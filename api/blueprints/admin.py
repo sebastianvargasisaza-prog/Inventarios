@@ -14840,8 +14840,12 @@ def admin_auditoria_lotes():
     # 2) Lotes nuevos en la ventana (primera entrada vista en esos dias)
     try:
         nuevos = c.execute(f"""
-            SELECT m.material_id, m.material_nombre, m.lote, m.proveedor,
-                   m.cantidad, m.fecha, m.operador,
+            SELECT m.material_id, m.lote,
+                   MAX(m.material_nombre) as material_nombre,
+                   MAX(m.proveedor) as proveedor,
+                   SUM(m.cantidad) as cantidad,
+                   MAX(m.fecha) as fecha,
+                   MAX(m.operador) as operador,
                    MIN(m.id) as primera_id
             FROM movimientos m
             WHERE COALESCE(m.lote,'') != ''
@@ -14854,7 +14858,9 @@ def admin_auditoria_lotes():
                     AND m2.id < m.id
               )
             GROUP BY m.material_id, m.lote
-            ORDER BY m.fecha DESC, m.id DESC
+            -- ordenar por los ALIAS agregados · `m.fecha`/`m.id` crudos no están agrupados y
+            -- en PostgreSQL eso revienta igual en el ORDER BY que en el SELECT
+            ORDER BY fecha DESC, primera_id DESC
             LIMIT 200
         """).fetchall()
         out["lotes_creados_recientes"] = [dict(r) for r in nuevos]
@@ -14882,7 +14888,9 @@ def admin_auditoria_lotes():
     #    aparece en 2 o mas filas en la ventana
     try:
         dups = c.execute(f"""
-            SELECT material_id, material_nombre, lote, cantidad, tipo,
+            SELECT material_id, lote, cantidad, tipo,
+                   MAX(material_nombre) as material_nombre,
+                   MAX(fecha) as fecha,
                    COUNT(*) as veces, MIN(id) as primera, MAX(id) as ultima,
                    GROUP_CONCAT(operador, ' / ') as operadores
             FROM movimientos
@@ -14933,6 +14941,16 @@ def admin_auditoria_lotes():
     except Exception as e:
         out["delta_lotes_error"] = str(e)
 
+    # Un chequeo que FALLÓ no puede verse igual que un chequeo LIMPIO. Dos de estas queries
+    # llevaban tiempo reventando en PostgreSQL (GROUP BY incompleto · pasa en SQLite) y el
+    # endpoint devolvía `duplicados_sospechosos: []` al lado del error: quien mirara la lista
+    # leía "no hay lotes duplicados" cuando en realidad la detección nunca corrió.
+    _fallidos = sorted(k[:-6] for k in out if k.endswith('_error'))
+    out['checks_fallidos'] = _fallidos
+    out['ok'] = not _fallidos
+    if _fallidos:
+        out['aviso'] = ('Estos chequeos NO corrieron: %s · sus resultados vacíos no significan '
+                        '"todo limpio"' % ', '.join(_fallidos))
     conn.close()
     return jsonify(out)
 

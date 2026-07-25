@@ -10350,6 +10350,20 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ON CONFLICT (producto_nombre) DO UPDATE SET sobreproduccion_deliberada=1, "
         "sobreproduccion_motivo='Lanzamiento reciente · produccion larga · Sebastian 25-jul'",
     ]),
+    (379, "Codigo de envase con TABULADOR invisible (auditoria de kardex 25-jul). 1000 unidades de "
+          "MEE-IMP-020 entraron al kardex como '<TAB>MEE-IMP-020' (copiar/pegar al cargar la OC), "
+          "asi que eran una CLAVE DISTINTA: invisibles para el cruce con formulas, para el stock de "
+          "envases y para abastecimiento. No hay ambiguedad (no existe otra fila con el codigo "
+          "limpio), asi que es una correccion de clave, no una fusion de materiales. El guard que "
+          "evita que vuelva a pasar va en recibir_oc (strip del codigo antes de tocar el kardex). "
+          "Se usa LIKE en vez de char(9)/chr(9) porque char() es SQLite-only (rompe en PG).", [
+        "UPDATE movimientos_mee SET mee_codigo='MEE-IMP-020' "
+        "WHERE mee_codigo LIKE '%MEE-IMP-020' AND mee_codigo <> 'MEE-IMP-020'",
+        "UPDATE ordenes_compra_items SET codigo_mp='MEE-IMP-020' "
+        "WHERE codigo_mp LIKE '%MEE-IMP-020' AND codigo_mp <> 'MEE-IMP-020'",
+        "UPDATE maestro_mee SET codigo='MEE-IMP-020' "
+        "WHERE codigo LIKE '%MEE-IMP-020' AND codigo <> 'MEE-IMP-020'",
+    ]),
 ]
 
 

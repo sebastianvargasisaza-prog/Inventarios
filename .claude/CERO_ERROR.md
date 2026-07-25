@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-07-25** (M99 · una MISMA regla de negocio en DOS constantes distintas diverge en silencio: `DIAS_HABILES`=L-V validaba y `DIAS_PRODUCCION`=L/M/V ubicaba → el calendario aceptaba martes que los generadores nunca elegían (2 rutas, 2 calendarios) y la capacidad del mes caía de 44 a 26 cupos, comiéndose el colchón de 20d · el ➕ del calendario era el ÚNICO de 3 caminos sin validar día hábil/festivo · si N caminos hacen lo mismo, comparar sus GUARDS no solo su lógica · test que agenda a `hoy+N` cae siempre en el mismo día de semana · M98 · un campo con nombre de MÉTRICA que en realidad es una ETIQUETA de texto: `tendencia` ('aceleracion_fuerte') se convertía con float() → 500 en prod, y en JS se comparaba >= 0.08 → alerta muerta que nunca apareció · leé el `return` del productor antes de comparar/convertir · el número va en un campo APARTE (`tendencia_pct`), no se reinterpreta la etiqueta · un except alrededor del float() tapa el 500 pero deja la decisión con el default · M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
+Última actualización: **2026-07-25** (M100 · abastecimiento MP: el motor trataba el stock como NÚMERO PLANO sin mirar cuándo vence → una MP que vence en 30d cubría un consumo del día 90 y el déficit salía corto (53 MPs) · un TABULADOR pegado a un código = clave distinta = 1000 envases invisibles en el kardex, normalizá toda clave con .strip() en el punto de escritura · un endpoint de diagnóstico con un chequeo caído DEBE declararlo, si no su lista vacía miente · M99 · una MISMA regla de negocio en DOS constantes distintas diverge en silencio: `DIAS_HABILES`=L-V validaba y `DIAS_PRODUCCION`=L/M/V ubicaba → el calendario aceptaba martes que los generadores nunca elegían (2 rutas, 2 calendarios) y la capacidad del mes caía de 44 a 26 cupos, comiéndose el colchón de 20d · el ➕ del calendario era el ÚNICO de 3 caminos sin validar día hábil/festivo · si N caminos hacen lo mismo, comparar sus GUARDS no solo su lógica · test que agenda a `hoy+N` cae siempre en el mismo día de semana · M98 · un campo con nombre de MÉTRICA que en realidad es una ETIQUETA de texto: `tendencia` ('aceleracion_fuerte') se convertía con float() → 500 en prod, y en JS se comparaba >= 0.08 → alerta muerta que nunca apareció · leé el `return` del productor antes de comparar/convertir · el número va en un campo APARTE (`tendencia_pct`), no se reinterpreta la etiqueta · un except alrededor del float() tapa el 500 pero deja la decisión con el default · M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
 
 ---
 
@@ -969,6 +969,51 @@ Verificado: el calendario de festivos es correcto (18/año, Pascua validada cont
 Ley Emiliani). Tests `test_calendario_dias_habiles.py` (los 3 caminos aplican la misma regla) +
 `test_plan_festivos_clamp.py` + `test_mover_lote_cadena.py`. Gate PG 367 verde.
 Ver [[project_modal_calendario_unificado_16jul]].
+
+## 📦 M100 · Abastecimiento de MP · lo que el motor NO miraba, y stock invisible por un tabulador · 25-jul
+
+Sebastián: *"abastecimiento es la fuente de la solicitud para no quedarnos sin materias primas"*.
+
+**Lo que se VERIFICÓ sano** (contra producción, 158 MPs, no por lectura de código): consumo y
+déficit MONÓTONOS en los 7 horizontes, cero déficit negativo, `% × kg × 1000` coincidiendo al
+gramo contra el trail por materia prima, y el neteo EXACTO en las 158:
+`pedir = max(0, deficit[foco] − en_camino − cuarentena)` con MOQ. Los 168 lotes cruzaron su
+fórmula (`lotes_sin_formula: 0`). **Método: correr invariantes sobre el payload real, no leer.**
+
+**El hueco real: el stock se trataba como un NÚMERO PLANO, sin mirar CUÁNDO VENCE.** Una MP que
+vence en 30 días contaba igual para cubrir un consumo del día 90 → el déficit salía CORTO y no se
+compraba. 53 MPs afectadas (5 dentro de 90d, ~4.7 kg; el extremo: 202 kg de Probetaína de los que
+sólo 9.9 siguen vigentes al día 365). Modelo aplicado (no un recorte grueso): un lote que vence el
+día D sólo cubre el consumo ANTERIOR a D, así que el desperdicio es
+`max_{D ≤ h}(stock_que_vence_hasta_D − consumo_hasta_D)⁺`, con el consumo interpolado entre los
+horizontes que el motor ya calcula. **Conservador por diseño: un lote SIN fecha se trata como que
+no vence, así que el cambio sólo puede AUMENTAR el déficit, nunca reducirlo.** Se expone
+`vence_sin_usar_g` por horizonte para que el número sea auditable. **NO se tocó `_get_mp_stock`**
+(helper canónico de toda la app · las vistas se anclan en `estado_lote`): el ajuste vive sólo en
+el motor de COMPRA, que es donde decide. Tests `test_abastecimiento_vencimiento.py`.
+
+**🔤 Un espacio o TABULADOR pegado a un código es una CLAVE DISTINTA → stock invisible.** 1000
+unidades del envase MEE-IMP-020 estaban en el kardex como `'\tMEE-IMP-020'` (copiar/pegar al
+cargar la OC): no cruzaba con fórmulas, no sumaba al stock, no aparecía en abastecimiento, y sin
+un solo error a la vista. `recibir_oc` desempaquetaba `codigo` del ítem de la OC **sin `.strip()`**
+(otros puntos del mismo archivo sí lo hacen). Fix: strip en los 2 sitios + mig 379 para el dato ya
+escrito (con `LIKE`, **no `char(9)`/`chr(9)`**, que es SQLite-only). Invariante durable en
+`test_codigo_kardex_limpio.py`: ningún código de `movimientos`/`movimientos_mee`/maestros/OC puede
+tener espacios al borde ni caracteres de control. **Regla: todo código que va a ser CLAVE se
+normaliza (`.strip()`) en el punto de escritura; una clave sucia no da error, da silencio.**
+
+**🩺 Un chequeo que FALLÓ no puede verse igual que un chequeo LIMPIO.** `/api/admin/auditoria-lotes`
+(integridad del kardex) tenía 2 queries reventando SOLO en PG por GROUP BY incompleto (M12b) —
+una de ellas por el **`ORDER BY m.fecha, m.id` sobre columnas no agrupadas**, que en PG falla
+igual que en el SELECT. El endpoint atrapaba el error y devolvía `duplicados_sospechosos: []` al
+lado del `_error`: la detección de lotes duplicados llevaba tiempo MUERTA y se leía como "todo
+limpio". Fix: agregar las columnas y, sobre todo, `checks_fallidos` + `ok` + `aviso` en la
+respuesta. **Regla: un endpoint de diagnóstico con resultados parciales DEBE declarar cuáles de
+sus chequeos no corrieron; si no, su silencio miente.** Tests `test_auditoria_lotes_pg.py`.
+
+**Integridad del kardex al 25-jul (357 lotes):** 0 stock negativo · 0 lotes sin número de lote ·
+0 vencidos contados como disponibles · 11 lotes SIN fecha de vencimiento (dato a completar,
+INVIMA) · 17 sin ubicación · 3 sin INCI.
 
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 

@@ -6166,6 +6166,11 @@ def recibir_oc(numero_oc):
 
     for _idx, item in enumerate(items_oc):
         _oci_rowid, codigo, nombre, cantidad_pedida = item
+        # El codigo se LIMPIA antes de tocar el kardex: un tabulador o espacio invisible pegado
+        # al codigo (viene de copiar/pegar al cargar la OC) crea una clave distinta y el stock
+        # queda INVISIBLE para todo cruce con formulas. Caso real en produccion (25-jul):
+        # 1000 unidades del envase MEE-IMP-020 entraron como '	MEE-IMP-020'.
+        codigo = (codigo or '').strip()
         # Rotular el ingreso por INCI (cae al codigo si no hay INCI). El comercial
         # (nombre) queda en la OC pero no entra al kardex como etiqueta.
         nombre = inci_by_cod.get(codigo) or codigo or nombre
@@ -6246,6 +6251,11 @@ def recibir_oc(numero_oc):
     lotes_sinteticos_advertencia = []  # Fix #9 · 21-may-2026
     for _idx, item in enumerate(items_oc):
         _oci_rowid, codigo, nombre, cantidad_pedida = item
+        # El codigo se LIMPIA antes de tocar el kardex: un tabulador o espacio invisible pegado
+        # al codigo (viene de copiar/pegar al cargar la OC) crea una clave distinta y el stock
+        # queda INVISIBLE para todo cruce con formulas. Caso real en produccion (25-jul):
+        # 1000 unidades del envase MEE-IMP-020 entraron como '	MEE-IMP-020'.
+        codigo = (codigo or '').strip()
         # Rotular el ingreso por INCI (cae al codigo si no hay INCI). El comercial
         # (nombre) queda en la OC pero no entra al kardex como etiqueta.
         nombre = inci_by_cod.get(codigo) or codigo or nombre
