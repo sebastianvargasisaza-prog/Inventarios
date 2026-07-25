@@ -1732,6 +1732,33 @@ def _rc_estado(v):
     return m.get((v or '').lower(), v)
 
 
+def _rc_firma(c, valor):
+    """Rúbrica manuscrita del firmante lista para estampar en el documento (Part 11 §11.50).
+
+    UN solo punto de estampa para TODOS los imprimibles de Calidad (F01/F02/CoA-PT): resuelve
+    por username O por nombre completo (los formatos guardan el NOMBRE del responsable) y
+    devuelve '' si esa persona no tiene firma cargada. Defensivo: nunca lanza (un documento
+    regulado no puede caerse porque falte una imagen).
+    """
+    try:
+        from blueprints.firmas import firma_estampa_html as _f
+    except Exception:
+        try:
+            from api.blueprints.firmas import firma_estampa_html as _f
+        except Exception:
+            return ''
+    try:
+        return _f(c, valor)
+    except Exception:
+        return ''
+
+
+def _rc_fecha_firma(v):
+    """Línea de fecha bajo la rúbrica (GMP: toda firma va fechada). '' si no hay fecha."""
+    v = (str(v or '')).strip()
+    return f"<span style='display:block;color:#a1a1b0;font-size:9px;margin-top:2px'>Fecha: {_e(v[:19])}</span>" if v else ''
+
+
 @bp.route('/api/calidad/recepcion-tecnica/imprimible', methods=['GET'])
 def calidad_f01_imprimible():
     """F01 imprimible (COC-PRO-002-F01) · documento auditable para PDF (imprimir desde el navegador)."""
@@ -1770,8 +1797,10 @@ def calidad_f01_imprimible():
             + (f"<div class='fld'><span class='k'>Observaciones</span><span class='v'>{_e(d.get('observaciones'))}</span></div>" if d.get('observaciones') else '')
             + f"<div class='res {res_cls}'>Resultado de la recepción: {res_txt}</div>"
             + "<div class='firmas'>"
-            + f"<div class='firma'><b>{_e(d.get('realiza_por') or '-')}</b>Realiza la recepción</div>"
-            + f"<div class='firma'><b>{_e(d.get('aprueba_por') or '-')}</b>Aprueba la recepción</div>"
+            + (f"<div class='firma'>{_rc_firma(c, d.get('realiza_por'))}"
+               f"<b>{_e(d.get('realiza_por') or '-')}</b>Realiza la recepción{_rc_fecha_firma(d.get('realiza_fecha'))}</div>")
+            + (f"<div class='firma'>{_rc_firma(c, d.get('aprueba_por'))}"
+               f"<b>{_e(d.get('aprueba_por') or '-')}</b>Aprueba la recepción{_rc_fecha_firma(d.get('aprueba_fecha'))}</div>")
             + "</div>"
             + f"<p style='margin-top:18px;font-size:9px;color:#94a3b8'>Registrado por {_e(d.get('creado_por'))} · {_e((d.get('creado_en') or '')[:19])}</p>"
             + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
@@ -1791,13 +1820,6 @@ def calidad_f02_imprimible():
         return Response("<p style='font-family:sans-serif;padding:40px'>No hay F02 guardado para este lote.</p>",
                         mimetype='text/html')
     d = dict(zip([x[0] for x in c.description], row))
-    try:
-        from blueprints.firmas import firma_estampa_html as _festampa
-    except Exception:
-        try:
-            from api.blueprints.firmas import firma_estampa_html as _festampa
-        except Exception:
-            _festampa = lambda *a, **k: ''
     params = [('aspecto', 'Aspecto / Color / Olor'), ('ph', 'pH (a 25°C)'), ('densidad', 'Densidad (g/mL)'),
               ('solubilidad', 'Solubilidad'), ('viscosidad', 'Viscosidad (cP)')]
     filas = ''.join(
@@ -1818,8 +1840,10 @@ def calidad_f02_imprimible():
             + (f"<div class='fld'><span class='k'>Observaciones generales</span><span class='v'>{_e(d.get('observaciones_generales'))}</span></div>" if d.get('observaciones_generales') else '')
             + f"<div class='res {res_cls}'>Concepto de calidad: {res_txt}</div>"
             + "<div class='firmas'>"
-            + f"<div class='firma'>{_festampa(c, d.get('responsable_analisis'))}<b>{_e(d.get('responsable_analisis') or '-')}</b>Realiza el análisis</div>"
-            + f"<div class='firma'>{_festampa(c, d.get('aprobo_por'))}<b>{_e(d.get('aprobo_por') or '-')}</b>Aprueba · Jefe de Control de Calidad</div>"
+            + (f"<div class='firma'>{_rc_firma(c, d.get('responsable_analisis'))}"
+               f"<b>{_e(d.get('responsable_analisis') or '-')}</b>Realiza el análisis{_rc_fecha_firma(d.get('realiza_fecha'))}</div>")
+            + (f"<div class='firma'>{_rc_firma(c, d.get('aprobo_por'))}"
+               f"<b>{_e(d.get('aprobo_por') or '-')}</b>Aprueba · Jefe de Control de Calidad{_rc_fecha_firma(d.get('aprobo_fecha'))}</div>")
             + "</div>"
             + f"<p style='margin-top:18px;font-size:9px;color:#94a3b8'>Registrado por {_e(d.get('creado_por'))} · {_e((d.get('creado_en') or '')[:19])}</p>"
             + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
@@ -1837,14 +1861,16 @@ def calidad_coa_pt_imprimible(lote):
     try:
         micro = c.execute(
             "SELECT microorganismo, COALESCE(valor_texto, CAST(valor AS TEXT), ''), COALESCE(unidad,''), "
-            "COALESCE(estado,''), COALESCE(metodo,''), COALESCE(producto_nombre,'') "
+            "COALESCE(estado,''), COALESCE(metodo,''), COALESCE(producto_nombre,''), "
+            "COALESCE(analista,''), COALESCE(creado_por,''), COALESCE(fecha_analisis,'') "
             "FROM calidad_micro_resultados WHERE lote=? ORDER BY id", (lote,)).fetchall()
     except Exception:
         micro = []
     try:
         fq = c.execute(
             "SELECT parametro, COALESCE(resultado,''), COALESCE(unidad,''), COALESCE(valor_referencia,''), "
-            "COALESCE(estado,''), COALESCE(producto_nombre,'') "
+            "COALESCE(estado,''), COALESCE(producto_nombre,''), "
+            "COALESCE(analista,''), COALESCE(creado_por,''), COALESCE(fecha_analisis,'') "
             "FROM calidad_fisicoquimica_resultados WHERE lote=? ORDER BY id", (lote,)).fetchall()
     except Exception:
         fq = []
@@ -1868,15 +1894,32 @@ def calidad_coa_pt_imprimible(lote):
                       % (_e(r[0]), _e(r[1]), _e(r[2]), _e(r[4]), _e(_estl(r[3]))) for r in micro)
     filas_f = ''.join("<tr><td>%s</td><td>%s %s</td><td>%s</td><td>%s</td></tr>"
                       % (_e(r[0]), _e(r[1]), _e(r[2]), _e(r[3]), _e(_estl(r[4]))) for r in fq)
+    # Firmante del CoA-PT: el ANALISTA que registró los resultados (analista, o quien lo cargó).
+    # No se inventa un aprobador: si nadie firmó la aprobación, la línea queda en blanco (GMP).
+    analista = ''
+    for r in list(micro) + list(fq):
+        if (r[6] or '').strip():
+            analista = r[6].strip(); break
+    if not analista:
+        for r in list(micro) + list(fq):
+            if (r[7] or '').strip():
+                analista = r[7].strip(); break
+    fecha_an = ''
+    for r in list(micro) + list(fq):
+        if (r[8] or '').strip():
+            fecha_an = r[8].strip(); break
     body = (_rc_doc_css() + _rc_head('Certificado de análisis de producto terminado', 'COC-PRO-002 · CoA PT')
-            + "<div class='grid'>" + _rc_fld('Producto', producto) + _rc_fld('Lote', lote) + "</div>"
+            + "<div class='grid'>" + _rc_fld('Producto', producto) + _rc_fld('Lote', lote)
+            + (_rc_fld('Fecha de análisis', fecha_an) if fecha_an else '') + "</div>"
             + (("<table><thead><tr><th>Microorganismo</th><th>Resultado</th><th>Método</th><th style='width:110px'>Concepto</th></tr></thead><tbody>"
                 + filas_m + "</tbody></table>") if micro else '')
             + (("<table><thead><tr><th>Parámetro fisicoquímico</th><th>Resultado</th><th>Referencia</th><th style='width:110px'>Concepto</th></tr></thead><tbody>"
                 + filas_f + "</tbody></table>") if fq else '')
             + ("<div class='res %s'>Concepto de calidad: %s</div>"
                % (('no' if hay_fuera else 'ok'), ('CON OBSERVACIONES' if hay_fuera else 'CONFORME')))
-            + "<div class='firmas'><div class='firma'><b>-</b>Realiza el análisis</div>"
+            + "<div class='firmas'>"
+            + ("<div class='firma'>%s<b>%s</b>Realiza el análisis%s</div>"
+               % (_rc_firma(c, analista), _e(analista or '-'), _rc_fecha_firma(fecha_an)))
             + "<div class='firma'><b>-</b>Aprueba · Jefe de Control de Calidad</div></div>"
             + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
     return Response(body, mimetype='text/html')

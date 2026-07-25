@@ -311,19 +311,26 @@ async function showMbrDetail(id){
   const m = await r.json();
 
   // Botones de acción contextual según estado
+  // El maestro impreso (con la rúbrica del aprobador · Part 11 §11.50) siempre está disponible:
+  // es el documento que pide una auditoría junto al batch record.
+  const imprimir = '<button class="btn btn-sm" onclick="window.open(\'/api/brd/mbr/' + id
+    + '/imprimible\',\'_blank\')" title="Documento maestro auditable con la firma de aprobación">🖨️ Imprimir maestro</button>';
   let actions = '';
   if (m.estado === 'draft') {
     actions = '<div class="action-bar">'
       + '<button class="btn btn-primary btn-sm" onclick="submitMbr(' + id + ')">Submit a revisión</button>'
-      + '</div>';
+      + imprimir + '</div>';
   } else if (m.estado === 'en_revision') {
     actions = '<div class="action-bar">'
       + '<button class="btn btn-success btn-sm" onclick="aprobarMbr(' + id + ')">Firmar y aprobar</button>'
-      + '</div>';
+      + imprimir + '</div>';
   } else if (m.estado === 'aprobado') {
     actions = '<div class="action-bar">'
+      + imprimir
       + '<button class="btn btn-danger btn-sm" onclick="obsoletarMbr(' + id + ')">Obsoletar (motivo)</button>'
       + '</div>';
+  } else {
+    actions = '<div class="action-bar">' + imprimir + '</div>';
   }
 
   let html = '<div class="card">'

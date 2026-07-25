@@ -568,6 +568,147 @@ def detalle_mbr(mbr_id):
     return jsonify(_mbr_to_dict(row, pasos))
 
 
+def _mbr_doc_helpers():
+    """Helpers de render de documento regulado (los mismos que F01/F02 · un solo look).
+
+    Import perezoso para no acoplar el módulo en el arranque. Si por alguna razón no
+    resuelven, devuelve un juego mínimo: un documento regulado nunca debe caerse.
+    """
+    try:
+        from blueprints.calidad import _rc_doc_css, _rc_head, _rc_fld, _rc_firma, _rc_fecha_firma, _e
+    except Exception:
+        try:
+            from api.blueprints.calidad import _rc_doc_css, _rc_head, _rc_fld, _rc_firma, _rc_fecha_firma, _e
+        except Exception:
+            import html as _h
+            _e = lambda v: _h.escape(str(v if v is not None else ''))
+            _rc_doc_css = lambda: "<style>body{font-family:Arial,sans-serif;font-size:12px}</style>"
+            _rc_head = lambda t, c, x='': f"<h2>{_e(t)}</h2><div>{_e(c)} {_e(x)}</div>"
+            _rc_fld = lambda k, v: f"<div><b>{_e(k)}:</b> {_e(v)}</div>"
+            _rc_firma = lambda c, v: ''
+            _rc_fecha_firma = lambda v: ''
+    return _rc_doc_css, _rc_head, _rc_fld, _rc_firma, _rc_fecha_firma, _e
+
+
+@bp.route("/api/brd/mbr/<int:mbr_id>/imprimible", methods=["GET"])
+def mbr_imprimible(mbr_id):
+    """MBR imprimible · el procedimiento maestro APROBADO como documento auditable (INVIMA/GMP).
+
+    Es el documento que una auditoría pide junto al batch record: qué procedimiento estaba
+    aprobado, en qué versión, y QUIÉN lo aprobó. La firma electrónica (e_signatures) es el
+    control legal §11.200; acá se estampa además la RÚBRICA MANUSCRITA del aprobador
+    (manifestación visible §11.50), igual que en el F01/F02 y el batch record.
+    """
+    err = _require_login()
+    if err:
+        return err
+    _css, _head, _fld, _firma, _fecha_firma, _e = _mbr_doc_helpers()
+    conn = get_db()
+    m = conn.execute(
+        """SELECT id, producto_nombre, formula_version_id, version, estado, titulo, descripcion,
+                  lote_size_g, tiempo_total_estimado_min, creado_por, creado_at_utc,
+                  COALESCE(aprobado_por,'') AS aprobado_por, aprobado_at_utc, aprobado_signature_id,
+                  obsoleto_at_utc, COALESCE(obsoleto_motivo,'') AS obsoleto_motivo
+             FROM mbr_templates WHERE id = ?""",
+        (mbr_id,),
+    ).fetchone()
+    if not m:
+        return Response("<p style='font-family:sans-serif;padding:40px'>No existe el MBR solicitado.</p>",
+                        mimetype="text/html", status=404)
+    pasos = conn.execute(
+        """SELECT orden, COALESCE(fase,'') AS fase, descripcion, COALESCE(tipo_paso,'') AS tipo_paso,
+                  COALESCE(equipo_requerido,'') AS equipo_requerido,
+                  COALESCE(tiempo_estimado_min,0) AS tiempo_estimado_min,
+                  COALESCE(requiere_e_sign,0) AS requiere_e_sign, COALESCE(requiere_qc,0) AS requiere_qc
+             FROM mbr_pasos WHERE mbr_template_id = ? ORDER BY orden""",
+        (mbr_id,),
+    ).fetchall()
+    specs = conn.execute(
+        """SELECT parametro, COALESCE(unidad,'') AS unidad, valor_min, valor_max,
+                  COALESCE(metodo,'') AS metodo, COALESCE(obligatorio,0) AS obligatorio
+             FROM ipc_specs WHERE mbr_template_id = ? ORDER BY id""",
+        (mbr_id,),
+    ).fetchall()
+    # Identidad del aprobador tomada de la e_signature (snapshot legal del momento de firmar).
+    sig = None
+    if m["aprobado_signature_id"]:
+        sig = conn.execute(
+            "SELECT signer_username, COALESCE(signer_full_name,'') AS signer_full_name, "
+            "COALESCE(signer_cedula,'') AS signer_cedula, COALESCE(signer_cargo,'') AS signer_cargo, "
+            "signed_at_utc, COALESCE(signature_hash,'') AS signature_hash "
+            "FROM e_signatures WHERE id = ?", (m["aprobado_signature_id"],)).fetchone()
+
+    estado = (m["estado"] or "").lower()
+    est_cls = "ok" if estado == "aprobado" else ("no" if estado == "obsoleto" else "")
+    est_txt = {"aprobado": "APROBADO Y VIGENTE", "draft": "BORRADOR (sin valor regulatorio)",
+               "en_revision": "EN REVISIÓN (aún sin aprobar)",
+               "obsoleto": "OBSOLETO (no usar para fabricar)"}.get(estado, (m["estado"] or "-").upper())
+    _tipo = {"pesaje": "Pesaje", "dispensacion": "Dispensación", "mezclado": "Mezclado",
+             "caliente": "Fase caliente", "enfriamiento": "Enfriamiento", "control_ipc": "Control IPC",
+             "envasado": "Envasado", "inspeccion": "Inspección", "limpieza": "Limpieza", "otro": ""}
+    filas_p = "".join(
+        "<tr><td style='text-align:center;font-weight:700'>%s</td><td>%s</td><td>%s%s</td>"
+        "<td>%s</td><td style='text-align:center'>%s</td><td style='text-align:center'>%s</td></tr>"
+        % (p["orden"], _e(p["fase"] or "-"), _e(p["descripcion"]),
+           ("<br><span style='color:#8b8b9e;font-size:9.5px'>Equipo: %s</span>" % _e(p["equipo_requerido"]))
+           if p["equipo_requerido"] else "",
+           _e(_tipo.get(p["tipo_paso"], p["tipo_paso"])),
+           (str(p["tiempo_estimado_min"]) if p["tiempo_estimado_min"] else "-"),
+           ("Operario + QC" if p["requiere_qc"] else ("Operario" if p["requiere_e_sign"] else "-")))
+        for p in pasos)
+    _rango = lambda a, b: ("%s a %s" % (a, b)) if (a is not None and b is not None) else (
+        ("mín %s" % a) if a is not None else (("máx %s" % b) if b is not None else "-"))
+    filas_s = "".join(
+        "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td style='text-align:center'>%s</td></tr>"
+        % (_e(s["parametro"]), _e(_rango(s["valor_min"], s["valor_max"])), _e(s["unidad"] or "-"),
+           _e(s["metodo"] or "-"), ("Sí" if s["obligatorio"] else "No"))
+        for s in specs)
+
+    _ap_nom = (sig["signer_full_name"] if (sig and sig["signer_full_name"]) else (m["aprobado_por"] or ""))
+    _ap_user = (sig["signer_username"] if sig else (m["aprobado_por"] or ""))
+    _ap_meta = ""
+    if sig:
+        _ap_meta = ("<span style='display:block;color:#a1a1b0;font-size:9px;margin-top:2px'>"
+                    "C.C. %s · %s · firma electrónica #%s</span>"
+                    % (_e(sig["signer_cedula"] or "-"), _e(sig["signer_cargo"] or "-"),
+                       _e(m["aprobado_signature_id"])))
+    body = (_css() + _head("Registro maestro de lote (MBR)", "MBR v%s" % _e(m["version"]),
+                           m["producto_nombre"])
+            + ("<div class='res %s'>Estado del maestro: %s</div>" % (est_cls, _e(est_txt)))
+            + "<div class='grid'>"
+            + _fld("Producto", m["producto_nombre"]) + _fld("Versión del maestro", "v%s" % m["version"])
+            + _fld("Tamaño de lote (referencia)", "%s g" % format(int(m["lote_size_g"] or 0), ",d").replace(",", "."))
+            + _fld("Tiempo estimado", "%s min" % (m["tiempo_total_estimado_min"] or 0))
+            + _fld("Fórmula vinculada", m["formula_version_id"] or "-")
+            + _fld("Pasos del procedimiento", len(pasos))
+            + "</div>"
+            + ((f"<div class='fld'><span class='k'>Título</span><span class='v'>{_e(m['titulo'])}</span></div>") if m["titulo"] else "")
+            + ((f"<div class='fld'><span class='k'>Descripción</span><span class='v'>{_e(m['descripcion'])}</span></div>") if m["descripcion"] else "")
+            + (("<table><thead><tr><th style='width:38px'>#</th><th style='width:110px'>Fase</th>"
+                "<th>Instrucción</th><th style='width:100px'>Tipo</th><th style='width:52px'>Min</th>"
+                "<th style='width:96px'>Firma</th></tr></thead><tbody>" + filas_p + "</tbody></table>")
+               if pasos else "<p style='color:#b45309'>Este maestro no tiene pasos cargados.</p>")
+            + (("<table><thead><tr><th>Control en proceso (IPC)</th><th style='width:130px'>Especificación</th>"
+                "<th style='width:80px'>Unidad</th><th style='width:150px'>Método</th>"
+                "<th style='width:80px'>Obligatorio</th></tr></thead><tbody>" + filas_s + "</tbody></table>")
+               if specs else "")
+            + ((("<div class='res no'>Maestro OBSOLETADO el %s · motivo: %s</div>")
+                % (_e((m["obsoleto_at_utc"] or "")[:19]), _e(m["obsoleto_motivo"] or "-"))) if m["obsoleto_at_utc"] else "")
+            + "<div class='firmas'>"
+            + ("<div class='firma'>%s<b>%s</b>Elabora el maestro%s</div>"
+               % (_firma(conn, m["creado_por"]), _e(m["creado_por"] or "-"),
+                  _fecha_firma((m["creado_at_utc"] or "")[:19])))
+            + ("<div class='firma'>%s<b>%s</b>Aprueba · Aseguramiento / Control de Calidad%s%s</div>"
+               % (_firma(conn, _ap_user), _e(_ap_nom or "-"),
+                  _fecha_firma(((sig["signed_at_utc"] if sig else m["aprobado_at_utc"]) or "")[:19]), _ap_meta))
+            + "</div>"
+            + "<p style='margin-top:18px;font-size:9px;color:#94a3b8'>Documento generado desde EOS · "
+            + "la firma electrónica (21 CFR Part 11 §11.200) es el control legal · la rúbrica es su "
+            + "manifestación visible (§11.50).</p>"
+            + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
+    return Response(body, mimetype="text/html")
+
+
 @bp.route("/api/brd/mbr", methods=["POST"])
 def crear_mbr():
     err = _require_login()
