@@ -232,7 +232,18 @@ def get_inventario():
     # carga. Cache TTL 45s (per-worker): es un OVERVIEW, no una vista transaccional. El toggle de
     # recepción se refresca fresco en cada hit (es barato) para que la casilla no quede vieja.
     import time as _tt
-    _hit = _INV_DASH_CACHE.get('payload')
+    # FIX 25-jul (auditoría) · la caché NO aplica en tests ni con ?fresco=1. Con ella activa,
+    # un test que lee el baseline, siembra datos y vuelve a leer recibía la respuesta VIEJA:
+    # 3 tests de KPIs de Planta (lotes vencidos, críticos a 30d, cuarentena) llevaban tiempo en
+    # rojo por eso, y el diagnóstico apuntaba al endpoint cuando el endpoint estaba bien.
+    # Una caché que no se puede saltear vuelve los tests no deterministas y ESCONDE bugs
+    # reales, que es justo lo contrario de lo que queremos.
+    try:
+        from flask import current_app as _capp
+        _sin_cache = bool(_capp.config.get('TESTING')) or request.args.get('fresco') in ('1', 'true')
+    except Exception:
+        _sin_cache = False
+    _hit = None if _sin_cache else _INV_DASH_CACHE.get('payload')
     if _hit is not None and (_tt.time() - _INV_DASH_CACHE.get('ts', 0)) < _INV_DASH_TTL:
         try:
             _hit = dict(_hit)

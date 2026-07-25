@@ -138,10 +138,10 @@ async function _ccrFirmar(meaning, recordId){
   if(!pwd){return null;}
   var totp=prompt('Si tenés MFA activo, ingresá el código de 6 dígitos.\nSi no usás MFA, dejá vacío y presioná OK.')||'';
   try{
-    var rc=await fetch('/api/sign/challenge',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:pwd,totp_token:totp})});
+    var rc=await fetch('/api/sign/challenge',_fetchOpts('POST', {password:pwd,totp_token:totp}));
     var dc=await rc.json();
     if(!rc.ok){return {error:dc.error||'Credenciales inválidas'};}
-    var rs=await fetch('/api/sign',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({record_table:'movimientos',record_id:String(recordId),meaning:meaning,challenge_token:dc.token})});
+    var rs=await fetch('/api/sign',_fetchOpts('POST', {record_table:'movimientos',record_id:String(recordId),meaning:meaning,challenge_token:dc.token}));
     var ds=await rs.json();
     if(!rs.ok){return {error:ds.error||'Error al firmar'};}
     return {signature_id:ds.signature_id};
@@ -173,14 +173,14 @@ async function enviarCCReview(){
   var btn=document.getElementById('ccr-submit');
   try{
     btn.disabled=true; btn.textContent='Registrando...';
-    var r=await fetch('/api/lotes/cc-review',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(payload)});
+    var r=await fetch('/api/lotes/cc-review',_fetchOpts('POST', payload));
     var res=await r.json();
     if(!r.ok && res.requiere_firma){
       var firma=await _ccrFirmar(res.sign_meaning, res.record_id);
       if(firma===null){msg.innerHTML='<span style="color:#dc2626">Firma cancelada · la disposición NO se registró</span>';return;}
       if(firma.error){msg.innerHTML='<span style="color:#dc2626">'+firma.error+'</span>';return;}
       payload.signature_id=firma.signature_id;
-      r=await fetch('/api/lotes/cc-review',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(payload)});
+      r=await fetch('/api/lotes/cc-review',_fetchOpts('POST', payload));
       res=await r.json();
     }
     if(r.ok){

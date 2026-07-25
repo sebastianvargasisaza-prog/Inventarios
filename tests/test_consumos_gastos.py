@@ -32,8 +32,13 @@ def test_recepcion_consumo_no_entra_a_mp(app, db_clean):
     conn.commit(); conn.close()
     c = _login(app)
     r = c.post("/api/ordenes-compra/OC-EPP-TEST/recibir", json={"items": []}, headers=_csrf(c))
-    assert r.status_code == 409, r.data
-    assert r.get_json().get("codigo") == "OC_CONSUMO_SIN_RECEPCION"
+    # ACTUALIZADO 25-jul · el test esperaba 409 OC_CONSUMO_SIN_RECEPCION, pero ese rechazo se
+    # quitó A PROPÓSITO el 19-jul (Fase 1 de recepción de consumibles: los cargos ADMIN sí se
+    # confirman, solo que NO entran al kardex ni a cuarentena). El código de error ya no existe
+    # en compras.py. Lo que este test protege sigue igual y es lo importante: un consumible
+    # NUNCA crea movimientos de materia prima. Se afirma eso, no el rechazo viejo.
+    assert r.status_code == 200, r.data
+    assert int((r.get_json() or {}).get("ingresos") or 0) == 0, r.data
     # y NO se creó ningún movimiento de MP para esa OC
     conn = sqlite3.connect(os.environ["DB_PATH"])
     n = conn.execute("SELECT COUNT(*) FROM movimientos WHERE numero_oc='OC-EPP-TEST'").fetchone()[0]

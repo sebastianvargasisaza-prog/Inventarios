@@ -183,23 +183,25 @@ def test_compras_no_orphan_fetch_urls():
     fetches = re.findall(r"fetch\('(/api/[^'?]+)", COMPRAS_HTML)
     fetches = sorted(set(fetches))
 
-    # Lista whitelist de prefijos válidos. Cualquier fetch debe coincidir
-    # con uno de estos prefijos (o ser literal).
-    valid_prefixes = [
-        "/api/compras/", "/api/comprobantes-pago",
-        "/api/maestro-mps", "/api/maestro-mp/",
-        "/api/ordenes-compra", "/api/programacion/",
-        "/api/proveedores-compras", "/api/solicitudes-compra",
-        "/api/proveedores-unicos",  # autocompletado de proveedores en tab Planta
-        "/api/conteo/", "/api/admin/",
-        "/api/precio-historico/",
-        "/api/abastecimiento/",  # motor run-rate (programacion.abastecimiento_consumo_horizontes)
-        "/api/csrf-token",  # Pre-fetch defense-in-depth (core.csrf_token)
-    ]
-    orphans = []
-    for url in fetches:
-        if not any(url.startswith(p) or url == p.rstrip("/") for p in valid_prefixes):
-            orphans.append(url)
+    # ACTUALIZADO 25-jul (auditoría) · antes esto comparaba contra una LISTA BLANCA escrita a
+    # mano, que se desactualiza sola: marcaba `/api/mee` como huérfana cuando el endpoint
+    # existe y funciona (compras.handle_mee), y el test llevaba tiempo en rojo por eso. Un
+    # guardián que da falsos positivos deja de mirarse, que es peor que no tenerlo.
+    # Ahora se contrasta contra el MAPA REAL de rutas de la app: una URL es válida si coincide
+    # con una regla registrada o si es el prefijo de una (los fetch suelen concatenar el id
+    # después, ej. fetch('/api/ordenes-compra/' + num)).
+    from api.index import app as _app
+    reglas = {str(r.rule) for r in _app.url_map.iter_rules()}
+    reglas_planas = {re.sub(r'<[^>]+>', '', r).rstrip('/') for r in reglas}
+
+    def _registrada(url):
+        u = url.rstrip('/')
+        if u in reglas_planas or url in reglas:
+            return True
+        # prefijo de una regla real (la parte dinámica la arma el JS)
+        return any(r.startswith(u) for r in reglas_planas if r)
+
+    orphans = [u for u in fetches if not _registrada(u)]
     assert not orphans, (
         f"URLs frontend que no apuntan a ningún endpoint registrado: "
         f"{orphans}. Verificá que coincidan con los @bp.route(...)."

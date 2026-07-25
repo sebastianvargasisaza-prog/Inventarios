@@ -40,7 +40,10 @@ def test_rotulo_recepcion_mp_premium(admin_client):
     r = admin_client.get("/rotulo-recepcion/MP00107/LOTE-TEST/3000")
     assert r.status_code == 200, r.status_code
     body = r.data.decode("utf-8", "replace")
-    assert "ESPAGIRIA Laboratorio SAS" in body
+    # ACTUALIZADO 25-jul · el rótulo de MP muestra la marca en DOS elementos
+    # ('ESPAGIRIA' + <span class="cosub">Laboratorio SAS</span>) desde el rediseño, así que la
+    # cadena concatenada exacta ya no aparece. Lo que importa es que la empresa esté rotulada.
+    assert "ESPAGIRIA" in body and "Laboratorio SAS" in body
     assert "espagiria" in body.lower()  # logo src
     assert 'class="sheet"' in body
     assert "100mm 100mm" in body

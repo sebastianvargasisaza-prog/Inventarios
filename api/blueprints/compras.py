@@ -9910,28 +9910,20 @@ def cargos_fijos_pagar(pid):
 # MEE · Materiales de Envase & Empaque
 # ════════════════════════════════════════════
 
-@bp.route('/api/mee', methods=['GET','POST'])
+@bp.route('/api/mee', methods=['GET'])
 def handle_mee():
+    """Catálogo de envases (MEE) para Compras · SOLO LECTURA.
+
+    FIX 25-jul (auditoría) · esta ruta declaraba también POST y tenía su propio bloque de
+    creación gateado a `_require_compras_write`. Pero `/api/mee` está registrada DOS veces:
+    `inventario.mee_crear` también la declara con POST, y como se registra antes, es la que
+    Werkzeug resuelve (verificado con `url_map.bind().match('/api/mee', method='POST')`).
+    O sea que este bloque era CÓDIGO MUERTO con un gate MÁS ESTRICTO que nunca corría: daba
+    la ilusión de que crear un envase exigía rol de compras cuando en realidad basta con estar
+    autenticado (el gate de planta de la otra ruta). Es la misma clase de control ficticio que
+    el gate de MFA. Se deja UNA sola ruta de creación (M3) y esta queda GET-only.
+    """
     conn = get_db(); cur = conn.cursor()
-    if request.method == 'POST':
-        usuario, err, code = _require_compras_write()
-        if err:
-            return err, code
-        d = request.get_json(silent=True) or {}
-        if not d.get('codigo') or not d.get('descripcion'):
-            return jsonify({'error':'codigo y descripcion requeridos'}), 400
-        try:
-            cur.execute("""INSERT INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion)
-                VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (d['codigo'].upper().strip(), d['descripcion'].strip(),
-                 d.get('categoria','Otro'), d.get('proveedor',''), d.get('fabricante',''),
-                 'Activo', float(d.get('stock_actual',2000)), float(d.get('stock_minimo',1000)),
-                 'und', datetime.now().isoformat()))
-            conn.commit()
-            return jsonify({'message':f"MEE '{d['codigo']}' creado"}), 201
-        except Exception as e:
-            log.exception('crear MEE fallo: %s', e)
-            return jsonify({'error': 'No se pudo crear el MEE'}), 400
     # GET
     cat = request.args.get('cat','')
     q   = request.args.get('q','')

@@ -13,6 +13,8 @@ import sqlite3
 from .conftest import TEST_PASSWORD, csrf_headers
 
 
+# ACTUALIZADO 25-jul: era "luis", que quedó DESACTIVADO por el offboarding
+# (mig 375 · users_passwords.activo=0). Se usa otra persona de planta activa.
 def _login(app, user="sebastian"):
     c = app.test_client()
     r = c.post("/login", data={"username": user, "password": TEST_PASSWORD},
@@ -40,7 +42,7 @@ def _last_audit(accion=None, registro_id=None):
 # ─── Cronograma ejecuciones POST ─────────────────────────────────────
 
 def test_cronograma_agendar_user_no_bpm_403(app, db_clean):
-    c = _login(app, "luis")  # luis no es responsable BPM
+    c = _login(app, "mayerlin")  # luis no es responsable BPM
     r = c.post("/api/compliance/cronogramas/1/ejecuciones",
                json={"fecha_planeada": "2026-06-01"},
                headers=csrf_headers())
@@ -209,14 +211,14 @@ def test_hallazgo_no_existe_404(app, db_clean):
 
 
 def test_capa_user_no_bpm_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.patch("/api/compliance/capa/1",
                 json={"severidad": "baja"}, headers=csrf_headers())
     assert r.status_code == 403
 
 
 def test_hallazgo_user_no_bpm_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.patch("/api/compliance/hallazgos/1",
                 json={"severidad": "baja"}, headers=csrf_headers())
     assert r.status_code == 403

@@ -4,7 +4,9 @@ import sqlite3
 from .conftest import TEST_PASSWORD, csrf_headers
 
 
-def _login(app, user="luis"):
+# ACTUALIZADO 25-jul: era "luis", que quedó DESACTIVADO por el offboarding
+# (mig 375 · users_passwords.activo=0). Se usa otra persona de planta activa.
+def _login(app, user="mayerlin"):
     c = app.test_client()
     r = c.post("/login", data={"username": user, "password": TEST_PASSWORD},
                headers=csrf_headers(), follow_redirects=False)
@@ -24,7 +26,7 @@ def _last_audit(accion=None):
 
 
 def test_crear_notif_bienestar_audita(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/bienestar/notificaciones",
                json={"tipo": "cita_medica", "asunto": "Test cita médica",
                      "fecha_inicio": "2026-06-01"},
@@ -39,7 +41,7 @@ def test_crear_notif_bienestar_audita(app, db_clean):
 
 
 def test_notif_tipo_invalido_400(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/bienestar/notificaciones",
                json={"tipo": "invalido", "asunto": "x"},
                headers=csrf_headers())
@@ -47,7 +49,7 @@ def test_notif_tipo_invalido_400(app, db_clean):
 
 
 def test_notif_resolver_audita(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/bienestar/notificaciones",
                json={"tipo": "permiso", "asunto": "Test"},
                headers=csrf_headers())
@@ -68,7 +70,7 @@ def test_notif_resolver_audita(app, db_clean):
 
 
 def test_resolver_no_jefe_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/bienestar/notificaciones/1/resolver",
                json={"estado": "aprobada"}, headers=csrf_headers())
     assert r.status_code == 403

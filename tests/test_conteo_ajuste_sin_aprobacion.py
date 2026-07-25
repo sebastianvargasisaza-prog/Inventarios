@@ -31,7 +31,8 @@ def test_operario_aplica_ajuste_mayor_5pct_sin_aprobacion_y_queda_en_informe(app
           "VALUES (?,?,?,'Entrada',datetime('now'),?,?,'VIGENTE')", (COD, 'GLYCERIN', 1000, LOTE, EST))
 
     # 'luis' es operario de planta (PLANTA_USERS), NO admin
-    c = _login(app, 'luis')
+    # ACTUALIZADO 25-jul · era 'luis', DESACTIVADO por el offboarding (mig 375)
+    c = _login(app, 'mayerlin')
     r = c.post('/api/conteo/iniciar', json={'estanteria': EST})
     assert r.status_code == 200, r.data
     cid = r.get_json()['conteo_id']
@@ -63,4 +64,4 @@ def test_operario_aplica_ajuste_mayor_5pct_sin_aprobacion_y_queda_en_informe(app
     aplicados = d.get('aplicados', [])
     mio = [a for a in aplicados if a['codigo_mp'] == COD]
     assert mio, "el ajuste grande aplicado debe salir en el informe"
-    assert (mio[0].get('aplicado_por') or '') == 'luis', "el informe debe registrar quién lo aplicó"
+    assert (mio[0].get('aplicado_por') or '') == 'mayerlin', "el informe debe registrar quién lo aplicó"

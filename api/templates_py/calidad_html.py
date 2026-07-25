@@ -2701,10 +2701,10 @@ async function _calFirmar(meaning, recordId, recordTable){
   if(!pwd){ return null; }
   var totp=prompt('Si tenés MFA activo, ingresá el código de 6 dígitos.\\nSi no usás MFA, dejá vacío y presioná OK.')||'';
   try{
-    var rc=await fetch('/api/sign/challenge',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:pwd,totp_token:totp})});
+    var rc=await fetch('/api/sign/challenge',_fetchOpts('POST', {password:pwd,totp_token:totp}));
     var dc=await rc.json();
     if(!rc.ok){ return {error:dc.error||'Credenciales inválidas'}; }
-    var rs=await fetch('/api/sign',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({record_table:(recordTable||'movimientos'),record_id:String(recordId),meaning:meaning,challenge_token:dc.token})});
+    var rs=await fetch('/api/sign',_fetchOpts('POST', {record_table:(recordTable||'movimientos'),record_id:String(recordId),meaning:meaning,challenge_token:dc.token}));
     var ds=await rs.json();
     if(!rs.ok){ return {error:ds.error||'Error al firmar'}; }
     return {signature_id:ds.signature_id};
