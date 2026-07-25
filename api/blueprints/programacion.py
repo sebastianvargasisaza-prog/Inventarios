@@ -15570,8 +15570,15 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
                    COALESCE(mm.nombre_inci,'')
             FROM maestro_mps mm
             LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = mm.codigo_mp
-            WHERE COALESCE(mm.activo,1)=1
         """).fetchall():
+            # FIX 25-jul (auditoría): antes filtraba `WHERE COALESCE(mm.activo,1)=1`. Descontinuar
+            # una MP es `activo=0` (M17: NUNCA se borra, para conservar el histórico), pero la
+            # fórmula sigue viva apuntando a ese código → caía al default (lead 14 d, buffer 30,
+            # proveedor vacío) y el "COMPRAR AHORA" de una MP importada de 90 días de lead se
+            # desplomaba ~66%, además de dejar la solicitud sin proveedor al que rutearla.
+            # `mp_info` es SOLO un diccionario de consulta (se lee con .get() para nombre,
+            # proveedor y lead): incluir las inactivas no agrega demanda, solo evita que la que
+            # ya está en la fórmula quede sin sus datos de compra.
             mp_info[r[0]] = {
                 'nombre': r[1] or r[0],
                 'proveedor': (r[2] or '').strip(),

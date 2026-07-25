@@ -171,3 +171,31 @@ def test_pantalla_y_generar_oc_ven_lo_mismo(app):
             assert oc > 0, 'generar-OC tampoco debería ver 0 para un lote atrasado sin stock'
     finally:
         _limpiar()
+
+
+def test_mp_descontinuada_conserva_proveedor_y_lead(app):
+    """Descontinuar una MP (activo=0) no puede borrarle el proveedor ni el lead time.
+
+    `mp_info` filtraba activo=1, así que una MP descontinuada que la fórmula sigue usando caía
+    al default (lead 14 d, buffer 30, proveedor vacío). En una importada de 90 días de lead eso
+    desploma el "comprar ahora" y deja la solicitud sin proveedor al que rutearla.
+    """
+    _sembrar_formula()
+    _sql("UPDATE maestro_mps SET activo=0, proveedor='ProveedorImportadoTT' WHERE codigo_mp='%s'" % MP,
+         "DELETE FROM mp_lead_time_config WHERE material_id='%s'" % MP,
+         "INSERT INTO mp_lead_time_config (material_id, lead_time_dias, buffer_dias, proveedor_principal) "
+         "VALUES ('%s', 90, 30, 'ProveedorImportadoTT')" % MP)
+    _lote('eos_plan', 20)
+    c = _login(app)
+    try:
+        r = c.get('/api/abastecimiento/consumo-horizontes?horizontes=90&tipo=mp')
+        assert r.status_code == 200, r.data[:300]
+        it = next((x for x in (r.get_json() or {}).get('mps', []) if x['codigo'] == MP), None)
+        assert it is not None, 'la MP de la fórmula tiene que aparecer aunque esté descontinuada'
+        assert int(it.get('lead_time_dias') or 0) == 90, \
+            'perdió el lead time real · quedó %s' % it.get('lead_time_dias')
+        assert (it.get('proveedor_sugerido') or '') == 'ProveedorImportadoTT', \
+            'perdió el proveedor · quedó %r' % it.get('proveedor_sugerido')
+    finally:
+        _sql("DELETE FROM mp_lead_time_config WHERE material_id='%s'" % MP)
+        _limpiar()
