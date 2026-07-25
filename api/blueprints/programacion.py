@@ -15237,7 +15237,9 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
               AND COALESCE(pb.fecha_estimada,'') >= ?
               AND COALESCE(pb.fecha_estimada,'') <= ?
               AND pbl.id IS NULL
-        """, (hoy_iso, cutoff_max)).fetchall()
+        """, (piso_iso, cutoff_max)).fetchall()   # FIX 25-jul: piso_iso, no hoy_iso · un pedido
+        # de cliente ATRASADO sigue pendiente de entregar y su MP tiene que seguir contando.
+        # Las producciones ya usaban piso_iso (backlog); el loop B2B se había quedado en hoy.
     except sqlite3.OperationalError:
         b2b_rows = []
 
@@ -15756,20 +15758,40 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
     for _pr in prod_rows:
         if (_pr[6] if len(_pr) > 6 else '') in _FIJO_ORG:
             _prod_con_fijo.add(_norm_prod(_pr[1]))
-    # Paso 2: dedup por (producto, fecha) quedándose con la fila de MÁS kg.
+    # Paso 2 · FIX 25-jul (auditoría · SUB-COMPRA): lo FIJO NO se deduplica.
+    # El dedup por (producto, fecha) se quedaba con UNA sola fila, la de más kg, sin mirar
+    # el origen → dos tandas FIJAS legítimas del mismo producto el mismo día (dos clics en
+    # el calendario, o un eos_plan de Ánimus junto a un eos_b2b de cliente) pedían la MP de
+    # una sola: se compraba la MITAD. Y crearlas es trivial: `plan_programar_manual` inserta
+    # sin ningún guard de unicidad por (producto, fecha).
+    # Regla correcta, que conserva la protección del M49:
+    #   · FIJO = decisión explícita del usuario → cada tanda CUENTA, nunca se colapsa.
+    #   · SUGERIDO = propuesta → se deduplica por (producto, fecha) Y se descarta si ese
+    #     día ya tiene una fila FIJA (es la MISMA producción que el usuario ya fijó ·
+    #     contarla aparte sería el doble conteo que este dedup vino a evitar).
+    _fijas = []
+    _dias_fijos = set()      # (producto_norm, fecha) que ya tienen una tanda FIJA
+    for _pr in prod_rows:
+        if (_pr[6] if len(_pr) > 6 else '') in _FIJO_ORG:
+            _fijas.append(_pr)
+            _dias_fijos.add((_norm_prod(_pr[1]), str(_pr[2] or '')[:10]))
     _ded_pp = {}
     for _pr in prod_rows:
-        _pn = _norm_prod(_pr[1])
         _org = _pr[6] if len(_pr) > 6 else ''
+        if _org in _FIJO_ORG:
+            continue          # ya está en _fijas · no pasa por el dedup
+        _pn = _norm_prod(_pr[1])
         if _pn in _prod_con_fijo and _org in _AUTO_FILL:
-            continue   # el plan fijo manda · no apilar auto_plan/proyección de este producto
+            continue          # el plan fijo manda · no apilar auto_plan/proyección
         _fc = str(_pr[2] or '')[:10]
+        if (_pn, _fc) in _dias_fijos:
+            continue          # ese día ya lo cubre una tanda fija · la sugerida es la misma
         _ck = float(_pr[4] or 0)
         _eff = _ck if _ck > 0 else (int(_pr[3] or 1) * float(_pr[5] or 0))
         _kk = (_pn, _fc)
         if _kk not in _ded_pp or _eff > _ded_pp[_kk][1]:
             _ded_pp[_kk] = (_pr, _eff)
-    prod_rows = [v[0] for v in _ded_pp.values()]
+    prod_rows = _fijas + [v[0] for v in _ded_pp.values()]
     matched_lotes = 0
     sin_formula_lotes = []
     for _pr in prod_rows:
