@@ -878,6 +878,18 @@ Al dejar en verde los 9 archivos que llevaban tiempo rojos (101 tests), **2 eran
 - **Ruta registrada DOS veces = la segunda es código muerto silencioso.** `/api/mee` POST estaba en `inventario` y en `compras`; gana la primera registrada (verificable con `url_map.bind().match(path, method=...)`), así que el gate más estricto de la otra NUNCA corría. Misma familia que el gate de MFA muerto. **Al agregar una ruta, `grep` del path completo.**
 - **Correr la suite entera en UN proceso cascadea** (desde ~40 %): una BD compartida que queda bloqueada arrastra a todo lo que sigue. **Diagnosticá archivo por archivo**; los 145 "fallos" de una corrida conjunta eran 5 reales.
 
+## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
+
+Cosas que una auditoría marca como "inconsistencia" y NO lo son. Verificar acá antes de reportar:
+
+- **Ácido hialurónico: 3 códigos con el mismo INCI son 3 MATERIALES.** 50 kD (MP00163 · 19 fórmulas), 300 kD (MP00157 · 13), 1500 kD (MP00142 · 14). Los tres con stock y en uso. **Sebastián 25-jul: "son tres tipos, dejalo como está".** El resolver NO debe sustituir uno por otro (el fail-safe es lo correcto). El grado vive en el INCI, no en el nombre comercial.
+- **Vitamina E: polvo y líquida son 2 materiales con código distinto.** **Sebastián 25-jul:** el POLVO (MP00079) va en los sueros de niacinamida y de hialurónico; la LÍQUIDA (MP00078) en el resto. Funciona bien así.
+- **Centella: YA organizada.** Ninguna fórmula usa el extracto plano (MP00181); todas usan triterpenes 80% (MP00176). Solo queda stock físico sin uso en el código viejo.
+- **BLUSH BALM y LIP SERUM sobre-producen A PROPÓSITO.** **Sebastián 25-jul: "son lanzamientos recientes que van vendiendo cada vez más y se demoran mucho, por eso los hacemos así".** El diagnóstico de cadenas ya los clasifica como `lanzamiento` (no `sobre`) cuando la tendencia viene en ascenso. No reportarlos como sobre-producción.
+- **Envases en cuarentena: el gate NO se enciende todavía.** **Sebastián 25-jul: "los envases sí necesitan revisión, solo que todos los actuales no la tienen · dejemos así por ahora".** `test_prop_inventario::P2` queda xfail CON motivo. Encenderlo a ciegas frena todo el envasado.
+- **Catalina autoriza Y paga OCs** (hasta 5M) es decisión de gerencia documentada en `config.py`, con `audit_log` como control compensatorio. No es una violación de SoD que haya que "arreglar".
+- **Los 6 sitios de `plan.py` que omiten `eos_plan`** al cancelar (reemplazar cadena / regenerar plan) lo hacen A PROPÓSITO: son acciones explícitas del usuario. El único que estaba mal era `dedup-mismo-dia` (ya arreglado) y el cron de las 4:50 (ya arreglado).
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

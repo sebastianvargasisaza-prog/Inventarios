@@ -723,6 +723,7 @@ JOBS_SCHEDULE = [
     ('agua_recordatorio',    12,  0, [0,1,2,3,4], None,         'job_agua_recordatorio'),
     # ⭐ Calidad · diario 7:30 · alerta equipos próximos a vencer + vencidos (COC-PRO-012)
     ('equipos_vencimientos',  7, 30, None, None,                'job_equipos_vencimientos'),
+    ('mee_cuarentena',        7, 40, None, None,                'job_mee_cuarentena_pendiente'),
     # ⭐ Direccion Tecnica · diario 7:45 · alerta INVIMA + SGD próximos a vencer
     ('tecnica_vencimientos',  7, 45, None, None,                'job_tecnica_vencimientos'),
     # ⭐ Planta · diario 7:50 · marca VENCIDO en lotes con fecha_venc pasada (INVIMA)
@@ -1846,6 +1847,71 @@ def job_agua_recordatorio(app):
             log.warning('agua_recordatorio push_notif fallo: %s', e)
         return True, {'mensaje': 'Alerta enviada · falta registro de agua hoy',
                        'destinatarios': 6}, 0
+
+
+def job_mee_cuarentena_pendiente(app):
+    """Avisa a Calidad que hay ENVASES esperando liberación (INVIMA · 25-jul).
+
+    Contexto (Sebastián 25-jul): "los envases sí necesitan revisión, solo que todos los
+    actuales no la tienen". Al mirar producción había 15 lotes en cuarentena de recepciones
+    de hace días (frascos, goteros, etiquetas) y NADA le avisaba a nadie: el flujo existe y se
+    usa al recibir, pero la liberación no ocurre porque el pendiente es invisible.
+
+    Este cron lo hace visible. Es el paso previo para poder ENCENDER el gate de envasado
+    (hoy apagado a propósito: prenderlo con backlog frenaría toda la planta). Cuando el
+    pendiente esté en cero de forma sostenida, el gate se puede activar sin romper nada.
+
+    Idempotente y silencioso si no hay nada pendiente.
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            filas = c.execute(
+                "SELECT mv.mee_codigo, COALESCE(m.descripcion, mv.mee_codigo), mv.cantidad, "
+                "       COALESCE(mv.fecha,'') "
+                "  FROM movimientos_mee mv "
+                "  LEFT JOIN maestro_mee m ON m.codigo = mv.mee_codigo "
+                " WHERE mv.tipo='Entrada' AND COALESCE(mv.anulado,0)=0 "
+                "   AND UPPER(COALESCE(mv.estado,'VIGENTE'))='CUARENTENA' "
+                " ORDER BY mv.fecha ASC LIMIT 200").fetchall()
+        except Exception as e:
+            log.warning('mee_cuarentena read falló: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+        if not filas:
+            return True, {'pendientes': 0}, 0
+        # ⚠ `timezone` NO está importado a nivel de módulo en este archivo (solo datetime,
+        # timedelta y time · las funciones que lo necesitan lo importan local). Sin este
+        # import, `timezone.utc` lanza NameError y el job muere en silencio en el cron.
+        from datetime import date as _d, timezone as _tzj
+        hoy = (datetime.now(_tzj.utc) - timedelta(hours=5)).date()   # Colombia (M24)
+        viejos, lineas = 0, []
+        for cod, desc, cant, fecha in filas:
+            dias = None
+            try:
+                dias = (hoy - _d.fromisoformat(str(fecha)[:10])).days
+            except Exception:
+                pass
+            if dias is not None and dias >= 7:
+                viejos += 1
+            lineas.append('• %s · %s uds%s' % (desc or cod, ('%g' % float(cant or 0)),
+                                               (' · hace %sd' % dias) if dias is not None else ''))
+        try:
+            from blueprints.notif import push_notif_multi
+            titulo = ('📦 %d lote(s) de ENVASES esperando liberación de Calidad' % len(filas)
+                      if not viejos else
+                      '⏳ %d lote(s) de ENVASES llevan +7 días sin liberar (de %d en cuarentena)'
+                      % (viejos, len(filas)))
+            push_notif_multi(
+                ['controlcalidad.espagiria', 'laura', 'yuliel', 'catalina', 'sebastian'],
+                'calidad', titulo,
+                body='\n'.join(lineas[:8]) + ('\n…y %d más' % (len(filas) - 8) if len(filas) > 8 else '')
+                     + '\n\nLiberá con el F01 en Calidad · mientras estén en cuarentena NO cuentan '
+                       'como stock disponible para planear.',
+                link='/calidad', remitente='cron-envases', importante=bool(viejos))
+        except Exception as e:
+            log.warning('mee_cuarentena push_notif falló: %s', e)
+        return True, {'pendientes': len(filas), 'con_mas_de_7d': viejos}, 0
 
 
 def job_equipos_vencimientos(app):

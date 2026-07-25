@@ -51,6 +51,7 @@ CORAZON=(
   "tests/test_paridad_motores.py"
   "tests/test_salud_cadenas.py"
   "tests/test_inci_ambiguos.py"
+  "tests/test_cron_mee_cuarentena.py"
   "tests/test_e2e_mp_chain.py"
   "tests/test_diag_solo_admin.py"
 )
