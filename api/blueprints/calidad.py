@@ -2103,6 +2103,28 @@ def _equipo_calibracion(c, equipo_codigo):
     return {'ultima': ultima, 'proxima': proxima, 'vigente': vigente}
 
 
+def _equipos_con_calibracion(c, area_codigo):
+    """Equipos del área con su estado de calibración (genealogía · INVIMA).
+
+    OJO: `_equipos_de_area` devuelve DICTS ({'codigo','nombre','tipo'}), no tuplas. Indexarlos
+    como tuplas (e[0]) lanza KeyError y, envuelto en un `except` mudo, dejaba la lista de
+    equipos SIEMPRE vacía sin que nadie se enterara (cazado con el E2E del flujo real 24-jul).
+    El try se conserva (una vista read-only regulada no debe caerse) pero AHORA LOGUEA.
+    """
+    try:
+        try:
+            from blueprints.programacion import _equipos_de_area
+        except Exception:
+            from api.blueprints.programacion import _equipos_de_area
+        return [{'codigo': e['codigo'], 'nombre': e.get('nombre') or '', 'tipo': e.get('tipo') or '',
+                 'calibracion': _equipo_calibracion(c, e['codigo'])}
+                for e in (_equipos_de_area(c, area_codigo) or [])]
+    except Exception as _e:
+        __import__('logging').getLogger('calidad').warning(
+            'genealogia · equipos del area %s no resolvieron: %s', area_codigo, _e)
+        return []
+
+
 @bp.route('/api/calidad/genealogia-pt/<path:lote>', methods=['GET'])
 def calidad_genealogia_pt(lote):
     """GENEALOGÍA hacia atrás de un lote de PRODUCTO TERMINADO (INVIMA · trazabilidad Fase 1).
@@ -2201,15 +2223,8 @@ def calidad_genealogia_pt(lote):
             if _aid:
                 ar = c.execute("SELECT codigo, nombre FROM areas_planta WHERE id=?", (_aid,)).fetchone()
                 if ar:
-                    equipos = []
-                    try:
-                        from blueprints.programacion import _equipos_de_area
-                        equipos = [{'codigo': e[0], 'nombre': e[1], 'tipo': (e[2] if len(e) > 2 else ''),
-                                    'calibracion': _equipo_calibracion(c, e[0])}
-                                   for e in _equipos_de_area(c, ar[0])]
-                    except Exception:
-                        equipos = []
-                    out['areas'][_slot] = {'codigo': ar[0], 'nombre': ar[1], 'equipos': equipos}
+                    out['areas'][_slot] = {'codigo': ar[0], 'nombre': ar[1],
+                                           'equipos': _equipos_con_calibracion(c, ar[0])}
     # Fallback (Fabricación directa · sin produccion_id → sin área por produccion_programada): tomar el
     # área del `area_codigo` del EBR (que se elige al fabricar). Read-only · así el flujo real ve su área.
     if not out['areas']:
@@ -2222,15 +2237,8 @@ def calidad_genealogia_pt(lote):
                 continue
             _ar = c.execute("SELECT codigo, nombre FROM areas_planta WHERE codigo=?", (_ac,)).fetchone()
             if _ar:
-                _eqs = []
-                try:
-                    from blueprints.programacion import _equipos_de_area
-                    _eqs = [{'codigo': e[0], 'nombre': e[1], 'tipo': (e[2] if len(e) > 2 else ''),
-                             'calibracion': _equipo_calibracion(c, e[0])}
-                            for e in _equipos_de_area(c, _ar[0])]
-                except Exception:
-                    _eqs = []
-                out['areas'][_slot] = {'codigo': _ar[0], 'nombre': _ar[1], 'equipos': _eqs}
+                out['areas'][_slot] = {'codigo': _ar[0], 'nombre': _ar[1],
+                                       'equipos': _equipos_con_calibracion(c, _ar[0])}
     # 4) Envases (MEE) consumidos · por lote en observaciones/batch_ref
     try:
         for r in c.execute(
