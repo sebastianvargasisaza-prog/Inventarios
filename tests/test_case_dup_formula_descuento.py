@@ -27,6 +27,12 @@ def test_case_dup_header_no_vacia_el_descuento(app, db_clean):
     pid = db.execute("SELECT id FROM produccion_programada WHERE producto=? ORDER BY id DESC LIMIT 1", (PROD,)).fetchone()[0]
     db.commit()
     c = db.cursor()
-    mps, cant_kg = _calcular_mp_consumo_produccion(c, pid)
+    # ACTUALIZADO 25-jul · `_calcular_mp_consumo_produccion` resuelve el material con
+    # `_resolver_material_bodega`, que cachea el stock por request en la `g` de Flask. Fuera
+    # de un app_context eso lanza "Working outside of application context" y el test moría
+    # ANTES de llegar al assert. El código está bien; faltaba el contexto. Llevaba tiempo en
+    # rojo sin que nadie lo viera: no está en la suite golden, la única que corre el guardian.
+    with app.app_context():
+        mps, cant_kg = _calcular_mp_consumo_produccion(c, pid)
     db.close()
     assert mps, ("el descuento NO debe quedar vacío por un header inactivo case-variant (bug P0 · antes [])", mps)
