@@ -125,8 +125,17 @@ def test_consumo_horizontes_acredita_oc_pagada_no_recibida(app, db_clean):
     it1 = _item_horizontes(c, cod)
     assert it1['pendiente_compras_g'] >= 119, \
         f"OC Pagada-no-recibida debe contar como pendiente · got {it1['pendiente_compras_g']}"
-    assert it1['deficit'][h_max] <= 0.5, \
-        f"pendiente (120g) cubre el consumo (100g) → déficit ~0 · got {it1['deficit']}"
+    # ACTUALIZADO 25-jul · este test es del 17-jun y afirmaba `deficit ~0`, pero la REGLA DE
+    # ALEJANDRO del 22-jul cambió las semánticas a propósito: `deficit` quedó BRUTO de lo en
+    # camino (consumo − stock − cuarentena) y es `neto_a_pedir` el que descuenta lo pendiente
+    # (es la columna "Pedir" de la pantalla y lo que compra generar-OC). El test congelaba el
+    # comportamiento viejo, así que llevaba tiempo en ROJO sin que nadie lo viera: no está en
+    # la suite golden, que es la única que corre el guardian antes de cada push.
+    # El código está BIEN; lo que estaba desactualizado era la expectativa.
+    assert it1['deficit'][h_max] >= 99, \
+        f"deficit es BRUTO de lo en-camino (regla 22-jul) · got {it1['deficit']}"
+    assert float((it1.get('neto_a_pedir') or {}).get(h_max, 0)) <= 0.5, \
+        f"pendiente (120g) cubre el consumo (100g) → neto_a_pedir ~0 · got {it1.get('neto_a_pedir')}"
 
 
 def test_consumo_horizontes_oc_pagada_recibida_no_acredita(app, db_clean):
