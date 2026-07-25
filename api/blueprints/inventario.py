@@ -13081,6 +13081,104 @@ def _mp_stock_g(c, cod):
         return 0.0
 
 
+@bp.route('/api/admin/inci-ambiguos', methods=['GET'])
+def admin_inci_ambiguos():
+    """Hoja de decisión para Alejandro: MPs distintas que comparten el MISMO INCI (read-only).
+
+    Contexto (auditoría 25-jul): el resolver elegía entre ellas POR STOCK, así que una fórmula
+    que pedía ácido hialurónico 50 kD podía descontar el de 1500 kD y rotularlo con el nombre
+    correcto. Eso ya se cerró: hoy, si hay varias candidatas con GRADOS distintos, el sistema
+    NO adivina y producción avisa "sin stock" (fail-safe INVIMA · mejor frenar que fabricar con
+    otra potencia). La contra es que un código sin stock puede frenar una producción.
+
+    La solución de fondo es que Alejandro diga, por grupo, qué código reemplaza a cuál (o que
+    son materiales DISTINTOS y no deben cruzarse). Esto arma esa hoja con todo lo necesario:
+    qué códigos comparten INCI, el grado que los diferencia, cuánto stock tiene cada uno, y
+    QUÉ FÓRMULAS usan cada código (que es lo que define el impacto de decidir mal).
+
+    NO muta nada.
+    """
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    try:
+        from blueprints.programacion import _norm_mp_name as _nrm
+    except Exception:
+        from api.blueprints.programacion import _norm_mp_name as _nrm
+    import re as _re_g
+    conn = get_db(); c = conn.cursor()
+    filas = c.execute(
+        "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''), "
+        "       COALESCE(activo,1) FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall()
+    # stock canónico por código (mismo CASE de la regla #4 · excluye los 6 estados retenidos)
+    stock = {}
+    try:
+        for r in c.execute(
+                "SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') "
+                "THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) "
+                "FROM movimientos WHERE UPPER(COALESCE(estado_lote,'')) NOT IN "
+                "('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO') "
+                "GROUP BY material_id").fetchall():
+            stock[str(r[0] or '').strip().upper()] = round(float(r[1] or 0), 1)
+    except Exception as _e_st:
+        log.warning('inci-ambiguos · stock no resolvió: %s', _e_st)
+    # fórmulas ACTIVAS que usan cada código
+    usos = {}
+    try:
+        for r in c.execute(
+                "SELECT fi.material_id, fi.producto_nombre FROM formula_items fi "
+                "WHERE TRIM(fi.producto_nombre) NOT IN "
+                "(SELECT TRIM(producto_nombre) FROM formula_headers WHERE COALESCE(activo,1)=0)").fetchall():
+            usos.setdefault(str(r[0] or '').strip().upper(), set()).add(r[1])
+    except Exception as _e_us:
+        log.warning('inci-ambiguos · usos no resolvieron: %s', _e_us)
+
+    grupos = {}
+    for cod, inci, com, _act in filas:
+        if not inci:
+            continue
+        grupos.setdefault(_nrm(inci), []).append((str(cod).strip().upper(), inci, com))
+    out = []
+    for k, miembros in grupos.items():
+        if len(miembros) < 2:
+            continue
+        _det = []
+        for cod, inci, com in miembros:
+            _g = _re_g.findall(r'\(([^)]*)\)', com or '')
+            _det.append({
+                'codigo': cod,
+                'nombre_comercial': com,
+                'inci': inci,
+                'grado': (' / '.join(_g) if _g else ''),   # lo que el normalizador BORRA
+                'stock_g': stock.get(cod, 0.0),
+                'formulas_que_lo_usan': sorted(usos.get(cod, []))[:12],
+                'n_formulas': len(usos.get(cod, [])),
+            })
+        _grados = {d['grado'] for d in _det}
+        # solo es AMBIGUO de verdad si los grados difieren (si son iguales, es un código duplicado
+        # del mismo material y el resolver sí puede unificarlo solo)
+        _ambiguo = len(_grados) > 1
+        # BLOQUEA hoy si alguna fórmula usa un código sin stock y hay otro del grupo con stock
+        _sin_stock_en_uso = [d for d in _det if d['n_formulas'] > 0 and d['stock_g'] <= 0.01]
+        _con_stock = [d for d in _det if d['stock_g'] > 0.01]
+        out.append({
+            'inci_normalizado': k,
+            'n_codigos': len(_det),
+            'ambiguo_por_grado': _ambiguo,
+            'bloquea_produccion_hoy': bool(_ambiguo and _sin_stock_en_uso and _con_stock),
+            'codigos': sorted(_det, key=lambda d: -d['stock_g']),
+        })
+    out.sort(key=lambda g: (not g['bloquea_produccion_hoy'], not g['ambiguo_por_grado'], -g['n_codigos']))
+    return jsonify({
+        'ok': True,
+        'total_grupos': len(out),
+        'ambiguos_por_grado': sum(1 for g in out if g['ambiguo_por_grado']),
+        'bloquean_hoy': sum(1 for g in out if g['bloquea_produccion_hoy']),
+        'grupos': out,
+        'nota': 'read-only · para que Alejandro decida el mapeo código↔código por grupo',
+    })
+
+
 @bp.route('/api/admin/renombrar-mp-preview', methods=['GET'])
 def renombrar_mp_preview():
     """Preview read-only del renombrado de un código de MP: qué MP es, su stock, y
