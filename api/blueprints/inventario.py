@@ -2468,7 +2468,7 @@ def _handle_produccion_inner():
             # operación que mutue inventario'. Imposible reconstruir quién
             # descontó qué lote para reclamo INVIMA.
             try:
-                from database import audit_log as _al
+                from audit_helpers import audit_log as _al   # FIX 25-jul: NO vive en database.py (ImportError tragado por el except → este audit NUNCA se escribió)
                 _al(c, usuario=operador or 'sistema',
                     accion='PRODUCCION_DESCONTAR_MP',
                     tabla='movimientos', registro_id=str(lote_ref),
@@ -2497,7 +2497,7 @@ def _handle_produccion_inner():
                 if _r.get('ok'):
                     ebr_auto = _r
                     try:
-                        from database import audit_log as _al2
+                        from audit_helpers import audit_log as _al2   # FIX 25-jul (mismo import muerto)
                         _al2(c, usuario=operador or 'sistema', accion='CREAR_EBR_AUTO',
                              tabla='ebr_ejecuciones', registro_id=str(_r.get('id')),
                              despues={'producto': producto, 'lote': lote_ref,
@@ -15617,7 +15617,7 @@ def envasado_list():
                     fase='envasado', area_codigo=area_codigo)
                 if _re.get('ok') and not _re.get('reusado'):
                     try:
-                        from database import audit_log as _ale
+                        from audit_helpers import audit_log as _ale   # FIX 25-jul (mismo import muerto)
                         _ale(c, usuario=operador or 'sistema', accion='CREAR_EBR_OF_AUTO',
                              tabla='ebr_ejecuciones', registro_id=str(_re.get('id')),
                              despues={'producto': producto, 'lote': lote,
@@ -15871,7 +15871,7 @@ def acondicionamiento_list():
                     area_codigo=(d.get('area_codigo') or '').strip())
                 if _ro.get('ok') and not _ro.get('reusado'):
                     try:
-                        from database import audit_log as _alo
+                        from audit_helpers import audit_log as _alo   # FIX 25-jul (mismo import muerto)
                         _alo(c, usuario=u or 'sistema', accion='CREAR_EBR_OA_AUTO',
                              tabla='ebr_ejecuciones', registro_id=str(_ro.get('id')),
                              despues={'producto': _prod_oa, 'lote': _lote_oa,

@@ -5,10 +5,16 @@ Tres casos que pueden esconder errores en las SOLICITUDES de compra:
        distintas fechas) → consumo debe SUMAR ambos por horizonte (no quedarse uno).
   H2 · BRIDGE + PENDIENTE: la formula usa un codigo FANTASMA (bridge→bodega),
        el stock y el PENDIENTE de compra estan bajo el codigo de BODEGA.
-       Tras colapsar la demanda a bodega, el deficit debe restar ESE pendiente.
-       (Si el pendiente no cruza → SOL duplicada / sobre-compra.)
-  H3 · CUARENTENA: stock en estado_lote='CUARENTENA' NO debe contar como
-       disponible → debe seguir habiendo deficit (no falso "tengo stock").
+       Tras colapsar la demanda a bodega, el 'Pedir' (neto_a_pedir) debe restar ESE
+       pendiente. (Si el pendiente no cruza → SOL duplicada / sobre-compra.)
+  H3 · CUARENTENA: stock en estado_lote='CUARENTENA' NO es stock PRODUCIBLE
+       (stock_actual_g=0), pero SI se acredita como material que ya llego a planta
+       para efectos de COMPRA (regla Alejandro 22-jul).
+
+⚠ 25-jul · H2 y H3 REPARADOS (el codigo esta bien · ver los docstrings de cada uno):
+la REGLA DE NETEO de Alejandro (22-jul · commit 3d517063) cambio a proposito quien
+resta que — lo EN CAMINO ya no baja el 'deficit' (baja el 'neto_a_pedir') y la
+CUARENTENA si baja ambos. Spec canonica viva: test_paridad_motores.test_neteo_regla_alejandro.
 """
 import os
 import sqlite3
@@ -64,10 +70,16 @@ def test_H1_multilote_mismo_producto_suma(app, db_clean):
 
 def test_H2_pendiente_cruza_por_bridge_a_bodega(app, db_clean):
     """Formula usa FANTASMA→bridge→BODEGA. Stock y PENDIENTE bajo BODEGA.
-    Tras colapsar demanda a bodega, deficit resta el pendiente (MODO 'contar pendiente')."""
-    # Sebastián 12-jul · el default cambió a NO contar pendiente (M39/M66) · este test valida el bridge del
-    # PENDIENTE + su resta → fijar el modo viejo.
-    _exec("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('abast_contar_pendiente','1')")
+    Tras colapsar la demanda a bodega, el pendiente cruza y se acredita en 'Pedir'.
+
+    ⚠ 25-jul · TEST REPARADO (el codigo esta bien). Antes fijaba el toggle
+    `abast_contar_pendiente='1'` y exigia deficit=5000. Desde la regla de neteo de
+    Alejandro (22-jul) el toggle NO afecta el deficit (queda leido y sin usar en
+    programacion.py:16264-16269) y lo en-camino se descuenta en `neto_a_pedir`
+    (programacion.py:16291), que es la columna 'Pedir' y lo que consume Generar OC.
+    El 5000 sigue vivo: ahora es el neto. Lo que este test protege de verdad — que el
+    pendiente registrado bajo el codigo de BODEGA CRUCE cuando la formula usa el codigo
+    FANTASMA — se sigue verificando igual (si no cruzara, el neto seria 7000 → SOL duplicada)."""
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
           "VALUES ('QAHUECO-BOD','HuecoBod','HUECO BOD INCI',1)")
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
@@ -98,12 +110,25 @@ def test_H2_pendiente_cruza_por_bridge_a_bodega(app, db_clean):
     # CLAVE: el pendiente bajo el codigo de bodega DEBE acreditarse
     assert abs(mp["pendiente_compras_g"] - 2000) < 1, (
         f"el pendiente bajo codigo BODEGA debe cruzar (sino → SOL duplicada) · got {mp['pendiente_compras_g']}")
-    # deficit = max(0, 8000 - 1000 - 2000) = 5000
-    assert abs(defc["15"] - 5000) < 1, f"deficit debe restar stock+pendiente cruzado · {defc}"
+    # 'Pedir' = max(0, 8000 - 1000 stock - 0 cuarentena - 2000 en camino) = 5000
+    assert abs(mp["neto_a_pedir"]["15"] - 5000) < 1, (
+        f"'Pedir' debe restar el pendiente cruzado por bridge (si diera 7000 → SOL duplicada) "
+        f"· {mp['neto_a_pedir']}")
+    # deficit = max(0, 8000 - 1000) = 7000 · BRUTO de lo en camino (regla Alejandro 22-jul)
+    assert abs(defc["15"] - 7000) < 1, f"deficit queda bruto de lo en camino · {defc}"
 
 
-def test_H3_cuarentena_no_cuenta_como_disponible(app, db_clean):
-    """Stock en CUARENTENA NO es disponible → sigue habiendo deficit completo."""
+def test_H3_cuarentena_no_es_stock_producible_pero_si_cuenta_para_comprar(app, db_clean):
+    """Stock en CUARENTENA NO entra en `stock_actual_g` (no es producible: Calidad no lo
+    libero) pero SI se acredita para decidir COMPRA → deficit y 'Pedir' bajan.
+
+    ⚠ 25-jul · TEST REPARADO (el codigo esta bien). Antes exigia deficit completo (5000).
+    La regla de neteo de Alejandro (22-jul · programacion.py:16282-16287
+    `disponible = stock_g + cuar_g`) decidio a proposito que el material que YA LLEGO por
+    recepcion y espera QC no se re-compra: esta fisicamente en planta. La propiedad de
+    seguridad INVIMA — que la cuarentena NO cuente como stock disponible para PRODUCIR —
+    sigue intacta y es lo que verifica `stock_actual_g == 0` aca abajo (y en produccion la
+    protegen los filtros _ESTADOS_LOTE_NO_PRODUCIBLES del FEFO)."""
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
           "VALUES ('QAHUECO-H3','HuecoH3','HUECO H3 INCI',1)")
     _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES ('QAHUECO-PRODH3', 1, 1)")
@@ -118,6 +143,12 @@ def test_H3_cuarentena_no_cuenta_como_disponible(app, db_clean):
     assert mp is not None
     assert abs(mp["consumo"]["15"] - 5000) < 1, mp["consumo"]
     assert abs(mp["stock_actual_g"] - 0) < 1, (
-        f"stock en CUARENTENA NO debe contar como disponible · got {mp['stock_actual_g']}")
-    assert abs(mp["deficit"]["15"] - 5000) < 1, (
-        f"deficit completo (cuarentena no cubre) · got {mp['deficit']}")
+        f"stock en CUARENTENA NO debe contar como stock PRODUCIBLE · got {mp['stock_actual_g']}")
+    # se reporta aparte, explicito, para que el comprador vea por que no hay que pedir
+    assert abs(mp["cuarentena_g"] - 9999) < 1, (
+        f"la cuarentena debe reportarse en su propio campo · got {mp.get('cuarentena_g')}")
+    # 9999 en cuarentena > 5000 de consumo → nada que comprar (regla Alejandro 22-jul)
+    assert mp["deficit"]["15"] == 0, (
+        f"la cuarentena (ya llego a planta) se acredita en el deficit de compra · got {mp['deficit']}")
+    assert mp["neto_a_pedir"]["15"] == 0, (
+        f"tampoco hay que pedir: el material ya esta en planta esperando QC · got {mp['neto_a_pedir']}")

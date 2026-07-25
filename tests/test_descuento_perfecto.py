@@ -4,6 +4,16 @@
 - _distribuir_fefo legacy (lote='') no consume stock en estado no-producible.
 - _resolver_material_bodega: nombre ambiguo (>1 código) NO cruza (devuelve el propio fmid).
 - unify repunta mp_formula_bridge (antes referenciaba columna inexistente).
+
+⚠ 25-jul · REPARACIÓN DE TESTS (no de código): estos tests llamaban los helpers de
+`programacion` con una conexión sqlite cruda y SIN app_context. Desde PERF #6 (9-jul)
+`_stock_neto_map` (programacion.py:10561) y `_maestro_mps_activos` (:10595) memoizan en
+`flask.g`, y `getattr(g, ...)` sobre el LocalProxy sin contexto lanza RuntimeError
+("Working outside of application context") — no AttributeError, así que el `getattr(...,
+None)` no lo salva. TODO caller real corre dentro de un request o de un
+`with app.app_context():` (los crons de auto_plan_jobs.py lo abren siempre), o sea que el
+código está bien y el test era el obsoleto: ahora envuelve la llamada en app_context, igual
+que ya hacía `test_get_mp_stock_excluye_bloqueado` desde el principio.
 """
 import os
 import sqlite3
@@ -38,7 +48,8 @@ def test_resolver_nombre_varios_codigos_elige_mas_stock(app, db_clean):
     c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-AMB-2','GLYCERIN','Entrada',900,'L2',date('now'))")
     c.commit()
     # fmid sin movimientos, nombre que matchea AMBOS → elige el de más stock (MP-AMB-2 = 900)
-    res = prog._resolver_material_bodega(c, 'MP-FMID-SINMOV', 'GLYCERIN')
+    with app.app_context():   # PERF #6 · el resolver memoiza en flask.g
+        res = prog._resolver_material_bodega(c, 'MP-FMID-SINMOV', 'GLYCERIN')
     c.close()
     assert res == 'MP-AMB-2', f"debe elegir el de más stock · {res}"
 
@@ -50,7 +61,8 @@ def test_resolver_nombre_unico_si_resuelve(app, db_clean):
     c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-UNI-1','UNOBTANIUM','MP',1)")
     c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-UNI-1','UNOBTANIUM','Entrada',50,'L1',date('now'))")
     c.commit()
-    res = prog._resolver_material_bodega(c, 'MP-FMID-X', 'UNOBTANIUM')
+    with app.app_context():   # PERF #6 · el resolver memoiza en flask.g
+        res = prog._resolver_material_bodega(c, 'MP-FMID-X', 'UNOBTANIUM')
     c.close()
     assert res == 'MP-UNI-1', f"match único debe resolver · {res}"
 
@@ -67,7 +79,8 @@ def test_resolver_tier1_neto_cero_cae_a_inci_con_stock(app, db_clean):
     c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-F-INCI','x','Salida',50,'L0',date('now'))")
     c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-G-INCI','x','Entrada',700,'L1',date('now'))")
     c.commit()
-    res = prog._resolver_material_bodega(c, 'MP-F-INCI', 'nombre que no matchea nada')
+    with app.app_context():   # PERF #6 · el resolver memoiza en flask.g
+        res = prog._resolver_material_bodega(c, 'MP-F-INCI', 'nombre que no matchea nada')
     c.close()
     assert res == 'MP-G-INCI', f"tier-1 neto 0 debe caer al código del mismo INCI con stock · {res}"
 
@@ -83,7 +96,8 @@ def test_resolver_rescata_stock_en_codigo_inactivo(app, db_clean):
     c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-PAN-G','RESCATINOLZZ','MP',0)")
     c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-PAN-G','Rescatinol atrapado','Entrada',1118,'L1',date('now'))")
     c.commit()
-    res = prog._resolver_material_bodega(c, 'MP-PAN-F', 'nombre que no matchea seed')
+    with app.app_context():   # PERF #6 · el resolver memoiza en flask.g
+        res = prog._resolver_material_bodega(c, 'MP-PAN-F', 'nombre que no matchea seed')
     c.close()
     assert res == 'MP-PAN-G', f"debe rescatar stock atrapado en código inactivo · {res}"
 
@@ -115,7 +129,8 @@ def test_calcular_consumo_marca_agua_no_controla(app, db_clean):
     c.execute("INSERT INTO produccion_programada (producto,fecha_programada,lotes,cantidad_kg,estado,origen) VALUES ('PROD AGUA',date('now'),1,1,'programado','manual')")
     pid = c.execute("SELECT id FROM produccion_programada WHERE producto='PROD AGUA'").fetchone()[0]
     c.commit()
-    mps, _meta = prog._calcular_mp_consumo_produccion(c, pid)
+    with app.app_context():   # PERF #6 · pasa por el resolver, que memoiza en flask.g
+        mps, _meta = prog._calcular_mp_consumo_produccion(c, pid)
     c.close()
     agua = [m for m in mps if m['codigo_mp'] == 'MP-AGUA2']
     assert agua and agua[0]['controla_stock'] == 0, f"agua debe marcarse controla_stock=0 · {mps}"
@@ -210,6 +225,7 @@ def test_bridge_pantenol_mp00236_a_mp00110(app, db_clean):
     c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,estado_lote,fecha) VALUES ('MP00110','D-Pantenol','Entrada',990,'LPANT',date('now'),date('now'))" if False else
               "INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,estado_lote,fecha) VALUES ('MP00110','D-Pantenol','Entrada',990,'LPANT','VIGENTE',date('now'))")
     c.commit()
-    res = prog._resolver_material_bodega(c, 'MP00236', 'Pantenol polvo')
+    with app.app_context():   # PERF #6 · el resolver memoiza en flask.g
+        res = prog._resolver_material_bodega(c, 'MP00236', 'Pantenol polvo')
     c.close()
     assert res == 'MP00110', f"el bridge debe resolver MP00236->MP00110 (Pantenol) · dio {res}"

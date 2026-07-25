@@ -152,3 +152,37 @@ def test_simular_consolida_igual_que_el_descuento(app):
         assert d['factible'] is False, 'el simulador debe decir NO factible, igual que el descuento'
     finally:
         _limpiar()
+
+
+def test_descuento_de_mp_deja_audit_log(app):
+    """Part 11 / INVIMA: descontar MP tiene que dejar rastro de quién descontó qué lote.
+
+    Auditoría 25-jul: el bloque de audit hacía `from database import audit_log`, y audit_log
+    NO vive en database.py (vive en audit_helpers.py, que el propio módulo ya importa bien
+    arriba). El ImportError lo tragaba un `except Exception: pass`, así que el audit cuyo
+    comentario dice "P0-6 · descontaba MP sin escribir audit_log" NUNCA se aplicó.
+    """
+    _limpiar()
+    _sql("INSERT INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) "
+         "VALUES ('%s','GLYCERIN DEDUP','Glicerina Dedup','MP',1)" % MP,
+         "INSERT INTO formula_headers (producto_nombre,unidad_base_g,lote_size_kg,activo,fecha_creacion) "
+         "VALUES ('%s',10000,10,1,datetime('now'))" % PROD,
+         "INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) "
+         "VALUES ('%s','%s','GLYCERIN DEDUP',10.0,0)" % (PROD, MP),
+         "INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote,"
+         "fecha_vencimiento,operador) VALUES ('%s','GLYCERIN DEDUP',1000,'Entrada',date('now'),"
+         "'L-AUDIT-1','VIGENTE','2027-12-31','test')" % MP)
+    c = _login(app)
+    try:
+        r = c.post('/api/produccion', json={'producto': PROD, 'cantidad_kg': 1,
+                                            'operador': 'sebastian', 'presentacion': 'x'},
+                   headers=csrf_headers())
+        assert r.status_code in (200, 201), r.data[:300]
+        db = _db()
+        try:
+            n = db.execute("SELECT COUNT(*) FROM audit_log WHERE accion='PRODUCCION_DESCONTAR_MP'").fetchone()[0]
+        finally:
+            db.close()
+        assert n >= 1, 'el descuento de MP no dejó audit_log (Part 11 · INVIMA)'
+    finally:
+        _limpiar()

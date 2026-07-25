@@ -1,10 +1,11 @@
-"""PROPIEDAD 3 · deficit[h] = max(0, consumo[h] - stock - pendiente_compras).
+"""PROPIEDAD 3 · deficit[h] = max(0, consumo[h] - stock - cuarentena)   (regla Alejandro 22-jul)
 
 Verifica EMPÍRICAMENTE que /api/abastecimiento/consumo-horizontes:
   · resta BIEN el stock físico (vía movimientos Entrada) del consumo,
-  · resta TAMBIÉN el pendiente de compras (SOL Pendiente sin OC),
+  · NO resta lo EN CAMINO (SOL/OC pendiente) del déficit — eso vive en `neto_a_pedir`,
+    que es la columna 'Pedir' y lo que usa Generar OC,
   · nunca devuelve déficit negativo,
-  · si stock+pendiente cubren el consumo → déficit = 0.
+  · si el stock cubre el consumo → déficit = 0.
 
 Datos CONTROLADOS con prefijo único 'QADEF-' / 'DEFICIT-' para aislar.
 Cada MP resuelve a sí misma en _resolver_material_bodega (tier 1: tiene
@@ -89,24 +90,35 @@ def test_deficit_resta_stock(app, db_clean):
     assert abs(mp["deficit"]["90"] - 4000) < 1, f"acumulativo igual (1 sola prod) · {mp['deficit']}"
 
 
-def test_deficit_resta_stock_mas_pendiente(app, db_clean):
-    """B: consumo 5000g · stock 1000g · pendiente 2000g → deficit = 2000g.
-    Confirma que SE RESTAN AMBOS (stock + pendiente_compras) EN EL MODO 'contar pendiente'."""
-    # Sebastián 12-jul · el default cambió a NO contar pendiente/cuarentena (M39/M66) · este test valida el modo
-    # viejo (contar) → fijarlo explícito (el flag persiste en app_settings · db_clean no lo resetea).
-    _exec("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('abast_contar_pendiente','1')")
+def test_pendiente_no_toca_deficit_pero_si_neto_a_pedir(app, db_clean):
+    """B: consumo 5000g · stock 1000g · en camino 2000g → deficit = 4000g (BRUTO) y
+    neto_a_pedir = 2000g.
+
+    ⚠ 25-jul · TEST REPARADO (el código está bien). Antes se llamaba
+    `test_deficit_resta_stock_mas_pendiente` y exigía deficit=2000 fijando el toggle
+    `abast_contar_pendiente='1'`. La REGLA DE NETEO de Alejandro (22-jul · commit 3d517063)
+    cambió eso a propósito: lo EN CAMINO (SOL/OC pendiente) NO reduce el déficit — Alejandro
+    quiere ver la necesidad BRUTA, porque una OC pendiente todavía no es material en planta —
+    y lo que se descuenta va en `neto_a_pedir`, que es la columna 'Pedir' y la que usa
+    Generar OC (programacion.py:16287 deficits vs :16291 neto_a_pedir · paridad en
+    test_paridad_motores.test_neteo_regla_alejandro). El toggle quedó SIN EFECTO sobre el
+    déficit, así que ya no se fija: la propiedad viva es que el pendiente se acredita UNA vez
+    y solo en el neto."""
     _seed_mp("DEFICIT-B", "Deficit B")
     _seed_formula("QADEF-PRODB", "DEFICIT-B", "Deficit B", 50)  # 50% de 10kg = 5000g
     _programar("QADEF-PRODB", 10, 3)
     _entrada_stock("DEFICIT-B", "Deficit B", 1000)            # stock físico 1000g
-    _sol_pendiente("QADEF-SOL-B", "DEFICIT-B", "Deficit B", 2000)  # pendiente 2000g
+    _sol_pendiente("QADEF-SOL-B", "DEFICIT-B", "Deficit B", 2000)  # en camino 2000g
     mp = _consumo_mp(app, "DEFICIT-B")
     assert mp is not None
     assert abs(mp["consumo"]["15"] - 5000) < 1, mp["consumo"]
     assert abs(mp["stock_actual_g"] - 1000) < 1, mp["stock_actual_g"]
     assert abs(mp["pendiente_compras_g"] - 2000) < 1, mp["pendiente_compras_g"]
-    # deficit = max(0, 5000 - 1000 - 2000) = 2000
-    assert abs(mp["deficit"]["15"] - 2000) < 1, f"deficit debe restar stock+pendiente · {mp['deficit']}"
+    # deficit = max(0, 5000 - 1000) = 4000 · BRUTO de lo en camino (regla Alejandro 22-jul)
+    assert abs(mp["deficit"]["15"] - 4000) < 1, f"deficit NO resta lo en camino · {mp['deficit']}"
+    # neto_a_pedir = max(0, 5000 - 1000 - 0 cuarentena - 2000 en camino) = 2000
+    assert abs(mp["neto_a_pedir"]["15"] - 2000) < 1, (
+        f"'Pedir' SÍ debe restar lo en camino (no re-comprar lo ya pedido) · {mp['neto_a_pedir']}")
 
 
 def test_deficit_default_no_resta_pendiente(app, db_clean):

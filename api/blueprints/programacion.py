@@ -12470,7 +12470,12 @@ def prog_regenerar_oc():
 
     from datetime import datetime as _dt
     year = _dt.now().strftime('%Y')
-    last_n = siguiente_correlativo(conn, 'solicitudes_compra', 'numero', f"SOL-{year}-") - 1  # PG-safe · M45 (loop hace +1)
+    # FIX 25-jul (auditoría): iba `conn` y el helper espera un CURSOR (hace c.execute y
+    # después c.fetchall(); una conexión no tiene fetchall) → AttributeError → 500 SIEMPRE.
+    # Los otros 14 llamadores del repo pasan cursor; estos 2 quedaron mal desde el M45 y
+    # nadie lo vio porque los tests probaban el MOTOR de déficit, nunca el endpoint que
+    # ESCRIBE. En regenerar-oc es peor: el borrado de las viejas ya commiteó más arriba.
+    last_n = siguiente_correlativo(conn.cursor(), 'solicitudes_compra', 'numero', f"SOL-{year}-") - 1  # PG-safe · M45 (loop hace +1)
     n_sol = last_n
     user = session.get('compras_user', 'Sistema')
 
@@ -12484,7 +12489,7 @@ def prog_regenerar_oc():
                 continue
             n_sol += 1
             sol_numero = f"SOL-{year}-{n_sol:04d}"
-            num_oc = siguiente_numero_oc(conn, year)  # PG-safe (drift CAST · 16-jun)
+            num_oc = siguiente_numero_oc(conn.cursor(), year)  # PG-safe (drift CAST · 16-jun) · FIX 25-jul: cursor, no conexión
 
             mps_resumen_items = sorted(items, key=lambda x: -x['deficit_g'])[:5]
             mps_resumen = ', '.join([
@@ -12620,7 +12625,12 @@ def prog_generar_oc():
     # Numero de SOL inicial
     from datetime import datetime as _dt
     year = _dt.now().strftime('%Y')
-    last_n = siguiente_correlativo(conn, 'solicitudes_compra', 'numero', f"SOL-{year}-") - 1  # PG-safe · M45 (loop hace +1)
+    # FIX 25-jul (auditoría): iba `conn` y el helper espera un CURSOR (hace c.execute y
+    # después c.fetchall(); una conexión no tiene fetchall) → AttributeError → 500 SIEMPRE.
+    # Los otros 14 llamadores del repo pasan cursor; estos 2 quedaron mal desde el M45 y
+    # nadie lo vio porque los tests probaban el MOTOR de déficit, nunca el endpoint que
+    # ESCRIBE. En regenerar-oc es peor: el borrado de las viejas ya commiteó más arriba.
+    last_n = siguiente_correlativo(conn.cursor(), 'solicitudes_compra', 'numero', f"SOL-{year}-") - 1  # PG-safe · M45 (loop hace +1)
     n_sol = last_n
     user = session.get('compras_user', 'Sistema')
 
@@ -12641,7 +12651,7 @@ def prog_generar_oc():
                 continue
             n_sol += 1
             sol_numero = f"SOL-{year}-{n_sol:04d}"
-            num_oc = siguiente_numero_oc(conn, year)  # PG-safe (drift CAST · 16-jun)
+            num_oc = siguiente_numero_oc(conn.cursor(), year)  # PG-safe (drift CAST · 16-jun) · FIX 25-jul: cursor, no conexión
 
             # Resumen de MPs principales para observaciones (legibilidad)
             mps_resumen_items = sorted(items, key=lambda x: -x['deficit_g'])[:5]
