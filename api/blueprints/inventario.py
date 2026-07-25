@@ -3423,8 +3423,19 @@ def simular_produccion():
         if int(cs or 0) == 0:
             return True
         _n = str(nom or '').strip().upper()
-        if _n == 'AGUA' or _n.startswith('AGUA '):
-            return True
+        # FIX 25-jul (auditoría · M5) · antes bastaba con que el nombre EMPEZARA por "AGUA "
+        # (`_n.startswith('AGUA ')`), y eso metía en la bolsa de "infinitas" a materias primas
+        # COMPRADAS con stock real: agua de rosas, agua micelar, agua termal, agua floral. El
+        # descuento real NO las trata así (usa la lista canónica `_MP_UNLIMITED`), así que el
+        # simulador decía "alcanza" y el POST de producción rechazaba con 422. Ahora se usa la
+        # MISMA lista canónica que el descuento: el simulador y el descuento no pueden discrepar.
+        try:
+            from .programacion import _MP_UNLIMITED as _UNL, _norm_mp_name as _nrm
+            if _nrm(_n).upper() in {str(x).upper() for x in _UNL}:
+                return True
+        except Exception:
+            if _n in ('AGUA', 'AQUA', 'AGUA DESIONIZADA', 'AGUA PURIFICADA', 'AGUA DESTILADA'):
+                return True
         if str(mid or '').strip().upper() in ('MPAGUAL01', 'MPAGUALI01', 'MPAGUALI02'):
             return True
         return False
