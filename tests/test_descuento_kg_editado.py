@@ -26,7 +26,13 @@ def test_descuento_programado_usa_kg_editado(app, db_clean):
     c = db.cursor()
 
     from blueprints.programacion import _calcular_mp_consumo_produccion
-    mps, meta = _calcular_mp_consumo_produccion(c, pid)
+    # ACTUALIZADO 25-jul · `_calcular_mp_consumo_produccion` resuelve el material con
+    # `_resolver_material_bodega`, que cachea el stock por request en la `g` de Flask: fuera de
+    # un app_context lanza "Working outside of application context" y el test moria ANTES del
+    # assert. El codigo esta bien; faltaba el contexto. Mismo caso que test_descuento_perfecto
+    # y test_case_dup_formula_descuento, que llevaban tiempo en rojo por lo mismo.
+    with app.app_context():
+        mps, meta = _calcular_mp_consumo_produccion(c, pid)
     db.close()
 
     m = next((x for x in mps if str(x.get('codigo_mp', '')).upper() == MAT

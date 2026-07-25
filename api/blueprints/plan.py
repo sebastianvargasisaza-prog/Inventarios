@@ -5977,8 +5977,17 @@ def plan_salud_cadenas():
             # tendencia viene en ascenso fuerte (mismo umbral que usa la UI para "considerá
             # adelantar"), NO se marca como sobre-producción: se marca como lanzamiento, para que
             # el diagnóstico deje de gritar sobre algo que es deliberado.
+            # REDONDEO A BATCH (25-jul · visto con los datos reales) · el ratio solo no alcanza:
+            # nadie fabrica 7.69 kg, hace un lote de 10. Ese 1.3 es redondeo normal de planta,
+            # NO sobre-producción, y marcarlo convierte la alerta en ruido. Lo que sí importa es
+            # cuántos DÍAS DE MÁS acumula cada lote sobre lo que debía cubrir (cadencia + 20):
+            #   Suero Vit C+ 67d vs 50 → 17d de más = redondeo · no se marca
+            #   LIP SERUM   127d vs 40 → 87d de más = sobre-producción real
+            # Se exige que fallen LAS DOS cosas: proporción alta Y exceso material en días.
+            _dias_cubre = cad + BUFFER_REORDEN
+            _dias_exceso = dur_lote - _dias_cubre
             _tend = float(p.get('tendencia') or 0)
-            if ratio >= 1.3:
+            if ratio >= 1.3 and _dias_exceso >= 30:
                 est = 'lanzamiento' if _tend >= 0.08 else 'sobre'
             elif ratio <= 0.9:
                 est = 'corto'
@@ -5993,6 +6002,7 @@ def plan_salud_cadenas():
                 'kg_exceso_por_lote': round(kg_lote - kg_req, 2),
                 'kg_exceso_total': round((kg_lote - kg_req) * len(fut), 1),
                 'dias_que_dura_un_lote': dur_lote,
+                'dias_exceso_por_lote': _dias_exceso,   # lo que acumula de MÁS sobre cadencia+20
                 'vende_uds_dia': round(vel, 2), 'ml_unidad': round(ml, 1),
                 'tendencia_pct': round(_tend * 100),   # por qué NO es sobre-producción si es lanzamiento
                 # sugerencias: o achicar el lote a lo necesario, o espaciar la cadencia
