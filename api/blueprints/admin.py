@@ -14941,6 +14941,29 @@ def admin_auditoria_lotes():
     except Exception as e:
         out["delta_lotes_error"] = str(e)
 
+    # ENVASES metidos en el kardex de MATERIA PRIMA (auditoría 25-jul). Un envase recibido por OC
+    # cuyo código todavía no estaba en `maestro_mee` caía a la rama MP y entraba a `movimientos`:
+    # inflaba el inventario de MP, dejaba su stock de envase en 0 (abastecimiento lo volvía a
+    # pedir) y se saltaba la cuarentena de envases. No daba ningún error. Caso real: MEE-IMP-019 y
+    # MEE-IMP-020 (1000 uds c/u). El origen ya está tapado en recibir_oc; esto lo hace VISIBLE.
+    try:
+        _cruz = c.execute(
+            "SELECT material_id, MAX(material_nombre) AS nombre, MAX(lote) AS lote, "
+            "       COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
+            "                         WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad "
+            "                         ELSE 0 END), 0) AS g "
+            "FROM movimientos "
+            "WHERE (UPPER(COALESCE(material_id,'')) LIKE 'MEE-%' OR UPPER(COALESCE(material_id,'')) LIKE 'MEE!_%' ESCAPE '!' "
+            "       OR UPPER(COALESCE(material_id,'')) LIKE 'ENV-%') "
+            "GROUP BY material_id HAVING COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
+            "                                              WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad "
+            "                                              ELSE 0 END), 0) > 0.01").fetchall()
+        out["envases_en_kardex_mp"] = [dict(r) for r in _cruz]
+        out["envases_en_kardex_mp_count"] = len(_cruz)
+    except Exception as e:
+        out["envases_en_kardex_mp_error"] = str(e)
+        out["envases_en_kardex_mp"] = []
+
     # Un chequeo que FALLÓ no puede verse igual que un chequeo LIMPIO. Dos de estas queries
     # llevaban tiempo reventando en PostgreSQL (GROUP BY incompleto · pasa en SQLite) y el
     # endpoint devolvía `duplicados_sospechosos: []` al lado del error: quien mirara la lista

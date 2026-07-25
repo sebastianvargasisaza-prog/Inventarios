@@ -10364,6 +10364,18 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "UPDATE maestro_mee SET codigo='MEE-IMP-020' "
         "WHERE codigo LIKE '%MEE-IMP-020' AND codigo <> 'MEE-IMP-020'",
     ]),
+    (380, "El tabulador de MEE-IMP-020 vivía en `movimientos` (kardex de MATERIA PRIMA), no en "
+          "`movimientos_mee`: la mig 379 limpió las tablas equivocadas. Causa de fondo (ya "
+          "corregida en recibir_oc): un envase cuyo código todavía NO está en maestro_mee caía al "
+          "kardex de MP. Acá sólo se NORMALIZA la clave para que deje de ser invisible; los 1000 "
+          "uds siguen en el kardex de MP a propósito: MOVERLOS entre kardex es una corrección "
+          "regulada (Salida compensatoria + Entrada, net-zero y auditada) que decide Sebastián, "
+          "no una migración a ciegas.", [
+        "UPDATE movimientos SET material_id='MEE-IMP-020' "
+        "WHERE material_id LIKE '%MEE-IMP-020' AND material_id <> 'MEE-IMP-020'",
+        "UPDATE movimientos SET material_nombre='MEE-IMP-020' "
+        "WHERE material_nombre LIKE '%MEE-IMP-020' AND material_nombre <> 'MEE-IMP-020'",
+    ]),
 ]
 
 

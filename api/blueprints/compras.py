@@ -6322,6 +6322,19 @@ def recibir_oc(numero_oc):
                     _es_mee_item = True
                     log.warning('recibir_oc %s · item %s está en maestro_mee pero la OC dice categoria=%s '
                                 '→ se recibe como ENVASE (kardex MEE + cuarentena)', numero_oc, codigo, categoria)
+                elif not _en_mps and __import__('re').match(r'^(MEE|ENV)[-_]', codigo, __import__('re').I):
+                    # FIX 25-jul (auditoría de kardex) · el criterio "está en maestro_mee" no alcanza:
+                    # un envase RECIÉN creado (serigrafiado nuevo) todavía no está en el maestro, así
+                    # que caía al `else` y entraba al kardex de MATERIA PRIMA. Caso real: MEE-IMP-019
+                    # y MEE-IMP-020 (1000 uds cada uno, OC-2026-0275) quedaron dentro de `movimientos`
+                    # → inflaban el inventario de MP, su stock de envase quedaba en 0 (abastecimiento
+                    # los volvía a pedir) y se saltaban la cuarentena de envases. Sin un solo error.
+                    # Si el código NO está en maestro_mps, seguro NO es materia prima; y con prefijo
+                    # MEE-/ENV- es envase por la convención de códigos de la app → al kardex correcto.
+                    _es_mee_item = True
+                    log.warning('recibir_oc %s · item %s tiene prefijo de ENVASE y no está en '
+                                'maestro_mps → se recibe como ENVASE (no al kardex de MP). '
+                                'Falta darlo de alta en maestro_mee.', numero_oc, codigo)
             except Exception as _e_mee:
                 log.warning('recibir_oc · no se pudo verificar si %s es envase: %s', codigo, _e_mee)
         if cant_recibida > 0 and not _es_consumo_admin:

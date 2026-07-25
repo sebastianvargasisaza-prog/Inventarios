@@ -81,3 +81,31 @@ def test_un_codigo_con_tab_es_una_clave_distinta(app):
     assert '\tMEE-IMP-020'.strip() == 'MEE-IMP-020'
     d = {'MEE-IMP-020': 1000}
     assert d.get('\tMEE-IMP-020') is None, 'por eso el stock quedaba invisible'
+
+
+def test_un_envase_no_puede_entrar_al_kardex_de_materia_prima(app):
+    """Un envase recibido por OC cuyo codigo aun no esta en maestro_mee caia al kardex de MP.
+
+    Caso real (25-jul): MEE-IMP-019 y MEE-IMP-020, 1000 uds cada uno, quedaron dentro de
+    `movimientos`. Inflaban el inventario de MP, dejaban el stock de envase en 0 (abastecimiento
+    los volvia a pedir) y se saltaban la cuarentena de envases. Sin un solo error a la vista.
+    """
+    import inspect
+
+    from blueprints.compras import recibir_oc
+    src = inspect.getsource(recibir_oc)
+    assert "prefijo de ENVASE" in src, (
+        "recibir_oc debe enrutar por prefijo cuando el codigo aun no esta en maestro_mee")
+
+
+def test_la_auditoria_reporta_envases_dentro_del_kardex_de_MP(app):
+    """El desvio tiene que ser VISIBLE, no descubrirse revisando a mano."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c = app.test_client()
+    r = c.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+    d = c.get("/api/admin/auditoria-lotes?dias=2").get_json()
+    assert "envases_en_kardex_mp" in d, d.keys()
+    assert "envases_en_kardex_mp_error" not in d, d.get("envases_en_kardex_mp_error")
+    assert isinstance(d["envases_en_kardex_mp"], list)
