@@ -24,8 +24,36 @@ cd "$REPO_ROOT"
 
 MODE="${1:-quick}"
 
+# ── SET DEL CORAZÓN (25-jul-2026) ─────────────────────────────────────────────
+# Lo que NO puede romperse en silencio: el descuento de MP, el motor de demanda,
+# el resolver de material y las propiedades de inventario/fórmulas. Entran al gate
+# porque la auditoría CERO-ERROR encontró 11 de estos tests EN ROJO desde hacía
+# tiempo, invisibles por correr solo los golden. ~40s.
+CORAZON=(
+  "tests/test_descuento_perfecto.py"
+  "tests/test_descuento_dedup_codigo.py"
+  "tests/test_case_dup_formula_descuento.py"
+  "tests/test_prop_descuento.py"
+  "tests/test_prop_abastecimiento.py"
+  "tests/test_prop_inventario.py"
+  "tests/test_corazon_deficit.py"
+  "tests/test_corazon_pedir.py"
+  "tests/test_corazon_revisor_huecos.py"
+  "tests/test_corazon_acumula.py"
+  "tests/test_corazon_b2b_e2e.py"
+  "tests/test_corazon_formula.py"
+  "tests/test_corazon_agua_excluida.py"
+  "tests/test_abastecimiento_dedup_fijo.py"
+  "tests/test_resolver_inci_ambiguo.py"
+  "tests/test_generar_oc_correlativo.py"
+  "tests/test_dedup_mismo_dia_respeta_fijo.py"
+  "tests/test_paridad_motores.py"
+  "tests/test_e2e_mp_chain.py"
+  "tests/test_diag_solo_admin.py"
+)
+
 echo ""
-echo "🛡️  GUARDIAN · golden paths regression check"
+echo "🛡️  GUARDIAN · golden paths + corazón (descuento · demanda · fórmulas · inventario)"
 echo "    repo: $REPO_ROOT"
 echo "    mode: $MODE"
 echo ""
@@ -53,7 +81,7 @@ if [ "$MODE" = "--pg" ] || [ "$MODE" = "pg" ]; then
     echo ""
     exit 1
   fi
-  TESTS=("tests/test_golden_paths.py")
+  TESTS=("tests/test_golden_paths.py" "${CORAZON[@]}")
 elif [ "$MODE" = "--full" ] || [ "$MODE" = "full" ]; then
   TESTS=(
     "tests/test_golden_paths.py"
@@ -63,8 +91,15 @@ elif [ "$MODE" = "--full" ] || [ "$MODE" = "full" ]; then
     "tests/test_producciones_faltantes.py"
   )
 else
-  # Quick mode (default) · solo golden paths · ~3s
-  TESTS=("tests/test_golden_paths.py")
+  # Quick mode (default · el que corre el hook pre-push).
+  #
+  # 25-jul-2026 · LECCIÓN CARA de la auditoría CERO-ERROR: el gate corría SOLO los golden,
+  # así que 11 tests del CORAZÓN (descuento de MP, abastecimiento, resolver) llevaban tiempo
+  # EN ROJO y nadie podía enterarse. Un test que no corre en el gate no protege nada.
+  # Por eso el quick mode ahora incluye el set del corazón (~40s extra, vale la pena).
+  # Regla: si escribís un test que protege el descuento, la demanda, las fórmulas o el
+  # inventario, AGREGALO ACÁ o su rojo será invisible.
+  TESTS=("tests/test_golden_paths.py" "${CORAZON[@]}")
 fi
 
 # Ejecutar · pipefail para que el exit code de pytest llegue al if
