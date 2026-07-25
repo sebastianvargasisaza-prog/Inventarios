@@ -5894,6 +5894,103 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     return out
 
 
+@bp.route("/api/plan/salud-cadenas", methods=["GET"])
+def plan_salud_cadenas():
+    """¿Está bien DIMENSIONADA la producción programada de cada producto? (read-only · 25-jul)
+
+    Sebastián, mirando LIP SERUM: la cadena tenía 36 lotes de 15 kg mensuales cuando el motor
+    calcula que con 5.9 kg alcanza. La app ya lo sabía (marcaba sobra-stock lote por lote) pero
+    estaba enterrado en el modal. Esto lo saca a la superficie para TODOS los productos.
+
+    Usa la MISMA regla del motor de cadencia (regla de reorden, 11-jul), no una propia:
+        kg_requerido_por_lote = velocidad_uds_dia × (cadencia_dias + 20) × ml_unidad / 1000
+    El +20 es el colchón: se produce 20 días ANTES de agotarse, así que cada lote tiene que
+    cubrir su cadencia más ese margen.
+
+    NO muta nada. Cuando falta el dato para juzgar (sin ventas mapeadas o sin ml) devuelve
+    estado='sin_datos' en vez de inventar un veredicto.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    _resp = plan_necesidades()          # reusa el motor real · una sola fuente de verdad
+    try:
+        _data = _resp[0].get_json() if isinstance(_resp, tuple) else _resp.get_json()
+    except Exception:
+        return jsonify({'ok': False, 'error': 'no se pudo leer necesidades'}), 500
+    BUFFER_REORDEN = 20                 # mismo valor que el motor de cadencia y que la UI
+    hoy = _hoy_colombia()
+    items, resumen = [], {'sobre': 0, 'corto': 0, 'ok': 0, 'sin_datos': 0, 'sin_cadena': 0}
+    for cli in (_data.get('clientes') or []):
+        for p in (cli.get('productos') or []):
+            prod = p.get('producto_nombre') or ''
+            vel = float(p.get('velocidad_uds_dia') or 0)
+            ml = float(p.get('ml_unidad') or 0)
+            fut = []
+            for l in (p.get('planificacion') or []):
+                _f = str(l.get('fecha') or '')[:10]
+                _e = str(l.get('estado') or '')
+                if not _f or _e in ('cancelado', 'completado'):
+                    continue
+                try:
+                    if _date.fromisoformat(_f) <= hoy:
+                        continue
+                except Exception:
+                    continue
+                fut.append({'fecha': _f, 'kg': float(l.get('kg') or 0)})
+            if not fut:
+                resumen['sin_cadena'] += 1
+                continue
+            fut.sort(key=lambda x: x['fecha'])
+            # cadencia = mediana de los saltos entre lotes (robusta a un lote corrido)
+            gaps = []
+            for i in range(1, len(fut)):
+                try:
+                    gaps.append((_date.fromisoformat(fut[i]['fecha'])
+                                 - _date.fromisoformat(fut[i - 1]['fecha'])).days)
+                except Exception:
+                    pass
+            gaps = sorted(g for g in gaps if g > 0)
+            cad = gaps[len(gaps) // 2] if gaps else 30
+            kgs = [x['kg'] for x in fut if x['kg'] > 0]
+            kg_lote = round(sum(kgs) / len(kgs), 2) if kgs else 0.0
+            if not (vel > 0.001 and ml > 0) or kg_lote <= 0:
+                resumen['sin_datos'] += 1
+                items.append({'producto': prod, 'cliente': cli.get('nombre') or '',
+                              'estado': 'sin_datos', 'n_lotes': len(fut),
+                              'kg_lote_programado': kg_lote or None, 'cadencia_dias': cad,
+                              'kg_requerido_lote': None, 'motivo': 'sin ventas mapeadas o sin ml'})
+                continue
+            kg_req = round(vel * (cad + BUFFER_REORDEN) * ml / 1000.0, 2)
+            ratio = (kg_lote / kg_req) if kg_req > 0 else 0
+            # días que dura UN lote en góndola · lo que el usuario siente como "sobra"
+            dur_lote = round((kg_lote * 1000.0 / ml) / vel) if vel > 0 else 0
+            if ratio >= 1.3:
+                est = 'sobre'
+            elif ratio <= 0.9:
+                est = 'corto'
+            else:
+                est = 'ok'
+            resumen[est] += 1
+            items.append({
+                'producto': prod, 'cliente': cli.get('nombre') or '', 'estado': est,
+                'n_lotes': len(fut), 'cadencia_dias': cad,
+                'kg_lote_programado': kg_lote, 'kg_requerido_lote': kg_req,
+                'ratio': round(ratio, 2),
+                'kg_exceso_por_lote': round(kg_lote - kg_req, 2),
+                'kg_exceso_total': round((kg_lote - kg_req) * len(fut), 1),
+                'dias_que_dura_un_lote': dur_lote,
+                'vende_uds_dia': round(vel, 2), 'ml_unidad': round(ml, 1),
+                # sugerencias: o achicar el lote a lo necesario, o espaciar la cadencia
+                'sugerido_kg_lote': kg_req,
+                'sugerido_cadencia_dias': (max(1, int(round((kg_lote * 1000.0 / ml) / vel)) - BUFFER_REORDEN)
+                                           if (est == 'sobre' and vel > 0) else cad),
+            })
+    items.sort(key=lambda x: -(x.get('kg_exceso_total') or 0))
+    return jsonify({'ok': True, 'resumen': resumen, 'items': items,
+                    'regla': 'kg_requerido = vende_uds_dia x (cadencia + 20) x ml / 1000',
+                    'nota': 'read-only · no modifica el calendario'})
+
+
 @bp.route("/api/plan/factibilidad", methods=["GET"])
 def plan_factibilidad():
     """Factibilidad del plan completo · ¿alcanzan las MP para todo lo programado?
