@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-07-25** (M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
+Última actualización: **2026-07-25** (M98 · un campo con nombre de MÉTRICA que en realidad es una ETIQUETA de texto: `tendencia` ('aceleracion_fuerte') se convertía con float() → 500 en prod, y en JS se comparaba >= 0.08 → alerta muerta que nunca apareció · leé el `return` del productor antes de comparar/convertir · el número va en un campo APARTE (`tendencia_pct`), no se reinterpreta la etiqueta · un except alrededor del float() tapa el 500 pero deja la decisión con el default · M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
 
 ---
 
@@ -877,6 +877,33 @@ Al dejar en verde los 9 archivos que llevaban tiempo rojos (101 tests), **2 eran
 - **Un guardián con lista blanca a mano se pudre y da falsos positivos.** El smoke de "URLs huérfanas" comparaba contra prefijos hardcodeados y marcaba `/api/mee`, que existe. **Contrastá contra el `url_map` REAL.** Un guardián que miente deja de mirarse, y eso es peor que no tenerlo.
 - **Ruta registrada DOS veces = la segunda es código muerto silencioso.** `/api/mee` POST estaba en `inventario` y en `compras`; gana la primera registrada (verificable con `url_map.bind().match(path, method=...)`), así que el gate más estricto de la otra NUNCA corría. Misma familia que el gate de MFA muerto. **Al agregar una ruta, `grep` del path completo.**
 - **Correr la suite entera en UN proceso cascadea** (desde ~40 %): una BD compartida que queda bloqueada arrastra a todo lo que sigue. **Diagnosticá archivo por archivo**; los 145 "fallos" de una corrida conjunta eran 5 reales.
+
+## 🏷️ M98 · Un campo con nombre de MÉTRICA que en realidad es una ETIQUETA · 25-jul
+
+`velocidad_blended_uds_dia` devuelve `(velocidad, tendencia)` donde **`tendencia` es un TEXTO**
+(`'aceleracion_fuerte'`, `'estable'`, `'caida_fuerte'`, `'sin_historico'`). El nombre suena a
+número, así que DOS consumidores lo trataron como fracción y ninguno de los dos avisó:
+
+- **Backend:** `float(p['tendencia'])` → **500 en producción** (`could not convert string to
+  float: 'caida_fuerte'`). Solo reventaba con productos cuya etiqueta no fuera el `0.0` del
+  override manual → invisible en los tests y en el seed.
+- **Frontend:** `p.tendencia >= 0.08` → comparar un texto contra un número es **siempre falso**
+  en JS → la alerta "📈 ventas +X% · considerá adelantar" del panel de Necesidades **nunca
+  apareció**. Feature muerta en silencio, misma familia que M94 (dict indexado como tupla) y
+  que el gate de MFA / la columna fantasma dentro de un `except`.
+
+**Reglas:**
+1. **Antes de convertir o comparar un campo contra un umbral, leé el `return` de quien lo
+   produce.** Un nombre no es un contrato. Si el productor vive en otro módulo, abrilo.
+2. **Si un campo es categórico, exponé el número aparte en vez de reinterpretar la etiqueta.**
+   Acá se agregó `tendencia_pct` (fracción de ascenso 30d vs 60d, clamp ±200%) y se dejó
+   `tendencia` intacta — cambiar el tipo de un campo publicado rompe consumidores que no ves.
+3. **Un `try/except (TypeError, ValueError)` alrededor de la conversión NO es el arreglo**: tapa
+   el 500 pero deja la decisión tomándose con el valor por defecto (acá: todos los productos con
+   tendencia 0 → la rama 'lanzamiento' seguía sin cumplirse jamás). Arreglá la FUENTE del número.
+4. **Un endpoint nuevo se mira EN PRODUCCIÓN con datos reales antes de darlo por bueno.** Los
+   tests pasaban en verde: el seed no tenía la combinación de ventas que produce la etiqueta.
+   El 500 apareció al abrir la URL real. Ver [[project_9_motores_demanda_16jul]].
 
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 

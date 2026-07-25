@@ -26024,7 +26024,11 @@ async function ckMarcar(itemId, estado){
         var _cadBadge = _cadEst === 'ok' ? '<span title="Cadena de 2 años completa" style="background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">✅ ' + _nCad + ' lotes</span>'
                       : _cadEst === 'inc' ? '<span title="Cadena incompleta · reprogramá" style="background:#fef3c7;color:#b45309;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">🟠 ' + _nCad + ' lote' + (_nCad === 1 ? '' : 's') + '</span>'
                       : '<span title="Sin cadena de 2 años · programala" style="background:#fee2e2;color:#b91c1c;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">🔴 sin plan</span>';
-        var _tend = p.tendencia || 0, _tp = Math.round(_tend * 100);   // tendencia 0..0.5 · positiva = ascenso
+        // FIX 25-jul · `p.tendencia` es una ETIQUETA de texto ('aceleracion_fuerte', 'estable'…),
+        // no un número: comparar texto >= 0.08 da falso SIEMPRE, así que las alertas de ascenso
+        // ("considerá adelantar" / "en ascenso") nunca aparecieron. El número real es
+        // `tendencia_pct` (fracción · 0.15 = +15%).
+        var _tend = Number(p.tendencia_pct) || 0, _tp = Math.round(_tend * 100);
         var _al, _alc;
         if(_esExterno){ _al = '🏷️ cliente externo · Ánimus no lo fabrica (opcional · programá si lo piden)'; _alc = '#7c3aed'; }
         else if(!(p.velocidad_uds_dia > 0.001)){ _al = '🛒 sin ventas mapeadas · revisá el SKU'; _alc = '#94a3b8'; }

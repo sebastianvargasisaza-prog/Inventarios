@@ -50,6 +50,7 @@ CORAZON=(
   "tests/test_cron_no_cancela_fijo.py"
   "tests/test_paridad_motores.py"
   "tests/test_salud_cadenas.py"
+  "tests/test_tendencia_numerica.py"
   "tests/test_inci_ambiguos.py"
   "tests/test_cron_mee_cuarentena.py"
   "tests/test_descuento_kg_editado.py"

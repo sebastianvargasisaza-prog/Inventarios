@@ -4707,6 +4707,13 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 tendencia = 0.0
         except Exception:
             _ov_vel = None
+        # Tendencia NUMÉRICA (fracción de ascenso 30d vs 60d · 0.15 = +15%). El `tendencia` de
+        # arriba es una ETIQUETA de texto; quien necesite decidir con un umbral usa ESTE campo.
+        # Con override manual la tendencia no aplica (el usuario fijó la venta) → 0.
+        _tendencia_pct = 0.0
+        if _ov_vel is None and vel_60d > 0.001:
+            # clamp a ±200% · una racha corta no debe disparar decisiones absurdas
+            _tendencia_pct = round(max(-2.0, min(2.0, (vel_30d / vel_60d) - 1.0)), 3)
         velocidad_kg_dia = (velocidad_uds_dia * ml_promedio) / 1000.0
         # Stock kg = uds × ml / 1000 + pipeline reciente + Fijo pendiente
         # FIX P0 audit 24-may-2026 · sumar Fijo futuro (60d) al stock total
@@ -5063,6 +5070,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "velocidad_uds_dia_60d": round(vel_60d, 2),
             "velocidad_uds_dia_90d": round(vel_90d, 2),
             "tendencia": tendencia,
+            # ⚠ `tendencia` (arriba) es una ETIQUETA de texto ('aceleracion_fuerte', 'estable',
+            # 'caida_fuerte'…) que devuelve velocidad_blended_uds_dia · NO es un número. Dos
+            # consumidores la trataban como fracción: la alerta "📈 ventas +X% · considerá
+            # adelantar" del panel (comparaba texto >= 0.08 → NUNCA se cumplía → alerta muerta)
+            # y el diagnóstico de cadenas (float() del texto → 500 en producción). Este campo
+            # SÍ es el número: fracción de ascenso 30d vs 60d (0.15 = +15%). La etiqueta se
+            # conserva intacta para no romper a nadie más (M94 · contrato de retorno).
+            "tendencia_pct": _tendencia_pct,
             "vel_uds_mes_predictiva": round(velocidad_uds_dia * 30, 0),
             "ml_unidad": ml_promedio,
             "ml_inferido": ml_inferido,  # FIX #2 · True = heurística por nombre, no SKU real
@@ -5986,14 +6001,20 @@ def plan_salud_cadenas():
             # Se exige que fallen LAS DOS cosas: proporción alta Y exceso material en días.
             _dias_cubre = cad + BUFFER_REORDEN
             _dias_exceso = dur_lote - _dias_cubre
-            # ⚠ `tendencia` la producen DOS módulos distintos y NO siempre es numérica: en el
-            # camino de Ánimus DTC es un float, pero otro productor la escribe como texto
-            # ('caida_fuerte'). Un float() directo tumbaba el endpoint entero con 500. No asumir
-            # el tipo de un campo que arma más de un módulo (M96 · contrato de retorno).
-            try:
-                _tend = float(p.get('tendencia') or 0)
-            except (TypeError, ValueError):
-                _tend = 0.0
+            # ⚠ La tendencia numérica es `tendencia_pct`. El campo `tendencia` es una ETIQUETA de
+            # texto ('aceleracion_fuerte', 'caida_fuerte'…) que devuelve velocidad_blended_uds_dia:
+            # hacerle float() tumbaba este endpoint con 500 en producción, y antes de eso la rama
+            # 'lanzamiento' nunca se cumplía. Se lee el número y, si no viniera, se cae a la
+            # etiqueta (M94 · leé el contrato de retorno antes de indexar/convertir).
+            _tp_raw = p.get('tendencia_pct')
+            if _tp_raw is None:
+                _lbl = str(p.get('tendencia') or '')
+                _tend = 0.35 if _lbl == 'aceleracion_fuerte' else (0.2 if _lbl == 'aceleracion_moderada' else 0.0)
+            else:
+                try:
+                    _tend = float(_tp_raw)
+                except (TypeError, ValueError):
+                    _tend = 0.0
             if ratio >= 1.3 and _dias_exceso >= 30:
                 est = 'lanzamiento' if _tend >= 0.08 else 'sobre'
             elif ratio <= 0.9:
