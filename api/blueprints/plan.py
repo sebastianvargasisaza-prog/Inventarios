@@ -13747,7 +13747,21 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
         # muy lenta (cad_real de años) → sobre-producción masiva + MP comprada de más.
         _emite_uno = (cad_real > prod_dias) and not _cad_forzada
         n = 0
-        off = 0
+        # PRIMER LOTE = producir BUFFER días ANTES de que se agote lo que HAY (Sebastián 25-jul:
+        # "desde lo que hay aún disponible para vender cuánto alcanza · la regla es producir 20
+        # días antes de que se agote"). Antes arrancaba en off=0, o sea HOY para todos: a un
+        # producto con 6 meses de góndola le ponía un lote hoy igual, y eso contradice la regla y
+        # sobre-produce al frente. Los otros dos caminos ya la aplicaban (el modal con
+        # `diasGond - buffer`, la proyección simulando el agotamiento).
+        # ⚠ Se usa `stock_proyeccion_g` (la métrica de TIMING, acotada por el cuello de góndola),
+        # la MISMA que usa _proyectar_horizonte_2y → los dos generadores fechan igual. Y el offset
+        # se CLAMPEA a una cadencia: así es estructuralmente imposible repetir el bug viejo de
+        # "cobertura sobre-estimada manda los lotes a 2027" que motivó el arranque-desde-hoy.
+        try:
+            _dias_cob = float(dsg.get('stock_proyeccion_g') or 0) / demand_g
+        except (TypeError, ValueError, ZeroDivisionError):
+            _dias_cob = 0.0
+        off = int(max(0, min(round(_dias_cob - BUFFER_REORDEN_DIAS), cad)))
         while off <= prod_dias and n < 130:
             prod_date = _slot(max(hoy, hoy + _td(days=off)))
             _obs = ('Plan manual desde hoy · 1 lote cubre el horizonte (~' + format(cad_real, '.0f') + 'd)'
