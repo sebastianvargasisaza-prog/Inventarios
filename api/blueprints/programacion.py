@@ -10725,8 +10725,26 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
                 for cod, _inci_c, _com_c in _maestro_mps_activos(c):   # PERF #6: lista cacheada por request
                     if cod and _norm_mp_name(_inci_c) == _inci_f and _stock_neto(cod) > 0.01:
                         _inci_cands.append(cod)
-                if _inci_cands:
-                    return sorted(_inci_cands, key=lambda x: (-_stock_neto(x), x))[0]
+                # FIX 25-jul (auditoría · riesgo INVIMA): si hay VARIOS candidatos con el mismo
+                # INCI, NO se adivina por stock. El cerebro ya lo declaraba y el gate nunca se
+                # implementó (M17 punto 3 · M19 punto c): "mismo INCI, GRADO distinto = NO
+                # unificar a ciegas · el % de fórmula cambia con el grado → potencia errada".
+                # `_norm_mp_name` borra el paréntesis, que es justo donde vive el grado
+                # ("(50 kD)", "(triterpenos 80%)"), así que por INCI son indistinguibles.
+                # Grupos ambiguos REALES del maestro: HYALURONIC ACID (50/300/1500 kD),
+                # PARFUM (3 fragancias distintas), TOCOPHEROL (líquida/polvo), CENTELLA
+                # (extracto/triterpenos 80%), PANTHENOL (líquido/polvo), CARBOMER.
+                # Reproducido: la fórmula pedía 50 kD y descontaba 1500 kD, rotulándolo con
+                # el nombre del correcto. Ahora cae al tier 3 (match por NOMBRE), que SÍ
+                # distingue el grado; si tampoco resuelve, producción avisa "sin stock" y lo
+                # decide una persona. Fail-safe: mejor frenar que fabricar con otro grado.
+                if len(_inci_cands) > 1:
+                    logging.getLogger('programacion').warning(
+                        'resolver: INCI %r ambiguo para %r · %s candidatos (%s) · NO se elige por '
+                        'stock (grados distintos) · se intenta por nombre',
+                        _inci_f, fmid, len(_inci_cands), ','.join(sorted(_inci_cands)[:5]))
+                elif _inci_cands:
+                    return _inci_cands[0]
     except Exception:
         pass
     # 3) por nombre (exacto/normalizado/alias) contra maestro_mps.
@@ -10742,6 +10760,7 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
         _alias_nn = _MP_NAME_ALIAS.get(nn)
         try:
             _cands = set()
+            _nombre_de = {}   # cod → nombre crudo con el que matcheó (para comparar el GRADO)
             for cod, _inci_c, _com_c in _maestro_mps_activos(c):   # PERF #6: lista cacheada por request
                 if not cod:
                     continue
@@ -10751,7 +10770,27 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
                     cn = _norm_mp_name(cand)
                     if cn == nn or cn == _alias_nn or _MP_NAME_ALIAS.get(cn) == nn:
                         _cands.add(cod)
+                        _nombre_de[cod] = cand
                         break
+            # FIX 25-jul (auditoría · riesgo INVIMA): el comentario de arriba dice que esto es
+            # seguro porque "nombres distintos = materiales distintos NO se matchean", y eso NO
+            # se sostiene cuando la diferencia vive en el PARÉNTESIS: `_norm_mp_name` lo BORRA,
+            # así que "Ac. hialuronico (50 kD)" y "Ac. hialuronico (1500 kD)" normalizan igual y
+            # competían entre sí, ganando el de más stock. Reproducido: la fórmula pedía 50 kD y
+            # se descontaba 1500 kD. Si los candidatos difieren en el grado del paréntesis, es
+            # ambiguo y NO se adivina (mismo criterio que el tier 2b).
+            if len(_cands) > 1:
+                import re as _re_g
+                _grados = set()
+                for _cd in _cands:
+                    _g = _re_g.findall(r'\(([^)]*)\)', str(_nombre_de.get(_cd) or ''))
+                    _grados.add(_norm_mp_name(' '.join(_g)) if _g else '')
+                if len(_grados) > 1:
+                    logging.getLogger('programacion').warning(
+                        "resolver MP nombre '%s' (fmid=%s): %s códigos con GRADOS distintos %s "
+                        "· NO se elige por stock (potencia errada · INVIMA) · resolvelo con "
+                        "Alejandro o unificá los códigos", nom, fmid, len(_cands), sorted(_cands))
+                    _cands = set()
             if _cands:
                 # preferir el de mayor stock neto; si ninguno tiene stock, el que
                 # tenga movimientos; desempate determinista por código.
@@ -10779,6 +10818,7 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
         nn = _norm_mp_name(nom) if nom else ''
         _alias_nn = _MP_NAME_ALIAS.get(nn) if nn else None
         _resc = set()
+        _resc_nombre = {}   # cod → nombre crudo (para comparar el GRADO del paréntesis)
         for r in c.execute(
             "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') "
             "FROM maestro_mps").fetchall():  # SIN filtro activo
@@ -10798,6 +10838,23 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
                         break
             if _ok and _stock_neto(cod) > 0:
                 _resc.add(cod)
+                _resc_nombre[cod] = r[2] or r[1] or ''
+        # FIX 25-jul (auditoría): el rescate es el ÚLTIMO tier y también elegía por stock. Si
+        # los candidatos rescatados difieren en el GRADO del paréntesis, es la misma ambigüedad
+        # de los tiers 2b/3 y tampoco se adivina: se prefiere frenar la producción (el operario
+        # ve "sin stock") antes que fabricar con otro grado del mismo INCI.
+        if len(_resc) > 1:
+            import re as _re_r
+            _g_resc = set()
+            for _cd in _resc:
+                _gg = _re_r.findall(r'\(([^)]*)\)', str(_resc_nombre.get(_cd) or ''))
+                _g_resc.add(_norm_mp_name(' '.join(_gg)) if _gg else '')
+            if len(_g_resc) > 1:
+                logging.getLogger('programacion').warning(
+                    "resolver MP RESCATE · fórmula '%s' (fmid=%s): %s códigos con GRADOS "
+                    "distintos %s · NO se elige por stock (potencia errada · INVIMA)",
+                    nom or _inci_f, fmid, len(_resc), sorted(_resc))
+                _resc = set()
         if _resc:
             _best = sorted(_resc, key=lambda x: (-_stock_neto(x), x))[0]
             logging.getLogger('programacion').warning(
