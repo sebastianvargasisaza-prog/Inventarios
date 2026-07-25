@@ -116,3 +116,17 @@ def test_no_marca_lo_que_no_puede_juzgar(app):
             assert it.get('kg_requerido_lote'), it
             # todo item juzgado trae con qué se juzgó (auditable)
             assert it.get('cadencia_dias') and it.get('kg_lote_programado') is not None, it
+
+
+def test_tendencia_no_numerica_no_tumba_el_endpoint(app):
+    """`tendencia` la escriben DOS módulos y no siempre es numérica ('caida_fuerte').
+
+    Un float() directo tumbaba el endpoint con 500 en producción. No se puede asumir el tipo
+    de un campo que arma más de un módulo.
+    """
+    c = _login(app)
+    r = c.get('/api/plan/salud-cadenas')
+    assert r.status_code == 200, r.data[:300]
+    for it in (r.get_json().get('items') or []):
+        if 'tendencia_pct' in it:
+            assert isinstance(it['tendencia_pct'], (int, float)), it

@@ -5986,7 +5986,14 @@ def plan_salud_cadenas():
             # Se exige que fallen LAS DOS cosas: proporción alta Y exceso material en días.
             _dias_cubre = cad + BUFFER_REORDEN
             _dias_exceso = dur_lote - _dias_cubre
-            _tend = float(p.get('tendencia') or 0)
+            # ⚠ `tendencia` la producen DOS módulos distintos y NO siempre es numérica: en el
+            # camino de Ánimus DTC es un float, pero otro productor la escribe como texto
+            # ('caida_fuerte'). Un float() directo tumbaba el endpoint entero con 500. No asumir
+            # el tipo de un campo que arma más de un módulo (M96 · contrato de retorno).
+            try:
+                _tend = float(p.get('tendencia') or 0)
+            except (TypeError, ValueError):
+                _tend = 0.0
             if ratio >= 1.3 and _dias_exceso >= 30:
                 est = 'lanzamiento' if _tend >= 0.08 else 'sobre'
             elif ratio <= 0.9:
