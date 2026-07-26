@@ -1,0 +1,396 @@
+verde tests/test_abastecimiento_cada_lote_2anios.py :: 3 passed
+verde tests/test_abastecimiento_colapso_bridge.py :: 1 passed
+verde tests/test_abastecimiento_dedup_fijo.py :: 7 passed
+verde tests/test_abastecimiento_deficit_17jun.py :: 4 passed
+verde tests/test_abastecimiento_deficit_fixes.py :: 1 passed
+verde tests/test_abastecimiento_demanda.py :: 1 passed
+verde tests/test_abastecimiento_no_infla_no_deja.py :: 1 passed
+verde tests/test_abastecimiento_vencimiento.py :: 6 passed
+verde tests/test_abastecimiento_verificacion.py :: 2 passed
+verde tests/test_acondicionamiento_cierre.py :: 6 passed in 13.61s 
+verde tests/test_acondicionamiento_legajo.py :: 3 passed in 10.07s 
+verde tests/test_admin_gerencia_audit.py :: 11 passed in 11.92s 
+verde tests/test_admin_health.py :: 16 passed in 14.74s 
+verde tests/test_admin_paginas_nuevas.py :: 38 passed
+verde tests/test_admin_panel.py :: 44 passed
+verde tests/test_agent_memory.py :: 7 passed in 20.21s 
+verde tests/test_agregar_cliente_lote.py :: 3 passed in 15.02s 
+verde tests/test_ajustar_formula_pct.py :: 4 passed in 11.90s 
+verde tests/test_alias_formula.py :: 4 passed
+verde tests/test_ancla_sin_registrar.py :: 3 passed
+verde tests/test_animus_audit.py :: 5 passed in 10.40s 
+verde tests/test_animus_inv_fisico.py :: 31 passed in 20.35s 
+verde tests/test_areas_planta.py :: 3 passed in 10.74s 
+verde tests/test_artes.py :: 3 passed
+verde tests/test_aseguramiento.py :: 33 passed in 22.21s 
+verde tests/test_aseguramiento_cambios.py :: 13 passed in 12.56s 
+verde tests/test_aseguramiento_cero_error.py :: 4 passed in 12.25s 
+verde tests/test_aseguramiento_crons.py :: 10 passed
+verde tests/test_aseguramiento_desviaciones.py :: 11 passed in 12.23s 
+verde tests/test_aseguramiento_division.py :: 5 passed in 9.92s 
+verde tests/test_aseguramiento_gobierno.py :: 10 passed in 12.15s 
+verde tests/test_aseguramiento_quejas.py :: 14 passed in 16.20s 
+verde tests/test_aseguramiento_recalls.py :: 11 passed in 11.51s 
+verde tests/test_aseguramiento_ux.py :: 10 passed in 18.84s 
+verde tests/test_asg_estados_invalidos.py :: 7 passed in 10.02s 
+verde tests/test_asignar_areas.py :: 16 passed in 17.98s 
+verde tests/test_audit_ebr_persiste.py :: 1 passed in 7.94s 
+verde tests/test_auditar_minimos.py :: 7 passed
+verde tests/test_auditar_minimos_unificado.py :: 1 passed
+verde tests/test_auditoria_bodega_mp.py :: 1 passed in 13.47s 
+verde tests/test_auditoria_lotes_pg.py :: 3 passed in 10.36s 
+verde tests/test_auditoria_total_fixes.py :: 2 passed in 8.98s 
+verde tests/test_auth.py :: 13 passed in 18.29s 
+verde tests/test_auto_plan_consolida_proveedor.py :: 28 passed
+verde tests/test_auto_plan_no_duplica_futuro.py :: 6 passed in 0.17s 
+verde tests/test_b2b_diagnostico_cliente.py :: 2 passed in 8.34s 
+verde tests/test_b2b_no_cubre_animus.py :: 1 passed
+verde tests/test_backup.py :: 15 passed
+verde tests/test_bandeja_ceo.py :: 10 passed in 12.43s 
+verde tests/test_barrido_dano_18jun.py :: 2 passed in 0.17s 
+verde tests/test_bienestar_audit.py :: 4 passed in 9.53s 
+verde tests/test_blueprints_smoke.py :: 24 passed in 17.10s 
+verde tests/test_blush_canonico_mig274.py :: 3 passed in 0.08s 
+verde tests/test_blush_formula_v4_mig351.py :: 7 passed in 9.88s 
+verde tests/test_blush_tonos_mig238.py :: 2 passed in 0.08s 
+verde tests/test_blush_tonos_view.py :: 2 passed
+verde tests/test_bodega_mp_paso1.py :: 3 passed in 8.97s 
+verde tests/test_boot.py :: 6 passed in 7.52s 
+verde tests/test_brd_oculto.py :: 3 passed in 8.45s 
+verde tests/test_brd_visibilidad.py :: 4 passed in 11.41s 
+verde tests/test_cadencia_desde_lote.py :: 9 passed
+verde tests/test_cadencia_producto.py :: 4 passed
+verde tests/test_calc_stock_resolver.py :: 3 passed
+verde tests/test_calendar_sync_zero_sesgo.py :: 6 passed in 7.56s 
+verde tests/test_calendario_dias_habiles.py :: 6 passed in 10.07s 
+verde tests/test_calibracion_aseguramiento.py :: 7 passed in 9.26s 
+verde tests/test_calidad_analisis_promax.py :: 6 passed in 10.99s 
+verde tests/test_calidad_bandeja.py :: 15 passed in 14.32s 
+verde tests/test_calidad_bandeja_ebr.py :: 2 passed in 11.46s 
+verde tests/test_calidad_documentos.py :: 3 passed in 8.21s 
+verde tests/test_calidad_equipos.py :: 13 passed in 13.00s 
+verde tests/test_calidad_indicadores.py :: 4 passed in 9.19s 
+verde tests/test_calidad_indicadores_16jul.py :: 2 passed in 7.61s 
+verde tests/test_calidad_micro_fase2.py :: 4 passed in 9.08s 
+verde tests/test_calidad_micro_microlab.py :: 3 passed in 9.33s 
+verde tests/test_calidad_oos_equipos.py :: 3 passed in 13.72s 
+verde tests/test_calidad_ux.py :: 7 passed in 12.18s 
+verde tests/test_cambiar_formula.py :: 5 passed in 8.96s 
+verde tests/test_cambiar_password_page.py :: 4 passed in 9.61s 
+verde tests/test_cancelar_proxima_guard.py :: 2 passed in 8.15s 
+verde tests/test_capacidad_calendario.py :: 1 passed
+verde tests/test_cargos_fijos.py :: 3 passed in 12.26s 
+verde tests/test_case_dup_formula_descuento.py :: 1 passed in 8.31s 
+verde tests/test_cash_flow_fix.py :: 2 passed in 8.00s 
+verde tests/test_cash_flow_por_pagar.py :: 2 passed in 9.34s 
+verde tests/test_catalina_autoriza_paga_oc.py :: 4 passed in 16.99s 
+verde tests/test_catalina_nueva_mp.py :: 18 passed in 25.96s 
+verde tests/test_catalina_sin_tope.py :: 4 passed in 10.66s 
+verde tests/test_cc_correcciones.py :: 2 passed in 12.71s 
+verde tests/test_centro_decisiones.py :: 4 passed in 14.34s 
+verde tests/test_cerrar_envasado_override.py :: 1 passed in 11.81s 
+verde tests/test_chat_asignar_tarea.py :: 8 passed in 14.10s 
+verde tests/test_checklist_cadena_causal.py :: 8 passed in 9.43s 
+verde tests/test_checklist_columnas.py :: 4 passed in 0.08s 
+verde tests/test_clientes_audit.py :: 16 passed in 21.86s 
+verde tests/test_coa_import.py :: 4 passed in 14.23s 
+verde tests/test_cobertura_planeacion_mig275.py :: 3 passed in 9.57s 
+verde tests/test_codigo_kardex_limpio.py :: 6 passed in 17.37s 
+verde tests/test_comercial_audit.py :: 4 passed in 13.85s 
+verde tests/test_comparar_calendar_match.py :: 1 passed in 13.67s 
+verde tests/test_completar_ebr_demo.py :: 2 passed in 11.17s 
+verde tests/test_completar_no_descuenta_envases.py :: 1 passed in 10.68s 
+verde tests/test_completar_race_safe.py :: 7 passed in 14.70s 
+verde tests/test_compliance_audit.py :: 11 passed in 19.25s 
+verde tests/test_compliance_ux.py :: 6 passed in 15.05s 
+verde tests/test_composicion_envase_fija.py :: 5 passed
+verde tests/test_comprar_ahora_lead.py :: 3 passed
+verde tests/test_compras_3fuentes.py :: 21 passed in 24.67s 
+verde tests/test_compras_audit.py :: 12 passed in 17.62s 
+verde tests/test_compras_consolidado_inci.py :: 1 passed in 12.62s 
+verde tests/test_compras_descontinuado.py :: 2 passed
+verde tests/test_compras_smoke.py :: 14 passed
+verde tests/test_compras_sprints.py :: 19 passed
+verde tests/test_config.py :: 6 passed in 10.03s 
+verde tests/test_confirmar_pedido_b2b.py :: 9 passed
+verde tests/test_consolidar_producto.py :: 2 passed in 11.39s 
+verde tests/test_consumo_manual_cuarentena.py :: 1 passed in 10.69s 
+verde tests/test_consumos_dash_alerta.py :: 2 passed in 12.43s 
+verde tests/test_consumos_gastos.py :: 4 passed in 14.39s 
+verde tests/test_contabilidad_factura_guards.py :: 3 passed in 12.51s 
+verde tests/test_conteo_ajuste_sin_aprobacion.py :: 1 passed in 10.69s 
+verde tests/test_conteo_doble_ajuste.py :: 1 passed in 10.93s 
+verde tests/test_conteo_fix_6jun.py :: 3 passed
+verde tests/test_conteo_fragancia_comercial.py :: 3 passed in 7.88s 
+verde tests/test_conteo_legacy_idempotente.py :: 1 passed in 9.18s 
+verde tests/test_conteo_materiales_contrato.py :: 2 passed in 20.03s 
+verde tests/test_corazon_acumula.py :: 1 passed
+verde tests/test_corazon_agua_excluida.py :: 1 passed
+verde tests/test_corazon_b2b_e2e.py :: 2 passed
+verde tests/test_corazon_deficit.py :: 4 passed
+verde tests/test_corazon_formula.py :: 3 passed
+verde tests/test_corazon_match_b2b.py :: 2 passed
+verde tests/test_corazon_pedir.py :: 1 passed
+verde tests/test_corazon_revisor_huecos.py :: 3 passed
+verde tests/test_correcciones_audit.py :: 2 passed in 11.83s 
+verde tests/test_correlativo_pg_safe.py :: 2 passed in 12.80s 
+verde tests/test_cotizaciones_candidatos.py :: 3 passed in 16.15s 
+verde tests/test_crear_mps_faltantes.py :: 1 passed
+verde tests/test_cron_mee_cuarentena.py :: 2 passed in 12.81s 
+verde tests/test_cron_no_cancela_fijo.py :: 2 passed in 13.07s 
+verde tests/test_cronograma_areas.py :: 10 passed in 19.54s 
+verde tests/test_cronograma_comparar.py :: 7 passed in 14.73s 
+verde tests/test_cruce_inci_orden.py :: 1 passed in 12.27s 
+verde tests/test_cruce_maestro.py :: 9 passed
+verde tests/test_csrf.py :: 7 passed in 16.97s 
+verde tests/test_csrf_admin_fetches.py :: 1 passed in 0.15s 
+verde tests/test_csrf_token.py :: 9 passed in 20.78s 
+verde tests/test_cuarentena_solo_mp.py :: 2 passed in 14.17s 
+verde tests/test_dashboard_app_js.py :: 3 passed in 12.39s 
+verde tests/test_dashboard_fixes_paso12.py :: 2 passed in 13.02s 
+verde tests/test_dashboard_planta_audit.py :: 20 passed in 31.04s 
+verde tests/test_dedup_mismo_dia_respeta_fijo.py :: 3 passed in 14.96s 
+verde tests/test_demanda_pipeline_animus.py :: 2 passed
+verde tests/test_descuento_corregir.py :: 3 passed in 16.28s 
+verde tests/test_descuento_dedup_codigo.py :: 4 passed in 15.56s 
+verde tests/test_descuento_kg_editado.py :: 1 passed in 11.40s 
+verde tests/test_descuento_perfecto.py :: 11 passed in 13.38s 
+verde tests/test_desglose_manda_override.py :: 2 passed in 14.00s 
+verde tests/test_despeje_verificar_demo.py :: 2 passed in 20.20s 
+verde tests/test_diag_familia.py :: 3 passed in 13.53s 
+verde tests/test_diag_solo_admin.py :: 4 passed in 14.09s 
+verde tests/test_diagnostico_formulas.py :: 7 passed in 21.39s 
+verde tests/test_diagnostico_shopify_skus.py :: 2 passed in 11.59s 
+verde tests/test_discrepancias.py :: 4 passed in 12.87s 
+verde tests/test_drift_detector.py :: 12 passed in 13.90s 
+verde tests/test_e2e_mp_chain.py :: 2 passed in 17.85s 
+verde tests/test_e2e_nuevos_modulos.py :: 33 passed in 39.67s 
+verde tests/test_ebr_artes.py :: 1 passed in 13.50s 
+verde tests/test_ebr_batch_a_gates.py :: 5 passed in 12.69s 
+verde tests/test_ebr_batch_b_fases.py :: 4 passed in 12.99s 
+verde tests/test_ebr_conciliacion.py :: 1 passed in 10.97s 
+verde tests/test_ebr_e2e_demo.py :: 1 passed
+verde tests/test_ebr_estaciones_mybatch.py :: 4 passed in 11.71s 
+verde tests/test_ebr_fase.py :: 2 passed in 10.26s 
+verde tests/test_ebr_ml_envasable.py :: 1 passed in 11.04s 
+verde tests/test_ebr_objetivo_m67.py :: 4 passed in 11.00s 
+verde tests/test_ebr_observaciones.py :: 1 passed in 10.09s 
+verde tests/test_ebr_verificar_pesaje.py :: 2 passed in 11.46s 
+verde tests/test_en_transito_azul.py :: 5 passed
+verde tests/test_envasado_fase3.py :: 1 passed in 11.18s 
+verde tests/test_envase_checklist_autopreset.py :: 2 passed in 9.88s 
+verde tests/test_envase_fija_desglose.py :: 1 passed
+verde tests/test_envases_abastecimiento.py :: 9 passed
+verde tests/test_envases_kardex_mp.py :: 9 passed in 12.55s 
+verde tests/test_envases_normalizacion_fase0.py :: 7 passed in 9.78s 
+verde tests/test_espagiria_modulo.py :: 17 passed in 17.72s 
+verde tests/test_estacionalidad_cache.py :: 2 passed
+verde tests/test_estacionalidad_factor.py :: 1 passed
+verde tests/test_estacionalidad_ventas.py :: 5 passed
+verde tests/test_estado_lote_case_insensitive.py :: 2 passed in 9.44s 
+verde tests/test_fabricacion_crear_iniciar.py :: 7 passed in 12.58s 
+ROJO  tests/test_fabricacion_cuenta_en_plan.py :: =========================== short test summary info =========================== FAILED tests/test_fabricacion_cuenta_en_plan.py::test_cerrar_pendientes_ya_producidos 1 failed, 7 passed, 1 warning in 17.84s 
+verde tests/test_factibilidad_arrastre.py :: 1 passed in 8.61s 
+verde tests/test_factibilidad_fisico_vs_camino.py :: 3 passed in 11.26s 
+verde tests/test_factibilidad_realidad.py :: 2 passed in 10.94s 
+verde tests/test_factibilidad_resuelve_nombre.py :: 1 passed in 8.76s 
+verde tests/test_facturas_proveedor.py :: 6 passed
+verde tests/test_feed_necesidades.py :: 1 passed in 8.19s 
+verde tests/test_fefo_no_consume_vencido.py :: 4 passed in 11.97s 
+verde tests/test_financial_audit.py :: 9 passed in 16.11s 
+verde tests/test_financiero_audit_ux.py :: 11 passed in 13.81s 
+verde tests/test_financiero_categoria_trend.py :: 10 passed in 16.31s 
+verde tests/test_financiero_mes_detalle.py :: 11 passed in 14.34s 
+ROJO  tests/test_financiero_mom_12.py :: =========================== short test summary info =========================== FAILED tests/test_financiero_mom_12.py::test_mom_12_stats_mejor_peor_promedio 1 failed, 7 passed in 16.03s 
+verde tests/test_firmas_usuarios.py :: 18 passed
+verde tests/test_formula_descontinuada_no_fabrica.py :: 4 passed in 10.93s 
+verde tests/test_formula_guard_nombre_codigo.py :: 3 passed in 10.08s 
+verde tests/test_formula_preflight.py :: 5 passed in 10.10s 
+verde tests/test_formula_validacion.py :: 2 passed in 10.39s 
+verde tests/test_formulas_mismapeo.py :: 2 passed in 10.65s 
+verde tests/test_formulas_permiso_invima.py :: 8 passed in 15.28s 
+verde tests/test_forzar_eliminar_produccion.py :: 2 passed in 10.12s 
+verde tests/test_forzar_normalizar.py :: 6 passed in 12.29s 
+verde tests/test_fusion_resolucion_retro.py :: 1 passed in 9.67s 
+verde tests/test_genealogia_e2e.py :: 3 passed
+verde tests/test_generar_oc_correlativo.py :: 3 passed
+verde tests/test_generar_oc_pct_cuarentena.py :: 1 passed
+verde tests/test_golden_paths.py :: 245 passed
+verde tests/test_habilitar_envasado.py :: 1 passed in 9.60s 
+verde tests/test_health_critical_paths.py :: 7 passed in 11.81s 
+verde tests/test_helpers.py :: 19 passed in 1.18s 
+verde tests/test_ia_slot_lock.py :: 3 passed in 8.40s 
+verde tests/test_importar_conteo.py :: 7 passed
+verde tests/test_inci_ambiguos.py :: 2 passed in 9.34s 
+verde tests/test_inflacion_planes_solapados.py :: 2 passed
+verde tests/test_influencer_banco_marketing.py :: 3 passed in 10.57s 
+verde tests/test_influencer_pago_e2e.py :: 1 passed
+verde tests/test_influencers_dedup.py :: 1 passed in 17.68s 
+verde tests/test_iniciar_descuenta_mp.py :: 10 passed in 19.74s 
+verde tests/test_inteligencia_operacional.py :: 3 passed in 11.13s 
+verde tests/test_inventario_audit.py :: 14 passed in 15.26s 
+verde tests/test_inventario_zero_sesgo.py :: 14 passed in 15.82s 
+verde tests/test_invima_gates.py :: 4 passed in 17.42s 
+verde tests/test_io_fase2.py :: 3 passed in 10.79s 
+verde tests/test_ipc_estandar.py :: 6 passed in 15.56s 
+verde tests/test_kg_otro_cliente.py :: 3 passed in 9.58s 
+verde tests/test_kg_otro_cliente_cadena.py :: 2 passed in 10.43s 
+verde tests/test_legajo_trazabilidad_responsables.py :: 4 passed in 10.49s 
+verde tests/test_liberar_cuarentena_bloque.py :: 2 passed in 14.65s 
+verde tests/test_liberar_dt_demo.py :: 3 passed
+verde tests/test_limpiar_futuro_auto.py :: 1 passed in 8.67s 
+verde tests/test_listo_envases.py :: 2 passed in 9.24s 
+verde tests/test_lote_tarde_adelantar.py :: 1 passed
+verde tests/test_lotes_atrapado.py :: 4 passed in 12.12s 
+verde tests/test_lotes_dust_threshold.py :: 1 passed in 8.83s 
+verde tests/test_lotes_export_xlsx.py :: 1 passed
+ROJO  tests/test_lotes_retenido.py :: =========================== short test summary info =========================== FAILED tests/test_lotes_retenido.py::test_retenido_seccion_en_tab_cuarentena 1 failed, 5 passed in 11.72s 
+verde tests/test_luz_clientes_b2b.py :: 2 passed in 9.42s 
+verde tests/test_maestro_inci_convergencia.py :: 9 passed
+verde tests/test_maestro_mps_next_codigo.py :: 6 passed in 10.36s 
+verde tests/test_maquila_audit.py :: 7 passed in 12.54s 
+verde tests/test_marketing_agentes.py :: 18 passed in 15.69s 
+ROJO  tests/test_marketing_smoke.py :: =========================== short test summary info =========================== FAILED tests/test_marketing_smoke.py::test_atribucion_influencers_endpoint - ... 1 failed, 32 passed in 25.02s 
+verde tests/test_material_envase_manual.py :: 5 passed in 14.55s 
+verde tests/test_mbr_instructivo_llega_al_piso.py :: 5 passed in 10.27s 
+verde tests/test_mbr_sync_procedimiento.py :: 1 passed in 10.01s 
+verde tests/test_mee_medida.py :: 4 passed in 11.14s 
+verde tests/test_mee_recepcion_parcial.py :: 2 passed
+verde tests/test_mee_stock_canonico.py :: 8 passed in 12.39s 
+verde tests/test_mee_zero_sesgo.py :: 17 passed in 11.62s 
+verde tests/test_mfa.py :: 11 passed in 19.23s 
+verde tests/test_minimos_calculo.py :: 4 passed
+verde tests/test_minimos_envases.py :: 1 passed
+verde tests/test_modelo_e2e_sim.py :: 3 passed
+verde tests/test_monthly_financial_email.py :: 8 passed in 8.33s 
+verde tests/test_motores_demanda_paridad.py :: 2 passed
+verde tests/test_mover_lote_cadena.py :: 6 passed
+verde tests/test_movimientos_estado_whitelist.py :: 2 passed in 10.77s 
+verde tests/test_mp_bridges_page.py :: 3 passed in 12.67s 
+verde tests/test_multitono_bottleneck.py :: 8 passed
+verde tests/test_necesidades_stock_huerfano.py :: 2 passed
+verde tests/test_necesidades_sync_banner.py :: 1 passed
+verde tests/test_necesidades_urgencia_gondola.py :: 1 passed
+verde tests/test_normalizar_lote.py :: 1 passed in 10.27s 
+verde tests/test_oc_eliminar_autorizada.py :: 3 passed in 11.88s 
+verde tests/test_oc_items_precios_iva.py :: 2 passed in 11.95s 
+verde tests/test_orden_detalle_botones.py :: 3 passed in 10.06s 
+ROJO  tests/test_ordenes_unificadas.py :: =========================== short test summary info =========================== FAILED tests/test_ordenes_unificadas.py::test_vista_completa_supervisado_y_elaborado 1 failed, 27 passed in 31.64s 
+verde tests/test_p2a_y_zombie_alerta.py :: 2 passed
+verde tests/test_paridad_motores.py :: 3 passed
+verde tests/test_pedido_b2b_envase_urgencia.py :: 1 passed in 15.22s 
+verde tests/test_pendiente_compras_dedup.py :: 1 passed in 11.16s 
+verde tests/test_permissions.py :: 14 passed in 16.84s 
+verde tests/test_pg_compat.py :: 16 passed in 0.08s 
+verde tests/test_pg_insert_or_replace.py :: 3 passed in 0.21s 
+verde tests/test_pipeline_fecha_fisica.py :: 1 passed
+verde tests/test_pipeline_nombre_normalizado.py :: 1 passed
+verde tests/test_plan_envasado_por_cliente.py :: 1 passed
+verde tests/test_plan_festivos_clamp.py :: 7 passed
+verde tests/test_plan_mix_mode.py :: 6 passed
+verde tests/test_plan_primer_lote_buffer.py :: 4 passed
+verde tests/test_plan_sellar_horizonte.py :: 16 passed
+verde tests/test_plan_v4_wiring.py :: 4 passed
+verde tests/test_planificacion_estrategica.py :: 13 passed
+ROJO  tests/test_planta_audit.py :: =========================== short test summary info =========================== FAILED tests/test_planta_audit.py::test_aprobar_lote_user_no_calidad_403 - As... 1 failed, 10 passed in 18.01s 
+verde tests/test_planta_auditoria.py :: 3 passed
+verde tests/test_planta_cobertura.py :: 2 passed in 18.58s 
+ROJO  tests/test_planta_extension.py :: =========================== short test summary info =========================== FAILED tests/test_planta_extension.py::test_maestro_mps_supports_tipo_material 1 failed, 27 passed, 4 warnings in 33.59s 
+verde tests/test_planta_inventario.py :: 28 passed
+verde tests/test_planta_operarios.py :: 29 passed in 16.83s 
+verde tests/test_planta_permisos.py :: 19 passed in 25.25s 
+verde tests/test_por_entrar_calendario_no_azul.py :: 2 passed
+verde tests/test_por_entrar_espagiria.py :: 1 passed
+verde tests/test_por_entrar_manual.py :: 1 passed
+verde tests/test_por_entrar_motor.py :: 2 passed
+verde tests/test_pqr_omnicanal.py :: 11 passed in 18.73s 
+verde tests/test_precio_writethrough_maestro.py :: 2 passed in 14.25s 
+verde tests/test_preparacion_envases.py :: 1 passed
+verde tests/test_presentaciones_editor.py :: 6 passed
+verde tests/test_presentaciones_planeadas.py :: 3 passed
+verde tests/test_prod_retenido.py :: 1 passed in 12.49s 
+verde tests/test_produccion_drift_invariante.py :: 5 passed in 16.09s 
+verde tests/test_produccion_resuelve_mp_bodega.py :: 5 passed in 12.94s 
+verde tests/test_produccion_stock_transparencia.py :: 1 passed in 14.56s 
+ROJO  tests/test_producciones_faltantes.py :: =========================== short test summary info =========================== FAILED tests/test_producciones_faltantes.py::test_producciones_faltantes_listado_basico 1 failed, 34 passed, 26 warnings in 48.84s 
+verde tests/test_programacion_solo_manual.py :: 6 passed
+verde tests/test_prop_abastecimiento.py :: 10 passed
+verde tests/test_prop_descuento.py :: 8 passed in 29.52s 
+verde tests/test_prop_inventario.py :: 4 passed
+verde tests/test_proveedores_dedup.py :: 1 passed in 11.36s 
+verde tests/test_proveedores_unicos_maestro.py :: 2 passed in 13.79s 
+ROJO  tests/test_proyeccion_2anios.py :: =========================== short test summary info =========================== FAILED tests/test_proyeccion_2anios.py::test_mover_recalcula_cadena - Asserti... 1 failed, 15 passed, 2138 warnings in 21.96s 
+verde tests/test_pt_por_fase.py :: 1 passed in 18.18s 
+verde tests/test_publico_reportar.py :: 10 passed in 16.56s 
+verde tests/test_r2_archivo_expediente.py :: 10 passed in 10.77s 
+ROJO  tests/test_rbac_negative.py :: =========================== short test summary info =========================== FAILED tests/test_rbac_negative.py::test_calidad_post_specs_user_no_calidad_403 1 failed, 14 passed, 4 skipped in 18.70s 
+verde tests/test_reactivar_mps.py :: 1 passed
+verde tests/test_recepcion_anular_cc.py :: 5 passed in 20.24s 
+verde tests/test_recepcion_audit.py :: 10 passed
+verde tests/test_recepcion_auto_vigente.py :: 8 passed in 13.16s 
+verde tests/test_recepcion_batch2.py :: 3 passed in 10.68s 
+verde tests/test_recepcion_calidad.py :: 12 passed
+verde tests/test_recepcion_consumibles.py :: 2 passed
+verde tests/test_recepcion_cuarentena_6jun.py :: 4 passed in 12.95s 
+verde tests/test_recepcion_envases_detalle.py :: 2 passed in 11.12s 
+verde tests/test_recepcion_ingreso_inci.py :: 4 passed in 20.75s 
+verde tests/test_recepcion_proveedor_null.py :: 1 passed in 10.73s 
+verde tests/test_recepcion_solo_mp_mee.py :: 1 passed in 16.42s 
+verde tests/test_recepcion_vencimiento.py :: 3 passed in 11.60s 
+verde tests/test_recibir_oc_empty_code.py :: 1 passed in 11.51s 
+verde tests/test_recipientes_persistencia.py :: 3 passed in 9.91s 
+verde tests/test_reconciliacion_formulas_mig237.py :: 4 passed in 0.08s 
+verde tests/test_renombrar_producto.py :: 5 passed in 22.73s 
+ROJO  tests/test_reportes_invima.py :: =========================== short test summary info =========================== FAILED tests/test_reportes_invima.py::test_reportes_ui_pestana_y_handlers - a... 1 failed, 15 passed in 15.66s 
+verde tests/test_reprogramar_desde_mes.py :: 1 passed
+verde tests/test_reset_fix_y_sembrar.py :: 5 passed
+verde tests/test_reset_inventario.py :: 3 passed
+verde tests/test_resolver_inci_ambiguo.py :: 2 passed in 9.07s 
+verde tests/test_revertir_correcciones_formulas.py :: 2 passed in 9.33s 
+verde tests/test_revincular_mbr.py :: 8 passed in 20.18s 
+ROJO  tests/test_revisar_minimos_planta.py :: =========================== short test summary info =========================== FAILED tests/test_revisar_minimos_planta.py::test_planta_auditar_minimos_accesible_a_operario 1 failed, 7 passed, 10 warnings in 15.94s 
+verde tests/test_rolling_stock_planificacion.py :: 4 passed in 0.07s 
+verde tests/test_rotulo_limpieza.py :: 9 passed in 16.21s 
+verde tests/test_rotulo_recipientes.py :: 5 passed in 11.61s 
+verde tests/test_rotulos_termico.py :: 4 passed in 12.23s 
+verde tests/test_rrhh_audit_ux.py :: 11 passed in 14.37s 
+verde tests/test_saldo_favor.py :: 8 passed
+verde tests/test_salud_cadenas.py :: 4 passed
+verde tests/test_salud_formulas.py :: 2 passed in 13.96s 
+verde tests/test_schema_doctor.py :: 1 passed in 10.47s 
+verde tests/test_security_regressions.py :: 8 passed in 14.70s 
+verde tests/test_seguridad_planta.py :: 3 passed in 12.07s 
+verde tests/test_selfheal_formula_gpl.py :: 1 passed in 9.55s 
+verde tests/test_sentry.py :: 4 passed in 10.30s 
+verde tests/test_serigrafia_transformacion.py :: 2 passed
+verde tests/test_session_por_rol.py :: 10 passed in 10.95s 
+verde tests/test_shopify_b2b_diag.py :: 2 passed in 14.28s 
+ROJO  tests/test_shopify_necesidades.py :: FAILED tests/test_shopify_necesidades.py::test_marcacion_enviar_y_recibir - A... FAILED tests/test_shopify_necesidades.py::test_marcacion_alistar_urgencia - A... 2 failed, 28 passed, 11 warnings in 33.68s 
+verde tests/test_simular_fefo_alineado.py :: 1 passed in 8.43s 
+verde tests/test_sku_producto_map.py :: 9 passed in 15.05s 
+verde tests/test_smoke.py :: 9 passed in 10.12s 
+ROJO  tests/test_solicitar_lote_bodega.py :: =========================== short test summary info =========================== FAILED tests/test_solicitar_lote_bodega.py::test_solicitar_mp_endpoint_acepta_payload_de_bodega_mp 1 failed, 3 passed in 15.55s 
+verde tests/test_solicitar_pago_influencer.py :: 3 passed
+verde tests/test_solicitudes_agrupadas.py :: 20 passed in 24.69s 
+verde tests/test_sugerencia_produccion.py :: 10 passed
+ROJO  tests/test_sugerencia_solo_animus.py :: =========================== short test summary info =========================== FAILED tests/test_sugerencia_solo_animus.py::test_proxima_sugerida_solo_animus 1 failed, 2 warnings in 13.72s 
+verde tests/test_sweep_csrf_ux.py :: 8 passed in 16.23s 
+verde tests/test_sync_salud_stock.py :: 4 passed in 10.12s 
+verde tests/test_tecnica_amarillos.py :: 11 passed in 15.15s 
+verde tests/test_tecnica_audit.py :: 10 passed in 15.58s 
+verde tests/test_tecnica_features.py :: 22 passed in 29.68s 
+verde tests/test_tecnica_sgd_unificado.py :: 8 passed in 14.31s 
+verde tests/test_template_js_valido.py :: 8 passed
+verde tests/test_tendencia_numerica.py :: 7 passed
+ROJO  tests/test_trail_explosion.py :: FAILED tests/test_trail_explosion.py::test_trail_endpoint_producto_inexistente FAILED tests/test_trail_explosion.py::test_trail_endpoint_producto_real - Key... 4 failed in 20.70s 
+verde tests/test_transicion_fabricacion_envasado.py :: 1 passed
+verde tests/test_velocidad_unificada.py :: 2 passed
+verde tests/test_venta_esperada_override.py :: 3 passed in 12.94s 
+verde tests/test_ventas_diarias_perf.py :: 2 passed
+verde tests/test_verificar_cadenas.py :: 1 passed in 14.37s 
+verde tests/test_verificar_formulas_excel.py :: 3 passed
+verde tests/test_vigilancia_precios.py :: 5 passed
+verde tests/test_vmaps_cache.py :: 1 passed in 12.65s 
+verde tests/test_weekly_executive_email.py :: 6 passed in 14.14s 
+verde tests/test_zero_error_dashboard.py :: 8 passed in 18.32s 
+FIN

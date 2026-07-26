@@ -13,13 +13,15 @@ Flujo:
   6. Click 'Enviar a Compras' → POST /api/solicitudes-compra
   7. ¿Que ve Luis en planta despues?
 """
+# ⚠ 26-jul: logueaba como "luis", dado de BAJA (mig 375). Se usa "mayerlin", operaria de
+# planta ACTIVA con el mismo perfil.
 import os
 import sqlite3
 
 from .conftest import TEST_PASSWORD, csrf_headers
 
 
-def _login(app, user="luis"):
+def _login(app, user="mayerlin"):
     c = app.test_client()
     r = c.post("/login", data={"username": user, "password": TEST_PASSWORD},
                headers=csrf_headers(), follow_redirects=False)
@@ -29,9 +31,9 @@ def _login(app, user="luis"):
 
 def test_solicitar_mp_endpoint_acepta_payload_de_bodega_mp(app, db_clean):
     """El payload que envía enviarSolicitarLote() debe crear una solicitud."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     payload = {
-        'solicitante': 'luis',
+        'solicitante': 'mayerlin',
         'urgencia': 'Normal',
         'observaciones': 'Stock por debajo del minimo, requerido para producir GEL',
         'empresa': 'Espagiria',
@@ -62,7 +64,7 @@ def test_lotes_marca_tiene_solicitud_pendiente(app, db_clean):
     """Si hay una solicitud Pendiente para un codigo_mp, el lote
     correspondiente debe llegar con flag tiene_solicitud_pendiente=true.
     Sin pendiente → False. Esto alimenta el badge 'Solicitada' en UI."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     # Crear lote con stock para 2 codigos
     conn = sqlite3.connect(os.environ["DB_PATH"])
     for cod in ('MP-SOL-PEN', 'MP-SIN-SOL'):
@@ -83,7 +85,7 @@ def test_lotes_marca_tiene_solicitud_pendiente(app, db_clean):
     conn.commit(); conn.close()
     # Crear solicitud pendiente para MP-SOL-PEN
     r = cs.post('/api/solicitudes-compra',
-                json={'solicitante': 'luis', 'urgencia': 'Normal',
+                json={'solicitante': 'mayerlin', 'urgencia': 'Normal',
                       'observaciones': 'test pendiente flag',
                       'empresa': 'Espagiria', 'categoria': 'Materia Prima',
                       'tipo': 'Compra', 'area': 'Produccion',
@@ -114,7 +116,7 @@ def test_dashboard_html_tiene_funcion_toast(app, db_clean):
     """El dashboard debe exponer _toastSolicitudCreada · feedback visible al click.
     El JS del dashboard se sirve en archivos cacheables separados (/planta-core.js +
     /planta-app.js), no inline · el contenido a validar es el combinado."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     body = (cs.get('/inventarios').get_data(as_text=True)
             + cs.get('/planta-core.js').get_data(as_text=True)
             + cs.get('/planta-app.js').get_data(as_text=True))
@@ -129,10 +131,10 @@ def test_dashboard_html_tiene_funcion_toast(app, db_clean):
 def test_luis_ve_su_solicitud_en_mis_solicitudes(app, db_clean):
     """Luis NO debería tener que ir a /compras a buscar su solicitud.
     Esta es la queja real: 'no hace nada' = no la ve en planta despues."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     r = cs.post('/api/solicitudes-compra',
                 json={
-                    'solicitante': 'luis',
+                    'solicitante': 'mayerlin',
                     'urgencia': 'Normal',
                     'observaciones': 'Test luis solicita',
                     'empresa': 'Espagiria',

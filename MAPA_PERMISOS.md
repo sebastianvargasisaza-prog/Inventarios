@@ -7,19 +7,20 @@
 
 | Gate | Rutas | Quién entra |
 |---|---:|---|
-| `AUTENTICADO` | 1017 | cualquier usuario con sesión |
+| `AUTENTICADO` | 1007 | cualquier usuario con sesión |
 | `ADMIN` | 486 | solo Sebastián y Alejandro |
-| `COMPRAS` | 35 | Catalina, Mayra + Admin |
+| `COMPRAS` | 38 | Catalina, Mayra + Admin |
 | `PLANTA` | 33 | operarios de planta + Admin |
 | `EJECUTOR DE LOTE` | 25 | Planta ∪ Calidad ∪ Admin |
 | `FINANZAS` | 22 | contadora / compras + Admin |
 | `PÚBLICA` | 18 | sin sesión (a propósito) |
-| `CALIDAD+ADMIN` | 12 | Control de Calidad o Dirección |
-| `CALIDAD` | 8 | Laura, Yulieth + Admin |
+| `CALIDAD+ADMIN` | 13 | Control de Calidad o Dirección |
+| `CALIDAD` | 7 | Laura, Yulieth + Admin |
 | `ASEGURAMIENTO` | 6 | Miguel + Calidad + Admin |
 | `FÓRMULAS (INVIMA)` | 6 | Técnica ∪ Calidad ∪ Aseguramiento ∪ Dirección |
+| `CALIDAD (QC)` | 5 | Control de Calidad + backup DT/Aseguramiento + Admin |
+| `AUTORIZA OC` | 4 | Compras con límite · contadora bloqueada (SoD) |
 | `PORTAL B2B` | 3 |  |
-| `MARKETING` | 1 | equipo de marketing + Admin |
 | `RRHH` | 1 | Gloria + asistentes + Admin |
 | `TÉCNICA` | 1 | Hernando, Miguel + Admin |
 
@@ -206,22 +207,16 @@ y no lo eran. Si una de estas toca dinero, inventario o un registro regulado, ne
 | `/api/compliance/hallazgos/<int:hid>` | PATCH | compliance.py |
 | `/api/compras/consumibles` | GET,POST | compras.py |
 | `/api/compras/consumibles/<int:cid>` | DELETE,PATCH | compras.py |
-| `/api/compras/facturas-proveedor` | POST | compras.py |
-| `/api/compras/facturas-proveedor/<int:fid>` | PATCH | compras.py |
-| `/api/compras/facturas-proveedor/<int:fid>/pagar` | POST | compras.py |
 | `/api/compras/oc/<numero_oc>/rechazar` | POST | compras.py |
 | `/api/compras/oc/<numero_oc>/reparar-desde-solicitud` | POST | compras.py |
 | `/api/compras/ocr-factura` | POST | compras.py |
-| `/api/compras/ordenes-compra/<numero_oc>/aplicar-saldo` | POST | compras.py |
 | `/api/compras/ordenes-servicio` | GET,POST | compras.py |
-| `/api/compras/proveedor-saldo/registrar` | POST | compras.py |
 | `/api/compras/sugerir-mp-bulk` | POST | compras.py |
 | `/api/compras/validar-precios-bulk` | POST | compras.py |
 | `/api/comprobantes-pago/<int:comp_id>/email` | POST | compras.py |
 | `/api/generar-oc-automatica` | POST | compras.py |
 | `/api/movimientos-mee` | GET,POST | compras.py |
 | `/api/movimientos-mee/lote` | POST | compras.py |
-| `/api/ordenes-compra/<numero_oc>/autorizar` | PATCH | compras.py |
 | `/api/comunicacion/actas` | GET,POST | comunicacion.py |
 | `/api/comunicacion/actas/<int:aid>/parsear` | POST | comunicacion.py |
 | `/api/comunicacion/mensajes` | GET,POST | comunicacion.py |
@@ -253,10 +248,6 @@ y no lo eran. Si una de estas toca dinero, inventario o un registro regulado, ne
 | `/api/formulas/sync-shopify-all` | POST | inventario.py |
 | `/api/formulas/sync-shopify-blocking` | POST | inventario.py |
 | `/api/formulas/unlock` | POST | inventario.py |
-| `/api/liberacion` | GET,POST | inventario.py |
-| `/api/liberacion/<int:lid>` | PATCH | inventario.py |
-| `/api/lotes/cuarentena/<int:mov_id>/liberar` | POST | inventario.py |
-| `/api/maestro-mps/<codigo>/archivar` | PUT | inventario.py |
 | `/api/maestro-mps/<codigo>/mee-stock-minimo` | PUT | inventario.py |
 | `/api/maestro-mps/<codigo>/proveedor` | PUT | inventario.py |
 | `/api/maestro-mps/alias` | DELETE,GET,POST | inventario.py |
@@ -293,7 +284,6 @@ y no lo eran. Si una de estas toca dinero, inventario o un registro regulado, ne
 | `/api/marketing/fix-pago-link` | POST | marketing.py |
 | `/api/marketing/ig-refresh` | POST | marketing.py |
 | `/api/marketing/ig-update-token` | POST | marketing.py |
-| `/api/marketing/influencers/<int:iid>/banco` | PUT | marketing.py |
 | `/api/marketing/influencers/<int:iid>/dar-baja` | POST | marketing.py |
 | `/api/marketing/influencers/<int:iid>/generar-cupon` | POST | marketing.py |
 | `/api/marketing/influencers/<int:iid>/refresh-metrics` | POST | marketing.py |
@@ -377,7 +367,6 @@ y no lo eran. Si una de estas toca dinero, inventario o un registro regulado, ne
 | `/api/admin/portal/credenciales` | GET,POST | portal.py |
 | `/api/admin/portal/credenciales/<int:cred_id>` | DELETE,PATCH | portal.py |
 | `/api/admin/portal/pqr/<int:pqr_id>` | PATCH | portal.py |
-| `/api/portal-demo/regenerar` | POST | portal.py |
 | `/api/portal/login` | POST | portal.py |
 | `/api/portal/pedidos` | POST | portal.py |
 | `/api/portal/pedidos/<int:pid>` | PATCH | portal.py |
@@ -476,7 +465,7 @@ y no lo eran. Si una de estas toca dinero, inventario o un registro regulado, ne
 | `/api/tecnica/formulas` | GET,POST | tecnica.py |
 | `/api/tecnica/invima` | GET,POST | tecnica.py |
 
-_432 rutas en esta lista._
+_420 rutas en esta lista._
 
 ## Todas las rutas
 
@@ -1061,6 +1050,7 @@ _432 rutas en esta lista._
 | `/api/brd/mi-trabajo` | GET | AUTENTICADO | brd.py |
 | `/api/brd/ordenes-unificadas` | GET | AUTENTICADO | brd.py |
 | `/api/brd/revincular-mbr` | POST | CALIDAD+ADMIN | brd.py |
+| `/api/brd/revincular-mbr/revertir` | POST | CALIDAD+ADMIN | brd.py |
 | `/brd` | GET | AUTENTICADO | brd.py |
 | `/brd/` | GET | AUTENTICADO | brd.py |
 | `/brd/despeje/<int:ebr_id>` | GET | AUTENTICADO | brd.py |
@@ -1206,10 +1196,10 @@ _432 rutas en esta lista._
 | `/api/compras/dashboard-home` | GET | ADMIN | compras.py |
 | `/api/compras/discrepancias` | GET | AUTENTICADO | compras.py |
 | `/api/compras/facturas-proveedor` | GET | AUTENTICADO | compras.py |
-| `/api/compras/facturas-proveedor` | POST | AUTENTICADO | compras.py |
+| `/api/compras/facturas-proveedor` | POST | COMPRAS | compras.py |
 | `/api/compras/facturas-proveedor/<int:fid>` | GET | AUTENTICADO | compras.py |
-| `/api/compras/facturas-proveedor/<int:fid>` | PATCH | AUTENTICADO | compras.py |
-| `/api/compras/facturas-proveedor/<int:fid>/pagar` | POST | AUTENTICADO | compras.py |
+| `/api/compras/facturas-proveedor/<int:fid>` | PATCH | COMPRAS | compras.py |
+| `/api/compras/facturas-proveedor/<int:fid>/pagar` | POST | COMPRAS | compras.py |
 | `/api/compras/facturas-proveedor/<int:fid>/pdf` | GET | AUTENTICADO | compras.py |
 | `/api/compras/fast-track-config` | GET | AUTENTICADO | compras.py |
 | `/api/compras/fast-track-config` | POST | ADMIN | compras.py |
@@ -1228,7 +1218,7 @@ _432 rutas en esta lista._
 | `/api/compras/ocr-factura` | POST | AUTENTICADO | compras.py |
 | `/api/compras/ocs-atrasadas` | GET | AUTENTICADO | compras.py |
 | `/api/compras/ocs-consolidado-excel` | GET | FINANZAS | compras.py |
-| `/api/compras/ordenes-compra/<numero_oc>/aplicar-saldo` | POST | AUTENTICADO | compras.py |
+| `/api/compras/ordenes-compra/<numero_oc>/aplicar-saldo` | POST | AUTORIZA OC | compras.py |
 | `/api/compras/ordenes-servicio` | GET,POST | AUTENTICADO | compras.py |
 | `/api/compras/ordenes-servicio/<numero_os>` | GET | AUTENTICADO | compras.py |
 | `/api/compras/ordenes-servicio/<numero_os>/estado` | PATCH | ADMIN | compras.py |
@@ -1238,7 +1228,7 @@ _432 rutas en esta lista._
 | `/api/compras/por-pagar` | GET | FINANZAS | compras.py |
 | `/api/compras/prediccion-demanda` | GET | AUTENTICADO | compras.py |
 | `/api/compras/proveedor-recomendado/<path:codigo_mp>` | GET | COMPRAS | compras.py |
-| `/api/compras/proveedor-saldo/registrar` | POST | AUTENTICADO | compras.py |
+| `/api/compras/proveedor-saldo/registrar` | POST | AUTORIZA OC | compras.py |
 | `/api/compras/proveedor-scorecard/<nombre_prov>` | GET | AUTENTICADO | compras.py |
 | `/api/compras/recepciones-discrepancias` | GET | AUTENTICADO | compras.py |
 | `/api/compras/reporte-ejecutivo` | GET | AUTENTICADO | compras.py |
@@ -1267,14 +1257,14 @@ _432 rutas en esta lista._
 | `/api/movimientos-mee/lote` | POST | AUTENTICADO | compras.py |
 | `/api/ordenes-compra` | GET,POST | COMPRAS | compras.py |
 | `/api/ordenes-compra/<numero_oc>` | DELETE,GET,PUT | ADMIN | compras.py |
-| `/api/ordenes-compra/<numero_oc>/autorizar` | PATCH | AUTENTICADO | compras.py |
+| `/api/ordenes-compra/<numero_oc>/autorizar` | PATCH | AUTORIZA OC | compras.py |
 | `/api/ordenes-compra/<numero_oc>/cambiar-proveedor` | POST | COMPRAS | compras.py |
 | `/api/ordenes-compra/<numero_oc>/comprobante` | GET | AUTENTICADO | compras.py |
 | `/api/ordenes-compra/<numero_oc>/editar` | PATCH | ADMIN | compras.py |
 | `/api/ordenes-compra/<numero_oc>/items` | POST | ADMIN | compras.py |
 | `/api/ordenes-compra/<numero_oc>/items-precios` | PATCH | COMPRAS | compras.py |
 | `/api/ordenes-compra/<numero_oc>/items/<int:item_id>` | DELETE,PATCH | COMPRAS | compras.py |
-| `/api/ordenes-compra/<numero_oc>/pagar` | PATCH | MARKETING | compras.py |
+| `/api/ordenes-compra/<numero_oc>/pagar` | PATCH | AUTORIZA OC | compras.py |
 | `/api/ordenes-compra/<numero_oc>/pagos` | GET | AUTENTICADO | compras.py |
 | `/api/ordenes-compra/<numero_oc>/proveedor` | PATCH | COMPRAS | compras.py |
 | `/api/ordenes-compra/<numero_oc>/recibir` | POST | ADMIN | compras.py |
@@ -1546,8 +1536,8 @@ _432 rutas en esta lista._
 | `/api/inventario/importar-conteo/cargar` | POST | ADMIN | inventario.py |
 | `/api/inventario/modo-inventario` | GET,POST | ADMIN | inventario.py |
 | `/api/inventario/reset-inventario-cero` | GET,POST | ADMIN | inventario.py |
-| `/api/liberacion` | GET,POST | AUTENTICADO | inventario.py |
-| `/api/liberacion/<int:lid>` | PATCH | AUTENTICADO | inventario.py |
+| `/api/liberacion` | GET,POST | CALIDAD (QC) | inventario.py |
+| `/api/liberacion/<int:lid>` | PATCH | CALIDAD (QC) | inventario.py |
 | `/api/lotes` | GET | AUTENTICADO | inventario.py |
 | `/api/lotes/<material_id>/<path:lote>` | DELETE | PLANTA | inventario.py |
 | `/api/lotes/<material_id>/<path:lote>/codigo-lote` | PUT | PLANTA | inventario.py |
@@ -1557,15 +1547,15 @@ _432 rutas en esta lista._
 | `/api/lotes/<material_id>/<path:lote>/ubicacion` | PUT | PLANTA | inventario.py |
 | `/api/lotes/cc-review` | POST | ADMIN | inventario.py |
 | `/api/lotes/cuarentena` | GET | AUTENTICADO | inventario.py |
-| `/api/lotes/cuarentena/<int:mov_id>/liberar` | POST | AUTENTICADO | inventario.py |
+| `/api/lotes/cuarentena/<int:mov_id>/liberar` | POST | CALIDAD (QC) | inventario.py |
 | `/api/lotes/cuarentena/liberar-inventario` | POST | ADMIN | inventario.py |
 | `/api/lotes/export-xlsx` | GET | AUTENTICADO | inventario.py |
-| `/api/lotes/liberar` | POST | CALIDAD | inventario.py |
+| `/api/lotes/liberar` | POST | CALIDAD (QC) | inventario.py |
 | `/api/lotes/retenido` | GET | AUTENTICADO | inventario.py |
 | `/api/maestro-mp/<codigo>/precio` | POST | PLANTA | inventario.py |
 | `/api/maestro-mps` | GET,POST | PLANTA | inventario.py |
 | `/api/maestro-mps/<codigo>` | GET | AUTENTICADO | inventario.py |
-| `/api/maestro-mps/<codigo>/archivar` | PUT | AUTENTICADO | inventario.py |
+| `/api/maestro-mps/<codigo>/archivar` | PUT | CALIDAD (QC) | inventario.py |
 | `/api/maestro-mps/<codigo>/mee-stock-minimo` | PUT | AUTENTICADO | inventario.py |
 | `/api/maestro-mps/<codigo>/proveedor` | PUT | AUTENTICADO | inventario.py |
 | `/api/maestro-mps/<codigo>/stock-minimo` | PUT | ADMIN | inventario.py |

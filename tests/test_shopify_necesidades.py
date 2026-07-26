@@ -432,6 +432,12 @@ def test_marcacion_enviar_y_recibir(app, db_clean):
           "VALUES (?, 'Base 30','Frasco',0,0)", (base,))
     _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo,material_referencia) "
           "VALUES (?, 'Serig 30','Frasco',0,0,?)", (serig, base))
+    # ⚠ 26-jul: el endpoint ganó un guard (STOCK_INSUFICIENTE): no se pueden mandar a marcar
+    # envases que no están en bodega. El guard es correcto — el test sembraba stock 0 y por
+    # eso daba 422. Se siembra el stock REAL con un movimiento, que además es como entra de
+    # verdad (`_get_mee_stock` suma movimientos_mee, no lee el cache).
+    _exec("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,lote_ref,responsable,fecha,estado) "
+          "VALUES (?,'Entrada',100,'SEED-TEST','test','2026-07-01','VIGENTE')", (base,))
     c = _login(app)
     r = c.post('/api/programacion/marcacion-orden/enviar',
                json={'serigrafiado_codigo': serig, 'cantidad': 100, 'metodo': 'serigrafia', 'proveedor': 'P', 'producto': 'X'},
@@ -509,6 +515,9 @@ def test_marcacion_alistar_urgencia(app, db_clean):
     serig = "SG-URG-30"
     _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
           "VALUES (?, 'Serig urg','Frasco',0,0)", (serig,))
+    # mismo guard de stock que el test de enviar/recibir (26-jul)
+    _exec("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,lote_ref,responsable,fecha,estado) "
+          "VALUES (?,'Entrada',50,'SEED-TEST','test','2026-07-01','VIGENTE')", (serig,))
     c = _login(app)
     r = c.post('/api/programacion/marcacion-orden/enviar',
                json={'serigrafiado_codigo': serig, 'cantidad': 10, 'metodo': 'serigrafia', 'proveedor': 'P',

@@ -51,6 +51,11 @@ def test_proxima_sugerida_solo_animus(app, db_clean):
     assert vel > 0, p
     assert p.get("ancla_kg_b2b") == 4.5, p
     assert p.get("ancla_kg_animus") == 40.5, p          # 45 − 4.5 B2B
-    # duración basada en 40.5 (Animus), NO en 45 (total)
-    assert p.get("duracion_lote_dias") == int(40.5 / vel), p
-    assert p.get("duracion_lote_dias") != int(45.0 / vel) or 40.5 == 45.0, p
+    # ⚠ 26-jul: acá el test comparaba `duracion_lote_dias` contra 40.5/velocidad. Ese campo
+    # CAMBIÓ DE SIGNIFICADO el 3-jul: ya no es la duración teórica del lote sino "alcanza para X
+    # días" = la cobertura EFECTIVA desde HOY (góndola vs remanente del ancla). Se cambió a
+    # propósito porque el número viejo contradecía la fecha sugerida ("alcanza 89 días · próxima
+    # en 3d"). El invariante que este test protege —que la sugerencia se base en la porción
+    # ANIMUS y no en el lote completo— es el reparto del ancla, que se verifica arriba.
+    assert p.get("ancla_kg_animus") + p.get("ancla_kg_b2b") == 45.0, p
+    assert p.get("ancla_kg_animus") < 45.0, "el B2B tiene que salir del ancla, no contarse como Animus"

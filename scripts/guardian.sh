@@ -63,6 +63,7 @@ CORAZON=(
   "tests/test_mbr_instructivo_llega_al_piso.py"
   "tests/test_revincular_mbr.py"
   "tests/test_auto_asignar_operarios_audita.py"
+  "tests/test_facturas_proveedor_rol.py"
   "tests/test_legajo_trazabilidad_responsables.py"
   "tests/test_inci_ambiguos.py"
   "tests/test_cron_mee_cuarentena.py"
@@ -108,7 +109,27 @@ elif [ "$MODE" = "--full" ] || [ "$MODE" = "full" ]; then
     "tests/test_compras_smoke.py::test_all_pages_js_parses_with_node"
     "tests/test_compras_smoke.py::test_compras_no_orphan_fetch_urls"
     "tests/test_compras_3fuentes.py"
+    # 26-jul · los 16 que el barrido nocturno encontró EN ROJO fuera del gate. Ninguno era
+    # regresión: 3 usaban a un usuario dado de baja, 2 buscaban JS que se movió a un archivo
+    # externo, 3 esperaban comportamientos que una decisión posterior cambió, 1 tenía fechas
+    # hardcodeadas que envejecieron, 1 no controlaba su universo y 1 destapó un bug real
+    # (LIMIT 1 sin ORDER BY en "Supervisado por"). Entran acá para que su rojo vuelva a verse.
+    "tests/test_fabricacion_cuenta_en_plan.py"
+    "tests/test_financiero_mom_12.py"
+    "tests/test_lotes_retenido.py"
+    "tests/test_marketing_smoke.py"
+    "tests/test_ordenes_unificadas.py"
+    "tests/test_planta_audit.py"
+    "tests/test_planta_extension.py"
     "tests/test_producciones_faltantes.py"
+    "tests/test_proyeccion_2anios.py"
+    "tests/test_rbac_negative.py"
+    "tests/test_reportes_invima.py"
+    "tests/test_revisar_minimos_planta.py"
+    "tests/test_shopify_necesidades.py"
+    "tests/test_solicitar_lote_bodega.py"
+    "tests/test_sugerencia_solo_animus.py"
+    "tests/test_trail_explosion.py"
   )
 else
   # Quick mode (default · el que corre el hook pre-push).

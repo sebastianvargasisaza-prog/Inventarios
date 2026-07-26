@@ -13,13 +13,17 @@ Cubre:
   - Refactor: _compute_audit_minimos() helper compartido funciona desde
     ambos endpoints (admin y planta) con misma logica
 """
+# ⚠ 26-jul: estos tests logueaban como "luis", que fue dado de BAJA (mig 375 lo
+# desactivó en users_passwords, por eso su login devuelve 200 y no 302). Un test que
+# hardcodea una persona se rompe cuando esa persona se va. "mayerlin" es operaria de
+# planta ACTIVA con el mismo perfil (no admin, no calidad), que es lo que el test necesita.
 import os
 import sqlite3
 
 from .conftest import TEST_PASSWORD, csrf_headers
 
 
-def _login(app, user="luis"):
+def _login(app, user="mayerlin"):
     c = app.test_client()
     r = c.post("/login", data={"username": user, "password": TEST_PASSWORD},
                headers=csrf_headers(), follow_redirects=False)
@@ -29,7 +33,7 @@ def _login(app, user="luis"):
 
 def test_planta_auditar_minimos_accesible_a_operario(app, db_clean):
     """Endpoint /api/planta/auditar-minimos accesible para Luis (operario)."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     r = cs.get('/api/planta/auditar-minimos')
     assert r.status_code == 200, r.data
     d = r.get_json()
@@ -46,7 +50,7 @@ def test_planta_auditar_minimos_sin_login_401(app, db_clean):
 
 def test_planta_auditar_minimos_horizonte_clamp(app, db_clean):
     """proyeccion_dias debe clampear entre 30-180."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     r = cs.get('/api/planta/auditar-minimos?proyeccion_dias=500')
     d = r.get_json()
     assert d['horizonte_proyeccion_dias'] == 180  # clamped to max
@@ -56,7 +60,7 @@ def test_planta_auditar_minimos_horizonte_clamp(app, db_clean):
 
 
 def test_planta_auditar_minimos_stats_estructura_correcta(app, db_clean):
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     r = cs.get('/api/planta/auditar-minimos?proyeccion_dias=90')
     d = r.get_json()
     stats = d['stats']
@@ -71,7 +75,7 @@ def test_planta_auditar_minimos_stats_estructura_correcta(app, db_clean):
 def test_admin_auditar_minimos_misma_logica_que_planta(app, db_clean):
     """Refactor verificación: ambos endpoints retornan misma estructura."""
     cs_admin = _login(app, 'sebastian')
-    cs_op = _login(app, 'luis')
+    cs_op = _login(app, 'mayerlin')
     r_admin = cs_admin.get('/api/admin/auditar-minimos?proyeccion_dias=60')
     r_op = cs_op.get('/api/planta/auditar-minimos?proyeccion_dias=60')
     assert r_admin.status_code == 200
@@ -84,7 +88,7 @@ def test_admin_auditar_minimos_misma_logica_que_planta(app, db_clean):
 
 
 def test_dashboard_html_expone_boton_revisar_minimos(app, db_clean):
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     # El JS del dashboard va en archivos servidos aparte (cacheables): combinar.
     body = (cs.get('/inventarios').get_data(as_text=True)
             + cs.get('/planta-core.js').get_data(as_text=True)
@@ -104,7 +108,7 @@ def test_dashboard_html_expone_boton_revisar_minimos(app, db_clean):
 
 def test_aplicar_minimos_solo_admin(app, db_clean):
     """Luis (no admin) NO puede aplicar · debe recibir 403."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     r = cs.post('/api/admin/aplicar-minimos',
                 json={'token': 'APLICAR_MINIMOS_RECALCULADOS_2026',
                       'proyeccion_dias': 90},

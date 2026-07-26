@@ -335,8 +335,14 @@ def test_mover_recalcula_cadena(app, db_clean):
     nueva = ((_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date() - _dt.timedelta(days=10)).isoformat()
     c = app.test_client()
     c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    # ⚠ 26-jul: el test asumía que mover un lote SIEMPRE re-espacia la cadena. Desde el 25-jul
+    # eso es OPT-IN (`reprogramar_cadena`): Sebastián lo pidió porque el efecto correcto depende
+    # del MOTIVO — si movés porque no llegó la MP, los siguientes también se corren; si movés
+    # para adelantar algo puntual, no. El default es mover SOLO ese lote. El código está bien;
+    # el test tiene que pedir explícitamente que corra la cadena.
     r = c.post('/api/plan/proximas/' + str(primero) + '/reprogramar',
-               json={'nueva_fecha': nueva, 'skip_validacion_dia': True}, headers=csrf_headers())
+               json={'nueva_fecha': nueva, 'skip_validacion_dia': True,
+                     'reprogramar_cadena': True}, headers=csrf_headers())
     assert r.status_code == 200, r.data[:200]
     conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
     try:

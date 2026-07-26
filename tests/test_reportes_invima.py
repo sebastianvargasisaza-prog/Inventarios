@@ -197,7 +197,11 @@ def test_audit_trail_csv_user_no_calidad_403(app, db_clean):
 
 def test_reportes_ui_pestana_y_handlers(app, db_clean):
     """La página /aseguramiento incluye la pestaña Reportes INVIMA + handlers JS."""
-    c = _login(app, "laura")
+    # ⚠ 26-jul: el test entraba como "laura" (Control de Calidad). Desde la división de cargos
+    # del 14-jun el módulo /aseguramiento es de MIGUEL (Aseguramiento de la Calidad) y a laura
+    # se le sirve la pantalla de "sin acceso" con 200. El código está bien; la expectativa era
+    # de antes de la división.
+    c = _login(app, "miguel")
     r = c.get("/aseguramiento")
     assert r.status_code == 200
     body = r.get_data(as_text=True)

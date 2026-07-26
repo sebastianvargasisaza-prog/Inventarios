@@ -10,13 +10,17 @@ Endpoints cubiertos:
 Reusa toda la infraestructura existente (formulas, sku_mee_config,
 maestro_mee, mp_lead_time_config) sin migraciones.
 """
+# ⚠ 26-jul: estos tests logueaban como "luis", que fue dado de BAJA (mig 375 lo
+# desactivó en users_passwords, por eso su login devuelve 200 y no 302). Un test que
+# hardcodea una persona se rompe cuando esa persona se va. "mayerlin" es operaria de
+# planta ACTIVA con el mismo perfil (no admin, no calidad), que es lo que el test necesita.
 import os
 import sqlite3
 
 from .conftest import TEST_PASSWORD, csrf_headers
 
 
-def _login(app, user="luis"):
+def _login(app, user="mayerlin"):
     c = app.test_client()
     r = c.post("/login", data={"username": user, "password": TEST_PASSWORD},
                headers=csrf_headers(), follow_redirects=False)
@@ -230,7 +234,7 @@ def _cleanup(productos=None, mps=None, mees=None, prod_ids=None):
 
 
 def test_producciones_faltantes_listado_basico(app, db_clean):
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-PF-1', 'Glicerina PF', 1000, 'ProvA')  # Stock 1kg
     _seed_mp_y_stock('MP-PF-2', 'Agua PF', 100000, 'ProvB')      # Stock 100kg
     _seed_formula('PROD-PF-1', [
@@ -268,7 +272,7 @@ def test_producciones_faltantes_descontadas_aparecen_marcadas(app, db_clean):
     Una descontada sin fin_real_at = en_proceso (sigue activa en planta).
     Crítico: aunque visibles, NO suman a faltantes_mps (ya descontaron).
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-DESC-1', 'X', 100)  # solo 100g · si en_proceso
                                               # contara, faltarían 4900g
     _seed_formula('PROD-DESC', [('MP-DESC-1', 'X', 5000)], lote_size_kg=5)
@@ -294,7 +298,7 @@ def test_producciones_faltantes_descontadas_aparecen_marcadas(app, db_clean):
 
 
 def test_producciones_faltantes_excluye_canceladas(app, db_clean):
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_formula('PROD-CAN', [('MP-CAN', 'X', 1000)], lote_size_kg=1)
     pid = _seed_produccion('PROD-CAN', lotes=1, cantidad_kg=1)
     conn = sqlite3.connect(os.environ["DB_PATH"])
@@ -310,7 +314,7 @@ def test_producciones_faltantes_excluye_canceladas(app, db_clean):
 
 
 def test_producciones_faltantes_horizonte_filtra_lejanas(app, db_clean):
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_formula('PROD-LEJ', [('MP-LEJ', 'X', 1000)], lote_size_kg=1)
     pid = _seed_produccion('PROD-LEJ', lotes=1, cantidad_kg=1, fecha_offset_dias=200)
     try:
@@ -328,7 +332,7 @@ def test_producciones_faltantes_horizonte_filtra_lejanas(app, db_clean):
 
 def test_producciones_faltantes_mees_calculados_desde_volumen(app, db_clean):
     """Volumen 30ml, producción 3kg = 3000g ≈ 3000ml = 100 unidades → 100 frascos."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-MEE-1', 'X', 100000)  # MP suficiente
     _seed_formula('PROD-MEE', [('MP-MEE-1', 'X', 3000)], lote_size_kg=3)
     _seed_mee_y_stock('MEE-FRASCO', 'Frasco 30ml', 50, 'ProvFrasco')  # 50 stock
@@ -358,7 +362,7 @@ def test_producciones_faltantes_sin_login_401(client):
 
 
 def test_producciones_faltantes_horizonte_clamp(app, db_clean):
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     r = cs.get('/api/programacion/producciones-faltantes?dias=999')
     d = r.get_json()
     assert d['horizonte_dias'] == 365
@@ -462,7 +466,7 @@ def test_solicitar_bulk_sin_login_401(client):
 def test_solicitar_bulk_luis_jefe_produccion_puede(app, db_clean):
     """Luis (jefe de producción) ESTA en COMPRAS_USERS · puede solicitar
     porque ese es el use case · este endpoint es PARA él."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-LUIS-OK', 'X', 100, proveedor='ProvX')
     _seed_formula('PROD-LUIS', [('MP-LUIS-OK', 'X', 5000)], lote_size_kg=5)
     pid = _seed_produccion('PROD-LUIS', lotes=1, cantidad_kg=5)
@@ -560,7 +564,7 @@ def test_realizadas_aparecen_en_panel(app, db_clean):
     aparecer en el panel para visibilidad. Antes el filtro las escondía y
     parecía que se habían perdido.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_formula('PROD-RESC-DONE', [('MP-RESC-D', 'X', 1000)], lote_size_kg=1)
     pid_real = _seed_produccion_realizada('PROD-RESC-DONE',
                                             fecha_offset_dias=-3, lotes=2,
@@ -585,7 +589,7 @@ def test_realizadas_no_inflan_mp_faltantes(app, db_clean):
     faltantes — sus MPs ya se descontaron del stock. Si las contáramos otra
     vez, infláriamos la lista de compras y se ordenaría stock duplicado.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-NOINFLA', 'X', 5000, 'ProvX')   # 5kg en stock
     _seed_formula('PROD-NOINFLA', [('MP-NOINFLA', 'X', 5000)], lote_size_kg=5)
     # Realizada (no debe contar) + pendiente futura (sí cuenta)
@@ -613,7 +617,7 @@ def test_en_proceso_aparece_y_no_infla_mp(app, db_clean):
     """Producción que arrancó (inicio_real_at + descontada) pero no terminó:
     visible con estado_display='en_proceso' y NO suma a faltantes.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-PROC', 'X', 5000)
     _seed_formula('PROD-PROC', [('MP-PROC', 'X', 5000)], lote_size_kg=5)
     pid = _seed_produccion_en_proceso('PROD-PROC',
@@ -637,7 +641,7 @@ def test_atrasada_aparece_y_si_infla_mp(app, db_clean):
     """Producción cuya fecha pasó pero NUNCA arrancó: 'atrasada'. Sigue
     requiriendo MPs porque no ha consumido stock todavía.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-ATR', 'X', 0)  # sin stock
     _seed_formula('PROD-ATR', [('MP-ATR', 'X', 1000)], lote_size_kg=1)
     pid = _seed_produccion('PROD-ATR', lotes=1, cantidad_kg=1,
@@ -662,7 +666,7 @@ def test_canceladas_siguen_ocultas(app, db_clean):
     """Las cancelaciones SIGUEN siendo ruido — no deben aparecer en el panel
     ni siquiera con la nueva visibilidad de realizadas/atrasadas.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_formula('PROD-CANC', [('MP-CC', 'X', 1000)], lote_size_kg=1)
     pid = _seed_produccion('PROD-CANC', lotes=1, cantidad_kg=1)
     conn = sqlite3.connect(os.environ['DB_PATH'])
@@ -682,7 +686,7 @@ def test_realizada_no_clona_con_pendiente_misma_kg(app, db_clean):
     se marcaban como CLONES. Eso es falso positivo — la realizada es historia,
     no clon de la próxima.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_formula('PROD-NOCLON', [('MP-NC', 'X', 1000)], lote_size_kg=1)
     pid_done = _seed_produccion_realizada('PROD-NOCLON',
                                             fecha_offset_dias=-2, lotes=1,
@@ -702,7 +706,7 @@ def test_realizada_no_clona_con_pendiente_misma_kg(app, db_clean):
 
 
 def test_dashboard_html_expone_vista_simple(app, db_clean):
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     # El JS del dashboard se sirve en archivos cacheables aparte: combinar los 3.
     body = (cs.get('/inventarios').get_data(as_text=True)
             + cs.get('/planta-core.js').get_data(as_text=True)
@@ -736,7 +740,7 @@ def test_producciones_agrupadas_consolida_misma_producto(app, db_clean):
     """Un producto con 2 fechas debe aparecer UNA vez en producciones_agrupadas
     con todas sus fechas listadas y total_kg sumado.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-AGR-1', 'X', 100000)
     _seed_formula('PROD-AGR', [('MP-AGR-1', 'X', 5000)], lote_size_kg=5)
     pid_a = _seed_produccion('PROD-AGR', lotes=1, cantidad_kg=5,
@@ -764,7 +768,7 @@ def test_duplicado_sospechoso_marca_clones_dentro_de_7_dias(app, db_clean):
     """Misma producción (mismo producto + lotes + kg) en fechas dentro de 7d
     → flag duplicado_sospechoso=True.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_formula('PROD-DUP', [('MP-DUP', 'X', 1000)], lote_size_kg=1)
     pid_a = _seed_produccion('PROD-DUP', lotes=1, cantidad_kg=1,
                               fecha_offset_dias=2)
@@ -795,7 +799,7 @@ def test_fechas_distintas_misma_semana_no_se_colapsan(app, db_clean):
     lunes 18). Cada fecha con kg/lotes distintos. La respuesta debe preservar
     las 3 fechas separadas.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-MW-1', 'X', 100000)
     _seed_formula('PROD-MULTIWEEK', [('MP-MW-1', 'X', 1000)], lote_size_kg=10)
     pid_1 = _seed_produccion('PROD-MULTIWEEK', lotes=2, cantidad_kg=20,
@@ -843,7 +847,7 @@ def test_fechas_no_se_marcan_clones_si_separadas_mas_de_7_dias(app, db_clean):
     'mismo producto + mismos lotes/kg DENTRO de 7 dias' — exactamente 7 entra
     al límite, pero el caso real son lunes consecutivos de cadencia distinta.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_formula('PROD-MONDAYS', [('MP-MN-1', 'X', 500)], lote_size_kg=5)
     # 4 fechas separadas por > 7 días cada una (offset 1, 9, 17, 25)
     pids = []
@@ -868,7 +872,7 @@ def test_fechas_no_se_marcan_clones_si_separadas_mas_de_7_dias(app, db_clean):
 
 def test_duplicado_no_marca_si_distintos_lotes(app, db_clean):
     """Mismo producto con DISTINTOS lotes/kg no debe marcar como clon."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_formula('PROD-NODUP', [('MP-ND', 'X', 1000)], lote_size_kg=1)
     pid_a = _seed_produccion('PROD-NODUP', lotes=1, cantidad_kg=1,
                               fecha_offset_dias=2)
@@ -1032,7 +1036,7 @@ def test_atrasadas_viejas_pendientes_se_ocultan_por_default(app, db_clean):
     """Una pendiente de hace 30 días sin arrancar NO debe aparecer en
     la vista por default (atrasadas_max_dias=7). Es basura visual.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-VJ', 'X', 0)
     _seed_formula('PROD-VIEJA', [('MP-VJ', 'X', 1000)], lote_size_kg=1)
     pid = _seed_produccion('PROD-VIEJA', lotes=1, cantidad_kg=1,
@@ -1059,7 +1063,7 @@ def test_atrasadas_viejas_visible_si_pasa_param(app, db_clean):
     """Si el frontend pasa ?atrasadas_max_dias=999 (toggle 'Mostrar
     atrasadas viejas'), las producciones viejas SÍ aparecen.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-VS', 'X', 0)
     _seed_formula('PROD-VS', [('MP-VS', 'X', 1000)], lote_size_kg=1)
     pid = _seed_produccion('PROD-VS', lotes=1, cantidad_kg=1,
@@ -1086,7 +1090,7 @@ def test_realizadas_pasadas_siempre_visibles(app, db_clean):
     Nota: se marca como `en_proceso` (arrancó/descontó pero sin fin_real_at).
     Para `realizada=True` necesita fin_real_at o estado=completado.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-RP', 'X', 0)
     _seed_formula('PROD-REAL', [('MP-RP', 'X', 1000)], lote_size_kg=1)
     pid = _seed_produccion('PROD-REAL', lotes=1, cantidad_kg=1,
@@ -1116,7 +1120,7 @@ def test_atrasadas_recientes_dentro_threshold_aparecen(app, db_clean):
     """Una pendiente de hace 3 días (dentro del threshold 7d default)
     SÍ aparece como atrasada. No es basura vieja, todavía puede hacerse.
     """
-    cs = _login(app, 'luis')
+    cs = _login(app, 'mayerlin')
     _seed_mp_y_stock('MP-AR', 'X', 0)
     _seed_formula('PROD-AR', [('MP-AR', 'X', 1000)], lote_size_kg=1)
     pid = _seed_produccion('PROD-AR', lotes=1, cantidad_kg=1,

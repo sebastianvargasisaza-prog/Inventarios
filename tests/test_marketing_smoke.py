@@ -338,6 +338,12 @@ def test_atribucion_influencers_endpoint(app, db_clean):
     db_path = os.environ.get("DB_PATH")
     assert db_path
     conn = sqlite3.connect(db_path)
+    # ⚠ 26-jul: las fechas estaban HARDCODEADAS en abril-2026. El endpoint mira los últimos
+    # 90 días, así que el test se volvió rojo solo por el paso del tiempo — el código estaba
+    # sano. Es el patrón "test date-frágil": la fecha va RELATIVA a hoy, nunca fija.
+    from datetime import datetime as _dtm, timedelta as _tdm
+    _d1 = (_dtm.now() - _tdm(days=10)).strftime("%Y-%m-%d")
+    _d2 = (_dtm.now() - _tdm(days=9)).strftime("%Y-%m-%d")
     # Insertar 1 influencer con code y 2 órdenes que lo usan
     conn.execute("""INSERT INTO marketing_influencers
         (nombre, red_social, estado, discount_code) VALUES (?,?,?,?)""",
@@ -347,13 +353,13 @@ def test_atribucion_influencers_endpoint(app, db_clean):
          creado_en, discount_codes, subtotal, total_descuentos)
         VALUES (?,?,?,?,?,?,?,?,?,?)""",
         ("9001", "#9001", "a@b.com", 100000, "[]", 1,
-         "2026-04-20", "ANIMUS_TEST10", 110000, 10000))
+         _d1, "ANIMUS_TEST10", 110000, 10000))
     conn.execute("""INSERT INTO animus_shopify_orders
         (shopify_id, nombre, email, total, sku_items, unidades_total,
          creado_en, discount_codes, subtotal, total_descuentos)
         VALUES (?,?,?,?,?,?,?,?,?,?)""",
         ("9002", "#9002", "c@d.com", 200000, "[]", 2,
-         "2026-04-21", "OTRO,ANIMUS_TEST10", 220000, 20000))
+         _d2, "OTRO,ANIMUS_TEST10", 220000, 20000))
     conn.commit()
     conn.close()
 

@@ -3262,15 +3262,24 @@ def ebr_vista_completa(ebr_id):
                     out['header']['operario'] = ', '.join(_partes) + f' ({op})'
         # Supervisado por = Jefe de Producción (fases productivas).
         sup = ''
+        # FIX 26-jul · `LIMIT 1` sin `ORDER BY` devuelve una fila ARBITRARIA (y en PostgreSQL,
+        # distinta entre corridas). Si hay más de un registro con cargo de jefe de producción y
+        # el que sale primero no tiene `nombre_completo`, el batch record imprime "Supervisado
+        # por: Jefe de Producción" — el CARGO sin la PERSONA, que en un documento regulado no
+        # sirve como firma. Se prefiere explícitamente el que TIENE nombre y se desempata por
+        # username para que sea determinista.
         jp = conn.execute(
             "SELECT COALESCE(nombre_completo,''), COALESCE(cargo,'') FROM usuarios_identidad "
-            "WHERE LOWER(cargo) LIKE '%jefe%produc%' AND COALESCE(activo,1)=1 LIMIT 1").fetchone()
+            "WHERE LOWER(cargo) LIKE '%jefe%produc%' AND COALESCE(activo,1)=1 "
+            "ORDER BY CASE WHEN COALESCE(nombre_completo,'')<>'' THEN 0 ELSE 1 END, username "
+            "LIMIT 1").fetchone()
         if jp and (jp[0] or jp[1]):
             sup = ((jp[0] + ', ') if jp[0] else '') + (jp[1] or 'Jefe de Producción')
         else:
             jo = conn.execute(
                 "SELECT nombre, COALESCE(apellido,'') FROM operarios_planta "
-                "WHERE COALESCE(es_jefe_produccion,0)=1 LIMIT 1").fetchone()
+                "WHERE COALESCE(es_jefe_produccion,0)=1 "
+                "ORDER BY CASE WHEN COALESCE(nombre,'')<>'' THEN 0 ELSE 1 END, id LIMIT 1").fetchone()
             if jo:
                 sup = (str(jo[0] or '') + ' ' + str(jo[1] or '')).strip() + ', Jefe de Producción'
         out['header']['supervisado_por'] = sup

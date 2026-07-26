@@ -91,7 +91,19 @@ def test_retenido_case_insensitive(app, db_clean):
 
 
 def test_retenido_seccion_en_tab_cuarentena(app, db_clean):
+    """La tabla vive en el HTML y el fetch puede vivir en el JS EXTERNO.
+
+    ⚠ 26-jul: el test exigía encontrar el `fetch` dentro del HTML. Desde la optimización del
+    26-jun el segundo bloque grande de JS se sirve como archivo externo cacheable
+    (`/planta-app.js`), así que el fetch ya no está en el body — y el test daba rojo con el
+    código sano. Ahora acepta cualquiera de los dos lugares: lo que importa es que la página
+    CARGUE el endpoint, no en qué archivo esté la línea.
+    """
     c = _login(app)
     body = c.get('/inventarios').data.decode('utf-8', 'replace')
     assert 'ret-tbody' in body, "el tab debe tener la tabla de retenido"
-    assert "fetch('/api/lotes/retenido')" in body, "debe cargar el endpoint de retenido"
+    # El JS del dashboard se sirve en DOS archivos externos desde la optimización de junio.
+    js = (c.get('/planta-core.js').data.decode('utf-8', 'replace')
+          + c.get('/planta-app.js').data.decode('utf-8', 'replace'))
+    assert "fetch('/api/lotes/retenido')" in body or "fetch('/api/lotes/retenido')" in js, (
+        "la página debe cargar el endpoint de retenido (inline o desde el JS externo)")

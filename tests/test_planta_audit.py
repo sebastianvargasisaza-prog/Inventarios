@@ -8,6 +8,9 @@ Verifica audit_log para:
 
 INVIMA Resolución 2214/2021 art. 10: liberación de PT documentada.
 """
+# ⚠ 26-jul: este archivo logueaba como "luis", que fue dado de BAJA (mig 375 lo
+# desactivó en users_passwords). Un test que hardcodea una persona se rompe cuando esa
+# persona se va. Se usa "mayerlin", operaria de planta activa, con el mismo perfil.
 import os
 import sqlite3
 
@@ -38,7 +41,7 @@ def _last_audit(accion=None):
 
 def test_aprobar_lote_user_no_calidad_403(app, db_clean):
     """Solo Calidad/Admin puede aprobar lote (no luis · operario)."""
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/recepcion/aprobar-lote",
                json={"mov_id": 1, "estado": "Aprobado"},
                headers=csrf_headers())
@@ -162,7 +165,7 @@ def test_terminar_produccion_audita(app, db_clean):
 # ─── Liberación PT (decisión INVIMA crítica) ─────────────────────────
 
 def test_liberacion_disposicion_user_no_calidad_403(app, db_clean):
-    c = _login(app, "luis")  # luis no es Calidad
+    c = _login(app, "mayerlin")  # luis no es Calidad
     r = c.post("/api/planta/cola-liberacion/1/disposicion",
                json={"disposicion": "aprobado"},
                headers=csrf_headers())

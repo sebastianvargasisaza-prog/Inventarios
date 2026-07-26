@@ -18,7 +18,10 @@ def _login(app, user="luis"):
 
 def test_maestro_mps_supports_tipo_material(app, db_clean):
     """POST /api/maestro-mps acepta tipo_material y lo guarda."""
-    c = _login(app, "luis")  # planta puede crear MPs
+    # ⚠ 26-jul: usaba "luis", que fue dado de BAJA (mig 375 lo desactivó en users_passwords).
+    # Un test que hardcodea una persona se rompe cuando esa persona se va. "mayerlin" es
+    # operaria de planta activa, mismo perfil.
+    c = _login(app, "mayerlin")  # planta puede crear MPs
     r = c.post("/api/maestro-mps",
                json={"codigo_mp": "ENV001", "nombre_inci": "frasco vidrio",
                      "nombre_comercial": "Frasco 30ml",

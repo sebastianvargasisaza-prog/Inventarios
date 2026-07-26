@@ -30,6 +30,8 @@ GATES = [
     (r'_require_admin\(\)|ADMIN_USERS\b(?!.*\|)', 'ADMIN', 'solo Sebastián y Alejandro'),
     (r'gate_ver_formulas|_puede_ver_formulas', 'FÓRMULAS (INVIMA)', 'Técnica ∪ Calidad ∪ Aseguramiento ∪ Dirección'),
     (r'_require_qa_or_admin', 'CALIDAD+ADMIN', 'Control de Calidad o Dirección'),
+    (r'_require_qc\(', 'CALIDAD (QC)', 'Control de Calidad + backup DT/Aseguramiento + Admin'),
+    (r'_require_authorize_oc', 'AUTORIZA OC', 'Compras con límite · contadora bloqueada (SoD)'),
     (r'_require_brd_ejecutor', 'EJECUTOR DE LOTE', 'Planta ∪ Calidad ∪ Admin'),
     (r'_autorizados_equipos|ASEGURAMIENTO_USERS', 'ASEGURAMIENTO', 'Miguel + Calidad + Admin'),
     (r'CALIDAD_USERS', 'CALIDAD', 'Laura, Yulieth + Admin'),
@@ -93,6 +95,13 @@ def _detectar(cuerpo):
     return '?', 'no pude detectarlo · revisar a mano'
 
 
+def _tiene_gate_por_campo(cuerpo):
+    """Algunos endpoints dejan pasar a cualquiera pero gatean CAMPO por campo (ej. editar un
+    influencer: los datos bancarios exigen admin+contadora, el resto no). Marcarlos como
+    "sólo login" es un falso positivo, y un mapa con falsos positivos deja de mirarse (M97)."""
+    return bool(re.search(r'CAMPOS_BANCARIOS|CONTADORA_USERS|ADMIN_USERS', cuerpo))
+
+
 def main():
     from index import app
     fuentes = _fuentes()
@@ -124,14 +133,16 @@ def main():
                     etiqueta, quien = '⚠ SIN GATE', 'NADIE la protege · revisar YA'
         muta = bool({'POST', 'PUT', 'PATCH', 'DELETE'} & set(metodos))
         filas.append({'ruta': ruta, 'metodos': ','.join(metodos), 'gate': etiqueta,
-                      'quien': quien, 'archivo': archivo, 'muta': muta})
+                      'quien': quien, 'archivo': archivo, 'muta': muta,
+                      'gate_campo': etiqueta == 'AUTENTICADO' and _tiene_gate_por_campo(cuerpo)})
     filas.sort(key=lambda f: (f['archivo'], f['ruta']))
 
     por_gate = defaultdict(int)
     for f in filas:
         por_gate[f['gate']] += 1
     # Lo que más importa de un mapa de permisos: qué MUTA y no sabemos quién puede.
-    sospechosas = [f for f in filas if f['muta'] and f['gate'] in ('AUTENTICADO', '?')]
+    sospechosas = [f for f in filas if f['muta'] and f['gate'] in ('AUTENTICADO', '?')
+                   and not f.get('gate_campo')]
     abiertas = [f for f in filas if f['gate'] == '⚠ SIN GATE']
 
     out = [

@@ -2219,9 +2219,17 @@ def fp_listar():
 
 @bp.route('/api/compras/facturas-proveedor', methods=['POST'])
 def fp_crear():
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autenticado'}), 401
-    user = session.get('compras_user', '')
+    # FIX 26-jul · crear una factura de proveedor es una operación de Compras/Finanzas y sólo exigía
+    # estar LOGUEADO: cualquier usuario del sistema (planta, marketing, calidad, RRHH) podía
+    # hacerlo. Su hermano `pagar_oc` sí pide rol desde el 21-may — la asimetría es justo el
+    # patrón M45: cuando se endurece un guard de dinero, uno de los pagadores hermanos queda
+    # sin endurecer. `fp_pagar` además recalcula el estado de la OC, o sea que mueve el mismo
+    # dinero. Gate = COMPRAS_ACCESS | ADMIN, que es exactamente quien hace este trabajo
+    # (Catalina, Mayra + dirección); la contadora SÍ entra porque registrar pagos es su tarea
+    # (autorizar OCs sigue siendo otra cosa, con su propio gate más estricto).
+    user, err, code = _require_compras_write()
+    if err:
+        return err, code
     d = request.get_json(silent=True) or {}
     numero = (d.get('numero_factura') or '').strip()
     proveedor = (d.get('proveedor') or '').strip()
@@ -2342,9 +2350,17 @@ def fp_pdf(fid):
 
 @bp.route('/api/compras/facturas-proveedor/<int:fid>', methods=['PATCH'])
 def fp_editar(fid):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autenticado'}), 401
-    user = session.get('compras_user', '')
+    # FIX 26-jul · editar una factura de proveedor es una operación de Compras/Finanzas y sólo exigía
+    # estar LOGUEADO: cualquier usuario del sistema (planta, marketing, calidad, RRHH) podía
+    # hacerlo. Su hermano `pagar_oc` sí pide rol desde el 21-may — la asimetría es justo el
+    # patrón M45: cuando se endurece un guard de dinero, uno de los pagadores hermanos queda
+    # sin endurecer. `fp_pagar` además recalcula el estado de la OC, o sea que mueve el mismo
+    # dinero. Gate = COMPRAS_ACCESS | ADMIN, que es exactamente quien hace este trabajo
+    # (Catalina, Mayra + dirección); la contadora SÍ entra porque registrar pagos es su tarea
+    # (autorizar OCs sigue siendo otra cosa, con su propio gate más estricto).
+    user, err, code = _require_compras_write()
+    if err:
+        return err, code
     d = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
     r = c.execute("SELECT estado FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()
@@ -2386,9 +2402,17 @@ def fp_pagar(fid):
     """Registra un pago CONTRA la factura (pagos_oc.factura_proveedor_id=fid) y
     recalcula el estado. El link es factura_proveedor_id (NO numero_factura_proveedor,
     que es UNIQUE y bloquearía pagos parciales de la misma factura)."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autenticado'}), 401
-    user = session.get('compras_user', '')
+    # FIX 26-jul · registrar un pago a un proveedor es una operación de Compras/Finanzas y sólo exigía
+    # estar LOGUEADO: cualquier usuario del sistema (planta, marketing, calidad, RRHH) podía
+    # hacerlo. Su hermano `pagar_oc` sí pide rol desde el 21-may — la asimetría es justo el
+    # patrón M45: cuando se endurece un guard de dinero, uno de los pagadores hermanos queda
+    # sin endurecer. `fp_pagar` además recalcula el estado de la OC, o sea que mueve el mismo
+    # dinero. Gate = COMPRAS_ACCESS | ADMIN, que es exactamente quien hace este trabajo
+    # (Catalina, Mayra + dirección); la contadora SÍ entra porque registrar pagos es su tarea
+    # (autorizar OCs sigue siendo otra cosa, con su propio gate más estricto).
+    user, err, code = _require_compras_write()
+    if err:
+        return err, code
     d = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
     f = c.execute("SELECT numero_oc, total, estado, numero_factura "

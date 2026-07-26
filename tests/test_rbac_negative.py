@@ -4,6 +4,10 @@ Verifica que los endpoints sensibles RECHAZAN (403) cuando el user logueado
 no tiene el rol requerido. Antes los audits encontraron varios endpoints
 que solo verificaban session pero no rol.
 """
+# ⚠ 26-jul: estos tests logueaban como "luis", que fue dado de BAJA (mig 375 lo
+# desactivó en users_passwords, por eso su login devuelve 200 y no 302). Un test que
+# hardcodea una persona se rompe cuando esa persona se va. "mayerlin" es operaria de
+# planta ACTIVA con el mismo perfil (no admin, no calidad), que es lo que el test necesita.
 import os
 import sqlite3
 
@@ -21,7 +25,7 @@ def _login(app, user):
 # ─── Calidad: POST endpoints requieren CALIDAD_USERS ───────────────────
 
 def test_calidad_post_specs_user_no_calidad_403(app, db_clean):
-    c = _login(app, "luis")  # luis no es calidad
+    c = _login(app, "mayerlin")  # mayerlin no es calidad
     r = c.post("/api/calidad/especificaciones",
                json={"codigo_mp": "MP-001", "parametro": "pH"},
                headers=csrf_headers())
@@ -29,7 +33,7 @@ def test_calidad_post_specs_user_no_calidad_403(app, db_clean):
 
 
 def test_calidad_post_coa_user_no_calidad_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/calidad/coa",
                json={"lote": "L1", "codigo_mp": "MP-001",
                      "parametro": "pH", "valor_obtenido": "7.0"},
@@ -38,7 +42,7 @@ def test_calidad_post_coa_user_no_calidad_403(app, db_clean):
 
 
 def test_calidad_post_agua_user_no_calidad_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/calidad/agua/registros",
                json={"punto_muestreo": "tanque-1", "ph": 7.0},
                headers=csrf_headers())
@@ -46,7 +50,7 @@ def test_calidad_post_agua_user_no_calidad_403(app, db_clean):
 
 
 def test_calidad_post_nc_user_no_calidad_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/calidad/no-conformidades",
                json={"descripcion": "Test sin permiso", "tipo": "Proceso"},
                headers=csrf_headers())
@@ -55,7 +59,7 @@ def test_calidad_post_nc_user_no_calidad_403(app, db_clean):
 
 def test_calidad_post_capa_user_no_calidad_403(app, db_clean):
     """POST CAPA · audit zero-error 2-may-2026 (cierre Calidad)."""
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/calidad/capa",
                json={"nc_id": 1, "tipo": "correctiva",
                      "descripcion": "Test sin permiso CAPA"},
@@ -64,7 +68,7 @@ def test_calidad_post_capa_user_no_calidad_403(app, db_clean):
 
 
 def test_calidad_patch_capa_user_no_calidad_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.patch("/api/calidad/capa/9999",
                 json={"estado": "Verificada"},
                 headers=csrf_headers())
@@ -72,7 +76,7 @@ def test_calidad_patch_capa_user_no_calidad_403(app, db_clean):
 
 
 def test_calidad_post_auditorias_user_no_calidad_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/calidad/auditorias",
                json={"tipo": "interna", "ente_auditado": "Producción"},
                headers=csrf_headers())
@@ -80,7 +84,7 @@ def test_calidad_post_auditorias_user_no_calidad_403(app, db_clean):
 
 
 def test_calidad_post_estabilidades_user_no_calidad_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/calidad/estabilidades",
                json={"producto": "P", "lote_piloto": "L1",
                      "condicion": "30C/65HR", "tiempo_dias": 30,
@@ -92,7 +96,7 @@ def test_calidad_post_estabilidades_user_no_calidad_403(app, db_clean):
 # ─── Compliance: POST endpoints requieren responsables BPM ─────────────
 
 def test_compliance_post_capa_user_no_responsable_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/compliance/capa",
                json={"titulo": "Test sin permiso BPM",
                      "tipo": "desviacion", "severidad": "media"},
@@ -101,7 +105,7 @@ def test_compliance_post_capa_user_no_responsable_403(app, db_clean):
 
 
 def test_compliance_post_hallazgo_user_no_responsable_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/compliance/hallazgos",
                json={"titulo": "Test sin permiso BPM",
                      "origen": "BPM_interna"},
@@ -110,7 +114,7 @@ def test_compliance_post_hallazgo_user_no_responsable_403(app, db_clean):
 
 
 def test_compliance_cumplir_cronograma_user_no_responsable_403(app, db_clean):
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     # ej_id arbitrario · solo nos importa el 403 antes del lookup
     r = c.post("/api/compliance/ejecuciones/999/cumplir",
                json={"observaciones": "test"},
@@ -168,7 +172,7 @@ def test_clientes_endpoint_sin_login_401(client, db_clean):
 
 def test_aseguramiento_triaje_user_no_calidad_403(app, db_clean):
     """luis (no Calidad) no puede triar quejas."""
-    luis = _login(app, "luis")
+    luis = _login(app, "mayerlin")
     # Crear queja primero (cualquier user puede)
     r = luis.post("/api/aseguramiento/quejas",
                    json={"cliente_nombre": "Test",
@@ -190,7 +194,7 @@ def test_aseguramiento_triaje_user_no_calidad_403(app, db_clean):
 
 def test_aseguramiento_recall_iniciar_user_no_calidad_403(app, db_clean):
     """luis no puede iniciar recall (decisión grave)."""
-    c = _login(app, "luis")
+    c = _login(app, "mayerlin")
     r = c.post("/api/aseguramiento/recalls",
                json={"producto": "PROD", "lotes_afectados": "L1",
                      "motivo": "Test sin permiso para iniciar recall"},

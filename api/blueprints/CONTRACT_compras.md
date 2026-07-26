@@ -275,3 +275,20 @@ transaccional (1:1). NO materializar stock con cache persistente (drift · prohi
 - **Habeas Data (Ley 1581)**: `por-pagar` y `ocs-consolidado-excel` devolvían banco, tipo y
   número de cuenta y NIT en claro a cualquier usuario logueado (`compras_user` = "inició
   sesión", NO un rol). Enmascarados a `***` salvo admin + contadora, como los hermanos.
+
+## 💵 El libro de facturas de proveedor exige rol de Compras (26-jul)
+
+`pagar_oc` pide rol desde el 21-may (`_require_authorize_oc`, con SoD que bloquea a la contadora
+para AUTORIZAR). Sus hermanos del libro de facturas —`fp_crear`, `fp_editar` y **`fp_pagar`**—
+sólo exigían estar logueado: **cualquier usuario del sistema** (planta, marketing, calidad, RRHH)
+podía crear una factura de proveedor o registrar un pago contra ella. Y `fp_pagar` recalcula el
+estado de la OC, así que mueve el mismo dinero.
+
+Es el patrón M45: cuando se endurece un guard de dinero, uno de los pagadores hermanos se queda
+sin endurecer. (Ya había pasado con el over-payment race AR/AP el 16-jun.)
+
+**Gate = `_require_compras_write()`** (COMPRAS_ACCESS | ADMIN → Catalina, Mayra, Alejandro,
+Sebastián). La contadora **sí** entra: REGISTRAR un pago es su trabajo; lo que sigue vedado para
+ella es AUTORIZAR una OC, que tiene su propio gate más estricto. Test:
+`tests/test_facturas_proveedor_rol.py` (verifica las dos direcciones: quien no tiene rol recibe
+403 y quien hace el trabajo sigue pudiendo).

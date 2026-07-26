@@ -102,19 +102,33 @@ def test_mirror_cierra_pendiente_en_vez_de_duplicar(app, db_clean):
 
 
 def test_cerrar_pendientes_ya_producidos(app, db_clean):
-    """Un pendiente cuyo mismo (producto, fecha) ya tiene un completado → se cancela."""
+    """Un pendiente AUTO cuyo mismo (producto, fecha) ya tiene un completado → se cancela.
+
+    ⚠ ACTUALIZADO 26-jul: este test seguía esperando que se cancelara un lote con
+    `origen='eos_plan'` (FIJO). El 25-jul se excluyó `eos_plan` de este cron A PROPÓSITO: estaba
+    cancelando la 2ª tanda deliberada del usuario (programás dos lotes de 20 kg el mismo día, la
+    planta produce uno, y a la madrugada el otro desaparece) y encima Abastecimiento dejaba de
+    contar sus 20 kg → sub-compra silenciosa. El código está bien; la expectativa era vieja.
+    Ahora el test fija la regla REAL: lo AUTO se cierra, lo que el usuario FIJÓ nunca se toca.
+    """
     _api()
     from blueprints.plan import _cerrar_pendientes_ya_producidos
     from database import get_db
     conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
     conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,fin_real_at,inicio_real_at) "
                   "VALUES (?,?,?,?,?,1,?,?)", ('GEL DUP', '2026-06-04', 'completado', 'eos_retroactivo', 45, '2026-06-04', '2026-06-04'))
+    # pendiente AUTO del mismo día → redundante, se cierra
+    conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                  "VALUES (?,?,?,?,?,1)", ('GEL DUP', '2026-06-04', 'programado', 'auto_plan', 45))
+    auto = conn0.execute("SELECT id FROM produccion_programada WHERE producto='GEL DUP' AND origen='auto_plan'").fetchone()[0]
+    # 2ª tanda FIJA del MISMO día → intocable (regla dura #3)
     conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
                   "VALUES (?,?,?,?,?,1)", ('GEL DUP', '2026-06-04', 'programado', 'eos_plan', 45))
-    pend = conn0.execute("SELECT id FROM produccion_programada WHERE producto='GEL DUP' AND estado='programado'").fetchone()[0]
+    fijo = conn0.execute("SELECT id FROM produccion_programada WHERE producto='GEL DUP' AND origen='eos_plan' "
+                         "AND substr(fecha_programada,1,10)='2026-06-04'").fetchone()[0]
     # un pendiente FUTURO de otro día NO debe tocarse
     conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
-                  "VALUES (?,?,?,?,?,1)", ('GEL DUP', '2026-07-04', 'pendiente', 'eos_plan', 45))
+                  "VALUES (?,?,?,?,?,1)", ('GEL DUP', '2026-07-04', 'pendiente', 'auto_plan', 45))
     otro = conn0.execute("SELECT id FROM produccion_programada WHERE producto='GEL DUP' AND substr(fecha_programada,1,10)='2026-07-04'").fetchone()[0]
     conn0.commit(); conn0.close()
     with app.app_context():
@@ -122,7 +136,8 @@ def test_cerrar_pendientes_ya_producidos(app, db_clean):
         cerrados = _cerrar_pendientes_ya_producidos(conn, usuario='test')
         assert cerrados >= 1
     conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
-    assert conn0.execute("SELECT estado FROM produccion_programada WHERE id=?", (pend,)).fetchone()[0] == 'cancelado'
+    assert conn0.execute("SELECT estado FROM produccion_programada WHERE id=?", (auto,)).fetchone()[0] == 'cancelado'
+    assert conn0.execute("SELECT estado FROM produccion_programada WHERE id=?", (fijo,)).fetchone()[0] == 'programado',         'lo que el usuario FIJÓ no lo cancela ningún automático'
     assert conn0.execute("SELECT estado FROM produccion_programada WHERE id=?", (otro,)).fetchone()[0] == 'pendiente'
     conn0.close()
 

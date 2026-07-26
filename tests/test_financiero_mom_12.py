@@ -105,9 +105,15 @@ def test_mom_12_stats_mejor_peor_promedio(app, db_clean):
     p_a = meses_endpoint[-3]["periodo"]
     p_b = meses_endpoint[-2]["periodo"]
 
+    # ⚠ 26-jul: el test limpiaba SÓLO p_a y p_b, así que el "peor mes" podía ser cualquier otro
+    # de los 12 que trajera datos del seed — y lo era (2026-04). El endpoint estaba bien: elegía
+    # correctamente el peor margen de la ventana. El que fallaba era el test, por no controlar su
+    # universo. Ahora limpia los 12 meses de la ventana antes de sembrar.
+    todos = [m["periodo"] for m in meses_endpoint]
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM flujo_ingresos WHERE periodo IN (?,?)", (p_a, p_b))
-    conn.execute("DELETE FROM flujo_egresos WHERE periodo IN (?,?)", (p_a, p_b))
+    _ph = ",".join("?" * len(todos))
+    conn.execute("DELETE FROM flujo_ingresos WHERE periodo IN (%s)" % _ph, todos)
+    conn.execute("DELETE FROM flujo_egresos WHERE periodo IN (%s)" % _ph, todos)
     # p_a: margen alto (10M ingreso, 1M egreso = 9M margen)
     conn.execute("""INSERT INTO flujo_ingresos (fecha, periodo, monto, concepto)
                     VALUES (date('now'), ?, 10000000, 'Mejor mes')""", (p_a,))
@@ -130,8 +136,8 @@ def test_mom_12_stats_mejor_peor_promedio(app, db_clean):
         assert "margen_promedio" in stats
     finally:
         conn = sqlite3.connect(os.environ["DB_PATH"])
-        conn.execute("DELETE FROM flujo_ingresos WHERE periodo IN (?,?)", (p_a, p_b))
-        conn.execute("DELETE FROM flujo_egresos WHERE periodo IN (?,?)", (p_a, p_b))
+        conn.execute("DELETE FROM flujo_ingresos WHERE periodo IN (%s)" % _ph, todos)
+        conn.execute("DELETE FROM flujo_egresos WHERE periodo IN (%s)" % _ph, todos)
         conn.commit(); conn.close()
 
 

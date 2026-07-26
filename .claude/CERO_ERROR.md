@@ -1054,6 +1054,31 @@ vacío.
   legajo roto era de ENVASADO. **Cuando verifiques el efecto de una acción, asegurate de que la
   fuente que consultás incluya el universo que tocaste.**
 
+## 🔦 M102 · Barrido de los 395 archivos de test, uno por uno · 26-jul
+
+Corrí la suite COMPLETA **archivo por archivo** (en un solo proceso cascadea y miente · M97).
+**12 archivos estaban en ROJO y nadie podía saberlo**, porque el gate corre golden + corazón.
+Ninguno era regresión: los 12 fallaban igual con el código de la semana pasada. El reparto,
+que vale como mapa de dónde se pudre un test:
+
+| Causa | Cuántos | Qué hacer |
+|---|---|---|
+| Loguean como una persona **dada de baja** (`luis`, mig 375) | 5 | no hardcodear personas: usar un usuario del PERFIL que el test necesita |
+| Buscan JS **en el HTML** y el JS se movió a archivo externo (`/planta-core.js`, `/planta-app.js`) | 2 | aceptar los dos lugares: importa que la página CARGUE el endpoint, no en qué archivo está |
+| Esperan un comportamiento que una **decisión posterior** cambió | 3 | arreglar el TEST y dejar escrito por qué (nunca deformar el código) |
+| **Fechas hardcodeadas** que envejecieron fuera de la ventana del endpoint | 1 | fecha SIEMPRE relativa a hoy |
+| **No controla su universo** (siembra 2 meses, el endpoint mira 12) | 1 | limpiar TODO el universo que el endpoint observa, no sólo lo que sembrás |
+
+Y **1 destapó un bug real**: `SELECT ... WHERE cargo LIKE '%jefe%produc%' LIMIT 1` **sin
+`ORDER BY`** devolvía una fila arbitraria, y podía elegir una SIN `nombre_completo` sobre otra
+que sí lo tenía → el batch record imprimía *"Supervisado por: Jefe de Producción"*, el CARGO sin
+la PERSONA, que como firma en un documento regulado no sirve. **Regla: `LIMIT 1` sin `ORDER BY`
+es no determinista (y en PostgreSQL cambia entre corridas); si además puede haber filas
+incompletas, ordená para preferir la completa.**
+
+Los 12 entraron al modo `--full` del guardián: un test que no corre en ningún gate no protege
+nada, y esa es exactamente la razón por la que llevaban tanto tiempo rojos sin que se notara.
+
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 
 Cosas que una auditoría marca como "inconsistencia" y NO lo son. Verificar acá antes de reportar:
