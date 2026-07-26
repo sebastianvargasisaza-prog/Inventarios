@@ -134,7 +134,8 @@
   --cx-success-pale: #052e16;
   --cx-warn-pale:    #451a03;
   --cx-danger-pale:  #450a0a;
-  --cx-info-pale:    #1e3a8a;
+  --cx-info-pale:    #172554;   /* 26-jul: era #1e3a8a, el unico pale que no se oscurecio como sus
+                                   hermanos (#1e1b4b/#052e16/#450a0a) → el chip azul daba 4,07:1 */
   /* Texto semántico ACLARADO para el fondo oscuro (los rellenos NO se tocan, así el texto
      blanco sobre un botón sigue leyéndose). Medido sobre #0f172a y #1e293b. */
   --cx-primary-text: #a78bfa;

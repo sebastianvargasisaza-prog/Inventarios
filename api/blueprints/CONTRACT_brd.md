@@ -266,6 +266,28 @@ concurrentes dejaban el EBR 'rechazado' con el PT ya promovido a VIGENTE
   idempotencia). test_golden_envasado_hook_crea_legajo_of adaptado a
   COALESCE(lote_codigo,lote). Suite golden 247/247 verde.
 
+### 2026-07-26 · `ordenes-unificadas` enriquece las órdenes CON legajo (solo lectura)
+
+Sebastián, mirando la lista de Envasado: *"¿es premium? ¿qué hay para mejorar acá?"*. La lista
+decía QUÉ órdenes hay (n°, producto, lote, estado) pero nunca CÓMO van, así que para saber si una
+orden iba a la mitad, cuántos frascos salían o hacía cuántos días estaba parada había que abrir
+los legajos uno por uno.
+
+Cada orden con `ebr_id` ahora trae, además de lo anterior:
+`pasos_total` · `pasos_hechos` · `avance_pct` (de `ebr_pasos_ejecutados`),
+`presentaciones` [{etiqueta, volumen_ml, unidades}] y `unidades_total` (de
+`ebr_envasado_unidades`, solo envasado/acondicionamiento), y `dias` (edad, anclada a Colombia).
+El `resumen` suma `abiertas`, `atrasadas` (abiertas con 3 días o más) y `unidades_total`.
+
+**INVARIANTE · se calcula con consultas AGREGADAS, nunca una por fila.** Son 2 queries con
+`IN (...)` + `GROUP BY` para toda la lista. Si alguien mueve esto a un endpoint por orden, la
+vista vuelve a ser N+1 fetch desde una lista, que es exactamente lo que satura los 3 workers y
+deja la pantalla en "Cargando" (M43/M59/M86). Lo protege
+`tests/test_envasado_lista_premium.py::test_la_lista_sigue_siendo_UNA_sola_consulta_por_pantalla`.
+
+Sigue siendo **solo lectura**: no escribe nada. El resto de campos no cambió (los consumidores
+existentes no se tocan).
+
 ### 2026-05-30 · Fase 2 · IPC fuera de spec → desviación/CAPA automática (mig 203)
 - `reportar_ipc_resultado`: si conforme=0, abre desviación automática vía
   `aseguramiento.crear_desviacion_auto` (tipo proceso, lotes_afectados=lote EBR,

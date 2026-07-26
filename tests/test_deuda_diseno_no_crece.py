@@ -34,13 +34,20 @@ TEMPLATES = os.path.join(RAIZ, 'api', 'templates_py')
 # tras migrar 9.685 declaraciones a tokens: dashboard 3.116 · total  5.934
 # tras devolver a literal los 1.107 `color:#fff` (texto blanco sobre un relleno de color: NO
 # depende del tema, mandarlo a --cx-card lo volvía oscuro sobre oscuro en el tema oscuro):
-TECHO_COLORES_DASHBOARD = 3578
+#                                           dashboard 3.578 · total  6.748
+# y con la MEDICIÓN corregida (sin entidades HTML de iconos, sin el blanco de texto legítimo):
+TECHO_COLORES_DASHBOARD = 2509
 TECHO_DISPLAY_NONE_DASHBOARD = 201
-TECHO_COLORES_TOTAL = 6748   # los 42 templates juntos
+TECHO_COLORES_TOTAL = 5024   # los 42 templates juntos
 TECHO_FONDO_OPACO = 0        # un fondo opaco sin token IGNORA el tema oscuro · debe quedar en 0
 TECHO_TEXTO_PALABRA = 28     # `color:gray|black|red…` · el blanco no cuenta (ver abajo)
 
-_HEX = re.compile(r'#[0-9a-fA-F]{3,8}\b')
+# `(?<!&)` deja fuera las ENTIDADES HTML: `&#9888;` (⚠) y `&#128203;` (📋) matcheaban como si
+# fueran colores y le sumaban ruido al conteo. Un trinquete que cuenta iconos como deuda mide mal.
+_HEX = re.compile(r'(?<!&)#[0-9a-fA-F]{3,8}\b')
+# `color:#fff` NO es deuda: el texto blanco sobre un relleno de color es correcto y no depende del
+# tema (por eso 1.107 volvieron a literal). Se descuenta para que el techo mida deuda de verdad.
+_BLANCO_TEXTO = re.compile(r'(?<![-\w])color\s*:\s*#(?:fff|ffffff)\b', re.I)
 _NONE = re.compile(r'display\s*:\s*none')
 
 # El primer trinquete sólo contaba HEX y se le escapaban 617 colores escritos de otra forma:
@@ -62,7 +69,8 @@ def _leer(nombre):
 
 
 def _contar_colores(s):
-    return len(_HEX.findall(s))
+    """Colores hardcodeados que SON deuda: sin entidades HTML y sin el blanco de texto legítimo."""
+    return len(_HEX.findall(s)) - len(_BLANCO_TEXTO.findall(s))
 
 
 def test_el_dashboard_no_agrega_colores_hardcodeados():
@@ -187,6 +195,30 @@ def test_los_tokens_de_texto_pasan_AA_en_los_dos_temas():
     assert not fallos, ('estos tokens de texto no llegan a AA (4,5:1):\n  ' +
                         '\n  '.join(fallos) +
                         '\nOscurecé el valor del tema claro o aclará el del oscuro.')
+
+
+def test_los_chips_se_leen_sobre_su_propio_fondo_palido():
+    """El hueco que dejé en la primera versión de este test: sólo medí el texto contra el FONDO y
+    la TARJETA, y los chips de estado ponen texto semántico sobre el pálido del MISMO color
+    (`--cx-info-text` sobre `--cx-info-pale`). Al mirar la lista de Envasado en oscuro, el chip
+    'ENVASANDO' daba 4,07:1 porque `--cx-info-pale` era el único pálido que no se había oscurecido
+    como sus hermanos. Un par que nadie mide es un par que se degrada."""
+    css = io.open(os.path.join(RAIZ, 'api', 'static', 'cortex.css'), encoding='utf-8').read()
+    i = css.find('[data-theme="dark"]')
+    claro, oscuro = _tokens(css[:i]), _tokens(css[i:])
+    fallos = []
+    for base in ('primary', 'success', 'danger', 'info', 'warn'):
+        for tema, tabla in (('claro', claro), ('oscuro', oscuro)):
+            txt = tabla.get('--cx-%s-text' % base) or claro.get('--cx-%s-text' % base)
+            pale = tabla.get('--cx-%s-pale' % base) or claro.get('--cx-%s-pale' % base)
+            assert txt and pale, 'faltan tokens de %s' % base
+            r = _contraste(txt, pale)
+            if r < 4.5:
+                fallos.append('--cx-%s-text sobre --cx-%s-pale (%s): %s sobre %s -> %.2f:1'
+                              % (base, base, tema, txt, pale, r))
+    assert not fallos, ('estos chips no se leen:\n  ' + '\n  '.join(fallos) +
+                        '\nEn tema oscuro el pale tiene que ser OSCURO de verdad (mirá que '
+                        '--cx-primary-pale es #1e1b4b, no un tono medio).')
 
 
 def test_el_texto_blanco_sobre_los_rellenos_se_sigue_leyendo():

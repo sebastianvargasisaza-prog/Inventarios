@@ -10764,6 +10764,101 @@ function cargarOrdenesAcondicionamiento(){
 // ENVASADO 26-jun (Sebastián) · loader LIMPIO de la pestaña Envasado: solo legajos de envasado
 // HABILITADOS (ebr_ejecuciones fase='envasado' · se crean cuando Calidad LIBERA el granel · Fase 2).
 // Espeja cargarEnCurso de Fabricación · abre el legajo en el MISMO runner role-aware (abrirEBR).
+// ENVASADO · lista premium (26-jul) · Sebastián: "¿es premium? ¿qué hay para mejorar acá?".
+// Antes era una tabla de 5 columnas (n°, producto, lote, estado, botón): decía QUÉ órdenes hay,
+// nunca CÓMO van. Ahora cada fila responde lo que el jefe de planta necesita sin abrir el legajo:
+// cuánto avanzó, cuántos frascos de cada presentación salen, quién la tiene y hace cuántos días.
+// Todo viene ya calculado del endpoint (una sola llamada · nada de un fetch por fila · M43/M59).
+function envasadoChipEstado(est){
+  var e=(est||'').toLowerCase();
+  if(e.indexOf('proceso')>=0||e.indexOf('curso')>=0||e.indexOf('iniciad')>=0)
+    return {t:'ENVASANDO', f:'var(--cx-info-text)', b:'var(--cx-info-pale)'};
+  if(e.indexOf('liberad')>=0||e.indexOf('complet')>=0||e.indexOf('cerrad')>=0)
+    return {t:'CERRADA', f:'var(--cx-success-text)', b:'var(--cx-success-pale)'};
+  if(e.indexOf('rechaz')>=0)
+    return {t:'RECHAZADA', f:'var(--cx-danger-text)', b:'var(--cx-danger-pale)'};
+  if(e.indexOf('revis')>=0||e.indexOf('qc')>=0)
+    return {t:'EN REVISIÓN QC', f:'var(--cx-warn-text)', b:'var(--cx-warn-pale)'};
+  return {t:(est||'PENDIENTE').toUpperCase(), f:'var(--cx-text-mute)', b:'var(--cx-border-soft)'};
+}
+function envasadoKpi(rot, val, tok){
+  return '<div style="flex:1;min-width:150px;background:var(--cx-card);border:1px solid var(--cx-border);'
+    +'border-left:3px solid var('+tok+');border-radius:10px;padding:12px 14px">'
+    +'<div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--cx-text-mute);'
+    +'text-transform:uppercase">'+rot+'</div>'
+    +'<div style="font-size:26px;font-weight:800;color:var('+tok+'-text);font-variant-numeric:tabular-nums;'
+    +'line-height:1.15">'+(val===null||val===undefined?'-':val)+'</div></div>';
+}
+function envasadoRenderLista(items, res){
+  var h='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">';
+  h+=envasadoKpi('Órdenes abiertas', res.abiertas, '--cx-primary');
+  h+=envasadoKpi('3 días o más sin cerrar', res.atrasadas, '--cx-danger');
+  h+=envasadoKpi('Unidades envasadas', (res.unidades_total||0).toLocaleString('es-CO'), '--cx-success');
+  h+='</div>';
+  items.forEach(function(o){
+    var c=envasadoChipEstado(o.estado);
+    // La EDAD es el dato que hace visible una orden parada. Antes había que deducirla de la fecha.
+    // text-mute, no text-faint: faint es decorativo y sobre la tarjeta oscura daba 3,07:1
+    var dias=o.dias, dtxt='', dcol='var(--cx-text-mute)';
+    if(dias!==null&&dias!==undefined){
+      dtxt=(dias===0?'hoy':(dias===1?'hace 1 día':'hace '+dias+' días'));
+      if(dias>=6) dcol='var(--cx-danger-text)'; else if(dias>=3) dcol='var(--cx-warn-text)';
+    }
+    var cerrada=(c.t==='CERRADA'||c.t==='RECHAZADA');
+    h+='<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;'
+      +'padding:14px 16px;margin-bottom:10px;box-shadow:var(--cx-sh-card)">';
+    // línea 1: identidad + estado + edad
+    h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<span style="font-family:ui-monospace,monospace;font-size:12px;font-weight:700;'
+      +'color:var(--cx-text-mute)">'+_escHTML(o.numero_op||('EBR-'+o.ebr_id))+'</span>'
+      +'<span style="font-size:15px;font-weight:700;color:var(--cx-text)">'+_escHTML(o.producto||'')+'</span>'
+      +'<span style="background:'+c.b+';color:'+c.f+';font-size:10px;font-weight:800;letter-spacing:.05em;'
+      +'padding:3px 9px;border-radius:999px">'+c.t+'</span>'
+      +'<span style="margin-left:auto;font-size:12px;font-weight:600;color:'+dcol+'">'+dtxt+'</span></div>';
+    // línea 2: lote + granel + avance de pasos
+    h+='<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:7px;font-size:12px;'
+      +'color:var(--cx-text-soft)">';
+    if(o.lote_bulk) h+='<span>Lote <b style="font-family:ui-monospace,monospace">'+_escHTML(o.lote_bulk)+'</b></span>';
+    if(o.teorica_g) h+='<span>'+Math.round(o.teorica_g).toLocaleString('es-CO')+' g de granel</span>';
+    if(o.pasos_total){
+      var pct=o.avance_pct||0;
+      h+='<span style="display:flex;align-items:center;gap:7px">'
+        +'<span style="width:78px;height:6px;background:var(--cx-border-soft);border-radius:999px;'
+        +'overflow:hidden;display:inline-block"><span style="display:block;height:100%;width:'+pct+'%;'
+        +'background:var(--cx-primary);border-radius:999px"></span></span>'
+        +'<b style="font-variant-numeric:tabular-nums">'+o.pasos_hechos+'/'+o.pasos_total+'</b> pasos</span>';
+    }
+    h+='</div>';
+    // línea 3: el desglose de presentaciones · era lo que obligaba a abrir el legajo
+    if(o.presentaciones&&o.presentaciones.length){
+      h+='<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">';
+      o.presentaciones.forEach(function(p){
+        h+='<span style="background:var(--cx-primary-pale);color:var(--cx-primary-text);font-size:12px;'
+          +'font-weight:700;padding:4px 10px;border-radius:8px;font-variant-numeric:tabular-nums">'
+          +p.unidades.toLocaleString('es-CO')+' &times; '+(p.volumen_ml||0)+' ml</span>';
+      });
+      if(o.unidades_total)
+        h+='<span style="font-size:12px;color:var(--cx-text-mute);align-self:center">= '
+          +o.unidades_total.toLocaleString('es-CO')+' unidades</span>';
+      h+='</div>';
+    } else if(!cerrada){
+      h+='<div style="margin-top:9px;font-size:12px;color:var(--cx-warn-text)">'
+        +'&#9888; Sin unidades registradas todavía</div>';
+    }
+    // acciones
+    h+='<div style="display:flex;gap:8px;margin-top:11px">'
+      +'<button onclick="abrirEBR('+o.ebr_id+',&#39;envasado-runner&#39;)" '
+      +'style="background:var(--cx-primary-grad);color:#fff;border:none;border-radius:7px;'
+      +'padding:7px 15px;font-size:12px;font-weight:700;cursor:pointer">&#128203; Abrir legajo</button>';
+    if(o.lote_bulk)
+      h+='<button onclick="verLoteFases(encodeURIComponent(&#39;'+_escHTML(o.lote_bulk)+'&#39;))" '
+        +'style="background:var(--cx-card);color:var(--cx-primary-text);border:1px solid var(--cx-border);'
+        +'border-radius:7px;padding:7px 15px;font-size:12px;font-weight:700;cursor:pointer">'
+        +'&#128279; Ver lote completo</button>';
+    h+='</div></div>';
+  });
+  return h;
+}
 async function cargarEnvasadoRunner(){
   var wrap=document.getElementById('envasado-lista');
   if(!wrap) return;
@@ -10777,12 +10872,7 @@ async function cargarEnvasadoRunner(){
       wrap.innerHTML='<div style="color:var(--cx-text-mute);padding:16px;text-align:center;font-size:13px">Sin órdenes de envasado todav&iacute;a.<br>Cuando Calidad <b>libera</b> el granel de un lote, su Orden de Envasado aparece ac&aacute; autom&aacute;ticamente.</div>';
       return;
     }
-    var h='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--cx-primary-pale);color:var(--cx-primary-text)"><th style="text-align:left;padding:8px">N&deg; orden</th><th style="text-align:left;padding:8px">Producto</th><th style="text-align:left;padding:8px">Lote</th><th style="text-align:left;padding:8px">Estado</th><th style="padding:8px">Legajo</th></tr></thead><tbody>';
-    items.forEach(function(o){
-      h+='<tr style="border-bottom:1px solid var(--cx-border-soft)"><td style="padding:8px">'+(o.numero_op||('EBR-'+o.ebr_id))+'</td><td style="padding:8px">'+(o.producto||'')+'</td><td style="padding:8px;font-family:monospace;font-size:11px">'+(o.lote_bulk||'')+'</td><td style="padding:8px">'+(o.estado||'')+'</td><td style="padding:8px;text-align:center"><button onclick="abrirEBR('+o.ebr_id+',&#39;envasado-runner&#39;)" style="background:var(--cx-primary);color:#fff;border:none;border-radius:5px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer">&#128203; Pasos</button></td></tr>';
-    });
-    h+='</tbody></table></div>';
-    wrap.innerHTML=h;
+    wrap.innerHTML=envasadoRenderLista(items, d.resumen||{});
   }catch(e){ wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:10px">Error cargando &oacute;rdenes de envasado.</div>'; }
 }
 // ENVASADO Fase 3 (26-jun) · sección de presentaciones en el runner: unidades por presentación + cerrar/descontar.

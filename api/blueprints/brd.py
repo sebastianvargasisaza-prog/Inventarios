@@ -7944,14 +7944,75 @@ def ordenes_unificadas():
             "produccion_id": _pid,
             "operador": _v['operador'],
         })
+    # 3) ENRIQUECER las órdenes con legajo · avance, presentaciones, quién y hace cuánto (26-jul).
+    # Sebastián, mirando la lista de Envasado: "¿es premium? ¿qué hay para mejorar acá?". La lista
+    # mostraba número, producto, lote y estado — nada de lo que hace falta para DECIDIR: cuánto
+    # lleva la orden, cuántos frascos de cada presentación salen, quién la tiene, hace cuántos días.
+    # Se calcula acá y NO en el navegador: pedir el detalle por fila serían N fetch desde una vista
+    # de lista, que es exactamente lo que satura los 3 workers y deja la pantalla en "Cargando" (M43
+    # /M59/M86). Son 2 consultas AGREGADAS para toda la lista, no una por orden.
+    _ids = [i["ebr_id"] for i in items if i.get("ebr_id")]
+    if _ids:
+        _ph = ",".join("?" for _ in _ids)
+        _avance, _pres = {}, {}
+        try:
+            for r in conn.execute(
+                "SELECT ebr_id, COUNT(*) AS n, "
+                "SUM(CASE WHEN LOWER(COALESCE(estado,''))='completado' THEN 1 ELSE 0 END) AS hechos "
+                "FROM ebr_pasos_ejecutados WHERE ebr_id IN (%s) GROUP BY ebr_id" % _ph,
+                _ids).fetchall():
+                _avance[r[0]] = (int(r[1] or 0), int(r[2] or 0))
+        except Exception as _e:
+            log.warning("ordenes-unificadas avance de pasos fallo: %s", _e)
+        if fase in ("envasado", "acondicionamiento"):
+            try:
+                for r in conn.execute(
+                    "SELECT ebr_id, COALESCE(etiqueta,''), COALESCE(volumen_ml,0), "
+                    "COALESCE(unidades,0) FROM ebr_envasado_unidades WHERE ebr_id IN (%s) "
+                    "ORDER BY volumen_ml DESC" % _ph, _ids).fetchall():
+                    if (r[3] or 0) > 0:
+                        _pres.setdefault(r[0], []).append({
+                            "etiqueta": r[1], "volumen_ml": float(r[2] or 0),
+                            "unidades": int(r[3] or 0)})
+            except Exception as _e:
+                log.warning("ordenes-unificadas presentaciones fallo: %s", _e)
+        # import local: este archivo no importa datetime a nivel de módulo (cada función lo hace)
+        from datetime import date as _dfecha, datetime as _dnow, timedelta as _dtd
+        _hoy = (_dnow.utcnow() - _dtd(hours=5)).date()  # ancla Colombia, nunca UTC crudo (M24)
+        for it in items:
+            eid = it.get("ebr_id")
+            if not eid:
+                continue
+            tot, hechos = _avance.get(eid, (0, 0))
+            it["pasos_total"] = tot
+            it["pasos_hechos"] = hechos
+            it["avance_pct"] = (round(100.0 * hechos / tot) if tot else None)
+            it["presentaciones"] = _pres.get(eid, [])
+            it["unidades_total"] = sum(p["unidades"] for p in _pres.get(eid, []))
+            # Edad en días: una orden de envasado parada 6 días es el dato que hace falta ver de
+            # un vistazo, y hoy había que abrir el legajo para deducirlo de la fecha.
+            it["dias"] = None
+            f = (it.get("fecha") or "").strip()
+            if len(f) >= 10:
+                try:
+                    it["dias"] = (_hoy - _dfecha.fromisoformat(f[:10])).days
+                except ValueError:
+                    pass
+
     # orden: en-curso PRIMERO, luego por fecha desc (sort estable)
     items.sort(key=lambda x: (x.get("fecha") or ""), reverse=True)
     items.sort(key=lambda x: 0 if (x.get("estado") or "").lower().startswith("en proceso") else 1)
+    _abiertas = [i for i in items if not (i.get("estado") or "").lower().startswith(
+        ("complet", "liberad", "cerrad", "rechaz"))]
     resumen = {
         "total": len(items),
         "legajos": sum(1 for i in items if i["origen"] == "legajo"),
         "simples": sum(1 for i in items if i["origen"] in ("simple", "en_proceso")),
         "en_proceso": sum(1 for i in items if i.get("produccion_id")),
+        "abiertas": len(_abiertas),
+        # Lo que de verdad pide una acción: órdenes abiertas que llevan 3 días o más sin cerrar.
+        "atrasadas": sum(1 for i in _abiertas if (i.get("dias") or 0) >= 3),
+        "unidades_total": sum(int(i.get("unidades_total") or 0) for i in items),
     }
     return jsonify({"ok": True, "fase": fase, "resumen": resumen, "ordenes": items})
 
