@@ -329,3 +329,27 @@ llegaba al piso. Tres causas independientes:
 texto de un MBR ya aprobado exige obsoletar + versión nueva, nunca un UPDATE.
 
 Tests: `tests/test_mbr_instructivo_llega_al_piso.py`, `tests/test_revincular_mbr.py` (en el gate).
+
+## 🧩 El instructivo se carga POR FASE (26-jul)
+
+Sebastián: *"tenemos envasado de emulsiones, limpiadores, sueros…"* → hace falta instructivo de
+**envasado** y de **acondicionamiento** por producto, no sólo el de fabricación.
+
+`POST /api/brd/mbr/cargar-instructivo` acepta `fase` (`fabricacion` default · `envasado` ·
+`acondicionamiento`), validada contra `_FASES_VALIDAS`. Dos bugs que tenía y **los dos eran
+silenciosos** — habrían hecho que el operario leyera los pasos equivocados sin un solo error:
+
+1. escribía **siempre** `fase='fabricacion'` hardcodeado → un instructivo de envasado entraba como
+   pasos de MEZCLA y corrompía la receta del producto;
+2. al reemplazar en un borrador borraba **TODOS** los pasos del MBR → cargar envasado **borraba**
+   el instructivo de fabricación del mismo borrador.
+
+Ahora: borra/reemplaza **sólo la fase que se carga** (comparando con `_fase_canonica`, porque la
+fase se guarda con etiquetas distintas según quién la escribió), el `orden` arranca después de lo
+que ya hay para no chocar entre fases, y **al versionar un MBR aprobado la v+1 copia las fases que
+NO se cargaron** — si no, aprobar el instructivo de envasado dejaría al producto sin instructivo de
+mezcla. Tests: `tests/test_instructivo_por_fase.py` (en el gate · verificados 3 corridas en PG).
+
+⚠ Los pasos genéricos de envasado (5) y acondicionamiento (3) que siembra
+`_generar_mbr_desde_formula` son iguales para TODO producto. Sirven de esqueleto; el instructivo
+real por producto (o por familia) entra por este endpoint.

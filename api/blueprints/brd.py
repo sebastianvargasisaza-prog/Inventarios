@@ -880,6 +880,20 @@ def cargar_instructivo_mbr():
     pasos = [str(p).strip() for p in pasos if str(p or "").strip()][:80]
     if not producto_in or not pasos:
         return jsonify({"error": "producto y pasos requeridos"}), 400
+    # FASE del instructivo (26-jul · Sebastián: "tenemos envasado de emulsiones, limpiadores,
+    # sueros..."). Antes esto escribía SIEMPRE `fase='fabricacion'` hardcodeado: cargar un
+    # instructivo de ENVASADO habría entrado como pasos de FABRICACIÓN y habría corrompido la
+    # receta de mezcla del producto. El legajo clona por fase (`_fase_canonica`), así que la fase
+    # tiene que ser explícita y validada, no supuesta.
+    fase_in = (body.get("fase") or "fabricacion").strip().lower()
+    if fase_in not in _FASES_VALIDAS:
+        return jsonify({"error": "fase inválida: '%s' · válidas: %s"
+                        % (fase_in, ", ".join(sorted(_FASES_VALIDAS)))}), 400
+    # El tipo de paso y la etiqueta de fase que el legajo espera por cada fase.
+    _TIPO_POR_FASE = {"fabricacion": "mezclado", "envasado": "envasado",
+                      "acondicionamiento": "acondicionamiento"}
+    _ETIQUETA_FASE = {"fabricacion": "Fabricación", "envasado": "Envasado",
+                      "acondicionamiento": "Acondicionamiento"}
     conn = get_db()
     cur = conn.cursor()
     user = session.get("compras_user", "")
@@ -893,29 +907,59 @@ def cargar_instructivo_mbr():
     if (mbr[1] or "") == "draft":
         target_id = mbr[0]
         nueva_version = False
-        cur.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (target_id,))
+        # ⚠ SÓLO los pasos de ESTA fase. Antes borraba TODOS los del MBR, así que cargar el
+        # instructivo de envasado habría BORRADO el de fabricación del mismo borrador. Se compara
+        # con `_fase_canonica` porque la fase se guarda con etiquetas distintas según quién la
+        # escribió ('Fabricación', 'fabricacion', 'Envasado'…).
+        for _r in cur.execute("SELECT id, COALESCE(fase,'') FROM mbr_pasos WHERE mbr_template_id=?",
+                              (target_id,)).fetchall():
+            if _fase_canonica(_r[1]) == fase_in:
+                cur.execute("DELETE FROM mbr_pasos WHERE id=?", (_r[0],))
     else:
         version = _next_version(conn, producto)
         cur.execute(
             "INSERT INTO mbr_templates (producto_nombre, version, estado, titulo, lote_size_g, creado_por) "
             "VALUES (?, ?, 'draft', ?, ?, ?)",
-            (producto, version, f"{producto} v{version} · instructivo de fabricación", mbr[2], user))
+            (producto, version, f"{producto} v{version} · instructivo de {_ETIQUETA_FASE[fase_in].lower()}",
+             mbr[2], user))
         target_id = cur.lastrowid
         nueva_version = True
+        # La versión nueva arranca de la anterior y se le REEMPLAZA sólo la fase que se carga: si
+        # no, aprobar el instructivo de envasado dejaría al producto sin instructivo de mezcla.
+        for _r in cur.execute(
+            "SELECT orden, COALESCE(fase,''), descripcion, COALESCE(tipo_paso,''), "
+            "       COALESCE(equipo_requerido,''), COALESCE(requiere_e_sign,0), COALESCE(requiere_qc,0) "
+            "FROM mbr_pasos WHERE mbr_template_id=? ORDER BY orden", (mbr[0],)).fetchall():
+            if _fase_canonica(_r[1]) == fase_in:
+                continue
+            cur.execute(
+                "INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, tipo_paso, "
+                "                       equipo_requerido, requiere_e_sign, requiere_qc) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (target_id, _r[0], _r[1], _r[2], _r[3], _r[4], _r[5], _r[6]))
+    # El orden arranca después de lo que ya hay, para no chocar con los pasos de las otras fases.
+    _base = cur.execute("SELECT COALESCE(MAX(orden),0) FROM mbr_pasos WHERE mbr_template_id=?",
+                        (target_id,)).fetchone()[0] or 0
     for i, txt in enumerate(pasos, start=1):
         cur.execute(
             "INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, tipo_paso, requiere_qc) "
-            "VALUES (?, ?, 'fabricacion', ?, 'mezclado', 1)",
-            (target_id, i, txt[:1500]))
+            "VALUES (?, ?, ?, ?, ?, 1)",
+            (target_id, _base + i, _ETIQUETA_FASE[fase_in], txt[:1500], _TIPO_POR_FASE[fase_in]))
     audit_log(cur, usuario=user, accion="CARGAR_INSTRUCTIVO_MBR", tabla="mbr_templates",
               registro_id=target_id,
-              despues={"producto": producto, "pasos": len(pasos), "nueva_version": nueva_version})
+              despues={"producto": producto, "fase": fase_in, "pasos": len(pasos),
+                       "nueva_version": nueva_version})
     conn.commit()
     return jsonify({"ok": True, "mbr_id": target_id, "producto": producto, "pasos": len(pasos),
                     "nueva_version": nueva_version,
-                    "aviso": ("Versión NUEVA en borrador creada · aprobala con e-firma en el módulo MBR "
-                              "para que entre en vigor (la anterior sigue activa hasta entonces)"
-                              if nueva_version else "Pasos del MBR en borrador reemplazados")}), 200
+                    "fase": fase_in,
+                    "aviso": ("Versión NUEVA en borrador creada con el instructivo de %s · aprobala "
+                              "con e-firma en el módulo MBR para que entre en vigor (la anterior "
+                              "sigue activa hasta entonces · los pasos de las OTRAS fases se "
+                              "copiaron tal cual)" % _ETIQUETA_FASE[fase_in].lower()
+                              if nueva_version else
+                              "Pasos de %s reemplazados en el borrador (las otras fases quedaron "
+                              "intactas)" % _ETIQUETA_FASE[fase_in].lower())}), 200
 
 
 @bp.route("/api/brd/mbr/cargar-todos-instructivos", methods=["GET", "POST"])

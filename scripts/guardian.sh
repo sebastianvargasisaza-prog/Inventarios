@@ -65,6 +65,8 @@ CORAZON=(
   "tests/test_auto_asignar_operarios_audita.py"
   "tests/test_facturas_proveedor_rol.py"
   "tests/test_instructivos_completos.py"
+  "tests/test_instructivo_por_fase.py"
+  "tests/test_deuda_diseno_no_crece.py"
   "tests/test_legajo_trazabilidad_responsables.py"
   "tests/test_inci_ambiguos.py"
   "tests/test_cron_mee_cuarentena.py"
