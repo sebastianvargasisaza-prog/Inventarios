@@ -54,6 +54,22 @@ que un documento impreso nunca pierda color.
 colores hardcodeados y falla si suben (la regla estaba escrita desde hace meses y se incumplió
 8.077 veces). Si migrás y el número baja, **bajá el techo** en el test para fijar la mejora.
 
+### Las 3 vistas del día comparten UN renderizador (26-jul-2026)
+
+Envasado, Fabricación y Acondicionamiento usan `ordenesRenderLista` / `ordenChipEstado` /
+`ordenKpi` (`dashboard_html.py`). Nacieron como tres tablas distintas escritas en momentos
+distintos, y así es exactamente como aparecieron las cuatro paletas de grises: cada pantalla se
+inventó la suya. Una pieza compartida es lo que impide que vuelvan a divergir.
+
+- El **verbo del chip** sigue a la fase (`ENVASANDO` / `FABRICANDO` / `ACONDICIONANDO`) y el
+  rótulo del KPI también (`Unidades envasadas` vs `acondicionadas`): se pasa `fase` como 3er
+  argumento, no se duplica la función.
+- **Fabricación conserva su tabla** a propósito: sus datos son números que se comparan entre sí
+  (teórica / producida / aprobada) y una tabla alinea columnas mejor que una tarjeta. Comparte los
+  KPIs y los chips, no el layout. La forma sigue al dato, no a la uniformidad.
+- Lo que cada fila tiene que responder sin abrir el legajo: **cuánto avanzó** (3/5 pasos),
+  **qué sale** (282 × 30 ml), **hace cuánto** (ámbar a los 3 días, rojo a los 6) y **quién**.
+
 ## Typography
 
 - Familia única: **Inter** (`--cx-font`) + JetBrains Mono para datos crudos/código.

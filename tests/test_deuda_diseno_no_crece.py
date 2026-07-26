@@ -36,9 +36,12 @@ TEMPLATES = os.path.join(RAIZ, 'api', 'templates_py')
 # depende del tema, mandarlo a --cx-card lo volvía oscuro sobre oscuro en el tema oscuro):
 #                                           dashboard 3.578 · total  6.748
 # y con la MEDICIÓN corregida (sin entidades HTML de iconos, sin el blanco de texto legítimo):
-TECHO_COLORES_DASHBOARD = 2509
+#                                           dashboard 2.509 · total  5.024
+# tras migrar los chips de estado de Fabricación y unificar las 3 vistas del día en un solo
+# renderizador (Envasado · Fabricación · Acondicionamiento):
+TECHO_COLORES_DASHBOARD = 2499
 TECHO_DISPLAY_NONE_DASHBOARD = 201
-TECHO_COLORES_TOTAL = 5024   # los 42 templates juntos
+TECHO_COLORES_TOTAL = 5014   # los 42 templates juntos
 TECHO_FONDO_OPACO = 0        # un fondo opaco sin token IGNORA el tema oscuro · debe quedar en 0
 TECHO_TEXTO_PALABRA = 28     # `color:gray|black|red…` · el blanco no cuenta (ver abajo)
 

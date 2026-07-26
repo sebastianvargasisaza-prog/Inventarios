@@ -1560,8 +1560,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
         <input id="hist-prod-q" type="text" placeholder="🔍 Buscar producto / lote / N° orden…" oninput="_histProdDebounced()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--cx-border);border-radius:5px">
       </div>
-      <table class="table"><thead><tr><th>N° de orden</th><th>N° lote</th><th>Producto</th><th style="text-align:right;">Teórica</th><th style="text-align:right;">Producida</th><th style="text-align:right;">Aprobada</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Origen</th><th>Fecha</th><th style="text-align:center;">Legajo</th></tr></thead>
-      <tbody id="hist-prod-body"><tr><td colspan="10" style="text-align:center;color:var(--cx-text-faint);padding:16px;">Cargando...</td></tr></tbody></table>
+      <!-- KPIs de Fabricación (26-jul) · mismo criterio que Envasado: la lista tiene que decir
+           qué PIDE ACCIÓN antes de que uno lea fila por fila. -->
+      <div id="hist-prod-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
+      <table class="table"><thead><tr><th>N° de orden</th><th>N° lote</th><th>Producto</th><th style="text-align:right;">Teórica</th><th style="text-align:right;">Producida</th><th style="text-align:right;">Aprobada</th><th style="text-align:center;">Avance</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Origen</th><th>Fecha</th><th style="text-align:center;">Legajo</th></tr></thead>
+      <tbody id="hist-prod-body"><tr><td colspan="11" style="text-align:center;color:var(--cx-text-faint);padding:16px;">Cargando...</td></tr></tbody></table>
       <div id="hist-prod-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--cx-text-mute)"></div>
     </div>
     <!-- ═══ Legajos electrónicos (EBR) · colapsable (Sebastián 25-jun: simple, sin clutter) ═══ -->
@@ -2431,14 +2434,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <h3 style="margin:0;font-size:14px;color:var(--cx-primary-text)">&#128203; Órdenes de Acondicionamiento</h3>
       <button onclick="cargarOrdenesAcondicionamiento()" style="background:var(--cx-primary);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">&#8635; Actualizar</button>
     </div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:var(--cx-primary-pale);color:var(--cx-primary-text)">
-        <th style="text-align:left;padding:8px">N&deg; de orden</th><th style="text-align:left;padding:8px">Producto</th>
-        <th style="text-align:left;padding:8px">N&deg; lote</th><th style="text-align:left;padding:8px">Estado</th>
-        <th style="text-align:left;padding:8px">Fecha</th><th style="padding:8px">Legajo</th>
-      </tr></thead>
-      <tbody id="ordenes-acond-tbody"><tr><td colspan="6" style="text-align:center;color:var(--cx-text-faint);padding:10px">Cargando&hellip;</td></tr></tbody>
-    </table></div>
+    <div id="ordenes-acond-lista"><div style="color:var(--cx-text-mute);padding:10px">Cargando&hellip;</div></div>
   </div>
 
   <!-- Panel activo de acondicionamiento - aparece al clic en Acondicionar desde la cola -->
@@ -4285,12 +4281,42 @@ async function cargarHistProd(){
   if(!tb)return;
   var q = (((document.getElementById('hist-prod-q')||{}).value)||'').trim().toLowerCase();
   function gfmt(n){return n==null?'<span style="color:var(--cx-text-faint)">-</span>':Number(n).toLocaleString('es-CO')+' g';}
+  // Avance de los pasos del legajo · viene calculado del endpoint (agregado, no un fetch por fila).
+  // Un registro simple no tiene pasos: se marca como tal en vez de mostrar un 0/0 que confunde.
+  function avanceCel(o){
+    // text-mute, no faint: "sin legajo" es INFORMACIÓN (esta orden no tiene batch record), no un
+    // adorno. Faint queda para los guiones de "sin dato". Sobre la tarjeta oscura faint da 3,07:1.
+    if(!o.pasos_total) return '<span style="color:var(--cx-text-mute);font-size:11px">sin legajo</span>';
+    var pct=o.avance_pct||0, lleno=(pct>=100);
+    return '<span style="display:inline-flex;align-items:center;gap:6px">'
+      +'<span style="width:56px;height:6px;background:var(--cx-border-soft);border-radius:999px;'
+      +'overflow:hidden;display:inline-block"><span style="display:block;height:100%;width:'+pct+'%;'
+      +'background:'+(lleno?'var(--cx-success)':'var(--cx-primary)')+';border-radius:999px"></span></span>'
+      +'<b style="font-size:11px;font-variant-numeric:tabular-nums;color:var(--cx-text-soft)">'
+      +o.pasos_hechos+'/'+o.pasos_total+'</b></span>';
+  }
+  // La fecha sola no dice nada; lo que importa es hace CUÁNTO. Ámbar a los 3 días, rojo a los 6,
+  // y solo mientras la orden sigue abierta (una orden vieja ya cerrada no es un problema).
+  function fechaCel(o){
+    var f=_escHTML(o.fecha||'-'), d=o.dias, e=(o.estado||'').toLowerCase();
+    var cerrada=(e.indexOf('aprob')>=0||e.indexOf('liberad')>=0||e.indexOf('complet')>=0
+                 ||e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0);
+    if(d===null||d===undefined||cerrada)
+      return '<span style="color:var(--cx-text-mute)">'+f+'</span>';
+    var col=(d>=6?'var(--cx-danger-text)':(d>=3?'var(--cx-warn-text)':'var(--cx-text-mute)'));
+    var txt=(d===0?'hoy':(d===1?'hace 1 día':'hace '+d+' días'));
+    return '<span style="color:var(--cx-text-mute)">'+f+'</span>'
+      +'<span style="display:block;font-size:10px;font-weight:700;color:'+col+'">'+txt+'</span>';
+  }
   function estadoPill(e){
-    var s=(e||'').toLowerCase(), bg='#f1f5f9', col='#475569';
-    if(s.indexOf('cuarentena')>=0){bg='#dbeafe';col='#1e40af';}
-    else if(s.indexOf('proceso')>=0){bg='#fef9c3';col='#854d0e';}
-    else if(s.indexOf('aprob')>=0){bg='#dcfce7';col='#166534';}
-    else if(s.indexOf('rechaz')>=0||s.indexOf('cancel')>=0){bg='#fee2e2';col='#991b1b';}
+    var s=(e||'').toLowerCase(), bg='var(--cx-border-soft)', col='var(--cx-text-soft)';
+    // 26-jul · con tokens: estos chips estaban en hex fijo, así que en tema oscuro quedaban
+    // celeste/amarillo claro con letra oscura sobre la tarjeta oscura. Los pares texto/pale ya
+    // están medidos para AA en los dos temas (ver test_deuda_diseno_no_crece).
+    if(s.indexOf('cuarentena')>=0){bg='var(--cx-info-pale)';col='var(--cx-info-text)';}
+    else if(s.indexOf('proceso')>=0){bg='var(--cx-warn-pale)';col='var(--cx-warn-text)';}
+    else if(s.indexOf('aprob')>=0){bg='var(--cx-success-pale)';col='var(--cx-success-text)';}
+    else if(s.indexOf('rechaz')>=0||s.indexOf('cancel')>=0){bg='var(--cx-danger-pale)';col='var(--cx-danger-text)';}
     return '<span style="background:'+bg+';color:'+col+';padding:2px 8px;border-radius:10px;font-size:0.78em;font-weight:700;white-space:nowrap">'+_escHTML(e||'')+'</span>';
   }
   try{
@@ -4302,7 +4328,7 @@ async function cargarHistProd(){
       });
     }
     if(!ordenes.length){
-      tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--cx-text-faint);padding:16px;">Sin órdenes que coincidan</td></tr>';
+      tb.innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--cx-text-faint);padding:16px;">Sin órdenes que coincidan</td></tr>';
       if(ft) ft.innerHTML='Total: 0';
       return;
     }
@@ -4331,19 +4357,28 @@ async function cargarHistProd(){
         '<td style="text-align:right">'+gfmt(o.teorica_g)+'</td>'+
         '<td style="text-align:right">'+gfmt(o.producida_g)+'</td>'+
         '<td style="text-align:right">'+aprob+'</td>'+
+        '<td style="text-align:center">'+avanceCel(o)+'</td>'+
         '<td style="text-align:center">'+estadoPill(o.estado)+'</td>'+
         '<td style="text-align:center">'+org+'</td>'+
-        '<td style="font-size:0.85em;color:var(--cx-text-mute)">'+_escHTML(o.fecha||'-')+'</td>'+
+        '<td style="font-size:0.85em">'+fechaCel(o)+'</td>'+
         '<td style="text-align:center">'+acc+'</td>'+
       '</tr>';
     }).join('');
+    var rs=(d&&d.resumen)||{};
+    var kp=document.getElementById('hist-prod-kpis');
+    if(kp&&typeof ordenKpi==='function'){
+      // Se reusa el KPI de Envasado a propósito: una sola pieza para las dos vistas del día,
+      // así no vuelven a divergir en estilo (que es como nacieron las 4 paletas de grises).
+      kp.innerHTML = ordenKpi('Órdenes abiertas', rs.abiertas, '--cx-primary')
+        + ordenKpi('3 días o más sin cerrar', rs.atrasadas, '--cx-danger')
+        + ordenKpi('Con legajo electrónico', (rs.legajos||0)+' de '+(rs.total||0), '--cx-success');
+    }
     if(ft){
-      var rs=(d&&d.resumen)||{};
       ft.innerHTML='<span>'+(rs.total||ordenes.length)+' órdenes · '+(rs.legajos||0)+' con legajo EBR · '+(rs.simples||0)+' registro simple</span><span></span>';
     }
   }catch(e){
     console.error('cargarHistProd (ordenes) fallo:',e);
-    tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--cx-danger-text);padding:16px;">Error cargando órdenes: '+_escHTML(e.message)+'</td></tr>';
+    tb.innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--cx-danger-text);padding:16px;">Error cargando órdenes: '+_escHTML(e.message)+'</td></tr>';
   }
 }
 
@@ -10741,25 +10776,24 @@ async function crearLegajoAcondicionamiento(btn){
   }catch(e){alert('Error: '+(e.message||e));btn.disabled=false;btn.textContent=_t;}
 }
 function cargarOrdenesAcondicionamiento(){
-  // Órdenes de Acondicionamiento (con estado + legajo) · como MyBatch. Reusa el endpoint
-  // unificado /api/brd/ordenes-unificadas?fase=acondicionamiento (estado + link al legajo).
-  var tb=document.getElementById('ordenes-acond-tbody');
-  if(!tb)return;
-  var E=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
-  fetch('/api/brd/ordenes-unificadas?fase=acondicionamiento').then(function(r){return r.json();}).then(function(d){
+  // 26-jul · misma lista premium que Envasado (idéntica forma de dato: órdenes con legajo,
+  // avance de pasos y presentaciones). Un solo renderizador para las 3 vistas del día, así no
+  // vuelven a divergir en estilo, que es como nacieron las 4 paletas de grises.
+  var wrap=document.getElementById('ordenes-acond-lista');
+  if(!wrap)return;
+  wrap.innerHTML='<div style="color:var(--cx-text-mute);padding:10px">Cargando&hellip;</div>';
+  fetch('/api/brd/ordenes-unificadas?fase=acondicionamiento',{credentials:'same-origin'})
+    .then(function(r){return r.json();}).then(function(d){
     var ords=(d&&d.ordenes)||[];
-    if(!ords.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--cx-text-faint);padding:10px">Sin órdenes de acondicionamiento aún · acondicioná un lote para crearlas</td></tr>';return;}
-    tb.innerHTML=ords.map(function(o){
-      var leg=o.link?('<a href="'+E(o.link)+'" style="color:var(--cx-primary-text);font-weight:700;text-decoration:none">Abrir legajo →</a>'):('<button data-prod="'+E(o.producto)+'" data-lote="'+E(o.lote_bulk||o.numero_op||'')+'" onclick="crearLegajoAcondicionamiento(this)" style="background:var(--cx-success);color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:12px;cursor:pointer">Crear legajo &rarr;</button>');
-      return '<tr style="border-bottom:1px solid var(--cx-border-soft)">'+
-        '<td style="padding:8px;font-weight:600">'+E(o.numero_op)+'</td>'+
-        '<td style="padding:8px">'+E(o.producto)+'</td>'+
-        '<td style="padding:8px">'+E(o.lote_bulk||'-')+'</td>'+
-        '<td style="padding:8px">'+E(o.estado||'-')+'</td>'+
-        '<td style="padding:8px;color:var(--cx-text-mute)">'+E(o.fecha||'-')+'</td>'+
-        '<td style="padding:8px;text-align:center">'+leg+'</td></tr>';
-    }).join('');
-  }).catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:var(--cx-danger-text);text-align:center;padding:10px">Error cargando órdenes</td></tr>';});
+    if(!ords.length){
+      wrap.innerHTML='<div style="color:var(--cx-text-mute);padding:16px;text-align:center;font-size:13px">'
+        +'Sin órdenes de acondicionamiento todavía &middot; acondicioná un lote para crearlas</div>';
+      return;
+    }
+    wrap.innerHTML=ordenesRenderLista(ords, d.resumen||{}, 'acondicionamiento');
+  }).catch(function(){
+    wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:10px">Error cargando órdenes</div>';
+  });
 }
 // ENVASADO 26-jun (Sebastián) · loader LIMPIO de la pestaña Envasado: solo legajos de envasado
 // HABILITADOS (ebr_ejecuciones fase='envasado' · se crean cuando Calidad LIBERA el granel · Fase 2).
@@ -10769,10 +10803,12 @@ function cargarOrdenesAcondicionamiento(){
 // nunca CÓMO van. Ahora cada fila responde lo que el jefe de planta necesita sin abrir el legajo:
 // cuánto avanzó, cuántos frascos de cada presentación salen, quién la tiene y hace cuántos días.
 // Todo viene ya calculado del endpoint (una sola llamada · nada de un fetch por fila · M43/M59).
-function envasadoChipEstado(est){
+function ordenChipEstado(est, fase){
   var e=(est||'').toLowerCase();
+  // el verbo del chip cambia por fase; el resto de los estados son iguales en las tres
+  var enCurso=(fase==='acondicionamiento'?'ACONDICIONANDO':(fase==='fabricacion'?'FABRICANDO':'ENVASANDO'));
   if(e.indexOf('proceso')>=0||e.indexOf('curso')>=0||e.indexOf('iniciad')>=0)
-    return {t:'ENVASANDO', f:'var(--cx-info-text)', b:'var(--cx-info-pale)'};
+    return {t:enCurso, f:'var(--cx-info-text)', b:'var(--cx-info-pale)'};
   if(e.indexOf('liberad')>=0||e.indexOf('complet')>=0||e.indexOf('cerrad')>=0)
     return {t:'CERRADA', f:'var(--cx-success-text)', b:'var(--cx-success-pale)'};
   if(e.indexOf('rechaz')>=0)
@@ -10781,7 +10817,7 @@ function envasadoChipEstado(est){
     return {t:'EN REVISIÓN QC', f:'var(--cx-warn-text)', b:'var(--cx-warn-pale)'};
   return {t:(est||'PENDIENTE').toUpperCase(), f:'var(--cx-text-mute)', b:'var(--cx-border-soft)'};
 }
-function envasadoKpi(rot, val, tok){
+function ordenKpi(rot, val, tok){
   return '<div style="flex:1;min-width:150px;background:var(--cx-card);border:1px solid var(--cx-border);'
     +'border-left:3px solid var('+tok+');border-radius:10px;padding:12px 14px">'
     +'<div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--cx-text-mute);'
@@ -10789,14 +10825,16 @@ function envasadoKpi(rot, val, tok){
     +'<div style="font-size:26px;font-weight:800;color:var('+tok+'-text);font-variant-numeric:tabular-nums;'
     +'line-height:1.15">'+(val===null||val===undefined?'-':val)+'</div></div>';
 }
-function envasadoRenderLista(items, res){
+function ordenesRenderLista(items, res, fase){
   var h='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">';
-  h+=envasadoKpi('Órdenes abiertas', res.abiertas, '--cx-primary');
-  h+=envasadoKpi('3 días o más sin cerrar', res.atrasadas, '--cx-danger');
-  h+=envasadoKpi('Unidades envasadas', (res.unidades_total||0).toLocaleString('es-CO'), '--cx-success');
+  h+=ordenKpi('Órdenes abiertas', res.abiertas, '--cx-primary');
+  h+=ordenKpi('3 días o más sin cerrar', res.atrasadas, '--cx-danger');
+  // el rotulo sigue a la fase: en acondicionamiento las unidades ya no se 'envasan'
+  h+=ordenKpi((fase==='acondicionamiento'?'Unidades acondicionadas':'Unidades envasadas'),
+              (res.unidades_total||0).toLocaleString('es-CO'), '--cx-success');
   h+='</div>';
   items.forEach(function(o){
-    var c=envasadoChipEstado(o.estado);
+    var c=ordenChipEstado(o.estado, fase);
     // La EDAD es el dato que hace visible una orden parada. Antes había que deducirla de la fecha.
     // text-mute, no text-faint: faint es decorativo y sobre la tarjeta oscura daba 3,07:1
     var dias=o.dias, dtxt='', dcol='var(--cx-text-mute)';
@@ -10872,7 +10910,7 @@ async function cargarEnvasadoRunner(){
       wrap.innerHTML='<div style="color:var(--cx-text-mute);padding:16px;text-align:center;font-size:13px">Sin órdenes de envasado todav&iacute;a.<br>Cuando Calidad <b>libera</b> el granel de un lote, su Orden de Envasado aparece ac&aacute; autom&aacute;ticamente.</div>';
       return;
     }
-    wrap.innerHTML=envasadoRenderLista(items, d.resumen||{});
+    wrap.innerHTML=ordenesRenderLista(items, d.resumen||{}, 'envasado');
   }catch(e){ wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:10px">Error cargando &oacute;rdenes de envasado.</div>'; }
 }
 // ENVASADO Fase 3 (26-jun) · sección de presentaciones en el runner: unidades por presentación + cerrar/descontar.

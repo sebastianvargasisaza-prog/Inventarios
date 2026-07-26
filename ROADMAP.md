@@ -74,7 +74,13 @@ tema oscuro; **ahora** sí, con esto pendiente:
      · 124 declaraciones). No las migré a propósito: una variable propia puede usarse como texto
      Y como fondo, así que mapearla a ciegas es peor que dejarla. Hay que revisar caso por caso
      cuál es (el nombre ayuda: `--bg`/`--line`/`--mut` son claros, `--c`/`--v`/`--gm-ac` no).
-  2. **Cola larga de colores sin token** (`#1e63a8`, `#a21caf`, `#c0392b`, `#0f766e`…). O se les
+  2. **Colores asignados a una variable de JS** (`bg='#dbeafe'`, `col='#1e40af'`): **1.774**, de los
+     cuales 874 en `dashboard_html.py`. El migrador no los vio porque su regex pide `propiedad:#hex`
+     y una asignación no lo es. **No se pueden barrer a ciegas**: la mayoría termina dentro de un
+     `style="..."` (y ahí el token funciona) pero otros van a un gráfico de canvas o a una
+     comparación, donde el literal hace falta. Hay que ir por función, viendo dónde aterriza el
+     valor. Los chips de estado de Fabricación ya se migraron así (uno por uno, verificando).
+  3. **Cola larga de colores sin token** (`#1e63a8`, `#a21caf`, `#c0392b`, `#0f766e`…). O se les
      asigna un token del sistema, o se agrega el token que falte a `cortex.css`.
 - **NO borrar en bloque los 201 `display:none`.** Estaba en mi plan y es un error: M86 ya advierte
   que las pestañas se ocultan con `display:none` **sin quitar el nodo**, porque `goTab` mapea por

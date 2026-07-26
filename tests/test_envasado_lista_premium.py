@@ -1,4 +1,4 @@
-"""La lista de Envasado tiene que decir CÓMO van las órdenes, no sólo cuáles hay (26-jul).
+"""Las listas del día (Envasado y Fabricación) tienen que decir CÓMO van las órdenes (26-jul).
 
 Sebastián, mirando la pantalla: *"siempre me pregunto ¿es premium? · ¿qué hay para mejorar acá?"*.
 La lista era una tabla de 5 columnas (n°, producto, lote, estado, botón): para saber si una orden
@@ -128,6 +128,25 @@ def test_sin_unidades_registradas_no_inventa_numeros(app):
     o, _ = _orden(_admin(app), ebr)
     assert o['presentaciones'] == [], o
     assert o['unidades_total'] == 0, o
+
+
+def test_fabricacion_recibe_el_mismo_avance(app):
+    """Las dos vistas del día comparten el enriquecimiento: si alguien lo hace específico de
+    envasado, Fabricación pierde la columna de avance y la edad sin que nada falle."""
+    from database import get_db
+    ebr = _sembrar(app)
+    with app.app_context():
+        conn = get_db()
+        conn.execute("UPDATE ebr_ejecuciones SET fase='fabricacion' WHERE id=?", (ebr,))
+        conn.commit()
+    c = _admin(app)
+    d = c.get('/api/brd/ordenes-unificadas?fase=fabricacion').get_json()
+    o = [x for x in d['ordenes'] if x.get('ebr_id') == ebr]
+    assert o, 'la orden de fabricación no aparece'
+    assert o[0]['pasos_total'] == 5 and o[0]['pasos_hechos'] == 2, o[0]
+    assert o[0]['dias'] is not None, o[0]
+    # las presentaciones son de envasado/acondicionamiento: en fabricación no aplican
+    assert o[0]['presentaciones'] == [], o[0]
 
 
 def test_la_lista_sigue_siendo_UNA_sola_consulta_por_pantalla(app):
