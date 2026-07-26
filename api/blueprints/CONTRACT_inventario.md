@@ -453,3 +453,25 @@ workers); `dry_run` por defecto. La vista previa y el apply comparten el núcleo
 
 Página: `/admin/envases-kardex-mp`. Detección continua: `envases_en_kardex_mp` en
 `/api/admin/auditoria-lotes`. Tests: `tests/test_envases_kardex_mp.py` (en el gate).
+
+## 🔎 La auditoría de lotes ahora LISTA lo que falta, no lo cuenta (26-jul)
+
+Sebastián: *"dame la lista"*. Un conteo no se puede accionar. `/api/admin/auditoria-lotes` devuelve:
+
+| Campo | Qué trae | Por qué importa |
+|---|---|---|
+| `lotes_sin_vencimiento` | fila por lote **con stock** · código, lote, g, proveedor, último movimiento y **`en_cuarentena`** | si está en cuarentena, el dato se completa ANTES de liberar y no hay nada que corregir hacia atrás |
+| `lotes_sin_ubicacion` | idem | |
+| `mps_sin_inci` | MPs activas sin INCI, con su stock | el INCI es lo que va en el rótulo y el expediente; sin stock no urge |
+| `producciones_en_curso_sin_legajo` | lote iniciado sin EBR, **con `descontó_mp`** | ahora que el batch record vive, esto no debería existir. `descontó_mp` es lo que decide: si descontó, la MP salió del kardex y cerrarla a la ligera deja el stock mintiendo; si no, es una fila zombie cancelable sin tocar inventario |
+
+Sólo lista lotes **con stock**: uno agotado sin fecha de vencimiento es historia, no un pendiente.
+
+⚠ Dos columnas fantasma que cazaron los tests al escribir esto (M12a): `tipo` existe en
+`maestro_mps` **y** en `movimientos` (con JOIN hay que calificar toda columna), y
+`produccion_programada` **no tiene** columna de lote — `lotes` es el CONTEO de lotes del evento y
+el número de lote físico vive en `ebr_ejecuciones.lote_codigo`.
+
+Estado al 26-jul: 21 sin vencimiento (12 en cuarentena) · 62 sin ubicación (47 en cuarentena) ·
+30 MPs sin INCI (1 con stock) · 1 producción en curso sin legajo (`PROD-03764` ESENCIA ILUMINADORA,
+producto ya descontinuado, trabada desde el 30-jun).

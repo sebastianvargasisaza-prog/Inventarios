@@ -1079,6 +1079,34 @@ incompletas, ordená para preferir la completa.**
 Los 12 entraron al modo `--full` del guardián: un test que no corre en ningún gate no protege
 nada, y esa es exactamente la razón por la que llevaban tanto tiempo rojos sin que se notara.
 
+## 🧪 M103 · Un test que ESCRIBE en la BD compartida tiene que limpiar lo suyo · y limpiar ANTES, no después · 26-jul
+
+Puse el gate en rojo **tres veces en un día, con la misma causa de fondo**: escribí tests que
+siembran datos en la BD de tests, que es COMPARTIDA (una sola sesión por corrida) y que en
+PostgreSQL **PERSISTE entre corridas del gate**. Los tres síntomas fueron distintos y por eso
+tardé en ver que era un solo problema:
+
+1. **Property test ajena en rojo.** Sembré una fórmula al 77,79% y no la borré → la property test
+   que verifica que *toda fórmula activa sume 95-101* la encontró y falló. El test que rompe no es
+   el que tiene el bug.
+2. **Test propio dependiente del ORDEN.** Mi test "todo producto activo tiene instructivo" leía la
+   BD, donde otros archivos siembran `PROD PCT TEST`, `REVINC PRODUCTO A`… → daba rojo o verde
+   según qué archivo corriera antes. **Reescrito para comparar las dos CONSTANTES del código**
+   (`BATCH_FORMULAS` vs `BATCH_INSTRUCTIVOS`): 0,14 s, determinista, sin BD. Cuando lo que querés
+   verificar es una relación entre datos del REPO, no vayas a la BD.
+3. **IntegrityError a la TERCERA corrida.** `ebr_ejecuciones.lote` es UNIQUE y mis tests usaban
+   lotes fijos (`LOTE-RV-1`…). El gate pasó dos veces y a la tercera reventó con mis propios datos
+   de las corridas anteriores. **Un test que pasa una vez no está probado: probalo 3 veces
+   seguidas contra PG.**
+
+**Reglas:**
+- **Limpiar ANTES de sembrar, no después.** Un `finally` no corre si el proceso muere, y un assert
+  que falla antes del cleanup deja la basura igual. Limpiar-antes es idempotente por construcción.
+- **Limpiar-antes con nombres FIJOS le gana a sufijos aleatorios**: determinista, y no acumula
+  filas huérfanas corrida tras corrida.
+- **`audit_log` no se limpia** (inmutable por trigger · Part 11) y no hace falta.
+- Antes de agregar un test al gate: `for i in 1 2 3; do pytest <archivo> ...; done` en modo PG.
+
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 
 Cosas que una auditoría marca como "inconsistencia" y NO lo son. Verificar acá antes de reportar:

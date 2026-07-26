@@ -90,3 +90,64 @@ def test_solo_lista_lotes_CON_stock(app):
     d = c.get("/api/admin/auditoria-lotes?dias=2").get_json()
     for fila in d['lotes_sin_vencimiento'] + d['lotes_sin_ubicacion']:
         assert fila['stock_g'] > 0.01, fila
+
+
+def test_detecta_produccion_en_curso_sin_legajo(app):
+    """Ahora que el batch record está vivo, un lote iniciado SIN legajo es un lote fabricándose
+    sin registro. Y lo que decide qué hacer con él es si YA descontó la materia prima."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, "
+                    "estado, origen, lotes, inicio_real_at, inventario_descontado_at) "
+                    "VALUES ('HUERFANA SIN LEGAJO','2026-06-30',20,'en_proceso','eos_plan',1,"
+                    "'2026-06-30 10:00:00','2026-06-30 10:05:00')")
+        pid = cur.lastrowid
+        conn.commit()
+    c = app.test_client()
+    c.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+           headers=csrf_headers(), follow_redirects=False)
+    d = c.get("/api/admin/auditoria-lotes?dias=2").get_json()
+    assert 'producciones_en_curso_sin_legajo_error' not in d, d.get('producciones_en_curso_sin_legajo_error')
+    mia = [x for x in d['producciones_en_curso_sin_legajo'] if x['produccion_id'] == pid]
+    assert mia, 'no detectó la producción en curso sin legajo'
+    assert mia[0]['descontó_mp'] is True, 'tiene que decir si la MP ya salió del kardex'
+    assert mia[0]['producto'] == 'HUERFANA SIN LEGAJO'
+    with app.app_context():
+        conn = get_db()
+        conn.execute("DELETE FROM produccion_programada WHERE id=?", (pid,))
+        conn.commit()
+
+
+def test_una_produccion_CON_legajo_no_se_reporta(app):
+    """El chequeo no puede gritar sobre lo que sí tiene su registro."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, "
+                    "estado, origen, lotes, inicio_real_at) VALUES "
+                    "('CON LEGAJO OK','2026-06-30',20,'en_proceso','eos_plan',1,'2026-06-30 10:00:00')")
+        pid = cur.lastrowid
+        cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                    "VALUES ('CON LEGAJO OK',1,'aprobado',20000,'test')")
+        mbr = cur.lastrowid
+        cur.execute("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, produccion_id, lote, "
+                    "numero_op, estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, fase) "
+                    "VALUES (?,1,?,'LOTE-CL-1','OP-CL-1','iniciado','test','2026-06-30 10:00:00',20000,"
+                    "'fabricacion')", (mbr, pid))
+        conn.commit()
+    c = app.test_client()
+    c.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+           headers=csrf_headers(), follow_redirects=False)
+    d = c.get("/api/admin/auditoria-lotes?dias=2").get_json()
+    assert not [x for x in d['producciones_en_curso_sin_legajo'] if x['produccion_id'] == pid]
+    with app.app_context():
+        conn = get_db()
+        conn.execute("DELETE FROM ebr_ejecuciones WHERE produccion_id=?", (pid,))
+        conn.execute("DELETE FROM produccion_programada WHERE id=?", (pid,))
+        conn.execute("DELETE FROM mbr_templates WHERE producto_nombre='CON LEGAJO OK'")
+        conn.commit()

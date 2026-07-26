@@ -15028,6 +15028,42 @@ def admin_auditoria_lotes():
         out['mps_sin_inci_error'] = str(e)
         out['mps_sin_inci'] = []
 
+    # PRODUCCIONES EN CURSO SIN LEGAJO (26-jul). Ahora que el batch record está vivo, una
+    # producción iniciada sin legajo es un lote fabricándose sin registro — justo lo que el
+    # zero-paper tiene que impedir. Lo que decide qué hacer con ella es si YA DESCONTÓ la materia
+    # prima: si descontó, la MP salió del kardex y cerrarla a la ligera deja el stock mintiendo;
+    # si no descontó, es una fila zombie que se puede cancelar sin tocar inventario.
+    try:
+        _sin_legajo = c.execute(
+            "SELECT pp.id, pp.producto, substr(pp.fecha_programada,1,10) AS fecha, "
+            "       COALESCE(pp.cantidad_kg,0) AS kg, COALESCE(pp.estado,'') AS estado, "
+            "       COALESCE(pp.origen,'') AS origen, "
+            "       COALESCE(pp.inicio_real_at,'') AS inicio, "
+            "       COALESCE(pp.inventario_descontado_at,'') AS descontado, "
+            # `produccion_programada` NO tiene columna de lote: el nº de lote físico vive en el
+            # legajo (`ebr_ejecuciones.lote_codigo`), y estas filas justamente no tienen legajo.
+            # `lotes` es el CONTEO de lotes del evento, no el número. Escribir `lote_produccion`
+            # daba "no such column" (M12a · columna fantasma) · lo cazó la verificación contra el
+            # esquema real antes de subirlo.
+            "       COALESCE(pp.lotes,1) AS n_lotes "
+            "FROM produccion_programada pp "
+            "WHERE COALESCE(pp.inicio_real_at,'') <> '' "
+            "  AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado') "
+            "  AND NOT EXISTS (SELECT 1 FROM ebr_ejecuciones e WHERE e.produccion_id = pp.id) "
+            "ORDER BY pp.fecha_programada").fetchall()
+        out['producciones_en_curso_sin_legajo'] = [{
+            'produccion_id': r['id'], 'producto': r['producto'], 'fecha': r['fecha'],
+            'kg': round(float(r['kg'] or 0), 2), 'estado': r['estado'], 'origen': r['origen'],
+            'inicio_real': r['inicio'], 'n_lotes': r['n_lotes'],
+            # el dato que decide: si descontó, la MP ya salió del kardex
+            'descontó_mp': bool((r['descontado'] or '').strip()),
+            'descontado_at': r['descontado'],
+        } for r in _sin_legajo]
+        out['producciones_en_curso_sin_legajo_count'] = len(_sin_legajo)
+    except Exception as e:
+        out['producciones_en_curso_sin_legajo_error'] = str(e)
+        out['producciones_en_curso_sin_legajo'] = []
+
     # Un chequeo que FALLÓ no puede verse igual que un chequeo LIMPIO. Dos de estas queries
     # llevaban tiempo reventando en PostgreSQL (GROUP BY incompleto · pasa en SQLite) y el
     # endpoint devolvía `duplicados_sospechosos: []` al lado del error: quien mirara la lista

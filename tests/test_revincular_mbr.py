@@ -28,6 +28,29 @@ def _csrf(c):
     return h
 
 
+def _limpiar(conn, productos=(), lotes=()):
+    """Borra lo que este archivo siembra, ANTES de sembrarlo.
+
+    ⚠ Sin esto los tests no son re-ejecutables: `ebr_ejecuciones.lote` es UNIQUE y en PostgreSQL la
+    BD de tests PERSISTE entre corridas del gate, así que a la 2ª/3ª vez chocaban con
+    IntegrityError. Me pasó: el gate pasó dos veces y a la tercera se puso rojo por mis propios
+    datos, no por el código. Limpiar-antes es determinista (nada de sufijos aleatorios).
+    `audit_log` NO se toca: es inmutable por trigger (Part 11) y no molesta.
+    """
+    cur = conn.cursor()
+    for lote in lotes:
+        for r in cur.execute("SELECT id FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)=? "
+                             "OR lote=?", (lote, lote)).fetchall():
+            cur.execute("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id=?", (r[0],))
+            cur.execute("DELETE FROM ebr_ejecuciones WHERE id=?", (r[0],))
+    for prod in productos:
+        for r in cur.execute("SELECT id FROM mbr_templates WHERE UPPER(TRIM(producto_nombre))="
+                             "UPPER(TRIM(?))", (prod,)).fetchall():
+            cur.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (r[0],))
+            cur.execute("DELETE FROM mbr_templates WHERE id=?", (r[0],))
+    conn.commit()
+
+
 def _mbr(conn, producto, pasos, version, estado='aprobado'):
     cur = conn.cursor()
     cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
@@ -46,6 +69,7 @@ def _escenario(app, producto, lote, estado_ebr='iniciado'):
     from database import get_db
     with app.app_context():
         conn = get_db()
+        _limpiar(conn, productos=(producto,), lotes=(lote,))
         viejo = _mbr(conn, producto, ['Fabricar el producto siguiendo procedimiento aprobado'],
                      1, estado='obsoleto')
         nuevo = _mbr(conn, producto, ['Paso 1. Calentar fase A a 75°C',
@@ -167,6 +191,7 @@ def _escenario_fase_cruzada(app, producto, lote):
     from database import get_db
     with app.app_context():
         conn = get_db()
+        _limpiar(conn, productos=(producto,), lotes=(lote,))
         cur = conn.cursor()
         cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, "
                     "creado_por) VALUES (?,1,'draft',10000,'test')", (producto,))

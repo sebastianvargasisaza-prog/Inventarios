@@ -30,6 +30,29 @@ def _csrf(c):
     return h
 
 
+def _limpiar(conn, productos=(), lotes=()):
+    """Borra lo que este archivo siembra, ANTES de sembrarlo.
+
+    ⚠ Sin esto los tests no son re-ejecutables: `ebr_ejecuciones.lote` es UNIQUE y la BD de tests
+    PERSISTE entre corridas del gate, así que la 2ª vez chocaban con IntegrityError. Me pasó: el
+    gate pasó dos veces y a la tercera se puso rojo por mis propios datos, no por el código.
+    Limpiar-antes es determinista (nada de sufijos aleatorios) y deja el test corrible N veces.
+    `audit_log` NO se toca: es inmutable por trigger (Part 11) y no molesta.
+    """
+    cur = conn.cursor()
+    for lote in lotes:
+        for r in cur.execute("SELECT id FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)=? "
+                             "OR lote=?", (lote, lote)).fetchall():
+            cur.execute("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id=?", (r[0],))
+            cur.execute("DELETE FROM ebr_ejecuciones WHERE id=?", (r[0],))
+    for prod in productos:
+        for r in cur.execute("SELECT id FROM mbr_templates WHERE UPPER(TRIM(producto_nombre))="
+                             "UPPER(TRIM(?))", (prod,)).fetchall():
+            cur.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (r[0],))
+            cur.execute("DELETE FROM mbr_templates WHERE id=?", (r[0],))
+    conn.commit()
+
+
 def _mbr_aprobado(conn, producto, pasos, version=1):
     cur = conn.cursor()
     cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
@@ -51,6 +74,7 @@ def test_el_MBR_se_encuentra_aunque_el_nombre_este_en_otras_mayusculas(app):
     from database import get_db
     with app.app_context():
         conn = get_db()
+        _limpiar(conn, productos=('Prueba Case Balm',), lotes=('LOTE-CASE-1',))
         _mbr_aprobado(conn, 'Prueba Case Balm', ['Paso 1. Calentar fase A a 75°C'])
         r = crear_ebr_desde_mbr(conn.cursor(), producto_nombre='PRUEBA CASE BALM',
                                 lote='LOTE-CASE-1', usuario='sebastian')
@@ -65,6 +89,7 @@ def test_sin_MBR_aprobado_sigue_sin_poder_fabricar(app):
     from database import get_db
     with app.app_context():
         conn = get_db()
+        _limpiar(conn, lotes=('LOTE-CASE-2',))
         r = crear_ebr_desde_mbr(conn.cursor(), producto_nombre='PRODUCTO QUE NO EXISTE JAMAS',
                                 lote='LOTE-CASE-2', usuario='sebastian')
     assert r['ok'] is False and r['error'] == 'NO_MBR_APROBADO', r
@@ -76,6 +101,7 @@ def test_gana_la_version_aprobada_mas_alta(app):
     from database import get_db
     with app.app_context():
         conn = get_db()
+        _limpiar(conn, productos=('Prueba Version',), lotes=('LOTE-VER-1',))
         _mbr_aprobado(conn, 'Prueba Version', ['viejo'], version=1)
         _mbr_aprobado(conn, 'Prueba Version', ['Paso 1. nuevo', 'Paso 2. nuevo'], version=2)
         r = crear_ebr_desde_mbr(conn.cursor(), producto_nombre='PRUEBA VERSION',
