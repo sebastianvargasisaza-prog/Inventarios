@@ -1,1 +1,0 @@
-window.__DASH_USR='{usuario}';window.__DASH_ADMIN=({es_admin}===true);

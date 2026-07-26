@@ -129,4 +129,4 @@ Datos regulatorios MÁS críticos del sistema (Part 11 / GMP INVIMA). Tres capas
 
 - `inventario.db`, `*.db`, `*.db-wal`, `*.db-shm` — local databases (gitignored, sometimes appear in working tree).
 - `node_modules/`, `__pycache__/`, `.pytest_cache/`, `archive/`, `BROCHURE_*.docx`, `DOCUMENTO_*.docx`, `ROADMAP_*.docx` — not part of the runtime app.
-- Top-level `auditoria_*.py`, `cadencias_*.py`, `extract_*.py`, `verificar_*.py`, `lotes_realistas.py`, `tabla_maestra.py`, `bf_y_plan.py`, `plan_*.py`, `sah_completo_v3.py` — one-off analysis scripts, not imported by the app.
+- ~~Top-level one-off analysis scripts~~ **BORRADOS el 26-jul** (`auditoria_*.py`, `cadencias_*.py`, `extract_*.py`, `verificar_*.py`, `_wf_*`, `_tmp_nodecheck/`…): 44 archivos que nadie importaba. Verificado con grep sobre `api/`, `tests/` y `scripts/` antes de borrar; git conserva la historia. Los documentos ya cumplidos se movieron a `archive/docs-cerrados/`.

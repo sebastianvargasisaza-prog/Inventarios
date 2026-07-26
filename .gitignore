@@ -69,3 +69,6 @@ _barrido_resultado.txt
 _mapa_permisos.db
 _mapa_esquema_tmp.db
 _barrido_ronda1.txt
+
+# node-check temporal (se regenera al vuelo)
+_tmp_nodech*/
