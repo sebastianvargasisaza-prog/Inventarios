@@ -396,6 +396,19 @@ BATCH_INSTRUCTIVOS = {
         "Paso 19. Fase C1 (péptidos y quelantes): dispensar al final. Homogeneizar lo más posible en el hexanediol y agregar a la mezcla ya finalizada con movimientos circulares, evitando airear y cuidando la dispersión.",
         "Paso 20. Ajustar el pH final si es necesario al rango 5.65-5.75. 1,2-Hexanediol, Disodium EDTA, Sodium Phytate, todos los péptidos y el SYN-AKE. Controles en proceso: densidad ~1.011 g/mL a 25°C, pH ~5.71.",
     ],
+    # 26-jul · el único que faltaba. El PDF exportado de este batch (OP-2026-41, formato viejo
+    # PRD-PRO-001-F03 de abril) trae SOLO las 2 páginas de pesajes: la sección "5. Fabricación/
+    # Mezcla" no bajó en la exportación. Sebastián la encontró en MyBatch y la pasó de ahí.
+    # Los "Resultado: 30 min / 20 min" del registro NO van acá: eran el dato de ESE lote, no el
+    # procedimiento (el tiempo real se registra al ejecutar, por eso queda el espacio en blanco).
+    "SUERO HIDRATANTE AH 1.5%": [
+        "Paso 1. Dividir el agua desionizada en dos partes (70% y 30%). En el recipiente 1 adicionar el 30% del agua desionizada y con agitación constante adicionar las siguientes materias primas: Betaína; Alantoína; Gluconolactona; Vitamina E polvo; Betaglucano.",
+        "Paso 2. Seguir con: Aloe vera, Pantenol polvo. Observación: adicionar uno por uno hasta total disolución, no adicionar materia prima si la anterior no se ha disuelto completamente.",
+        "Paso 3. En el recipiente 2 adicionar la siguiente materia prima con agitación constante (utilizar batidora de mano): Agua desionizada (70%) · Glicerina · ÁH 50 KD · ÁH 300 KD · ÁH 1500 KD.",
+        "Paso 4. Observación: adicionar uno por uno hasta total disolución, no adicionar materia prima si la anterior no se ha disuelto completamente. Revisar que la mezcla quede totalmente homogénea, sin grumos.",
+        "Paso 5. Con agitación constante, adicionar el recipiente 2 al recipiente 1 y dejar en agitación por alrededor de 30 min. Tiempo real: ____ min.",
+        "Paso 6. Por último agregar fenoxietanol y seguir agitando por 20 min. Tiempo real: ____ min.",
+    ],
 }
 
 BATCH_FORMULAS = {

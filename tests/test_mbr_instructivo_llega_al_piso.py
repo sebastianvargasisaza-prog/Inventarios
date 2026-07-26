@@ -98,6 +98,9 @@ def test_el_paso_de_dispensacion_no_lleva_gramos_congelados(app):
 
 
 def test_el_paso_generado_expresa_porcentaje_y_no_un_peso(app):
+    """⚠ Este test SIEMBRA una fórmula y tiene que BORRARLA: la BD de tests es compartida y una
+    fórmula al 77,79% dejada ahí rompe la property test que verifica que toda fórmula activa sume
+    ~100 (me pasó · el gate se puso rojo por mi propia basura)."""
     from database import get_db
     with app.app_context():
         conn = get_db()
@@ -117,6 +120,15 @@ def test_el_paso_generado_expresa_porcentaje_y_no_un_peso(app):
         desc = conn.execute(
             "SELECT descripcion FROM mbr_pasos WHERE mbr_template_id=? AND orden=1",
             (res['id'],)).fetchone()[0]
+        # limpiar lo sembrado ANTES de assertar, para que un assert que falle no deje basura
+        try:
+            cur.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (res['id'],))
+            cur.execute("DELETE FROM mbr_templates WHERE id=?", (res['id'],))
+            cur.execute("DELETE FROM formula_items WHERE producto_nombre='PROD PCT TEST'")
+            cur.execute("DELETE FROM formula_headers WHERE producto_nombre='PROD PCT TEST'")
+            conn.commit()
+        except Exception:
+            conn.rollback()
     assert '77.79%' in desc, desc
     assert '777.9 g' not in desc and '777.9g' not in desc, (
         'el peso por lote NO puede quedar congelado en el texto del paso: %s' % desc)

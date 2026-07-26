@@ -21,20 +21,26 @@
 
 ## 🔴 Abierto · riesgo real
 
-### Instructivos de fabricación incompletos
-- `SUERO HIDRATANTE AH 1.5%` es el **único producto activo** cuyo MBR sigue con los 3 pasos
-  genéricos de relleno. Necesita el procedimiento real de Hernando/Alejandro — no se puede
-  inventar (GMP).
+### Instructivos de fabricación
+- ~~`SUERO HIDRATANTE AH 1.5%` sin instructivo~~ **CARGADO 26-jul.** Su PDF exportado (formato
+  viejo de abril) traía sólo las 2 páginas de pesajes; Sebastián lo encontró en MyBatch. Queda
+  **pendiente que Calidad apruebe la v2 con e-firma** para que entre en vigor.
+- Ya están los 28 de 28 productos con fórmula activa (test que lo vigila:
+  `tests/test_instructivos_completos.py`).
 - Los MBR **no tienen IPCs definidos**, así que el legajo cae a los controles estándar y muestra
   "pendiente" con ✓ a la vez. Cargar specs por producto en `/brd`.
 
 ### Producción sin batch record
-- **35 de 56 órdenes** entraron por la vía "registro simple" (sin legajo). Para zero-paper hay
-  que cerrar o migrar esa vía.
-- **1 orden EN PROCESO sin legajo y sin lote**: `PROD-03764` (ESENCIA ILUMINADORA, 30-jun).
+- ~~35 de 56 órdenes sin legajo~~ **No es un hueco** (Sebastián 26-jul): esas 35 son de **antes**
+  de que existiera el batch record, que se está construyendo ahora. Es historia previa.
+- Sí queda **1 orden EN PROCESO sin legajo y sin lote**: `PROD-03764` (ESENCIA ILUMINADORA, 30-jun).
 
 ### Datos del kardex que INVIMA va a pedir
-- 11 lotes **sin fecha de vencimiento** · 17 sin ubicación · 3 sin INCI.
+- **21 lotes sin fecha de vencimiento** (12 en cuarentena → se completa al liberar; **9 vigentes**
+  urgen, el mayor Silicona BM 956 con 19.387 g) · **62 sin ubicación** (47 en cuarentena, 15
+  vigentes) · **30 MPs sin INCI** pero sólo **1 con stock**.
+  Se listan en `/api/admin/auditoria-lotes` con el estado de cada lote (26-jul).
+  ⚠ Los números que estaban acá antes (11/17/3) salieron de una consulta parcial y eran míos, mal.
 - 30 duplicados y 65 lotes nuevos que destapó `/api/admin/auditoria-lotes` cuando se arregló
   (llevaba tiempo devolviendo "0 duplicados" porque dos queries reventaban en PostgreSQL).
 
@@ -48,9 +54,9 @@
 ## 🟡 Abierto · deuda que muerde
 
 ### Release y operación
-- **Quitar el disco persistente de Render** → sin él no hay deploy sin downtime, y con él **cada
-  deploy tira la app por minutos**. Exige mover primero los COA (`/var/data/coa/`, documentos
-  regulados) a almacenamiento externo. Es un mini-proyecto, no un toggle.
+- ~~Quitar el disco persistente de Render~~ **YA ESTÁ HECHO** (verificado 26-jul: no hay bloque
+  `disk:` en `render.yaml` y los COA viven en R2 desde el 24-jul). Este punto lo arrastré del
+  roadmap viejo sin verificarlo — era mi error, no un pendiente.
 - `--preload` en gunicorn (ojo: los daemons arrancan en el import → con `--preload` correrían en
   el master, verificar antes).
 - Watchdog en `_loop_multi_cron`: hoy un job colgado en I/O bloquea los 78 crons y el supervisor
