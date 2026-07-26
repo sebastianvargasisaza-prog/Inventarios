@@ -3913,6 +3913,11 @@ def prog_diag_formula_anomalia():
     Uso: /api/programacion/diag-formula-anomalia?producto=EMULSION HIDRATANTE ILUMINADORA[&kg=12]"""
     if not _auth():
         return jsonify({'error': 'No autenticado'}), 401
+    # 26-jul · vuelca la RECETA (códigos + porcentajes) = dato regulado INVIMA · gate único.
+    from .inventario import gate_ver_formulas as _gvf
+    _g = _gvf()
+    if _g:
+        return _g
     conn = get_db(); c = conn.cursor()
     prod = (request.args.get('producto') or '').strip()
     try:
@@ -6664,6 +6669,11 @@ def api_trail_explosion():
     reinventa el cálculo. ?producto=NOMBRE&kg=OPCIONAL (default lote de la fórmula)."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    # 26-jul · vuelca la RECETA (códigos + porcentajes) = dato regulado INVIMA · gate único.
+    from .inventario import gate_ver_formulas as _gvf
+    _g = _gvf()
+    if _g:
+        return _g
     producto = (request.args.get('producto') or '').strip()
     if not producto:
         return jsonify({'ok': True, 'producto': '', 'items': []})
@@ -6749,6 +6759,18 @@ def planta_trail_explosion_page():
     if 'compras_user' not in session:
         from flask import redirect
         return redirect('/login?next=/planta/trail-explosion')
+    # 26-jul · la página muestra el desglose de la fórmula, así que va al MISMO gate que su
+    # endpoint. Si la página quedara abierta y el fetch devolviera 403, el usuario vería una
+    # pantalla rota en vez de un "no tenés permiso" claro (M32: gate de vista y gate de datos
+    # son dos controles, y tienen que decir lo mismo).
+    from .inventario import gate_ver_formulas as _gvf
+    if _gvf():
+        from flask import Response as _R
+        return _R('<h2 style="font-family:Inter,system-ui,sans-serif;padding:40px;color:#4c1d95">'
+                  'La receta es un dato regulado INVIMA<br>'
+                  '<span style="font-size:14px;font-weight:400;color:#78716c">La ven Dirección '
+                  'Técnica, Control de Calidad, Aseguramiento y Dirección.</span></h2>',
+                  status=403, mimetype='text/html')
     from flask import Response
     return Response(_TRAIL_EXPLOSION_HTML, mimetype='text/html')
 
@@ -21923,6 +21945,19 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
         )
         return None
 
+    # Estado ANTES del cambio · un audit sin el "antes" no permite revertir.
+    previos = {}
+    try:
+        _pv = c.execute(
+            "SELECT operario_dispensacion_id, operario_elaboracion_id, "
+            "       operario_envasado_id, operario_acondicionamiento_id "
+            "FROM produccion_programada WHERE id=?", (produccion_id,)).fetchone()
+        if _pv:
+            previos = {'dispensacion': _pv[0], 'elaboracion': _pv[1],
+                       'envasado': _pv[2], 'acondicionamiento': _pv[3]}
+    except Exception:
+        previos = {}
+
     # UPDATE produccion_programada · valores ABSOLUTOS (ya garantizamos
     # que los 4 están). Si alguien pasó valores previos para "preservar",
     # esta función reemplaza todo el set de operarios atómicamente.
@@ -21938,6 +21973,21 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
           asignaciones['envasado'],
           asignaciones['acondicionamiento'],
           produccion_id))
+    # FIX 26-jul · último pendiente vivo del roadmap zero-error de mayo (los otros 5 ya se
+    # habían cerrado). `produccion_programada` exige audit_log en TODA mutación: fue justo una
+    # cancelación sin auditar la que hizo desaparecer la programación del 19-may sin dejar
+    # rastro. Acá la IA decide QUIÉN fabrica cada lote — quién dispensó es dato regulado.
+    # Va con el cursor del caller (antes de su commit · M22) y no puede tumbar la asignación
+    # si el audit falla, así que best-effort con log.
+    try:
+        audit_log(c, usuario=user, accion='AUTO_ASIGNAR_OPERARIOS',
+                  tabla='produccion_programada', registro_id=str(produccion_id),
+                  antes={'previos': dict(previos)} if previos else None,
+                  despues=dict(asignaciones),
+                  detalle='asignación automática por afinidad + carga del día')
+    except Exception as _e_aud:
+        logging.getLogger('inventario.programacion').warning(
+            'audit de auto_asignar_operarios falló prod=%s: %s', produccion_id, _e_aud)
     return asignaciones
 
 

@@ -62,6 +62,7 @@ CORAZON=(
   "tests/test_formulas_permiso_invima.py"
   "tests/test_mbr_instructivo_llega_al_piso.py"
   "tests/test_revincular_mbr.py"
+  "tests/test_auto_asignar_operarios_audita.py"
   "tests/test_legajo_trazabilidad_responsables.py"
   "tests/test_inci_ambiguos.py"
   "tests/test_cron_mee_cuarentena.py"

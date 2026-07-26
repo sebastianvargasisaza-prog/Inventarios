@@ -78,3 +78,46 @@ def test_el_resolver_es_uno_solo_y_falla_cerrado(app):
     assert _puede_ver_formulas('valentina') is False
     assert _puede_ver_formulas('') is False
     assert _puede_ver_formulas('usuario-que-no-existe') is False
+
+
+# ─── Los VOLCADOS de catálogo también (26-jul) ────────────────────────────────
+# La receta no se filtra sólo por /api/formulas: hay endpoints de diagnóstico que
+# devuelven códigos y porcentajes. Los OPERATIVOS quedan abiertos a propósito (el
+# operario los necesita para SU lote); los de catálogo van al mismo gate.
+
+_VOLCADOS = [
+    ('GET', '/api/plan/diag-formulas-dump'),
+    ('GET', '/api/programacion/trail-explosion?producto=BLUSH%20BALM'),
+    ('GET', '/api/programacion/diag-formula-anomalia?producto=BLUSH%20BALM'),
+    ('GET', '/api/plan/diag-mp/MP00001'),
+]
+
+
+def test_los_volcados_de_catalogo_exigen_permiso_invima(app):
+    c = _login(app, 'valentina')
+    for metodo, url in _VOLCADOS:
+        r = c.get(url)
+        assert r.status_code == 403, '%s quedó abierto: %s' % (url, r.status_code)
+        assert (r.get_json() or {}).get('codigo') == 'SIN_PERMISO_FORMULA', url
+    h = dict(csrf_headers())
+    h["X-CSRF-Token"] = c.get("/api/csrf-token").get_json()["csrf_token"]
+    r = c.post('/api/formula/costo', headers=h, json={'producto': 'BLUSH BALM', 'cantidad_kg': 1})
+    assert r.status_code == 403, r.status_code
+
+
+def test_tecnica_sigue_pudiendo_usarlos(app):
+    """El gate no puede dejar sin herramienta a quien la usa para reconciliar fórmulas."""
+    c = _login(app, 'hernando')
+    for _m, url in _VOLCADOS:
+        r = c.get(url)
+        assert r.status_code == 200, '%s se rompió para Técnica: %s' % (url, r.status_code)
+
+
+def test_lo_OPERATIVO_sigue_abierto_para_planta(app):
+    """Si se cierra esto, la planta no puede fabricar. Es la línea que el gate NO cruza."""
+    c = _login(app, 'mayerlin')
+    h = dict(csrf_headers())
+    h["X-CSRF-Token"] = c.get("/api/csrf-token").get_json()["csrf_token"]
+    r = c.post('/api/produccion/simular', headers=h,
+               json={'producto': 'BLUSH BALM', 'cantidad_kg': 1})
+    assert r.status_code != 403, 'verificar stock antes de fabricar no puede requerir permiso INVIMA'

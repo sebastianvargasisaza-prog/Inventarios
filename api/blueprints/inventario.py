@@ -579,6 +579,27 @@ def dashboard_insights():
     })
 
 
+def gate_ver_formulas():
+    """Gate reusable para endpoints que VUELCAN la receta (catálogo, dump, costeo, trail).
+
+    Devuelve `None` si puede pasar, o `(response, 403)` si no. Los otros blueprints lo importan
+    perezosamente (`from .inventario import gate_ver_formulas`) para que exista UNA sola
+    definición de "quién ve una fórmula" (M1) — si cada endpoint arma su propio criterio, uno
+    queda viejo y la receta se filtra por ahí.
+
+    OJO: esto es para los volcados de CATÁLOGO. Los endpoints OPERATIVOS (hoja de pesaje,
+    dispensado, rótulos, simular stock, factibilidad) NO se gatean: el operario los necesita
+    para fabricar SU lote, y cerrarlos dejaría la planta sin poder trabajar.
+    """
+    if _puede_ver_formulas():
+        return None
+    return jsonify({
+        'error': 'La receta (ingredientes y porcentajes) es un dato regulado INVIMA · '
+                 'la ven Dirección Técnica, Control de Calidad, Aseguramiento y Dirección',
+        'codigo': 'SIN_PERMISO_FORMULA',
+    }), 403
+
+
 def _puede_ver_formulas(usuario=None):
     """¿Este usuario puede ver la RECETA (ingredientes + porcentajes) de una fórmula maestra?
 
@@ -3759,6 +3780,11 @@ def admin_formulas_pin():
 @bp.route('/api/formula/costo', methods=['POST'])
 def calcular_costo_formula():
     """Calcula costo estimado de un batch sin verificar stock."""
+    # 26-jul · devuelve el desglose por ingrediente (códigos + cantidades) = la receta con
+    # precios encima. Mismo gate INVIMA que el resto de los volcados de catálogo.
+    _g = gate_ver_formulas()
+    if _g:
+        return _g
     data = request.get_json(silent=True) or {}
     producto = data.get('producto', '')
     try:

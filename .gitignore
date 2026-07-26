@@ -62,3 +62,9 @@ archive/mybatch-pdfs/
 # Screenshots de auditoría visual (local, no deploy)
 _uiview/
 nova_*.json
+
+# barrido nocturno de tests (temporal)
+_barrido.sh
+_barrido_resultado.txt
+_mapa_permisos.db
+_mapa_esquema_tmp.db

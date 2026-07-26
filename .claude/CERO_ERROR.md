@@ -1028,6 +1028,32 @@ un alta descuidada inventa 2000 unidades; (4) la vista previa y el apply compart
 (`_envases_kardex_mp_plan`) y el ancla se reclama con CAS antes de escribir. Ver INV-9 en
 `CONTRACT_inventario.md` · `/admin/envases-kardex-mp` · `test_envases_kardex_mp.py` (en el gate).
 
+## 💥 M101 · Una herramienta que REEMPLAZA hijos debe contar los que va a CREAR con el MISMO filtro que usa al crearlos · 26-jul
+
+Lo rompí yo, en producción, con una herramienta que acababa de escribir y testear. La
+re-vinculación de legajos al MBR aprobado borra los pasos `pendiente` y clona los del MBR nuevo
+**filtrando por la FASE del legajo** (un legajo de envasado no debe traer los pasos de
+fabricación). Pero la vista previa contaba `SELECT COUNT(*) FROM mbr_pasos WHERE
+mbr_template_id=?` — **todos**, sin filtrar por fase. Para `OP-2026-0027` (envasado) la previa
+decía "5 → 15 pasos" y el resultado real fue **5 → 0**: el MBR nuevo tenía el instructivo de
+FABRICACIÓN y ni un paso de envasado, así que borró los 5 y no insertó ninguno. El legajo quedó
+vacío.
+
+- **Regla dura: si el INSERT filtra, el COUNT de la vista previa filtra IGUAL.** Es M5 otra vez
+  (el número que se muestra tiene que ser el que decide), pero en su forma más traicionera: acá
+  el número no sólo se mostraba, era el que me convenció de que la operación era segura.
+- **Un guard de "no rompas nada" tiene que incluir "no lo dejes vacío".** Los tests cubrían las
+  líneas rojas obvias (no tocar liberado, no tocar con pasos firmados, no borrar una firma) y
+  ninguna cubría el resultado degenerado: 0 hijos. Al escribir un reemplazo masivo, preguntá
+  explícitamente "¿qué pasa si lo nuevo está vacío?" y hacelo NO-OP.
+- **Toda acción que reemplaza hijos necesita REVERSA desde el audit_log.** El `antes` se guarda
+  justamente para esto; si no hay endpoint que lo lea, en la emergencia se repara a mano. Se
+  agregó `POST /api/brd/revincular-mbr/revertir`.
+- **El chequeo posterior también puede mentir por el mismo filtro.** Verifiqué "¿quedó algún
+  legajo sin pasos?" recorriendo `ordenes-unificadas`… que lista sólo fabricación. Dio `[]` y el
+  legajo roto era de ENVASADO. **Cuando verifiques el efecto de una acción, asegurate de que la
+  fuente que consultás incluya el universo que tocaste.**
+
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 
 Cosas que una auditoría marca como "inconsistencia" y NO lo son. Verificar acá antes de reportar:

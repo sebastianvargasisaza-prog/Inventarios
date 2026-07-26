@@ -311,3 +311,24 @@ generar-OC comparten núcleo desde el M47). Los tres corrigen SUB-COMPRA:
 
 Tests: `tests/test_abastecimiento_dedup_fijo.py` (6 · incluye las 3 regresiones del
 M49 y la paridad), `tests/test_dedup_mismo_dia_respeta_fijo.py` (3).
+
+## 🔏 La asignación automática de operarios deja rastro (26-jul)
+
+`_auto_asignar_operarios` decide QUIÉN dispensa, elabora, envasa y acondiciona cada lote, y
+escribía los 4 operarios en `produccion_programada` **sin `audit_log`** — la tabla donde una
+mutación sin auditar hizo desaparecer la programación del 19-may sin dejar rastro. Quién dispensó
+un lote es dato regulado.
+
+Ahora audita `AUTO_ASIGNAR_OPERARIOS` con el estado previo (leído ANTES del UPDATE, o el "antes"
+sería el "después") y el nuevo. Va con el cursor del caller, antes de su commit (M22), y es
+best-effort con log: un fallo del audit no puede tumbar la asignación. Si la función ABORTA por
+falta de candidatos no toca la BD, así que tampoco audita — auditar un no-cambio ensucia la
+evidencia. Era el último pendiente vivo del roadmap zero-error de mayo (los otros 5 ya estaban
+cerrados · verificados uno por uno). Test: `tests/test_auto_asignar_operarios_audita.py`.
+
+## 🔒 El gate de MBR en modo estricto usa el MISMO criterio que quien crea el legajo (26-jul)
+
+`EBR_MODE='strict'` bloquea aceptar producción sin MBR aprobado. Resolvía el MBR por nombre
+EXACTO mientras `crear_ebr_desde_mbr` ahora lo resuelve con `UPPER(TRIM(...))`: con criterios
+distintos, el gate bloquearía una producción cuyo MBR SÍ existe, sólo porque el nombre está
+guardado con otras mayúsculas. Los dos usan el mismo criterio (M2/M5).

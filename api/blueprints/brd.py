@@ -2674,8 +2674,18 @@ def _mbr_desactualizados(conn):
         ejecutados = conn.execute(
             "SELECT COUNT(*) FROM ebr_pasos_ejecutados WHERE ebr_id=? "
             "AND LOWER(COALESCE(estado,'pendiente'))<>'pendiente'", (f['id'],)).fetchone()[0]
-        pasos_nuevos = conn.execute(
-            "SELECT COUNT(*) FROM mbr_pasos WHERE mbr_template_id=?", (mejor['id'],)).fetchone()[0]
+        # Los pasos que REALMENTE va a recibir: sólo los de SU fase. Contar todos los del MBR
+        # miente — y con consecuencias: un MBR con el instructivo de fabricación no tiene pasos
+        # de envasado, así que re-vincular ahí un legajo de ENVASADO lo deja en CERO pasos.
+        # Pasó de verdad el 26-jul con OP-2026-0027 y hubo que revertirlo. El clon filtra por
+        # fase, así que la cuenta tiene que filtrar por fase también (M5: el número que se
+        # muestra tiene que ser el que decide).
+        _fase_ebr = f['fase'] if f['fase'] in _FASES_VALIDAS else 'fabricacion'
+        pasos_nuevos = sum(
+            1 for r in conn.execute(
+                "SELECT COALESCE(fase,'') FROM mbr_pasos WHERE mbr_template_id=?",
+                (mejor['id'],)).fetchall()
+            if _fase_canonica(r[0]) == _fase_ebr)
         out.append({
             'ebr_id': f['id'], 'numero_op': f['numero_op'], 'producto': f['producto_nombre'],
             'lote': f['lote'], 'fase': f['fase'], 'estado_ebr': f['estado'],
@@ -2686,10 +2696,13 @@ def _mbr_desactualizados(conn):
                 "SELECT COUNT(*) FROM ebr_pasos_ejecutados WHERE ebr_id=?", (f['id'],)).fetchone()[0],
             'pasos_nuevos': pasos_nuevos,
             'pasos_ya_ejecutados': ejecutados,
-            'movible': ejecutados == 0,
-            'motivo': ('' if ejecutados == 0 else
-                       'el lote ya ejecutó %s paso(s): cambiar el procedimiento en marcha es una '
-                       'desviación que decide Calidad, no un ajuste automático' % ejecutados),
+            'movible': ejecutados == 0 and pasos_nuevos > 0,
+            'motivo': ('' if (ejecutados == 0 and pasos_nuevos > 0) else
+                       ('el lote ya ejecutó %s paso(s): cambiar el procedimiento en marcha es una '
+                        'desviación que decide Calidad, no un ajuste automático' % ejecutados)
+                       if ejecutados else
+                       ('el MBR aprobado no tiene pasos de fase %s · re-vincular dejaría el '
+                        'legajo VACÍO' % _fase_ebr)),
         })
     return out
 
@@ -2790,6 +2803,94 @@ def brd_revincular_mbr():
     conn.commit()
     return jsonify({'ok': True, 'dry_run': False, 'revinculados': hechos,
                     'saltados': saltados, 'restante': _mbr_desactualizados(conn)})
+
+
+@bp.route("/api/brd/revincular-mbr/revertir", methods=["POST"])
+def brd_revincular_mbr_revertir():
+    """Deshace una re-vinculación usando el rastro que ella misma dejó.
+
+    Toda acción que reemplaza pasos de un legajo necesita vuelta atrás: el 26-jul la
+    re-vinculación dejó en CERO pasos un legajo de ENVASADO (el MBR nuevo sólo tenía los de
+    fabricación) y hubo que devolverlo a mano. Ahora se revierte con un click, leyendo el
+    `antes` de `audit_log` — que es exactamente para lo que se guarda.
+
+    Body: {ebr_ids:[...], aplicar:bool}. Mismas líneas rojas: nada de tocar un legajo liberado
+    ni uno con pasos ya ejecutados.
+    """
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    d = request.get_json(silent=True) or {}
+    aplicar = bool(d.get('aplicar', False))
+    ids = [int(x) for x in (d.get('ebr_ids') or [])]
+    if not ids:
+        return jsonify({'error': 'faltan ebr_ids'}), 400
+    usuario = session.get('compras_user', '')
+    conn = get_db()
+    cur = conn.cursor()
+    plan, hechos, saltados = [], [], []
+    for ebr_id in ids:
+        fila = conn.execute(
+            "SELECT antes, despues FROM audit_log WHERE accion='REVINCULAR_MBR_EBR' "
+            "AND registro_id=? ORDER BY id DESC LIMIT 1", (str(ebr_id),)).fetchone()
+        if not fila:
+            saltados.append({'ebr_id': ebr_id, 'motivo': 'no tiene una re-vinculación que revertir'})
+            continue
+        try:
+            antes = _json.loads(fila[0]) if fila[0] else {}
+        except Exception:
+            antes = {}
+        mbr_prev, ver_prev = antes.get('mbr'), antes.get('version')
+        if not mbr_prev:
+            saltados.append({'ebr_id': ebr_id, 'motivo': 'el rastro no guardó el MBR anterior'})
+            continue
+        e = conn.execute(
+            "SELECT numero_op, COALESCE(fase,'fabricacion'), estado, mbr_template_id "
+            "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        if not e:
+            saltados.append({'ebr_id': ebr_id, 'motivo': 'el legajo no existe'})
+            continue
+        if str(e[2] or '').lower() in ('liberado', 'rechazado', 'completado', 'cancelado'):
+            saltados.append({'ebr_id': ebr_id, 'motivo': 'legajo %s: es inmutable' % e[2]})
+            continue
+        ejec = conn.execute(
+            "SELECT COUNT(*) FROM ebr_pasos_ejecutados WHERE ebr_id=? "
+            "AND LOWER(COALESCE(estado,'pendiente'))<>'pendiente'", (ebr_id,)).fetchone()[0]
+        if ejec:
+            saltados.append({'ebr_id': ebr_id, 'motivo': 'ya ejecutó %s paso(s)' % ejec})
+            continue
+        plan.append({'ebr_id': ebr_id, 'numero_op': e[0], 'fase': e[1],
+                     'mbr_actual': e[3], 'volver_a_mbr': mbr_prev, 'volver_a_version': ver_prev})
+        if not aplicar:
+            continue
+        _fase = e[1] if e[1] in _FASES_VALIDAS else 'fabricacion'
+        cur.execute("UPDATE ebr_ejecuciones SET mbr_template_id=?, mbr_version=? WHERE id=?",
+                    (mbr_prev, ver_prev, ebr_id))
+        cur.execute("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id=? "
+                    "AND LOWER(COALESCE(estado,'pendiente'))='pendiente'", (ebr_id,))
+        n = 0
+        for s in cur.execute(
+            """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
+                      requiere_e_sign, requiere_qc, COALESCE(fase,'') AS fase
+                 FROM mbr_pasos WHERE mbr_template_id=? ORDER BY orden""", (mbr_prev,)).fetchall():
+            if _fase_canonica(s[7]) != _fase:
+                continue
+            cur.execute(
+                """INSERT INTO ebr_pasos_ejecutados
+                     (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
+                      equipo_requerido, requiere_e_sign, requiere_qc, estado, fase)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)""",
+                (ebr_id, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]))
+            n += 1
+        audit_log(cur, usuario=usuario, accion='REVERTIR_REVINCULAR_MBR',
+                  tabla='ebr_ejecuciones', registro_id=str(ebr_id),
+                  antes={'mbr': e[3]}, despues={'mbr': mbr_prev, 'version': ver_prev, 'pasos': n},
+                  detalle='Deshace la re-vinculación anterior desde el rastro de audit_log')
+        hechos.append({'ebr_id': ebr_id, 'numero_op': e[0], 'mbr': mbr_prev, 'pasos': n})
+    if aplicar:
+        conn.commit()
+    return jsonify({'ok': True, 'dry_run': not aplicar, 'plan': plan,
+                    'revertidos': hechos, 'saltados': saltados})
 
 
 def _ebr_audit_rows(conn, ebr_id):

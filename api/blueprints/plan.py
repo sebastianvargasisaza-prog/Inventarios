@@ -6673,6 +6673,11 @@ def plan_diag_mp(codigo):
     vs muchos lotes)."""
     if not session.get("compras_user"):
         return jsonify({"error": "login requerido"}), 401
+    # 26-jul · vuelca la RECETA (códigos + porcentajes) = dato regulado INVIMA · gate único.
+    from .inventario import gate_ver_formulas as _gvf
+    _g = _gvf()
+    if _g:
+        return _g
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
     conn = get_db(); c = conn.cursor()
     cod = (codigo or "").strip().upper()
@@ -6727,6 +6732,11 @@ def plan_diag_formulas_dump():
     prod divergieron del maestro · ej. Acetyl tetrapeptide-5 a 0.5% en Suero Niacinamida)."""
     if not session.get("compras_user"):
         return jsonify({"error": "login requerido"}), 401
+    # 26-jul · vuelca la RECETA (códigos + porcentajes) = dato regulado INVIMA · gate único.
+    from .inventario import gate_ver_formulas as _gvf
+    _g = _gvf()
+    if _g:
+        return _g
     conn = get_db(); c = conn.cursor()
     # códigos de agua / consumible infinito (no se compran) · excluir del dump
     no_stock = set()

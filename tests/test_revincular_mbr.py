@@ -154,3 +154,76 @@ def test_solo_calidad_o_admin_pueden_revincular(app):
     c.post("/login", data={"username": "valentina", "password": _P}, headers=csrf_headers())
     r = c.post("/api/brd/revincular-mbr", headers=_csrf(c), json={'aplicar': True})
     assert r.status_code == 403, r.status_code
+
+
+# ─── El guard que faltó (26-jul · lo aprendí rompiendo producción) ─────────────
+
+def _escenario_fase_cruzada(app, producto, lote):
+    """MBR viejo CON pasos de envasado · MBR nuevo SOLO con pasos de fabricación.
+
+    Es el caso real: al cargar el instructivo de fabricación, la versión nueva no trae los pasos
+    de envasado. Re-vincular ahí un legajo de ENVASADO lo deja en CERO pasos.
+    """
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, "
+                    "creado_por) VALUES (?,1,'draft',10000,'test')", (producto,))
+        viejo = cur.lastrowid
+        for i, (fase, desc) in enumerate([('fabricacion', 'viejo fab'),
+                                          ('envasado', 'Alistar envases'),
+                                          ('envasado', 'Llenado y control de peso')], 1):
+            cur.execute("INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, "
+                        "tipo_paso) VALUES (?,?,?,?,'mezclado')", (viejo, i, fase, desc))
+        cur.execute("UPDATE mbr_templates SET estado='obsoleto' WHERE id=?", (viejo,))
+        cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, "
+                    "creado_por) VALUES (?,2,'draft',10000,'test')", (producto,))
+        nuevo = cur.lastrowid
+        cur.execute("INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, tipo_paso) "
+                    "VALUES (?,1,'fabricacion','Paso 1. Calentar a 75°C','mezclado')", (nuevo,))
+        cur.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (nuevo,))
+        cur.execute("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, lote, numero_op, "
+                    "estado, iniciado_por, iniciado_at_utc, fase, cantidad_objetivo_g) "
+                    "VALUES (?,1,?,?,'iniciado','sebastian','2026-07-26 10:00:00','envasado',10000)",
+                    (viejo, lote, 'OP-FASE-' + lote))
+        ebr = cur.lastrowid
+        for i, d in enumerate(['Alistar envases', 'Llenado y control de peso'], 1):
+            cur.execute("INSERT INTO ebr_pasos_ejecutados (ebr_id, mbr_paso_id, orden, descripcion, "
+                        "tipo_paso, estado, fase) VALUES (?,?,?,?,'mezclado','pendiente','envasado')",
+                        (ebr, viejo, i, d))
+        conn.commit()
+        return ebr
+
+
+def test_no_deja_un_legajo_de_envasado_SIN_pasos(app):
+    """Si el MBR aprobado no tiene pasos de la fase del legajo, no se toca. Vaciarlo es peor."""
+    ebr = _escenario_fase_cruzada(app, 'FASE CRUZADA PROD', 'LOTE-FC-1')
+    c = _login(app)
+    prev = [x for x in c.get("/api/brd/mbr-desactualizados").get_json()['plan'] if x['ebr_id'] == ebr]
+    assert prev, 'debe verse en el diagnóstico'
+    assert prev[0]['pasos_nuevos'] == 0, 'la cuenta tiene que ser de SU fase, no de todo el MBR'
+    assert prev[0]['movible'] is False
+    assert 'VACÍO' in prev[0]['motivo']
+    d = c.post("/api/brd/revincular-mbr", headers=_csrf(c),
+               json={'ebr_ids': [ebr], 'aplicar': True}).get_json()
+    assert d['revinculados'] == [], d
+    assert len(_pasos(app, ebr)) == 2, 'el legajo conserva sus pasos de envasado'
+
+
+def test_se_puede_revertir_una_revinculacion(app):
+    """Toda acción que reemplaza pasos necesita vuelta atrás."""
+    ebr, viejo, nuevo = _escenario(app, 'REVERT PRODUCTO', 'LOTE-REV-1')
+    c = _login(app)
+    c.post("/api/brd/revincular-mbr", headers=_csrf(c), json={'ebr_ids': [ebr], 'aplicar': True})
+    assert len(_pasos(app, ebr)) == 3
+    d = c.post("/api/brd/revincular-mbr/revertir", headers=_csrf(c),
+               json={'ebr_ids': [ebr], 'aplicar': True}).get_json()
+    assert len(d['revertidos']) == 1, d
+    pasos = _pasos(app, ebr)
+    assert len(pasos) == 1 and 'procedimiento aprobado' in pasos[0], pasos
+    from database import get_db
+    with app.app_context():
+        r = get_db().execute("SELECT 1 FROM audit_log WHERE accion='REVERTIR_REVINCULAR_MBR' "
+                             "AND registro_id=?", (str(ebr),)).fetchone()
+    assert r is not None, 'la reversa también deja rastro'

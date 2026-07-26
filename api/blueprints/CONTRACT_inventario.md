@@ -418,6 +418,14 @@ correctos así — el operario los necesita para su lote. Los de **volcado de ca
 `/api/programacion/diag-formula-anomalia`, `/api/plan/diag-mp/<codigo>`, `/api/formula/costo`)
 deberían pasar por `_puede_ver_formulas`. Tests: `tests/test_formulas_permiso_invima.py`.
 
+⚠ **Ampliado 26-jul:** el gate se extendió a los VOLCADOS de catálogo vía el helper único
+`inventario.gate_ver_formulas()` (lo importan los otros blueprints): `/api/plan/diag-formulas-dump`,
+`/api/programacion/trail-explosion` (+ su página `/planta/trail-explosion`),
+`/api/programacion/diag-formula-anomalia`, `/api/plan/diag-mp/<codigo>` y `/api/formula/costo`.
+Lo OPERATIVO sigue abierto a propósito — hoja de pesaje, dispensado, rótulos, `simular`,
+factibilidad, `listo-producir`: el operario los necesita para SU lote y cerrarlos dejaría a la
+planta sin poder trabajar. Esa es la línea: se cierra NAVEGAR el recetario, no fabricar.
+
 ## 📦 INV-9 · Mover un envase entre kardex es Salida compensatoria + Entrada (25-jul)
 
 Un envase recibido por OC cuyo código todavía no estaba en `maestro_mee` caía a la rama MP de
