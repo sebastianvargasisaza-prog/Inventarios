@@ -54,3 +54,39 @@ def test_un_chequeo_roto_se_declara(app):
     fallidos = sorted(k[:-6] for k in fake if k.endswith('_error'))
     assert fallidos == ['duplicados']
     assert not (not fallidos), 'con un error, ok debe ser False'
+
+
+# ─── Los datos que faltan se LISTAN, no se cuentan (26-jul · Sebastián) ───────
+
+def test_lista_los_lotes_sin_vencimiento_y_sin_ubicacion(app):
+    """Un conteo no se puede accionar; una lista sí. Y con el ESTADO de cada lote se responde
+    lo primero que se pregunta: ¿alguno está en cuarentena?"""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c = app.test_client()
+    r = c.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+    d = c.get("/api/admin/auditoria-lotes?dias=2").get_json()
+    for k in ('lotes_sin_vencimiento', 'lotes_sin_ubicacion', 'mps_sin_inci'):
+        assert k in d, d.keys()
+        assert isinstance(d[k], list), k
+        assert '%s_error' % k.replace('lotes_sin_vencimiento', 'lotes_sin_dato') not in d
+    assert 'lotes_sin_dato_error' not in d, d.get('lotes_sin_dato_error')
+    assert 'mps_sin_inci_error' not in d, d.get('mps_sin_inci_error')
+    # cada fila trae lo necesario para ir a completarlo
+    for fila in (d['lotes_sin_vencimiento'] + d['lotes_sin_ubicacion']):
+        for campo in ('codigo', 'lote', 'stock_g', 'estado', 'en_cuarentena'):
+            assert campo in fila, fila
+    assert 'lotes_sin_vencimiento_en_cuarentena' in d
+    assert d['lotes_sin_vencimiento_count'] == len(d['lotes_sin_vencimiento'])
+
+
+def test_solo_lista_lotes_CON_stock(app):
+    """Un lote agotado sin fecha de vencimiento es historia, no un pendiente."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c = app.test_client()
+    c.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+           headers=csrf_headers(), follow_redirects=False)
+    d = c.get("/api/admin/auditoria-lotes?dias=2").get_json()
+    for fila in d['lotes_sin_vencimiento'] + d['lotes_sin_ubicacion']:
+        assert fila['stock_g'] > 0.01, fila

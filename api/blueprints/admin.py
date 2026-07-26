@@ -14964,6 +14964,70 @@ def admin_auditoria_lotes():
         out["envases_en_kardex_mp_error"] = str(e)
         out["envases_en_kardex_mp"] = []
 
+    # DATOS QUE INVIMA VA A PEDIR y hoy faltan (26-jul · Sebastián los pidió listados, no
+    # contados: "dame la lista"). Un conteo no se puede accionar; una lista sí, y con el
+    # ESTADO de cada lote se puede responder lo primero que se pregunta: ¿alguno está en
+    # cuarentena? (un lote en cuarentena todavía no se liberó, así que el dato faltante se
+    # completa ANTES de liberarlo y no hay nada que corregir hacia atrás).
+    _caso_stock = ("CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
+                   "WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END")
+    try:
+        _lotes = c.execute(
+            "SELECT material_id, COALESCE(lote,'') AS lote, "
+            "       MAX(material_nombre) AS nombre, "
+            "       MAX(COALESCE(fecha_vencimiento,'')) AS venc, "
+            "       MAX(COALESCE(estanteria,'')) AS estanteria, "
+            "       MAX(COALESCE(posicion,'')) AS posicion, "
+            "       MAX(UPPER(COALESCE(estado_lote,''))) AS estado, "
+            "       MAX(COALESCE(proveedor,'')) AS proveedor, MAX(fecha) AS ultima_fecha, "
+            "       COALESCE(SUM(" + _caso_stock + "), 0) AS stock "
+            "FROM movimientos WHERE COALESCE(lote,'') <> '' "
+            "GROUP BY material_id, COALESCE(lote,'') "
+            "HAVING COALESCE(SUM(" + _caso_stock + "), 0) > 0.01").fetchall()
+        _sin_venc, _sin_ubic = [], []
+        for r in _lotes:
+            _fila = {'codigo': r['material_id'], 'nombre': r['nombre'], 'lote': r['lote'],
+                     'stock_g': round(float(r['stock'] or 0), 2), 'estado': r['estado'] or '(vacío)',
+                     'proveedor': r['proveedor'], 'ultimo_movimiento': (r['ultima_fecha'] or '')[:10],
+                     'en_cuarentena': str(r['estado'] or '').startswith('CUARENTENA')}
+            if not (r['venc'] or '').strip():
+                _sin_venc.append(_fila)
+            if not ((r['estanteria'] or '').strip() or (r['posicion'] or '').strip()):
+                _sin_ubic.append(dict(_fila))
+        _sin_venc.sort(key=lambda x: -x['stock_g'])
+        _sin_ubic.sort(key=lambda x: -x['stock_g'])
+        out['lotes_sin_vencimiento'] = _sin_venc
+        out['lotes_sin_ubicacion'] = _sin_ubic
+        out['lotes_sin_vencimiento_count'] = len(_sin_venc)
+        out['lotes_sin_ubicacion_count'] = len(_sin_ubic)
+        out['lotes_sin_vencimiento_en_cuarentena'] = sum(1 for x in _sin_venc if x['en_cuarentena'])
+        out['lotes_sin_ubicacion_en_cuarentena'] = sum(1 for x in _sin_ubic if x['en_cuarentena'])
+    except Exception as e:
+        out['lotes_sin_dato_error'] = str(e)
+        out['lotes_sin_vencimiento'] = []
+        out['lotes_sin_ubicacion'] = []
+    try:
+        # MPs CON STOCK y sin INCI. Sin stock no urge (el INCI se completa al recibir);
+        # con stock sí, porque el INCI es lo que va en el rótulo y en el expediente.
+        # `tipo` existe en maestro_mps Y en movimientos → con el JOIN hay que CALIFICAR toda
+        # columna o es "ambiguous column name" (está en el auto-check de CERO_ERROR y me pasó igual).
+        _caso_mv = ("CASE WHEN mv.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN mv.cantidad "
+                    "WHEN mv.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -mv.cantidad ELSE 0 END")
+        _si = c.execute(
+            "SELECT m.codigo_mp, COALESCE(m.nombre_comercial,'') AS comercial, "
+            "       COALESCE(SUM(" + _caso_mv + "), 0) AS stock "
+            "FROM maestro_mps m LEFT JOIN movimientos mv ON UPPER(TRIM(mv.material_id))=UPPER(TRIM(m.codigo_mp)) "
+            "WHERE COALESCE(m.activo,1)=1 AND COALESCE(TRIM(m.nombre_inci),'')='' "
+            "GROUP BY m.codigo_mp, COALESCE(m.nombre_comercial,'') "
+            "ORDER BY 3 DESC").fetchall()
+        out['mps_sin_inci'] = [{'codigo': r[0], 'comercial': r[1],
+                                'stock_g': round(float(r[2] or 0), 2)} for r in _si]
+        out['mps_sin_inci_count'] = len(out['mps_sin_inci'])
+        out['mps_sin_inci_con_stock'] = sum(1 for x in out['mps_sin_inci'] if x['stock_g'] > 0.01)
+    except Exception as e:
+        out['mps_sin_inci_error'] = str(e)
+        out['mps_sin_inci'] = []
+
     # Un chequeo que FALLÓ no puede verse igual que un chequeo LIMPIO. Dos de estas queries
     # llevaban tiempo reventando en PostgreSQL (GROUP BY incompleto · pasa en SQLite) y el
     # endpoint devolvía `duplicados_sospechosos: []` al lado del error: quien mirara la lista
