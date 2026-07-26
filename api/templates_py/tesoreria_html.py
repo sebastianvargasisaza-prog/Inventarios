@@ -16,39 +16,39 @@ HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f5f4f0; color:#1c1917; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f5f4f0; color:var(--cx-text); }
   .header { background:linear-gradient(135deg,#0f3a1f 0%,#15803d 100%); color:#fff; padding:18px 28px; display:flex; align-items:center; justify-content:space-between; }
   .header h1 { margin:0; font-size:1.4em; font-weight:700; }
   .header a { color:#bbf7d0; font-size:0.85em; text-decoration:none; }
   .container { max-width:1500px; margin:0 auto; padding:18px; }
-  .tabs { display:flex; gap:4px; margin-bottom:18px; border-bottom:2px solid #e5e7eb; padding-bottom:0; flex-wrap:wrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
-  .tab { padding:10px 16px; background:transparent; border:none; cursor:pointer; font-size:13px; color:#57534e; font-weight:600; white-space:nowrap; border-bottom:3px solid transparent; }
-  .tab:hover { color:#15803d; }
-  .tab.active { color:#15803d; border-bottom-color:#15803d; }
+  .tabs { display:flex; gap:4px; margin-bottom:18px; border-bottom:2px solid var(--cx-border); padding-bottom:0; flex-wrap:wrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .tab { padding:10px 16px; background:transparent; border:none; cursor:pointer; font-size:13px; color:var(--cx-text-soft); font-weight:600; white-space:nowrap; border-bottom:3px solid transparent; }
+  .tab:hover { color:var(--cx-success-text); }
+  .tab.active { color:var(--cx-success-text); border-bottom-color:var(--cx-success); }
   .grid { display:grid; gap:14px; }
   .grid-4 { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
   .grid-2 { grid-template-columns:1fr 1fr; }
-  .card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:16px; }
-  .card h3 { margin:0 0 8px; font-size:0.78em; color:#78716c; text-transform:uppercase; letter-spacing:0.06em; }
-  .card .val { font-size:1.6em; font-weight:800; color:#1c1917; line-height:1; }
-  .card .sub { font-size:0.78em; color:#a8a29e; margin-top:4px; }
-  .panel { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:18px; margin-bottom:14px; }
-  .panel h3 { margin:0 0 12px; font-size:0.95em; color:#1c1917; }
+  .card { background:var(--cx-card); border:1px solid var(--cx-border); border-radius:10px; padding:16px; }
+  .card h3 { margin:0 0 8px; font-size:0.78em; color:var(--cx-text-mute); text-transform:uppercase; letter-spacing:0.06em; }
+  .card .val { font-size:1.6em; font-weight:800; color:var(--cx-text); line-height:1; }
+  .card .sub { font-size:0.78em; color:var(--cx-text-faint); margin-top:4px; }
+  .panel { background:var(--cx-card); border:1px solid var(--cx-border); border-radius:10px; padding:18px; margin-bottom:14px; }
+  .panel h3 { margin:0 0 12px; font-size:0.95em; color:var(--cx-text); }
   table { width:100%; border-collapse:collapse; font-size:13px; }
-  th { background:#fafaf9; color:#78716c; font-weight:600; text-align:left; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; }
-  td { padding:8px 12px; border-bottom:1px solid #f5f5f4; }
-  tr:hover td { background:#fafaf9; }
+  th { background:var(--cx-bg-alt); color:var(--cx-text-mute); font-weight:600; text-align:left; padding:10px 12px; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; }
+  td { padding:8px 12px; border-bottom:1px solid var(--cx-bg-alt); }
+  tr:hover td { background:var(--cx-bg-alt); }
   .badge { padding:2px 8px; border-radius:8px; font-size:11px; font-weight:700; display:inline-block; }
-  .b-ok { background:#dcfce7; color:#15803d; }
-  .b-warn { background:#fef3c7; color:#92400e; }
-  .b-err { background:#fee2e2; color:#991b1b; }
-  .empty { color:#a8a29e; font-style:italic; padding:32px; text-align:center; }
+  .b-ok { background:var(--cx-success-pale); color:var(--cx-success-text); }
+  .b-warn { background:var(--cx-warn-pale); color:var(--cx-warn-text); }
+  .b-err { background:var(--cx-danger-pale); color:var(--cx-danger-text); }
+  .empty { color:var(--cx-text-faint); font-style:italic; padding:32px; text-align:center; }
   .btn { padding:8px 14px; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; }
-  .btn-primary { background:#15803d; color:#fff; }
-  .btn-secondary { background:#f5f5f4; color:#44403c; border:1px solid #e7e5e4; }
+  .btn-primary { background:var(--cx-success); color:#fff; }
+  .btn-secondary { background:var(--cx-bg-alt); color:var(--cx-text-soft); border:1px solid var(--cx-border); }
   .hidden { display:none; }
-  .pos { color:#15803d; font-weight:700; }
-  .neg { color:#dc2626; font-weight:700; }
+  .pos { color:var(--cx-success-text); font-weight:700; }
+  .neg { color:var(--cx-danger-text); font-weight:700; }
   @media (max-width:768px) {
     .header { padding:14px 16px; flex-wrap:wrap; gap:8px; }
     .header h1 { font-size:1.1em; }
@@ -58,7 +58,7 @@ HTML = r"""
     .tab { padding:8px 12px; font-size:12px; }
     table thead { display:none; }
     table, table tbody, table tr, table td { display:block; width:100%; }
-    table tr { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:10px; margin-bottom:8px; }
+    table tr { background:var(--cx-card); border:1px solid var(--cx-border); border-radius:8px; padding:10px; margin-bottom:8px; }
     table td { padding:4px 0; border-bottom:none; font-size:12px; }
     table td:first-child { font-weight:700; padding-bottom:6px; }
   }
@@ -66,7 +66,7 @@ HTML = r"""
 </head>
 <body>
   <header class="cx-mod-header cx-fade-in">
-    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
     <div>
       <div class="cx-mod-header__title">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#15803d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/></svg>
@@ -99,14 +99,14 @@ HTML = r"""
     <div id="tab-caja" class="tabpanel">
       <div class="grid grid-4" style="margin-bottom:18px">
         <div class="card"><h3>Ingresos mes</h3><div class="val" id="kpi-ing-mes">-</div><div class="sub" id="kpi-ing-shopify"></div></div>
-        <div class="card"><h3>Egresos mes</h3><div class="val" id="kpi-egr-mes" style="color:#dc2626">-</div><div class="sub">OCs+nómina+otros</div></div>
+        <div class="card"><h3>Egresos mes</h3><div class="val" id="kpi-egr-mes" style="color:var(--cx-danger-text)">-</div><div class="sub">OCs+nómina+otros</div></div>
         <div class="card"><h3>Neto mes</h3><div class="val" id="kpi-neto"></div><div class="sub" id="kpi-neto-sub"></div></div>
         <div class="card"><h3>Saldo caja</h3><div class="val" id="kpi-saldo"></div><div class="sub">acumulado</div></div>
       </div>
       <div class="grid grid-2">
         <div class="panel">
           <h3>Sync Shopify → Ingresos</h3>
-          <div id="shopify-status" style="font-size:13px;color:#57534e">Cargando...</div>
+          <div id="shopify-status" style="font-size:13px;color:var(--cx-text-soft)">Cargando...</div>
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary" onclick="syncDryRun()">👁️ Previsualizar</button>
             <button class="btn btn-primary" onclick="syncEjecutar()">✨ Sincronizar ahora</button>
@@ -115,7 +115,7 @@ HTML = r"""
         </div>
         <div class="panel">
           <h3>Importar OCs recibidas → egresos</h3>
-          <p style="font-size:12px;color:#78716c;margin:0 0 10px">Trae a flujo_egresos las OCs marcadas Recibida que aún no se importaron.</p>
+          <p style="font-size:12px;color:var(--cx-text-mute);margin:0 0 10px">Trae a flujo_egresos las OCs marcadas Recibida que aún no se importaron.</p>
           <button class="btn btn-secondary" onclick="importarOCs()">📦 Importar OCs</button>
           <div id="import-msg" style="margin-top:10px;font-size:12px"></div>
         </div>
@@ -175,8 +175,8 @@ HTML = r"""
       <div class="panel">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
           <h3 style="margin:0">Todas las órdenes de compra</h3>
-          <input type="text" id="oc-q" placeholder="Buscar OC, proveedor, categoría…" oninput="renderArchivoOCs()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;min-width:220px">
-          <select id="oc-estado" onchange="renderArchivoOCs()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
+          <input type="text" id="oc-q" placeholder="Buscar OC, proveedor, categoría…" oninput="renderArchivoOCs()" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;min-width:220px">
+          <select id="oc-estado" onchange="renderArchivoOCs()" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px">
             <option value="">Todos los estados</option>
             <option value="Borrador">Borrador</option><option value="Revisada">Revisada</option>
             <option value="Autorizada">Autorizada</option><option value="Recibida">Recibida</option>
@@ -205,7 +205,7 @@ HTML = r"""
       <div class="panel">
         <h3>👥 Nómina · Cálculo y aprobación quincenal</h3>
         <div class="ctrl-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-          <select id="nom-mes" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
+          <select id="nom-mes" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px">
             <option value="01">Enero</option><option value="02">Febrero</option>
             <option value="03">Marzo</option><option value="04">Abril</option>
             <option value="05">Mayo</option><option value="06">Junio</option>
@@ -213,16 +213,16 @@ HTML = r"""
             <option value="09">Septiembre</option><option value="10">Octubre</option>
             <option value="11">Noviembre</option><option value="12">Diciembre</option>
           </select>
-          <select id="nom-anio" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px"><option>2026</option><option>2025</option></select>
-          <select id="nom-quinc" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;font-weight:600">
+          <select id="nom-anio" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px"><option>2026</option><option>2025</option></select>
+          <select id="nom-quinc" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;font-weight:600">
             <option value="Q1">1ª Quincena (1‑15)</option>
             <option value="Q2">2ª Quincena (16‑fin)</option>
           </select>
           <button class="btn btn-primary" onclick="loadNomina()">Calcular</button>
-          <label class="btn" style="background:#7c3aed;color:#fff;cursor:pointer" title="Importar Excel de nómina">📂 Importar Excel<input type="file" accept=".xlsx" style="display:none" onchange="importarExcelNomina(this)"></label>
+          <label class="btn" style="background:var(--cx-primary);color:#fff;cursor:pointer" title="Importar Excel de nómina">📂 Importar Excel<input type="file" accept=".xlsx" style="display:none" onchange="importarExcelNomina(this)"></label>
           <button class="btn btn-primary" onclick="guardarNomina()" style="margin-left:auto">💾 Guardar</button>
-          <button class="btn" id="nom-btn-aprobar" style="display:none;background:#16a34a;color:#fff" onclick="aprobarNomina()">✓ Aprobar</button>
-          <button class="btn" id="nom-btn-pagar" style="display:none;background:#166534;color:#fff" onclick="pagarNomina()">💸 Marcar Pagada</button>
+          <button class="btn" id="nom-btn-aprobar" style="display:none;background:var(--cx-success);color:#fff" onclick="aprobarNomina()">✓ Aprobar</button>
+          <button class="btn" id="nom-btn-pagar" style="display:none;background:var(--cx-success);color:#fff" onclick="pagarNomina()">💸 Marcar Pagada</button>
           <button class="btn" onclick="exportarNominaExcel()" style="background:#0284c7;color:#fff" title="Descargar Excel">⬇️ Excel</button>
           <span id="nom-estado-badge"></span>
         </div>
@@ -236,7 +236,7 @@ HTML = r"""
             <tbody id="nom-body"><tr><td colspan="12" class="empty">Click "Calcular" para cargar el periodo seleccionado.</td></tr></tbody>
           </table>
         </div>
-        <div id="nom-summary" style="display:none;margin-top:14px;padding:14px;background:#fafaf9;border:1px solid #e7e5e4;border-radius:10px;display:none;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px"></div>
+        <div id="nom-summary" style="display:none;margin-top:14px;padding:14px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:10px;display:none;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px"></div>
         <div class="panel" id="nom-aportes" style="display:none;margin-top:14px">
           <h3>🏛 Aportes Empleador (no deducidos del empleado)</h3>
           <div id="nom-aportes-body"></div>
@@ -248,16 +248,16 @@ HTML = r"""
     <div id="tab-config" class="tabpanel hidden">
       <div class="panel">
         <h3>Información</h3>
-        <p style="font-size:13px;color:#57534e;line-height:1.6">
+        <p style="font-size:13px;color:var(--cx-text-soft);line-height:1.6">
           Tesorería unifica los dashboards de <strong>Finanzas</strong> (caja, P&amp;L, cartera, pagos)
           y <strong>Contabilidad</strong> (facturas, SIIGO, nómina).
           Las URLs viejas <code>/financiero</code> y <code>/contabilidad</code> siguen funcionando
           como atajos directos.
         </p>
-        <p style="font-size:12px;color:#78716c;margin-top:14px">
+        <p style="font-size:12px;color:var(--cx-text-mute);margin-top:14px">
           <strong>Acceso rápido:</strong>
-          <a href="/financiero" style="color:#15803d">Ir a Financiero (vista clásica)</a> ·
-          <a href="/contabilidad" style="color:#15803d">Ir a Contabilidad (vista clásica)</a>
+          <a href="/financiero" style="color:var(--cx-success-text)">Ir a Financiero (vista clásica)</a> ·
+          <a href="/contabilidad" style="color:var(--cx-success-text)">Ir a Contabilidad (vista clásica)</a>
         </p>
       </div>
     </div>
@@ -387,7 +387,7 @@ async function cargarCartera() {
     let html = '<div class="grid grid-4" style="margin-bottom:14px">' +
       '<div class="card"><h3>Total por cobrar</h3><div class="val">'+fmtM(ar.total||0)+'</div></div>' +
       '<div class="card"><h3>Corriente</h3><div class="val pos">'+fmtM(ar.corriente||0)+'</div></div>' +
-      '<div class="card"><h3>Vencido 30d</h3><div class="val" style="color:#f59e0b">'+fmtM(ar.vencido_30||0)+'</div></div>' +
+      '<div class="card"><h3>Vencido 30d</h3><div class="val" style="color:var(--cx-warn-text)">'+fmtM(ar.vencido_30||0)+'</div></div>' +
       '<div class="card"><h3>Vencido 60+d</h3><div class="val neg">'+fmtM((ar.vencido_60||0)+(ar.vencido_90||0))+'</div></div>' +
       '</div>';
     if (ar.detalle && ar.detalle.length) {
@@ -424,7 +424,7 @@ async function cargarPagar() {
     let html = '<div class="grid grid-4" style="margin-bottom:14px">' +
       '<div class="card"><h3>Total por pagar</h3><div class="val">'+fmtM(ap.total||0)+'</div></div>' +
       '<div class="card"><h3>Corriente</h3><div class="val">'+fmtM(ap.corriente||0)+'</div></div>' +
-      '<div class="card"><h3>Vencido 30d</h3><div class="val" style="color:#f59e0b">'+fmtM(ap.vencido_30||0)+'</div></div>' +
+      '<div class="card"><h3>Vencido 30d</h3><div class="val" style="color:var(--cx-warn-text)">'+fmtM(ap.vencido_30||0)+'</div></div>' +
       '<div class="card"><h3>Vencido 60+d</h3><div class="val neg">'+fmtM((ap.vencido_60||0)+(ap.vencido_90||0))+'</div></div>' +
       '</div>';
     if (ap.detalle && ap.detalle.length) {
@@ -483,8 +483,8 @@ function renderArchivoOCs(){
   var catBox=document.getElementById('oc-por-cat');
   catBox.className='';
   catBox.innerHTML=catArr.length?catArr.map(function(c){
-    return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600">'+_esc(c.k)+'</span><span style="font-variant-numeric:tabular-nums;color:#57534e">'+_ocMoney(c.v)+'</span></div>'
-      +'<div style="height:8px;background:#f1f5f9;border-radius:6px;overflow:hidden"><div style="height:100%;width:'+(c.v/maxc*100).toFixed(1)+'%;background:linear-gradient(90deg,#7c3aed,#a855f7);border-radius:6px"></div></div></div>';
+    return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600">'+_esc(c.k)+'</span><span style="font-variant-numeric:tabular-nums;color:var(--cx-text-soft)">'+_ocMoney(c.v)+'</span></div>'
+      +'<div style="height:8px;background:var(--cx-border-soft);border-radius:6px;overflow:hidden"><div style="height:100%;width:'+(c.v/maxc*100).toFixed(1)+'%;background:linear-gradient(90deg,#7c3aed,#a855f7);border-radius:6px"></div></div></div>';
   }).join(''):'<div class="empty">Sin datos</div>';
   // Gasto por mes (últimos 12, barras)
   var meses={}; list.forEach(function(o){ var k=String(o.fecha||'').slice(0,7); if(k) meses[k]=(meses[k]||0)+(parseFloat(o.valor_total)||0); });
@@ -493,8 +493,8 @@ function renderArchivoOCs(){
   var mesBox=document.getElementById('oc-por-mes');
   mesBox.className='';
   mesBox.innerHTML=mesArr.length?mesArr.map(function(c){
-    return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600">'+_esc(c.k)+'</span><span style="font-variant-numeric:tabular-nums;color:#57534e">'+_ocMoney(c.v)+'</span></div>'
-      +'<div style="height:8px;background:#f1f5f9;border-radius:6px;overflow:hidden"><div style="height:100%;width:'+(c.v/maxm*100).toFixed(1)+'%;background:linear-gradient(90deg,#0d9488,#2dd4bf);border-radius:6px"></div></div></div>';
+    return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600">'+_esc(c.k)+'</span><span style="font-variant-numeric:tabular-nums;color:var(--cx-text-soft)">'+_ocMoney(c.v)+'</span></div>'
+      +'<div style="height:8px;background:var(--cx-border-soft);border-radius:6px;overflow:hidden"><div style="height:100%;width:'+(c.v/maxm*100).toFixed(1)+'%;background:linear-gradient(90deg,#0d9488,#2dd4bf);border-radius:6px"></div></div></div>';
   }).join(''):'<div class="empty">Sin datos</div>';
   // Tabla
   var tabla=document.getElementById('oc-tabla'); tabla.className='';
@@ -517,7 +517,7 @@ async function cargarFacturacion() {
               '<td>'+_esc(fa.fecha_emision)+'</td>' +
               '<td>'+fmtM(fa.total)+'</td>' +
               '<td><span class="badge '+cls+'">'+_esc(fa.estado)+'</span></td>' +
-              '<td><a href="/api/contabilidad/facturas/'+_esc(fa.numero)+'/pdf" target="_blank" style="color:#15803d">📄 PDF</a></td></tr>';
+              '<td><a href="/api/contabilidad/facturas/'+_esc(fa.numero)+'/pdf" target="_blank" style="color:var(--cx-success-text)">📄 PDF</a></td></tr>';
     });
     html += '</tbody></table>';
     document.getElementById('facturas-list').innerHTML = html;
@@ -607,30 +607,30 @@ function renderNomina(){
     var ae = e.aportes_empleador||{};
     Object.keys(aportesTot).forEach(function(k){aportesTot[k]+=(ae[k]||0);});
     return '<tr>' +
-      '<td><strong>'+_esc(e.nombre||'')+'</strong><br><small style="color:#78716c">'+_esc(e.cargo||'')+'</small></td>' +
+      '<td><strong>'+_esc(e.nombre||'')+'</strong><br><small style="color:var(--cx-text-mute)">'+_esc(e.cargo||'')+'</small></td>' +
       '<td>'+badgeEmpresa(e.empresa)+'</td>' +
-      '<td><input type="number" value="'+(e.dias_trabajados||0)+'" min="0" max="31" style="width:55px;padding:3px 5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px" onchange="nominaData['+i+'].dias_trabajados=this.value;renderNomina();"></td>' +
+      '<td><input type="number" value="'+(e.dias_trabajados||0)+'" min="0" max="31" style="width:55px;padding:3px 5px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px" onchange="nominaData['+i+'].dias_trabajados=this.value;renderNomina();"></td>' +
       '<td>'+fmtCop(e.salario_base)+'</td>' +
-      '<td style="color:#16a34a">'+fmtCop(e.aux_transporte)+'</td>' +
-      '<td><input type="number" value="'+(e.valor_horas_extras||0)+'" min="0" step="10000" style="width:80px;padding:3px 5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px" onchange="nominaData['+i+'].valor_horas_extras=parseFloat(this.value)||0;renderNomina();"></td>' +
-      '<td><input type="number" value="'+(e.bonificaciones||0)+'" min="0" step="10000" style="width:80px;padding:3px 5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px" onchange="nominaData['+i+'].bonificaciones=parseFloat(this.value)||0;renderNomina();"></td>' +
-      '<td style="color:#dc2626">-'+fmtCop(e.desc_salud)+'</td>' +
-      '<td style="color:#dc2626">-'+fmtCop(e.desc_pension)+'</td>' +
-      '<td style="font-weight:700;color:#6d28d9">'+fmtCop(neto)+'</td>' +
+      '<td style="color:var(--cx-success-text)">'+fmtCop(e.aux_transporte)+'</td>' +
+      '<td><input type="number" value="'+(e.valor_horas_extras||0)+'" min="0" step="10000" style="width:80px;padding:3px 5px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px" onchange="nominaData['+i+'].valor_horas_extras=parseFloat(this.value)||0;renderNomina();"></td>' +
+      '<td><input type="number" value="'+(e.bonificaciones||0)+'" min="0" step="10000" style="width:80px;padding:3px 5px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px" onchange="nominaData['+i+'].bonificaciones=parseFloat(this.value)||0;renderNomina();"></td>' +
+      '<td style="color:var(--cx-danger-text)">-'+fmtCop(e.desc_salud)+'</td>' +
+      '<td style="color:var(--cx-danger-text)">-'+fmtCop(e.desc_pension)+'</td>' +
+      '<td style="font-weight:700;color:var(--cx-primary-text)">'+fmtCop(neto)+'</td>' +
       '<td style="font-size:11px">' +
-        (e.banco ? '<span style="display:block;font-weight:600">'+_esc(e.banco)+'</span><span style="color:#6b7280">'+_esc(e.tipo_cuenta||'')+'</span><span style="display:block;font-family:monospace;font-size:10px;color:#6d28d9">'+_esc(e.numero_cuenta||'')+'</span>' : '<span style="color:#d1d5db;font-style:italic">Sin registrar</span>') +
+        (e.banco ? '<span style="display:block;font-weight:600">'+_esc(e.banco)+'</span><span style="color:var(--cx-text-mute)">'+_esc(e.tipo_cuenta||'')+'</span><span style="display:block;font-family:monospace;font-size:10px;color:var(--cx-primary-text)">'+_esc(e.numero_cuenta||'')+'</span>' : '<span style="color:var(--cx-border);font-style:italic">Sin registrar</span>') +
       '</td>' +
-      '<td><button class="btn" style="padding:2px 7px;font-size:10px;background:#f5f5f4;color:#1c1917" onclick="verComprobante('+e.id+')" title="Ver comprobante">🖨️</button></td>' +
+      '<td><button class="btn" style="padding:2px 7px;font-size:10px;background:var(--cx-bg-alt);color:var(--cx-text)" onclick="verComprobante('+e.id+')" title="Ver comprobante">🖨️</button></td>' +
       '</tr>';
   }).join('');
   var s = document.getElementById('nom-summary');
   s.style.display='grid';
   s.innerHTML =
-    '<div><div style="font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.4px">Total Devengado</div><div style="font-size:18px;font-weight:800;color:#1c1917;margin-top:4px">'+fmtCop(totalBruto)+'</div></div>'+
-    '<div><div style="font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.4px">Total Deducciones</div><div style="font-size:18px;font-weight:800;color:#dc2626;margin-top:4px">-'+fmtCop(totalDed)+'</div></div>'+
-    '<div><div style="font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.4px">Neto a Pagar</div><div style="font-size:18px;font-weight:800;color:#16a34a;margin-top:4px">'+fmtCop(totalNeto)+'</div></div>'+
-    '<div><div style="font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.4px">Aportes Empleador</div><div style="font-size:18px;font-weight:800;color:#6d28d9;margin-top:4px">'+fmtCop(aportesTot.total)+'</div></div>'+
-    '<div><div style="font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.4px">Costo Total Empresa</div><div style="font-size:18px;font-weight:800;color:#6d28d9;margin-top:4px">'+fmtCop(totalBruto+aportesTot.total)+'</div></div>';
+    '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px">Total Devengado</div><div style="font-size:18px;font-weight:800;color:var(--cx-text);margin-top:4px">'+fmtCop(totalBruto)+'</div></div>'+
+    '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px">Total Deducciones</div><div style="font-size:18px;font-weight:800;color:var(--cx-danger-text);margin-top:4px">-'+fmtCop(totalDed)+'</div></div>'+
+    '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px">Neto a Pagar</div><div style="font-size:18px;font-weight:800;color:var(--cx-success-text);margin-top:4px">'+fmtCop(totalNeto)+'</div></div>'+
+    '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px">Aportes Empleador</div><div style="font-size:18px;font-weight:800;color:var(--cx-primary-text);margin-top:4px">'+fmtCop(aportesTot.total)+'</div></div>'+
+    '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px">Costo Total Empresa</div><div style="font-size:18px;font-weight:800;color:var(--cx-primary-text);margin-top:4px">'+fmtCop(totalBruto+aportesTot.total)+'</div></div>';
   var ap = document.getElementById('nom-aportes');
   ap.style.display='block';
   ap.querySelector('#nom-aportes-body').innerHTML =
@@ -638,7 +638,7 @@ function renderNomina(){
     [['Salud (8.5%)',aportesTot.salud],['Pensión (12%)',aportesTot.pension],
      ['ARL',aportesTot.arl],['SENA (2%)',aportesTot.sena],
      ['ICBF (3%)',aportesTot.icbf],['Caja (4%)',aportesTot.caja],['TOTAL',aportesTot.total]].map(function(x){
-      return '<div style="text-align:center;background:#fafaf9;border-radius:8px;padding:10px"><div style="font-size:10px;color:#78716c">'+x[0]+'</div><div style="font-size:14px;font-weight:700;color:'+(x[0]==='TOTAL'?'#6d28d9':'#1c1917')+';margin-top:2px">'+fmtCop(x[1])+'</div></div>';
+      return '<div style="text-align:center;background:var(--cx-bg-alt);border-radius:8px;padding:10px"><div style="font-size:10px;color:var(--cx-text-mute)">'+x[0]+'</div><div style="font-size:14px;font-weight:700;color:'+(x[0]==='TOTAL'?'#6d28d9':'#1c1917')+';margin-top:2px">'+fmtCop(x[1])+'</div></div>';
     }).join('') + '</div>';
 }
 
@@ -668,14 +668,14 @@ async function checkEstadoNomina(){
     var btnPag=document.getElementById('nom-btn-pagar');
     var esAdmin = true;  // Tesoreria - siempre admins (Mayra/Sebastian/Alejandro)
     if(pagadas>0 && pagadas===estados.length){
-      badge.innerHTML='<span style="background:#166534;color:#fff;padding:3px 12px;border-radius:12px;font-size:11px;font-weight:700">💸 Pagada</span>';
+      badge.innerHTML='<span style="background:var(--cx-success);color:#fff;padding:3px 12px;border-radius:12px;font-size:11px;font-weight:700">💸 Pagada</span>';
       if(btnAp) btnAp.style.display='none'; if(btnPag) btnPag.style.display='none';
     } else if(aprobadas>0 && aprobadas===estados.length){
-      badge.innerHTML='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">✓ Aprobada - pendiente pago</span>';
+      badge.innerHTML='<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">✓ Aprobada - pendiente pago</span>';
       if(btnAp) btnAp.style.display='none';
       if(btnPag && esAdmin) btnPag.style.display='inline-block';
     } else if(estados.length>0){
-      badge.innerHTML='<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">Pendiente aprobación</span>';
+      badge.innerHTML='<span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">Pendiente aprobación</span>';
       if(btnAp && esAdmin) btnAp.style.display='inline-block';
       if(btnPag) btnPag.style.display='none';
     } else { badge.innerHTML=''; if(btnAp) btnAp.style.display='none'; if(btnPag) btnPag.style.display='none'; }

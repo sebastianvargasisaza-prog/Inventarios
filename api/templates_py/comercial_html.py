@@ -9,45 +9,45 @@ HTML = r"""<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1c1917;font-size:14px}
+body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);font-size:14px}
 .topbar{background:linear-gradient(90deg,#581c87,#7c3aed);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:14px}
 .topbar h1{font-size:18px;font-weight:700;flex:1}
-.topbar a{color:#cbd5e1;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,.1)}
-.tabs{background:#fff;border-bottom:2px solid #e2e8f0;display:flex;gap:0}
-.tabbtn{padding:12px 22px;font-size:13px;font-weight:600;color:#64748b;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
-.tabbtn:hover{background:#f8fafc;color:#7c3aed}
-.tabbtn.on{color:#7c3aed;border-bottom-color:#7c3aed;font-weight:700}
+.topbar a{color:var(--cx-border);text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,.1)}
+.tabs{background:var(--cx-card);border-bottom:2px solid var(--cx-border);display:flex;gap:0}
+.tabbtn{padding:12px 22px;font-size:13px;font-weight:600;color:var(--cx-text-mute);background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
+.tabbtn:hover{background:var(--cx-bg-alt);color:var(--cx-primary-text)}
+.tabbtn.on{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);font-weight:700}
 .pane{display:none;padding:22px 24px;max-width:1400px;margin:0 auto}
 .pane.on{display:block}
 .btn{padding:7px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
-.btn-primary{background:#7c3aed;color:#fff}.btn-primary:hover{background:#6d28d9}
-.btn-secondary{background:#e2e8f0;color:#475569}
-.btn-success{background:#16a34a;color:#fff}
-.btn-danger{background:#dc2626;color:#fff}
+.btn-primary{background:var(--cx-primary);color:#fff}.btn-primary:hover{background:var(--cx-primary)}
+.btn-secondary{background:var(--cx-border);color:var(--cx-text-soft)}
+.btn-success{background:var(--cx-success);color:#fff}
+.btn-danger{background:var(--cx-danger);color:#fff}
 .btn-sm{padding:4px 8px;font-size:11px}
-input,select,textarea{padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;width:100%}
-input:focus,select:focus,textarea:focus{border-color:#7c3aed;outline:none}
+input,select,textarea{padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;font-family:inherit;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--cx-primary);outline:none}
 .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .row > * {flex:1;min-width:180px}
-label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4px}
-.empty{text-align:center;color:#94a3b8;padding:30px;font-style:italic}
+label{font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px}
+.empty{text-align:center;color:var(--cx-text-faint);padding:30px;font-style:italic}
 /* Kanban styles */
 .kanban{display:flex;gap:12px;overflow-x:auto;padding:4px;align-items:flex-start}
-.kcol{min-width:240px;background:#f1f5f9;border-radius:10px;padding:8px}
-.kcol-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;color:#475569;padding:4px 8px;display:flex;justify-content:space-between;align-items:center}
-.kcard{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-top:8px;font-size:12px;cursor:pointer;transition:all .15s}
-.kcard:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);border-color:#7c3aed}
-.kcard b{display:block;color:#0f172a;font-size:13px;margin-bottom:4px}
-.kcard .meta{font-size:10px;color:#64748b;margin-top:6px}
-.kcard .v{font-weight:700;color:#16a34a;font-size:12px}
-.b-stage-consulta{background:#e2e8f0;color:#475569}
-.b-stage-nda{background:#dbeafe;color:#1e40af}
+.kcol{min-width:240px;background:var(--cx-border-soft);border-radius:10px;padding:8px}
+.kcol-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;color:var(--cx-text-soft);padding:4px 8px;display:flex;justify-content:space-between;align-items:center}
+.kcard{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;padding:10px;margin-top:8px;font-size:12px;cursor:pointer;transition:all .15s}
+.kcard:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);border-color:var(--cx-primary)}
+.kcard b{display:block;color:var(--cx-text);font-size:13px;margin-bottom:4px}
+.kcard .meta{font-size:10px;color:var(--cx-text-mute);margin-top:6px}
+.kcard .v{font-weight:700;color:var(--cx-success-text);font-size:12px}
+.b-stage-consulta{background:var(--cx-border);color:var(--cx-text-soft)}
+.b-stage-nda{background:var(--cx-info-pale);color:var(--cx-info-text)}
 .b-stage-brief{background:#e0e7ff;color:#3730a3}
-.b-stage-cotizacion{background:#fef3c7;color:#92400e}
-.b-stage-contrato{background:#fed7aa;color:#9a3412}
-.b-stage-produccion{background:#d1fae5;color:#065f46}
-.b-stage-ganado{background:#16a34a;color:#fff}
-.b-stage-perdido{background:#fee2e2;color:#991b1b}
+.b-stage-cotizacion{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.b-stage-contrato{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.b-stage-produccion{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.b-stage-ganado{background:var(--cx-success);color:#fff}
+.b-stage-perdido{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
 </style>
 </head>
 <body>
@@ -66,7 +66,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px">
     <h3 style="color:#581c87">Pipeline Maquila Full Service</h3>
     <div style="display:flex;align-items:center;gap:10px">
-      <span style="font-size:12px;color:#64748b">Pipeline activo: <b id="maq-valor" style="color:#16a34a">$0</b></span>
+      <span style="font-size:12px;color:var(--cx-text-mute)">Pipeline activo: <b id="maq-valor" style="color:var(--cx-success-text)">$0</b></span>
       <button class="btn btn-primary" onclick="abrirModalMaquila()">+ Nuevo deal</button>
     </div>
   </div>
@@ -86,8 +86,8 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
       <option value="cerrado">Cerrados</option>
     </select>
   </div>
-  <div style="background:#fef3c7;border-left:4px solid #d97706;padding:12px 16px;margin-bottom:16px;border-radius:0 6px 6px 0;font-size:13px">
-    <b>📥 Webhook activo:</b> <code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:11px">POST /api/eos/leads/webhook</code>
+  <div style="background:var(--cx-warn-pale);border-left:4px solid var(--cx-accent-dark);padding:12px 16px;margin-bottom:16px;border-radius:0 6px 6px 0;font-size:13px">
+    <b>📥 Webhook activo:</b> <code style="background:var(--cx-card);padding:2px 6px;border-radius:4px;font-size:11px">POST /api/eos/leads/webhook</code>
     - configura web3forms o cualquier form para enviar aquí. Llega notif in-app automática.
   </div>
   <div id="eos-list"></div>
@@ -95,7 +95,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
 
 <!-- MODAL: Nuevo deal maquila -->
 <div id="modal-maq" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:9999;align-items:center;justify-content:center;padding:20px">
-  <div style="background:#fff;border-radius:14px;padding:22px 26px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto">
+  <div style="background:var(--cx-card);border-radius:14px;padding:22px 26px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto">
     <h3 style="color:#581c87;margin-bottom:14px" id="maq-modal-title">Nuevo deal maquila</h3>
     <input type="hidden" id="mq-id">
     <div style="margin-bottom:10px"><label>Empresa</label><input id="mq-empresa" type="text"></div>
@@ -180,14 +180,14 @@ async function cargarMaquila(){
       var html = '<div class="kcol">' +
         '<div class="kcol-h"><span>'+labels[st]+' ('+deals.length+')</span><span>'+_fmtCOP(totalV)+'</span></div>';
       if(!deals.length){
-        html += '<div style="padding:12px;text-align:center;color:#94a3b8;font-size:11px">-</div>';
+        html += '<div style="padding:12px;text-align:center;color:var(--cx-text-faint);font-size:11px">-</div>';
       } else {
         html += deals.map(function(deal){
           return '<div class="kcard" onclick="editarMaquila('+deal.id+')">' +
             '<b>'+_esc(deal.empresa)+'</b>' +
-            (deal.contacto_nombre?'<div style="color:#64748b">'+_esc(deal.contacto_nombre)+'</div>':'') +
+            (deal.contacto_nombre?'<div style="color:var(--cx-text-mute)">'+_esc(deal.contacto_nombre)+'</div>':'') +
             (deal.valor_estimado_cop>0?'<div class="v">'+_fmtCOP(deal.valor_estimado_cop)+'</div>':'') +
-            (deal.notas?'<div style="font-size:11px;color:#64748b;margin-top:4px;line-height:1.3">'+_esc((deal.notas||'').substring(0,100))+'</div>':'') +
+            (deal.notas?'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;line-height:1.3">'+_esc((deal.notas||'').substring(0,100))+'</div>':'') +
             '<div class="meta">Owner: '+_esc(deal.owner||'-')+'</div>' +
           '</div>';
         }).join('');
@@ -266,18 +266,18 @@ async function cargarEosLeads(){
     if(!d.leads.length){ box.innerHTML = '<div class="empty">Sin leads aún. Cuando lleguen via webhook /api/eos/leads/webhook aparecerán aquí.</div>'; return; }
     box.innerHTML = d.leads.map(function(l){
       var color = {nuevo:'#dc2626',contactado:'#d97706',demo_agendada:'#7c3aed',propuesta:'#6d28d9',cerrado:'#16a34a',descartado:'#94a3b8'}[l.estado] || '#64748b';
-      return '<div class="card" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:10px;border-left:4px solid '+color+'">' +
+      return '<div class="card" style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:14px;margin-bottom:10px;border-left:4px solid '+color+'">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">' +
           '<div><b>'+_esc(l.nombre || l.email || '(sin nombre)')+'</b>' +
-            (l.empresa?' · <span style="color:#64748b">'+_esc(l.empresa)+'</span>':'')+
+            (l.empresa?' · <span style="color:var(--cx-text-mute)">'+_esc(l.empresa)+'</span>':'')+
             ' <span style="background:'+color+';color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;margin-left:6px">'+l.estado+'</span></div>' +
-          '<span style="font-size:11px;color:#94a3b8">'+_esc((l.creado_en||'').slice(0,16))+'</span>' +
+          '<span style="font-size:11px;color:var(--cx-text-faint)">'+_esc((l.creado_en||'').slice(0,16))+'</span>' +
         '</div>' +
-        '<div style="font-size:12px;color:#475569;margin-top:4px">' +
-          (l.email?'📧 <a href="mailto:'+_esc(l.email)+'" style="color:#6d28d9">'+_esc(l.email)+'</a>':'') +
+        '<div style="font-size:12px;color:var(--cx-text-soft);margin-top:4px">' +
+          (l.email?'📧 <a href="mailto:'+_esc(l.email)+'" style="color:var(--cx-primary-text)">'+_esc(l.email)+'</a>':'') +
           (l.telefono?' · 📞 '+_esc(l.telefono):'') +
         '</div>' +
-        (l.mensaje?'<div style="font-size:13px;color:#475569;margin-top:6px;background:#f8fafc;padding:8px 10px;border-radius:6px">'+_esc(l.mensaje)+'</div>':'') +
+        (l.mensaje?'<div style="font-size:13px;color:var(--cx-text-soft);margin-top:6px;background:var(--cx-bg-alt);padding:8px 10px;border-radius:6px">'+_esc(l.mensaje)+'</div>':'') +
         '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' +
           (l.estado==='nuevo'?'<button class="btn btn-success btn-sm" onclick="cambiarEstadoLead('+l.id+',\'contactado\')">Marqué contacto</button>':'') +
           (l.estado!=='cerrado' && l.estado!=='descartado' ?'<button class="btn btn-secondary btn-sm" onclick="cambiarEstadoLead('+l.id+',\'demo_agendada\')">Demo agendada</button><button class="btn btn-secondary btn-sm" onclick="cambiarEstadoLead('+l.id+',\'propuesta\')">Propuesta</button><button class="btn btn-success btn-sm" onclick="cambiarEstadoLead('+l.id+',\'cerrado\')">Cerrado</button><button class="btn btn-danger btn-sm" onclick="cambiarEstadoLead('+l.id+',\'descartado\')">Descartar</button>':'') +

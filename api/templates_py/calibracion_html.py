@@ -25,15 +25,15 @@ body{font-family:"Inter",system-ui,-apple-system,Arial,sans-serif;background:var
 .sub{color:var(--cx-text-soft,#64748b);font-size:13.5px;margin:4px 0 18px;max-width:900px;line-height:1.5}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:13px;margin-bottom:18px}
 .kpi{background:var(--cx-surface,#fff);border:1px solid var(--cx-border,#ece9f6);border-radius:15px;padding:15px 17px;box-shadow:0 2px 12px rgba(109,40,217,.05);position:relative;overflow:hidden}
-.kpi::after{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#cbd5e1}
-.kpi.v::after{background:#16a34a}.kpi.p::after{background:#d97706}.kpi.x::after{background:#dc2626}.kpi.s::after{background:#64748b}
+.kpi::after{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cx-border)}
+.kpi.v::after{background:var(--cx-success)}.kpi.p::after{background:var(--cx-accent-dark)}.kpi.x::after{background:var(--cx-danger)}.kpi.s::after{background:var(--cx-text-mute)}
 .kpi .n{font-size:29px;font-weight:800;letter-spacing:-.03em;line-height:1.05}
 .kpi .l{font-size:11px;color:var(--cx-text-mute,#8b8b9e);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-top:3px}
-.kpi.v .n{color:#16a34a}.kpi.p .n{color:#d97706}.kpi.x .n{color:#dc2626}
+.kpi.v .n{color:var(--cx-success-text)}.kpi.p .n{color:var(--cx-warn-text)}.kpi.x .n{color:var(--cx-danger-text)}
 .bar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
 .bar input.q{flex:1;min-width:230px;max-width:420px}
 .fchip{border:1px solid var(--cx-border,#e4e2ee);background:var(--cx-surface,#fff);color:var(--cx-text-soft,#64748b);border-radius:22px;padding:7px 15px;font-size:12.5px;font-weight:700;cursor:pointer;transition:.15s}
-.fchip:hover{border-color:#a78bfa}
+.fchip:hover{border-color:var(--cx-primary-light)}
 .fchip.on{background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;border-color:transparent;box-shadow:0 6px 16px -8px rgba(109,40,217,.7)}
 .panel{background:var(--cx-surface,#fff);border:1px solid var(--cx-border,#ece9f6);border-radius:16px;overflow:hidden;box-shadow:0 2px 14px rgba(109,40,217,.05)}
 table{width:100%;border-collapse:collapse;font-size:13px}
@@ -44,10 +44,10 @@ tbody tr:hover{background:rgba(124,58,237,.045)}
 .eqsub{font-size:11px;color:var(--cx-text-mute,#8b8b9e);margin-top:2px}
 code{background:var(--cx-bg-alt,#f1f5f9);padding:1px 6px;border-radius:5px;font-size:11.5px}
 .chip{display:inline-block;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:800;white-space:nowrap}
-.c-vigente{background:#dcfce7;color:#15803d}
-.c-proximo{background:#fef3c7;color:#b45309}
-.c-vencido{background:#fee2e2;color:#b91c1c}
-.c-sin_calibrar{background:#eef2f7;color:#64748b}
+.c-vigente{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.c-proximo{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.c-vencido{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
+.c-sin_calibrar{background:#eef2f7;color:var(--cx-text-mute)}
 tr.r-vencido{background:rgba(220,38,38,.05)}
 tr.r-proximo{background:rgba(217,119,6,.045)}
 .acts{display:flex;gap:7px;justify-content:flex-end}
@@ -64,7 +64,7 @@ tr.r-proximo{background:rgba(217,119,6,.045)}
 .lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute,#8b8b9e);font-weight:800;margin-bottom:5px}
 .hint{font-size:11.5px;color:var(--cx-text-mute,#8b8b9e);margin-top:5px}
 .msg{font-size:13px;min-height:18px;margin-top:6px}
-.note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:13px;padding:12px 15px;font-size:12.5px;margin-bottom:16px;line-height:1.5}
+.note{background:var(--cx-info-pale);border:1px solid #bfdbfe;color:var(--cx-info-text);border-radius:13px;padding:12px 15px;font-size:12.5px;margin-bottom:16px;line-height:1.5}
 .x{background:none;border:none;font-size:24px;line-height:1;cursor:pointer;color:var(--cx-text-mute,#8b8b9e)}
 @media(max-width:820px){.frm{grid-template-columns:1fr}.hero .who{display:none}}
 </style>
@@ -235,7 +235,7 @@ async function guardar(){
   var btn = document.getElementById('r-save'), cod = btn.getAttribute('data-cod');
   var msg = document.getElementById('r-msg');
   var fecha = document.getElementById('r-fecha').value;
-  if(!fecha){ msg.innerHTML='<span style="color:#dc2626">La fecha de calibraci&oacute;n es obligatoria.</span>'; return; }
+  if(!fecha){ msg.innerHTML='<span style="color:var(--cx-danger-text)">La fecha de calibraci&oacute;n es obligatoria.</span>'; return; }
   btn.disabled = true;
   msg.innerHTML = '<span class="cx-text-mute">Guardando...</span>';
   var body = {
@@ -252,12 +252,12 @@ async function guardar(){
     var r = await fetch('/api/calidad/equipos/'+encodeURIComponent(cod)+'/registrar-evento', _opts('POST', body));
     var d = await r.json();
     if(r.ok && d.ok){
-      msg.innerHTML = '<span style="color:#15803d;font-weight:700">Calibraci&oacute;n registrada.</span>';
+      msg.innerHTML = '<span style="color:var(--cx-success-text);font-weight:700">Calibraci&oacute;n registrada.</span>';
       setTimeout(function(){ cerrar('m-reg'); cargar(); }, 700);
     } else {
-      msg.innerHTML = '<span style="color:#dc2626">'+esc(d.error||'No se pudo guardar')+'</span>';
+      msg.innerHTML = '<span style="color:var(--cx-danger-text)">'+esc(d.error||'No se pudo guardar')+'</span>';
     }
-  }catch(e){ msg.innerHTML = '<span style="color:#dc2626">Error de red: '+esc(e.message)+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error de red: '+esc(e.message)+'</span>'; }
   btn.disabled = false;
 }
 

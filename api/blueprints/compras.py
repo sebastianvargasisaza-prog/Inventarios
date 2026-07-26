@@ -132,24 +132,24 @@ def _enviar_oc_a_proveedor(numero_oc, proveedor, email_proveedor, items, monto_t
     for it in (items or []):
         items_html += (
             '<tr>'
-            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb">{(it.get("codigo_mp") or "")}</td>'
-            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb">{(it.get("nombre_mp") or "")}</td>'
-            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">{float(it.get("cantidad_g") or 0):,.0f}</td>'
-            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">${float(it.get("precio_unitario") or 0):,.2f}</td>'
-            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">${(float(it.get("cantidad_g") or 0)*float(it.get("precio_unitario") or 0)):,.0f}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid var(--cx-border, #e5e7eb)">{(it.get("codigo_mp") or "")}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid var(--cx-border, #e5e7eb)">{(it.get("nombre_mp") or "")}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid var(--cx-border, #e5e7eb);text-align:right">{float(it.get("cantidad_g") or 0):,.0f}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid var(--cx-border, #e5e7eb);text-align:right">${float(it.get("precio_unitario") or 0):,.2f}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid var(--cx-border, #e5e7eb);text-align:right">${(float(it.get("cantidad_g") or 0)*float(it.get("precio_unitario") or 0)):,.0f}</td>'
             '</tr>'
         )
     body_html = (
         '<html><body style="font-family:Arial,sans-serif;max-width:680px;margin:auto">'
-        '<div style="background:#0e7490;color:#fff;padding:20px;border-radius:8px 8px 0 0">'
+        '<div style="background:var(--cx-info, #0e7490);color:#fff;padding:20px;border-radius:8px 8px 0 0">'
         '<h2 style="margin:0">Orden de Compra Autorizada</h2>'
         f'<div style="opacity:.9;margin-top:4px">N° {numero_oc} · {proveedor}</div>'
         '</div>'
-        '<div style="background:#f9fafb;padding:20px;border-radius:0 0 8px 8px">'
+        '<div style="background:var(--cx-bg-alt, #f9fafb);padding:20px;border-radius:0 0 8px 8px">'
         '<p>Estimado proveedor,</p>'
         f'<p>Se ha autorizado la siguiente Orden de Compra:</p>'
-        '<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:6px;overflow:hidden">'
-        '<thead style="background:#1e293b;color:#fff"><tr>'
+        '<table style="width:100%;border-collapse:collapse;background:var(--cx-card, #fff);border-radius:6px;overflow:hidden">'
+        '<thead style="background:var(--cx-text, #1e293b);color:#fff"><tr>'
         '<th style="padding:10px;text-align:left">Código</th>'
         '<th style="padding:10px;text-align:left">Material</th>'
         '<th style="padding:10px;text-align:right">Cant (g)</th>'
@@ -157,11 +157,11 @@ def _enviar_oc_a_proveedor(numero_oc, proveedor, email_proveedor, items, monto_t
         '<th style="padding:10px;text-align:right">Subtotal</th>'
         '</tr></thead><tbody>' + items_html + '</tbody>'
         f'<tfoot><tr><td colspan="4" style="padding:10px;text-align:right;font-weight:700">TOTAL:</td>'
-        f'<td style="padding:10px;text-align:right;font-weight:800;color:#0e7490">${monto_total:,.0f}</td></tr></tfoot>'
+        f'<td style="padding:10px;text-align:right;font-weight:800;color:var(--cx-info-text, #0e7490)">${monto_total:,.0f}</td></tr></tfoot>'
         '</table>'
         + (f'<p style="margin-top:14px"><b>Observaciones:</b><br>{observaciones}</p>' if observaciones else '')
         + '<p style="margin-top:18px">Confirmar recepción de esta OC respondiendo a este correo.</p>'
-        '<p style="color:#6b7280;font-size:12px;margin-top:20px">Espagiria Laboratorio · Compras HHA Group</p>'
+        '<p style="color:var(--cx-text-mute, #6b7280);font-size:12px;margin-top:20px">Espagiria Laboratorio · Compras HHA Group</p>'
         '</div></body></html>'
     )
     try:
@@ -5556,7 +5556,7 @@ def rechazar_solicitud(numero):
                 f"<h2>Tu solicitud de pago fue rechazada</h2>"
                 f"<p>Solicitud: <b>{numero}</b></p>"
                 f"<p>Motivo: <i>{motivo}</i></p>"
-                f"<p style='color:#94a3b8;font-size:11px'>Mensaje automatico HHA Group</p>"
+                f"<p style='color:var(--cx-text-faint, #94a3b8);font-size:11px'>Mensaje automatico HHA Group</p>"
             )
             _notificar_solicitante_email(_dest, _asunto, _body)
     except Exception:
@@ -6019,12 +6019,12 @@ def actualizar_estado_solicitud(numero):
             _asunto_n = f'Solicitud rechazada \u2014 {numero.upper()}'
             _body_n = (
                 '<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
-                '<div style="background:#fee2e2;padding:20px;border-radius:8px;border-left:4px solid #dc2626;">'
-                '<h2 style="color:#991b1b;">Solicitud rechazada</h2>'
+                '<div style="background:var(--cx-danger-pale, #fee2e2);padding:20px;border-radius:8px;border-left:4px solid var(--cx-danger, #dc2626);">'
+                '<h2 style="color:var(--cx-danger-text, #991b1b);">Solicitud rechazada</h2>'
                 f'<p>Tu solicitud <strong>{numero.upper()}</strong> fue rechazada.</p>'
                 + (f'<p><strong>Motivo:</strong> {obs}</p>' if obs else '')
                 + '<p>Puedes corregirla y reenviarla desde el sistema.</p>'
-                '<p style="color:#6b7280;font-size:12px;">Compras HHA \u2014 Espagiria</p>'
+                '<p style="color:var(--cx-text-mute, #6b7280);font-size:12px;">Compras HHA \u2014 Espagiria</p>'
                 '</div></body></html>'
             )
             _notificar_solicitante_email(_notif_dest, _asunto_n, _body_n)
@@ -6032,12 +6032,12 @@ def actualizar_estado_solicitud(numero):
             _asunto_n = f'Solicitud aprobada \u2014 {numero.upper()}'
             _body_n = (
                 '<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
-                '<div style="background:#dcfce7;padding:20px;border-radius:8px;border-left:4px solid #16a34a;">'
-                '<h2 style="color:#15803d;">Solicitud aprobada</h2>'
+                '<div style="background:var(--cx-success-pale, #dcfce7);padding:20px;border-radius:8px;border-left:4px solid var(--cx-success, #16a34a);">'
+                '<h2 style="color:var(--cx-success-text, #15803d);">Solicitud aprobada</h2>'
                 f'<p>Tu solicitud <strong>{numero.upper()}</strong> fue aprobada.</p>'
                 f'<p>Orden de compra generada: <strong>{oc_creada}</strong></p>'
                 '<p>El equipo de compras esta gestionando tu pedido.</p>'
-                '<p style="color:#6b7280;font-size:12px;">Compras HHA \u2014 Espagiria</p>'
+                '<p style="color:var(--cx-text-mute, #6b7280);font-size:12px;">Compras HHA \u2014 Espagiria</p>'
                 '</div></body></html>'
             )
             _notificar_solicitante_email(_notif_dest, _asunto_n, _body_n)
@@ -7615,7 +7615,7 @@ def pagar_oc(numero_oc):
                     f"</ul>"
                     f"<p>El estado en Marketing → Influencers cambió a <b>Pagada</b>. "
                     f"El comprobante de egreso (CE) se adjuntó al beneficiario si tenía email.</p>"
-                    f"<p style='color:#94a3b8;font-size:11px'>Mensaje automatico HHA Group</p>"
+                    f"<p style='color:var(--cx-text-faint, #94a3b8);font-size:11px'>Mensaje automatico HHA Group</p>"
                 )
                 _notificar_solicitante_email(_dest, _asunto, _body)
     except Exception as _e_notif:
@@ -8938,7 +8938,7 @@ _DISCREPANCIAS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="ut
 .top h1{font-size:18px;font-weight:800;display:flex;align-items:center;gap:9px}.top a{color:#e9d5ff;text-decoration:none;font-size:13px;font-weight:600}
 .wrap{max-width:1120px;margin:0 auto;padding:20px 26px}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
-.chip{padding:8px 16px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;font-weight:700;font-size:13px;color:var(--mut)}
+.chip{padding:8px 16px;border:1px solid var(--line);border-radius:999px;background:var(--cx-card, #fff);cursor:pointer;font-weight:700;font-size:13px;color:var(--mut)}
 .chip.on{background:linear-gradient(135deg,#a78bfa,var(--vio));color:#fff;border-color:transparent}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
@@ -8947,7 +8947,7 @@ _DISCREPANCIAS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="ut
 .card.alert{border-left:4px solid var(--dang)}
 .crow{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
 .cname{font-weight:800;font-size:15px}.cbadge{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 8px;border-radius:6px;margin-left:8px;vertical-align:middle}
-.bmp{background:#eff6ff;color:#1e40af}.bmee{background:#f0fdfa;color:#0f766e}.bconsumo{background:#fef3c7;color:#92400e}.botro{background:#f3f4f6;color:#4b5563}
+.bmp{background:var(--cx-info-pale, #eff6ff);color:var(--cx-info-text, #1e40af)}.bmee{background:#f0fdfa;color:var(--cx-info-text, #0f766e)}.bconsumo{background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #92400e)}.botro{background:#f3f4f6;color:#4b5563}
 .cvar{font-size:22px;font-weight:800;text-align:right}.up{color:var(--dang)}.down{color:var(--ok)}
 .csub{font-size:12px;color:var(--mut);margin-top:3px}
 .razon{margin-top:10px;font-size:13px;font-weight:700}
@@ -8955,11 +8955,11 @@ _DISCREPANCIAS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="ut
 .deff{flex:1;min-width:170px;background:#faf9ff;border:1px solid var(--line);border-radius:10px;padding:9px 12px}
 .deff .lb{font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:var(--mut);font-weight:700}
 .deff .vv{font-size:15px;font-weight:800;margin-top:2px}
-.bar{height:7px;border-radius:4px;background:#eee;margin-top:6px;overflow:hidden}.bar>span{display:block;height:100%}
+.bar{height:7px;border-radius:4px;background:var(--cx-border-soft, #eee);margin-top:6px;overflow:hidden}.bar>span{display:block;height:100%}
 .spark{display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:8px}
-.spark i{flex:1;background:#ddd6fe;border-radius:2px;min-height:2px}.spark i.last{background:var(--vio)}
+.spark i{flex:1;background:var(--cx-primary-soft, #ddd6fe);border-radius:2px;min-height:2px}.spark i.last{background:var(--vio)}
 .mut{color:var(--mut)}.empty{padding:40px;text-align:center;color:var(--mut)}
-.atip{font-size:9px;font-weight:800;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:6px;margin-left:6px}
+.atip{font-size:9px;font-weight:800;color:var(--cx-warn-text, #92400e);background:var(--cx-warn-pale, #fef3c7);padding:2px 7px;border-radius:6px;margin-left:6px}
 </style></head><body>
 <div class="top"><h1>&#128202; Discrepancias de compra</h1><a href="/compras">&larr; Compras</a></div>
 <div class="wrap">
@@ -9010,7 +9010,7 @@ async function cargar(){
        +'<div class="decomp">'
        +'<div class="deff"><div class="lb">Efecto cantidad</div><div class="vv" style="color:'+((o.efecto_cantidad||0)>=0?'var(--warn)':'var(--ok)')+'">'+fmt(o.efecto_cantidad)+'</div>'+decompBar(o.efecto_cantidad,o.efecto_precio,'#f59e0b')+'<div class="csub">'+(o.var_cantidad_pct==null?'-':((o.var_cantidad_pct>=0?'+':'')+o.var_cantidad_pct+'% en unidades'))+'</div></div>'
        +'<div class="deff"><div class="lb">Efecto precio</div><div class="vv" style="color:'+((o.efecto_precio||0)>=0?'var(--dang)':'var(--ok)')+'">'+fmt(o.efecto_precio)+'</div>'+decompBar(o.efecto_precio,o.efecto_cantidad,'#dc2626')+'<div class="csub">'+(o.var_precio_pct==null?'-':((o.var_precio_pct>=0?'+':'')+o.var_precio_pct+'% en precio unit.'))+'</div></div>'
-       +'</div><div style="margin-top:10px;text-align:right"><a class="verhist" data-item="'+esc(o.item)+'" onclick="abrirTraza(this)" style="font-size:12px;color:#6d28d9;font-weight:700;cursor:pointer">&#128220; ver historia completa (quién pidió → OC → recepción) &rarr;</a></div></div>';
+       +'</div><div style="margin-top:10px;text-align:right"><a class="verhist" data-item="'+esc(o.item)+'" onclick="abrirTraza(this)" style="font-size:12px;color:var(--cx-primary-text, #6d28d9);font-weight:700;cursor:pointer">&#128220; ver historia completa (quién pidió → OC → recepción) &rarr;</a></div></div>';
     });
     box.innerHTML=h;
   }catch(e){ box.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; }
@@ -9022,7 +9022,7 @@ async function abrirTraza(el){
   var ov=document.createElement('div'); ov.id='traza-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(30,27,46,.5);z-index:900;display:flex;align-items:flex-start;justify-content:center;padding:34px 16px;overflow:auto';
   ov.onclick=function(e){ if(e.target===ov) cerrarTraza(); };
-  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:760px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.35);overflow:hidden"><div style="background:linear-gradient(135deg,#4c1d95,#6d28d9);color:#fff;padding:15px 22px;display:flex;justify-content:space-between;align-items:center"><span style="font-weight:800;font-size:15px">&#128220; Trazabilidad del artículo</span><button onclick="cerrarTraza()" style="background:none;border:none;color:#e9d5ff;font-size:22px;cursor:pointer;line-height:1">&times;</button></div><div id="traza-bd" style="padding:20px 22px"><div class="empty">Cargando&hellip;</div></div></div>';
+  ov.innerHTML='<div style="background:var(--cx-card, #fff);border-radius:16px;max-width:760px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.35);overflow:hidden"><div style="background:linear-gradient(135deg,#4c1d95,#6d28d9);color:#fff;padding:15px 22px;display:flex;justify-content:space-between;align-items:center"><span style="font-weight:800;font-size:15px">&#128220; Trazabilidad del artículo</span><button onclick="cerrarTraza()" style="background:none;border:none;color:#e9d5ff;font-size:22px;cursor:pointer;line-height:1">&times;</button></div><div id="traza-bd" style="padding:20px 22px"><div class="empty">Cargando&hellip;</div></div></div>';
   document.body.appendChild(ov);
   try{
     var d=await (await fetch('/api/compras/trazabilidad-item?item='+encodeURIComponent(item),{cache:'no-store'})).json();
@@ -9044,8 +9044,8 @@ async function abrirTraza(el){
         if(e.tipo==='solicitado') extra='por <b>'+esc(e.quien)+'</b>'+(e.oc?(' &middot; '+esc(e.oc)):'')+(e.estado?(' &middot; '+esc(e.estado)):'');
         else if(e.tipo==='ordenado') extra='<b>'+esc(e.ref)+'</b> &middot; '+esc(e.quien)+(e.precio>0?(' &middot; '+fmt(e.precio)+'/u'):'')+(e.estado?(' &middot; '+esc(e.estado)):'');
         else if(e.tipo==='recibido') extra='<b>'+esc(e.ref)+'</b> &middot; recibió <b>'+esc(e.quien)+'</b>';
-        h+='<div style="position:relative;padding:9px 0;border-bottom:1px solid #f5f3ff"><span style="position:absolute;left:-25px;color:'+col+';font-size:14px">'+ic+'</span>'
-          +'<div style="display:flex;justify-content:space-between;gap:10px"><div><b style="color:'+col+'">'+tit+'</b> &middot; '+extra+'</div><div style="white-space:nowrap;color:#78716c;font-size:12px">'+(e.cantidad!=null?(Math.round(e.cantidad).toLocaleString('es-CO')+' uds &middot; '):'')+esc(e.fecha||'')+'</div></div></div>';
+        h+='<div style="position:relative;padding:9px 0;border-bottom:1px solid var(--cx-primary-pale, #f5f3ff)"><span style="position:absolute;left:-25px;color:'+col+';font-size:14px">'+ic+'</span>'
+          +'<div style="display:flex;justify-content:space-between;gap:10px"><div><b style="color:'+col+'">'+tit+'</b> &middot; '+extra+'</div><div style="white-space:nowrap;color:var(--cx-text-mute, #78716c);font-size:12px">'+(e.cantidad!=null?(Math.round(e.cantidad).toLocaleString('es-CO')+' uds &middot; '):'')+esc(e.fecha||'')+'</div></div></div>';
       });
       h+='</div>';
     }
@@ -9060,34 +9060,34 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Consumos / Gastos Generales</title>
 <style>
- body{font-family:'Inter',system-ui,-apple-system,Segoe UI,Arial;margin:0;background:#f6f7fb;color:#1e293b}
+ body{font-family:'Inter',system-ui,-apple-system,Segoe UI,Arial;margin:0;background:#f6f7fb;color:var(--cx-text, #1e293b)}
  .wrap{max-width:1580px;margin:0 auto;padding:20px 26px 60px}
- a{color:#7c3aed;text-decoration:none;font-weight:600}h1{font-size:23px;margin:6px 0;font-weight:800;letter-spacing:-.01em;color:#0f172a}h2{font-size:16px;margin:4px 0 12px;font-weight:800;color:#1e293b}
- .muted{color:#64748b;font-size:13px}
+ a{color:var(--cx-primary-text, #7c3aed);text-decoration:none;font-weight:600}h1{font-size:23px;margin:6px 0;font-weight:800;letter-spacing:-.01em;color:var(--cx-text, #0f172a)}h2{font-size:16px;margin:4px 0 12px;font-weight:800;color:var(--cx-text, #1e293b)}
+ .muted{color:var(--cx-text-mute, #64748b);font-size:13px}
  .kpis{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
- .kpi{background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:15px 18px;min-width:150px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
- .kpi .v{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1}.kpi .l{font-size:11px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:.4px;font-weight:600}
- .card{background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:18px 20px;margin:14px 0;box-shadow:0 2px 14px rgba(15,23,42,.05)}
- .alert{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 15px;margin:8px 0;color:#9a3412}
+ .kpi{background:var(--cx-card, #fff);border:1px solid #eef2f7;border-radius:14px;padding:15px 18px;min-width:150px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
+ .kpi .v{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1}.kpi .l{font-size:11px;color:var(--cx-text-mute, #64748b);margin-top:4px;text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+ .card{background:var(--cx-card, #fff);border:1px solid #eef2f7;border-radius:16px;padding:18px 20px;margin:14px 0;box-shadow:0 2px 14px rgba(15,23,42,.05)}
+ .alert{background:var(--cx-warn-pale, #fff7ed);border:1px solid #fed7aa;border-radius:12px;padding:11px 15px;margin:8px 0;color:var(--cx-warn-text, #9a3412)}
  table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
- th,td{padding:9px 11px;border-bottom:1px solid #f4f4f8;text-align:right;vertical-align:middle}th{color:#64748b;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:800;background:#fbfbfe}
+ th,td{padding:9px 11px;border-bottom:1px solid #f4f4f8;text-align:right;vertical-align:middle}th{color:var(--cx-text-mute, #64748b);text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:800;background:#fbfbfe}
  th:first-child,td:first-child{text-align:left}
  tbody tr:hover td{background:#faf9ff}
- .up{color:#dc2626;font-weight:800}.down{color:#16a34a;font-weight:700}.flat{color:#9ca3af}
- input,select{padding:9px 11px;border:1px solid #e2e8f0;border-radius:9px;font-size:13px;background:#fff;transition:border-color .15s,box-shadow .15s}
- input:focus,select:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.1)}
+ .up{color:var(--cx-danger-text, #dc2626);font-weight:800}.down{color:var(--cx-success-text, #16a34a);font-weight:700}.flat{color:#9ca3af}
+ input,select{padding:9px 11px;border:1px solid var(--cx-border, #e2e8f0);border-radius:9px;font-size:13px;background:var(--cx-card, #fff);transition:border-color .15s,box-shadow .15s}
+ input:focus,select:focus{outline:none;border-color:var(--cx-primary, #7c3aed);box-shadow:0 0 0 3px rgba(124,58,237,.1)}
  .frow{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:10px}
- .frow label{font-size:11px;color:#64748b;display:block;margin-bottom:3px;font-weight:600}
+ .frow label{font-size:11px;color:var(--cx-text-mute, #64748b);display:block;margin-bottom:3px;font-weight:600}
  button{padding:9px 15px;border:0;border-radius:9px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.1);transition:transform .1s,box-shadow .15s}
  button:hover{transform:translateY(-1px);box-shadow:0 3px 8px rgba(15,23,42,.14)}
- .b-sol{background:linear-gradient(135deg,#16a34a,#15803d)}.b-add{background:linear-gradient(135deg,#7c3aed,#6d28d9)}.b-del{background:linear-gradient(135deg,#ef4444,#dc2626)}.b-cancel{background:#e2e8f0;color:#334155}
+ .b-sol{background:linear-gradient(135deg,#16a34a,#15803d)}.b-add{background:linear-gradient(135deg,#7c3aed,#6d28d9)}.b-del{background:linear-gradient(135deg,#ef4444,#dc2626)}.b-cancel{background:var(--cx-border, #e2e8f0);color:var(--cx-text-soft, #334155)}
  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50}
- .modal.show{display:flex}.box{background:#fff;border-radius:14px;padding:20px;width:330px;max-width:92vw}
+ .modal.show{display:flex}.box{background:var(--cx-card, #fff);border-radius:14px;padding:20px;width:330px;max-width:92vw}
  .tabs{display:flex;gap:6px;margin:12px 0}
- .tab{padding:8px 16px;border-radius:9px 9px 0 0;background:#ede9fe;color:#6d28d9;cursor:pointer;font-weight:700;font-size:14px}
- .tab.active{background:#7c3aed;color:#fff}
+ .tab{padding:8px 16px;border-radius:9px 9px 0 0;background:var(--cx-primary-soft, #ede9fe);color:var(--cx-primary-text, #6d28d9);cursor:pointer;font-weight:700;font-size:14px}
+ .tab.active{background:var(--cx-primary, #7c3aed);color:#fff}
 </style></head><body><div class="wrap">
-<a href="/compras">&larr; Compras</a> &nbsp;&middot;&nbsp; <a href="/compras/discrepancias" style="color:#6d28d9;font-weight:700">&#128202; Discrepancias (precio vs cantidad)</a>
+<a href="/compras">&larr; Compras</a> &nbsp;&middot;&nbsp; <a href="/compras/discrepancias" style="color:var(--cx-primary-text, #6d28d9);font-weight:700">&#128202; Discrepancias (precio vs cantidad)</a>
 <h1>&#128230; Consumos / Gastos Generales</h1>
 <div class="muted">Todo lo que la empresa consume (EPP, papelería, aseo, dotación, mantenimiento…) · NO es materia prima. Creá el consumible una vez y reusalo en cada solicitud. El sistema traza el gasto y te avisa cuando algo <b>sube</b>.</div>
 
@@ -9166,13 +9166,13 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
  async function guardarConsumible(){
    var nombre=document.getElementById('c-nombre').value.trim();
    var m=document.getElementById('c-msg');
-   if(!nombre){m.innerHTML='<span style="color:#b91c1c">Poné un nombre.</span>';return;}
+   if(!nombre){m.innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">Poné un nombre.</span>';return;}
    var body={nombre:nombre,categoria:document.getElementById('c-cat').value,proveedor:document.getElementById('c-prov').value.trim(),precio_referencia:parseFloat(document.getElementById('c-precio').value)||0,unidad:document.getElementById('c-unidad').value.trim()||'unidad'};
    var t=await csrf();
    var r=await fetch('/api/compras/consumibles',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
    var j=await r.json();
-   if(!r.ok){m.innerHTML='<span style="color:#b91c1c">'+ESC(j.error||r.status)+'</span>';return;}
-   m.innerHTML='<span style="color:#16a34a">✓ Guardado. Ya lo podés solicitar abajo.</span>';
+   if(!r.ok){m.innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">'+ESC(j.error||r.status)+'</span>';return;}
+   m.innerHTML='<span style="color:var(--cx-success-text, #16a34a)">✓ Guardado. Ya lo podés solicitar abajo.</span>';
    document.getElementById('c-nombre').value='';document.getElementById('c-prov').value='';document.getElementById('c-precio').value='';
    cargarCatalogo();
  }
@@ -9205,16 +9205,16 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
    var cant=parseFloat(document.getElementById('m-cant').value)||0;
    var precio=parseFloat(document.getElementById('m-precio').value)||0;
    var mm=document.getElementById('m-msg');
-   if(cant<=0){mm.innerHTML='<span style="color:#b91c1c">Cantidad mayor a 0.</span>';return;}
+   if(cant<=0){mm.innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">Cantidad mayor a 0.</span>';return;}
    document.getElementById('m-go').disabled=true;mm.textContent='Creando solicitud...';
    var body={categoria:_sel.categoria,urgencia:'Normal',observaciones:'Consumible: '+_sel.nombre,valor:Math.round(cant*precio),
      items:[{codigo_mp:'',nombre_mp:_sel.nombre,cantidad_g:cant,unidad:_sel.unidad||'unidad',valor_estimado:Math.round(cant*precio),proveedor_sugerido:_sel.proveedor||''}]};
    var t=await csrf();
    var r=await fetch('/api/solicitudes-compra',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
    var j=await r.json();document.getElementById('m-go').disabled=false;
-   if(!r.ok){mm.innerHTML='<span style="color:#b91c1c">'+ESC(j.error||r.status)+'</span>';return;}
+   if(!r.ok){mm.innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">'+ESC(j.error||r.status)+'</span>';return;}
    cerrarM();
-   document.getElementById('c-msg').innerHTML='<span style="color:#16a34a">&#128722; Solicitud creada'+(j.numero?(' ('+ESC(j.numero)+')'):'')+' · '+ESC(_sel.nombre)+' x'+cant+'. Va a Compras para autorizar/pagar.</span>';
+   document.getElementById('c-msg').innerHTML='<span style="color:var(--cx-success-text, #16a34a)">&#128722; Solicitud creada'+(j.numero?(' ('+ESC(j.numero)+')'):'')+' · '+ESC(_sel.nombre)+' x'+cant+'. Va a Compras para autorizar/pagar.</span>';
  }
  async function borrar(id){
    if(!confirm('¿Quitar este consumible del catálogo?'))return;
@@ -9255,7 +9255,7 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
  async function cargarTendencia(){
    var r=await fetch('/api/compras/consumos/tendencia?meses=8',{credentials:'same-origin'});
    var j=await r.json();
-   if(!j.ok){document.getElementById('tabla').innerHTML='<span style="color:#b91c1c">Error: '+ESC(j.error||r.status)+'</span>';return;}
+   if(!j.ok){document.getElementById('tabla').innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">Error: '+ESC(j.error||r.status)+'</span>';return;}
    var meses=j.meses||[], cats=j.categorias||[], al=j.alertas||[];
    document.getElementById('kpis').innerHTML=
      '<div class="kpi"><div class="v">'+FM(j.gasto_total)+'</div><div class="l">gasto total ('+meses.length+' meses)</div></div>'+
@@ -9659,7 +9659,7 @@ def rechazar_oc(numero_oc):
             ).fetchone()
             if ce_row:
                 _ce_codigo, _ce_fecha, _ce_monto = ce_row
-                _ce_info = (f'<div style="background:#d1fae5;border-left:4px solid #16a34a;'
+                _ce_info = (f'<div style="background:var(--cx-success-pale, #d1fae5);border-left:4px solid var(--cx-success, #16a34a);'
                             f'padding:12px 16px;border-radius:0 6px 6px 0;margin-top:12px">'
                             f'<b>\u2713 Esta OC ya estaba pagada:</b> CE {_ce_codigo} '
                             f'del {_ce_fecha} por ${_ce_monto:,.0f}'
@@ -9677,13 +9677,13 @@ def rechazar_oc(numero_oc):
                        f'(CE {_ce_codigo}). Si tienes dudas, abre /compras \u2192 Comprobantes.')
         _body_r = (
             '<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
-            '<div style="background:#fee2e2;padding:20px;border-radius:8px;border-left:4px solid #dc2626;">'
-            '<h2 style="color:#991b1b;">Orden de compra rechazada</h2>'
+            '<div style="background:var(--cx-danger-pale, #fee2e2);padding:20px;border-radius:8px;border-left:4px solid var(--cx-danger, #dc2626);">'
+            '<h2 style="color:var(--cx-danger-text, #991b1b);">Orden de compra rechazada</h2>'
             f'<p>La OC <strong>{numero_oc}</strong> asociada a tu solicitud fue rechazada.</p>'
             f'<p><strong>Motivo:</strong> {motivo}</p>'
             f'{_ce_info}'
             f'<p style="margin-top:14px">{_accion}</p>'
-            '<p style="color:#6b7280;font-size:12px;">Compras HHA \u2014 Espagiria</p>'
+            '<p style="color:var(--cx-text-mute, #6b7280);font-size:12px;">Compras HHA \u2014 Espagiria</p>'
             '</div></body></html>'
         )
         _notificar_solicitante_email(_dest_email, _asunto_r, _body_r)
@@ -11986,24 +11986,24 @@ def planta_ordenes_servicio_page():
 <title>Recibir Órdenes de Servicio · Planta</title>
 <style>
 *{box-sizing:border-box;font-family:'Segoe UI',Roboto,sans-serif}
-body{margin:0;background:#f1f5f9;padding:18px;color:#0f172a}
-.wrap{max-width:900px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
-h1{color:#0f766e;margin:0 0 6px}
-.subtitle{color:#64748b;font-size:13px;margin-bottom:18px}
-.banner{background:#fef3c7;border:1px solid #ca8a04;padding:10px 14px;border-radius:8px;font-size:12px;color:#78350f;margin-bottom:14px}
-.os-card{background:#fff;border:2px solid #16a34a;border-radius:10px;padding:14px;margin-bottom:12px}
+body{margin:0;background:var(--cx-border-soft, #f1f5f9);padding:18px;color:var(--cx-text, #0f172a)}
+.wrap{max-width:900px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+h1{color:var(--cx-info-text, #0f766e);margin:0 0 6px}
+.subtitle{color:var(--cx-text-mute, #64748b);font-size:13px;margin-bottom:18px}
+.banner{background:var(--cx-warn-pale, #fef3c7);border:1px solid var(--cx-accent-dark, #ca8a04);padding:10px 14px;border-radius:8px;font-size:12px;color:var(--cx-warn-text, #78350f);margin-bottom:14px}
+.os-card{background:var(--cx-card, #fff);border:2px solid var(--cx-success, #16a34a);border-radius:10px;padding:14px;margin-bottom:12px}
 .os-head{display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px;margin-bottom:8px}
-.os-num{font-family:monospace;font-weight:800;font-size:15px;color:#0f766e}
-.os-prov{font-size:13px;color:#475569;font-weight:600}
+.os-num{font-family:monospace;font-weight:800;font-size:15px;color:var(--cx-info-text, #0f766e)}
+.os-prov{font-size:13px;color:var(--cx-text-soft, #475569);font-weight:600}
 .os-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin:8px 0;font-size:12px}
-.os-grid > div{background:#f8fafc;padding:6px 10px;border-radius:5px}
-.os-grid b{display:block;font-size:10px;color:#64748b;text-transform:uppercase;margin-bottom:2px}
-.arte{background:#fef3c7;border-left:3px solid #ca8a04;padding:8px 10px;margin-top:8px;font-size:12px;color:#78350f}
+.os-grid > div{background:var(--cx-bg-alt, #f8fafc);padding:6px 10px;border-radius:5px}
+.os-grid b{display:block;font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase;margin-bottom:2px}
+.arte{background:var(--cx-warn-pale, #fef3c7);border-left:3px solid var(--cx-accent-dark, #ca8a04);padding:8px 10px;margin-top:8px;font-size:12px;color:var(--cx-warn-text, #78350f)}
 .actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
-button.confirm{background:#16a34a;color:#fff;border:none;padding:9px 18px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px}
-button.confirm:hover{background:#15803d}
-button.cancel{background:#94a3b8;color:#fff;border:none;padding:7px 14px;border-radius:5px;font-size:12px;cursor:pointer}
-#empty{text-align:center;padding:40px;color:#94a3b8;font-size:14px}
+button.confirm{background:var(--cx-success, #16a34a);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px}
+button.confirm:hover{background:var(--cx-success, #15803d)}
+button.cancel{background:var(--cx-text-faint, #94a3b8);color:#fff;border:none;padding:7px 14px;border-radius:5px;font-size:12px;cursor:pointer}
+#empty{text-align:center;padding:40px;color:var(--cx-text-faint, #94a3b8);font-size:14px}
 #msg{padding:10px 14px;border-radius:6px;margin-bottom:14px;display:none;font-size:13px}
 </style></head>
 <body>
@@ -12014,7 +12014,7 @@ button.cancel{background:#94a3b8;color:#fff;border:none;padding:7px 14px;border-
 <div id="msg"></div>
 <div id="lista"></div>
 <div id="empty" style="display:none">✓ No hay OS pendientes de confirmar · todo al día</div>
-<p style="text-align:center;margin-top:20px"><a href="/modulos" style="color:#64748b;font-size:12px;text-decoration:none">← Volver al hub</a></p>
+<p style="text-align:center;margin-top:20px"><a href="/modulos" style="color:var(--cx-text-mute, #64748b);font-size:12px;text-decoration:none">← Volver al hub</a></p>
 </div>
 <script>
 function _esc(s){return String(s||'').replace(/[&<>"\\\x27]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"\\x27":'&#39;'}[c];});}
@@ -12045,12 +12045,12 @@ async function load(){
       return '<div class="os-card">'+
         '<div class="os-head">'+
           '<div><div class="os-num">'+_esc(o.numero_os)+'</div><div class="os-prov">'+_esc(o.proveedor)+' · '+_esc(o.tipo_servicio)+'</div></div>'+
-          '<span style="background:#16a34a;color:#fff;padding:3px 12px;border-radius:10px;font-size:11px;font-weight:700">📦 ENTREGADA</span>'+
+          '<span style="background:var(--cx-success, #16a34a);color:#fff;padding:3px 12px;border-radius:10px;font-size:11px;font-weight:700">📦 ENTREGADA</span>'+
         '</div>'+
         '<div class="os-grid">'+
           '<div><b>Producto</b>'+_esc(o.producto_final)+'</div>'+
           '<div><b>Envase</b>'+_esc(o.envase_descripcion||'·')+'</div>'+
-          '<div><b>Cantidad</b><span style="font-size:18px;font-weight:800;color:#0f766e">'+(o.cantidad_unidades||0)+' uds</span></div>'+
+          '<div><b>Cantidad</b><span style="font-size:18px;font-weight:800;color:var(--cx-info-text, #0f766e)">'+(o.cantidad_unidades||0)+' uds</span></div>'+
           '<div><b>Entregada</b>'+_esc(fec)+'</div>'+
         '</div>'+
         (o.observaciones?'<div class="arte"><b>Observaciones entrega:</b><br>'+_esc(o.observaciones)+'</div>':'')+
@@ -12060,7 +12060,7 @@ async function load(){
       '</div>';
     }).join('');
   }catch(e){
-    document.getElementById('lista').innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc(e.message)+'</div>';
+    document.getElementById('lista').innerHTML='<div style="color:var(--cx-danger-text, #dc2626);padding:14px">Error: '+_esc(e.message)+'</div>';
   }
 }
 document.addEventListener('click',async function(ev){

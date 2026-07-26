@@ -11,11 +11,11 @@ GERENCIA_HTML = """<!DOCTYPE html>
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-height:100vh;color:var(--cx-text);}
 .topbar{background:var(--cx-hero-grad);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--cx-hairline);}
 .topbar-left{display:flex;align-items:center;gap:16px;}
-.logo{font-size:0.95em;font-weight:900;letter-spacing:3px;color:var(--cx-primary-dark);}
-.badge-ceo{background:rgba(109,40,217,0.5);color:#6d28d9;padding:3px 12px;border-radius:20px;font-size:0.72em;font-weight:700;letter-spacing:1px;}
+.logo{font-size:0.95em;font-weight:900;letter-spacing:3px;color:var(--cx-primary-text);}
+.badge-ceo{background:rgba(109,40,217,0.5);color:var(--cx-primary-text);padding:3px 12px;border-radius:20px;font-size:0.72em;font-weight:700;letter-spacing:1px;}
 .topbar a{color:var(--cx-text-mute);text-decoration:none;font-size:0.8em;padding:6px 14px;border:1px solid var(--cx-hairline);border-radius:6px;}
 .topbar a:hover{color:var(--cx-text);border-color:var(--cx-text-mute);}
-.periodo-badge{background:rgba(109,40,217,0.3);padding:4px 14px;border-radius:20px;font-size:0.78em;color:#6d28d9;}
+.periodo-badge{background:rgba(109,40,217,0.3);padding:4px 14px;border-radius:20px;font-size:0.78em;color:var(--cx-primary-text);}
 .main{padding:28px;max-width:1300px;margin:0 auto;}
 .section-title{font-size:0.72em;text-transform:uppercase;letter-spacing:2px;color:var(--cx-text-mute);margin-bottom:14px;margin-top:28px;}
 .section-title:first-child{margin-top:0;}
@@ -23,13 +23,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 .kpi{background:var(--cx-card);border:1px solid var(--cx-hairline);box-shadow:var(--cx-sh-card);border-radius:14px;padding:20px 22px;position:relative;overflow:hidden;transition:box-shadow .2s ease,transform .2s ease;}
 .kpi:hover{box-shadow:var(--cx-sh-card-hover);transform:translateY(-2px);}
 .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--ac,#6d28d9);}
-.kpi.rojo::before{background:#ef4444;}.kpi.amarillo::before{background:#f59e0b;}.kpi.verde::before{background:#10b981;}
+.kpi.rojo::before{background:var(--cx-danger);}.kpi.amarillo::before{background:var(--cx-warn);}.kpi.verde::before{background:var(--cx-success);}
 .kpi-val{font-size:2.2em;font-weight:900;line-height:1;color:var(--cx-text);}
-.kpi-val.rojo{color:#dc2626;}.kpi-val.amarillo{color:#b45309;}.kpi-val.verde{color:#16a34a;}
+.kpi-val.rojo{color:var(--cx-danger-text);}.kpi-val.amarillo{color:var(--cx-warn-text);}.kpi-val.verde{color:var(--cx-success-text);}
 .kpi-lbl{font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:1px;margin-top:8px;}
 .kpi-sub{font-size:0.8em;color:var(--cx-text-faint);margin-top:4px;}
 .sem{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}
-.sem.verde{background:#10b981;box-shadow:0 0 8px #10b981;}.sem.amarillo{background:#f59e0b;box-shadow:0 0 8px #f59e0b;}.sem.rojo{background:#ef4444;box-shadow:0 0 8px #ef4444;}
+.sem.verde{background:var(--cx-success);box-shadow:0 0 8px #10b981;}.sem.amarillo{background:var(--cx-warn);box-shadow:0 0 8px #f59e0b;}.sem.rojo{background:var(--cx-danger);box-shadow:0 0 8px #ef4444;}
 .alertas-panel{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;margin-bottom:28px;display:none;}
 .alertas-panel.visible{display:block;}
 .alerta-item{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(239,68,68,0.15);}
@@ -43,21 +43,21 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 .data-row:last-child{border-bottom:none;}
 .data-lbl{font-size:0.85em;color:var(--cx-text-mute);}
 .data-val{font-size:0.92em;font-weight:700;color:var(--cx-text);}
-.data-val.rojo{color:#dc2626;}.data-val.amarillo{color:#b45309;}.data-val.verde{color:#16a34a;}
+.data-val.rojo{color:var(--cx-danger-text);}.data-val.amarillo{color:var(--cx-warn-text);}.data-val.verde{color:var(--cx-success-text);}
 .input-panel{background:rgba(109,40,217,0.1);border:1px solid rgba(109,40,217,0.3);border-radius:12px;padding:22px;margin-top:20px;}
-.input-panel-title{font-size:0.85em;font-weight:700;color:#6d28d9;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.input-panel-title{font-size:0.85em;font-weight:700;color:var(--cx-primary-text);margin-bottom:16px;display:flex;align-items:center;gap:8px;}
 .inp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px;}
 .inp-group label{display:block;font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;}
 .inp-group input{width:100%;padding:9px 12px;background:var(--cx-bg-alt);border:1.5px solid var(--cx-hairline);border-radius:7px;color:var(--cx-text);font-size:0.9em;transition:border 0.2s;}
-.inp-group input:focus{outline:none;border-color:#6d28d9;background:var(--cx-bg-alt);}
+.inp-group input:focus{outline:none;border-color:var(--cx-primary);background:var(--cx-bg-alt);}
 .inp-group input::placeholder{color:var(--cx-text-faint);}
-.btn-save{background:#6d28d9;color:var(--cx-text);border:none;padding:10px 24px;border-radius:8px;font-size:0.88em;font-weight:700;cursor:pointer;transition:all 0.2s;}
+.btn-save{background:var(--cx-primary);color:var(--cx-text);border:none;padding:10px 24px;border-radius:8px;font-size:0.88em;font-weight:700;cursor:pointer;transition:all 0.2s;}
 .btn-save:hover{background:#1d5c5a;transform:translateY(-1px);}
-.msg-ok-dark{background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#16a34a;padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
-.msg-err-dark{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#dc2626;padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
+.msg-ok-dark{background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:var(--cx-success-text);padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
+.msg-err-dark{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:var(--cx-danger-text);padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
 .finanzas-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px;}
 .fin-card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:10px;padding:16px 18px;text-align:center;}
-.fin-val{font-size:1.6em;font-weight:900;color:#6d28d9;}
+.fin-val{font-size:1.6em;font-weight:900;color:var(--cx-primary-text);}
 .fin-lbl{font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:1px;margin-top:5px;}
 .refresh-btn{background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:6px 14px;border-radius:6px;font-size:0.8em;cursor:pointer;transition:all 0.2s;}
 .refresh-btn:hover{background:var(--cx-hairline);color:var(--cx-text);}
@@ -68,8 +68,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 .prog-bar.warn{background:linear-gradient(90deg,#f59e0b,#b45309);}
 .churn-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--cx-hairline);}
 .churn-item:last-child{border-bottom:none;}
-.badge-crit{background:rgba(239,68,68,0.2);color:#dc2626;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
-.badge-atenc{background:rgba(245,158,11,0.2);color:#b45309;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
+.badge-crit{background:rgba(239,68,68,0.2);color:var(--cx-danger-text);padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
+.badge-atenc{background:rgba(245,158,11,0.2);color:var(--cx-warn-text);padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
 /* Mobile responsive · 27-may-2026 */
 @media (max-width: 768px) {
   .two-cols { grid-template-columns: 1fr !important; }
@@ -82,17 +82,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M3 9l9-6 9 6"/><path d="M5 21V11M19 21V11M9 21v-8M15 21v-8M2 21h20"/></svg>
       Panel Gerencial
     </div>
-    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; metas YTD · estrategia · KPIs ejecutivos &middot; <span class="periodo-badge" id="periodo-label" style="color:#a8a29e">Cargando...</span></div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; metas YTD · estrategia · KPIs ejecutivos &middot; <span class="periodo-badge" id="periodo-label" style="color:var(--cx-text-faint)">Cargando...</span></div>
   </div>
   <div class="cx-mod-header__nav">
     <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="loadKPIs()">&#x21bb; Actualizar</button>
-    <span class="ultima-act" id="ultima-actualizacion" style="font-size:11px;color:#a8a29e;"></span>
+    <span class="ultima-act" id="ultima-actualizacion" style="font-size:11px;color:var(--cx-text-faint);"></span>
     <a href="/planta/analitica-batch" class="cx-btn cx-btn-sm" style="background:var(--cx-primary,#6d28d9);color:#fff" title="Tiempos de ciclo, cuellos de botella, rendimiento y productividad del batch (privado)">&#128202; Analítica del Batch</a>
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">Módulos</a>
     <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
@@ -106,7 +106,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 
   <!-- ALERTAS CRÍTICAS -->
   <div class="alertas-panel" id="alertas-panel">
-    <div style="font-size:0.82em;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">⚠ Alertas que requieren acción</div>
+    <div style="font-size:0.82em;font-weight:700;color:var(--cx-danger-text);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">⚠ Alertas que requieren acción</div>
     <div id="alertas-list"></div>
   </div>
 
@@ -116,7 +116,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
     <div class="fin-card"><div class="fin-val" id="fin-caja">-</div><div class="fin-lbl">Saldo de caja</div></div>
     <div class="fin-card"><div class="fin-val" id="fin-animus">-</div><div class="fin-lbl">Ingresos ÁNIMUS</div></div>
     <div class="fin-card"><div class="fin-val" id="fin-maquila">-</div><div class="fin-lbl">Ingresos Maquila</div></div>
-    <div class="fin-card"><div class="fin-val" id="fin-nomina" style="color:#b45309;">-</div><div class="fin-lbl">Nomina mes</div><div style="font-size:0.65em;color:var(--cx-text-faint);margin-top:3px;" id="fin-nomina-emp"></div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-nomina" style="color:var(--cx-warn-text);">-</div><div class="fin-lbl">Nomina mes</div><div style="font-size:0.65em;color:var(--cx-text-faint);margin-top:3px;" id="fin-nomina-emp"></div></div>
   </div>
 
   <!-- ESPAGIRIA -->
@@ -205,7 +205,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:20px;">
     <div class="panel">
       <div class="panel-title">📦 Compras pendientes de recibir
-        <a href="/recepcion" style="margin-left:auto;font-size:0.75em;color:#6d28d9;text-decoration:none;font-weight:600;">→ Recepción</a>
+        <a href="/recepcion" style="margin-left:auto;font-size:0.75em;color:var(--cx-primary-text);text-decoration:none;font-weight:600;">→ Recepción</a>
       </div>
       <div id="g-ocs-transito"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
@@ -215,7 +215,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
     </div>
     <div class="panel">
       <div class="panel-title">🚚 Pedidos listos para despachar
-        <a href="/hub-salida" style="margin-left:auto;font-size:0.75em;color:#6d28d9;text-decoration:none;font-weight:600;">→ Hub Salida</a>
+        <a href="/hub-salida" style="margin-left:auto;font-size:0.75em;color:var(--cx-primary-text);text-decoration:none;font-weight:600;">→ Hub Salida</a>
       </div>
       <div id="g-pedidos-listos"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
@@ -228,7 +228,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
   <!-- QUICK NAV -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">
     <a href="/hub" style="background:var(--cx-bg-alt);border:1px solid var(--cx-text-faint);color:#fff;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">🏠 Panel Central</a>
-    <a href="/recepcion" style="background:rgba(109,40,217,0.2);border:1px solid rgba(109,40,217,0.4);color:#6d28d9;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📥 Recepción de Mercancía</a>
+    <a href="/recepcion" style="background:rgba(109,40,217,0.2);border:1px solid rgba(109,40,217,0.4);color:var(--cx-primary-text);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📥 Recepción de Mercancía</a>
     <a href="/hub-salida" style="background:rgba(74,103,65,0.2);border:1px solid rgba(74,103,65,0.4);color:#8BC98A;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📤 Hub de Salida</a>
     <a href="/compras" style="background:var(--cx-card);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🛒 Módulo Compras</a>
     <a href="/clientes" style="background:var(--cx-card);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👤 Módulo Clientes</a>
@@ -241,7 +241,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 
 
   <!-- INDICADORES EJECUTIVOS - solo metas/estrategicos. Caja, AR/AP, P&L viven en /financiero -->
-  <div class="section-title" style="margin-top:32px;">📊 Metas estratégicas <a href="/financiero" style="font-size:0.65em;font-weight:600;color:#6d28d9;text-decoration:none;margin-left:12px;">→ Para caja, AR/AP, P&L: ir a Financiero</a> · <a href="/hoy" style="font-size:0.65em;font-weight:600;color:#fbbf24;text-decoration:none;">→ Para hoy: ir a HOY</a></div>
+  <div class="section-title" style="margin-top:32px;">📊 Metas estratégicas <a href="/financiero" style="font-size:0.65em;font-weight:600;color:var(--cx-primary-text);text-decoration:none;margin-left:12px;">→ Para caja, AR/AP, P&L: ir a Financiero</a> · <a href="/hoy" style="font-size:0.65em;font-weight:600;color:var(--cx-accent);text-decoration:none;">→ Para hoy: ir a HOY</a></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px;">
     <div class="panel">
       <div class="panel-title">🏭 Pipeline Maquila activo</div>
@@ -353,7 +353,7 @@ function setKPIColor(kpiId,valId,color){
 async function loadKPIs(){
   try{
     var d=await fetch('/api/gerencia/kpis').then(function(r){return r.json();});
-    if(d.error){document.querySelector('.main').innerHTML='<div style="color:#dc2626;padding:40px;text-align:center;">'+d.error+'</div>';return;}
+    if(d.error){document.querySelector('.main').innerHTML='<div style="color:var(--cx-danger-text);padding:40px;text-align:center;">'+d.error+'</div>';return;}
 
     var e=d.espagiria||{}; var a=d.animus||{}; var f=d.inputs_manuales||{}; var sem=d.semaforos||{};
 
@@ -501,7 +501,7 @@ async function loadFlujoOperacional() {
     var eld = document.getElementById('g-disc');
     if (eld) {
       var discs = d.recepciones_disc || [];
-      if (!discs.length) { eld.innerHTML = '<div style="color:#16a34a;font-size:0.85em;">Sin discrepancias ✓</div>'; }
+      if (!discs.length) { eld.innerHTML = '<div style="color:var(--cx-success-text);font-size:0.85em;">Sin discrepancias ✓</div>'; }
       else {
         eld.innerHTML = discs.slice(0,4).map(function(r) {
           return '<div class="data-row"><span class="data-lbl">' + esc(r.numero_oc) + '</span>'
@@ -602,7 +602,7 @@ async function loadGerenciaExtra() {
     var sc = d.stock_critico||[];
     var elSC = document.getElementById('gx-stock');
     if(elSC){
-      if(!sc.length){ elSC.innerHTML='<div style="color:#16a34a;font-size:0.85em;">Stock OK en todos los MPs</div>'; }
+      if(!sc.length){ elSC.innerHTML='<div style="color:var(--cx-success-text);font-size:0.85em;">Stock OK en todos los MPs</div>'; }
       else{
         elSC.innerHTML = sc.slice(0,6).map(function(mp){
           var pct = mp.stock_minimo>0?Math.round(mp.stock_actual/mp.stock_minimo*100):0;
@@ -617,7 +617,7 @@ async function loadGerenciaExtra() {
     var ss = d.sgsst_proximos||[];
     var elSS = document.getElementById('gx-sgsst');
     if(elSS){
-      if(!ss.length){ elSS.innerHTML='<div style="color:#16a34a;font-size:0.85em;">Sin vencimientos proximos</div>'; }
+      if(!ss.length){ elSS.innerHTML='<div style="color:var(--cx-success-text);font-size:0.85em;">Sin vencimientos proximos</div>'; }
       else{
         elSS.innerHTML = ss.slice(0,5).map(function(s){
           var c=s.dias_restantes<=15?'rojo':(s.dias_restantes<=30?'amarillo':'verde');
@@ -658,13 +658,13 @@ async function loadGerenciaExtra() {
     // Inventory COP
     var invC=d.inventory_cop||0; var elIC=document.getElementById('gx-inv-cop');
     if(elIC){
-      elIC.innerHTML='<div style="font-size:1.8em;font-weight:900;color:#6d28d9;padding:8px 0 4px;">'+fmtV(invC)+'</div>'
+      elIC.innerHTML='<div style="font-size:1.8em;font-weight:900;color:var(--cx-primary-text);padding:8px 0 4px;">'+fmtV(invC)+'</div>'
         +'<div style="font-size:0.75em;color:var(--cx-text-faint);">Precio promedio OC x lotes activos</div>';
     }
     // Churn alerts
     var churns=d.churn_alerts||[]; var elCh=document.getElementById('gx-churn');
     if(elCh){
-      if(!churns.length){ elCh.innerHTML='<div style="color:#16a34a;font-size:0.85em;">Todos los clientes activos &#10003;</div>'; }
+      if(!churns.length){ elCh.innerHTML='<div style="color:var(--cx-success-text);font-size:0.85em;">Todos los clientes activos &#10003;</div>'; }
       else{
         elCh.innerHTML=churns.slice(0,5).map(function(ch){
           return '<div class="churn-item"><div><div style="font-size:0.85em;color:var(--cx-text-soft);">'+esc(ch.nombre||'')+'</div>'
@@ -700,11 +700,11 @@ async function loadAliados4() {
       g4mix.innerHTML =
         '<div style="margin-bottom:8px;">'
         +'<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-bottom:6px;">'
-        +'<div style="width:'+pctA+'%;background:#a78bfa;" title="Aliados '+pctA+'%"></div>'
+        +'<div style="width:'+pctA+'%;background:var(--cx-primary-light);" title="Aliados '+pctA+'%"></div>'
         +'<div style="width:'+pctS+'%;background:#34d399;" title="Shopify '+pctS+'%"></div>'
         +'</div>'
         +'<div style="display:flex;justify-content:space-between;font-size:10px;">'
-        +'<span style="color:#a78bfa;">■ Aliados '+pctA+'%</span>'
+        +'<span style="color:var(--cx-primary-light);">■ Aliados '+pctA+'%</span>'
         +'<span style="color:#34d399;">■ Shopify '+pctS+'%</span>'
         +'</div>'
         +'</div>'

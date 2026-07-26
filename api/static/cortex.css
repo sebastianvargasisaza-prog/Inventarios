@@ -27,7 +27,7 @@
   --cx-card:           #ffffff;
   --cx-text:           #18181b;
   --cx-text-soft:      #3f3f46;
-  --cx-text-mute:      #71717a;
+  --cx-text-mute:      #6b6b74;   /* 26-jul: era #71717a = 4,40:1 sobre --cx-bg · no llegaba a AA */
   --cx-text-faint:     #a1a1aa;
   --cx-border:         #e6e6ea;
   --cx-border-soft:    #f1f1f4;
@@ -41,6 +41,19 @@
   --cx-danger-pale:    #fef2f2;
   --cx-info:           #2563eb;
   --cx-info-pale:      #eff6ff;
+
+  /* --- Semánticos PARA TEXTO (26-jul-2026) ------------------------------------------------
+     Un color de RELLENO y el mismo color como TEXTO no pueden ser el mismo token: al invertir
+     el tema tiran en direcciones opuestas. El relleno tiene que quedarse oscuro para que el
+     texto blanco encima se lea; el texto tiene que ACLARARSE para leerse sobre el fondo oscuro.
+     Con un solo token, el violeta como texto daba 2,06:1 sobre la tarjeta oscura (ilegible).
+     Regla: `background:` usa --cx-primary · `color:` usa --cx-primary-text.
+     Los 5 pares están medidos: todos pasan AA (4,5:1) en tema claro Y en oscuro. */
+  --cx-primary-text:   #6d28d9;
+  --cx-success-text:   #15803d;
+  --cx-danger-text:    #b91c1c;
+  --cx-info-text:      #2563eb;
+  --cx-warn-text:      #b45309;   /* el ámbar puro sobre blanco da 2,15:1 · como texto va tostado */
 
   /* --- Spacing (8pt grid) --- */
   --cx-s1: 4px;
@@ -122,6 +135,13 @@
   --cx-warn-pale:    #451a03;
   --cx-danger-pale:  #450a0a;
   --cx-info-pale:    #1e3a8a;
+  /* Texto semántico ACLARADO para el fondo oscuro (los rellenos NO se tocan, así el texto
+     blanco sobre un botón sigue leyéndose). Medido sobre #0f172a y #1e293b. */
+  --cx-primary-text: #a78bfa;
+  --cx-success-text: #4ade80;
+  --cx-danger-text:  #fca5a5;
+  --cx-info-text:    #60a5fa;
+  --cx-warn-text:    #fcd34d;
   /* v2 dark overrides */
   --cx-primary-soft:  #2e1065;
   --cx-hairline:      rgba(255,255,255,0.08);

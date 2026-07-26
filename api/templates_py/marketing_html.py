@@ -8,23 +8,23 @@ MARKETING_HTML = r"""<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg);color:var(--cx-text);min-height:100vh;font-size:14px;}
-::-webkit-scrollbar{width:6px;height:6px;}::-webkit-scrollbar-track{background:var(--cx-card);}::-webkit-scrollbar-thumb{background:#475569;border-radius:3px;}
+::-webkit-scrollbar{width:6px;height:6px;}::-webkit-scrollbar-track{background:var(--cx-card);}::-webkit-scrollbar-thumb{background:var(--cx-text-soft);border-radius:3px;}
 
 /* ─── Header ─── */
-.hdr{background:var(--cx-card);border-bottom:1px solid #e7e5e4;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.hdr{background:var(--cx-card);border-bottom:1px solid var(--cx-border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
 .hdr-brand{display:flex;align-items:center;gap:10px;}
 .hdr-brand h1{font-size:16px;font-weight:800;color:#fff;}
-.hdr-brand span{font-size:11px;color:var(--cx-text-mute);background:var(--cx-bg-alt);padding:2px 8px;border-radius:20px;border:1px solid #e7e5e4;}
+.hdr-brand span{font-size:11px;color:var(--cx-text-mute);background:var(--cx-bg-alt);padding:2px 8px;border-radius:20px;border:1px solid var(--cx-border);}
 .hdr-user{font-size:12px;color:var(--cx-text-mute);}
 .hdr-user strong{color:var(--cx-text);}
 .back-link{font-size:12px;color:#667eea;text-decoration:none;display:flex;align-items:center;gap:4px;}
 .back-link:hover{color:#818cf8;}
 
 /* ─── Tabs ─── */
-.tabs-bar{background:var(--cx-card);border-bottom:1px solid #e7e5e4;display:flex;overflow-x:auto;padding:0 20px;}
+.tabs-bar{background:var(--cx-card);border-bottom:1px solid var(--cx-border);display:flex;overflow-x:auto;padding:0 20px;}
 .tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s;}
-.tab-btn:hover{color:#6d28d9;background:#faf7ff;}
-.tab-btn.active{color:#6d28d9;border-bottom-color:#6d28d9;}
+.tab-btn:hover{color:var(--cx-primary-text);background:#faf7ff;}
+.tab-btn.active{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);}
 .tab-panel{display:none;padding:24px 20px;}
 .tab-panel.active{display:block;}
 
@@ -32,16 +32,16 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg);color:var(--cx-te
 .page-title{font-size:18px;font-weight:700;color:var(--cx-text);margin-bottom:4px;}
 .page-sub{font-size:12px;color:var(--cx-text-mute);margin-bottom:24px;}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin-bottom:24px;}
-.kpi-card{background:var(--cx-card);border:1px solid #eef0f2;border-top:3px solid #cbd5e1;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:box-shadow .15s,transform .1s;}
+.kpi-card{background:var(--cx-card);border:1px solid #eef0f2;border-top:3px solid var(--cx-border);border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:box-shadow .15s,transform .1s;}
 .kpi-card:hover{box-shadow:0 8px 20px rgba(15,23,42,.08);transform:translateY(-2px);}
 .kpi-label{font-size:11px;color:var(--cx-text-mute);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
 .kpi-val{font-size:26px;font-weight:800;color:var(--cx-text);line-height:1;letter-spacing:-.01em;}
 .kpi-sub{font-size:11px;color:var(--cx-text-mute);margin-top:5px;}
-.kpi-card.green{border-top-color:#16a34a;} .kpi-card.green .kpi-val{color:#16a34a;}
-.kpi-card.red{border-top-color:#dc2626;} .kpi-card.red .kpi-val{color:#dc2626;}
-.kpi-card.blue{border-top-color:#2563eb;} .kpi-card.blue .kpi-val{color:#2563eb;}
-.kpi-card.yellow{border-top-color:#f59e0b;} .kpi-card.yellow .kpi-val{color:#b45309;}
-.kpi-card.purple{border-top-color:#6d28d9;} .kpi-card.purple .kpi-val{color:#6d28d9;}
+.kpi-card.green{border-top-color:var(--cx-success);} .kpi-card.green .kpi-val{color:var(--cx-success-text);}
+.kpi-card.red{border-top-color:var(--cx-danger);} .kpi-card.red .kpi-val{color:var(--cx-danger-text);}
+.kpi-card.blue{border-top-color:var(--cx-info);} .kpi-card.blue .kpi-val{color:var(--cx-info-text);}
+.kpi-card.yellow{border-top-color:var(--cx-warn);} .kpi-card.yellow .kpi-val{color:var(--cx-warn-text);}
+.kpi-card.purple{border-top-color:var(--cx-primary);} .kpi-card.purple .kpi-val{color:var(--cx-primary-text);}
 
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
@@ -62,22 +62,22 @@ tr:hover td{background:#faf9ff;}
 
 /* ─── Badges ─── */
 .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
-.badge-green{background:var(--cx-success-pale);color:#16a34a;border:1px solid var(--cx-hairline);}
-.badge-blue{background:var(--cx-info-pale);color:#2563eb;border:1px solid var(--cx-hairline);}
-.badge-yellow{background:var(--cx-warn-pale);color:#b45309;border:1px solid var(--cx-hairline);}
-.badge-red{background:#2d0000;color:#dc2626;border:1px solid #7f1d1d;}
-.badge-gray{background:var(--cx-card);color:var(--cx-text-mute);border:1px solid #e7e5e4;}
-.badge-purple{background:var(--cx-primary-soft);color:#6d28d9;border:1px solid #4c1d95;}
+.badge-green{background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid var(--cx-hairline);}
+.badge-blue{background:var(--cx-info-pale);color:var(--cx-info-text);border:1px solid var(--cx-hairline);}
+.badge-yellow{background:var(--cx-warn-pale);color:var(--cx-warn-text);border:1px solid var(--cx-hairline);}
+.badge-red{background:#2d0000;color:var(--cx-danger-text);border:1px solid var(--cx-danger);}
+.badge-gray{background:var(--cx-card);color:var(--cx-text-mute);border:1px solid var(--cx-border);}
+.badge-purple{background:var(--cx-primary-soft);color:var(--cx-primary-text);border:1px solid var(--cx-primary-dark);}
 
 /* ─── Buttons ─── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
 .btn-primary{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;}
 .btn-primary:hover{opacity:.9;}
 .btn-sm{padding:5px 12px;font-size:12px;}
-.btn-outline{background:transparent;border:1px solid #e7e5e4;color:var(--cx-text-mute);}
+.btn-outline{background:transparent;border:1px solid var(--cx-border);color:var(--cx-text-mute);}
 .btn-outline:hover{border-color:var(--cx-text-faint);color:var(--cx-text);}
-.btn-danger{background:#7f1d1d;color:#dc2626;}
-.btn-danger:hover{background:#991b1b;}
+.btn-danger{background:var(--cx-danger);color:var(--cx-danger-text);}
+.btn-danger:hover{background:var(--cx-danger);}
 .btn-agent{background:var(--cx-primary-grad);border:none;color:#fff;width:100%;padding:14px;font-size:14px;font-weight:700;border-radius:10px;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px;}
 .btn-agent:hover{filter:brightness(1.06);}
 .btn-agent.running{opacity:.6;cursor:not-allowed;}
@@ -87,22 +87,22 @@ tr:hover td{background:#faf9ff;}
 .form-row.full{grid-template-columns:1fr;}
 .form-group{display:flex;flex-direction:column;gap:4px;}
 label{font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px;}
-input,select,textarea{background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:8px 12px;color:var(--cx-text);font-size:13px;width:100%;}
+input,select,textarea{background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:8px 12px;color:var(--cx-text);font-size:13px;width:100%;}
 input:focus,select:focus,textarea:focus{outline:none;border-color:#667eea;}
 textarea{resize:vertical;min-height:80px;}
 
 /* ─── Modal ─── */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;}
 .modal-bg.open{display:flex;}
-.modal{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:16px;width:min(600px,95vw);max-height:90vh;overflow-y:auto;padding:24px;}
+.modal{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;width:min(600px,95vw);max-height:90vh;overflow-y:auto;padding:24px;}
 .modal-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
 .modal-title{font-size:16px;font-weight:700;color:var(--cx-text);}
 .modal-close{background:none;border:none;color:var(--cx-text-mute);cursor:pointer;font-size:20px;padding:4px;}
-.modal-close:hover{color:#dc2626;}
+.modal-close:hover{color:var(--cx-danger-text);}
 
 /* ─── Agent cards ─── */
 .agents-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;}
-.agent-card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:14px;padding:20px;}
+.agent-card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;padding:20px;}
 .agent-icon{font-size:32px;margin-bottom:12px;}
 .agent-name{font-size:15px;font-weight:700;color:var(--cx-text);margin-bottom:4px;}
 .agent-desc{font-size:12px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;}
@@ -116,12 +116,12 @@ textarea{resize:vertical;min-height:80px;}
 
 /* ─── Alert ─── */
 .alert{padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:16px;}
-.alert-success{background:var(--cx-success-pale);color:#16a34a;border:1px solid var(--cx-hairline);}
-.alert-error{background:#2d0000;color:#dc2626;border:1px solid #7f1d1d;}
-.alert-info{background:var(--cx-info-pale);color:#2563eb;border:1px solid var(--cx-hairline);}
+.alert-success{background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid var(--cx-hairline);}
+.alert-error{background:#2d0000;color:var(--cx-danger-text);border:1px solid var(--cx-danger);}
+.alert-info{background:var(--cx-info-pale);color:var(--cx-info-text);border:1px solid var(--cx-hairline);}
 
 /* ─── Spinner ─── */
-.spin{display:inline-block;width:16px;height:16px;border:2px solid #e7e5e4;border-top-color:#667eea;border-radius:50%;animation:spin .7s linear infinite;}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid var(--cx-border);border-top-color:#667eea;border-radius:50%;animation:spin .7s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 
 /* ─── Trend item ─── */
@@ -130,13 +130,13 @@ textarea{resize:vertical;min-height:80px;}
 .trend-sku{font-weight:700;color:var(--cx-text);font-size:13px;}
 .trend-bar{flex:1;margin:0 12px;}
 .trend-pct{font-size:12px;font-weight:700;min-width:60px;text-align:right;}
-.trend-up{color:#16a34a;}
-.trend-dn{color:#dc2626;}
+.trend-up{color:var(--cx-success-text);}
+.trend-dn{color:var(--cx-danger-text);}
 .trend-flat{color:var(--cx-text-mute);}
 
 /* ─── Topbar actions ─── */
 .actions-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
-.search-box{background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:7px 12px;color:var(--cx-text);font-size:13px;width:240px;}
+.search-box{background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:7px 12px;color:var(--cx-text);font-size:13px;width:240px;}
 .search-box:focus{outline:none;border-color:#667eea;}
 
 /* ─── Content calendar ─── */
@@ -144,14 +144,14 @@ textarea{resize:vertical;min-height:80px;}
 .cal-day-hdr{text-align:center;font-size:10px;font-weight:700;color:var(--cx-text-mute);padding:6px 0;}
 .cal-day{background:var(--cx-bg-alt);border-radius:6px;min-height:70px;padding:6px;position:relative;}
 .cal-day-num{font-size:10px;color:var(--cx-text-mute);margin-bottom:4px;}
-.cal-item{background:#4c1d95;border-radius:3px;padding:2px 4px;font-size:9px;color:#ddd6fe;margin-bottom:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.cal-item.published{background:#065f46;color:#6ee7b7;}
-.cal-item.draft{background:#e7e5e4;color:var(--cx-text-mute);}
-.cal-item.scheduled{background:var(--cx-info-pale);color:#2563eb;}
+.cal-item{background:var(--cx-primary-dark);border-radius:3px;padding:2px 4px;font-size:9px;color:#ddd6fe;margin-bottom:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cal-item.published{background:var(--cx-success);color:#6ee7b7;}
+.cal-item.draft{background:var(--cx-border);color:var(--cx-text-mute);}
+.cal-item.scheduled{background:var(--cx-info-pale);color:var(--cx-info-text);}
 .platform-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:default;transition:all .2s;}
-.pill-off{background:var(--cx-card);color:var(--cx-text-faint);border:1px solid #e7e5e4;}
-.pill-shopify{background:#0d2e1a;color:#16a34a;border:1px solid var(--cx-hairline);}
-.pill-ghl{background:#1a1033;color:#6d28d9;border:1px solid #4c1d95;}
+.pill-off{background:var(--cx-card);color:var(--cx-text-faint);border:1px solid var(--cx-border);}
+.pill-shopify{background:#0d2e1a;color:var(--cx-success-text);border:1px solid var(--cx-hairline);}
+.pill-ghl{background:#1a1033;color:var(--cx-primary-text);border:1px solid var(--cx-primary-dark);}
 .pill-ig{background:#2d1520;color:#f9a8d4;border:1px solid #831843;}
 </style>
 </head>
@@ -159,7 +159,7 @@ textarea{resize:vertical;min-height:80px;}
 <div id="toast-container" style="position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
 <!-- Banner de errores JS - visible para diagnosticar en prod cuando un botón
      no responde. Si ves este banner, hay un bug específico para reportar. -->
-<div id="js-error-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:#7f1d1d;color:#fef2f2;padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid #ef4444;"></div>
+<div id="js-error-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:var(--cx-danger);color:var(--cx-danger-pale);padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid var(--cx-danger);"></div>
 <script>
 // CSRF defense-in-depth · Sebastian 3-may-2026
 function _csrf() {
@@ -215,10 +215,10 @@ window.addEventListener('unhandledrejection', function(ev) {
 <body>
 
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">Marketing</div>
-    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; campañas, influencers &amp; ROI &middot; <span style="color:#a8a29e">{usuario}</span></div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; campañas, influencers &amp; ROI &middot; <span style="color:var(--cx-text-faint)">{usuario}</span></div>
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">Módulos</a>
@@ -260,7 +260,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       <div id="pill-ghl" class="platform-pill pill-off">📋 GHL</div>
       <div id="pill-ig" class="platform-pill pill-off">📸 Instagram</div>
       <button id="btn-sync-shopify" class="btn btn-outline btn-sm" onclick="syncPlatform('shopify')">↻ Shopify</button>
-      <button class="btn btn-outline btn-sm" style="color:#f59e0b;border-color:#f59e0b;font-size:10px;" onclick="syncPlatform('shopify',true)" title="Trae todo el historial">📥 Histórico</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--cx-warn-text);border-color:var(--cx-warn);font-size:10px;" onclick="syncPlatform('shopify',true)" title="Trae todo el historial">📥 Histórico</button>
       <button id="btn-sync-ghl" class="btn btn-outline btn-sm" onclick="syncPlatform('ghl')">↻ GHL</button>
       <button id="btn-sync-instagram" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ IG</button>
       <button class="btn btn-outline btn-sm" style="border-color:#e1306c;color:#e1306c;" onclick="refreshIgToken()">🔑 Renovar token IG</button>
@@ -271,7 +271,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 
   <!-- KPIs Shopify -->
   <div style="font-size:11px;font-weight:700;color:#d4af37;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">🛍️ Shopify · Ventas reales</div>
-  <div id="sh-cobertura-banner" style="display:none;background:#78350f;color:#fde68a;border-radius:8px;padding:8px 14px;font-size:11px;margin-bottom:10px;"></div>
+  <div id="sh-cobertura-banner" style="display:none;background:var(--cx-accent-dark);color:#fde68a;border-radius:8px;padding:8px 14px;font-size:11px;margin-bottom:10px;"></div>
 <div class="kpi-grid" id="dash-shopify-kpis">
     <div class="kpi-card yellow"><div class="kpi-label" id="sh-rev30-label">Revenue</div><div class="kpi-val" id="sh-rev30">-</div><div class="kpi-sub" id="sh-rev7">vs período ant.: -</div></div>
     <div class="kpi-card blue"><div class="kpi-label" id="sh-ped30-label">Pedidos</div><div class="kpi-val" id="sh-ped30">-</div><div class="kpi-sub" id="sh-ped-total">Total: -</div></div>
@@ -282,7 +282,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
 
   <!-- AUDIT 26-may · Widget Meta del mes (#4 sprint marketing-superior) -->
-  <div style="font-size:11px;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;display:flex;align-items:center;gap:8px">
+  <div style="font-size:11px;font-weight:700;color:var(--cx-success-text);text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;display:flex;align-items:center;gap:8px">
     <span>🎯 Meta del mes</span>
     <button class="btn btn-outline btn-sm" onclick="openMetaModal()" style="font-size:10px;padding:2px 8px">⚙ Editar meta</button>
     <button class="btn btn-outline btn-sm" onclick="openCalendarioCosmeticoModal()" style="font-size:10px;padding:2px 8px">📅 Calendario cosmético</button>
@@ -324,7 +324,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div style="font-size:11px;color:#e1306c;font-weight:700;margin-bottom:8px;">🔑 Token expirado - pega un nuevo token de Graph API Explorer</div>
     <div style="display:flex;gap:8px;align-items:center;">
       <input id="ig-token-input" type="text" placeholder="EAANXh..." 
-        style="flex:1;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);padding:7px 10px;border-radius:6px;font-size:11px;font-family:monospace;">
+        style="flex:1;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);padding:7px 10px;border-radius:6px;font-size:11px;font-family:monospace;">
       <button onclick="saveIgToken()" class="btn btn-sm" style="background:#e1306c;color:#fff;border:none;white-space:nowrap;">Guardar y activar</button>
       <button onclick="document.getElementById('ig-token-form').style.display='none'" class="btn btn-outline btn-sm">✕</button>
     </div>
@@ -351,7 +351,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       <div class="page-title">&#x1F4E2; Campañas</div>
     </div>
     <div style="display:flex;gap:10px;">
-      <select id="camp-filtro-estado" onchange="loadCampanas()" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:7px 12px;color:var(--cx-text);font-size:13px;">
+      <select id="camp-filtro-estado" onchange="loadCampanas()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:7px 12px;color:var(--cx-text);font-size:13px;">
         <option value="">Todos los estados</option>
         <option value="Planificada">Planificada</option>
         <option value="Activa">Activa</option>
@@ -393,7 +393,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 
   <!-- Sub-nav · Centro de pagos vs Catálogo (Sebastián 13-jul) -->
   <div style="display:flex;gap:6px;margin:4px 0 18px;border-bottom:1px solid #ececf1;">
-    <button id="infsub-pagos" onclick="infSubView('pagos')" style="border:none;background:none;cursor:pointer;padding:10px 18px;font-size:13px;font-weight:800;color:#6d28d9;border-bottom:3px solid #6d28d9;">💸 Centro de pagos</button>
+    <button id="infsub-pagos" onclick="infSubView('pagos')" style="border:none;background:none;cursor:pointer;padding:10px 18px;font-size:13px;font-weight:800;color:var(--cx-primary-text);border-bottom:3px solid var(--cx-primary);">💸 Centro de pagos</button>
     <button id="infsub-creadores" onclick="infSubView('creadores')" style="border:none;background:none;cursor:pointer;padding:10px 18px;font-size:13px;font-weight:700;color:var(--cx-text-mute);border-bottom:3px solid transparent;">👥 Creadores</button>
   </div>
 
@@ -435,10 +435,10 @@ window.addEventListener('unhandledrejection', function(ev) {
   <details class="card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(52,211,153,.06),rgba(52,211,153,.02));border:1px solid rgba(52,211,153,.25);" ontoggle="if(this.open&&typeof loadAtribucion==='function'){loadAtribucion();}">
     <summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
       <div>
-        <div style="font-size:14px;font-weight:700;color:#16a34a;">&#x1F3AF; Atribución de ventas - últimos 90 días</div>
+        <div style="font-size:14px;font-weight:700;color:var(--cx-success-text);">&#x1F3AF; Atribución de ventas - últimos 90 días</div>
         <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Revenue Shopify por discount code · click para ver</div>
       </div>
-      <span onclick="event.preventDefault();loadAtribucion(true);" title="Refrescar atribución" style="font-size:16px;color:#16a34a;padding:4px 8px;">&#x21BB;</span>
+      <span onclick="event.preventDefault();loadAtribucion(true);" title="Refrescar atribución" style="font-size:16px;color:var(--cx-success-text);padding:4px 8px;">&#x21BB;</span>
     </summary>
     <div style="margin-top:14px;">
     <div id="atrib-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;"></div>
@@ -463,10 +463,10 @@ window.addEventListener('unhandledrejection', function(ev) {
   <!-- Filtros para historial de pagos (que sale al expandir cada fila) -->
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--cx-text-mute)">
     <span style="font-weight:600">📊 Filtros para historial expandido:</span>
-    <select id="pag-mes" onchange="renderInfluencersTable()" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:6px;padding:5px 9px;color:var(--cx-text);font-size:12px;">
+    <select id="pag-mes" onchange="renderInfluencersTable()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:5px 9px;color:var(--cx-text);font-size:12px;">
       <option value="">Todos los meses</option>
     </select>
-    <select id="pag-estado" onchange="renderInfluencersTable()" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:6px;padding:5px 9px;color:var(--cx-text);font-size:12px;">
+    <select id="pag-estado" onchange="renderInfluencersTable()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:5px 9px;color:var(--cx-text);font-size:12px;">
       <option value="">Todos los pagos</option>
       <option value="Pendiente">⏳ Solo pendientes</option>
       <option value="Pagada">✅ Solo pagados</option>
@@ -531,26 +531,26 @@ window.addEventListener('unhandledrejection', function(ev) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <style>
 .kanban-wrap{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:10px;}
-.kanban-col{background:var(--cx-card,#fff);border:1px solid #eef0f2;border-radius:14px;padding:10px 10px 12px;min-height:300px;display:flex;flex-direction:column;box-shadow:0 2px 12px rgba(15,23,42,.05);border-top:3px solid #e5e7eb;}
+.kanban-col{background:var(--cx-card,#fff);border:1px solid #eef0f2;border-radius:14px;padding:10px 10px 12px;min-height:300px;display:flex;flex-direction:column;box-shadow:0 2px 12px rgba(15,23,42,.05);border-top:3px solid var(--cx-border);}
 .kanban-col-hdr{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 10px;border-bottom:1px solid var(--cx-hairline);margin-bottom:8px;}
 .kanban-col-hdr .name{font-weight:800;font-size:13px;color:var(--cx-text);letter-spacing:-.01em;}
 .kanban-col-hdr .count{background:var(--cx-bg-alt);color:var(--cx-text-mute);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:800;}
-.kanban-col[data-estado="Brief"]       .name{color:#2563eb;} .kanban-col[data-estado="Brief"]{border-top-color:#2563eb;}
-.kanban-col[data-estado="Produccion"]  .name{color:#b45309;} .kanban-col[data-estado="Produccion"]{border-top-color:#f59e0b;}
-.kanban-col[data-estado="Pendiente"]   .name{color:#6d28d9;} .kanban-col[data-estado="Pendiente"]{border-top-color:#7c3aed;}
-.kanban-col[data-estado="Publicado"]   .name{color:#16a34a;} .kanban-col[data-estado="Publicado"]{border-top-color:#16a34a;}
+.kanban-col[data-estado="Brief"]       .name{color:var(--cx-info-text);} .kanban-col[data-estado="Brief"]{border-top-color:var(--cx-info);}
+.kanban-col[data-estado="Produccion"]  .name{color:var(--cx-warn-text);} .kanban-col[data-estado="Produccion"]{border-top-color:var(--cx-warn);}
+.kanban-col[data-estado="Pendiente"]   .name{color:var(--cx-primary-text);} .kanban-col[data-estado="Pendiente"]{border-top-color:var(--cx-primary);}
+.kanban-col[data-estado="Publicado"]   .name{color:var(--cx-success-text);} .kanban-col[data-estado="Publicado"]{border-top-color:var(--cx-success);}
 .kanban-col[data-estado="Performance"] .name{color:#f472b6;} .kanban-col[data-estado="Performance"]{border-top-color:#f472b6;}
 .kanban-card{background:var(--cx-card);border:1px solid #eef0f2;border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;transition:transform .12s,box-shadow .15s,border-color .15s;font-size:12px;box-shadow:0 1px 4px rgba(15,23,42,.04);}
-.kanban-card:hover{border-color:#7c3aed;transform:translateY(-2px);box-shadow:0 8px 18px rgba(124,58,237,.10);}
-.kanban-card .sku{font-family:monospace;color:#16a34a;font-size:11px;font-weight:700;}
+.kanban-card:hover{border-color:var(--cx-primary);transform:translateY(-2px);box-shadow:0 8px 18px rgba(124,58,237,.10);}
+.kanban-card .sku{font-family:monospace;color:var(--cx-success-text);font-size:11px;font-weight:700;}
 .kanban-card .titulo{font-weight:700;color:var(--cx-text);margin:4px 0;line-height:1.3;}
 .kanban-card .meta{display:flex;flex-wrap:wrap;gap:6px;font-size:10px;color:var(--cx-text-mute);margin-top:6px;}
 .kanban-card .meta span{background:var(--cx-bg-alt);padding:1px 7px;border-radius:6px;}
 .kanban-card .perf{display:flex;gap:8px;font-size:10px;margin-top:6px;color:var(--cx-text-mute);}
 .kanban-card .perf b{color:var(--cx-text);}
 .kanban-empty{color:var(--cx-text-faint);font-size:11px;text-align:center;padding:20px 0;font-style:italic;}
-.kanban-add-btn{background:var(--cx-bg-alt);color:var(--cx-text-mute);border:1px dashed #e7e5e4;border-radius:6px;padding:6px;font-size:11px;cursor:pointer;width:100%;margin-top:auto;transition:.15s;}
-.kanban-add-btn:hover{color:#6d28d9;border-color:#7c3aed;}
+.kanban-add-btn{background:var(--cx-bg-alt);color:var(--cx-text-mute);border:1px dashed var(--cx-border);border-radius:6px;padding:6px;font-size:11px;cursor:pointer;width:100%;margin-top:auto;transition:.15s;}
+.kanban-add-btn:hover{color:var(--cx-primary-text);border-color:var(--cx-primary);}
 </style>
 
 <div id="tab-contenido" class="tab-panel">
@@ -561,7 +561,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
       <button class="btn btn-outline btn-sm" onclick="loadContenido()" title="Refrescar">&#x21BB;</button>
-      <button class="btn btn-outline btn-sm" onclick="openABTestsModal()" title="A/B testing de creatividades" style="border-color:#6d28d9;color:#6d28d9">&#x1F52C; A/B Tests</button>
+      <button class="btn btn-outline btn-sm" onclick="openABTestsModal()" title="A/B testing de creatividades" style="border-color:var(--cx-primary);color:var(--cx-primary-text)">&#x1F52C; A/B Tests</button>
       <button class="btn btn-primary btn-sm" onclick="openContenidoModal()">+ Nueva pieza</button>
     </div>
   </div>
@@ -597,7 +597,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 </div>
 
 <style>
-.intel-subnav{display:flex;gap:4px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap;}
+.intel-subnav{display:flex;gap:4px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap;}
 .intel-subnav button{flex:1;min-width:130px;padding:9px 16px;background:transparent;color:var(--cx-text-mute);border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
 .intel-subnav button:hover{color:var(--cx-text);background:var(--cx-card);}
 .intel-subnav button.intel-active{background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;}
@@ -708,14 +708,14 @@ window.addEventListener('unhandledrejection', function(ev) {
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Email <span style="color:#dc2626;">*</span> <span style="font-weight:400;color:var(--cx-text-mute);font-size:11px;">· para enviarle la factura cuando se le pague</span></label><input type="email" id="inf-email" placeholder="correo@ejemplo.com"></div>
+      <div class="form-group"><label>Email <span style="color:var(--cx-danger-text);">*</span> <span style="font-weight:400;color:var(--cx-text-mute);font-size:11px;">· para enviarle la factura cuando se le pague</span></label><input type="email" id="inf-email" placeholder="correo@ejemplo.com"></div>
       <div class="form-group"><label>Teléfono</label><input id="inf-tel" placeholder="+57..."></div>
     </div>
     <div class="form-row full">
       <div class="form-group"><label>Notas</label><textarea id="inf-notas" placeholder="Observaciones..."></textarea></div>
     </div>
-    <div style="border-top:1px solid #e7e5e4;margin:10px 0 6px;padding-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏦 Datos Bancarios</div>
+    <div style="border-top:1px solid var(--cx-border);margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--cx-primary-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏦 Datos Bancarios</div>
       <div class="form-row">
         <div class="form-group"><label>Banco</label><input id="inf-banco" placeholder="Bancolombia, Nequi, Daviplata..."></div>
         <div class="form-group"><label>Tipo de cuenta</label>
@@ -729,12 +729,12 @@ window.addEventListener('unhandledrejection', function(ev) {
         <div class="form-group"><label>Cédula / NIT</label><input id="inf-cedula" placeholder="1234567890"></div>
       </div>
     </div>
-    <div style="border-top:1px solid #e7e5e4;margin:10px 0 6px;padding-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">⏰ Ciclo de pago</div>
+    <div style="border-top:1px solid var(--cx-border);margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--cx-warn-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">⏰ Ciclo de pago</div>
       <div class="form-row">
         <div class="form-group">
           <label>Frecuencia con la que se le paga</label>
-          <select id="inf-ciclo-pago" style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid #e7e5e4;border-radius:6px;padding:8px;width:100%;">
+          <select id="inf-ciclo-pago" style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid var(--cx-border);border-radius:6px;padding:8px;width:100%;">
             <option value="Mensual">Mensual (cada 30 días)</option>
             <option value="Bimensual">Bimensual (cada 60 días)</option>
             <option value="Trimestral">Trimestral (cada 90 días)</option>
@@ -747,15 +747,15 @@ window.addEventListener('unhandledrejection', function(ev) {
         </div>
       </div>
     </div>
-    <div style="border-top:1px solid #e7e5e4;margin:10px 0 6px;padding-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🎟️ Atribución de ventas</div>
+    <div style="border-top:1px solid var(--cx-border);margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--cx-success-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🎟️ Atribución de ventas</div>
       <div class="form-row full">
         <div class="form-group">
           <label>Discount code de Shopify</label>
           <input id="inf-discount-code" placeholder="ANIMUS_LAURA10" style="text-transform:uppercase;font-family:monospace;">
           <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;line-height:1.4;">
             Cuando un cliente use este código en Shopify, la venta se atribuye automáticamente a este influencer.
-            Convención: <code style="background:var(--cx-bg-alt);padding:1px 6px;border-radius:4px;color:#16a34a;">ANIMUS_NOMBRE_PCT</code> (ej: ANIMUS_LAURA10).
+            Convención: <code style="background:var(--cx-bg-alt);padding:1px 6px;border-radius:4px;color:var(--cx-success-text);">ANIMUS_NOMBRE_PCT</code> (ej: ANIMUS_LAURA10).
           </div>
         </div>
       </div>
@@ -772,7 +772,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 <div class="modal-bg" id="modal-gestionar-pagos">
   <div class="modal" style="max-width:780px;max-height:88vh;overflow-y:auto;">
     <div class="modal-hdr">
-      <div class="modal-title">⚙ Gestionar pagos · <span id="gp-inf-nombre" style="color:#6d28d9;"></span></div>
+      <div class="modal-title">⚙ Gestionar pagos · <span id="gp-inf-nombre" style="color:var(--cx-primary-text);"></span></div>
       <button class="modal-close" onclick="closeModal('modal-gestionar-pagos')">&times;</button>
     </div>
     <input type="hidden" id="gp-inf-id">
@@ -795,7 +795,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       </table>
     </div>
     <div id="gp-alert" style="display:none;margin-top:10px;padding:10px;border-radius:6px;font-size:12px;"></div>
-    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;border-top:1px solid #e7e5e4;padding-top:12px;">
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;border-top:1px solid var(--cx-border);padding-top:12px;">
       <button class="btn btn-outline" onclick="closeModal('modal-gestionar-pagos')">Cerrar</button>
     </div>
   </div>
@@ -818,7 +818,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>&#128226; Fecha de publicaci&oacute;n <span style="color:#dc2626;">*</span></label>
+        <label>&#128226; Fecha de publicaci&oacute;n <span style="color:var(--cx-danger-text);">*</span></label>
         <input type="date" id="pago-fecha-contenido" onchange="recalcularVencePagoInf()" title="Día real en que el creador publicó el contenido. La promesa de pago (30 días) se cuenta desde esta fecha.">
       </div>
       <div class="form-group">
@@ -827,13 +827,13 @@ window.addEventListener('unhandledrejection', function(ev) {
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:1;"><label>&#128221; De qu&eacute; trat&oacute; el contenido <span style="color:#dc2626;">*</span></label><input id="pago-entregable" placeholder="Ej: 1 Reel + 2 Stories del s&eacute;rum vitamina C"></div>
+      <div class="form-group" style="flex:1;"><label>&#128221; De qu&eacute; trat&oacute; el contenido <span style="color:var(--cx-danger-text);">*</span></label><input id="pago-entregable" placeholder="Ej: 1 Reel + 2 Stories del s&eacute;rum vitamina C"></div>
     </div>
     <div class="form-row">
       <div class="form-group" style="flex:1;"><label>&#128279; Link al post (opcional)</label><input id="pago-link-post" placeholder="https://instagram.com/p/..."></div>
     </div>
-    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:var(--cx-text-mute);">
-      <div style="font-weight:700;color:#6d28d9;margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
+    <div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:var(--cx-text-mute);">
+      <div style="font-weight:700;color:var(--cx-primary-text);margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
       <div id="pago-banco-preview" style="line-height:1.8;"></div>
     </div>
     <!-- Linea explicativa: que pasa despues de crear la solicitud -->
@@ -865,7 +865,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <div class="form-group" style="margin-bottom:12px;">
       <label>Motivo de baja *</label>
-      <select id="baja-motivo-tipo" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:6px;padding:8px;color:var(--cx-text);">
+      <select id="baja-motivo-tipo" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:8px;color:var(--cx-text);">
         <option value="Pausa temporal">Pausa temporal</option>
         <option value="No cumplió métricas">No cumplió métricas</option>
         <option value="Conflicto de marca">Conflicto de marca</option>
@@ -876,9 +876,9 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <div class="form-group" style="margin-bottom:12px;">
       <label>Observación (opcional)</label>
-      <textarea id="baja-observacion" rows="3" placeholder="Detalles adicionales..." style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:6px;padding:8px;color:var(--cx-text);resize:vertical;"></textarea>
+      <textarea id="baja-observacion" rows="3" placeholder="Detalles adicionales..." style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:8px;color:var(--cx-text);resize:vertical;"></textarea>
     </div>
-    <div style="background:var(--cx-warn-pale);border:1px solid var(--cx-hairline);border-radius:8px;padding:10px;font-size:12px;color:#b45309;margin-bottom:12px;">
+    <div style="background:var(--cx-warn-pale);border:1px solid var(--cx-hairline);border-radius:8px;padding:10px;font-size:12px;color:var(--cx-warn-text);margin-bottom:12px;">
       &#x26A0;&#xFE0F; El influencer quedará en estado <b>Baja</b> y visible en el historial. Podrá reactivarse en cualquier momento.
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;">
@@ -1189,7 +1189,7 @@ ${bars}
             <div style="background:#d4af37;height:6px;border-radius:3px;width:${Math.round((s.total/maxSku)*100)}%;"></div>
           </div>
         </div>
-        <span style="color:#16a34a;font-size:11px;min-width:72px;text-align:right;">${fmtCOP(s.total)}</span>
+        <span style="color:var(--cx-success-text);font-size:11px;min-width:72px;text-align:right;">${fmtCOP(s.total)}</span>
         <span style="color:var(--cx-text-mute);font-size:11px;min-width:36px;text-align:right;">${fmt2(s.uds)} uds</span>
       </div>`).join('');
   }
@@ -1225,7 +1225,7 @@ ${bars}
         <td><span class="badge badge-gray">${esc(c.canal||'-')}</span></td>
         <td>${badgeEstadoCamp(c.estado)}</td>
         <td>${fmtM(c.presupuesto)}</td>
-        <td style="color:#16a34a;">${fmtM(c.resultado_ventas)}</td>
+        <td style="color:var(--cx-success-text);">${fmtM(c.resultado_ventas)}</td>
       </tr>`).join('');
   }
 
@@ -1324,7 +1324,7 @@ ${bars}
       <div style="padding:10px 0;border-bottom:1px solid var(--cx-hairline);">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
           <span style="font-weight:700;">${esc(ch.canal)}</span>
-          <span style="color:#16a34a;">${fmtM(ch.ventas_total)} ventas</span>
+          <span style="color:var(--cx-success-text);">${fmtM(ch.ventas_total)} ventas</span>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--cx-text-mute);">
           <span>${ch.campanas} campaña${ch.campanas!=1?'s':''} · ${fmtM(ch.presupuesto_total)} invertido</span>
@@ -1344,16 +1344,16 @@ async function loadCampanas() {
   try {
     const r = await fetch(url, {credentials:'same-origin'});
     if(!r.ok){
-      body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:#dc2626">Error '+r.status+' cargando campañas</td></tr>';
+      body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:var(--cx-danger-text)">Error '+r.status+' cargando campañas</td></tr>';
       return;
     }
     rows = await r.json();
   } catch(e){
-    body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:#dc2626">Error red: '+esc(e.message)+'</td></tr>';
+    body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:var(--cx-danger-text)">Error red: '+esc(e.message)+'</td></tr>';
     return;
   }
   if(!Array.isArray(rows)){
-    body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:#dc2626">Respuesta inválida: '+esc(JSON.stringify(rows).slice(0,200))+'</td></tr>';
+    body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:var(--cx-danger-text)">Respuesta inválida: '+esc(JSON.stringify(rows).slice(0,200))+'</td></tr>';
     return;
   }
   if(!rows.length) { body.innerHTML='<tr class="empty-row"><td colspan="11">Sin campañas. Crea la primera.</td></tr>'; return; }
@@ -1363,7 +1363,7 @@ async function loadCampanas() {
     const roi = r.presupuesto_gastado>0 ? ((r.resultado_ventas-r.presupuesto_gastado)/r.presupuesto_gastado*100).toFixed(1) : null;
     // Sebastián 25-may-2026 PM · audit P0 · XSS · escape de campos del backend
     const cuponChip = r.discount_code
-      ? `<div style="margin-top:3px;font-size:10px"><span style="background:var(--cx-primary-soft);color:#6d28d9;padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="Atribución activa">${esc(r.discount_code)}</span></div>`
+      ? `<div style="margin-top:3px;font-size:10px"><span style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="Atribución activa">${esc(r.discount_code)}</span></div>`
       : '';
     return `<tr>
       <td class="mob-hide" style="color:var(--cx-text-mute);">${esc(r.id)}</td>
@@ -1373,12 +1373,12 @@ async function loadCampanas() {
       <td>${badgeEstadoCamp(r.estado)}</td>
       <td class="mob-hide">${fmtM(r.presupuesto)}</td>
       <td class="mob-hide">${fmtM(r.presupuesto_gastado)}</td>
-      <td style="color:#16a34a;">${fmtM(r.resultado_ventas)}</td>
+      <td style="color:var(--cx-success-text);">${fmtM(r.resultado_ventas)}</td>
       <td>${roiBadge(roi)}</td>
       <td class="mob-hide"><span class="badge badge-purple">${esc(r.num_influencers)}</span></td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="editCampana(${r.id})" title="Editar">✏️</button>
-        <button class="btn btn-outline btn-sm" onclick="generarCuponCampana(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cupón Shopify" style="border-color:#6d28d9;color:#6d28d9">🎟️</button>
+        <button class="btn btn-outline btn-sm" onclick="generarCuponCampana(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cupón Shopify" style="border-color:var(--cx-primary);color:var(--cx-primary-text)">🎟️</button>
         <button class="btn btn-danger btn-sm" onclick="deleteCampana(${r.id},'${String(r.nombre||'').replace(/[\\\\']/g,'\\\\$&')}')" title="Eliminar">🗑</button>
       </td>
     </tr>`;
@@ -1591,7 +1591,7 @@ async function loadAtribucion(force) {
     const r = await fetch('/api/marketing/atribucion-influencers' + (force ? '?force=1' : ''));
     const d = await r.json();
     if (!d.ok) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:#dc2626;">Error: ' + _escHtml(d.error||'desconocido') + '</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:var(--cx-danger-text);">Error: ' + _escHtml(d.error||'desconocido') + '</td></tr>';
       return;
     }
     const k = d.kpis || {};
@@ -1605,7 +1605,7 @@ async function loadAtribucion(force) {
       {label:'Inversión total',        val: fmtM(k.inversion_total||0),  color:'#a78bfa'},
       {label:'ROI global',             val: (k.roi_global_pct==null?'-':k.roi_global_pct+'%'),
         color: k.roi_global_pct==null ? '#64748b' : (k.roi_global_pct >= 100 ? '#34d399' : (k.roi_global_pct >= 0 ? '#fbbf24' : '#ef4444'))},
-    ].map(c=>`<div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:10px 12px;">
+    ].map(c=>`<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:10px 12px;">
       <div style="font-size:18px;font-weight:800;color:${c.color};line-height:1;">${c.val}</div>
       <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;">${c.label}</div>
     </div>`).join('');
@@ -1620,17 +1620,17 @@ async function loadAtribucion(force) {
       const roiTxt = (roi==null) ? '-' : roi + '%';
       return `<tr>
         <td style="font-weight:600;">${x.nombre||'-'}${x.usuario_red?'<div style="font-size:10px;color:var(--cx-text-mute);font-weight:400;">@'+x.usuario_red+'</div>':''}</td>
-        <td><code style="background:var(--cx-bg-alt);color:#16a34a;padding:2px 8px;border-radius:4px;font-size:11px;">${x.discount_code}</code></td>
+        <td><code style="background:var(--cx-bg-alt);color:var(--cx-success-text);padding:2px 8px;border-radius:4px;font-size:11px;">${x.discount_code}</code></td>
         <td style="text-align:right;">${x.n_pedidos||0}</td>
         <td style="text-align:right;color:var(--cx-text-mute);">${x.unidades||0}</td>
-        <td style="text-align:right;font-weight:700;color:#16a34a;">${fmtM(x.revenue_total||0)}</td>
+        <td style="text-align:right;font-weight:700;color:var(--cx-success-text);">${fmtM(x.revenue_total||0)}</td>
         <td style="text-align:right;color:var(--cx-text-mute);">${fmtM(x.invertido||0)}</td>
         <td style="text-align:right;font-weight:700;color:${roiCol};">${roiTxt}</td>
         <td style="font-size:11px;color:var(--cx-text-mute);">${(x.ultimo_pedido||'').slice(0,10)||'-'}</td>
       </tr>`;
     }).join('');
   } catch (e) {
-    body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:#dc2626;">Error de red: ' + e.message + '</td></tr>';
+    body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:var(--cx-danger-text);">Error de red: ' + e.message + '</td></tr>';
   }
 }
 
@@ -1691,15 +1691,15 @@ function renderPagos() {
   body.innerHTML = list.map(p => {
     const fecha = (p.fecha || '').slice(0,10);
     const estadoBadge = p.estado === 'Pagada'
-      ? '<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x2713; Pagada</span>'
-      : '<span style="background:#78350f;color:#b45309;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x23F3; Pendiente</span>';
+      ? '<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x2713; Pagada</span>'
+      : '<span style="background:var(--cx-accent-dark);color:var(--cx-warn-text);padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x23F3; Pendiente</span>';
     let comprobante = '<span style="color:var(--cx-text-faint);font-size:11px;">-</span>';
     if (p.comprobante_id && p.numero_ce) {
       comprobante = '<a href="/api/comprobantes-pago/'+p.comprobante_id+'/pdf" target="_blank" '
         + 'style="color:#1F5F5B;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px;background:#f0fdfa;padding:3px 10px;border-radius:6px;font-size:12px;">'
         + '&#x1F4C4; '+p.numero_ce+'</a>';
     } else if (p.estado === 'Pagada') {
-      comprobante = '<span style="color:#dc2626;font-size:11px;font-style:italic;" title="Pago hecho antes del feature de comprobantes">sin CE</span>';
+      comprobante = '<span style="color:var(--cx-danger-text);font-size:11px;font-style:italic;" title="Pago hecho antes del feature de comprobantes">sin CE</span>';
     }
     // Botón regenerar siempre visible junto al comprobante (corrige PDFs viejos)
     if (p.comprobante_id) {
@@ -1786,7 +1786,7 @@ function renderCentroPagos(){
   pagos.forEach(function(p){ if(!(p.inf_email||'').trim() && p.influencer_nombre) _sinMail[p.influencer_nombre.toLowerCase()]=1; });
   var _nSinMail=Object.keys(_sinMail).length;
   var _alertMail=_nSinMail>0
-    ? '<div style="background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #f59e0b;border-radius:10px;padding:11px 16px;margin-bottom:14px;font-size:13px;color:#92400e;font-weight:600">⚠ '+_nSinMail+' creador'+(_nSinMail>1?'es':'')+' con pagos y <b>sin correo</b> · no recibirán la factura de pagado. Agregales el correo en <b>Creadores</b>.</div>'
+    ? '<div style="background:var(--cx-warn-pale);border:1px solid #fde68a;border-left:4px solid var(--cx-warn);border-radius:10px;padding:11px 16px;margin-bottom:14px;font-size:13px;color:var(--cx-warn-text);font-weight:600">⚠ '+_nSinMail+' creador'+(_nSinMail>1?'es':'')+' con pagos y <b>sin correo</b> · no recibirán la factura de pagado. Agregales el correo en <b>Creadores</b>.</div>'
     : '';
   if(!list.length){ lst.innerHTML=_alertMail+'<div style="text-align:center;color:var(--cx-text-mute);padding:30px;">Sin pagos en este estado.</div>'; return; }
   lst.innerHTML=_alertMail+list.slice(0,300).map(function(p){
@@ -1798,13 +1798,13 @@ function renderCentroPagos(){
     var noEmail=!(p.inf_email||'').trim();
     return '<div style="background:var(--cx-card,#fff);border:1px solid #eef0f2;border-left:4px solid '+s.color+';border-radius:12px;padding:12px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(15,23,42,.05);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
       +'<div style="min-width:200px;flex:1">'
-        +'<div style="font-weight:800;color:var(--cx-text)">'+_escHtml(p.influencer_nombre||'-')+(noEmail?' <span title="sin correo · no recibirá la factura de pagado" style="color:#dc2626;font-size:11px;font-weight:700">⚠ sin correo</span>':'')+'</div>'
-        +'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">📅 Solicitud: '+((p.fecha||'').slice(0,10))+(p.fecha_publicacion?' · 📢 Publicó: '+p.fecha_publicacion.slice(0,10):'')+(entTxt?' · 📝 '+_escHtml(entTxt):'')+(okLink?' · <a href="'+_escHtml(link)+'" target="_blank" rel="noopener" style="color:#7c3aed;font-weight:700;text-decoration:none">🔗 post</a>':'')+'</div>'
+        +'<div style="font-weight:800;color:var(--cx-text)">'+_escHtml(p.influencer_nombre||'-')+(noEmail?' <span title="sin correo · no recibirá la factura de pagado" style="color:var(--cx-danger-text);font-size:11px;font-weight:700">⚠ sin correo</span>':'')+'</div>'
+        +'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">📅 Solicitud: '+((p.fecha||'').slice(0,10))+(p.fecha_publicacion?' · 📢 Publicó: '+p.fecha_publicacion.slice(0,10):'')+(entTxt?' · 📝 '+_escHtml(entTxt):'')+(okLink?' · <a href="'+_escHtml(link)+'" target="_blank" rel="noopener" style="color:var(--cx-primary-text);font-weight:700;text-decoration:none">🔗 post</a>':'')+'</div>'
       +'</div>'
       +'<div style="text-align:right;white-space:nowrap">'
         +'<div style="font-size:16px;font-weight:800;color:'+s.color+'">'+fmtM(p.valor||0)+'</div>'
         +'<span style="display:inline-block;margin-top:3px;background:'+s.bg+';color:'+s.fg+';padding:3px 11px;border-radius:999px;font-size:11px;font-weight:700">'+s.emoji+' '+s.one+'</span>'
-        +(p.numero_ce?' <div style="font-size:10px;color:#059669;font-family:monospace;margin-top:2px">'+_escHtml(p.numero_ce)+'</div>':'')
+        +(p.numero_ce?' <div style="font-size:10px;color:var(--cx-success-text);font-family:monospace;margin-top:2px">'+_escHtml(p.numero_ce)+'</div>':'')
       +'</div>'
     +'</div>';
   }).join('');
@@ -1887,7 +1887,7 @@ async function loadInfluencers() {
       banner.style.background = 'linear-gradient(135deg,rgba(245,158,11,.10),rgba(245,158,11,.03))';
       banner.style.border = '1px solid rgba(245,158,11,.28)';
       banner.style.color = 'var(--cx-text)';
-      banner.innerHTML = '<b style="color:#b45309;">⏳ ' + conPendiente.length + ' solicitud'
+      banner.innerHTML = '<b style="color:var(--cx-warn-text);">⏳ ' + conPendiente.length + ' solicitud'
         + (conPendiente.length>1?'es':'') + ' esperando pago</b> · '
         + 'Total: <b>' + fmtM(totalPend) + '</b>'
         + '<br><span style="font-size:11px;color:var(--cx-text-mute);">'
@@ -1946,9 +1946,9 @@ async function loadUrgenciasInfluencers() {
       + '<div><b style="font-size:14px;">'+icon+' Flujo urgencia pagos</b><br>'
       + '<span style="font-size:12px;opacity:.9;">'+esc(d.mensaje_estado||'')+'</span></div>'
       + '<div style="display:flex;gap:8px;font-size:11px;">'
-      + (vencidos > 0 ? '<span style="background:#dc2626;color:#fff;padding:4px 10px;border-radius:20px;font-weight:700;">🔴 '+vencidos+' atrasado'+(vencidos>1?'s':'')+'</span>' : '')
-      + (urgentes > 0 ? '<span style="background:#d97706;color:#fff;padding:4px 10px;border-radius:20px;font-weight:700;">🟡 '+urgentes+' esta semana</span>' : '')
-      + (proximos > 0 ? '<span style="background:#475569;color:#fff;padding:4px 10px;border-radius:20px;">🟢 '+proximos+' próx 15d</span>' : '')
+      + (vencidos > 0 ? '<span style="background:var(--cx-danger);color:#fff;padding:4px 10px;border-radius:20px;font-weight:700;">🔴 '+vencidos+' atrasado'+(vencidos>1?'s':'')+'</span>' : '')
+      + (urgentes > 0 ? '<span style="background:var(--cx-accent-dark);color:#fff;padding:4px 10px;border-radius:20px;font-weight:700;">🟡 '+urgentes+' esta semana</span>' : '')
+      + (proximos > 0 ? '<span style="background:var(--cx-text-soft);color:#fff;padding:4px 10px;border-radius:20px;">🟢 '+proximos+' próx 15d</span>' : '')
       + '</div></div>'
       + (vencidos > 0 ? '<div style="font-size:11px;margin-top:8px;opacity:.85;">Promesa de pago: 30 días desde fecha del contenido. Total atrasado: <b>$'+total+'</b></div>' : '');
   } catch (_) {
@@ -2072,8 +2072,8 @@ async function cargarMiSemanaKPIs(){
     topEl.innerHTML = topEng.map((i, idx) => {
       const er = parseFloat(i.engagement_rate||0).toFixed(2);
       return `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid rgba(52,211,153,.15);">
-        <span><span style="color:#16a34a;font-weight:700;">${idx+1}.</span> ${esc(i.nombre||'(s/n)')}</span>
-        <span style="color:#16a34a;font-weight:800;">${er}%</span></div>`;
+        <span><span style="color:var(--cx-success-text);font-weight:700;">${idx+1}.</span> ${esc(i.nombre||'(s/n)')}</span>
+        <span style="color:var(--cx-success-text);font-weight:800;">${er}%</span></div>`;
     }).join('');
     topCt.textContent = `${topEng.length} de ${infs.length}`;
   } else {
@@ -2095,7 +2095,7 @@ async function cargarMiSemanaKPIs(){
     dormEl.innerHTML = dormidos.map(i =>
       `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid rgba(245,158,11,.15);">
         <span>${esc(i.nombre||'(s/n)')}</span>
-        <span style="color:#f59e0b;font-weight:800;">${i.dias_desde_ultimo_pago||0}d</span></div>`
+        <span style="color:var(--cx-warn-text);font-weight:800;">${i.dias_desde_ultimo_pago||0}d</span></div>`
     ).join('');
     dormCt.textContent = `${dormidos.length} activos`;
   } else {
@@ -2147,17 +2147,17 @@ function renderInfluencersTable() {
       // Chip urgencia \u00b7 prioriza color de vencimiento sobre amarillo gen\u00e9rico
       const u = (window.INF_URGENCIA_MAP||{})[r.id];
       if (u && u.urgencia === 'vencido') {
-        estadoBadge = '<span style="background:#7f1d1d;color:#dc2626;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;border:1.5px solid #dc2626;" title="ATRASADO \u00b7 pago vencido hace '+Math.abs(u.dias||0)+' d. Venc\u00eda '+esc(u.vence||'')+'">\ud83d\udd34</span>';
+        estadoBadge = '<span style="background:var(--cx-danger);color:var(--cx-danger-text);padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;border:1.5px solid var(--cx-danger);" title="ATRASADO \u00b7 pago vencido hace '+Math.abs(u.dias||0)+' d. Venc\u00eda '+esc(u.vence||'')+'">\ud83d\udd34</span>';
       } else if (u && u.urgencia === 'urgente') {
-        estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;border:1.5px solid #f59e0b;" title="Urgente \u00b7 vence en '+(u.dias||0)+' d ('+esc(u.vence||'')+')">\ud83d\udfe1</span>';
+        estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;border:1.5px solid var(--cx-warn);" title="Urgente \u00b7 vence en '+(u.dias||0)+' d ('+esc(u.vence||'')+')">\ud83d\udfe1</span>';
       } else {
-        estadoBadge = '<span style="background:#78350f;color:#b45309;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Esperando pago \u2014 solicitud creada, Sebasti\u00e1n por autorizar">\u23f3</span>';
+        estadoBadge = '<span style="background:var(--cx-accent-dark);color:var(--cx-warn-text);padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Esperando pago \u2014 solicitud creada, Sebasti\u00e1n por autorizar">\u23f3</span>';
       }
     } else if(r.toca_pagar) {
       const dias = r.dias_desde_ultimo_pago || 0;
       estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Toca solicitar \u2014 hace '+dias+' d\u00edas del \u00faltimo pago (ciclo '+r.ciclo_pago+'). Click \ud83d\udcb8 Solicitar pago para crear cuenta de cobro">\ud83d\udccc</span>';
     } else if(r.pagos_count>0) {
-      estadoBadge = '<span style="background:var(--cx-success-pale);color:#16a34a;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Al d\u00eda \u2014 '+(r.pagos_count||0)+' pago(s) confirmado(s)">\u2713</span>';
+      estadoBadge = '<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Al d\u00eda \u2014 '+(r.pagos_count||0)+' pago(s) confirmado(s)">\u2713</span>';
     } else {
       estadoBadge = '<span style="color:var(--cx-text-faint);font-size:11px;" title="Sin actividad de pago a\u00fan">\u2014</span>';
     }
@@ -2182,12 +2182,12 @@ function renderInfluencersTable() {
     // tal de que este mal \u00b7 alli donde dice pagos es confuso, debemos darle
     // mejor version". Badge clickable \u2192 abre modal Gestionar Pagos con lista
     // editable (Marcar Pagada/Pendiente, Editar valor, Eliminar err\u00f3neos).
-    let pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+esc(JSON.stringify(r.nombre||''))+')" style="background:var(--cx-card);border:1px dashed #475569;color:var(--cx-text-mute);font-size:10px;padding:3px 8px;border-radius:6px;cursor:pointer" title="Sin pagos \u00b7 click para registrar/gestionar">+ Gestionar</button>';
+    let pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+esc(JSON.stringify(r.nombre||''))+')" style="background:var(--cx-card);border:1px dashed var(--cx-text-soft);color:var(--cx-text-mute);font-size:10px;padding:3px 8px;border-radius:6px;cursor:pointer" title="Sin pagos \u00b7 click para registrar/gestionar">+ Gestionar</button>';
     if(pagosInf.length > 0){
       pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+esc(JSON.stringify(r.nombre||''))+')" style="background:transparent;border:0;padding:0;cursor:pointer;display:inline-flex;gap:4px;align-items:center;font-size:11px" title="Click para gestionar \u00b7 marcar pagado/pendiente, editar o eliminar">';
-      if(pendCount>0) pagosBadge += `<span style="background:#78350f;color:#b45309;padding:2px 8px;border-radius:8px;font-weight:700">\u23f3 ${pendCount}</span>`;
-      if(paidCount>0) pagosBadge += `<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 8px;border-radius:8px;font-weight:700">\u2713 ${paidCount}</span>`;
-      pagosBadge += '<span style="color:#6d28d9;font-size:13px;margin-left:2px">\u2699</span></button>';
+      if(pendCount>0) pagosBadge += `<span style="background:var(--cx-accent-dark);color:var(--cx-warn-text);padding:2px 8px;border-radius:8px;font-weight:700">\u23f3 ${pendCount}</span>`;
+      if(paidCount>0) pagosBadge += `<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:2px 8px;border-radius:8px;font-weight:700">\u2713 ${paidCount}</span>`;
+      pagosBadge += '<span style="color:var(--cx-primary-text);font-size:13px;margin-left:2px">\u2699</span></button>';
     }
     // AUDIT 26-may \u00b7 cup\u00f3n + atribuci\u00f3n real Shopify
     let cuponBadge = '';
@@ -2196,7 +2196,7 @@ function renderInfluencersTable() {
       const roi = r.roi_implicito_pct;
       const roiCol = roi==null?'#94a3b8':(roi>=200?'#10b981':roi>=50?'#22c55e':roi>=0?'#f59e0b':'#ef4444');
       const roiTxt = roi==null?'sin pago a\u00fan':roi+'% ROI';
-      cuponBadge = `<div style="font-size:10px;margin-top:3px"><span style="background:var(--cx-primary-soft);color:#6d28d9;padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="C\u00f3digo activo: ${esc(r.discount_code)}">${esc(r.discount_code)}</span>`;
+      cuponBadge = `<div style="font-size:10px;margin-top:3px"><span style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="C\u00f3digo activo: ${esc(r.discount_code)}">${esc(r.discount_code)}</span>`;
       if(revAtr>0){
         cuponBadge += ` <span style="color:${roiCol};font-weight:700" title="${r.pedidos_atribuibles||0} pedidos \u00b7 ${r.unidades_atribuibles||0} uds">${fmtM(revAtr)}</span>`;
         cuponBadge += ` <span style="color:${roiCol};font-size:9px">(${esc(roiTxt)})</span>`;
@@ -2230,7 +2230,7 @@ function renderInfluencersTable() {
         +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
         +`<button class="btn btn-outline btn-sm" onclick="var m=document.getElementById('acc-more-${r.id}');m.style.display=m.style.display==='none'?'inline':'none';" title="M\u00e1s acciones" style="color:var(--cx-text-mute);">&#x22EF;</button>`
         +`<span id="acc-more-${r.id}" style="display:none;">`
-          +` <button class="btn btn-outline btn-sm" onclick="generarCuponInf(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cup\u00f3n Shopify para atribuci\u00f3n de ventas" style="border-color:#6d28d9;color:#6d28d9">&#x1F39F;&#xFE0F;</button> `
+          +` <button class="btn btn-outline btn-sm" onclick="generarCuponInf(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cup\u00f3n Shopify para atribuci\u00f3n de ventas" style="border-color:var(--cx-primary);color:var(--cx-primary-text)">&#x1F39F;&#xFE0F;</button> `
           +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBajaById(${r.id})" title="Dar de baja">&#x26D4;</button> `
           +`<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerById(${r.id})" title="Eliminar duplicado (solo sin pagos efectuados)">&#x1F5D1;&#xFE0F;</button>`
         +`</span>`
@@ -2247,7 +2247,7 @@ function renderInfluencersTable() {
         expandedRows = filtered.map(p => {
           const est = p.estado||'Pendiente';
           const estColor = est.toLowerCase()==='pagada' ? '#34d399' : (est.toLowerCase()==='pendiente'?'#fcd34d':'#94a3b8');
-          const pdfBtn = p.has_pdf ? `<a href="/api/marketing/pagos-influencers/${p.id}/pdf" target="_blank" style="color:#16a34a;text-decoration:none;font-size:11px;">\u{1F4C4} PDF</a>` : '<span style="color:var(--cx-text-faint);font-size:11px;">\u2014</span>';
+          const pdfBtn = p.has_pdf ? `<a href="/api/marketing/pagos-influencers/${p.id}/pdf" target="_blank" style="color:var(--cx-success-text);text-decoration:none;font-size:11px;">\u{1F4C4} PDF</a>` : '<span style="color:var(--cx-text-faint);font-size:11px;">\u2014</span>';
           return `<tr style="background:var(--cx-bg)">`
             +`<td colspan="2" style="color:var(--cx-text-mute);font-size:11px;padding-left:42px;">${esc(p.fecha||'\u2014')}</td>`
             +`<td colspan="3" style="font-size:12px;color:var(--cx-text-mute)">${esc((p.concepto||'(sin concepto)').substring(0,80))}</td>`
@@ -2493,7 +2493,7 @@ async function abrirDuplicados() {
       +'  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
       +'    <div class="modal-title">\u{1F50D} Posibles influencers duplicados</div>'
       +'    <div style="display:flex;gap:6px;">'
-      +'      <button class="btn btn-sm" style="background:#dc2626;color:#fff;" onclick="dedupMergeInfluencers()" title="Fusiona TODOS los duplicados por nombre · conserva el de más pagos · repunta los pagos al conservado (solo admin)">\u{1F9F9} Fusionar duplicados</button>'
+      +'      <button class="btn btn-sm" style="background:var(--cx-danger);color:#fff;" onclick="dedupMergeInfluencers()" title="Fusiona TODOS los duplicados por nombre · conserva el de más pagos · repunta los pagos al conservado (solo admin)">\u{1F9F9} Fusionar duplicados</button>'
       +'      <button class="btn btn-outline btn-sm" onclick="closeModal(\''+modalId+'\')">Cerrar</button>'
       +'    </div>'
       +'  </div>'
@@ -2510,7 +2510,7 @@ async function abrirDuplicados() {
     const gN = d.duplicados_por_nombre || [];
     const gD = d.duplicados_por_datos || [];
     if(!gN.length && !gD.length) {
-      body.innerHTML = '<div style="padding:24px;text-align:center;color:#16a34a;">✅ No se detectaron duplicados.</div>';
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--cx-success-text);">✅ No se detectaron duplicados.</div>';
       return;
     }
     let html = '';
@@ -2523,8 +2523,8 @@ async function abrirDuplicados() {
         sug = sorted[0].id;
       }
       const titulo = kind==='nombre'
-        ? ('Nombre similar: <span style="color:#b45309">'+_escDup(grupo.nombre_normalizado||'?')+'</span>')
-        : ('Mismos '+_escDup(grupo.tipo||'datos')+': <span style="color:#b45309">'+_escDup(grupo.valor||'?')+'</span>');
+        ? ('Nombre similar: <span style="color:var(--cx-warn-text)">'+_escDup(grupo.nombre_normalizado||'?')+'</span>')
+        : ('Mismos '+_escDup(grupo.tipo||'datos')+': <span style="color:var(--cx-warn-text)">'+_escDup(grupo.valor||'?')+'</span>');
       let rows = items.map(it => {
         const conservar = (it.id === sug);
         const pagos = it.n_pagos || 0;
@@ -2534,12 +2534,12 @@ async function abrirDuplicados() {
           +'<td style="padding:6px 8px;text-align:center;">'+pagos+'</td>'
           +'<td style="padding:6px 8px;text-align:right;white-space:nowrap;">'
             +(conservar
-              ? '<span style="color:#16a34a;font-size:11px;">conservar</span>'
+              ? '<span style="color:var(--cx-success-text);font-size:11px;">conservar</span>'
               : '<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerDup('+it.id+',\''+_escDup((it.nombre||'').replace(/\x27/g,'’'))+'\')">\u{1F5D1}️ Eliminar</button>')
           +'</td>'
         +'</tr>';
       }).join('');
-      return '<div style="margin-bottom:18px;border:1px solid #e7e5e4;border-radius:8px;overflow:hidden;">'
+      return '<div style="margin-bottom:18px;border:1px solid var(--cx-border);border-radius:8px;overflow:hidden;">'
         +'<div style="padding:8px 12px;background:var(--cx-card);font-weight:600;">'+titulo+'</div>'
         +'<table style="width:100%;border-collapse:collapse;">'
         +'<thead><tr style="background:var(--cx-bg-alt);color:var(--cx-text-mute);font-size:11px;">'
@@ -2559,7 +2559,7 @@ async function abrirDuplicados() {
     }
     body.innerHTML = html;
   } catch(e) {
-    body.innerHTML = '<div style="padding:20px;color:#dc2626;">Error: '+e.message+'</div>';
+    body.innerHTML = '<div style="padding:20px;color:var(--cx-danger-text);">Error: '+e.message+'</div>';
   }
 }
 
@@ -2629,7 +2629,7 @@ async function _cargarGestionarPagos(infId, infNombre){
     html += '<tr style="border-bottom:1px solid var(--cx-hairline);">';
     html += '<td style="padding:8px;color:var(--cx-text-soft);">'+esc((p.fecha||'').substring(0,10))+'</td>';
     html += '<td style="padding:8px;"><span style="background:'+estadoBg+';color:'+estadoCol+';padding:3px 9px;border-radius:10px;font-weight:700;font-size:11px;">'+esc(estado)+'</span></td>';
-    html += '<td style="padding:8px;text-align:right;font-weight:700;color:#6d28d9;">$'+valor+'</td>';
+    html += '<td style="padding:8px;text-align:right;font-weight:700;color:var(--cx-primary-text);">$'+valor+'</td>';
     html += '<td style="padding:8px;font-size:11px;color:var(--cx-text-mute);">'+esc((p.concepto||'').substring(0,60))+'</td>';
     html += '<td style="padding:8px;font-family:monospace;font-size:11px;color:#67e8f9;">'+esc(p.numero_oc||'-')+'</td>';
     html += '<td style="padding:8px;text-align:center;white-space:nowrap;">';
@@ -2639,10 +2639,10 @@ async function _cargarGestionarPagos(infId, infNombre){
     }
     // Botón Pendiente (si está Pagada)
     if (estado === 'Pagada'){
-      html += '<button onclick="_gpCambiarEstado('+p.id+',&quot;Pendiente&quot;)" title="Revertir a Pendiente" style="background:#78350f;color:#b45309;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">↩</button>';
+      html += '<button onclick="_gpCambiarEstado('+p.id+',&quot;Pendiente&quot;)" title="Revertir a Pendiente" style="background:var(--cx-accent-dark);color:var(--cx-warn-text);border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">↩</button>';
     }
     html += '<button onclick="_gpEditarValor('+p.id+','+(p.valor||0)+')" title="Editar valor/concepto" style="background:var(--cx-info-pale);color:#fff;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">✏</button>';
-    html += '<button onclick="_gpEliminar('+p.id+')" title="Eliminar este registro" style="background:#7f1d1d;color:#fecaca;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px">🗑</button>';
+    html += '<button onclick="_gpEliminar('+p.id+')" title="Eliminar este registro" style="background:var(--cx-danger);color:#fecaca;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px">🗑</button>';
     html += '</td></tr>';
   }
   tbody.innerHTML = html;
@@ -2753,7 +2753,7 @@ function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
       +'<b>Cuenta/Cel:</b> '+_escHtml(cuenta||'\u2014')+'<br>'
       +'<b>C\u00e9dula/NIT:</b> '+_escHtml(cedula||'\u2014');
   } else {
-    prev.innerHTML = '<span style="color:#f59e0b;">\u26a0\ufe0f Sin datos bancarios. Edita el influencer primero.</span>';
+    prev.innerHTML = '<span style="color:var(--cx-warn-text);">\u26a0\ufe0f Sin datos bancarios. Edita el influencer primero.</span>';
   }
   document.getElementById('pago-inf-alert').style.display='none';
   document.getElementById('modal-inf-pago').classList.add('open');
@@ -2825,13 +2825,13 @@ function _mostrarPagoSolicitadoOk(d){
       '<div class="modal" style="max-width:540px;">'
       + '<div style="text-align:center;padding:18px 6px 8px;">'
       + '<div style="font-size:54px;line-height:1">✅</div>'
-      + '<div style="font-size:18px;font-weight:800;color:#16a34a;margin-top:6px">Solicitud creada y guardada</div>'
-      + '<div id="mpo-numero" style="font-family:monospace;font-size:22px;font-weight:800;color:#6d28d9;background:var(--cx-primary-soft);border:1.5px solid #4338ca;border-radius:10px;padding:10px 16px;margin:12px auto;display:inline-block"></div>'
+      + '<div style="font-size:18px;font-weight:800;color:var(--cx-success-text);margin-top:6px">Solicitud creada y guardada</div>'
+      + '<div id="mpo-numero" style="font-family:monospace;font-size:22px;font-weight:800;color:var(--cx-primary-text);background:var(--cx-primary-soft);border:1.5px solid #4338ca;border-radius:10px;padding:10px 16px;margin:12px auto;display:inline-block"></div>'
       + '<div style="font-size:13px;color:var(--cx-text-soft);line-height:1.6;text-align:left;background:var(--cx-bg-alt);border-radius:8px;padding:12px 14px;margin:10px 14px">'
       + '<div><b style="color:var(--cx-text-mute)">Influencer:</b> <span id="mpo-nombre"></span></div>'
-      + '<div><b style="color:var(--cx-text-mute)">Monto:</b> <span id="mpo-monto" style="color:#b45309;font-weight:700"></span></div>'
+      + '<div><b style="color:var(--cx-text-mute)">Monto:</b> <span id="mpo-monto" style="color:var(--cx-warn-text);font-weight:700"></span></div>'
       + '<div><b style="color:var(--cx-text-mute)">Concepto:</b> <span id="mpo-concepto"></span></div>'
-      + '<div style="margin-top:8px;border-top:1px solid #e7e5e4;padding-top:8px;color:#6d28d9">'
+      + '<div style="margin-top:8px;border-top:1px solid var(--cx-border);padding-top:8px;color:var(--cx-primary-text)">'
       + '📌 Ya quedó visible para Sebastián en <b>/compras → tab Influencers</b>. '
       + 'Cuando pague vas a recibir notificación in-app. También aparece ahora en tu tabla con el badge ⏳.'
       + '</div></div>'
@@ -2885,7 +2885,7 @@ function renderKanbanCard(it) {
   if (it.tipo) meta.push(`<span>${esc(it.tipo)}</span>`);
   if (it.plataforma && it.plataforma !== 'Instagram') meta.push(`<span>${esc(it.plataforma)}</span>`);
   if (it.influencer_nombre) {
-    const code = it.influencer_code ? ` · <code style="color:#16a34a;">${esc(it.influencer_code)}</code>` : '';
+    const code = it.influencer_code ? ` · <code style="color:var(--cx-success-text);">${esc(it.influencer_code)}</code>` : '';
     meta.push(`<span>👤 ${esc(it.influencer_nombre)}${code}</span>`);
   }
   if (it.campana_nombre) meta.push(`<span>📢 ${esc(it.campana_nombre)}</span>`);
@@ -2902,7 +2902,7 @@ function renderKanbanCard(it) {
     if (it.guardados) stats.push(`🔖 <b>${fmt(it.guardados)}</b>`);
     // AUDIT 26-may · marca de origen métricas · IG live = automático del Graph API
     const fuenteBadge = it.ig_match
-      ? `<span style="background:var(--cx-info-pale);color:#2563eb;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Métricas auto-sincronizadas desde Instagram Graph API${it.ig_synced_at?' · sync '+esc(it.ig_synced_at):''}">📡 IG LIVE</span>`
+      ? `<span style="background:var(--cx-info-pale);color:var(--cx-info-text);padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Métricas auto-sincronizadas desde Instagram Graph API${it.ig_synced_at?' · sync '+esc(it.ig_synced_at):''}">📡 IG LIVE</span>`
       : (it.url_publicacion && it.estado === 'Publicado'
           ? `<span style="background:#7c2d12;color:#fdba74;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Esta pieza tiene URL pero no hay match en posts IG sincronizados · refresca IG en Dashboard ↻">⚠ sin sync IG</span>`
           : '');
@@ -2911,7 +2911,7 @@ function renderKanbanCard(it) {
 
   let urlBtn = '';
   if (it.url_publicacion) {
-    urlBtn = `<a href="${escUrl(it.url_publicacion)}" target="_blank" rel="noopener noreferrer" style="color:#2563eb;font-size:11px;text-decoration:none;margin-right:8px;" onclick="event.stopPropagation();">🔗 Ver post</a>`;
+    urlBtn = `<a href="${escUrl(it.url_publicacion)}" target="_blank" rel="noopener noreferrer" style="color:var(--cx-info-text);font-size:11px;text-decoration:none;margin-right:8px;" onclick="event.stopPropagation();">🔗 Ver post</a>`;
   }
 
   return `<div class="kanban-card" onclick="editContenido(${it.id})">
@@ -2931,7 +2931,7 @@ function kanbanMoveButtons(it) {
   const idx = seq.indexOf(it.estado_kanban || it.estado);
   let html = '';
   if (idx > 0) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx-1]}')" title="← ${seq[idx-1]}" style="background:none;border:none;color:var(--cx-text-mute);cursor:pointer;padding:2px 4px;font-size:13px;">←</button>`;
-  if (idx >= 0 && idx < seq.length-1) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx+1]}')" title="→ ${seq[idx+1]}" style="background:none;border:none;color:#6d28d9;cursor:pointer;padding:2px 4px;font-size:13px;">→</button>`;
+  if (idx >= 0 && idx < seq.length-1) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx+1]}')" title="→ ${seq[idx+1]}" style="background:none;border:none;color:var(--cx-primary-text);cursor:pointer;padding:2px 4px;font-size:13px;">→</button>`;
   return html;
 }
 
@@ -3199,7 +3199,7 @@ async function loadABTests(){
   if(!list) return;
   try {
     const r = await fetch('/api/marketing/ab-tests', {credentials:'same-origin'});
-    if(!r.ok){ list.innerHTML = '<div style="color:#ef4444">Error '+r.status+'</div>'; return; }
+    if(!r.ok){ list.innerHTML = '<div style="color:var(--cx-danger-text)">Error '+r.status+'</div>'; return; }
     const d = await r.json();
     const tests = d.tests || [];
     if(!tests.length){
@@ -3209,14 +3209,14 @@ async function loadABTests(){
     list.innerHTML = tests.map(t => {
       const gan = t.ganadora;
       const ganChip = gan === 'a'
-        ? `<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 A gana · ${t.ganadora_diff_pct}%</span>`
+        ? `<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 A gana · ${t.ganadora_diff_pct}%</span>`
         : gan === 'b'
-        ? `<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 B gana · ${t.ganadora_diff_pct}%</span>`
+        ? `<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 B gana · ${t.ganadora_diff_pct}%</span>`
         : gan === 'tie'
-        ? `<span style="background:#3f3f46;color:#a8a29e;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">⚖ Empate técnico</span>`
+        ? `<span style="background:#3f3f46;color:var(--cx-text-faint);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">⚖ Empate técnico</span>`
         : gan === 'indeterminado'
         ? `<span style="background:#7c2d12;color:#fdba74;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">❓ Sin data</span>`
-        : `<span style="background:var(--cx-info-pale);color:#2563eb;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🟡 Activo</span>`;
+        : `<span style="background:var(--cx-info-pale);color:var(--cx-info-text);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🟡 Activo</span>`;
       const aScore = (parseInt(t.a_likes)||0)+(parseInt(t.a_com)||0)*3+(parseInt(t.a_alc)||0)/10;
       const bScore = (parseInt(t.b_likes)||0)+(parseInt(t.b_com)||0)*3+(parseInt(t.b_alc)||0)/10;
       return `<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:10px;padding:14px;margin-bottom:10px">
@@ -3245,7 +3245,7 @@ async function loadABTests(){
         </div>
       </div>`;
     }).join('');
-  } catch(e){ list.innerHTML = '<div style="color:#ef4444">Error: '+esc(e.message)+'</div>'; }
+  } catch(e){ list.innerHTML = '<div style="color:var(--cx-danger-text)">Error: '+esc(e.message)+'</div>'; }
 }
 
 function openABTestCrear(){
@@ -3254,12 +3254,12 @@ function openABTestCrear(){
     <div style="background:var(--cx-card);padding:14px;border-radius:8px;margin-top:12px">
       <h4 style="font-size:13px;color:var(--cx-text);margin:0 0 10px">Crear nuevo A/B test</h4>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <input id="ab-nombre" placeholder="Nombre del test (ej. Reel rutina vs antes/después)" style="width:100%;padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
-        <input id="ab-hipotesis" placeholder="Hipótesis · qué esperás (opcional)" style="width:100%;padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
+        <input id="ab-nombre" placeholder="Nombre del test (ej. Reel rutina vs antes/después)" style="width:100%;padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
+        <input id="ab-hipotesis" placeholder="Hipótesis · qué esperás (opcional)" style="width:100%;padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-          <input id="ab-a-id" type="number" placeholder="ID pieza A" style="padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
-          <input id="ab-b-id" type="number" placeholder="ID pieza B" style="padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
-          <select id="ab-metrica" style="padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
+          <input id="ab-a-id" type="number" placeholder="ID pieza A" style="padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
+          <input id="ab-b-id" type="number" placeholder="ID pieza B" style="padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
+          <select id="ab-metrica" style="padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
             <option value="engagement">Engagement</option>
             <option value="alcance">Alcance</option>
             <option value="conversiones">Conversiones</option>
@@ -3267,7 +3267,7 @@ function openABTestCrear(){
         </div>
         <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
           <button class="btn btn-primary btn-sm" onclick="saveABTest()">✓ Crear</button>
-          <span id="ab-crear-status" style="font-size:11px;color:#10b981"></span>
+          <span id="ab-crear-status" style="font-size:11px;color:var(--cx-success-text)"></span>
         </div>
         <div style="font-size:10px;color:var(--cx-text-mute);margin-top:6px">
           💡 Los IDs de las piezas los ves en la URL al hacer click en una card del Kanban, o en el botón "✏️ Editar"
@@ -3326,7 +3326,7 @@ async function loadMetaProgreso(){
   try {
     const r = await fetch('/api/marketing/meta-progreso?mes='+_mesActual(), {credentials:'same-origin'});
     if(!r.ok){
-      el.innerHTML = '<span style="color:#ef4444">Error HTTP '+r.status+'</span>';
+      el.innerHTML = '<span style="color:var(--cx-danger-text)">Error HTTP '+r.status+'</span>';
       return;
     }
     const d = await r.json();
@@ -3343,7 +3343,7 @@ async function loadMetaProgreso(){
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-size:12px;color:var(--cx-text-mute)">${esc(d.mes)} · ${d.dias_transcurridos}/${d.dias_mes} días</div>
-        <div style="font-size:10px;color:var(--cx-text-mute)">Proyección fin de mes: <b style="color:#6d28d9">${fmtCOP(py.revenue||0)}</b> (${py.revenue_pct_meta||0}% meta)</div>
+        <div style="font-size:10px;color:var(--cx-text-mute)">Proyección fin de mes: <b style="color:var(--cx-primary-text)">${fmtCOP(py.revenue||0)}</b> (${py.revenue_pct_meta||0}% meta)</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
         <div>
@@ -3360,7 +3360,7 @@ async function loadMetaProgreso(){
         </div>
       </div>`;
   } catch(e){
-    el.innerHTML = '<span style="color:#ef4444">Error: '+esc(e.message)+'</span>';
+    el.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+esc(e.message)+'</span>';
   }
 }
 
@@ -3387,19 +3387,19 @@ async function openMetaModal(){
     <div style="display:flex;flex-direction:column;gap:12px">
       <div>
         <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">💰 Revenue meta (COP)</label>
-        <input id="meta-rev" type="number" min="0" step="100000" value="${cur.revenue_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px">
+        <input id="meta-rev" type="number" min="0" step="100000" value="${cur.revenue_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px">
       </div>
       <div>
         <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">📦 Pedidos meta</label>
-        <input id="meta-ped" type="number" min="0" step="10" value="${cur.pedidos_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px">
+        <input id="meta-ped" type="number" min="0" step="10" value="${cur.pedidos_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px">
       </div>
       <div>
         <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">🆕 Clientes nuevos meta</label>
-        <input id="meta-cln" type="number" min="0" step="5" value="${cur.clientes_nuevos_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px">
+        <input id="meta-cln" type="number" min="0" step="5" value="${cur.clientes_nuevos_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px">
       </div>
       <div>
         <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">📝 Notas (opcional)</label>
-        <textarea id="meta-notas" rows="2" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;resize:vertical">${esc(cur.notas||'')}</textarea>
+        <textarea id="meta-notas" rows="2" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;resize:vertical">${esc(cur.notas||'')}</textarea>
       </div>
       <div id="meta-alert" style="display:none"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
@@ -3421,7 +3421,7 @@ async function saveMetaMensual(){
     notas: document.getElementById('meta-notas').value||'',
   };
   if(body.revenue_meta < 0 || body.pedidos_meta < 0 || body.clientes_nuevos_meta < 0){
-    document.getElementById('meta-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Valores no pueden ser negativos</div>';
+    document.getElementById('meta-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Valores no pueden ser negativos</div>';
     document.getElementById('meta-alert').style.display = 'block';
     return;
   }
@@ -3433,11 +3433,11 @@ async function saveMetaMensual(){
       showToast('Meta de '+mes+' guardada','success');
       loadMetaProgreso();
     } else {
-      document.getElementById('meta-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Error: '+esc(d.error||('HTTP '+r.status))+'</div>';
+      document.getElementById('meta-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error: '+esc(d.error||('HTTP '+r.status))+'</div>';
       document.getElementById('meta-alert').style.display = 'block';
     }
   } catch(e){
-    document.getElementById('meta-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Error red: '+esc(e.message)+'</div>';
+    document.getElementById('meta-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error red: '+esc(e.message)+'</div>';
     document.getElementById('meta-alert').style.display = 'block';
   }
 }
@@ -3459,13 +3459,13 @@ async function openCalendarioCosmeticoModal(){
       Eventos cosméticos que los agentes IA usan para calcular demanda proyectada · multiplicador = factor vs día normal (Black Friday típico 3.5).
     </div>
     <div id="cal-cosm-list" style="margin-bottom:14px">Cargando…</div>
-    <div style="border-top:1px solid #e7e5e4;padding-top:12px">
+    <div style="border-top:1px solid var(--cx-border);padding-top:12px">
       <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">➕ Agregar evento</div>
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end">
-        <div><label style="font-size:10px;color:var(--cx-text-mute)">Evento</label><input id="cal-nuevo-evento" placeholder="Ej. Black Friday Animus" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px"></div>
-        <div><label style="font-size:10px;color:var(--cx-text-mute)">Fecha</label><input id="cal-nuevo-fecha" type="date" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px"></div>
-        <div><label style="font-size:10px;color:var(--cx-text-mute)">Multiplicador</label><input id="cal-nuevo-mult" type="number" step="0.1" min="0.1" max="10" value="2.0" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px"></div>
-        <div><label style="font-size:10px;color:var(--cx-text-mute)">Color</label><input id="cal-nuevo-color" type="color" value="#a78bfa" style="width:100%;height:32px;padding:0;border:1px solid #e7e5e4;border-radius:6px;background:var(--cx-card)"></div>
+        <div><label style="font-size:10px;color:var(--cx-text-mute)">Evento</label><input id="cal-nuevo-evento" placeholder="Ej. Black Friday Animus" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px"></div>
+        <div><label style="font-size:10px;color:var(--cx-text-mute)">Fecha</label><input id="cal-nuevo-fecha" type="date" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px"></div>
+        <div><label style="font-size:10px;color:var(--cx-text-mute)">Multiplicador</label><input id="cal-nuevo-mult" type="number" step="0.1" min="0.1" max="10" value="2.0" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px"></div>
+        <div><label style="font-size:10px;color:var(--cx-text-mute)">Color</label><input id="cal-nuevo-color" type="color" value="#a78bfa" style="width:100%;height:32px;padding:0;border:1px solid var(--cx-border);border-radius:6px;background:var(--cx-card)"></div>
         <button class="btn btn-primary btn-sm" onclick="addEventoCalendario()">+ Agregar</button>
       </div>
       <div id="cal-cosm-alert" style="margin-top:8px"></div>
@@ -3480,16 +3480,16 @@ async function loadEventosCalendario(){
   if(!list) return;
   try {
     const r = await fetch('/api/marketing/eventos-calendario?incluir_inactivos=1', {credentials:'same-origin'});
-    if(!r.ok){ list.innerHTML = '<span style="color:#ef4444">Error '+r.status+'</span>'; return; }
+    if(!r.ok){ list.innerHTML = '<span style="color:var(--cx-danger-text)">Error '+r.status+'</span>'; return; }
     const d = await r.json();
     const evs = d.eventos || [];
     if(!evs.length){ list.innerHTML = '<div style="color:var(--cx-text-mute);padding:14px;text-align:center">Sin eventos · agrega el primero abajo</div>'; return; }
-    list.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--cx-text-mute);font-weight:700;text-align:left"><th style="padding:6px;border-bottom:1px solid #e7e5e4">Evento</th><th style="padding:6px;border-bottom:1px solid #e7e5e4">Fecha</th><th style="padding:6px;border-bottom:1px solid #e7e5e4">×Mult.</th><th style="padding:6px;border-bottom:1px solid #e7e5e4">Color</th><th style="padding:6px;border-bottom:1px solid #e7e5e4;text-align:center">Activo</th><th style="padding:6px;border-bottom:1px solid #e7e5e4;text-align:right">Acción</th></tr></thead><tbody>'
+    list.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--cx-text-mute);font-weight:700;text-align:left"><th style="padding:6px;border-bottom:1px solid var(--cx-border)">Evento</th><th style="padding:6px;border-bottom:1px solid var(--cx-border)">Fecha</th><th style="padding:6px;border-bottom:1px solid var(--cx-border)">×Mult.</th><th style="padding:6px;border-bottom:1px solid var(--cx-border)">Color</th><th style="padding:6px;border-bottom:1px solid var(--cx-border);text-align:center">Activo</th><th style="padding:6px;border-bottom:1px solid var(--cx-border);text-align:right">Acción</th></tr></thead><tbody>'
       + evs.map(e => `<tr style="border-bottom:1px solid var(--cx-hairline);${e.activo?'':'opacity:.45'}">
         <td style="padding:6px">${esc(e.evento)}</td>
         <td style="padding:6px;font-family:monospace;color:var(--cx-text-mute)">${esc(e.fecha)}</td>
-        <td style="padding:6px"><span style="background:var(--cx-primary-soft);color:#6d28d9;padding:1px 6px;border-radius:6px;font-weight:700">${e.multiplicador}×</span></td>
-        <td style="padding:6px"><div style="width:24px;height:18px;background:${esc(e.color||'#94a3b8')};border-radius:3px;border:1px solid #e7e5e4"></div></td>
+        <td style="padding:6px"><span style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:1px 6px;border-radius:6px;font-weight:700">${e.multiplicador}×</span></td>
+        <td style="padding:6px"><div style="width:24px;height:18px;background:${esc(e.color||'#94a3b8')};border-radius:3px;border:1px solid var(--cx-border)"></div></td>
         <td style="padding:6px;text-align:center">${e.activo?'✓':'-'}</td>
         <td style="padding:6px;text-align:right">
           ${e.activo
@@ -3498,7 +3498,7 @@ async function loadEventosCalendario(){
         </td>
       </tr>`).join('')
       + '</tbody></table>';
-  } catch(e){ list.innerHTML = '<span style="color:#ef4444">Error: '+esc(e.message)+'</span>'; }
+  } catch(e){ list.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+esc(e.message)+'</span>'; }
 }
 
 async function toggleEventoCal(id, activo){
@@ -3509,12 +3509,12 @@ async function toggleEventoCal(id, activo){
       : await fetch('/api/marketing/eventos-calendario/'+id, _fetchOpts('PUT', {activo: true}));
     const d = await r.json().catch(()=>({}));
     if(!r.ok){
-      document.getElementById('cal-cosm-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Error: '+esc(d.error||r.status)+'</div>';
+      document.getElementById('cal-cosm-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error: '+esc(d.error||r.status)+'</div>';
       return;
     }
     loadEventosCalendario();
   } catch(e){
-    document.getElementById('cal-cosm-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Error red: '+esc(e.message)+'</div>';
+    document.getElementById('cal-cosm-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error red: '+esc(e.message)+'</div>';
   }
 }
 
@@ -3524,23 +3524,23 @@ async function addEventoCalendario(){
   const mult = parseFloat(document.getElementById('cal-nuevo-mult').value)||1;
   const col = document.getElementById('cal-nuevo-color').value;
   const alert = document.getElementById('cal-cosm-alert');
-  if(!ev || !fc){ alert.innerHTML = '<div style="color:#ef4444;font-size:12px">Evento y fecha obligatorios</div>'; return; }
+  if(!ev || !fc){ alert.innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Evento y fecha obligatorios</div>'; return; }
   try {
     const r = await fetch('/api/marketing/eventos-calendario', _fetchOpts('POST', {
       evento: ev, fecha: fc, multiplicador: mult, color: col
     }));
     const d = await r.json().catch(()=>({}));
     if(!r.ok){
-      alert.innerHTML = '<div style="color:#ef4444;font-size:12px">Error: '+esc(d.error||r.status)+'</div>';
+      alert.innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error: '+esc(d.error||r.status)+'</div>';
       return;
     }
-    alert.innerHTML = '<div style="color:#10b981;font-size:12px">✓ Evento agregado</div>';
+    alert.innerHTML = '<div style="color:var(--cx-success-text);font-size:12px">✓ Evento agregado</div>';
     document.getElementById('cal-nuevo-evento').value = '';
     document.getElementById('cal-nuevo-fecha').value = '';
     loadEventosCalendario();
     setTimeout(()=>{ alert.innerHTML = ''; }, 2000);
   } catch(e){
-    alert.innerHTML = '<div style="color:#ef4444;font-size:12px">Error red: '+esc(e.message)+'</div>';
+    alert.innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error red: '+esc(e.message)+'</div>';
   }
 }
 
@@ -3603,16 +3603,16 @@ function verHistorial(id, infOptional) {
 
   // ── KPI resumen ──
   html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
-    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;text-align:center;">
-      <div style="font-size:18px;font-weight:800;color:#16a34a;">${fmtM(inf.total_pagado||0)}</div>
+    <div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:12px;text-align:center;">
+      <div style="font-size:18px;font-weight:800;color:var(--cx-success-text);">${fmtM(inf.total_pagado||0)}</div>
       <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Total pagado</div>
     </div>
-    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;text-align:center;">
+    <div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:12px;text-align:center;">
       <div style="font-size:18px;font-weight:800;color:#818cf8;">${inf.pagos_count||0}</div>
       <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Colaboraciones</div>
     </div>
-    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;text-align:center;">
-      <div style="font-size:18px;font-weight:800;color:#f59e0b;">${fmtM(inf.total_pendiente||0)}</div>
+    <div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:12px;text-align:center;">
+      <div style="font-size:18px;font-weight:800;color:var(--cx-warn-text);">${fmtM(inf.total_pendiente||0)}</div>
       <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Pendiente pago</div>
     </div>
   </div>`;
@@ -3621,7 +3621,7 @@ function verHistorial(id, infOptional) {
   if(pagadas.length) {
     html += `<div style="font-size:12px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">✅ Pagos realizados</div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px;">
-      <thead><tr style="border-bottom:1px solid #e7e5e4;">
+      <thead><tr style="border-bottom:1px solid var(--cx-border);">
         <th style="padding:6px 8px;text-align:left;color:var(--cx-text-mute);">Fecha</th>
         <th style="padding:6px 8px;text-align:left;color:var(--cx-text-mute);">Concepto</th>
         <th style="padding:6px 8px;text-align:right;color:var(--cx-text-mute);">Valor</th>
@@ -3632,7 +3632,7 @@ function verHistorial(id, infOptional) {
       html += `<tr style="border-bottom:1px solid var(--cx-hairline);">
         <td style="padding:6px 8px;color:var(--cx-text-mute);">${p.fecha||'-'}</td>
         <td style="padding:6px 8px;">${p.concepto||'-'}</td>
-        <td style="padding:6px 8px;text-align:right;color:#16a34a;font-weight:700;">${fmtM(p.valor||0)}</td>
+        <td style="padding:6px 8px;text-align:right;color:var(--cx-success-text);font-weight:700;">${fmtM(p.valor||0)}</td>
         <td style="padding:6px 8px;color:var(--cx-text-mute);font-size:11px;">${p.numero_oc||'-'}</td>
       </tr>`;
     });
@@ -3643,7 +3643,7 @@ function verHistorial(id, infOptional) {
   if(pendientes.length) {
     html += `<div style="font-size:12px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">⏳ Pendientes de pago</div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px;">
-      <thead><tr style="border-bottom:1px solid #e7e5e4;">
+      <thead><tr style="border-bottom:1px solid var(--cx-border);">
         <th style="padding:6px 8px;text-align:left;color:var(--cx-text-mute);">Fecha</th>
         <th style="padding:6px 8px;text-align:left;color:var(--cx-text-mute);">Concepto</th>
         <th style="padding:6px 8px;text-align:right;color:var(--cx-text-mute);">Valor</th>
@@ -3653,7 +3653,7 @@ function verHistorial(id, infOptional) {
       html += `<tr style="border-bottom:1px solid var(--cx-hairline);">
         <td style="padding:6px 8px;color:var(--cx-text-mute);">${p.fecha||'-'}</td>
         <td style="padding:6px 8px;">${p.concepto||'-'}</td>
-        <td style="padding:6px 8px;text-align:right;color:#f59e0b;font-weight:700;">${fmtM(p.valor||0)}</td>
+        <td style="padding:6px 8px;text-align:right;color:var(--cx-warn-text);font-weight:700;">${fmtM(p.valor||0)}</td>
       </tr>`;
     });
     html += `</tbody></table>`;

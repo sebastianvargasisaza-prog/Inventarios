@@ -21,65 +21,65 @@ BRD_HTML = r'''<!DOCTYPE html>
 <title>Batch Record Digital · EOS</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <style>
-body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;margin:0;color:#0f172a}
-header{background:#0f172a;color:#f1f5f9;padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--cx-bg-alt);margin:0;color:var(--cx-text)}
+header{background:var(--cx-text);color:var(--cx-border-soft);padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
 .logo{font-weight:800;letter-spacing:.5px;font-size:1.05em;color:#7ACFCC}
-.tabs{display:flex;gap:0;background:#1e293b;border-bottom:1px solid #334155;padding:0 24px;flex-wrap:wrap}
-.tab{padding:11px 20px;font-size:.78em;font-weight:700;letter-spacing:.5px;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase}
+.tabs{display:flex;gap:0;background:var(--cx-text);border-bottom:1px solid var(--cx-text-soft);padding:0 24px;flex-wrap:wrap}
+.tab{padding:11px 20px;font-size:.78em;font-weight:700;letter-spacing:.5px;color:var(--cx-text-mute);cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase}
 .tab.active{color:#7ACFCC;border-bottom-color:#7ACFCC}
-.tab:hover{color:#cbd5e1}
+.tab:hover{color:var(--cx-border)}
 .main{padding:18px 24px;max-width:1400px;margin:0 auto}
 .pane{display:none}.pane.active{display:block}
-.card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-.card-title{font-size:1em;font-weight:700;color:#0f172a;margin-bottom:8px}
+.card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;padding:14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.card-title{font-size:1em;font-weight:700;color:var(--cx-text);margin-bottom:8px}
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px}
-.kpi{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center}
-.kpi-label{font-size:.72em;color:#64748b;text-transform:uppercase;letter-spacing:.5px}
-.kpi-val{font-size:1.8em;font-weight:800;color:#0f172a;margin-top:2px}
-.kpi-val.good{color:#15803d}.kpi-val.warn{color:#fbbf24}.kpi-val.crit{color:#ef4444}
-.kpi-val.muted{color:#94a3b8}
+.kpi{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;padding:12px;text-align:center}
+.kpi-label{font-size:.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px}
+.kpi-val{font-size:1.8em;font-weight:800;color:var(--cx-text);margin-top:2px}
+.kpi-val.good{color:var(--cx-success-text)}.kpi-val.warn{color:var(--cx-accent)}.kpi-val.crit{color:var(--cx-danger-text)}
+.kpi-val.muted{color:var(--cx-text-faint)}
 table{width:100%;border-collapse:collapse;font-size:.85em}
-th,td{padding:8px 10px;border-bottom:1px solid #f1f5f9;text-align:left;vertical-align:top}
-th{background:#f8fafc;font-weight:700;color:#475569;font-size:.76em;text-transform:uppercase;letter-spacing:.5px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--cx-border-soft);text-align:left;vertical-align:top}
+th{background:var(--cx-bg-alt);font-weight:700;color:var(--cx-text-soft);font-size:.76em;text-transform:uppercase;letter-spacing:.5px}
 tr:hover{background:#fafafa}
-.empty{text-align:center;color:#94a3b8;padding:20px;font-style:italic}
+.empty{text-align:center;color:var(--cx-text-faint);padding:20px;font-style:italic}
 .estado{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.78em;font-weight:600;text-transform:uppercase}
-.estado-draft{background:#fef3c7;color:#92400e}
-.estado-en_revision{background:#dbeafe;color:#1e40af}
-.estado-aprobado{background:#d1fae5;color:#065f46}
-.estado-obsoleto{background:#f3f4f6;color:#6b7280}
-.estado-iniciado,.estado-en_proceso{background:#fef3c7;color:#92400e}
-.estado-completado{background:#dbeafe;color:#1e40af}
-.estado-liberado{background:#d1fae5;color:#065f46}
-.estado-rechazado{background:#fee2e2;color:#991b1b}
+.estado-draft{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.estado-en_revision{background:var(--cx-info-pale);color:var(--cx-info-text)}
+.estado-aprobado{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.estado-obsoleto{background:#f3f4f6;color:var(--cx-text-mute)}
+.estado-iniciado,.estado-en_proceso{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.estado-completado{background:var(--cx-info-pale);color:var(--cx-info-text)}
+.estado-liberado{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.estado-rechazado{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
 .btn{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.85em;font-weight:600;text-decoration:none;display:inline-block}
-.btn-primary{background:#7ACFCC;color:#0f172a}.btn-primary:hover{background:#5fb8b5}
+.btn-primary{background:#7ACFCC;color:var(--cx-text)}.btn-primary:hover{background:#5fb8b5}
 .btn-sm{padding:4px 10px;font-size:.78em}
-.muted{color:#94a3b8;font-size:.85em}
+.muted{color:var(--cx-text-faint);font-size:.85em}
 .detail-grid{display:grid;grid-template-columns:140px 1fr;gap:6px 14px;font-size:.88em}
-.detail-grid dt{color:#64748b;font-weight:600}
-.detail-grid dd{margin:0;color:#0f172a}
-.paso-card{background:#f8fafc;border-left:3px solid #cbd5e1;padding:8px 12px;margin-bottom:6px;border-radius:0 4px 4px 0}
-.paso-card.completado{border-left-color:#15803d}
-.paso-card.en_proceso{border-left-color:#fbbf24}
+.detail-grid dt{color:var(--cx-text-mute);font-weight:600}
+.detail-grid dd{margin:0;color:var(--cx-text)}
+.paso-card{background:var(--cx-bg-alt);border-left:3px solid var(--cx-border);padding:8px 12px;margin-bottom:6px;border-radius:0 4px 4px 0}
+.paso-card.completado{border-left-color:var(--cx-success)}
+.paso-card.en_proceso{border-left-color:var(--cx-accent)}
 .action-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.btn-success{background:#15803d;color:#fff}.btn-success:hover{background:#166534}
-.btn-danger{background:#dc2626;color:#fff}.btn-danger:hover{background:#b91c1c}
+.btn-success{background:var(--cx-success);color:#fff}.btn-success:hover{background:var(--cx-success)}
+.btn-danger{background:var(--cx-danger);color:#fff}.btn-danger:hover{background:var(--cx-danger)}
 .modal-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:20px}
 .modal-bg.open{display:flex}
-.modal{background:#fff;border-radius:8px;padding:20px;max-width:420px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal{background:var(--cx-card);border-radius:8px;padding:20px;max-width:420px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.3)}
 .modal h3{margin:0 0 12px 0;font-size:1.1em}
-.modal label{display:block;font-size:.82em;color:#475569;font-weight:600;margin:8px 0 2px}
-.modal input,.modal textarea{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:4px;font-size:.95em;box-sizing:border-box;font-family:inherit}
+.modal label{display:block;font-size:.82em;color:var(--cx-text-soft);font-weight:600;margin:8px 0 2px}
+.modal input,.modal textarea{width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:4px;font-size:.95em;box-sizing:border-box;font-family:inherit}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
-.modal-error{color:#dc2626;font-size:.85em;margin-top:8px;min-height:1em}
-.modal-meaning{background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:8px;font-size:.85em;margin-bottom:8px;color:#1e3a8a}
+.modal-error{color:var(--cx-danger-text);font-size:.85em;margin-top:8px;min-height:1em}
+.modal-meaning{background:var(--cx-info-pale);border:1px solid #bfdbfe;border-radius:4px;padding:8px;font-size:.85em;margin-bottom:8px;color:#1e3a8a}
 </style>
 </head>
 <body>
 <header>
   <div class="logo">EOS · BATCH RECORD DIGITAL</div>
-  <div><a href="/modulos" style="color:#cbd5e1;font-size:.85em;text-decoration:none">Módulos</a></div>
+  <div><a href="/modulos" style="color:var(--cx-border);font-size:.85em;text-decoration:none">Módulos</a></div>
 </header>
 
 <div class="tabs">
@@ -421,7 +421,7 @@ async function showEbrDetail(id){
     + '<dt>Cantidad obj</dt><dd>' + d.cantidad_objetivo_g.toLocaleString('es-CO') + ' g</dd>'
     + (d.cantidad_real_g != null ? '<dt>Cantidad real</dt><dd>' + d.cantidad_real_g.toLocaleString('es-CO') + ' g · yield ' + d.yield_pct.toFixed(2) + '%</dd>' : '')
     + (d.liberado_por ? '<dt>Liberado por</dt><dd>' + escapeHtml(d.liberado_por) + ' · firma #' + d.liberado_signature_id + '</dd>' : '')
-    + (d.rechazado_motivo ? '<dt>Rechazo</dt><dd style="color:#991b1b">' + escapeHtml(d.rechazado_motivo) + '</dd>' : '')
+    + (d.rechazado_motivo ? '<dt>Rechazo</dt><dd style="color:var(--cx-danger-text)">' + escapeHtml(d.rechazado_motivo) + '</dd>' : '')
     + '</dl>'
     + actions
     + '</div>';
@@ -484,7 +484,7 @@ async function showEbrDetail(id){
         html += '<div class="card"><div class="card-title">Pesajes pendientes (' + recRes.no_pesados.length + ' MPs)</div>'
           + '<table><thead><tr><th>MP</th><th>Teórico (g)</th><th></th></tr></thead><tbody>';
         recRes.no_pesados.forEach(function(mp){
-          html += '<tr><td>' + escapeHtml(mp.material_id) + ' · ' + escapeHtml(mp.nombre_inci || mp.material_nombre || '') + ((mp.nombre_inci && mp.material_nombre && mp.nombre_inci !== mp.material_nombre) ? ' <span style="color:#999;font-size:0.85em">(' + escapeHtml(mp.material_nombre) + ')</span>' : '') + '</td>'
+          html += '<tr><td>' + escapeHtml(mp.material_id) + ' · ' + escapeHtml(mp.nombre_inci || mp.material_nombre || '') + ((mp.nombre_inci && mp.material_nombre && mp.nombre_inci !== mp.material_nombre) ? ' <span style="color:var(--cx-text-faint);font-size:0.85em">(' + escapeHtml(mp.material_nombre) + ')</span>' : '') + '</td>'
             + '<td>' + mp.cantidad_teorica_g.toFixed(2) + '</td>'
             + '<td><button class="btn btn-primary btn-sm" onclick="reportarPesaje(' + id + ',\'' + escapeHtml(mp.material_id) + '\',\'' + escapeHtml(mp.material_nombre||'') + '\',' + mp.cantidad_teorica_g + ')">Reportar</button></td></tr>';
         });
@@ -509,7 +509,7 @@ async function showEbrDetail(id){
     if (rec.outliers.length) {
       html += '<table><thead><tr><th>MP</th><th>Teórico (g)</th><th>Real (g)</th><th>Δ%</th></tr></thead><tbody>';
       rec.outliers.forEach(function(x){
-        html += '<tr><td>' + escapeHtml(x.material_id) + ' · ' + escapeHtml(x.nombre_inci || x.material_nombre || '') + ((x.nombre_inci && x.material_nombre && x.nombre_inci !== x.material_nombre) ? ' <span style="color:#999;font-size:0.85em">(' + escapeHtml(x.material_nombre) + ')</span>' : '') + '</td><td>' + x.cantidad_teorica_g.toFixed(2) + '</td><td>' + x.cantidad_real_g.toFixed(2) + '</td><td style="color:#991b1b;font-weight:700">' + x.delta_pct.toFixed(1) + '%</td></tr>';
+        html += '<tr><td>' + escapeHtml(x.material_id) + ' · ' + escapeHtml(x.nombre_inci || x.material_nombre || '') + ((x.nombre_inci && x.material_nombre && x.nombre_inci !== x.material_nombre) ? ' <span style="color:var(--cx-text-faint);font-size:0.85em">(' + escapeHtml(x.material_nombre) + ')</span>' : '') + '</td><td>' + x.cantidad_teorica_g.toFixed(2) + '</td><td>' + x.cantidad_real_g.toFixed(2) + '</td><td style="color:var(--cx-danger-text);font-weight:700">' + x.delta_pct.toFixed(1) + '%</td></tr>';
       });
       html += '</tbody></table>';
     }

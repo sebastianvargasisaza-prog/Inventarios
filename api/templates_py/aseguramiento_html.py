@@ -25,54 +25,54 @@ ASEGURAMIENTO_HTML = r'''<!DOCTYPE html>
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 :root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#6d28d9;--good:#15803d;--warn:#fbbf24;--crit:#ef4444}
-body{font-family:system-ui,-apple-system,sans-serif;background:var(--cx-bg,#f8fafc);margin:0;color:#0f172a}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--cx-bg,#f8fafc);margin:0;color:var(--cx-text)}
 .tabs{display:flex;gap:0;background:var(--cx-card);border-bottom:1px solid var(--cx-hairline,#334155);padding:0 24px;flex-wrap:wrap;overflow-x:auto}
-.tab{padding:11px 20px;font-size:0.78em;font-weight:700;letter-spacing:.5px;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase;white-space:nowrap}
-.tab.active{color:#6d28d9;border-bottom-color:#6d28d9}
-.tab:hover{color:#cbd5e1}
+.tab{padding:11px 20px;font-size:0.78em;font-weight:700;letter-spacing:.5px;color:var(--cx-text-mute);cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase;white-space:nowrap}
+.tab.active{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary)}
+.tab:hover{color:var(--cx-border)}
 .main{padding:18px 24px;max-width:1400px;margin:0 auto}
 .pane{display:none}.pane.active{display:block}
-.card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-.card-title{font-size:1em;font-weight:700;color:#0f172a;margin-bottom:8px}
+.card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;padding:14px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.card-title{font-size:1em;font-weight:700;color:var(--cx-text);margin-bottom:8px}
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
-.kpi{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px;text-align:center}
-.kpi-label{font-size:0.72em;color:#64748b;text-transform:uppercase;letter-spacing:.5px}
-.kpi-val{font-size:1.6em;font-weight:800;color:#0f172a;margin-top:2px}
-.kpi-val.good{color:#15803d}.kpi-val.warn{color:#fbbf24}.kpi-val.crit{color:#ef4444}
-.kpi-sub{font-size:0.7em;color:#94a3b8;margin-top:2px}
+.kpi{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;padding:10px;text-align:center}
+.kpi-label{font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px}
+.kpi-val{font-size:1.6em;font-weight:800;color:var(--cx-text);margin-top:2px}
+.kpi-val.good{color:var(--cx-success-text)}.kpi-val.warn{color:var(--cx-accent)}.kpi-val.crit{color:var(--cx-danger-text)}
+.kpi-sub{font-size:0.7em;color:var(--cx-text-faint);margin-top:2px}
 table{width:100%;border-collapse:collapse;font-size:0.85em}
-th,td{padding:6px 8px;border-bottom:1px solid #f1f5f9;text-align:left;vertical-align:top}
-th{background:#f8fafc;font-weight:700;color:#475569;font-size:0.76em;text-transform:uppercase;letter-spacing:.5px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--cx-border-soft);text-align:left;vertical-align:top}
+th{background:var(--cx-bg-alt);font-weight:700;color:var(--cx-text-soft);font-size:0.76em;text-transform:uppercase;letter-spacing:.5px}
 tr:hover{background:#fafafa}
-.empty{text-align:center;color:#94a3b8;padding:14px;font-style:italic}
+.empty{text-align:center;color:var(--cx-text-faint);padding:14px;font-style:italic}
 .btn{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:0.85em;font-weight:600}
-.btn-primary{background:#6d28d9;color:#fff}.btn-primary:hover{background:#5b21b6}
-.btn-ghost{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
-.btn-ghost:hover{background:#e2e8f0}
+.btn-primary{background:var(--cx-primary);color:#fff}.btn-primary:hover{background:var(--cx-primary-dark)}
+.btn-ghost{background:var(--cx-border-soft);color:var(--cx-text-soft);border:1px solid var(--cx-border)}
+.btn-ghost:hover{background:var(--cx-border)}
 .btn-sm{padding:4px 10px;font-size:0.78em}
 .form-group{margin-bottom:8px}
-.form-group label{display:block;font-size:0.78em;color:#475569;font-weight:600;margin-bottom:2px}
-.form-group input,.form-group select,.form-group textarea{width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9em;background:#fff;box-sizing:border-box}
+.form-group label{display:block;font-size:0.78em;color:var(--cx-text-soft);font-weight:600;margin-bottom:2px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;font-size:0.9em;background:var(--cx-card);box-sizing:border-box}
 .form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:9999;padding:20px}
 .modal-overlay.open{display:flex}
-.modal{background:#fff;border-radius:10px;padding:22px;max-width:600px;width:100%;max-height:88vh;overflow-y:auto;position:relative}
-.modal-close{position:absolute;top:8px;right:8px;background:none;border:none;font-size:24px;cursor:pointer;color:#64748b;width:32px;height:32px;line-height:32px;border-radius:50%}
-.modal-close:hover{background:#f1f5f9}
-.modal-title{font-size:1.1em;font-weight:700;margin-bottom:14px;color:#0f172a}
+.modal{background:var(--cx-card);border-radius:10px;padding:22px;max-width:600px;width:100%;max-height:88vh;overflow-y:auto;position:relative}
+.modal-close{position:absolute;top:8px;right:8px;background:none;border:none;font-size:24px;cursor:pointer;color:var(--cx-text-mute);width:32px;height:32px;line-height:32px;border-radius:50%}
+.modal-close:hover{background:var(--cx-border-soft)}
+.modal-title{font-size:1.1em;font-weight:700;margin-bottom:14px;color:var(--cx-text)}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.72em;font-weight:700;text-transform:uppercase}
-.badge-vig{background:#d1fae5;color:#15803d}
-.badge-venc{background:#fef2f2;color:#ef4444}
-.badge-prox{background:#fef9c3;color:#a16207}
-.badge-obs{background:#f3f4f6;color:#6b7280}
+.badge-vig{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.badge-venc{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
+.badge-prox{background:#fef9c3;color:var(--cx-warn-text)}
+.badge-obs{background:#f3f4f6;color:var(--cx-text-mute)}
 .badge-confl{background:#ffedd5;color:#c2410c}
-.badge-bor{background:#dbeafe;color:#1e40af}
-code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Regular,Consolas,monospace;font-size:0.85em}
+.badge-bor{background:var(--cx-info-pale);color:var(--cx-info-text)}
+code{background:var(--cx-border-soft);padding:1px 6px;border-radius:3px;font-family:SFMono-Regular,Consolas,monospace;font-size:0.85em}
 /* Toast notifications · audit zero-error 2-may-2026 · reemplazo de alert() */
 #_toast-container{position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
-.toast{background:#fff;border-left:4px solid #6d28d9;padding:12px 18px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);min-width:260px;max-width:400px;font-size:0.9em;animation:slideIn .25s ease-out;pointer-events:auto;cursor:pointer}
-.toast.success{border-left-color:#15803d}.toast.error{border-left-color:#ef4444}
-.toast.warn{border-left-color:#fbbf24}.toast.fade-out{animation:fadeOut .25s ease-in forwards}
+.toast{background:var(--cx-card);border-left:4px solid var(--cx-primary);padding:12px 18px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);min-width:260px;max-width:400px;font-size:0.9em;animation:slideIn .25s ease-out;pointer-events:auto;cursor:pointer}
+.toast.success{border-left-color:var(--cx-success)}.toast.error{border-left-color:var(--cx-danger)}
+.toast.warn{border-left-color:var(--cx-accent)}.toast.fade-out{animation:fadeOut .25s ease-in forwards}
 @keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}
 @keyframes fadeOut{to{transform:translateX(120%);opacity:0}}
 .btn[disabled]{opacity:.5;cursor:wait}
@@ -81,7 +81,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <body>
 <div id="_toast-container" aria-live="polite" aria-atomic="true"></div>
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M12 2 4 5v6c0 5 3.4 8.5 8 11 4.6-2.5 8-6 8-11V5l-8-3z"/><path d="m9 12 2 2 4-4"/></svg>
@@ -123,8 +123,8 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <div id="tab-dash" class="pane active">
   <!-- Alertas críticas (banner rojo si hay) -->
   <div id="dash-alertas-wrap" style="display:none">
-    <div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px;margin-bottom:14px">
-      <div style="font-weight:700;color:#991b1b;margin-bottom:6px">🚨 Alertas críticas (acción requerida)</div>
+    <div class="card" style="background:var(--cx-danger-pale);border-left:4px solid var(--cx-danger);padding:10px 14px;margin-bottom:14px">
+      <div style="font-weight:700;color:var(--cx-danger-text);margin-bottom:6px">🚨 Alertas críticas (acción requerida)</div>
       <div id="dash-alertas-list" style="font-size:0.85em"></div>
     </div>
   </div>
@@ -144,19 +144,19 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="kpi-row">
     <div class="kpi" onclick="goTab('tab-desv')" style="cursor:pointer"><div class="kpi-label">📢 Desviaciones</div>
       <div class="kpi-val" id="kp-desv-tot">-</div>
-      <div class="kpi-sub"><span style="color:#ef4444" id="kp-desv-crit">-</span> críticas · <span id="kp-desv-sin">-</span> s/clasificar</div>
+      <div class="kpi-sub"><span style="color:var(--cx-danger-text)" id="kp-desv-crit">-</span> críticas · <span id="kp-desv-sin">-</span> s/clasificar</div>
     </div>
     <div class="kpi" onclick="goTab('tab-cambios')" style="cursor:pointer"><div class="kpi-label">🔄 Cambios</div>
       <div class="kpi-val" id="kp-cam-tot">-</div>
-      <div class="kpi-sub"><span style="color:#ef4444" id="kp-cam-inv">-</span> INVIMA · <span id="kp-cam-sin">-</span> s/evaluar</div>
+      <div class="kpi-sub"><span style="color:var(--cx-danger-text)" id="kp-cam-inv">-</span> INVIMA · <span id="kp-cam-sin">-</span> s/evaluar</div>
     </div>
     <div class="kpi" onclick="goTab('tab-quejas')" style="cursor:pointer"><div class="kpi-label">💬 Quejas</div>
       <div class="kpi-val" id="kp-qc-tot">-</div>
-      <div class="kpi-sub"><span style="color:#ef4444" id="kp-qc-crit">-</span> críticas · <span id="kp-qc-nue">-</span> nuevas</div>
+      <div class="kpi-sub"><span style="color:var(--cx-danger-text)" id="kp-qc-crit">-</span> críticas · <span id="kp-qc-nue">-</span> nuevas</div>
     </div>
     <div class="kpi" onclick="goTab('tab-recalls')" style="cursor:pointer"><div class="kpi-label">🚨 Recalls</div>
       <div class="kpi-val" id="kp-rcl-tot">-</div>
-      <div class="kpi-sub"><span style="color:#ef4444" id="kp-rcl-c1">-</span> Clase I · <span id="kp-rcl-inv">-</span> s/INVIMA</div>
+      <div class="kpi-sub"><span style="color:var(--cx-danger-text)" id="kp-rcl-c1">-</span> Clase I · <span id="kp-rcl-inv">-</span> s/INVIMA</div>
     </div>
   </div>
 
@@ -178,14 +178,14 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="card" style="background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:none">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
       <div>
-        <div style="font-size:0.78em;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">Cuadro de mando del Sistema de Calidad</div>
-        <div style="font-size:1.3em;font-weight:700;color:#6d28d9">Indicadores GMP &middot; <span id="ind-asg-hoy">-</span></div>
-        <div style="font-size:0.78em;color:#6b7280;margin-top:2px">Meta vs real &middot; sem&aacute;foro verde/amarillo/rojo. Doble-clic una tarjeta para editar su meta. Alimenta la Revisi&oacute;n por la Direcci&oacute;n.</div>
+        <div style="font-size:0.78em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.6px">Cuadro de mando del Sistema de Calidad</div>
+        <div style="font-size:1.3em;font-weight:700;color:var(--cx-primary-text)">Indicadores GMP &middot; <span id="ind-asg-hoy">-</span></div>
+        <div style="font-size:0.78em;color:var(--cx-text-mute);margin-top:2px">Meta vs real &middot; sem&aacute;foro verde/amarillo/rojo. Doble-clic una tarjeta para editar su meta. Alimenta la Revisi&oacute;n por la Direcci&oacute;n.</div>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">EN META</div><div id="ind-asg-verde" style="font-size:1.5em;font-weight:800;color:#16a34a">-</div></div>
-        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">EN AVISO</div><div id="ind-asg-amari" style="font-size:1.5em;font-weight:800;color:#d97706">-</div></div>
-        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">FUERA</div><div id="ind-asg-rojo" style="font-size:1.5em;font-weight:800;color:#dc2626">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">EN META</div><div id="ind-asg-verde" style="font-size:1.5em;font-weight:800;color:var(--cx-success-text)">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">EN AVISO</div><div id="ind-asg-amari" style="font-size:1.5em;font-weight:800;color:var(--cx-warn-text)">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">FUERA</div><div id="ind-asg-rojo" style="font-size:1.5em;font-weight:800;color:var(--cx-danger-text)">-</div></div>
         <button class="btn btn-ghost btn-sm" onclick="loadIndicadoresASG()">&#x21BB; Refrescar</button>
       </div>
     </div>
@@ -197,37 +197,37 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
 <!-- MIS TAREAS · vista personalizada por usuario -->
 <div id="tab-mis-tareas" class="pane">
-  <div id="mt-loading" style="text-align:center;padding:30px;color:#94a3b8">Cargando...</div>
+  <div id="mt-loading" style="text-align:center;padding:30px;color:var(--cx-text-faint)">Cargando...</div>
   <div id="mt-content" style="display:none">
     <div style="margin-bottom:14px">
       <span style="font-size:1.1em;font-weight:700">Tareas para </span>
-      <span id="mt-user" style="font-size:1.1em;font-weight:700;color:#6d28d9"></span>
-      <span id="mt-rol" style="font-size:0.78em;color:#94a3b8;margin-left:6px"></span>
+      <span id="mt-user" style="font-size:1.1em;font-weight:700;color:var(--cx-primary-text)"></span>
+      <span id="mt-rol" style="font-size:0.78em;color:var(--cx-text-faint);margin-left:6px"></span>
     </div>
 
     <!-- Banner urgentes (rojo) -->
     <div id="mt-urgentes-wrap" style="display:none">
-      <div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px;margin-bottom:14px">
-        <div style="font-weight:700;color:#991b1b;margin-bottom:6px">🚨 Urgente · acción inmediata</div>
+      <div class="card" style="background:var(--cx-danger-pale);border-left:4px solid var(--cx-danger);padding:10px 14px;margin-bottom:14px">
+        <div style="font-weight:700;color:var(--cx-danger-text);margin-bottom:6px">🚨 Urgente · acción inmediata</div>
         <div id="mt-urgentes-list" style="font-size:0.85em"></div>
       </div>
     </div>
 
     <!-- Capacitaciones pendientes -->
     <div class="card">
-      <div class="card-title">🎓 Capacitaciones pendientes <span id="mt-cap-cnt" style="color:#94a3b8;font-weight:400;font-size:0.85em"></span></div>
+      <div class="card-title">🎓 Capacitaciones pendientes <span id="mt-cap-cnt" style="color:var(--cx-text-faint);font-weight:400;font-size:0.85em"></span></div>
       <div id="mt-cap-body"><p class="empty">Sin capacitaciones pendientes</p></div>
     </div>
 
     <!-- Mis ítems abiertos -->
     <div class="card">
-      <div class="card-title">📋 Items que reporté/creé y siguen abiertos <span id="mt-mc-cnt" style="color:#94a3b8;font-weight:400;font-size:0.85em"></span></div>
+      <div class="card-title">📋 Items que reporté/creé y siguen abiertos <span id="mt-mc-cnt" style="color:var(--cx-text-faint);font-weight:400;font-size:0.85em"></span></div>
       <div id="mt-mc-body"><p class="empty">Sin ítems abiertos</p></div>
     </div>
 
     <!-- Cola Calidad (solo si rol Calidad) -->
     <div class="card" id="mt-queue-card" style="display:none">
-      <div class="card-title">⚙️ Cola de Calidad · pendientes de tu acción <span id="mt-q-cnt" style="color:#94a3b8;font-weight:400;font-size:0.85em"></span></div>
+      <div class="card-title">⚙️ Cola de Calidad · pendientes de tu acción <span id="mt-q-cnt" style="color:var(--cx-text-faint);font-weight:400;font-size:0.85em"></span></div>
       <div id="mt-queue-body"><p class="empty">Cola vacía 👏</p></div>
     </div>
   </div>
@@ -237,8 +237,8 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <div id="tab-sgd" class="pane">
   <div class="card">
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
-      <input id="sgd-q" placeholder="Buscar por código o título" style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px">
-      <select id="sgd-area" onchange="loadSGD()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px">
+      <input id="sgd-q" placeholder="Buscar por código o título" style="flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px">
+      <select id="sgd-area" onchange="loadSGD()" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px">
         <option value="">Todas áreas</option>
         <option value="COC">COC · Control Calidad</option>
         <option value="ASG">ASG · Aseguramiento</option>
@@ -249,7 +249,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <option value="RRH">RRH · Recursos Humanos</option>
         <option value="SST">SST · Seguridad</option>
       </select>
-      <select id="sgd-tipo" onchange="loadSGD()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px">
+      <select id="sgd-tipo" onchange="loadSGD()" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px">
         <option value="">Todos tipos</option>
         <option value="PRO">Procedimientos</option>
         <option value="NOR">Normas</option>
@@ -259,20 +259,20 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <option value="FOR">Formatos</option>
         <option value="LMA">Listados maestros</option>
       </select>
-      <select id="sgd-estado" onchange="loadSGD()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px">
+      <select id="sgd-estado" onchange="loadSGD()" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px">
         <option value="vigente">Vigentes</option>
         <option value="">Todos estados</option>
         <option value="borrador">Borrador</option>
         <option value="obsoleto">Obsoletos</option>
         <option value="conflicto">Conflicto</option>
       </select>
-      <label style="display:flex;align-items:center;gap:4px;font-size:0.85em;color:#475569">
+      <label style="display:flex;align-items:center;gap:4px;font-size:0.85em;color:var(--cx-text-soft)">
         <input type="checkbox" id="sgd-hijos" onchange="loadSGD()"> Incluir formatos hijos
       </label>
       <button class="btn btn-ghost btn-sm" onclick="loadSGD()">&#x1F50D; Buscar</button>
       <button class="btn btn-primary btn-sm" onclick="abrirNuevoSGD()">+ Nuevo</button>
     </div>
-    <div id="sgd-resumen" style="font-size:0.78em;color:#64748b;margin-bottom:6px"></div>
+    <div id="sgd-resumen" style="font-size:0.78em;color:var(--cx-text-mute);margin-bottom:6px"></div>
     <div style="overflow-x:auto">
       <table>
         <thead><tr><th>Código</th><th>Título</th><th>Versión</th><th>Estado</th><th>Próx. revisión</th><th>Aprobado por</th><th></th></tr></thead>
@@ -289,9 +289,9 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="card" style="background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:none">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div>
-        <div style="font-size:0.78em;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">Cronogramas BPM &middot; cumplimiento <span id="cron-bpm-year"></span></div>
-        <div style="font-size:1.15em;font-weight:700;color:#6d28d9">📅 Capacitaci&oacute;n, mantenimiento y dem&aacute;s cronogramas del a&ntilde;o</div>
-        <div style="font-size:0.78em;color:#6b7280;margin-top:2px">El cronograma de capacitaciones y el de mantenimientos viven aqu&iacute; con su % de cumplimiento y alertas de vencidas/pr&oacute;ximas.</div>
+        <div style="font-size:0.78em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.6px">Cronogramas BPM &middot; cumplimiento <span id="cron-bpm-year"></span></div>
+        <div style="font-size:1.15em;font-weight:700;color:var(--cx-primary-text)">📅 Capacitaci&oacute;n, mantenimiento y dem&aacute;s cronogramas del a&ntilde;o</div>
+        <div style="font-size:0.78em;color:var(--cx-text-mute);margin-top:2px">El cronograma de capacitaciones y el de mantenimientos viven aqu&iacute; con su % de cumplimiento y alertas de vencidas/pr&oacute;ximas.</div>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="loadCronogramasBPM()">&#x21BB; Refrescar</button>
     </div>
@@ -342,7 +342,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <div class="card-title" style="margin:0">Lista</div>
       <div style="display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap">
-        <input type="text" placeholder="Buscar..." oninput="buscarTabla('desv', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('desv', this.value)" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;max-width:200px">
         <select id="desv-f-estado" onchange="loadDesviaciones()">
           <option value="">Todos estados</option>
           <option value="detectada">Detectadas</option>
@@ -443,7 +443,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <div class="card-title" style="margin:0">Solicitudes de cambio</div>
       <div style="display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap">
-        <input type="text" placeholder="Buscar..." oninput="buscarTabla('cambios', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('cambios', this.value)" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;max-width:200px">
         <select id="cam-f-estado" onchange="loadCambios()">
           <option value="">Todos estados</option>
           <option value="solicitado">Solicitado</option>
@@ -528,11 +528,11 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <!-- QUEJAS CLIENTES · ASG-PRO-013 -->
 <div id="tab-quejas" class="pane">
   <!-- BANDEJA DE TRIAJE PQR · llega de GHL, la IA propone Espagiria/Ánimus -->
-  <div class="card" style="background:linear-gradient(135deg,#eff6ff,#e0f2fe);border-left:4px solid #0ea5e9">
+  <div class="card" style="background:linear-gradient(135deg,#eff6ff,#e0f2fe);border-left:4px solid var(--cx-info)">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <div>
-        <div style="font-weight:700;color:#0c4a6e">📨 Bandeja de triaje PQR <span id="pqr-tri-cnt" style="background:#0ea5e9;color:#fff;border-radius:10px;padding:1px 8px;font-size:0.8em;margin-left:4px">0</span></div>
-        <div style="font-size:0.8em;color:#0c4a6e">Mensajes que llegan de GHL (Instagram, WhatsApp…). La IA propone si son de <b>Espagiria</b> (calidad) o <b>Ánimus</b> (comercial). Confirma el destino con un clic.</div>
+        <div style="font-weight:700;color:var(--cx-info-text)">📨 Bandeja de triaje PQR <span id="pqr-tri-cnt" style="background:var(--cx-info);color:#fff;border-radius:10px;padding:1px 8px;font-size:0.8em;margin-left:4px">0</span></div>
+        <div style="font-size:0.8em;color:var(--cx-info-text)">Mensajes que llegan de GHL (Instagram, WhatsApp…). La IA propone si son de <b>Espagiria</b> (calidad) o <b>Ánimus</b> (comercial). Confirma el destino con un clic.</div>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="loadPqrTriaje()">&#x21BB; Refrescar</button>
     </div>
@@ -551,7 +551,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <div class="card-title" style="margin:0">Quejas y reclamos</div>
       <div style="display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap">
-        <input type="text" placeholder="Buscar..." oninput="buscarTabla('quejas', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('quejas', this.value)" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;max-width:200px">
         <select id="qc-f-estado" onchange="loadQuejas()">
           <option value="">Todos estados</option>
           <option value="nueva">Nueva</option>
@@ -674,15 +674,15 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div class="kpi"><div class="kpi-label">Cerrados 30d</div><div class="kpi-val good" id="rcl-kp-cer">-</div></div>
   </div>
 
-  <div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px">
-    <div style="font-size:0.85em;color:#991b1b">⚠ <b>RECALL = decisión grave.</b> Solo iniciar tras confirmar que el producto en el mercado representa riesgo. Clase I requiere notificación INVIMA en <b>&lt;24h</b> (Resolución 2214/2021).</div>
+  <div class="card" style="background:var(--cx-danger-pale);border-left:4px solid var(--cx-danger);padding:10px 14px">
+    <div style="font-size:0.85em;color:var(--cx-danger-text)">⚠ <b>RECALL = decisión grave.</b> Solo iniciar tras confirmar que el producto en el mercado representa riesgo. Clase I requiere notificación INVIMA en <b>&lt;24h</b> (Resolución 2214/2021).</div>
   </div>
 
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <div class="card-title" style="margin:0">Recalls</div>
       <div style="display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap">
-        <input type="text" placeholder="Buscar..." oninput="buscarTabla('recalls', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('recalls', this.value)" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;max-width:200px">
         <select id="rcl-f-estado" onchange="loadRecalls()">
           <option value="">Todos estados</option>
           <option value="iniciado">Iniciado</option>
@@ -701,7 +701,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
           <option value="clase_III">Clase III</option>
         </select>
         <button class="btn btn-ghost btn-sm" onclick="loadRecalls()">↻</button>
-        <button class="btn btn-primary btn-sm" onclick="abrirNuevoRecall()" style="background:#ef4444;color:#fff">+ Iniciar recall</button>
+        <button class="btn btn-primary btn-sm" onclick="abrirNuevoRecall()" style="background:var(--cx-danger);color:#fff">+ Iniciar recall</button>
       </div>
     </div>
     <div style="overflow-x:auto">
@@ -718,8 +718,8 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <div class="modal-overlay" id="m-rcl-new" role="dialog" aria-modal="true" aria-label="Iniciar recall">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('m-rcl-new')">&times;</button>
-    <div class="modal-title" style="color:#ef4444">🚨 Iniciar recall de producto</div>
-    <div style="background:#fef2f2;padding:8px 10px;border-radius:6px;font-size:0.78em;color:#991b1b;margin-bottom:10px">
+    <div class="modal-title" style="color:var(--cx-danger-text)">🚨 Iniciar recall de producto</div>
+    <div style="background:var(--cx-danger-pale);padding:8px 10px;border-radius:6px;font-size:0.78em;color:var(--cx-danger-text);margin-bottom:10px">
       Esta acción inicia el proceso formal de retiro de producto del mercado y notifica inmediato a Calidad+Sebastián.
     </div>
     <div class="form-group"><label>Origen *</label>
@@ -754,7 +754,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('m-rcl-new')">Cancelar</button>
-      <button class="btn btn-primary" style="background:#ef4444;color:#fff" onclick="guardarRecall()">Iniciar recall</button>
+      <button class="btn btn-primary" style="background:var(--cx-danger);color:#fff" onclick="guardarRecall()">Iniciar recall</button>
     </div>
     <div id="m-rcl-new-msg" style="margin-top:8px;font-size:12px"></div>
   </div>
@@ -772,13 +772,13 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
 <!-- GOBIERNO GMP -->
 <div id="tab-gob" class="pane">
-  <div class="card" style="background:#f5f3ff;border-left:4px solid #6d28d9">
-    <div style="font-weight:700;color:#4c1d95;margin-bottom:4px">🏛️ Gobierno de la Calidad (GMP / INVIMA)</div>
-    <div style="font-size:0.85em;color:#4c1d95">Procesos de Aseguramiento exigidos por GMP que cierran el ciclo del sistema: revisión por la dirección, calificación de proveedores, validación de equipos, gestión de riesgo (FMEA) y acuerdos de calidad con terceros. Edición: Aseguramiento / Calidad / Admin.</div>
+  <div class="card" style="background:var(--cx-primary-pale);border-left:4px solid var(--cx-primary)">
+    <div style="font-weight:700;color:var(--cx-primary-text);margin-bottom:4px">🏛️ Gobierno de la Calidad (GMP / INVIMA)</div>
+    <div style="font-size:0.85em;color:var(--cx-primary-text)">Procesos de Aseguramiento exigidos por GMP que cierran el ciclo del sistema: revisión por la dirección, calificación de proveedores, validación de equipos, gestión de riesgo (FMEA) y acuerdos de calidad con terceros. Edición: Aseguramiento / Calidad / Admin.</div>
   </div>
 
   <!-- Sub-nav -->
-  <div style="display:flex;gap:0;border-bottom:1px solid #cbd5e1;margin-bottom:14px;flex-wrap:wrap">
+  <div style="display:flex;gap:0;border-bottom:1px solid var(--cx-border);margin-bottom:14px;flex-wrap:wrap">
     <div class="gob-sub active" data-sub="rev" onclick="gobSub('rev')" style="padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:0.88em" title="Revisión periódica del sistema de calidad por la dirección (INVIMA Res. 2214 art. 8). Toma un snapshot vivo de los KPIs y registra decisiones y acciones de mejora.">📅 Revisión por Dirección</div>
     <div class="gob-sub" data-sub="prov" onclick="gobSub('prov')" style="padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:0.88em" title="Calificación formal de proveedores. Reusa el maestro de proveedores de Compras y su scorecard de desempeño (cumplimiento, on-time, rechazo QC). Define a quién se aprueba, quién es crítico y a quién se visita.">🏭 Calificación Proveedores</div>
     <div class="gob-sub" data-sub="eq" onclick="gobSub('eq')" style="padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:0.88em" title="Validación de equipos e instrumentos: IQ/OQ/PQ, CSV (validación de sistemas computarizados) y revalidaciones periódicas. Complementa la calibración genérica de Planta.">🔬 Validación Equipos</div>
@@ -804,9 +804,9 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px">
         <div class="card-title" style="margin:0">🏭 Proveedores (maestro de Compras + calificación AC)</div>
-        <input id="gob-prov-q" placeholder="Buscar proveedor" oninput="gobRenderProv()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;min-width:200px">
+        <input id="gob-prov-q" placeholder="Buscar proveedor" oninput="gobRenderProv()" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;min-width:200px">
       </div>
-      <div style="font-size:0.8em;color:#64748b;margin-bottom:8px">El scorecard (cumplimiento, on-time, rechazo QC) viene del desempeño real registrado en Compras/Recepción. Define criticidad, si requiere visita y el estado de aprobación.</div>
+      <div style="font-size:0.8em;color:var(--cx-text-mute);margin-bottom:8px">El scorecard (cumplimiento, on-time, rechazo QC) viene del desempeño real registrado en Compras/Recepción. Define criticidad, si requiere visita y el estado de aprobación.</div>
       <div id="gob-prov-list"><p class="empty">Cargando...</p></div>
     </div>
   </div>
@@ -829,7 +829,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <div class="card-title" style="margin:0">⚠️ Matriz FMEA · riesgo de producto/proceso (ICH Q9)</div>
         <button class="btn btn-primary btn-sm gob-wbtn" onclick="gobNuevaFmea()">+ Nuevo modo de falla</button>
       </div>
-      <div style="font-size:0.8em;color:#64748b;margin-bottom:8px">RPN = Severidad × Ocurrencia × Detección (cada uno 1-10). Ordenado por RPN descendente - lo más rojo arriba.</div>
+      <div style="font-size:0.8em;color:var(--cx-text-mute);margin-bottom:8px">RPN = Severidad × Ocurrencia × Detección (cada uno 1-10). Ordenado por RPN descendente - lo más rojo arriba.</div>
       <div id="gob-fmea-list"><p class="empty">Cargando...</p></div>
     </div>
   </div>
@@ -848,16 +848,16 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
 <!-- REPORTES INVIMA -->
 <div id="tab-reportes" class="pane">
-  <div class="card" style="background:#eff6ff;border-left:4px solid #0ea5e9">
-    <div style="font-weight:700;color:#0c4a6e;margin-bottom:4px">📋 Reportes regulatorios INVIMA</div>
-    <div style="font-size:0.85em;color:#0c4a6e">Consultas ad-hoc para auditoría INVIMA · acceso solo Calidad/Admin · descarga CSV disponible.</div>
+  <div class="card" style="background:var(--cx-info-pale);border-left:4px solid var(--cx-info)">
+    <div style="font-weight:700;color:var(--cx-info-text);margin-bottom:4px">📋 Reportes regulatorios INVIMA</div>
+    <div style="font-size:0.85em;color:var(--cx-info-text)">Consultas ad-hoc para auditoría INVIMA · acceso solo Calidad/Admin · descarga CSV disponible.</div>
   </div>
 
   <!-- Sub-pestañas dentro de Reportes -->
-  <div style="display:flex;gap:0;border-bottom:1px solid #cbd5e1;margin-bottom:14px">
-    <div class="rep-tab active" onclick="repGoTab('rep-audit')" style="padding:8px 16px;cursor:pointer;font-weight:600;border-bottom:2px solid #6d28d9;color:#6d28d9">Audit Trail</div>
-    <div class="rep-tab" onclick="repGoTab('rep-lote')" style="padding:8px 16px;cursor:pointer;font-weight:600;color:#94a3b8">Trazabilidad Lote</div>
-    <div class="rep-tab" onclick="repGoTab('rep-cliente')" style="padding:8px 16px;cursor:pointer;font-weight:600;color:#94a3b8">Trazabilidad Cliente</div>
+  <div style="display:flex;gap:0;border-bottom:1px solid var(--cx-border);margin-bottom:14px">
+    <div class="rep-tab active" onclick="repGoTab('rep-audit')" style="padding:8px 16px;cursor:pointer;font-weight:600;border-bottom:2px solid var(--cx-primary);color:var(--cx-primary-text)">Audit Trail</div>
+    <div class="rep-tab" onclick="repGoTab('rep-lote')" style="padding:8px 16px;cursor:pointer;font-weight:600;color:var(--cx-text-faint)">Trazabilidad Lote</div>
+    <div class="rep-tab" onclick="repGoTab('rep-cliente')" style="padding:8px 16px;cursor:pointer;font-weight:600;color:var(--cx-text-faint)">Trazabilidad Cliente</div>
   </div>
 
   <!-- Audit Trail -->
@@ -973,8 +973,8 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="repAuditCargar()">Consultar</button>
         <button class="btn btn-ghost btn-sm" onclick="repAuditExport()">📥 Descargar CSV</button>
-        <input type="text" placeholder="Buscar..." oninput="buscarTabla('audittrail', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
-        <span id="rep-at-info" style="font-size:0.85em;color:#64748b"></span>
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('audittrail', this.value)" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;max-width:200px">
+        <span id="rep-at-info" style="font-size:0.85em;color:var(--cx-text-mute)"></span>
       </div>
       <div style="overflow-x:auto;max-height:60vh;overflow-y:auto">
         <table>
@@ -991,7 +991,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div class="card">
       <div class="card-title">Trazabilidad por Lote · cadena recepción → cliente</div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <input id="rep-lote-input" placeholder="LOTE-2026-001" style="flex:1;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px">
+        <input id="rep-lote-input" placeholder="LOTE-2026-001" style="flex:1;padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px">
         <button class="btn btn-primary btn-sm" onclick="repLoteCargar()">Consultar</button>
       </div>
       <div id="rep-lote-body"><p class="empty">Ingresa un código de lote para consultar</p></div>
@@ -1003,9 +1003,9 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div class="card">
       <div class="card-title">Trazabilidad por Cliente · qué lotes recibió</div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <input id="rep-cli-input" type="number" placeholder="ID cliente (ej. 1)" style="width:200px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px">
+        <input id="rep-cli-input" type="number" placeholder="ID cliente (ej. 1)" style="width:200px;padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px">
         <button class="btn btn-primary btn-sm" onclick="repClienteCargar()">Consultar</button>
-        <span style="font-size:0.85em;color:#64748b">Encuentra el ID en la pestaña Clientes</span>
+        <span style="font-size:0.85em;color:var(--cx-text-mute)">Encuentra el ID en la pestaña Clientes</span>
       </div>
       <div id="rep-cli-body"><p class="empty">Ingresa ID de cliente para consultar</p></div>
     </div>
@@ -1017,9 +1017,9 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <span class="card-title" style="margin:0">&#x26A0;&#xFE0F; Conflictos detectados (códigos repetidos con temas distintos)</span>
-      <input type="text" placeholder="Buscar..." oninput="buscarTabla('conf', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
+      <input type="text" placeholder="Buscar..." oninput="buscarTabla('conf', this.value)" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;max-width:200px">
     </div>
-    <div style="font-size:0.85em;color:#64748b;margin-bottom:8px">Estos códigos del SGD físico aparecen con temas diferentes en los archivos · resolver eligiendo qué tema queda con el código original.</div>
+    <div style="font-size:0.85em;color:var(--cx-text-mute);margin-bottom:8px">Estos códigos del SGD físico aparecen con temas diferentes en los archivos · resolver eligiendo qué tema queda con el código original.</div>
     <div style="overflow-x:auto">
       <table>
         <thead><tr><th>Código</th><th>Temas detectados</th><th>Estado</th><th>Resolución</th><th></th></tr></thead>
@@ -1081,18 +1081,18 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
 <div id="tab-firmas" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-    <div style="font-size:13px;color:#475569">&#x270D;&#xFE0F; Firmas manuscritas del personal &middot; asigná la rúbrica que se estampa en los documentos al firmar, y registrá personas nuevas en la inducción.</div>
+    <div style="font-size:13px;color:var(--cx-text-soft)">&#x270D;&#xFE0F; Firmas manuscritas del personal &middot; asigná la rúbrica que se estampa en los documentos al firmar, y registrá personas nuevas en la inducción.</div>
     <a href="/admin/firmas-usuarios" target="_blank" class="btn btn-ghost btn-sm">Abrir en pestaña nueva &#8599;</a>
   </div>
-  <iframe id="firmas-ifr" src="about:blank" title="Firmas del personal" style="width:100%;height:78vh;border:1px solid #e5e7eb;border-radius:12px;background:#fff"></iframe>
+  <iframe id="firmas-ifr" src="about:blank" title="Firmas del personal" style="width:100%;height:78vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"></iframe>
 </div>
 
 <div id="tab-calib" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-    <div style="font-size:13px;color:#475569">&#x1F527; Bitácora de calibración de equipos &middot; cuándo se calibró cada uno, cuándo vence la próxima y con qué certificado. Un equipo vencido no puede usarse para fabricar.</div>
+    <div style="font-size:13px;color:var(--cx-text-soft)">&#x1F527; Bitácora de calibración de equipos &middot; cuándo se calibró cada uno, cuándo vence la próxima y con qué certificado. Un equipo vencido no puede usarse para fabricar.</div>
     <a href="/aseguramiento/calibracion" target="_blank" class="btn btn-ghost btn-sm">Abrir en pestaña nueva &#8599;</a>
   </div>
-  <iframe id="calib-ifr" src="about:blank" title="Bitácora de calibración" style="width:100%;height:78vh;border:1px solid #e5e7eb;border-radius:12px;background:#fff"></iframe>
+  <iframe id="calib-ifr" src="about:blank" title="Bitácora de calibración" style="width:100%;height:78vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"></iframe>
 </div>
 
 </div>
@@ -1158,9 +1158,9 @@ function _paginar(data, page, size) {
 function _renderPag(tabla, info, refreshFn) {
   var s = TBL_STATE[tabla];
   if (info.total <= s.size && info.total < 26) {
-    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+    return '<div style="font-size:11px;color:var(--cx-text-mute);padding:6px 0;">' + info.total + ' filas</div>';
   }
-  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#94a3b8;">';
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:var(--cx-text-faint);">';
   html += '<span>Pág ' + info.page + '/' + info.totalPages + ' · ' + info.total + ' total</span>';
   html += '<span style="flex:1"></span>';
   html += '<button class="btn btn-ghost btn-sm" onclick="cambiarPag(\'' + tabla + '\',-1)"' +
@@ -1168,7 +1168,7 @@ function _renderPag(tabla, info, refreshFn) {
   html += '<button class="btn btn-ghost btn-sm" onclick="cambiarPag(\'' + tabla + '\',1)"' +
           (info.page >= info.totalPages ? ' disabled' : '') + '>&rarr;</button>';
   html += '<select onchange="cambiarPagSize(\'' + tabla + '\', this.value)" ' +
-          'style="background:var(--cx-bg-alt);border:1px solid #334155;color:#cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+          'style="background:var(--cx-bg-alt);border:1px solid var(--cx-text-soft);color:var(--cx-border);padding:4px 6px;border-radius:5px;font-size:12px;">';
   ['25','50','100','999'].forEach(function(o){
     var label = o === '999' ? 'Todas' : o;
     html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
@@ -1264,7 +1264,7 @@ async function loadMisTareas(){
       document.getElementById('mt-urgentes-list').innerHTML = urg.map(function(it){
         return '<div style="padding:4px 0;border-top:1px solid #fecaca;cursor:pointer" onclick="goTab(\'tab-'+_modBaseTab(it.modulo)+'\')">'
           +'<b><code>'+_esc(it.codigo)+'</code></b> · '+_esc(it.titulo||'')+' · '
-          +'<span style="color:#991b1b">'+_esc(it.accion)+'</span> · '+(it.dias||0)+'d'
+          +'<span style="color:var(--cx-danger-text)">'+_esc(it.accion)+'</span> · '+(it.dias||0)+'d'
           +'</div>';
       }).join('');
     } else { urgWrap.style.display = 'none'; }
@@ -1278,7 +1278,7 @@ async function loadMisTareas(){
         + cap.map(function(it){
           var pdfBtn = it.archivo_pdf_url
             ? '<a href="'+_esc(it.archivo_pdf_url)+'" target="_blank" rel="noopener" class="btn btn-primary btn-sm" onclick="_marcarPdfAbierto(\''+_esc(it.sgd_codigo)+'\',\''+_esc(it.sgd_version)+'\')">📎 Abrir PDF</a> '
-            : '<span style="color:#94a3b8;font-size:0.78em">sin PDF · </span>';
+            : '<span style="color:var(--cx-text-faint);font-size:0.78em">sin PDF · </span>';
           return '<tr>'
             +'<td><code>'+_esc(it.sgd_codigo)+'</code> v'+_esc(it.sgd_version)+'</td>'
             +'<td>'+_esc(it.titulo||'')+'</td>'
@@ -1305,7 +1305,7 @@ async function loadMisTareas(){
             +'<td>'+_esc(it.titulo||'')+'</td>'
             +'<td><span style="font-size:0.85em">'+_esc((it.estado||'').replace(/_/g,' '))+'</span></td>'
             +'<td>'+(it.dias||0)+'d</td>'
-            +'<td style="font-size:0.85em;color:#475569">'+_esc(it.accion||'')+'</td>'
+            +'<td style="font-size:0.85em;color:var(--cx-text-soft)">'+_esc(it.accion||'')+'</td>'
             +'</tr>';
         }).join('') + '</tbody></table>';
     } else {
@@ -1348,7 +1348,7 @@ async function loadMisTareas(){
     document.getElementById('mt-loading').style.display = 'none';
     document.getElementById('mt-content').style.display = 'block';
   }catch(e){
-    document.getElementById('mt-loading').innerHTML = '<span style="color:#c00">Error: '+_esc(e.message)+'</span>';
+    document.getElementById('mt-loading').innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+_esc(e.message)+'</span>';
   }
 }
 
@@ -1393,7 +1393,7 @@ async function loadDesviaciones(){
         : it.clasificacion === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
         : it.clasificacion === 'menor' ? '<span class="badge badge-bor">menor</span>'
         : it.clasificacion === 'informativa' ? '<span class="badge badge-obs">info</span>'
-        : '<span style="color:#94a3b8;font-size:0.78em">-</span>';
+        : '<span style="color:var(--cx-text-faint);font-size:0.78em">-</span>';
       var estadoLabel = (it.estado||'').replace('_',' ');
       var estadoCol = it.estado === 'cerrada' ? '#15803d'
         : it.estado === 'rechazada' ? '#94a3b8'
@@ -1436,17 +1436,17 @@ async function guardarDesviacion(){
     lotes_afectados: document.getElementById('m-desv-lotes').value,
   };
   if(!body.descripcion || body.descripcion.length < 10){
-    msg.innerHTML = '<span style="color:#ef4444">Descripción requerida (≥10 chars)</span>'; return;
+    msg.innerHTML = '<span style="color:var(--cx-danger-text)">Descripción requerida (≥10 chars)</span>'; return;
   }
-  msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
+  msg.innerHTML = '<span style="color:var(--cx-text-mute)">Guardando...</span>';
   try{
     var r = await fetch('/api/aseguramiento/desviaciones', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
-      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' creada</span>';
+      msg.innerHTML = '<span style="color:var(--cx-success-text)">&#x2705; '+_esc(d.codigo)+' creada</span>';
       setTimeout(function(){ closeModal('m-desv-new'); loadDesviaciones(); }, 700);
-    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
-  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+    } else { msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error red: '+_esc(e.message)+'</span>'; }
 }
 
 async function verDesviacion(id){
@@ -1457,15 +1457,15 @@ async function verDesviacion(id){
   try{
     var r = await fetch('/api/aseguramiento/desviaciones/'+id);
     var d = await r.json();
-    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_esc(d.error||'?')+'</p>'; return; }
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">'+_esc(d.error||'?')+'</p>'; return; }
     document.getElementById('m-desv-det-title').textContent = d.codigo + ' · ' + (d.estado||'').replace('_',' ');
 
-    var html = '<div class="card" style="background:#f8fafc">'
-      +'<div style="font-size:0.85em;color:#475569"><b>Detectada:</b> '+_esc(d.fecha_deteccion||'')+' '+_esc(d.hora_deteccion||'')+' · por '+_esc(d.detectado_por||'')+'</div>'
-      +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Tipo:</b> '+_esc(d.tipo||'')+' · <b>Área:</b> '+_esc(d.area_origen||'-')+'</div>'
+    var html = '<div class="card" style="background:var(--cx-bg-alt)">'
+      +'<div style="font-size:0.85em;color:var(--cx-text-soft)"><b>Detectada:</b> '+_esc(d.fecha_deteccion||'')+' '+_esc(d.hora_deteccion||'')+' · por '+_esc(d.detectado_por||'')+'</div>'
+      +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Tipo:</b> '+_esc(d.tipo||'')+' · <b>Área:</b> '+_esc(d.area_origen||'-')+'</div>'
       +'<div style="margin-top:8px"><b>Descripción:</b><br>'+_esc(d.descripcion||'')+'</div>'
       +(d.contencion_inmediata ? '<div style="margin-top:6px"><b>Contención:</b><br>'+_esc(d.contencion_inmediata)+'</div>' : '')
-      +(d.impacto_producto ? '<div style="margin-top:6px;color:#ef4444">⚠ <b>Impacta producto</b> · Lotes: '+_esc(d.lotes_afectados||'?')+'</div>' : '')
+      +(d.impacto_producto ? '<div style="margin-top:6px;color:var(--cx-danger-text)">⚠ <b>Impacta producto</b> · Lotes: '+_esc(d.lotes_afectados||'?')+'</div>' : '')
       +'</div>';
 
     // Workflow steps
@@ -1473,17 +1473,17 @@ async function verDesviacion(id){
 
     // Paso 1: Clasificación
     if(d.clasificacion){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>1. Clasificada</b> como <b>'+_esc(d.clasificacion)+'</b></div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.justificacion_clasificacion||'')+'</div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.clasificado_por||'')+' · '+_esc(d.clasificado_at||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px">'+_esc(d.justificacion_clasificacion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">por '+_esc(d.clasificado_por||'')+' · '+_esc(d.clasificado_at||'')+'</div>'
         +'</div>';
     } else {
-      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
         +'<div><b>1. Clasificar</b> (pendiente)</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">'
-        +'<select id="cl-clasif" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">--</option><option value="critica">Crítica</option><option value="mayor">Mayor</option><option value="menor">Menor</option><option value="informativa">Informativa</option></select>'
-        +'<input id="cl-just" placeholder="Justificación (≥10 chars)" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'<select id="cl-clasif" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px"><option value="">--</option><option value="critica">Crítica</option><option value="mayor">Mayor</option><option value="menor">Menor</option><option value="informativa">Informativa</option></select>'
+        +'<input id="cl-just" placeholder="Justificación (≥10 chars)" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px">'
         +'</div>'
         +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="clasificarDesv('+id+')">Clasificar</button></div>'
         +'</div>';
@@ -1491,17 +1491,17 @@ async function verDesviacion(id){
 
     // Paso 2: Investigación
     if(d.causa_raiz_descripcion){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>2. Investigada</b> · método: <b>'+_esc(d.metodo_investigacion||'')+'</b></div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Causa raíz:</b><br>'+_esc(d.causa_raiz_descripcion||'')+'</div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.investigado_por||'')+' · '+_esc(d.investigacion_at||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Causa raíz:</b><br>'+_esc(d.causa_raiz_descripcion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">por '+_esc(d.investigado_por||'')+' · '+_esc(d.investigacion_at||'')+'</div>'
         +'</div>';
     } else if(d.clasificacion){
-      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid var(--cx-accent)">'
         +'<div><b>2. Investigar causa raíz</b> (pendiente)</div>'
         +'<div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:6px">'
-        +'<select id="inv-metodo" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="5_porques">5 Porqués</option><option value="ishikawa">Ishikawa</option><option value="arbol_decision">Árbol decisión</option><option value="otro">Otro</option></select>'
-        +'<textarea id="inv-causa" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;min-height:50px" placeholder="Causa raíz (≥20 chars)"></textarea>'
+        +'<select id="inv-metodo" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px"><option value="5_porques">5 Porqués</option><option value="ishikawa">Ishikawa</option><option value="arbol_decision">Árbol decisión</option><option value="otro">Otro</option></select>'
+        +'<textarea id="inv-causa" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px;min-height:50px" placeholder="Causa raíz (≥20 chars)"></textarea>'
         +'</div>'
         +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="investigarDesv('+id+')">Registrar investigación</button></div>'
         +'</div>';
@@ -1509,18 +1509,18 @@ async function verDesviacion(id){
 
     // Paso 3: CAPA
     if(d.capa_descripcion){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>3. CAPA propuesto</b></div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.capa_descripcion||'')+'</div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">Resp: '+_esc(d.capa_responsable||'?')+' · Límite: '+_esc(d.capa_fecha_limite||'sin definir')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px">'+_esc(d.capa_descripcion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">Resp: '+_esc(d.capa_responsable||'?')+' · Límite: '+_esc(d.capa_fecha_limite||'sin definir')+'</div>'
         +'</div>';
     } else if(d.causa_raiz_descripcion){
-      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid var(--cx-accent)">'
         +'<div><b>3. Definir CAPA</b> (pendiente)</div>'
         +'<div class="form-group"><label>Descripción de acciones (≥20 chars)</label><textarea id="capa-desc" style="min-height:50px"></textarea></div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
-        +'<input id="capa-resp" placeholder="Responsable" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
-        +'<input id="capa-fecha" type="date" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'<input id="capa-resp" placeholder="Responsable" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px">'
+        +'<input id="capa-fecha" type="date" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px">'
         +'</div>'
         +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="capaDesv('+id+')">Guardar CAPA</button></div>'
         +'</div>';
@@ -1530,22 +1530,22 @@ async function verDesviacion(id){
     if(d.estado === 'cerrada'){
       var efCol = d.efectividad_ok ? '#15803d' : '#ef4444';
       var efLabel = d.efectividad_ok ? '✅ EFECTIVIDAD OK' : '❌ EFECTIVIDAD NO OK';
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+efCol+'">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid '+efCol+'">'
         +'<div style="font-size:1em;font-weight:700;color:'+efCol+'">'+efLabel+'</div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Verificación:</b> '+_esc(d.verificacion_efectividad||'')+'</div>'
-        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
-        +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Verificación:</b> '+_esc(d.verificacion_efectividad||'')+'</div>'
+        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint);margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
         +'</div>';
       // Sugerir recall si crítica + efectividad NO OK + lotes en mercado
       if(d.clasificacion === 'critica' && !d.efectividad_ok){
-        html += '<div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px;margin-top:10px">'
-          +'<div style="font-weight:700;color:#991b1b">🚨 CAPA NO efectivo en desviación crítica</div>'
-          +'<div style="font-size:0.85em;color:#991b1b;margin-top:4px">El producto/lote afectado podría seguir representando riesgo en el mercado. Considerar iniciar recall (Resolución 2214/2021).</div>'
-          +'<div style="margin-top:8px"><button class="btn btn-primary btn-sm" style="background:#ef4444;color:#fff" onclick="iniciarRecallDesdeDesv('+id+')">🚨 Iniciar recall desde esta desviación</button></div>'
+        html += '<div class="card" style="background:var(--cx-danger-pale);border-left:4px solid var(--cx-danger);padding:10px 14px;margin-top:10px">'
+          +'<div style="font-weight:700;color:var(--cx-danger-text)">🚨 CAPA NO efectivo en desviación crítica</div>'
+          +'<div style="font-size:0.85em;color:var(--cx-danger-text);margin-top:4px">El producto/lote afectado podría seguir representando riesgo en el mercado. Considerar iniciar recall (Resolución 2214/2021).</div>'
+          +'<div style="margin-top:8px"><button class="btn btn-primary btn-sm" style="background:var(--cx-danger);color:#fff" onclick="iniciarRecallDesdeDesv('+id+')">🚨 Iniciar recall desde esta desviación</button></div>'
           +'</div>';
       }
     } else if(d.capa_descripcion){
-      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
         +'<div><b>4. Cerrar con verificación</b></div>'
         +'<div class="form-group"><label>Verificación de efectividad (≥20 chars)</label><textarea id="cer-verif" style="min-height:50px"></textarea></div>'
         +'<div class="form-group"><label><input type="checkbox" id="cer-ok"> CAPA fue efectiva</label></div>'
@@ -1559,16 +1559,16 @@ async function verDesviacion(id){
       html += '<div class="card-title" style="margin-top:12px">Timeline</div>';
       html += '<div style="font-size:0.85em">';
       d.timeline.forEach(function(ev){
-        html += '<div style="border-left:2px solid #cbd5e1;padding:4px 0 4px 10px;margin-bottom:4px">'
+        html += '<div style="border-left:2px solid var(--cx-border);padding:4px 0 4px 10px;margin-bottom:4px">'
           +'<div style="font-weight:600">'+_esc(ev.evento_tipo)+(ev.estado_anterior ? ' · '+_esc(ev.estado_anterior)+'→'+_esc(ev.estado_nuevo) : '')+'</div>'
-          +'<div style="color:#475569">'+_esc(ev.comentario||'')+'</div>'
-          +'<div style="color:#94a3b8;font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
+          +'<div style="color:var(--cx-text-soft)">'+_esc(ev.comentario||'')+'</div>'
+          +'<div style="color:var(--cx-text-faint);font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
           +'</div>';
       });
       html += '</div>';
     }
     body.innerHTML = html;
-  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_esc(e.message)+'</p>'; }
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">Error: '+_esc(e.message)+'</p>'; }
 }
 
 async function clasificarDesv(id){
@@ -1700,7 +1700,7 @@ async function loadCambios(){
     tb.innerHTML = info.items.map(function(it){
       var sevBadge = it.severidad === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
         : it.severidad === 'menor' ? '<span class="badge badge-bor">menor</span>'
-        : '<span style="color:#94a3b8;font-size:0.78em">-</span>';
+        : '<span style="color:var(--cx-text-faint);font-size:0.78em">-</span>';
       var estadoLabel = (it.estado||'').replace('_',' ');
       var estadoCol = it.estado === 'cerrado' ? '#15803d'
         : it.estado === 'rechazado' ? '#94a3b8'
@@ -1708,7 +1708,7 @@ async function loadCambios(){
         : it.estado === 'implementado' ? '#0ea5e9'
         : '#fbbf24';
       var invimaIcon = it.requiere_invima ? '<span title="Requiere INVIMA" style="color:#c2410c">⚠</span>' : '';
-      var bpmIcon = it.impacto_bpm ? '<span title="Impacta BPM" style="color:#a16207">●</span> ' : '';
+      var bpmIcon = it.impacto_bpm ? '<span title="Impacta BPM" style="color:var(--cx-warn-text)">●</span> ' : '';
       return '<tr>'
         +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
         +'<td>'+_esc(it.fecha_solicitud||'')+'</td>'
@@ -1746,20 +1746,20 @@ async function guardarCambio(){
     impacto_regulatorio: document.getElementById('m-cam-reg').checked,
   };
   if(!body.titulo || body.titulo.length < 5){
-    msg.innerHTML = '<span style="color:#ef4444">Título requerido (≥5 chars)</span>'; return;
+    msg.innerHTML = '<span style="color:var(--cx-danger-text)">Título requerido (≥5 chars)</span>'; return;
   }
   if(!body.descripcion || body.descripcion.length < 20){
-    msg.innerHTML = '<span style="color:#ef4444">Descripción requerida (≥20 chars)</span>'; return;
+    msg.innerHTML = '<span style="color:var(--cx-danger-text)">Descripción requerida (≥20 chars)</span>'; return;
   }
-  msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
+  msg.innerHTML = '<span style="color:var(--cx-text-mute)">Guardando...</span>';
   try{
     var r = await fetch('/api/aseguramiento/cambios', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
-      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' creada</span>';
+      msg.innerHTML = '<span style="color:var(--cx-success-text)">&#x2705; '+_esc(d.codigo)+' creada</span>';
       setTimeout(function(){ closeModal('m-cam-new'); loadCambios(); }, 700);
-    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
-  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+    } else { msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error red: '+_esc(e.message)+'</span>'; }
 }
 
 async function verCambio(id){
@@ -1770,12 +1770,12 @@ async function verCambio(id){
   try{
     var r = await fetch('/api/aseguramiento/cambios/'+id);
     var d = await r.json();
-    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_esc(d.error||'?')+'</p>'; return; }
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">'+_esc(d.error||'?')+'</p>'; return; }
     document.getElementById('m-cam-det-title').textContent = d.codigo + ' · ' + (d.estado||'').replace('_',' ');
 
-    var html = '<div class="card" style="background:#f8fafc">'
-      +'<div style="font-size:0.85em;color:#475569"><b>Solicitada:</b> '+_esc(d.fecha_solicitud||'')+' · por '+_esc(d.solicitado_por||'')+'</div>'
-      +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Tipo:</b> '+_esc(d.tipo||'')+(d.areas_afectadas ? ' · <b>Áreas:</b> '+_esc(d.areas_afectadas) : '')+'</div>'
+    var html = '<div class="card" style="background:var(--cx-bg-alt)">'
+      +'<div style="font-size:0.85em;color:var(--cx-text-soft)"><b>Solicitada:</b> '+_esc(d.fecha_solicitud||'')+' · por '+_esc(d.solicitado_por||'')+'</div>'
+      +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Tipo:</b> '+_esc(d.tipo||'')+(d.areas_afectadas ? ' · <b>Áreas:</b> '+_esc(d.areas_afectadas) : '')+'</div>'
       +'<div style="margin-top:8px;font-weight:600">'+_esc(d.titulo||'')+'</div>'
       +'<div style="margin-top:6px"><b>Descripción:</b><br>'+_esc(d.descripcion||'')+'</div>'
       +(d.justificacion ? '<div style="margin-top:6px"><b>Justificación:</b><br>'+_esc(d.justificacion)+'</div>' : '')
@@ -1789,16 +1789,16 @@ async function verCambio(id){
 
     // Paso 1: Evaluación
     if(d.severidad){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>1. Evaluada</b> · severidad: <b>'+_esc(d.severidad)+'</b>'+(d.requiere_invima?' · <span style="color:#c2410c">REQUIERE INVIMA</span>':'')+'</div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.evaluacion_descripcion||'')+'</div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.evaluado_por||'')+' · '+_esc(d.evaluado_at||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px">'+_esc(d.evaluacion_descripcion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">por '+_esc(d.evaluado_por||'')+' · '+_esc(d.evaluado_at||'')+'</div>'
         +'</div>';
     } else {
-      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
         +'<div><b>1. Evaluar impacto</b> (pendiente)</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">'
-        +'<select id="ev-sev" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">Severidad...</option><option value="mayor">Mayor</option><option value="menor">Menor</option></select>'
+        +'<select id="ev-sev" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px"><option value="">Severidad...</option><option value="mayor">Mayor</option><option value="menor">Menor</option></select>'
         +'<label style="display:flex;align-items:center;gap:4px;font-size:0.85em"><input type="checkbox" id="ev-invima"> Requiere INVIMA</label>'
         +'</div>'
         +'<div class="form-group" style="margin-top:6px"><label>Evaluación de impacto (≥20 chars)</label><textarea id="ev-desc" style="min-height:50px"></textarea></div>'
@@ -1810,23 +1810,23 @@ async function verCambio(id){
     if(d.aprobado_at){
       var apCol = d.estado === 'rechazado' ? '#94a3b8' : '#15803d';
       var apLabel = d.estado === 'rechazado' ? 'Rechazado' : 'Aprobado';
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+apCol+'">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid '+apCol+'">'
         +'<div><b>2. '+apLabel+'</b> por '+_esc(d.aprobado_por||'')+'</div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.aprobacion_observaciones||'')+'</div>'
-        +(d.plan_implementacion ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Plan:</b> '+_esc(d.plan_implementacion)+'</div>' : '')
-        +(d.fecha_implementacion_propuesta ? '<div style="font-size:0.78em;color:#94a3b8">Fecha propuesta: '+_esc(d.fecha_implementacion_propuesta)+(d.responsable_implementacion?' · Resp: '+_esc(d.responsable_implementacion):'')+'</div>' : '')
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px">'+_esc(d.aprobacion_observaciones||'')+'</div>'
+        +(d.plan_implementacion ? '<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Plan:</b> '+_esc(d.plan_implementacion)+'</div>' : '')
+        +(d.fecha_implementacion_propuesta ? '<div style="font-size:0.78em;color:var(--cx-text-faint)">Fecha propuesta: '+_esc(d.fecha_implementacion_propuesta)+(d.responsable_implementacion?' · Resp: '+_esc(d.responsable_implementacion):'')+'</div>' : '')
         +'</div>';
     } else if(d.severidad){
-      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid var(--cx-accent)">'
         +'<div><b>2. Aprobar / Rechazar</b> (pendiente)</div>'
         +'<div class="form-group" style="margin-top:6px"><label>Decisión</label>'
-        +'<select id="ap-decision" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;width:auto"><option value="aprobar">Aprobar</option><option value="rechazar">Rechazar</option></select>'
+        +'<select id="ap-decision" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px;width:auto"><option value="aprobar">Aprobar</option><option value="rechazar">Rechazar</option></select>'
         +'</div>'
         +'<div class="form-group"><label>Observaciones (≥10 chars)</label><textarea id="ap-obs" style="min-height:40px"></textarea></div>'
         +'<div class="form-group"><label>Plan de implementación (≥20 chars · solo si aprueba)</label><textarea id="ap-plan" style="min-height:50px"></textarea></div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
-        +'<input id="ap-fecha" type="date" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
-        +'<input id="ap-resp" placeholder="Responsable implementación" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'<input id="ap-fecha" type="date" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px">'
+        +'<input id="ap-resp" placeholder="Responsable implementación" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px">'
         +'</div>'
         +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="aprobarCambio('+id+')">Decidir</button></div>'
         +'</div>';
@@ -1835,12 +1835,12 @@ async function verCambio(id){
     // Paso 2b: Notificación INVIMA (si aplica)
     if(d.requiere_invima && d.estado !== 'rechazado'){
       if(d.notificacion_invima_at){
-        html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
           +'<div><b>2b. INVIMA notificado</b> · ref: <code>'+_esc(d.notificacion_invima_ref||'')+'</code></div>'
-          +'<div style="font-size:0.78em;color:#94a3b8">'+_esc(d.notificacion_invima_at||'')+'</div>'
+          +'<div style="font-size:0.78em;color:var(--cx-text-faint)">'+_esc(d.notificacion_invima_at||'')+'</div>'
           +'</div>';
       } else if(d.aprobado_at && d.estado !== 'rechazado'){
-        html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
           +'<div><b>2b. Notificar a INVIMA</b> (Resolución 2214/2021)</div>'
           +'<div class="form-group" style="margin-top:6px"><label>Radicado / oficio</label><input id="inv-ref" placeholder="Ej: 2026123456"></div>'
           +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="notificarInvima('+id+')">Registrar notificación</button></div>'
@@ -1850,14 +1850,14 @@ async function verCambio(id){
 
     // Paso 3: Implementación
     if(d.implementado_at){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>3. Implementado</b> por '+_esc(d.implementado_por||'')+'</div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">'+_esc(d.implementado_at||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">'+_esc(d.implementado_at||'')+'</div>'
         +'</div>';
     } else if(d.estado === 'aprobado' || d.estado === 'en_implementacion'){
       var bloqInvima = d.requiere_invima && !d.notificacion_invima_at;
       html += '<div class="card" style="background:'+(bloqInvima?'#f3f4f6':'#fefce8')+';border-left:3px solid '+(bloqInvima?'#94a3b8':'#fbbf24')+'">'
-        +'<div><b>3. Implementar cambio</b>'+(bloqInvima?' <span style="color:#94a3b8">(notifica INVIMA primero)</span>':'')+'</div>'
+        +'<div><b>3. Implementar cambio</b>'+(bloqInvima?' <span style="color:var(--cx-text-faint)">(notifica INVIMA primero)</span>':'')+'</div>'
         +(bloqInvima?'':'<div class="form-group" style="margin-top:6px"><label>Observaciones implementación</label><input id="imp-obs"></div>'
           +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="implementarCambio('+id+')">Marcar implementado</button></div>')
         +'</div>';
@@ -1867,14 +1867,14 @@ async function verCambio(id){
     if(d.estado === 'cerrado'){
       var vfCol = d.verificacion_ok ? '#15803d' : '#ef4444';
       var vfLabel = d.verificacion_ok ? '✅ VERIFICACIÓN OK' : '❌ VERIFICACIÓN NO OK';
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+vfCol+'">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid '+vfCol+'">'
         +'<div style="font-size:1em;font-weight:700;color:'+vfCol+'">'+vfLabel+'</div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Verificación post:</b> '+_esc(d.verificacion_post||'')+'</div>'
-        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
-        +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Verificación post:</b> '+_esc(d.verificacion_post||'')+'</div>'
+        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint);margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
         +'</div>';
     } else if(d.estado === 'implementado'){
-      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
         +'<div><b>4. Cerrar con verificación post</b></div>'
         +'<div class="form-group"><label>Verificación post (≥20 chars)</label><textarea id="cer-cam-verif" style="min-height:50px" placeholder="Cómo se verificó que el cambio funcionó"></textarea></div>'
         +'<div class="form-group"><label><input type="checkbox" id="cer-cam-ok"> Verificación OK</label></div>'
@@ -1888,16 +1888,16 @@ async function verCambio(id){
       html += '<div class="card-title" style="margin-top:12px">Timeline</div>';
       html += '<div style="font-size:0.85em">';
       d.timeline.forEach(function(ev){
-        html += '<div style="border-left:2px solid #cbd5e1;padding:4px 0 4px 10px;margin-bottom:4px">'
+        html += '<div style="border-left:2px solid var(--cx-border);padding:4px 0 4px 10px;margin-bottom:4px">'
           +'<div style="font-weight:600">'+_esc(ev.evento_tipo)+(ev.estado_anterior ? ' · '+_esc(ev.estado_anterior)+'→'+_esc(ev.estado_nuevo) : '')+'</div>'
-          +'<div style="color:#475569">'+_esc(ev.comentario||'')+'</div>'
-          +'<div style="color:#94a3b8;font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
+          +'<div style="color:var(--cx-text-soft)">'+_esc(ev.comentario||'')+'</div>'
+          +'<div style="color:var(--cx-text-faint);font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
           +'</div>';
       });
       html += '</div>';
     }
     body.innerHTML = html;
-  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_esc(e.message)+'</p>'; }
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">Error: '+_esc(e.message)+'</p>'; }
 }
 
 async function evaluarCambio(id){
@@ -1983,21 +1983,21 @@ async function loadQuejas(){
         : it.severidad === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
         : it.severidad === 'menor' ? '<span class="badge badge-bor">menor</span>'
         : it.severidad === 'informativa' ? '<span class="badge badge-obs">info</span>'
-        : '<span style="color:#94a3b8;font-size:0.78em">-</span>';
+        : '<span style="color:var(--cx-text-faint);font-size:0.78em">-</span>';
       var estadoLabel = (it.estado||'').replace('_',' ');
       var estadoCol = it.estado === 'cerrada' ? '#15803d'
         : it.estado === 'rechazada' ? '#94a3b8'
         : it.estado === 'nueva' ? '#ef4444'
         : it.estado === 'respondida' ? '#0ea5e9'
         : '#fbbf24';
-      var saludIcon = it.impacto_salud ? '<span title="Impacto salud" style="color:#ef4444">⚠</span> ' : '';
+      var saludIcon = it.impacto_salud ? '<span title="Impacto salud" style="color:var(--cx-danger-text)">⚠</span> ' : '';
       var recallIcon = it.requiere_recall ? '<span title="Recall" style="color:#c2410c">●</span> ' : '';
       var prodLote = (it.producto||'') + (it.lote ? ' / '+it.lote : '');
-      var claseTxt = it.clase_pqrsf ? '<div style="font-size:0.72em;color:#6d28d9">'+_esc(it.clase_pqrsf)+(it.criticidad?' · '+_esc(it.criticidad):'')+'</div>' : '';
+      var claseTxt = it.clase_pqrsf ? '<div style="font-size:0.72em;color:var(--cx-primary-text)">'+_esc(it.clase_pqrsf)+(it.criticidad?' · '+_esc(it.criticidad):'')+'</div>' : '';
       var slaTxt = '';
       if(it.fecha_limite_respuesta && it.estado!=='cerrada' && it.estado!=='rechazada'){
         var _dd = Math.ceil((new Date(it.fecha_limite_respuesta+'T00:00:00') - new Date())/86400000);
-        slaTxt = _dd<0 ? '<div style="font-size:0.7em;color:#dc2626;font-weight:700">SLA vencido</div>'
+        slaTxt = _dd<0 ? '<div style="font-size:0.7em;color:var(--cx-danger-text);font-weight:700">SLA vencido</div>'
                : '<div style="font-size:0.7em;color:'+(_dd<=3?'#d97706':'#16a34a')+'">vence '+_dd+'d</div>';
       }
       return '<tr>'
@@ -2043,19 +2043,19 @@ async function guardarQueja(){
     descripcion: document.getElementById('m-qc-desc').value,
     impacto_salud: document.getElementById('m-qc-salud').checked,
   };
-  if(!body.cliente_nombre){ msg.innerHTML = '<span style="color:#ef4444">Cliente requerido</span>'; return; }
+  if(!body.cliente_nombre){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Cliente requerido</span>'; return; }
   if(!body.descripcion || body.descripcion.length < 10){
-    msg.innerHTML = '<span style="color:#ef4444">Descripción ≥10 chars</span>'; return;
+    msg.innerHTML = '<span style="color:var(--cx-danger-text)">Descripción ≥10 chars</span>'; return;
   }
-  msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
+  msg.innerHTML = '<span style="color:var(--cx-text-mute)">Guardando...</span>';
   try{
     var r = await fetch('/api/aseguramiento/quejas', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
-      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' registrada</span>';
+      msg.innerHTML = '<span style="color:var(--cx-success-text)">&#x2705; '+_esc(d.codigo)+' registrada</span>';
       setTimeout(function(){ closeModal('m-qc-new'); loadQuejas(); }, 700);
-    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
-  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+    } else { msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error red: '+_esc(e.message)+'</span>'; }
 }
 
 async function verQueja(id){
@@ -2066,16 +2066,16 @@ async function verQueja(id){
   try{
     var r = await fetch('/api/aseguramiento/quejas/'+id);
     var d = await r.json();
-    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_esc(d.error||'?')+'</p>'; return; }
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">'+_esc(d.error||'?')+'</p>'; return; }
     document.getElementById('m-qc-det-title').textContent = d.codigo + ' · ' + (d.estado||'').replace('_',' ');
 
-    var html = '<div class="card" style="background:#f8fafc">'
-      +'<div style="font-size:0.85em;color:#475569"><b>Recibida:</b> '+_esc(d.fecha_recepcion||'')+' vía <b>'+_esc(d.canal||'')+'</b> · por '+_esc(d.recibido_por||'')+'</div>'
-      +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Cliente:</b> '+_esc(d.cliente_nombre||'')+(d.cliente_contacto?' · '+_esc(d.cliente_contacto):'')+(d.cliente_tipo?' ['+_esc(d.cliente_tipo)+']':'')+'</div>'
-      +(d.producto || d.lote ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Producto:</b> '+_esc(d.producto||'')+(d.lote?' · Lote '+_esc(d.lote):'')+(d.fecha_compra?' · compra '+_esc(d.fecha_compra):'')+'</div>' : '')
+    var html = '<div class="card" style="background:var(--cx-bg-alt)">'
+      +'<div style="font-size:0.85em;color:var(--cx-text-soft)"><b>Recibida:</b> '+_esc(d.fecha_recepcion||'')+' vía <b>'+_esc(d.canal||'')+'</b> · por '+_esc(d.recibido_por||'')+'</div>'
+      +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Cliente:</b> '+_esc(d.cliente_nombre||'')+(d.cliente_contacto?' · '+_esc(d.cliente_contacto):'')+(d.cliente_tipo?' ['+_esc(d.cliente_tipo)+']':'')+'</div>'
+      +(d.producto || d.lote ? '<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Producto:</b> '+_esc(d.producto||'')+(d.lote?' · Lote '+_esc(d.lote):'')+(d.fecha_compra?' · compra '+_esc(d.fecha_compra):'')+'</div>' : '')
       +'<div style="margin-top:8px"><b>Tipo:</b> '+_esc(d.tipo_queja||'')+'</div>'
       +'<div style="margin-top:6px"><b>Descripción:</b><br>'+_esc(d.descripcion||'')+'</div>'
-      +(d.impacto_salud ? '<div style="margin-top:6px;color:#ef4444">⚠ <b>IMPACTO EN SALUD declarado</b></div>' : '')
+      +(d.impacto_salud ? '<div style="margin-top:6px;color:var(--cx-danger-text)">⚠ <b>IMPACTO EN SALUD declarado</b></div>' : '')
       +'</div>';
 
     // Workflow steps
@@ -2083,19 +2083,19 @@ async function verQueja(id){
 
     // Paso 1: Triaje
     if(d.severidad){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>1. Triada</b> · severidad: <b>'+_esc(d.severidad)+'</b>'
         +(d.requiere_desviacion?' · <span style="color:#c2410c">requiere desviación</span>':'')
         +(d.requiere_recall?' · <span style="color:#c2410c">RECALL</span>':'')+'</div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.triaje_descripcion||'')+'</div>'
-        +(d.desviacion_id ? '<div style="font-size:0.85em;margin-top:6px"><b>📢 Desviación enlazada:</b> <a href="javascript:void(0)" onclick="closeModal(\'m-qc-det\');goTab(\'tab-desv\');setTimeout(function(){verDesviacion('+d.desviacion_id+')},300)" style="color:#0ea5e9">abrir DESV-#'+d.desviacion_id+' →</a></div>' : '')
-        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.triaje_por||'')+' · '+_esc(d.triaje_at||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px">'+_esc(d.triaje_descripcion||'')+'</div>'
+        +(d.desviacion_id ? '<div style="font-size:0.85em;margin-top:6px"><b>📢 Desviación enlazada:</b> <a href="javascript:void(0)" onclick="closeModal(\'m-qc-det\');goTab(\'tab-desv\');setTimeout(function(){verDesviacion('+d.desviacion_id+')},300)" style="color:var(--cx-info-text)">abrir DESV-#'+d.desviacion_id+' →</a></div>' : '')
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">por '+_esc(d.triaje_por||'')+' · '+_esc(d.triaje_at||'')+'</div>'
         +'</div>';
     } else {
-      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
         +'<div><b>1. Triaje</b> (pendiente)</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">'
-        +'<select id="qc-tr-sev" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">Severidad...</option><option value="critica">Crítica</option><option value="mayor">Mayor</option><option value="menor">Menor</option><option value="informativa">Informativa</option></select>'
+        +'<select id="qc-tr-sev" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px"><option value="">Severidad...</option><option value="critica">Crítica</option><option value="mayor">Mayor</option><option value="menor">Menor</option><option value="informativa">Informativa</option></select>'
         +'<div style="display:flex;gap:8px;align-items:center;font-size:0.85em"><label><input type="checkbox" id="qc-tr-desv"> Crear desviación</label><label><input type="checkbox" id="qc-tr-recall"> Recall</label></div>'
         +'</div>'
         +'<div class="form-group" style="margin-top:6px"><label>Análisis triaje (≥10 chars)</label><textarea id="qc-tr-desc" style="min-height:50px"></textarea></div>'
@@ -2105,13 +2105,13 @@ async function verQueja(id){
 
     // Paso 2: Investigación
     if(d.causa_raiz){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>2. Investigada</b></div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Causa raíz:</b><br>'+_esc(d.causa_raiz||'')+'</div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.investigacion_por||'')+' · '+_esc(d.investigacion_at||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Causa raíz:</b><br>'+_esc(d.causa_raiz||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">por '+_esc(d.investigacion_por||'')+' · '+_esc(d.investigacion_at||'')+'</div>'
         +'</div>';
     } else if(d.severidad){
-      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid var(--cx-accent)">'
         +'<div><b>2. Investigar causa raíz</b> (pendiente)</div>'
         +'<div class="form-group" style="margin-top:6px"><label>Causa raíz (≥20 chars)</label><textarea id="qc-inv-causa" style="min-height:50px"></textarea></div>'
         +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="investigarQueja('+id+')">Registrar investigación</button></div>'
@@ -2120,17 +2120,17 @@ async function verQueja(id){
 
     // Paso 3: Respuesta al cliente
     if(d.respuesta_descripcion){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>3. Cliente respondido</b> vía <b>'+_esc(d.respuesta_canal||'')+'</b></div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.respuesta_descripcion||'')+'</div>'
-        +(d.fecha_compromiso ? '<div style="font-size:0.78em;color:#94a3b8">Compromiso: '+_esc(d.fecha_compromiso)+'</div>' : '')
-        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.respondido_por||'')+' · '+_esc(d.respondido_at||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px">'+_esc(d.respuesta_descripcion||'')+'</div>'
+        +(d.fecha_compromiso ? '<div style="font-size:0.78em;color:var(--cx-text-faint)">Compromiso: '+_esc(d.fecha_compromiso)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">por '+_esc(d.respondido_por||'')+' · '+_esc(d.respondido_at||'')+'</div>'
         +'</div>';
     } else if(d.causa_raiz){
-      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid var(--cx-accent)">'
         +'<div><b>3. Responder al cliente</b> (pendiente)</div>'
         +'<div class="form-group" style="margin-top:6px"><label>Canal de respuesta</label>'
-        +'<select id="qc-r-canal" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;width:auto"><option value="email">Email</option><option value="telefono">Teléfono</option><option value="whatsapp">WhatsApp</option><option value="presencial">Presencial</option><option value="carta">Carta</option><option value="formulario_web">Formulario web</option><option value="otro">Otro</option></select>'
+        +'<select id="qc-r-canal" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px;width:auto"><option value="email">Email</option><option value="telefono">Teléfono</option><option value="whatsapp">WhatsApp</option><option value="presencial">Presencial</option><option value="carta">Carta</option><option value="formulario_web">Formulario web</option><option value="otro">Otro</option></select>'
         +'</div>'
         +'<div class="form-group"><label>Respuesta al cliente (≥20 chars)</label><textarea id="qc-r-desc" style="min-height:60px"></textarea></div>'
         +'<div class="form-group"><label>Fecha compromiso (opcional)</label><input id="qc-r-comp" type="date"></div>'
@@ -2142,14 +2142,14 @@ async function verQueja(id){
     if(d.estado === 'cerrada'){
       var satCol = d.cliente_satisfecho ? '#15803d' : '#ef4444';
       var satLabel = d.cliente_satisfecho ? '✅ CLIENTE SATISFECHO' : '❌ CLIENTE NO SATISFECHO';
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+satCol+'">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid '+satCol+'">'
         +'<div style="font-size:1em;font-weight:700;color:'+satCol+'">'+satLabel+'</div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Acción correctiva:</b> '+_esc(d.accion_correctiva||'')+'</div>'
-        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
-        +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Acción correctiva:</b> '+_esc(d.accion_correctiva||'')+'</div>'
+        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint);margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
         +'</div>';
     } else if(d.estado === 'respondida'){
-      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
         +'<div><b>4. Cerrar con análisis efectividad</b></div>'
         +'<div class="form-group"><label>Acción correctiva tomada (≥20 chars)</label><textarea id="qc-c-accion" style="min-height:50px"></textarea></div>'
         +'<div class="form-group"><label><input type="checkbox" id="qc-c-sat"> Cliente satisfecho</label></div>'
@@ -2163,16 +2163,16 @@ async function verQueja(id){
       html += '<div class="card-title" style="margin-top:12px">Timeline</div>';
       html += '<div style="font-size:0.85em">';
       d.timeline.forEach(function(ev){
-        html += '<div style="border-left:2px solid #cbd5e1;padding:4px 0 4px 10px;margin-bottom:4px">'
+        html += '<div style="border-left:2px solid var(--cx-border);padding:4px 0 4px 10px;margin-bottom:4px">'
           +'<div style="font-weight:600">'+_esc(ev.evento_tipo)+(ev.estado_anterior ? ' · '+_esc(ev.estado_anterior)+'→'+_esc(ev.estado_nuevo) : '')+'</div>'
-          +'<div style="color:#475569">'+_esc(ev.comentario||'')+'</div>'
-          +'<div style="color:#94a3b8;font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
+          +'<div style="color:var(--cx-text-soft)">'+_esc(ev.comentario||'')+'</div>'
+          +'<div style="color:var(--cx-text-faint);font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
           +'</div>';
       });
       html += '</div>';
     }
     body.innerHTML = html;
-  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_esc(e.message)+'</p>'; }
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">Error: '+_esc(e.message)+'</p>'; }
 }
 
 async function triarQueja(id){
@@ -2255,7 +2255,7 @@ async function loadRecalls(){
       var claseBadge = it.clase_recall === 'clase_I' ? '<span class="badge badge-venc">CLASE I</span>'
         : it.clase_recall === 'clase_II' ? '<span class="badge badge-prox">Clase II</span>'
         : it.clase_recall === 'clase_III' ? '<span class="badge badge-bor">Clase III</span>'
-        : '<span style="color:#94a3b8;font-size:0.78em">-</span>';
+        : '<span style="color:var(--cx-text-faint);font-size:0.78em">-</span>';
       var estadoLabel = (it.estado||'').replace(/_/g,' ');
       var estadoCol = it.estado === 'cerrado' ? '#15803d'
         : it.estado === 'cancelado' ? '#94a3b8'
@@ -2263,8 +2263,8 @@ async function loadRecalls(){
         : it.estado === 'completado' ? '#0ea5e9'
         : '#fbbf24';
       var invimaIcon = it.notificacion_invima_at
-        ? '<span title="INVIMA notificado" style="color:#15803d">✓</span>'
-        : '<span title="INVIMA pendiente" style="color:#ef4444">✗</span>';
+        ? '<span title="INVIMA notificado" style="color:var(--cx-success-text)">✓</span>'
+        : '<span title="INVIMA pendiente" style="color:var(--cx-danger-text)">✗</span>';
       var prodLote = (it.producto||'') + (it.lotes_afectados ? ' / '+it.lotes_afectados.slice(0,30) : '');
       return '<tr>'
         +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
@@ -2304,18 +2304,18 @@ async function guardarRecall(){
     motivo: document.getElementById('m-rcl-motivo').value,
     riesgo_descripcion: document.getElementById('m-rcl-riesgo').value,
   };
-  if(!body.producto){ msg.innerHTML = '<span style="color:#ef4444">Producto requerido</span>'; return; }
-  if(!body.lotes_afectados){ msg.innerHTML = '<span style="color:#ef4444">Lotes requeridos</span>'; return; }
-  if(!body.motivo || body.motivo.length < 20){ msg.innerHTML = '<span style="color:#ef4444">Motivo ≥20 chars</span>'; return; }
-  msg.innerHTML = '<span style="color:#64748b">Iniciando recall...</span>';
+  if(!body.producto){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Producto requerido</span>'; return; }
+  if(!body.lotes_afectados){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Lotes requeridos</span>'; return; }
+  if(!body.motivo || body.motivo.length < 20){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Motivo ≥20 chars</span>'; return; }
+  msg.innerHTML = '<span style="color:var(--cx-text-mute)">Iniciando recall...</span>';
   try{
     var r = await fetch('/api/aseguramiento/recalls', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
-      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' iniciado</span>';
+      msg.innerHTML = '<span style="color:var(--cx-success-text)">&#x2705; '+_esc(d.codigo)+' iniciado</span>';
       setTimeout(function(){ closeModal('m-rcl-new'); loadRecalls(); }, 700);
-    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
-  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+    } else { msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error red: '+_esc(e.message)+'</span>'; }
 }
 
 async function verRecall(id){
@@ -2326,15 +2326,15 @@ async function verRecall(id){
   try{
     var r = await fetch('/api/aseguramiento/recalls/'+id);
     var d = await r.json();
-    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_esc(d.error||'?')+'</p>'; return; }
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">'+_esc(d.error||'?')+'</p>'; return; }
     document.getElementById('m-rcl-det-title').textContent = d.codigo + ' · ' + (d.estado||'').replace(/_/g,' ');
 
-    var html = '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
-      +'<div style="font-size:0.85em;color:#991b1b"><b>Iniciado:</b> '+_esc(d.fecha_inicio||'')+' por '+_esc(d.iniciado_por||'')+'</div>'
-      +'<div style="font-size:0.85em;color:#991b1b;margin-top:4px"><b>Origen:</b> '+_esc((d.origen||'').replace(/_/g,' '))+(d.origen_referencia?' · ref: '+_esc(d.origen_referencia):'')+'</div>'
+    var html = '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
+      +'<div style="font-size:0.85em;color:var(--cx-danger-text)"><b>Iniciado:</b> '+_esc(d.fecha_inicio||'')+' por '+_esc(d.iniciado_por||'')+'</div>'
+      +'<div style="font-size:0.85em;color:var(--cx-danger-text);margin-top:4px"><b>Origen:</b> '+_esc((d.origen||'').replace(/_/g,' '))+(d.origen_referencia?' · ref: '+_esc(d.origen_referencia):'')+'</div>'
       +'<div style="margin-top:8px;font-weight:700">'+_esc(d.producto||'')+'</div>'
       +'<div style="font-size:0.9em;margin-top:4px"><b>Lotes:</b> '+_esc(d.lotes_afectados||'')+'</div>'
-      +(d.cantidad_fabricada || d.cantidad_distribuida ? '<div style="font-size:0.85em;color:#475569;margin-top:4px">Fabricado: '+(d.cantidad_fabricada||'?')+' uds · Distribuido: '+(d.cantidad_distribuida||'?')+' uds</div>' : '')
+      +(d.cantidad_fabricada || d.cantidad_distribuida ? '<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px">Fabricado: '+(d.cantidad_fabricada||'?')+' uds · Distribuido: '+(d.cantidad_distribuida||'?')+' uds</div>' : '')
       +'<div style="margin-top:8px"><b>Motivo:</b><br>'+_esc(d.motivo||'')+'</div>'
       +(d.riesgo_descripcion ? '<div style="margin-top:6px"><b>Riesgo:</b><br>'+_esc(d.riesgo_descripcion)+'</div>' : '')
       +'</div>';
@@ -2344,17 +2344,17 @@ async function verRecall(id){
     // Paso 1: Clasificación
     if(d.clase_recall){
       var claseCol = d.clase_recall === 'clase_I' ? '#ef4444' : '#fbbf24';
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+claseCol+'">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid '+claseCol+'">'
         +'<div><b>1. Clasificado</b> como <b style="color:'+claseCol+'">'+_esc(d.clase_recall.replace('_',' ').toUpperCase())+'</b> · alcance '+_esc(d.alcance_geografico||'')+'</div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.justificacion_clasificacion||'')+'</div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.clasificado_por||'')+' · '+_esc(d.clasificado_at||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px">'+_esc(d.justificacion_clasificacion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">por '+_esc(d.clasificado_por||'')+' · '+_esc(d.clasificado_at||'')+'</div>'
         +'</div>';
     } else {
-      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
         +'<div><b>1. Clasificar</b> (URGENTE · pendiente)</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">'
-        +'<select id="rcl-cl-clase" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">Clase...</option><option value="clase_I">Clase I (riesgo grave salud)</option><option value="clase_II">Clase II (temporal/reversible)</option><option value="clase_III">Clase III (improbable daño)</option></select>'
-        +'<select id="rcl-cl-alcance" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">Alcance...</option><option value="local">Local</option><option value="regional">Regional</option><option value="nacional">Nacional</option><option value="internacional">Internacional</option></select>'
+        +'<select id="rcl-cl-clase" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px"><option value="">Clase...</option><option value="clase_I">Clase I (riesgo grave salud)</option><option value="clase_II">Clase II (temporal/reversible)</option><option value="clase_III">Clase III (improbable daño)</option></select>'
+        +'<select id="rcl-cl-alcance" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px"><option value="">Alcance...</option><option value="local">Local</option><option value="regional">Regional</option><option value="nacional">Nacional</option><option value="internacional">Internacional</option></select>'
         +'</div>'
         +'<div class="form-group" style="margin-top:6px"><label>Justificación (≥20 chars)</label><textarea id="rcl-cl-just" style="min-height:50px"></textarea></div>'
         +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="clasificarRecall('+id+')">Clasificar</button></div>'
@@ -2363,13 +2363,13 @@ async function verRecall(id){
 
     // Paso 2: Notificación INVIMA
     if(d.notificacion_invima_at){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>2. INVIMA notificado</b> · ref: <code>'+_esc(d.notificacion_invima_ref||'')+'</code></div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.notificacion_invima_por||'')+' · '+_esc(d.notificacion_invima_at||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">por '+_esc(d.notificacion_invima_por||'')+' · '+_esc(d.notificacion_invima_at||'')+'</div>'
         +'</div>';
     } else if(d.clase_recall){
-      var urgente = d.clase_recall === 'clase_I' ? ' <span style="color:#ef4444">⏰ <24h</span>' : '';
-      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      var urgente = d.clase_recall === 'clase_I' ? ' <span style="color:var(--cx-danger-text)">⏰ <24h</span>' : '';
+      html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
         +'<div><b>2. Notificar a INVIMA</b>'+urgente+'</div>'
         +'<div class="form-group" style="margin-top:6px"><label>Radicado / oficio INVIMA</label><input id="rcl-inv-ref" placeholder="Ej: 2026-12345"></div>'
         +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="recallNotifInvima('+id+')">Registrar notificación</button></div>'
@@ -2378,13 +2378,13 @@ async function verRecall(id){
 
     // Paso 3: Notificación distribuidores
     if(d.notificacion_distribuidores_at){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>3. Distribuidores notificados</b></div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.distribuidores_notificados||'')+'</div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.notificacion_distribuidores_por||'')+' · '+_esc(d.notificacion_distribuidores_at||'')+'</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px">'+_esc(d.distribuidores_notificados||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">por '+_esc(d.notificacion_distribuidores_por||'')+' · '+_esc(d.notificacion_distribuidores_at||'')+'</div>'
         +'</div>';
     } else if(d.notificacion_invima_at){
-      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid var(--cx-accent)">'
         +'<div><b>3. Notificar a distribuidores y retail</b></div>'
         +'<div class="form-group" style="margin-top:6px"><label>Lista distribuidores notificados (≥5 chars)</label><textarea id="rcl-dist-list" style="min-height:50px" placeholder="Distribuidor A, Cadena retail B, ..."></textarea></div>'
         +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="recallNotifDist('+id+')">Marcar notificados</button></div>'
@@ -2394,15 +2394,15 @@ async function verRecall(id){
     // Paso 4: Recolección
     if(d.recoleccion_completada_at){
       var pct = d.cantidad_distribuida ? Math.round((d.cantidad_recolectada / d.cantidad_distribuida) * 100) : null;
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
         +'<div><b>4. Recolección completada</b> · '+(d.cantidad_recolectada||0)+' uds'+(pct!==null?' ('+pct+'%)':'')+'</div>'
-        +'<div style="font-size:0.78em;color:#94a3b8">'+_esc(d.recoleccion_completada_at||'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint)">'+_esc(d.recoleccion_completada_at||'')+'</div>'
         +'</div>';
     } else if(d.notificacion_distribuidores_at){
-      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid var(--cx-accent)">'
         +'<div><b>4. Recolección del producto</b> '+(d.cantidad_recolectada!==null?' · acumulado '+d.cantidad_recolectada+' uds':'')+'</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;align-items:center">'
-        +'<input id="rcl-rec-cant" type="number" min="0" placeholder="Cantidad recolectada total" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'<input id="rcl-rec-cant" type="number" min="0" placeholder="Cantidad recolectada total" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px">'
         +'<label style="font-size:0.85em"><input type="checkbox" id="rcl-rec-fin"> Recolección COMPLETA</label>'
         +'</div>'
         +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="recallRecoleccion('+id+')">Actualizar recolección</button></div>'
@@ -2411,23 +2411,23 @@ async function verRecall(id){
 
     // Paso 5: Cierre
     if(d.estado === 'cerrado'){
-      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
-        +'<div style="font-size:1em;font-weight:700;color:#15803d">✅ RECALL CERRADO</div>'
-        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Disposición:</b> '+_esc((d.disposicion_final||'').replace(/_/g,' '))+' · '+_esc(d.disposicion_descripcion||'')+'</div>'
-        +(d.efectividad_porcentaje !== null ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Efectividad:</b> '+d.efectividad_porcentaje+'%'+(d.efectividad_descripcion?' · '+_esc(d.efectividad_descripcion):'')+'</div>' : '')
-        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
-        +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Cerrado '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
+      html += '<div class="card" style="background:var(--cx-success-pale);border-left:3px solid var(--cx-success)">'
+        +'<div style="font-size:1em;font-weight:700;color:var(--cx-success-text)">✅ RECALL CERRADO</div>'
+        +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Disposición:</b> '+_esc((d.disposicion_final||'').replace(/_/g,' '))+' · '+_esc(d.disposicion_descripcion||'')+'</div>'
+        +(d.efectividad_porcentaje !== null ? '<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Efectividad:</b> '+d.efectividad_porcentaje+'%'+(d.efectividad_descripcion?' · '+_esc(d.efectividad_descripcion):'')+'</div>' : '')
+        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:var(--cx-text-faint);margin-top:4px">Cerrado '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
         +'</div>';
     } else if(d.estado === 'completado'){
-      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      html += '<div class="card" style="background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger)">'
         +'<div><b>5. Cerrar con disposición + efectividad</b></div>'
         +'<div class="form-group"><label>Disposición final</label>'
-        +'<select id="rcl-c-disp" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;width:auto"><option value="destruccion">Destrucción</option><option value="reproceso">Reproceso</option><option value="devolver_proveedor">Devolver a proveedor</option><option value="cuarentena">Cuarentena indefinida</option></select>'
+        +'<select id="rcl-c-disp" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px;width:auto"><option value="destruccion">Destrucción</option><option value="reproceso">Reproceso</option><option value="devolver_proveedor">Devolver a proveedor</option><option value="cuarentena">Cuarentena indefinida</option></select>'
         +'</div>'
         +'<div class="form-group"><label>Descripción disposición (≥20 chars)</label><textarea id="rcl-c-disp-desc" style="min-height:50px"></textarea></div>'
         +'<div style="display:grid;grid-template-columns:1fr 2fr;gap:8px">'
-        +'<input id="rcl-c-ef-pct" type="number" min="0" max="100" placeholder="% efectividad" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
-        +'<input id="rcl-c-ef-desc" placeholder="Análisis de efectividad" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'<input id="rcl-c-ef-pct" type="number" min="0" max="100" placeholder="% efectividad" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px">'
+        +'<input id="rcl-c-ef-desc" placeholder="Análisis de efectividad" style="padding:6px;border:1px solid var(--cx-border);border-radius:4px">'
         +'</div>'
         +'<div class="form-group" style="margin-top:6px"><label>Observaciones cierre</label><input id="rcl-c-obs"></div>'
         +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="cerrarRecall('+id+')">Cerrar recall</button></div>'
@@ -2439,16 +2439,16 @@ async function verRecall(id){
       html += '<div class="card-title" style="margin-top:12px">Timeline</div>';
       html += '<div style="font-size:0.85em">';
       d.timeline.forEach(function(ev){
-        html += '<div style="border-left:2px solid #cbd5e1;padding:4px 0 4px 10px;margin-bottom:4px">'
+        html += '<div style="border-left:2px solid var(--cx-border);padding:4px 0 4px 10px;margin-bottom:4px">'
           +'<div style="font-weight:600">'+_esc(ev.evento_tipo)+(ev.estado_anterior ? ' · '+_esc(ev.estado_anterior)+'→'+_esc(ev.estado_nuevo) : '')+'</div>'
-          +'<div style="color:#475569">'+_esc(ev.comentario||'')+'</div>'
-          +'<div style="color:#94a3b8;font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
+          +'<div style="color:var(--cx-text-soft)">'+_esc(ev.comentario||'')+'</div>'
+          +'<div style="color:var(--cx-text-faint);font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
           +'</div>';
       });
       html += '</div>';
     }
     body.innerHTML = html;
-  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_esc(e.message)+'</p>'; }
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">Error: '+_esc(e.message)+'</p>'; }
 }
 
 async function clasificarRecall(id){
@@ -2566,8 +2566,8 @@ async function loadDashboard(){
     var div = document.getElementById('dash-areas');
     var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">';
     Object.keys(areas).sort().forEach(function(a){
-      html += '<div style="background:#f8fafc;padding:10px;border-radius:6px;text-align:center">'
-        +'<div style="font-size:0.72em;color:#64748b">'+_esc(dArea.areas[a]||a)+'</div>'
+      html += '<div style="background:var(--cx-bg-alt);padding:10px;border-radius:6px;text-align:center">'
+        +'<div style="font-size:0.72em;color:var(--cx-text-mute)">'+_esc(dArea.areas[a]||a)+'</div>'
         +'<div style="font-size:1.4em;font-weight:700">'+areas[a]+'</div>'
         +'</div>';
     });
@@ -2619,7 +2619,7 @@ async function loadSGD(){
         : '';
       return '<tr>'
         +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
-        +'<td>'+_esc(it.titulo||'')+(it.padre_codigo?' <span style="color:#94a3b8;font-size:0.85em">(hijo de '+_esc(it.padre_codigo)+')</span>':'')+'</td>'
+        +'<td>'+_esc(it.titulo||'')+(it.padre_codigo?' <span style="color:var(--cx-text-faint);font-size:0.85em">(hijo de '+_esc(it.padre_codigo)+')</span>':'')+'</td>'
         +'<td>'+_esc(it.version_actual||'')+'</td>'
         +'<td><span class="badge '+bcls+'">'+_esc(it.estado_efectivo||it.estado||'')+'</span></td>'
         +'<td>'+_esc(it.proxima_revision||'-')+'</td>'
@@ -2638,11 +2638,11 @@ async function verSGD(codigo){
   try{
     var r = await fetch('/api/aseguramiento/sgd/'+encodeURIComponent(codigo));
     var d = await r.json();
-    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_esc(d.error||'?')+'</p>'; return; }
-    var html = '<div class="card" style="background:#f8fafc">'
-      +'<div style="font-size:0.78em;color:#64748b">'+_esc(d.codigo)+' · '+_esc(d.area)+'/'+_esc(d.tipo_doc)+'</div>'
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">'+_esc(d.error||'?')+'</p>'; return; }
+    var html = '<div class="card" style="background:var(--cx-bg-alt)">'
+      +'<div style="font-size:0.78em;color:var(--cx-text-mute)">'+_esc(d.codigo)+' · '+_esc(d.area)+'/'+_esc(d.tipo_doc)+'</div>'
       +'<div style="font-size:1.2em;font-weight:700;margin-top:4px">'+_esc(d.titulo||'')+'</div>'
-      +'<div style="font-size:0.85em;color:#475569;margin-top:6px">'+_esc(d.descripcion||'')+'</div>'
+      +'<div style="font-size:0.85em;color:var(--cx-text-soft);margin-top:6px">'+_esc(d.descripcion||'')+'</div>'
       +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:10px;font-size:0.85em">'
       +'<div><b>Versión:</b> '+_esc(d.version_actual||'')+'</div>'
       +'<div><b>Estado:</b> '+_esc(d.estado||'')+'</div>'
@@ -2671,7 +2671,7 @@ async function verSGD(codigo){
       html += '</tbody></table>';
     }
     body.innerHTML = html;
-  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_esc(e.message)+'</p>'; }
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:var(--cx-danger-text)">Error: '+_esc(e.message)+'</p>'; }
 }
 
 function abrirNuevoSGD(){
@@ -2698,16 +2698,16 @@ async function guardarSGD(){
     archivo_pdf_url: document.getElementById('m-sgd-url').value || null,
     observaciones: document.getElementById('m-sgd-obs').value || null,
   };
-  if(!body.codigo || !body.titulo){ msg.innerHTML='<span style="color:#ef4444">Código y título requeridos</span>'; return; }
-  msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
+  if(!body.codigo || !body.titulo){ msg.innerHTML='<span style="color:var(--cx-danger-text)">Código y título requeridos</span>'; return; }
+  msg.innerHTML = '<span style="color:var(--cx-text-mute)">Guardando...</span>';
   try{
     var r = await fetch('/api/aseguramiento/sgd', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
-      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.accion||'guardado')+'</span>';
+      msg.innerHTML = '<span style="color:var(--cx-success-text)">&#x2705; '+_esc(d.accion||'guardado')+'</span>';
       setTimeout(function(){ closeModal('m-sgd'); loadSGD(); loadDashboard(); }, 700);
-    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
-  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+    } else { msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error red: '+_esc(e.message)+'</span>'; }
 }
 
 async function asignarCap(){
@@ -2721,16 +2721,16 @@ async function asignarCap(){
     personas: personas,
   };
   if(!body.sgd_codigo || !body.sgd_version || !personas.length){
-    msg.innerHTML = '<span style="color:#ef4444">Código, versión y personas requeridos</span>'; return;
+    msg.innerHTML = '<span style="color:var(--cx-danger-text)">Código, versión y personas requeridos</span>'; return;
   }
-  msg.innerHTML = '<span style="color:#64748b">Asignando...</span>';
+  msg.innerHTML = '<span style="color:var(--cx-text-mute)">Asignando...</span>';
   try{
     var r = await fetch('/api/aseguramiento/capacitaciones/asignar', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
-      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+d.asignados+' asignaciones · '+d.saltados_ya_existian+' ya existían</span>';
-    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
-  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+      msg.innerHTML = '<span style="color:var(--cx-success-text)">&#x2705; '+d.asignados+' asignaciones · '+d.saltados_ya_existian+' ya existían</span>';
+    } else { msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error red: '+_esc(e.message)+'</span>'; }
 }
 
 // Tracker de PDFs abiertos en esta sesión (para validar lectura antes de firmar)
@@ -2763,7 +2763,7 @@ async function loadMisCapacitaciones(){
           btn = '<button class="btn btn-primary btn-sm" onclick="firmarCap(\''+_esc(it.sgd_codigo)+'\',\''+_esc(it.sgd_version)+'\',false)" title="No hay PDF adjunto">Firmar (sin PDF)</button>';
         }
       } else if(it.estado === 'firmada' || it.estado === 'aprobada'){
-        btn = '<span style="color:#15803d">&#x2713; Firmada '+_esc(it.firmado_at||'')+'</span>';
+        btn = '<span style="color:var(--cx-success-text)">&#x2713; Firmada '+_esc(it.firmado_at||'')+'</span>';
       }
       return '<tr>'
         +'<td><code>'+_esc(it.sgd_codigo)+'</code></td>'
@@ -2871,8 +2871,8 @@ async function repAuditCargar(){
         +'<td><code style="font-size:0.78em">'+_esc(it.accion||'')+'</code></td>'
         +'<td style="font-size:0.82em">'+_esc(it.tabla||'-')+'</td>'
         +'<td style="font-size:0.82em">'+_esc(it.registro_id||'-')+'</td>'
-        +'<td style="font-size:0.78em;color:#475569">'+_esc(det)+'</td>'
-        +'<td style="font-size:0.78em;color:#94a3b8">'+_esc(it.ip||'-')+'</td>'
+        +'<td style="font-size:0.78em;color:var(--cx-text-soft)">'+_esc(det)+'</td>'
+        +'<td style="font-size:0.78em;color:var(--cx-text-faint)">'+_esc(it.ip||'-')+'</td>'
         +'</tr>';
     }).join('');
   }catch(e){ tb.innerHTML = '<tr><td colspan="7" class="empty">Error: '+_esc(e.message)+'</td></tr>'; }
@@ -2899,7 +2899,7 @@ function _repBadge(n, label, color){
 function _repSeccion(titulo, items, columnas, formatter){
   var rows = (items||[]).map(formatter).join('');
   if(!rows) rows = '<tr><td colspan="'+columnas.length+'" class="empty" style="font-size:0.82em">Sin registros</td></tr>';
-  return '<div style="margin-top:14px"><div style="font-weight:600;margin-bottom:6px;color:#1e293b">'+_esc(titulo)+' ('+(items||[]).length+')</div>'
+  return '<div style="margin-top:14px"><div style="font-weight:600;margin-bottom:6px;color:var(--cx-text)">'+_esc(titulo)+' ('+(items||[]).length+')</div>'
     +'<div style="overflow-x:auto"><table style="font-size:0.85em"><thead><tr>'
     +columnas.map(function(c){return '<th>'+_esc(c)+'</th>';}).join('')
     +'</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
@@ -2917,9 +2917,9 @@ async function repLoteCargar(){
     var d = await r.json();
     var c = d.cadena || {};
     var rsm = d.resumen || {};
-    var html = '<div class="card" style="background:#f8fafc;border-left:4px solid #6d28d9">'
+    var html = '<div class="card" style="background:var(--cx-bg-alt);border-left:4px solid var(--cx-primary)">'
       +'<div style="font-weight:700;font-size:1.05em;margin-bottom:6px">Lote: <code>'+_esc(d.lote||lote)+'</code></div>'
-      +'<div style="font-size:0.82em;color:#64748b;margin-bottom:8px">Consultado por <b>'+_esc(d.consultado_por||'')+'</b> · '+_esc((d.consulta_at||'').slice(0,19))+'</div>'
+      +'<div style="font-size:0.82em;color:var(--cx-text-mute);margin-bottom:8px">Consultado por <b>'+_esc(d.consultado_por||'')+'</b> · '+_esc((d.consulta_at||'').slice(0,19))+'</div>'
       +'<div>'
       +_repBadge(rsm.recepciones, 'Recepciones', '#0ea5e9')
       +_repBadge(rsm.producciones, 'Producciones', '#6d28d9')
@@ -2938,7 +2938,7 @@ async function repLoteCargar(){
       return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.material||'')+'</td><td>'+_esc(it.cantidad||'')+'</td><td>'+_esc(it.operador||'-')+'</td><td style="font-size:0.78em">'+_esc((it.observaciones||'').slice(0,80))+'</td></tr>';
     });
     html += _repSeccion('🧪 COAs', c.coas, ['Fecha','Parámetro','Valor','Conforme','Analista','Decisión'], function(it){
-      var conforme = it.conforme ? '<span style="color:#15803d">✓</span>' : '<span style="color:#ef4444">✗</span>';
+      var conforme = it.conforme ? '<span style="color:var(--cx-success-text)">✓</span>' : '<span style="color:var(--cx-danger-text)">✗</span>';
       return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.parametro||'')+'</td><td>'+_esc(it.valor||'')+'</td><td>'+conforme+'</td><td>'+_esc(it.analista||'-')+'</td><td>'+_esc(it.decision||'-')+'</td></tr>';
     });
     html += _repSeccion('❌ No-conformidades', c.ncs, ['Fecha','Tipo','Descripción','Impacto','Estado'], function(it){
@@ -2972,9 +2972,9 @@ async function repClienteCargar(){
     var d = await r.json();
     var cli = d.cliente || {};
     var rsm = d.resumen || {};
-    var html = '<div class="card" style="background:#f8fafc;border-left:4px solid #8b5cf6">'
+    var html = '<div class="card" style="background:var(--cx-bg-alt);border-left:4px solid #8b5cf6">'
       +'<div style="font-weight:700;font-size:1.05em;margin-bottom:6px">Cliente: '+_esc(cli.nombre||'')+'</div>'
-      +'<div style="font-size:0.82em;color:#64748b;margin-bottom:8px">Código: <code>'+_esc(cli.codigo||'')+'</code> · Empresa: '+_esc(cli.empresa||'-')
+      +'<div style="font-size:0.82em;color:var(--cx-text-mute);margin-bottom:8px">Código: <code>'+_esc(cli.codigo||'')+'</code> · Empresa: '+_esc(cli.empresa||'-')
       +(cli.email ? ' · '+_esc(cli.email) : '')
       +(cli.telefono ? ' · ☎ '+_esc(cli.telefono) : '')
       +' · Consultado por <b>'+_esc(d.consultado_por||'')+'</b></div>'
@@ -2993,9 +2993,9 @@ async function repClienteCargar(){
 
     var lotes = d.lotes_unicos || [];
     if(lotes.length){
-      html += '<div style="margin-top:14px"><div style="font-weight:600;margin-bottom:6px;color:#1e293b">📦 Lotes únicos recibidos ('+lotes.length+')</div>'
+      html += '<div style="margin-top:14px"><div style="font-weight:600;margin-bottom:6px;color:var(--cx-text)">📦 Lotes únicos recibidos ('+lotes.length+')</div>'
         +'<div style="display:flex;flex-wrap:wrap;gap:6px">'
-        +lotes.map(function(l){ return '<code style="background:#f1f5f9;padding:3px 8px;border-radius:4px;font-size:0.82em">'+_esc(l)+'</code>'; }).join('')
+        +lotes.map(function(l){ return '<code style="background:var(--cx-border-soft);padding:3px 8px;border-radius:4px;font-size:0.82em">'+_esc(l)+'</code>'; }).join('')
         +'</div></div>';
     }
     body.innerHTML = html;
@@ -3021,7 +3021,7 @@ async function loadConflictos(){
     tb.innerHTML = info.items.map(function(it){
       var btn = it.estado === 'pendiente'
         ? '<button class="btn btn-ghost btn-sm" onclick="resolverConf('+it.id+')">Marcar resuelto</button>'
-        : '<span style="color:#94a3b8">'+_esc(it.estado)+'</span>';
+        : '<span style="color:var(--cx-text-faint)">'+_esc(it.estado)+'</span>';
       return '<tr>'
         +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
         +'<td>'+_esc(it.temas||'')+'</td>'
@@ -3100,7 +3100,7 @@ async function gobLoadRevision(){
     if(!rows.length){ document.getElementById('gob-rev-list').innerHTML='<p class="empty">Sin revisiones registradas. La revisión por la dirección debe hacerse al menos una vez al año (INVIMA Res. 2214 art. 8).</p>'; return; }
     var html='<table class="tbl"><thead><tr><th>Periodo</th><th>Planeada</th><th>Ejecutada</th><th>Conduce</th><th>Estado</th><th></th></tr></thead><tbody>';
     rows.forEach(function(x){
-      var badge = x.estado==='ejecutada'?'<span style="color:#16a34a;font-weight:700">✔ ejecutada</span>':(x.estado==='cerrada'?'<span style="color:#64748b">cerrada</span>':'<span style="color:#d97706;font-weight:700">planeada</span>');
+      var badge = x.estado==='ejecutada'?'<span style="color:var(--cx-success-text);font-weight:700">✔ ejecutada</span>':(x.estado==='cerrada'?'<span style="color:var(--cx-text-mute)">cerrada</span>':'<span style="color:var(--cx-warn-text);font-weight:700">planeada</span>');
       var btn = (x.estado==='planeada')?'<button class="btn btn-primary btn-sm gob-wbtn" onclick="gobEjecutarRevision('+x.id+')">Ejecutar acta</button>':'';
       html+='<tr><td><b>'+_esc(x.periodo)+'</b></td><td>'+_esc(x.fecha_planeada||'-')+'</td><td>'+_esc(x.fecha_ejecutada||'-')+'</td><td>'+_esc(x.conducido_por||'-')+'</td><td>'+badge+'</td><td>'+btn+'</td></tr>';
     });
@@ -3164,13 +3164,13 @@ function gobRenderProv(){
   if(!rows.length){ document.getElementById('gob-prov-list').innerHTML='<p class="empty">Sin proveedores.</p>'; return; }
   var html='<table class="tbl"><thead><tr><th>Proveedor</th><th>Criticidad</th><th>Visita</th><th>Estado AC</th><th>Reevaluación</th><th>Desempeño (Compras)</th><th></th></tr></thead><tbody>';
   rows.forEach(function(x){
-    var crit = x.criticidad==='critico'?'<span style="color:#ef4444;font-weight:700">crítico</span>':'no crítico';
+    var crit = x.criticidad==='critico'?'<span style="color:var(--cx-danger-text);font-weight:700">crítico</span>':'no crítico';
     var visita = x.requiere_visita?'🚩 sí':'-';
     var sid='sc-'+btoa(unescape(encodeURIComponent(x.proveedor))).replace(/[^a-zA-Z0-9]/g,'');
-    html+='<tr><td><b>'+_esc(x.proveedor)+'</b>'+(x.categoria?'<div style="font-size:0.78em;color:#94a3b8">'+_esc(x.categoria)+'</div>':'')+'</td>'
+    html+='<tr><td><b>'+_esc(x.proveedor)+'</b>'+(x.categoria?'<div style="font-size:0.78em;color:var(--cx-text-faint)">'+_esc(x.categoria)+'</div>':'')+'</td>'
       +'<td>'+crit+'</td><td>'+visita+'</td><td>'+_provEstadoBadge(x.estado)+'</td>'
       +'<td>'+_esc(x.fecha_reevaluacion||'-')+'</td>'
-      +'<td><span id="'+sid+'" style="font-size:0.82em;color:#94a3b8;cursor:pointer" onclick="gobScorecard('+JSON.stringify(x.proveedor).replace(/"/g,'&quot;')+',\''+sid+'\')">ver scorecard ▸</span></td>'
+      +'<td><span id="'+sid+'" style="font-size:0.82em;color:var(--cx-text-faint);cursor:pointer" onclick="gobScorecard('+JSON.stringify(x.proveedor).replace(/"/g,'&quot;')+',\''+sid+'\')">ver scorecard ▸</span></td>'
       +'<td><button class="btn btn-ghost btn-sm gob-wbtn" onclick="gobCalificarProv('+JSON.stringify(x.proveedor).replace(/"/g,'&quot;')+')">Calificar</button></td></tr>';
   });
   html+='</tbody></table>';
@@ -3222,7 +3222,7 @@ async function gobLoadEquipos(){
     rows.forEach(function(x){
       var est=x.estado||'pendiente';
       var col = (est==='aprobado'?'#16a34a':(est==='rechazado'?'#ef4444':'#d97706'));
-      html+='<tr><td><b>'+_esc(x.equipo_codigo)+'</b>'+(x.equipo_nombre?'<div style="font-size:0.78em;color:#94a3b8">'+_esc(x.equipo_nombre)+'</div>':'')+'</td>'
+      html+='<tr><td><b>'+_esc(x.equipo_codigo)+'</b>'+(x.equipo_nombre?'<div style="font-size:0.78em;color:var(--cx-text-faint)">'+_esc(x.equipo_nombre)+'</div>':'')+'</td>'
         +'<td><b>'+_esc(x.tipo)+'</b></td><td><span style="color:'+col+';font-weight:700">'+_esc(est)+'</span></td>'
         +'<td>'+_esc(x.fecha_ejecucion||'-')+'</td><td>'+_esc(x.fecha_revalidacion||'-')+'</td><td>'+_esc(x.aprobado_por||'-')+'</td></tr>';
     });
@@ -3342,7 +3342,7 @@ async function loadIndicadoresASG(){
     inds.forEach(function(i){ (cats[i.categoria]=cats[i.categoria]||[]).push(i); });
     var html='';
     Object.keys(cats).forEach(function(cat){
-      html += '<div style="grid-column:1/-1;font-size:0.8em;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-top:4px">'+_esc(_CAT_LABEL[cat]||cat)+'</div>';
+      html += '<div style="grid-column:1/-1;font-size:0.8em;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-top:4px">'+_esc(_CAT_LABEL[cat]||cat)+'</div>';
       cats[cat].forEach(function(i){
         var col=_SEM_COLOR[i.semaforo]||'#94a3b8';
         var bg=_SEM_BG[i.semaforo]||'#f8fafc';
@@ -3350,12 +3350,12 @@ async function loadIndicadoresASG(){
         var metaTxt = (i.meta===null||i.meta===undefined) ? '' : ((i.direccion==='mayor_mejor'?'≥':'≤')+' '+i.meta+(i.unidad==='%'?'%':''));
         html += '<div class="card" style="background:'+bg+';border-left:4px solid '+col+';cursor:pointer;margin:0" title="Doble-clic para editar la meta" ondblclick="editarMetaASG('+JSON.stringify(i.codigo).replace(/"/g,'&quot;')+','+(i.meta||0)+','+(i.umbral_amarillo||0)+')">'
           +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
-          +'<div style="font-size:0.84em;font-weight:700;color:#0f172a">'+_esc(i.nombre)+'</div>'
+          +'<div style="font-size:0.84em;font-weight:700;color:var(--cx-text)">'+_esc(i.nombre)+'</div>'
           +'<span style="width:10px;height:10px;border-radius:50%;background:'+col+';flex-shrink:0;margin-top:4px"></span>'
           +'</div>'
           +'<div style="font-size:1.7em;font-weight:800;color:'+col+';margin:4px 0">'+valTxt+'</div>'
-          +'<div style="font-size:0.72em;color:#64748b">Meta: '+(metaTxt||'-')+'</div>'
-          +'<div style="font-size:0.72em;color:#94a3b8;margin-top:4px">'+_esc(i.descripcion||'')+'</div>'
+          +'<div style="font-size:0.72em;color:var(--cx-text-mute)">Meta: '+(metaTxt||'-')+'</div>'
+          +'<div style="font-size:0.72em;color:var(--cx-text-faint);margin-top:4px">'+_esc(i.descripcion||'')+'</div>'
           +'</div>';
       });
     });
@@ -3393,12 +3393,12 @@ async function loadCronogramasBPM(){
       var col = pct>=90?'#16a34a':(pct>=70?'#d97706':'#dc2626');
       var venc = c.vencidas||0;
       return '<div class="card" style="margin:0;border-left:4px solid '+col+'">'
-        +'<div style="font-size:0.9em;font-weight:700;color:#0f172a">'+_esc(c.nombre)+'</div>'
-        +'<div style="font-size:0.72em;color:#94a3b8"><code>'+_esc(c.codigo)+'</code> · '+_esc(c.frecuencia||'')+' · '+_esc(c.responsable||'')+'</div>'
+        +'<div style="font-size:0.9em;font-weight:700;color:var(--cx-text)">'+_esc(c.nombre)+'</div>'
+        +'<div style="font-size:0.72em;color:var(--cx-text-faint)"><code>'+_esc(c.codigo)+'</code> · '+_esc(c.frecuencia||'')+' · '+_esc(c.responsable||'')+'</div>'
         +'<div style="display:flex;align-items:baseline;gap:6px;margin:6px 0"><span style="font-size:1.6em;font-weight:800;color:'+col+'">'+pct+'%</span>'
-        +'<span style="font-size:0.72em;color:#64748b">'+(c.ejecutadas||0)+'/'+(c.objetivo||0)+' del año</span></div>'
-        +'<div style="font-size:0.74em;color:#64748b">'
-        +(venc>0?'<span style="color:#dc2626;font-weight:700">⚠ '+venc+' vencida(s)</span> · ':'')
+        +'<span style="font-size:0.72em;color:var(--cx-text-mute)">'+(c.ejecutadas||0)+'/'+(c.objetivo||0)+' del año</span></div>'
+        +'<div style="font-size:0.74em;color:var(--cx-text-mute)">'
+        +(venc>0?'<span style="color:var(--cx-danger-text);font-weight:700">⚠ '+venc+' vencida(s)</span> · ':'')
         +(c.proximas||0)+' próxima(s)</div>'
         +'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="verEjecucionesBPM('+c.id+',\''+_esc(c.nombre).replace(/\x27/g,"")+'\')">Ejecuciones</button></div>'
         +'</div>';
@@ -3416,7 +3416,7 @@ async function verEjecucionesBPM(cronId, nombre){
     var d = await r.json();
     var ejs = d.ejecuciones||[];
     var html = '<div style="margin-bottom:10px;display:flex;gap:6px;align-items:center">'
-      +'<input type="date" id="cron-nueva-fecha" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px">'
+      +'<input type="date" id="cron-nueva-fecha" style="padding:6px 8px;border:1px solid var(--cx-border);border-radius:4px">'
       +'<button class="btn btn-primary btn-sm" onclick="agendarBPM('+cronId+')">+ Agendar</button></div>';
     if(!ejs.length){ html += '<p class="empty">Sin ejecuciones agendadas.</p>'; }
     else{
@@ -3465,27 +3465,27 @@ async function loadPqrTriaje(){
     if(!r.ok) throw new Error(d.error||'error');
     var cnt = document.getElementById('pqr-tri-cnt'); if(cnt) cnt.textContent = d.pendientes||0;
     var items = d.inbox||[];
-    if(!items.length){ box.innerHTML = '<p style="color:#0c4a6e;font-size:0.85em;margin:6px 0">Sin PQR pendientes de triaje 👏</p>'; return; }
+    if(!items.length){ box.innerHTML = '<p style="color:var(--cx-info-text);font-size:0.85em;margin:6px 0">Sin PQR pendientes de triaje 👏</p>'; return; }
     box.innerHTML = items.map(function(x){
       var conf = x.ia_confianza!=null ? Math.round(x.ia_confianza*100)+'%' : '-';
       var emp = x.ia_empresa;
       var critTxt = x.ia_criticidad ? (' · <b style="color:'+(x.ia_criticidad==='alto'?'#dc2626':(x.ia_criticidad==='medio'?'#d97706':'#16a34a'))+'">'+_esc(x.ia_criticidad.toUpperCase())+'</b>') : '';
       var claseTxt = x.ia_clase ? (' · '+_esc(x.ia_clase)) : '';
-      var sugTxt = emp ? ('IA sugiere <b style="color:'+(emp==='espagiria'?'#6d28d9':'#0ea5e9')+'">'+(emp==='espagiria'?'ESPAGIRIA':'ÁNIMUS')+'</b> ('+conf+' · '+_esc(x.ia_fuente||'')+')'+claseTxt+critTxt) : '<span style="color:#94a3b8">IA sin sugerencia</span>';
+      var sugTxt = emp ? ('IA sugiere <b style="color:'+(emp==='espagiria'?'#6d28d9':'#0ea5e9')+'">'+(emp==='espagiria'?'ESPAGIRIA':'ÁNIMUS')+'</b> ('+conf+' · '+_esc(x.ia_fuente||'')+')'+claseTxt+critTxt) : '<span style="color:var(--cx-text-faint)">IA sin sugerencia</span>';
       var opcEsp = _TIPO_ESP.map(function(t){return '<option value="'+t[0]+'"'+(x.ia_tipo===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('');
       var opcAni = _TIPO_ANI.map(function(t){return '<option value="'+t[0]+'"'+(x.ia_tipo===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('');
       return '<div class="card" style="margin:0 0 8px 0;border-left:3px solid '+(emp==='espagiria'?'#6d28d9':(emp==='animus'?'#0ea5e9':'#94a3b8'))+'">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">'
-        +'<div style="font-size:0.78em;color:#64748b">'+_esc(x.canal||'')+' · '+_esc(x.contacto_nombre||'anónimo')+' · '+_esc(x.recibido_en||'')+(x.ghl_message_id?' · <span style="color:#94a3b8">GHL:'+_esc(x.ghl_message_id)+'</span>':'')+'</div>'
+        +'<div style="font-size:0.78em;color:var(--cx-text-mute)">'+_esc(x.canal||'')+' · '+_esc(x.contacto_nombre||'anónimo')+' · '+_esc(x.recibido_en||'')+(x.ghl_message_id?' · <span style="color:var(--cx-text-faint)">GHL:'+_esc(x.ghl_message_id)+'</span>':'')+'</div>'
         +'<div style="font-size:0.78em">'+sugTxt+'</div></div>'
-        +'<div style="font-size:0.9em;color:#0f172a;margin:6px 0">'+_esc(x.mensaje||'')+'</div>'
-        +((x.producto||x.lote||x.pedido_numero)?'<div style="font-size:0.76em;color:#475569;margin-bottom:4px">'+(x.producto?'🧴 '+_esc(x.producto)+'  ':'')+(x.lote?'🏷️ Lote '+_esc(x.lote)+'  ':'')+(x.pedido_numero?'📦 Pedido '+_esc(x.pedido_numero):'')+'</div>':'')
-        +(x.ia_razon?'<div style="font-size:0.74em;color:#94a3b8;font-style:italic">'+_esc(x.ia_razon)+'</div>':'')
+        +'<div style="font-size:0.9em;color:var(--cx-text);margin:6px 0">'+_esc(x.mensaje||'')+'</div>'
+        +((x.producto||x.lote||x.pedido_numero)?'<div style="font-size:0.76em;color:var(--cx-text-soft);margin-bottom:4px">'+(x.producto?'🧴 '+_esc(x.producto)+'  ':'')+(x.lote?'🏷️ Lote '+_esc(x.lote)+'  ':'')+(x.pedido_numero?'📦 Pedido '+_esc(x.pedido_numero):'')+'</div>':'')
+        +(x.ia_razon?'<div style="font-size:0.74em;color:var(--cx-text-faint);font-style:italic">'+_esc(x.ia_razon)+'</div>':'')
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">'
-        +'<span style="font-size:0.78em;color:#6d28d9;font-weight:700">→ Espagiria</span> <select id="tri-esp-'+x.id+'" class="btn-sm" style="padding:4px;border:1px solid #cbd5e1;border-radius:4px">'+opcEsp+'</select>'
-        +'<button class="btn btn-sm" style="background:#6d28d9;color:#fff" onclick="enrutarPqr('+x.id+',\'espagiria\')">Es de Calidad</button>'
-        +'<span style="font-size:0.78em;color:#0ea5e9;font-weight:700;margin-left:10px">→ Ánimus</span> <select id="tri-ani-'+x.id+'" class="btn-sm" style="padding:4px;border:1px solid #cbd5e1;border-radius:4px">'+opcAni+'</select>'
-        +'<button class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="enrutarPqr('+x.id+',\'animus\')">Es comercial</button>'
+        +'<span style="font-size:0.78em;color:var(--cx-primary-text);font-weight:700">→ Espagiria</span> <select id="tri-esp-'+x.id+'" class="btn-sm" style="padding:4px;border:1px solid var(--cx-border);border-radius:4px">'+opcEsp+'</select>'
+        +'<button class="btn btn-sm" style="background:var(--cx-primary);color:#fff" onclick="enrutarPqr('+x.id+',\'espagiria\')">Es de Calidad</button>'
+        +'<span style="font-size:0.78em;color:var(--cx-info-text);font-weight:700;margin-left:10px">→ Ánimus</span> <select id="tri-ani-'+x.id+'" class="btn-sm" style="padding:4px;border:1px solid var(--cx-border);border-radius:4px">'+opcAni+'</select>'
+        +'<button class="btn btn-sm" style="background:var(--cx-info);color:#fff" onclick="enrutarPqr('+x.id+',\'animus\')">Es comercial</button>'
         +'<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="descartarPqr('+x.id+')">Descartar</button>'
         +'</div></div>';
     }).join('');

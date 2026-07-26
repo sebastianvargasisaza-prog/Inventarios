@@ -11,7 +11,7 @@ crudo dentro de un bloque script embebido rompe el script)."""
 # ── Markup del modal (estilos inline · premium · no depende del CSS del host) ──
 CC_REVIEW_MODAL_HTML = r'''
 <div id="ccr-modal" style="display:none;position:fixed;inset:0;background:rgba(24,24,27,.55);z-index:99999;align-items:center;justify-content:center;padding:16px;font-family:'Inter',system-ui,Arial,sans-serif;">
-  <div style="background:#fff;border-radius:16px;max-width:640px;width:100%;max-height:92vh;overflow:hidden;box-shadow:0 24px 70px rgba(24,24,27,.35);display:flex;flex-direction:column;">
+  <div style="background:var(--cx-card);border-radius:16px;max-width:640px;width:100%;max-height:92vh;overflow:hidden;box-shadow:0 24px 70px rgba(24,24,27,.35);display:flex;flex-direction:column;">
     <div style="height:5px;background:linear-gradient(90deg,#a78bfa,#6d28d9);flex:none;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 22px 8px;">
       <div style="display:flex;align-items:center;gap:10px;min-width:0;">
@@ -21,13 +21,13 @@ CC_REVIEW_MODAL_HTML = r'''
       <button onclick="cerrarCCReview()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1aa;line-height:1;flex:none;">&times;</button>
     </div>
     <div style="overflow-y:auto;padding:4px 22px 8px;">
-      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:#1e40af;">
+      <div style="background:var(--cx-info-pale);border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:var(--cx-info-text);">
         <b>COC-PRO-001 &middot; modo migración:</b> por ahora los análisis son <b>opcionales</b>. Completá la <b>documental</b> y la <b>ubicación final</b>, y firmá para liberar. (Cuando se active INVIMA estricto, los campos pasan a obligatorios.)
       </div>
-      <div id="ccr-info" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 14px;background:#f5f3ff;border:1px solid #ede9fe;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;"></div>
+      <div id="ccr-info" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 14px;background:var(--cx-primary-pale);border:1px solid var(--cx-primary-soft);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;"></div>
 
       <div class="ccr-sec">Verificación final (editable) &middot; es el rótulo definitivo</div>
-      <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:11.5px;color:#92400e;">Calidad verifica y corrige lo que llegó mal antes de liberar. Lo que dejes acá sale en el rótulo final y queda en el sistema.</div>
+      <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:11.5px;color:var(--cx-warn-text);">Calidad verifica y corrige lo que llegó mal antes de liberar. Lo que dejes acá sale en el rótulo final y queda en el sistema.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div style="grid-column:1/-1;"><label class="ccr-lbl">Nombre INCI (verificar / corregir)</label><input id="ccr-inci" class="ccr-inp" placeholder="INCI real del material"></div>
         <div><label class="ccr-lbl">Cantidad real al pesar (g)</label><input id="ccr-cant" class="ccr-inp" type="number" min="0" step="0.01" placeholder="peso del chequeo final"></div>
@@ -44,8 +44,8 @@ CC_REVIEW_MODAL_HTML = r'''
 
       <div class="ccr-sec">Resultado AQL / inspección organoléptica</div>
       <div class="ccr-seg">
-        <label><input type="radio" name="ccr-aql" value="CONFORME"><span style="color:#15803d;">Conforme</span></label>
-        <label><input type="radio" name="ccr-aql" value="NO_CONFORME"><span style="color:#dc2626;">No conforme</span></label>
+        <label><input type="radio" name="ccr-aql" value="CONFORME"><span style="color:var(--cx-success-text);">Conforme</span></label>
+        <label><input type="radio" name="ccr-aql" value="NO_CONFORME"><span style="color:var(--cx-danger-text);">No conforme</span></label>
         <label><input type="radio" name="ccr-aql" value="CUARENTENA_EXTENDIDA"><span style="color:#c2410c;">Cuarentena ext.</span></label>
       </div>
       <input id="ccr-aql-obs" placeholder="Observaciones AQL (obligatorio si No conforme o Cuarentena extendida)" style="width:100%;padding:9px 12px;border:1px solid #e4e4e7;border-radius:9px;font-size:13px;margin-top:8px;box-sizing:border-box;">
@@ -62,26 +62,26 @@ CC_REVIEW_MODAL_HTML = r'''
       <div id="ccr-msg" style="margin-top:12px;font-size:13px;min-height:18px;"></div>
     </div>
     <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;padding:12px 22px 18px;border-top:1px solid #f1f1f4;flex:none;flex-wrap:wrap;">
-      <button onclick="imprimirRotuloCC()" style="padding:10px 16px;border:1px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px;">&#128424; Imprimir rótulo</button>
+      <button onclick="imprimirRotuloCC()" style="padding:10px 16px;border:1px solid var(--cx-primary-light);background:var(--cx-primary-pale);color:var(--cx-primary-text);border-radius:10px;font-weight:700;cursor:pointer;font-size:14px;">&#128424; Imprimir rótulo</button>
       <div style="display:flex;gap:10px;">
-        <button onclick="cerrarCCReview()" style="padding:10px 18px;border:1px solid #e4e4e7;background:#fff;color:#3f3f46;border-radius:10px;font-weight:600;cursor:pointer;font-size:14px;">Cancelar</button>
+        <button onclick="cerrarCCReview()" style="padding:10px 18px;border:1px solid #e4e4e7;background:var(--cx-card);color:#3f3f46;border-radius:10px;font-weight:600;cursor:pointer;font-size:14px;">Cancelar</button>
         <button id="ccr-submit" onclick="enviarCCReview()" style="padding:10px 22px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px;box-shadow:0 4px 14px rgba(109,40,217,.25);">&#9998; Firmar y registrar</button>
       </div>
     </div>
   </div>
 </div>
 <style>
-  #ccr-info b{color:#4c1d95;font-weight:700;}
+  #ccr-info b{color:var(--cx-primary-text);font-weight:700;}
   .ccr-sec{font-size:11px;font-weight:800;color:#71717a;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px;}
   .ccr-lbl{display:block;font-size:10.5px;font-weight:700;color:#71717a;margin:0 0 4px;text-transform:uppercase;letter-spacing:.3px;}
-  .ccr-inp{width:100%;padding:8px 11px;border:1px solid #e4e4e7;border-radius:9px;font-size:13px;box-sizing:border-box;background:#fff;color:#18181b;}
-  .ccr-inp:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+  .ccr-inp{width:100%;padding:8px 11px;border:1px solid #e4e4e7;border-radius:9px;font-size:13px;box-sizing:border-box;background:var(--cx-card);color:#18181b;}
+  .ccr-inp:focus{outline:none;border-color:var(--cx-primary);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
   .ccr-chk{display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;color:#27272a;padding:6px 0;line-height:1.35;}
-  .ccr-chk input{width:17px;height:17px;margin-top:1px;flex:none;accent-color:#6d28d9;cursor:pointer;}
+  .ccr-chk input{width:17px;height:17px;margin-top:1px;flex:none;accent-color:var(--cx-primary);cursor:pointer;}
   .ccr-seg{display:flex;gap:8px;flex-wrap:wrap;}
   .ccr-seg label{display:flex;align-items:center;gap:7px;cursor:pointer;padding:9px 14px;border:1.5px solid #e4e4e7;border-radius:10px;font-size:13px;font-weight:700;flex:1;justify-content:center;min-width:120px;}
-  .ccr-seg input{accent-color:#6d28d9;cursor:pointer;}
-  .ccr-seg label:has(input:checked){border-color:#6d28d9;background:#f5f3ff;}
+  .ccr-seg input{accent-color:var(--cx-primary);cursor:pointer;}
+  .ccr-seg label:has(input:checked){border-color:var(--cx-primary);background:var(--cx-primary-pale);}
 </style>
 '''
 
@@ -154,7 +154,7 @@ async function enviarCCReview(){
   var aqlObs=(document.getElementById('ccr-aql-obs').value||'').trim();
   // Modo migración (warm · Sebastián 9-jul): los análisis son OPCIONALES. Si no se marca nada, el backend lo
   // trata como APROBADO. Solo exigimos la observación cuando SÍ se marca un rechazo explícito.
-  if(aql && (aql.value==='NO_CONFORME'||aql.value==='CUARENTENA_EXTENDIDA') && !aqlObs){msg.innerHTML='<span style="color:#dc2626;font-weight:600">Si marcás No conforme / Cuarentena ext., poné la observación</span>';return;}
+  if(aql && (aql.value==='NO_CONFORME'||aql.value==='CUARENTENA_EXTENDIDA') && !aqlObs){msg.innerHTML='<span style="color:var(--cx-danger-text);font-weight:600">Si marcás No conforme / Cuarentena ext., poné la observación</span>';return;}
   var payload={
     mov_id:_ccrLote.id, lote:_ccrLote.lote||'', codigo_mp:_ccrLote.material_id||_ccrLote.codigo_mp||'',
     coa_ok:document.getElementById('ccr-coa-ok').checked, lote_coincide:document.getElementById('ccr-lote-coincide').checked,
@@ -177,20 +177,20 @@ async function enviarCCReview(){
     var res=await r.json();
     if(!r.ok && res.requiere_firma){
       var firma=await _ccrFirmar(res.sign_meaning, res.record_id);
-      if(firma===null){msg.innerHTML='<span style="color:#dc2626">Firma cancelada · la disposición NO se registró</span>';return;}
-      if(firma.error){msg.innerHTML='<span style="color:#dc2626">'+firma.error+'</span>';return;}
+      if(firma===null){msg.innerHTML='<span style="color:var(--cx-danger-text)">Firma cancelada · la disposición NO se registró</span>';return;}
+      if(firma.error){msg.innerHTML='<span style="color:var(--cx-danger-text)">'+firma.error+'</span>';return;}
       payload.signature_id=firma.signature_id;
       r=await fetch('/api/lotes/cc-review',_fetchOpts('POST', payload));
       res=await r.json();
     }
     if(r.ok){
-      msg.innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+((res.message||'Revisión registrada'))+' · '+((res.estado||''))+'</span>';
+      msg.innerHTML='<span style="color:var(--cx-success-text);font-weight:700">&#10003; '+((res.message||'Revisión registrada'))+' · '+((res.estado||''))+'</span>';
       setTimeout(function(){cerrarCCReview(); if(typeof loadCuarentena==='function'){loadCuarentena();} if(typeof cargarCuarentena==='function'){cargarCuarentena();}},1500);
     }else{
-      msg.innerHTML='<span style="color:#dc2626">'+((res.error||'Error al registrar'))+'</span>';
+      msg.innerHTML='<span style="color:var(--cx-danger-text)">'+((res.error||'Error al registrar'))+'</span>';
     }
   }catch(e){
-    msg.innerHTML='<span style="color:#dc2626">Error: '+e.message+'</span>';
+    msg.innerHTML='<span style="color:var(--cx-danger-text)">Error: '+e.message+'</span>';
   }finally{
     btn.disabled=false; btn.textContent='✎ Firmar y registrar';
   }

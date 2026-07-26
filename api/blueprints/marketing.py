@@ -244,13 +244,13 @@ def _send_push_alert(conn, tipo, clave_unica, asunto, cuerpo_resumen,
         }
         color = sev_colors.get(severidad, "#3b82f6")
         html = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;">
-        <div style="background:#0f172a;color:#f1f5f9;padding:20px;border-radius:8px;border-left:4px solid {color};">
+        <div style="background:var(--cx-text, #0f172a);color:var(--cx-border-soft, #f1f5f9);padding:20px;border-radius:8px;border-left:4px solid {color};">
           <div style="font-size:11px;color:{color};font-weight:700;text-transform:uppercase;letter-spacing:.1em;">
             ÁNIMUS · alerta {severidad}
           </div>
           <h2 style="color:#fff;margin:8px 0 12px;">{asunto}</h2>
-          <div style="color:#cbd5e1;line-height:1.6;font-size:14px;">{cuerpo_resumen}</div>
-          <div style="margin-top:18px;padding-top:14px;border-top:1px solid #334155;font-size:11px;color:#64748b;">
+          <div style="color:var(--cx-border, #cbd5e1);line-height:1.6;font-size:14px;">{cuerpo_resumen}</div>
+          <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--cx-text-soft, #334155);font-size:11px;color:var(--cx-text-mute, #64748b);">
             Tipo: <code>{tipo}</code> · Clave: <code>{clave_unica}</code><br>
             Generada {datetime.now().strftime('%Y-%m-%d %H:%M')} por el sistema de Marketing.
           </div>
@@ -1243,14 +1243,14 @@ def _build_reporte_ejecutivo_html(data):
                   f"{'+' if delta >= 0 else ''}{fmt_cop(delta)}"
                   f"{f' ({delta_pct:+}%)' if delta_pct is not None else ''}</span>")
     # SKUs
-    skus_html = '<p style="color:#94a3b8">Sin ventas esta semana</p>' if not data['top_skus'] else (
+    skus_html = '<p style="color:var(--cx-text-faint, #94a3b8)">Sin ventas esta semana</p>' if not data['top_skus'] else (
         '<ol style="padding-left:18px">' +
         ''.join(f"<li><b>{s['sku']}</b> · {fmt_cop(s['rev'])} ({int(s['uds'] or 0)} uds)</li>"
                 for s in data['top_skus']) +
         '</ol>'
     )
     # Influencers
-    inf_html = '<p style="color:#94a3b8">Ningún influencer con cupón generó ventas esta semana</p>' if not data['top_influencers'] else (
+    inf_html = '<p style="color:var(--cx-text-faint, #94a3b8)">Ningún influencer con cupón generó ventas esta semana</p>' if not data['top_influencers'] else (
         '<ol style="padding-left:18px">' +
         ''.join(f"<li><b>{i['nombre']}</b> ({i['discount_code']}) · {fmt_cop(i['revenue'])} en {int(i['pedidos'])} pedidos</li>"
                 for i in data['top_influencers']) +
@@ -1258,14 +1258,14 @@ def _build_reporte_ejecutivo_html(data):
     )
     # Alertas stock
     if not data['alertas_stock']:
-        stock_html = '<p style="color:#10b981">✅ Sin alertas críticas de stock</p>'
+        stock_html = '<p style="color:var(--cx-success-text, #10b981)">✅ Sin alertas críticas de stock</p>'
     else:
         stock_html = ('<ul style="padding-left:18px">' +
             ''.join(f"<li>⚠ <b>{a['sku']}</b>: {int(a['stock'])} uds · {a['dias_cobertura']}d cobertura</li>"
                     for a in data['alertas_stock']) + '</ul>')
     # Eventos
     if not data['eventos_proximos']:
-        ev_html = '<p style="color:#94a3b8">Sin eventos cosméticos en próximos 30 días</p>'
+        ev_html = '<p style="color:var(--cx-text-faint, #94a3b8)">Sin eventos cosméticos en próximos 30 días</p>'
     else:
         ev_html = '<ul style="padding-left:18px">' + ''.join(
             f"<li>📅 <b>{e['evento']}</b> · {e['fecha']} ({e['dias_restantes']}d) · ×{e['multiplicador']}</li>"
@@ -1275,38 +1275,38 @@ def _build_reporte_ejecutivo_html(data):
     if data.get('meta_mes'):
         m = data['meta_mes']
         meta_html = (
-            f"<h3 style='color:#10b981;margin-top:20px'>🎯 Meta del mes ({m['mes']})</h3>"
+            f"<h3 style='color:var(--cx-success-text, #10b981);margin-top:20px'>🎯 Meta del mes ({m['mes']})</h3>"
             f"<p>Revenue: <b>{fmt_cop(m['revenue_real'])}</b> / "
-            f"<span style='color:#94a3b8'>{fmt_cop(m['revenue_meta'])}</span>"
+            f"<span style='color:var(--cx-text-faint, #94a3b8)'>{fmt_cop(m['revenue_meta'])}</span>"
             f" ({m['revenue_pct'] or '—'}%) · Pedidos: <b>{m['pedidos_real']}</b> / {m['pedidos_meta']}</p>"
         )
     # B2B
     b2b_html = ''
     if data['b2b_proximos']:
-        b2b_html = ("<h3 style='color:#a78bfa;margin-top:20px'>📦 Pedidos B2B próximos</h3>"
+        b2b_html = ("<h3 style='color:var(--cx-primary-light, #a78bfa);margin-top:20px'>📦 Pedidos B2B próximos</h3>"
             "<ul style='padding-left:18px'>" +
             ''.join(f"<li><b>{p['cliente_nombre']}</b>: {int(p['cantidad_uds'])} uds {p['producto_nombre']} "
                     f"({p['fecha_estimada'] or 'sin fecha'} · {p['estado']})</li>"
                     for p in data['b2b_proximos']) + '</ul>')
-    return f"""<html><body style="font-family:Arial,sans-serif;max-width:680px;margin:auto;background:#0f172a;color:#f1f5f9;padding:30px;border-radius:12px">
+    return f"""<html><body style="font-family:Arial,sans-serif;max-width:680px;margin:auto;background:var(--cx-text, #0f172a);color:var(--cx-border-soft, #f1f5f9);padding:30px;border-radius:12px">
 <div style="border-bottom:2px solid #d4af37;padding-bottom:16px;margin-bottom:24px">
   <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:.15em;text-transform:uppercase">ÁNIMUS LAB · HHA Group</div>
   <h1 style="color:#fff;margin:4px 0 0;font-size:24px">Reporte ejecutivo semanal</h1>
-  <p style="color:#94a3b8;margin:4px 0 0;font-size:13px">Generado {data['generado_en']}</p>
+  <p style="color:var(--cx-text-faint, #94a3b8);margin:4px 0 0;font-size:13px">Generado {data['generado_en']}</p>
 </div>
 
 <h2 style="color:#fff;font-size:18px">💰 Ventas Shopify (últimos 7 días)</h2>
 <table style="width:100%;border-collapse:collapse;margin:12px 0">
   <tr>
-    <td style="padding:10px;background:#1e293b;border-radius:8px 0 0 8px">
-      <div style="font-size:10px;color:#94a3b8;text-transform:uppercase">Revenue</div>
+    <td style="padding:10px;background:var(--cx-text, #1e293b);border-radius:8px 0 0 8px">
+      <div style="font-size:10px;color:var(--cx-text-faint, #94a3b8);text-transform:uppercase">Revenue</div>
       <div style="font-size:22px;font-weight:800">{fmt_cop(sa['revenue'])}</div>
-      <div style="font-size:11px;color:#94a3b8">vs sem. anterior: {delta_str}</div>
+      <div style="font-size:11px;color:var(--cx-text-faint, #94a3b8)">vs sem. anterior: {delta_str}</div>
     </td>
-    <td style="padding:10px;background:#1e293b;border-left:1px solid #334155;border-radius:0 8px 8px 0">
-      <div style="font-size:10px;color:#94a3b8;text-transform:uppercase">Pedidos</div>
+    <td style="padding:10px;background:var(--cx-text, #1e293b);border-left:1px solid var(--cx-text-soft, #334155);border-radius:0 8px 8px 0">
+      <div style="font-size:10px;color:var(--cx-text-faint, #94a3b8);text-transform:uppercase">Pedidos</div>
       <div style="font-size:22px;font-weight:800">{sa['pedidos']}</div>
-      <div style="font-size:11px;color:#94a3b8">anterior: {sant['pedidos']}</div>
+      <div style="font-size:11px;color:var(--cx-text-faint, #94a3b8)">anterior: {sant['pedidos']}</div>
     </td>
   </tr>
 </table>
@@ -1314,10 +1314,10 @@ def _build_reporte_ejecutivo_html(data):
 <h3 style="color:#d4af37;margin-top:24px">🏆 Top 3 SKUs por revenue</h3>
 {skus_html}
 
-<h3 style="color:#a78bfa;margin-top:20px">👥 Top 3 influencers · revenue atribuible</h3>
+<h3 style="color:var(--cx-primary-light, #a78bfa);margin-top:20px">👥 Top 3 influencers · revenue atribuible</h3>
 {inf_html}
 
-<h3 style="color:#f59e0b;margin-top:20px">⚠ Alertas de stock crítico (≤7d cobertura)</h3>
+<h3 style="color:var(--cx-warn-text, #f59e0b);margin-top:20px">⚠ Alertas de stock crítico (≤7d cobertura)</h3>
 {stock_html}
 
 <h3 style="color:#34d399;margin-top:20px">📅 Eventos cosméticos próximos (≤30d)</h3>
@@ -1327,9 +1327,9 @@ def _build_reporte_ejecutivo_html(data):
 
 {b2b_html}
 
-<div style="margin-top:32px;padding-top:16px;border-top:1px solid #334155;font-size:11px;color:#64748b">
+<div style="margin-top:32px;padding-top:16px;border-top:1px solid var(--cx-text-soft, #334155);font-size:11px;color:var(--cx-text-mute, #64748b)">
   Generado automáticamente por el módulo Marketing de EOS · HHA Group<br>
-  Configurá metas mensuales y cupones en <a href="https://app.eossuite.com/marketing" style="color:#a78bfa">/marketing</a>
+  Configurá metas mensuales y cupones en <a href="https://app.eossuite.com/marketing" style="color:var(--cx-primary-light, #a78bfa)">/marketing</a>
 </div>
 </body></html>"""
 
@@ -5954,13 +5954,13 @@ def _notificar_alertas_criticas(conn, agente, alertas):
             sku_html = f"<br>SKU: <b>{a.get('sku')}</b>" if a.get('sku') else ""
             body = (
                 f"<h2>Alerta detectada por agente {agente}</h2>"
-                f"<div style='background:#fef2f2;border-left:4px solid #dc2626;padding:14px;border-radius:6px'>"
+                f"<div style='background:var(--cx-danger-pale, #fef2f2);border-left:4px solid var(--cx-danger, #dc2626);padding:14px;border-radius:6px'>"
                 f"<b>{a.get('tipo_alerta','')}</b> · severidad: {a.get('severidad','')}"
                 f"{sku_html}"
                 f"<br>{a.get('mensaje','')}"
                 f"</div>"
                 f"<p>Revisa <a href='/marketing'>el tab Hoy</a> para ver detalle y aplicar workflow.</p>"
-                f"<p style='color:#94a3b8;font-size:11px'>Mensaje automático HHA Group · Marketing</p>"
+                f"<p style='color:var(--cx-text-faint, #94a3b8);font-size:11px'>Mensaje automático HHA Group · Marketing</p>"
             )
             notif = SistemaNotificaciones()
             _th.Thread(

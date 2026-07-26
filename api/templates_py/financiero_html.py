@@ -13,39 +13,39 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .topbar{background:#B5924A;color:white;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(181,146,74,0.3);}
 .topbar-title{font-size:1.1em;font-weight:800;letter-spacing:2px;}
 .topbar a{color:rgba(255,255,255,0.8);text-decoration:none;font-size:0.82em;padding:6px 14px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;}
-.tabs{background:white;border-bottom:1px solid #E8E4DE;padding:0 28px;display:flex;gap:4px;}
+.tabs{background:var(--cx-card);border-bottom:1px solid var(--cx-border);padding:0 28px;display:flex;gap:4px;}
 .tab{padding:14px 22px;cursor:pointer;font-size:0.88em;font-weight:600;color:#9C8B7A;border-bottom:3px solid transparent;transition:all 0.2s;white-space:nowrap;}
 .tab.active{color:#B5924A;border-bottom-color:#B5924A;}
 .tab:hover:not(.active){color:#B5924A;background:#fdf9f4;}
 .content{padding:28px;max-width:1200px;margin:0 auto;}
 .page{display:none;}.page.active{display:block;}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px;}
-.kpi{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:20px 22px;border-left:4px solid var(--c,#B5924A);}
+.kpi{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:20px 22px;border-left:4px solid var(--c,#B5924A);}
 .kpi-val{font-size:1.8em;font-weight:900;color:var(--c,#B5924A);line-height:1;}
 .kpi-lbl{font-size:0.78em;color:#9C8B7A;text-transform:uppercase;letter-spacing:1px;margin-top:6px;}
 .kpi-sub{font-size:0.82em;color:#9C8B7A;margin-top:4px;}
 .kpi-delta{font-size:0.82em;margin-top:6px;font-weight:700;}
-.kpi-delta.up{color:#6d28d9;}.kpi-delta.down{color:#c0392b;}
-.tbl{width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,0.06);}
-.tbl thead th{background:#fdf9f4;color:#9C8B7A;font-size:0.78em;text-transform:uppercase;letter-spacing:0.8px;padding:10px 14px;text-align:left;border-bottom:1px solid #E8E4DE;}
+.kpi-delta.up{color:var(--cx-primary-text);}.kpi-delta.down{color:var(--cx-danger-text);}
+.tbl{width:100%;border-collapse:collapse;background:var(--cx-card);border-radius:10px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,0.06);}
+.tbl thead th{background:#fdf9f4;color:#9C8B7A;font-size:0.78em;text-transform:uppercase;letter-spacing:0.8px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--cx-border);}
 .tbl tbody td{padding:11px 14px;border-bottom:1px solid #F5F0EA;font-size:0.88em;vertical-align:middle;}
 .tbl tbody tr:hover{background:#fdf9f4;}
 .tbl tbody tr:last-child td{border-bottom:none;}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:none;border-radius:8px;cursor:pointer;font-size:0.88em;font-weight:600;transition:all 0.2s;background:#B5924A;color:white;}
 .btn:hover{background:#9a7a3e;}
-.btn-ghost{background:white;color:#B5924A;border:1.5px solid #B5924A;}
-.btn-red{background:#c0392b;}.btn-green{background:#6d28d9;}
-.card{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:22px;margin-bottom:20px;}
+.btn-ghost{background:var(--cx-card);color:#B5924A;border:1.5px solid #B5924A;}
+.btn-red{background:var(--cx-danger);}.btn-green{background:var(--cx-primary);}
+.card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:22px;margin-bottom:20px;}
 .section-title{font-size:1em;font-weight:800;color:#1C2B30;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:16px;}
 .fg label{display:block;font-size:0.78em;color:#9C8B7A;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:5px;}
-.fg input,.fg select,.fg textarea{width:100%;padding:9px 12px;border:1.5px solid #E8E4DE;border-radius:8px;font-size:0.9em;background:white;outline:none;transition:border-color 0.2s;}
+.fg input,.fg select,.fg textarea{width:100%;padding:9px 12px;border:1.5px solid var(--cx-border);border-radius:8px;font-size:0.9em;background:var(--cx-card);outline:none;transition:border-color 0.2s;}
 .fg input:focus,.fg select:focus{border-color:#B5924A;}
-.badge-ing{background:rgba(109,40,217,.1);color:#6d28d9;padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
-.badge-egr{background:rgba(192,57,43,.1);color:#c0392b;padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
-.chart-wrap{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:22px;margin-bottom:20px;}
-.flujo-pos{color:#6d28d9;font-weight:700;}
-.flujo-neg{color:#c0392b;font-weight:700;}
+.badge-ing{background:rgba(109,40,217,.1);color:var(--cx-primary-text);padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
+.badge-egr{background:rgba(192,57,43,.1);color:var(--cx-danger-text);padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
+.chart-wrap{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:22px;margin-bottom:20px;}
+.flujo-pos{color:var(--cx-primary-text);font-weight:700;}
+.flujo-neg{color:var(--cx-danger-text);font-weight:700;}
 .bar-container{width:100%;background:#f0eeea;border-radius:4px;height:8px;margin-top:6px;}
 .bar-fill{height:8px;border-radius:4px;background:var(--bc,#B5924A);transition:width 0.5s;}
 /* Mobile responsive · 27-may-2026 */
@@ -60,13 +60,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#15803d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/></svg>
       Financiero
     </div>
-    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; P&amp;L · flujo de caja · capital de trabajo · <span id="periodo-label" style="color:#a8a29e"></span></div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; P&amp;L · flujo de caja · capital de trabajo · <span id="periodo-label" style="color:var(--cx-text-faint)"></span></div>
   </div>
   <div class="cx-mod-header__nav">
     <a href="/gerencia" class="cx-btn cx-btn-ghost cx-btn-sm" title="Gerencia">Gerencia</a>
@@ -97,7 +97,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div class="kpi" style="--c:#c0392b"><div class="kpi-val" id="kpi-egr-mes">-</div><div class="kpi-lbl">Egresos del mes</div><div class="kpi-sub" id="kpi-egr-sub"></div></div>
     <div class="kpi" style="--c:#B5924A"><div class="kpi-val" id="kpi-flujo-mes">-</div><div class="kpi-lbl">Flujo neto mes</div><div class="kpi-sub" id="kpi-flujo-sub"></div></div>
     <div class="kpi" style="--c:#7A4A8B"><div class="kpi-val" id="kpi-caja">-</div><div class="kpi-lbl">Saldo de caja</div><div class="kpi-sub" id="kpi-caja-sub"></div></div>
-    <div class="kpi" style="--c:#10b981;border-left:3px solid #10b981;"><div class="kpi-val" id="kpi-shopify" style="color:#10b981;">-</div><div class="kpi-lbl">Shopify DTC · mes</div><div class="kpi-sub" id="kpi-shopify-sub"></div></div>
+    <div class="kpi" style="--c:#10b981;border-left:3px solid var(--cx-success);"><div class="kpi-val" id="kpi-shopify" style="color:var(--cx-success-text);">-</div><div class="kpi-lbl">Shopify DTC · mes</div><div class="kpi-sub" id="kpi-shopify-sub"></div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
     <div class="chart-wrap">
@@ -115,7 +115,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
   <div class="card" style="margin-top:20px">
     <div class="section-title">📊 Tendencia 12 meses · MoM</div>
-    <div id="mom-12-stats" style="display:flex;flex-wrap:wrap;gap:18px;font-size:0.88em;color:#7A6A55;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #E8E4DE">
+    <div id="mom-12-stats" style="display:flex;flex-wrap:wrap;gap:18px;font-size:0.88em;color:#7A6A55;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--cx-border)">
       <span>Cargando…</span>
     </div>
     <canvas id="chart-mom-12" height="160"></canvas>
@@ -132,7 +132,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
           </tr>
         </thead>
         <tbody id="mom-12-tbody">
-          <tr><td colspan="6" style="text-align:center;padding:18px;color:#999">Cargando…</td></tr>
+          <tr><td colspan="6" style="text-align:center;padding:18px;color:var(--cx-text-faint)">Cargando…</td></tr>
         </tbody>
       </table>
     </div>
@@ -172,17 +172,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div class="section-title" style="margin:0;">Historial de Ingresos</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <input type="text" placeholder="Buscar..." oninput="buscarTabla('ing', this.value)" style="padding:6px 10px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;max-width:180px">
-        <select id="ing-filtro-mes" onchange="loadIngresos()" style="padding:6px 12px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('ing', this.value)" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:0.85em;max-width:180px">
+        <select id="ing-filtro-mes" onchange="loadIngresos()" style="padding:6px 12px;border:1px solid var(--cx-border);border-radius:6px;font-size:0.85em;">
           <option value="">Todos los meses</option>
         </select>
       </div>
     </div>
     <table class="tbl">
       <thead><tr><th>Fecha</th><th>Empresa</th><th>Categoría</th><th>Concepto</th><th>Referencia</th><th style="text-align:right;">Monto</th></tr></thead>
-      <tbody id="ing-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Cargando...</td></tr></tbody>
+      <tbody id="ing-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-faint);">Cargando...</td></tr></tbody>
     </table>
-    <div id="ing-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:#6d28d9;"></div>
+    <div id="ing-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:var(--cx-primary-text);"></div>
     <div id="pg-ing"></div>
   </div>
 </div>
@@ -224,17 +224,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div class="section-title" style="margin:0;">Historial de Egresos</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <input type="text" placeholder="Buscar..." oninput="buscarTabla('egr', this.value)" style="padding:6px 10px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;max-width:180px">
-        <select id="egr-filtro-mes" onchange="loadEgresos()" style="padding:6px 12px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('egr', this.value)" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:0.85em;max-width:180px">
+        <select id="egr-filtro-mes" onchange="loadEgresos()" style="padding:6px 12px;border:1px solid var(--cx-border);border-radius:6px;font-size:0.85em;">
           <option value="">Todos los meses</option>
         </select>
       </div>
     </div>
     <table class="tbl">
       <thead><tr><th>Fecha</th><th>Empresa</th><th>Categoría</th><th>Concepto</th><th>Referencia</th><th style="text-align:right;">Monto</th></tr></thead>
-      <tbody id="egr-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Cargando...</td></tr></tbody>
+      <tbody id="egr-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-faint);">Cargando...</td></tr></tbody>
     </table>
-    <div id="egr-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:#c0392b;"></div>
+    <div id="egr-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:var(--cx-danger-text);"></div>
     <div id="pg-egr"></div>
   </div>
 </div>
@@ -247,13 +247,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <table class="tbl" id="flujo-tbl">
       <thead><tr>
         <th>Período</th>
-        <th style="text-align:right;color:#6d28d9;">Ingresos</th>
-        <th style="text-align:right;color:#c0392b;">Egresos</th>
+        <th style="text-align:right;color:var(--cx-primary-text);">Ingresos</th>
+        <th style="text-align:right;color:var(--cx-danger-text);">Egresos</th>
         <th style="text-align:right;">Flujo Neto</th>
         <th style="text-align:right;">Acumulado</th>
         <th>Estado</th>
       </tr></thead>
-      <tbody id="flujo-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Cargando...</td></tr></tbody>
+      <tbody id="flujo-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-faint);">Cargando...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -275,10 +275,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <div class="card" style="border:1px solid rgba(34,211,238,0.3);">
     <div class="section-title" style="color:#22d3ee;">🛍️ Sync automático Shopify → Ingresos</div>
     <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:12px;">Importa los pedidos pagados de Shopify como ingresos en el flujo financiero. Idempotente: cada pedido solo se importa una vez (marcado <code>flujo_synced=1</code>).</p>
-    <div id="shopify-sync-status" style="background:#0f172a;padding:12px;border-radius:8px;margin-bottom:12px;font-size:0.85em;color:#94a3b8;">Cargando estado...</div>
+    <div id="shopify-sync-status" style="background:var(--cx-text);padding:12px;border-radius:8px;margin-bottom:12px;font-size:0.85em;color:var(--cx-text-faint);">Cargando estado...</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn btn-ghost" onclick="syncShopifyDryRun()" style="border-color:#22d3ee;color:#22d3ee;">👁️ Previsualizar</button>
-      <button class="btn btn-ghost" onclick="syncShopifyEjecutar()" style="background:#0e7490;color:#fff;border-color:#0e7490;">✨ Sincronizar ahora</button>
+      <button class="btn btn-ghost" onclick="syncShopifyEjecutar()" style="background:var(--cx-info);color:#fff;border-color:var(--cx-info);">✨ Sincronizar ahora</button>
     </div>
     <div id="shopify-sync-msg" style="margin-top:10px;font-size:0.88em;"></div>
   </div>
@@ -288,9 +288,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <button class="btn btn-ghost" onclick="importarOCs()">📦 Importar OCs recibidas como egresos</button>
     <div id="import-msg" style="margin-top:10px;"></div>
     <div style="margin-top:20px;padding-top:16px;border-top:1px solid #2d2420;">
-      <div style="font-size:0.82em;color:#dc2626;font-weight:600;margin-bottom:8px;">⚠️ Zona de peligro - solo admin</div>
+      <div style="font-size:0.82em;color:var(--cx-danger-text);font-weight:600;margin-bottom:8px;">⚠️ Zona de peligro - solo admin</div>
       <p style="font-size:0.82em;color:#9C8B7A;margin-bottom:10px;">Elimina <strong>todos</strong> los registros de flujo de egresos e ingresos (útil si hay datos incorrectos importados).</p>
-      <button class="btn btn-ghost" style="border-color:#dc2626;color:#dc2626;" onclick="limpiarFlujo()">🗑️ Limpiar todo el flujo (egresos e ingresos)</button>
+      <button class="btn btn-ghost" style="border-color:var(--cx-danger);color:var(--cx-danger-text);" onclick="limpiarFlujo()">🗑️ Limpiar todo el flujo (egresos e ingresos)</button>
       <div id="limpiar-msg" style="margin-top:8px;font-size:0.82em;"></div>
     </div>
   </div>
@@ -392,17 +392,17 @@ function _paginar(data, page, size) {
 function _renderPag(tabla, info) {
   var s = TBL_STATE[tabla];
   if (info.total <= s.size && info.total < 51) {
-    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+    return '<div style="font-size:11px;color:var(--cx-text-mute);padding:6px 0;">' + info.total + ' filas</div>';
   }
-  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#64748b;">';
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:var(--cx-text-mute);">';
   html += '<span>P' + String.fromCharCode(225) + 'g ' + info.page + '/' + info.totalPages + ' ' + String.fromCharCode(183) + ' ' + info.total + '</span>';
   html += '<span style="flex:1"></span>';
   html += '<button class="btn-sm" data-act="prev" data-tbl="' + tabla + '"' +
-          (info.page <= 1 ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&larr;</button>';
+          (info.page <= 1 ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid var(--cx-border);border-radius:5px;background:var(--cx-card);cursor:pointer">&larr;</button>';
   html += '<button class="btn-sm" data-act="next" data-tbl="' + tabla + '"' +
-          (info.page >= info.totalPages ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&rarr;</button>';
+          (info.page >= info.totalPages ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid var(--cx-border);border-radius:5px;background:var(--cx-card);cursor:pointer">&rarr;</button>';
   html += '<select data-act="size" data-tbl="' + tabla + '" ' +
-          'style="border:1px solid #cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+          'style="border:1px solid var(--cx-border);padding:4px 6px;border-radius:5px;font-size:12px;">';
   ['25','50','100','999'].forEach(function(o){
     var label = o === '999' ? 'Todas' : o;
     html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
@@ -488,12 +488,12 @@ async function loadDashboard(){
     // Desglose
     var des='<table style="width:100%;font-size:0.88em;">';
     if(d.desglose_ing&&d.desglose_ing.length){
-      des+='<tr><td colspan="2" style="font-weight:700;color:#6d28d9;padding:6px 0;">INGRESOS</td></tr>';
-      d.desglose_ing.forEach(function(r){des+='<tr><td style="color:#666;">'+r.categoria+'</td><td style="text-align:right;font-weight:600;">'+fmt(r.total)+'</td></tr>';});
+      des+='<tr><td colspan="2" style="font-weight:700;color:var(--cx-primary-text);padding:6px 0;">INGRESOS</td></tr>';
+      d.desglose_ing.forEach(function(r){des+='<tr><td style="color:var(--cx-text-mute);">'+r.categoria+'</td><td style="text-align:right;font-weight:600;">'+fmt(r.total)+'</td></tr>';});
     }
     if(d.desglose_egr&&d.desglose_egr.length){
-      des+='<tr><td colspan="2" style="font-weight:700;color:#c0392b;padding:6px 0;padding-top:14px;">EGRESOS</td></tr>';
-      d.desglose_egr.forEach(function(r){des+='<tr><td style="color:#666;">'+r.categoria+'</td><td style="text-align:right;font-weight:600;">'+fmt(r.total)+'</td></tr>';});
+      des+='<tr><td colspan="2" style="font-weight:700;color:var(--cx-danger-text);padding:6px 0;padding-top:14px;">EGRESOS</td></tr>';
+      d.desglose_egr.forEach(function(r){des+='<tr><td style="color:var(--cx-text-mute);">'+r.categoria+'</td><td style="text-align:right;font-weight:600;">'+fmt(r.total)+'</td></tr>';});
     }
     des+='</table>';
     document.getElementById('desglose-mes').innerHTML=des;
@@ -502,7 +502,7 @@ async function loadDashboard(){
     var metaCaja=parseFloat(_config.meta_caja_min||50000000);
     if((d.saldo_caja||0)<metaCaja) alertas+='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:8px;">🟡 Saldo de caja ($'+fmt(d.saldo_caja||0)+') está por debajo del mínimo ($'+fmt(metaCaja)+')</div>';
     if(flujo<0) alertas+='<div style="background:#fde8e8;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:8px;">🔴 Flujo neto negativo este mes: '+fmt(flujo)+'</div>';
-    if(!alertas) alertas='<div style="color:#6d28d9;font-size:0.92em;padding:8px;">✅ Sin alertas críticas este mes.</div>';
+    if(!alertas) alertas='<div style="color:var(--cx-primary-text);font-size:0.92em;padding:8px;">✅ Sin alertas críticas este mes.</div>';
     document.getElementById('alertas-fin').innerHTML=alertas;
     // Chart
     if(d.historico&&d.historico.length){
@@ -542,7 +542,7 @@ async function loadMoM12(){
       if(s.peor_mes) parts.push('📉 Peor: <b>'+s.peor_mes+'</b> ('+fmt(s.peor_mes_margen)+')');
       if(s.margen_promedio !== undefined) parts.push('📊 Promedio: <b>'+fmt(s.margen_promedio)+'</b>');
       if(s.top_categoria_egreso) parts.push('💸 Top egreso: <b>'+s.top_categoria_egreso+'</b> ('+fmt(s.top_categoria_egreso_monto)+')');
-      statsEl.innerHTML = parts.length ? parts.join(' · ') : '<span style="color:#999">Sin datos en los últimos 12 meses</span>';
+      statsEl.innerHTML = parts.length ? parts.join(' · ') : '<span style="color:var(--cx-text-faint)">Sin datos en los últimos 12 meses</span>';
     }
 
     // Chart bar dual: ingresos / egresos / margen line
@@ -589,7 +589,7 @@ async function loadMoM12(){
         return '<tr style="border-bottom:1px solid #F5F0E8">'
           +'<td style="padding:8px 10px"><b>'+m.periodo+'</b></td>'
           +'<td style="padding:8px 10px;text-align:right;cursor:pointer;text-decoration:underline dotted #94a3b8" onclick=\\\''+clickIng+'\\\' title="Ver desglose">'+fmt(m.ingresos)+'</td>'
-          +'<td style="padding:8px 10px;text-align:right;color:#c0392b;cursor:pointer;text-decoration:underline dotted #fca5a5" onclick=\\\''+clickEgr+'\\\' title="Ver desglose">'+fmt(m.egresos)+'</td>'
+          +'<td style="padding:8px 10px;text-align:right;color:var(--cx-danger-text);cursor:pointer;text-decoration:underline dotted #fca5a5" onclick=\\\''+clickEgr+'\\\' title="Ver desglose">'+fmt(m.egresos)+'</td>'
           +'<td style="padding:8px 10px;text-align:right;color:'+marColor+';font-weight:700">'+fmt(m.margen)+'</td>'
           +'<td style="padding:8px 10px;text-align:right;color:#7A6A55">'+m.margen_pct.toFixed(1)+'%</td>'
           +'<td style="padding:8px 10px;text-align:right">'+momHtml+'</td>'
@@ -618,14 +618,14 @@ async function loadIngresos(){
     s.page=info.page;
     var pgEl=document.getElementById('pg-ing');
     var h='';
-    if(!info.items.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">'+(s.q?'Sin coincidencias':'Sin ingresos registrados')+'</td></tr>';}
+    if(!info.items.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-faint);">'+(s.q?'Sin coincidencias':'Sin ingresos registrados')+'</td></tr>';}
     info.items.forEach(function(r){
       h+='<tr><td>'+((r.fecha||'').substring(0,10))+'</td>';
       h+='<td><span class="badge-ing">'+r.empresa+'</span></td>';
       h+='<td>'+r.categoria+'</td>';
       h+='<td>'+r.concepto+'</td>';
-      h+='<td style="color:#888;font-size:0.85em;">'+(r.referencia||'')+'</td>';
-      h+='<td style="text-align:right;font-weight:700;color:#6d28d9;">'+fmtFull(r.monto)+'</td></tr>';
+      h+='<td style="color:var(--cx-text-mute);font-size:0.85em;">'+(r.referencia||'')+'</td>';
+      h+='<td style="text-align:right;font-weight:700;color:var(--cx-primary-text);">'+fmtFull(r.monto)+'</td></tr>';
     });
     document.getElementById('ing-tbody').innerHTML=h;
     document.getElementById('ing-total').textContent='Total: '+fmtFull(total);
@@ -651,14 +651,14 @@ async function loadEgresos(){
     st.page=info.page;
     var pgEl=document.getElementById('pg-egr');
     var h='';
-    if(!info.items.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">'+(st.q?'Sin coincidencias':'Sin egresos registrados')+'</td></tr>';}
+    if(!info.items.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-faint);">'+(st.q?'Sin coincidencias':'Sin egresos registrados')+'</td></tr>';}
     info.items.forEach(function(r){
       h+='<tr><td>'+((r.fecha||'').substring(0,10))+'</td>';
       h+='<td><span class="badge-egr">'+r.empresa+'</span></td>';
       h+='<td>'+r.categoria+'</td>';
       h+='<td>'+r.concepto+'</td>';
-      h+='<td style="color:#888;font-size:0.85em;">'+(r.referencia||'')+'</td>';
-      h+='<td style="text-align:right;font-weight:700;color:#c0392b;">'+fmtFull(r.monto)+'</td></tr>';
+      h+='<td style="color:var(--cx-text-mute);font-size:0.85em;">'+(r.referencia||'')+'</td>';
+      h+='<td style="text-align:right;font-weight:700;color:var(--cx-danger-text);">'+fmtFull(r.monto)+'</td></tr>';
     });
     document.getElementById('egr-tbody').innerHTML=h;
     document.getElementById('egr-total').textContent='Total egresos: '+fmtFull(total);
@@ -672,15 +672,15 @@ async function loadFlujo(){
     var meses=d.meses||[];
     var acum=0;
     var h='';
-    if(!meses.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin datos de flujo</td></tr>';}
+    if(!meses.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-faint);">Sin datos de flujo</td></tr>';}
     meses.forEach(function(m){
       var flujo=(m.ingresos||0)-(m.egresos||0);
       acum+=flujo;
       var cls=flujo>=0?'flujo-pos':'flujo-neg';
       var acls=acum>=0?'flujo-pos':'flujo-neg';
       h+='<tr><td style="font-weight:600;">'+m.periodo+'</td>';
-      h+='<td style="text-align:right;color:#6d28d9;font-weight:700;">'+fmtFull(m.ingresos||0)+'</td>';
-      h+='<td style="text-align:right;color:#c0392b;font-weight:700;">'+fmtFull(m.egresos||0)+'</td>';
+      h+='<td style="text-align:right;color:var(--cx-primary-text);font-weight:700;">'+fmtFull(m.ingresos||0)+'</td>';
+      h+='<td style="text-align:right;color:var(--cx-danger-text);font-weight:700;">'+fmtFull(m.egresos||0)+'</td>';
       h+='<td style="text-align:right;" class="'+cls+'">'+fmtFull(flujo)+'</td>';
       h+='<td style="text-align:right;" class="'+acls+'">'+fmtFull(acum)+'</td>';
       h+='<td><span style="background:'+(flujo>=0?'rgba(109,40,217,.1)':'rgba(192,57,43,.1)')+';color:'+(flujo>=0?'#6d28d9':'#c0392b')+';padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;">'+(flujo>=0?'Superávit':'Déficit')+'</span></td></tr>';
@@ -722,7 +722,7 @@ async function guardarConfig(){
   });
   var r=await fetch('/api/financiero/config',_fetchOpts('POST', updates));
   var d=await r.json();
-  document.getElementById('config-msg').innerHTML=r.ok?'<span style="color:#6d28d9;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
+  document.getElementById('config-msg').innerHTML=r.ok?'<span style="color:var(--cx-primary-text);">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
 }
 
 async function guardarIngreso(){
@@ -736,7 +736,7 @@ async function guardarIngreso(){
   if(!fecha){fecha=new Date().toISOString().substring(0,10);}
   var r=await fetch('/api/financiero/ingresos',_fetchOpts('POST', {fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref}));
   var d=await r.json();
-  document.getElementById('ing-msg').innerHTML=r.ok?'<span style="color:#6d28d9;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
+  document.getElementById('ing-msg').innerHTML=r.ok?'<span style="color:var(--cx-primary-text);">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
   if(r.ok){document.getElementById('ing-concepto').value='';document.getElementById('ing-monto').value='';document.getElementById('ing-ref').value='';loadIngresos();}
 }
 
@@ -751,7 +751,7 @@ async function guardarEgreso(){
   if(!fecha){fecha=new Date().toISOString().substring(0,10);}
   var r=await fetch('/api/financiero/egresos',_fetchOpts('POST', {fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref}));
   var d=await r.json();
-  document.getElementById('egr-msg').innerHTML=r.ok?'<span style="color:#c0392b;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
+  document.getElementById('egr-msg').innerHTML=r.ok?'<span style="color:var(--cx-danger-text);">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
   if(r.ok){document.getElementById('egr-concepto').value='';document.getElementById('egr-monto').value='';document.getElementById('egr-ref').value='';loadEgresos();}
 }
 
@@ -777,7 +777,7 @@ async function limpiarFlujo(){
 async function importarOCs(){
   var r=await fetch('/api/financiero/importar-ocs',_fetchOpts('POST'));
   var d=await r.json();
-  document.getElementById('import-msg').innerHTML=r.ok?'<span style="color:#6d28d9;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
+  document.getElementById('import-msg').innerHTML=r.ok?'<span style="color:var(--cx-primary-text);">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   if(r.ok)loadEgresos();
 }
 
@@ -794,12 +794,12 @@ async function loadShopifyStatus(){
     var fmt = function(n) { return (n||0).toLocaleString('es-CO'); };
     document.getElementById('shopify-sync-status').innerHTML =
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">' +
-        '<div><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Pendientes de sync</div>' +
-          '<div style="font-size:1.4em;font-weight:700;color:#fbbf24;">' + d.pendientes_count + '</div>' +
-          '<div style="font-size:11px;color:#94a3b8;">$' + fmt(d.pendientes_total) + ' COP</div></div>' +
-        '<div><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Ya sincronizados</div>' +
+        '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;">Pendientes de sync</div>' +
+          '<div style="font-size:1.4em;font-weight:700;color:var(--cx-accent);">' + d.pendientes_count + '</div>' +
+          '<div style="font-size:11px;color:var(--cx-text-faint);">$' + fmt(d.pendientes_total) + ' COP</div></div>' +
+        '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;">Ya sincronizados</div>' +
           '<div style="font-size:1.4em;font-weight:700;color:#34d399;">' + d.sincronizados_count + '</div>' +
-          '<div style="font-size:11px;color:#94a3b8;">$' + fmt(d.sincronizados_total) + ' COP - ult: ' + (d.ultimo_sync_fecha||'nunca') + '</div></div>' +
+          '<div style="font-size:11px;color:var(--cx-text-faint);">$' + fmt(d.sincronizados_total) + ' COP - ult: ' + (d.ultimo_sync_fecha||'nunca') + '</div></div>' +
       '</div>';
   } catch(e) {
     document.getElementById('shopify-sync-status').textContent = 'Error: ' + e.message;
@@ -808,7 +808,7 @@ async function loadShopifyStatus(){
 
 async function syncShopifyDryRun() {
   var msg = document.getElementById('shopify-sync-msg');
-  msg.innerHTML = '<span style="color:#94a3b8;">Calculando...</span>';
+  msg.innerHTML = '<span style="color:var(--cx-text-faint);">Calculando...</span>';
   var r = await fetch('/api/financiero/sync-shopify-ingresos', _fetchOpts('POST', {dry_run: true, solo_pagados: true}));
   var d = await r.json();
   if (!r.ok) { msg.innerHTML = '<span style="color:#fca5a5;">' + (d.error||'Error') + '</span>'; return; }
@@ -823,7 +823,7 @@ async function syncShopifyEjecutar() {
   var msg = document.getElementById('shopify-sync-msg');
   var btnDis = document.querySelectorAll('#shopify-sync-status ~ div button');
   btnDis.forEach(function(b){b.disabled=true;});
-  msg.innerHTML = '<span style="color:#94a3b8;">Sincronizando...</span>';
+  msg.innerHTML = '<span style="color:var(--cx-text-faint);">Sincronizando...</span>';
   var r = await fetch('/api/financiero/sync-shopify-ingresos', _fetchOpts('POST', {solo_pagados: true}));
   var d = await r.json();
   btnDis.forEach(function(b){b.disabled=false;});
@@ -841,20 +841,20 @@ async function loadPreciosMayorista(){
     var data=await r.json();
     if(!data.length){document.getElementById('precios-list').innerHTML='<p style="color:#9C8B7A;font-size:0.88em;">Sin SKUs registrados.</p>';return;}
     var h='<table style="width:100%;border-collapse:collapse;font-size:0.88em;">';
-    h+='<thead><tr style="border-bottom:2px solid #eee;">';
-    h+='<th style="text-align:left;padding:8px 6px;color:#555;">SKU</th>';
-    h+='<th style="text-align:left;padding:8px 6px;color:#555;">Producto</th>';
-    h+='<th style="text-align:right;padding:8px 6px;color:#555;">Precio Mayorista (COP)</th>';
-    h+='<th style="text-align:center;padding:8px 6px;color:#555;">Unidad</th>';
+    h+='<thead><tr style="border-bottom:2px solid var(--cx-border-soft);">';
+    h+='<th style="text-align:left;padding:8px 6px;color:var(--cx-text-soft);">SKU</th>';
+    h+='<th style="text-align:left;padding:8px 6px;color:var(--cx-text-soft);">Producto</th>';
+    h+='<th style="text-align:right;padding:8px 6px;color:var(--cx-text-soft);">Precio Mayorista (COP)</th>';
+    h+='<th style="text-align:center;padding:8px 6px;color:var(--cx-text-soft);">Unidad</th>';
     h+='<th style="padding:8px 6px;"></th>';
     h+='</tr></thead><tbody>';
     data.forEach(function(s){
       h+='<tr style="border-bottom:1px solid #f0f0f0;">';
-      h+='<td style="padding:8px 6px;font-family:monospace;color:#6d28d9;font-weight:700;">'+s.sku+'</td>';
+      h+='<td style="padding:8px 6px;font-family:monospace;color:var(--cx-primary-text);font-weight:700;">'+s.sku+'</td>';
       h+='<td style="padding:8px 6px;">'+s.descripcion+'</td>';
-      h+='<td style="padding:8px 6px;text-align:right;"><input type="number" id="pm-'+s.sku+'" value="'+(s.precio_mayorista||0)+'" min="0" step="100" style="width:120px;padding:5px 8px;border:1px solid #dde;border-radius:6px;text-align:right;font-size:0.95em;"></td>';
-      h+='<td style="padding:8px 6px;text-align:center;color:#888;">'+s.unidad+'</td>';
-      h+='<td style="padding:8px 6px;"><button onclick="guardarPrecio(&apos;'+s.sku+'&apos;)" style="padding:5px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Guardar</button></td>';
+      h+='<td style="padding:8px 6px;text-align:right;"><input type="number" id="pm-'+s.sku+'" value="'+(s.precio_mayorista||0)+'" min="0" step="100" style="width:120px;padding:5px 8px;border:1px solid var(--cx-border);border-radius:6px;text-align:right;font-size:0.95em;"></td>';
+      h+='<td style="padding:8px 6px;text-align:center;color:var(--cx-text-mute);">'+s.unidad+'</td>';
+      h+='<td style="padding:8px 6px;"><button onclick="guardarPrecio(&apos;'+s.sku+'&apos;)" style="padding:5px 12px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Guardar</button></td>';
       h+='</tr>';
     });
     h+='</tbody></table>';
@@ -869,7 +869,7 @@ async function guardarPrecio(sku){
   var r=await fetch('/api/financiero/precios-mayorista/'+encodeURIComponent(sku),_fetchOpts('POST', {precio_mayorista:precio}));
   var d=await r.json();
   var msg=document.getElementById('precios-msg');
-  msg.innerHTML=r.ok?'<span style="color:#6d28d9;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
+  msg.innerHTML=r.ok?'<span style="color:var(--cx-primary-text);">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   setTimeout(function(){msg.innerHTML='';},2500);
 }
 
@@ -882,14 +882,14 @@ async function cargarCuarentena(){
     var r=await fetch('/api/lotes/cuarentena');
     var data=await r.json();
     var tb=document.getElementById('cuar-tbody');
-    if(!data.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin lotes pendientes de revision QC</td></tr>';return;}
+    if(!data.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--cx-text-faint);padding:20px;">Sin lotes pendientes de revision QC</td></tr>';return;}
     var h='';
     data.forEach(function(l){
       var esAdmin=(OPER_ACTUAL==='sebastian'||OPER_ACTUAL==='alejandro'||OPER_ACTUAL==='hernando');
       var estadoColor=l.estado_lote==='CUARENTENA'?'#e67e22':l.estado_lote==='CUARENTENA_EXTENDIDA'?'#c0392b':'#888';
       h+='<tr>';
       h+='<td style="font-family:monospace;font-size:0.85em;">'+l.codigo_mp+'</td>';
-      h+='<td style="font-size:0.8em;color:#555;">'+(l.nombre_inci||'')+'</td>';
+      h+='<td style="font-size:0.8em;color:var(--cx-text-soft);">'+(l.nombre_inci||'')+'</td>';
       h+='<td>'+l.nombre+'</td>';
       h+='<td style="font-family:monospace;font-weight:600;">'+l.lote+'</td>';
       h+='<td style="text-align:right;font-weight:600;">'+l.cantidad.toLocaleString()+'</td>';
@@ -899,9 +899,9 @@ async function cargarCuarentena(){
       h+='<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:700;">'+l.estado_lote.replace('_',' ')+'</span></td>';
       h+='<td>';
       if(esAdmin){
-        h+='<button onclick="abrirCCModal('+JSON.stringify(l)+')" style="padding:5px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
+        h+='<button onclick="abrirCCModal('+JSON.stringify(l)+')" style="padding:5px 12px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
       }else{
-        h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
+        h+='<span style="color:var(--cx-text-faint);font-size:0.82em;">Solo CC/Admin</span>';
       }
       h+='</td></tr>';
     });
@@ -1043,7 +1043,7 @@ async function buscarTrazabilidad(){
     document.getElementById('trz-nprod').textContent=data.total_producciones;
     var tb=document.getElementById('trz-prod-tbody');
     if(!data.producciones.length){
-      tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:#999;">Este lote no ha sido usado en produccion</td></tr>';
+      tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--cx-text-faint);">Este lote no ha sido usado en produccion</td></tr>';
     } else {
       var h='';
       data.producciones.forEach(function(p){
@@ -1060,11 +1060,11 @@ async function buscarTrazabilidadPT(){
   if(!lote){alert('Ingresa un numero de lote PT (ej: PROD-00001)');return;}
   var div=document.getElementById('trz-result');
   if(!div)return;
-  div.innerHTML='<p style="color:#888;font-size:0.9em;">Buscando...</p>';
+  div.innerHTML='<p style="color:var(--cx-text-mute);font-size:0.9em;">Buscando...</p>';
   try{
     var r=await fetch('/api/trazabilidad/lote-pt/'+encodeURIComponent(lote));
     var d=await r.json();
-    if(d.error){div.innerHTML='<div style="color:#e74c3c;padding:12px;background:#ffeaea;border-radius:8px;">'+d.error+'</div>';return;}
+    if(d.error){div.innerHTML='<div style="color:var(--cx-danger-text);padding:12px;background:#ffeaea;border-radius:8px;">'+d.error+'</div>';return;}
     var html='<div style="background:#f8f9ff;border:1px solid #c3cfe2;border-radius:10px;padding:16px;margin-bottom:12px;">';
     html+='<h4 style="margin:0 0 10px;color:#6c5ce7;">&#128203; Lote PT: '+d.lote_ref+'</h4>';
     if(d.produccion){
@@ -1077,18 +1077,18 @@ async function buscarTrazabilidadPT(){
       html+='</div>';
     }
     var mps=d.mps_consumidas||[];
-    html+='<h5 style="margin:0 0 8px;color:#6d28d9;">Materias Primas Consumidas ('+mps.length+')</h5>';
+    html+='<h5 style="margin:0 0 8px;color:var(--cx-primary-text);">Materias Primas Consumidas ('+mps.length+')</h5>';
     if(mps.length){
       html+='<table style="width:100%;font-size:0.82em;border-collapse:collapse;">';
       html+='<thead><tr style="background:#f0f0f0;"><th style="padding:4px 8px;text-align:left;">Lote MP</th><th style="padding:4px 8px;text-align:left;">Material</th><th style="padding:4px 8px;text-align:right;">Cant (g)</th><th style="padding:4px 8px;text-align:left;">Proveedor</th><th style="padding:4px 8px;text-align:left;">Vence</th></tr></thead><tbody>';
       var det=d.detalle_lotes_mp||{};
       mps.forEach(function(m){
         var info=det[m.lote]||{};
-        html+='<tr style="border-bottom:1px solid #eee;"><td style="padding:4px 8px;font-family:monospace;font-size:0.9em;">'+m.lote+'</td><td style="padding:4px 8px;">'+(m.material||'&#8212;')+'</td><td style="padding:4px 8px;text-align:right;">'+Number(m.cantidad_g||0).toLocaleString()+'</td><td style="padding:4px 8px;">'+(info.proveedor||'&#8212;')+'</td><td style="padding:4px 8px;">'+(info.vencimiento?info.vencimiento.substring(0,10):'&#8212;')+'</td></tr>';
+        html+='<tr style="border-bottom:1px solid var(--cx-border-soft);"><td style="padding:4px 8px;font-family:monospace;font-size:0.9em;">'+m.lote+'</td><td style="padding:4px 8px;">'+(m.material||'&#8212;')+'</td><td style="padding:4px 8px;text-align:right;">'+Number(m.cantidad_g||0).toLocaleString()+'</td><td style="padding:4px 8px;">'+(info.proveedor||'&#8212;')+'</td><td style="padding:4px 8px;">'+(info.vencimiento?info.vencimiento.substring(0,10):'&#8212;')+'</td></tr>';
       });
       html+='</tbody></table>';
     } else {
-      html+='<p style="color:#999;font-size:0.85em;">No se encontraron lotes MP asociados (la produccion puede no tener lote asignado aun).</p>';
+      html+='<p style="color:var(--cx-text-faint);font-size:0.85em;">No se encontraron lotes MP asociados (la produccion puede no tener lote asignado aun).</p>';
     }
     var desp=d.despachos||[];
     if(desp.length){
@@ -1101,7 +1101,7 @@ async function buscarTrazabilidadPT(){
     }
     html+='</div>';
     div.innerHTML=html;
-  }catch(e){div.innerHTML='<div style="color:#e74c3c;padding:12px;background:#ffeaea;border-radius:8px;">Error: '+e.message+'</div>';}
+  }catch(e){div.innerHTML='<div style="color:var(--cx-danger-text);padding:12px;background:#ffeaea;border-radius:8px;">Error: '+e.message+'</div>';}
 }
 
 async function buscarTrazabilidadMP(){
@@ -1110,16 +1110,16 @@ async function buscarTrazabilidadMP(){
   if(!lote){alert('Ingresa un numero de lote MP (ej: ESP240115MP1)');return;}
   var div=document.getElementById('trz-result');
   if(!div)return;
-  div.innerHTML='<p style="color:#888;font-size:0.9em;">Buscando...</p>';
+  div.innerHTML='<p style="color:var(--cx-text-mute);font-size:0.9em;">Buscando...</p>';
   try{
     var r=await fetch('/api/trazabilidad/lote-mp/'+encodeURIComponent(lote));
     var d=await r.json();
-    if(d.error){div.innerHTML='<div style="color:#e74c3c;padding:12px;background:#ffeaea;border-radius:8px;">'+d.error+'</div>';return;}
+    if(d.error){div.innerHTML='<div style="color:var(--cx-danger-text);padding:12px;background:#ffeaea;border-radius:8px;">'+d.error+'</div>';return;}
     var html='<div style="background:#f8fff8;border:1px solid #c3e2cf;border-radius:10px;padding:16px;margin-bottom:12px;">';
     html+='<h4 style="margin:0 0 10px;color:#00b894;">&#128203; Lote MP: '+d.lote_mp+'</h4>';
     if(d.material){
       var mat=d.material;
-      html+='<div style="font-size:0.88em;margin-bottom:12px;"><b>Material:</b> '+(mat.nombre||d.lote_mp)+' <span style="color:#888;">('+d.lote_mp+')</span>';
+      html+='<div style="font-size:0.88em;margin-bottom:12px;"><b>Material:</b> '+(mat.nombre||d.lote_mp)+' <span style="color:var(--cx-text-mute);">('+d.lote_mp+')</span>';
       if(mat.proveedor) html+=' | <b>Proveedor:</b> '+mat.proveedor;
       if(mat.fecha_ingreso) html+=' | <b>Ingreso:</b> '+mat.fecha_ingreso.substring(0,10);
       html+='</div>';
@@ -1129,11 +1129,11 @@ async function buscarTrazabilidadMP(){
     if(prods.length){
       html+='<table style="width:100%;font-size:0.82em;border-collapse:collapse;"><thead><tr style="background:#f0f0f8;"><th style="padding:4px 8px;text-align:left;">Lote PT</th><th style="padding:4px 8px;text-align:left;">Producto</th><th style="padding:4px 8px;text-align:left;">Fecha</th><th style="padding:4px 8px;text-align:right;">Cant (g)</th></tr></thead><tbody>';
       prods.forEach(function(p){
-        html+='<tr style="border-bottom:1px solid #eee;"><td style="padding:4px 8px;font-family:monospace;font-size:0.9em;">'+(p.lote_ref||'&#8212;')+'</td><td style="padding:4px 8px;">'+(p.producto||'&#8212;')+'</td><td style="padding:4px 8px;">'+(p.fecha?p.fecha.substring(0,10):'&#8212;')+'</td><td style="padding:4px 8px;text-align:right;">'+Number(p.cantidad_g||0).toLocaleString()+'</td></tr>';
+        html+='<tr style="border-bottom:1px solid var(--cx-border-soft);"><td style="padding:4px 8px;font-family:monospace;font-size:0.9em;">'+(p.lote_ref||'&#8212;')+'</td><td style="padding:4px 8px;">'+(p.producto||'&#8212;')+'</td><td style="padding:4px 8px;">'+(p.fecha?p.fecha.substring(0,10):'&#8212;')+'</td><td style="padding:4px 8px;text-align:right;">'+Number(p.cantidad_g||0).toLocaleString()+'</td></tr>';
       });
       html+='</tbody></table>';
     } else {
-      html+='<p style="color:#999;font-size:0.85em;">No se encontraron producciones para este lote.</p>';
+      html+='<p style="color:var(--cx-text-faint);font-size:0.85em;">No se encontraron producciones para este lote.</p>';
     }
     var clientes=d.clientes_afectados||[];
     if(clientes.length){
@@ -1146,7 +1146,7 @@ async function buscarTrazabilidadMP(){
     }
     html+='</div>';
     div.innerHTML=html;
-  }catch(e){div.innerHTML='<div style="color:#e74c3c;padding:12px;background:#ffeaea;border-radius:8px;">Error: '+e.message+'</div>';}
+  }catch(e){div.innerHTML='<div style="color:var(--cx-danger-text);padding:12px;background:#ffeaea;border-radius:8px;">Error: '+e.message+'</div>';}
 }
 
 var _conteoActivo = null;
@@ -1194,18 +1194,18 @@ async function cargarItemsConteo(est){
     _conteoItems.forEach(function(mp, i){
       h += '<tr id="cnt-row-'+i+'">';
       h += '<td style="font-family:monospace;font-size:0.82em;">'+mp.codigo_mp+'</td>';
-      h += '<td style="font-size:0.78em;color:#555;">'+(mp.inci||'')+'</td>';
+      h += '<td style="font-size:0.78em;color:var(--cx-text-soft);">'+(mp.inci||'')+'</td>';
       h += '<td style="font-size:0.88em;">'+mp.nombre+'</td>';
       h += '<td style="text-align:right;font-weight:600;font-family:monospace;">'+Number(mp.stock_sistema).toLocaleString()+'</td>';
-      h += '<td><input type="number" id="cnt-fis-'+i+'" min="0" step="0.1" oninput="calcDiff('+i+','+mp.stock_sistema+','+mp.precio_ref+')" style="width:120px;padding:6px;border:1px solid #dde;border-radius:6px;text-align:right;font-family:monospace;"></td>';
+      h += '<td><input type="number" id="cnt-fis-'+i+'" min="0" step="0.1" oninput="calcDiff('+i+','+mp.stock_sistema+','+mp.precio_ref+')" style="width:120px;padding:6px;border:1px solid var(--cx-border);border-radius:6px;text-align:right;font-family:monospace;"></td>';
       h += '<td id="cnt-diff-'+i+'" style="text-align:right;font-family:monospace;font-weight:700;">--</td>';
       h += '<td id="cnt-pct-'+i+'" style="font-size:0.85em;">--</td>';
-      h += '<td id="cnt-val-'+i+'" style="font-size:0.82em;color:#888;">--</td>';
-      h += '<td><select id="cnt-causa-'+i+'" style="width:150px;padding:5px;border:1px solid #dde;border-radius:6px;font-size:0.8em;"><option value="">Sin diferencia</option>'+causaOpts+'</select></td>';
+      h += '<td id="cnt-val-'+i+'" style="font-size:0.82em;color:var(--cx-text-mute);">--</td>';
+      h += '<td><select id="cnt-causa-'+i+'" style="width:150px;padding:5px;border:1px solid var(--cx-border);border-radius:6px;font-size:0.8em;"><option value="">Sin diferencia</option>'+causaOpts+'</select></td>';
       h += '<td id="cnt-adj-'+i+'"></td>';
       h += '</tr>';
     });
-    document.getElementById('cnt-tbody').innerHTML = h || '<tr><td colspan="10" style="text-align:center;color:#999;">Sin materiales en esta estanteria</td></tr>';
+    document.getElementById('cnt-tbody').innerHTML = h || '<tr><td colspan="10" style="text-align:center;color:var(--cx-text-faint);">Sin materiales en esta estanteria</td></tr>';
   }catch(e){console.error(e);}
 }
 
@@ -1294,7 +1294,7 @@ async function cargarHistorialConteos(){
     var r = await fetch('/api/conteo/historial');
     var data = await r.json();
     var tb = document.getElementById('cnt-hist-tbody');
-    if(!data.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin conteos</td></tr>';return;}
+    if(!data.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--cx-text-faint);">Sin conteos</td></tr>';return;}
     var h = '';
     data.forEach(function(c){
       var estadoColor = c.estado === 'Cerrado' ? '#27ae60' : '#e67e22';
@@ -1307,7 +1307,7 @@ async function cargarHistorialConteos(){
       h += '<td style="text-align:center;">'+c.total_items+'</td>';
       h += '<td style="text-align:center;color:'+(c.items_diferencia>0?'#e74c3c':'#27ae60')+';">'+c.items_diferencia+'</td>';
       h += '<td style="text-align:center;">';
-      if(c.items_gerencia > 0) h += '<span style="color:#e74c3c;font-weight:700;">'+c.items_gerencia+' ⚠</span>';
+      if(c.items_gerencia > 0) h += '<span style="color:var(--cx-danger-text);font-weight:700;">'+c.items_gerencia+' ⚠</span>';
       else h += '<span style="color:#27ae60;">OK</span>';
       h += '</td></tr>';
     });
@@ -1328,13 +1328,13 @@ async function loadPNL(){
     // KPI cards
     var kh='';
     kh+='<div style="background:rgba(109,40,217,0.12);border:1px solid rgba(109,40,217,0.3);border-radius:10px;padding:16px;text-align:center;">';
-    kh+='<div style="font-size:1.8em;font-weight:900;color:#6d28d9;">'+fmt2(tot.ingresos)+'</div>';
+    kh+='<div style="font-size:1.8em;font-weight:900;color:var(--cx-primary-text);">'+fmt2(tot.ingresos)+'</div>';
     kh+='<div style="font-size:0.72em;color:rgba(0,0,0,0.5);text-transform:uppercase;margin-top:4px;">Ingresos este mes</div>';
     if(crecMes!=null) kh+='<div style="font-size:0.75em;color:'+(crecMes>=0?'#27ae60':'#e74c3c');
     if(crecMes!=null) kh+=';margin-top:3px;">'+(crecMes>=0?'&#8593;':'&#8595;')+Math.abs(crecMes)+'% vs mismo mes año ant.</div>';
     kh+='</div>';
     kh+='<div style="background:rgba(192,57,43,0.08);border:1px solid rgba(192,57,43,0.2);border-radius:10px;padding:16px;text-align:center;">';
-    kh+='<div style="font-size:1.8em;font-weight:900;color:#e74c3c;">'+fmt2(tot.egresos)+'</div>';
+    kh+='<div style="font-size:1.8em;font-weight:900;color:var(--cx-danger-text);">'+fmt2(tot.egresos)+'</div>';
     kh+='<div style="font-size:0.72em;color:rgba(0,0,0,0.5);text-transform:uppercase;margin-top:4px;">Egresos este mes</div></div>';
     kh+='<div style="background:rgba(39,174,96,0.1);border:1px solid rgba(39,174,96,0.25);border-radius:10px;padding:16px;text-align:center;">';
     kh+='<div style="font-size:1.8em;font-weight:900;color:#27ae60;">'+fmt2(tot.margen)+'</div>';
@@ -1356,10 +1356,10 @@ async function loadPNL(){
     ['ANIMUS','ESPAGIRIA'].forEach(function(k){
       var b=d.empresas&&d.empresas[k]||{};
       bh+='<div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:10px;padding:16px;">';
-      bh+='<div style="font-weight:700;font-size:0.9em;color:#6d28d9;margin-bottom:12px;">'+k+'</div>';
-      bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e9ecef;"><span style="color:#666;">Ingresos mes</span><span style="font-weight:700;">'+fmt2(b.ingresos)+'</span></div>';
-      bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e9ecef;"><span style="color:#666;">YTD</span><span style="font-weight:700;color:#3498db;">'+fmt2(b.ingresos_ytd)+'</span></div>';
-      bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="color:#666;">Margen</span><span style="font-weight:700;color:#27ae60;">'+fmt2(b.margen)+'</span></div>';
+      bh+='<div style="font-weight:700;font-size:0.9em;color:var(--cx-primary-text);margin-bottom:12px;">'+k+'</div>';
+      bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e9ecef;"><span style="color:var(--cx-text-mute);">Ingresos mes</span><span style="font-weight:700;">'+fmt2(b.ingresos)+'</span></div>';
+      bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e9ecef;"><span style="color:var(--cx-text-mute);">YTD</span><span style="font-weight:700;color:#3498db;">'+fmt2(b.ingresos_ytd)+'</span></div>';
+      bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="color:var(--cx-text-mute);">Margen</span><span style="font-weight:700;color:#27ae60;">'+fmt2(b.margen)+'</span></div>';
       bh+='</div>';
     });
     document.getElementById('pnl-brands').innerHTML=bh;
@@ -1449,7 +1449,7 @@ async function loadWorkingCapital(){
     cards.forEach(function(c){
       h+='<div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;padding:12px;text-align:center;">';
       h+='<div style="font-size:1.3em;font-weight:900;color:'+c[2]+';">'+c[1]+'</div>';
-      h+='<div style="font-size:0.72em;color:#666;text-transform:uppercase;margin-top:4px;">'+c[0]+'</div></div>';
+      h+='<div style="font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;margin-top:4px;">'+c[0]+'</div></div>';
     });
     h+='</div>';
     h+='<table style="width:100%;border-collapse:collapse;font-size:0.88em;">';
@@ -1472,13 +1472,13 @@ document.addEventListener('DOMContentLoaded',function(){
 async function abrirMesDetalle(periodo, tipo){
   var modal = document.getElementById('mes-detalle-modal');
   document.getElementById('md-titulo').textContent = (tipo==='ingresos'?'Ingresos':'Egresos')+' · '+periodo;
-  document.getElementById('md-body').innerHTML = '<div style="padding:30px;text-align:center;color:#999">Cargando…</div>';
+  document.getElementById('md-body').innerHTML = '<div style="padding:30px;text-align:center;color:var(--cx-text-faint)">Cargando…</div>';
   modal.style.display = 'flex';
   try{
     var url = '/api/financiero/mes-detalle?periodo='+encodeURIComponent(periodo)+'&tipo='+encodeURIComponent(tipo);
     var r = await fetch(url);
     if(!r.ok){
-      document.getElementById('md-body').innerHTML = '<div style="padding:20px;color:#c0392b">Error '+r.status+'</div>';
+      document.getElementById('md-body').innerHTML = '<div style="padding:20px;color:var(--cx-danger-text)">Error '+r.status+'</div>';
       return;
     }
     var d = await r.json();
@@ -1486,20 +1486,20 @@ async function abrirMesDetalle(periodo, tipo){
     html += '<b>Total '+tipo+'</b>: '+fmt(d.total)+' · <b>'+d.count+'</b> transacciones · <b>'+d.categorias.length+'</b> categorías';
     html += '</div>';
     if(!d.categorias.length){
-      html += '<div style="padding:30px;text-align:center;color:#999;font-style:italic">Sin movimientos en '+periodo+'</div>';
+      html += '<div style="padding:30px;text-align:center;color:var(--cx-text-faint);font-style:italic">Sin movimientos en '+periodo+'</div>';
     }else{
       d.categorias.forEach(function(cat, idx){
         var color = tipo==='ingresos' ? '#6d28d9' : '#c0392b';
         // Header clickeable que toggea el trend inline
         var trendId = 'trend-'+idx+'-'+Math.random().toString(36).slice(2,7);
         var toggle = 'toggleCategoriaTrend("'+trendId+'","'+_esc(cat.categoria)+'","'+tipo+'")';
-        html += '<div style="margin-bottom:18px;border:1px solid #E8E4DE;border-radius:10px;overflow:hidden">';
+        html += '<div style="margin-bottom:18px;border:1px solid var(--cx-border);border-radius:10px;overflow:hidden">';
         html += '<div style="padding:12px 16px;background:#FAFAF7;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick=\\\''+toggle+'\\\' title="Click para ver tendencia 12 meses">';
-        html += '<div><b style="color:'+color+'">'+_esc(cat.categoria)+'</b> <span style="color:#94a3b8;font-size:0.78em;margin-left:6px">📈 ver 12m</span> · <span style="color:#7A6A55;font-size:0.88em">'+cat.count+' tx · '+cat.pct.toFixed(1)+'%</span></div>';
+        html += '<div><b style="color:'+color+'">'+_esc(cat.categoria)+'</b> <span style="color:var(--cx-text-faint);font-size:0.78em;margin-left:6px">📈 ver 12m</span> · <span style="color:#7A6A55;font-size:0.88em">'+cat.count+' tx · '+cat.pct.toFixed(1)+'%</span></div>';
         html += '<div style="font-weight:700;color:'+color+';font-size:1.05em">'+fmt(cat.monto)+'</div>';
         html += '</div>';
         // Slot del trend chart (oculto inicialmente)
-        html += '<div id="'+trendId+'" style="display:none;padding:14px 16px;background:#FCFAF7;border-top:1px dashed #E8E4DE"></div>';
+        html += '<div id="'+trendId+'" style="display:none;padding:14px 16px;background:#FCFAF7;border-top:1px dashed var(--cx-border)"></div>';
         if(cat.top_items && cat.top_items.length){
           html += '<table style="width:100%;font-size:0.85em;border-collapse:collapse">';
           html += '<thead><tr style="background:#FAFAF7;color:#7A6A55"><th style="padding:6px 12px;text-align:left;font-size:0.78em;text-transform:uppercase">Fecha</th><th style="padding:6px 12px;text-align:left;font-size:0.78em;text-transform:uppercase">Concepto</th><th style="padding:6px 12px;text-align:right;font-size:0.78em;text-transform:uppercase">Monto</th><th style="padding:6px 12px;text-align:left;font-size:0.78em;text-transform:uppercase">Ref</th></tr></thead><tbody>';
@@ -1507,7 +1507,7 @@ async function abrirMesDetalle(periodo, tipo){
             var refLink = it.referencia || '';
             // Si es OC, link al tab de OCs
             if(refLink && /^OC-/.test(refLink)){
-              refLink = '<a href="/compras#oc-'+_esc(refLink)+'" style="color:#6d28d9;text-decoration:none">'+_esc(refLink)+'</a>';
+              refLink = '<a href="/compras#oc-'+_esc(refLink)+'" style="color:var(--cx-primary-text);text-decoration:none">'+_esc(refLink)+'</a>';
             }else if(refLink){
               refLink = '<span style="color:#7A6A55;font-size:0.82em">'+_esc(refLink)+'</span>';
             }else{
@@ -1527,7 +1527,7 @@ async function abrirMesDetalle(periodo, tipo){
     }
     document.getElementById('md-body').innerHTML = html;
   }catch(e){
-    document.getElementById('md-body').innerHTML = '<div style="padding:20px;color:#c0392b">Error red: '+_esc(e.message)+'</div>';
+    document.getElementById('md-body').innerHTML = '<div style="padding:20px;color:var(--cx-danger-text)">Error red: '+_esc(e.message)+'</div>';
   }
 }
 
@@ -1548,12 +1548,12 @@ async function toggleCategoriaTrend(slotId, categoria, tipo){
     return;
   }
   slot.style.display = 'block';
-  slot.innerHTML = '<div style="text-align:center;color:#999;font-size:0.85em;padding:14px">Cargando tendencia 12 meses…</div>';
+  slot.innerHTML = '<div style="text-align:center;color:var(--cx-text-faint);font-size:0.85em;padding:14px">Cargando tendencia 12 meses…</div>';
   try{
     var url = '/api/financiero/categoria-trend?categoria='+encodeURIComponent(categoria)+'&tipo='+encodeURIComponent(tipo);
     var r = await fetch(url);
     if(!r.ok){
-      slot.innerHTML = '<div style="color:#c0392b;font-size:0.85em;padding:8px">Error '+r.status+'</div>';
+      slot.innerHTML = '<div style="color:var(--cx-danger-text);font-size:0.85em;padding:8px">Error '+r.status+'</div>';
       return;
     }
     var d = await r.json();
@@ -1597,7 +1597,7 @@ async function toggleCategoriaTrend(slotId, categoria, tipo){
       }
     });
   }catch(e){
-    slot.innerHTML = '<div style="color:#c0392b;font-size:0.85em;padding:8px">Error red: '+_esc(e.message)+'</div>';
+    slot.innerHTML = '<div style="color:var(--cx-danger-text);font-size:0.85em;padding:8px">Error red: '+_esc(e.message)+'</div>';
   }
 }
 
@@ -1611,7 +1611,7 @@ function _esc(s){
 
 <!-- Mes-detalle modal · drill-down de ingresos/egresos por categoría -->
 <div id="mes-detalle-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.65);z-index:9999;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
-  <div style="background:#fff;max-width:780px;width:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">
+  <div style="background:var(--cx-card);max-width:780px;width:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">
     <div style="padding:18px 24px;background:linear-gradient(135deg,#6d28d9,#205C5A);color:#fff;display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-size:11px;color:#a7f3d0;text-transform:uppercase;letter-spacing:.5px">Detalle del mes</div>

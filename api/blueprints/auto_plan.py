@@ -5512,41 +5512,41 @@ def _generar_html_auto_sc(plan, scs_creadas, modo):
     html_scs = ''
     for sc in scs_creadas:
         items = plan['scs_por_proveedor'].get(sc['proveedor'], [])
-        html_scs += f'<div style="background:#f8fafc;border-left:4px solid {bgHeader};padding:10px 14px;margin-bottom:8px;border-radius:0 6px 6px 0">'
+        html_scs += f'<div style="background:var(--cx-bg-alt, #f8fafc);border-left:4px solid {bgHeader};padding:10px 14px;margin-bottom:8px;border-radius:0 6px 6px 0">'
         html_scs += f'<b>{sc["numero"]}</b> · proveedor: <b>{sc["proveedor"]}</b> · {sc["items_count"]} MPs · {int(sc["total_g"]/1000)} kg total'
-        html_scs += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:#475569">'
+        html_scs += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:var(--cx-text-soft, #475569)">'
         for it in items[:6]:
             html_scs += f'<li><b>{it["material_nombre"]}</b>: {int(it["cantidad_g"]/1000)} kg (buf IA ×{it["buffer_ia_avg"]})</li>'
         if len(items) > 6:
-            html_scs += f'<li style="color:#94a3b8">+ {len(items)-6} MPs más</li>'
+            html_scs += f'<li style="color:var(--cx-text-faint, #94a3b8)">+ {len(items)-6} MPs más</li>'
         html_scs += '</ul></div>'
 
     huerfanos_html = ''
     if plan['items_huerfanos']:
-        huerfanos_html = '<div style="background:#fef3c7;border:1px solid #fcd34d;padding:10px;border-radius:6px;margin-top:14px">'
-        huerfanos_html += f'<b style="color:#92400e">⚠️ {len(plan["items_huerfanos"])} MPs SIN proveedor sugerido</b>'
-        huerfanos_html += '<div style="font-size:11px;color:#78350f;margin-top:4px">No se crearon SCs porque mp_lead_time_config no tiene proveedor_principal:</div>'
-        huerfanos_html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:11px;color:#78350f">'
+        huerfanos_html = '<div style="background:var(--cx-warn-pale, #fef3c7);border:1px solid #fcd34d;padding:10px;border-radius:6px;margin-top:14px">'
+        huerfanos_html += f'<b style="color:var(--cx-warn-text, #92400e)">⚠️ {len(plan["items_huerfanos"])} MPs SIN proveedor sugerido</b>'
+        huerfanos_html += '<div style="font-size:11px;color:var(--cx-warn-text, #78350f);margin-top:4px">No se crearon SCs porque mp_lead_time_config no tiene proveedor_principal:</div>'
+        huerfanos_html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:11px;color:var(--cx-warn-text, #78350f)">'
         for it in plan['items_huerfanos'][:8]:
             huerfanos_html += f'<li>{it["material_nombre"]}: {int(it["cantidad_g"]/1000)} kg</li>'
         huerfanos_html += '</ul></div>'
 
     return f'''<!DOCTYPE html>
 <html><body style="font-family:-apple-system,sans-serif;background:#f3f4f6;padding:20px;margin:0">
-  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+  <div style="max-width:640px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
     <div style="background:{bgHeader};color:#fff;padding:20px">
       <h2 style="margin:0;font-size:20px">{titulo}</h2>
       <p style="margin:4px 0 0;opacity:.9;font-size:13px">{fecha_hoy.strftime("%d-%b-%Y")} · Auto-Plan IA</p>
     </div>
     <div style="padding:20px">
-      <div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#065f46">
+      <div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:6px;margin-bottom:14px;font-size:13px;color:var(--cx-success-text, #065f46)">
         ✅ <b>{len(scs_creadas)} solicitudes creadas</b> · {plan["kpis"]["total_items"]} MPs · {plan["kpis"]["total_g"]/1000:.0f} kg total<br>
-        Estado: <b>Pendiente</b> · Catalina y Alejandro pueden revisar y aprobar en <a href="/solicitudes" style="color:#065f46">/solicitudes</a>
+        Estado: <b>Pendiente</b> · Catalina y Alejandro pueden revisar y aprobar en <a href="/solicitudes" style="color:var(--cx-success-text, #065f46)">/solicitudes</a>
       </div>
-      <h3 style="color:#0f172a;font-size:14px;margin:14px 0 8px">📋 Solicitudes creadas</h3>
+      <h3 style="color:var(--cx-text, #0f172a);font-size:14px;margin:14px 0 8px">📋 Solicitudes creadas</h3>
       {html_scs}
       {huerfanos_html}
-      <div style="margin-top:18px;padding:12px;background:#f1f5f9;border-radius:8px;font-size:11px;color:#64748b">
+      <div style="margin-top:18px;padding:12px;background:var(--cx-border-soft, #f1f5f9);border-radius:8px;font-size:11px;color:var(--cx-text-mute, #64748b)">
         Buffer IA aplicado: tendencia (vel 30d vs 180d) + estacional (BF/Madres/Navidad).<br>
         Auto-SC IA · cron mensual día 1-5 (60-90d) + cron lunes (urgentes 14d).
       </div>
@@ -6260,43 +6260,43 @@ def _generar_html_auto_sc_mee(plan, scs_creadas, modo):
     for sc in scs_creadas:
         items = plan['scs_por_proveedor'].get(f"{sc['proveedor']} ({sc['origen']})", [])
         flag_origen = '🇨🇳' if sc['origen'] == 'China' else '🇨🇴'
-        html_scs += f'<div style="background:#f8fafc;border-left:4px solid {bgHeader};padding:10px 14px;margin-bottom:8px;border-radius:0 6px 6px 0">'
+        html_scs += f'<div style="background:var(--cx-bg-alt, #f8fafc);border-left:4px solid {bgHeader};padding:10px 14px;margin-bottom:8px;border-radius:0 6px 6px 0">'
         html_scs += f'<b>{sc["numero"]}</b> · {flag_origen} {sc["proveedor"]} · {sc["items_count"]} MEE · {int(sc["total_unidades"]):,} ud'
         if sc.get('valor_estimado'):
             html_scs += f' · ${sc["valor_estimado"]:,.0f}'
-        html_scs += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:#475569">'
+        html_scs += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:var(--cx-text-soft, #475569)">'
         for it in items[:6]:
             html_scs += f'<li><b>{it["mee_nombre"]}</b>: {int(it["cantidad_unidades"]):,} ud (lead {it["lead_time_dias"]}d)</li>'
         if len(items) > 6:
-            html_scs += f'<li style="color:#94a3b8">+ {len(items)-6} MEE más</li>'
+            html_scs += f'<li style="color:var(--cx-text-faint, #94a3b8)">+ {len(items)-6} MEE más</li>'
         html_scs += '</ul></div>'
 
     huerfanos_html = ''
     if plan['items_huerfanos']:
-        huerfanos_html = '<div style="background:#fef3c7;border:1px solid #fcd34d;padding:10px;border-radius:6px;margin-top:14px">'
-        huerfanos_html += f'<b style="color:#92400e">⚠️ {len(plan["items_huerfanos"])} MEE SIN proveedor</b>'
-        huerfanos_html += '<div style="font-size:11px;color:#78350f;margin-top:4px">No se crearon SCs (mee_lead_time_config sin proveedor_principal):</div>'
-        huerfanos_html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:11px;color:#78350f">'
+        huerfanos_html = '<div style="background:var(--cx-warn-pale, #fef3c7);border:1px solid #fcd34d;padding:10px;border-radius:6px;margin-top:14px">'
+        huerfanos_html += f'<b style="color:var(--cx-warn-text, #92400e)">⚠️ {len(plan["items_huerfanos"])} MEE SIN proveedor</b>'
+        huerfanos_html += '<div style="font-size:11px;color:var(--cx-warn-text, #78350f);margin-top:4px">No se crearon SCs (mee_lead_time_config sin proveedor_principal):</div>'
+        huerfanos_html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:11px;color:var(--cx-warn-text, #78350f)">'
         for it in plan['items_huerfanos'][:8]:
             huerfanos_html += f'<li>{it["mee_nombre"]}: {int(it["cantidad_unidades"]):,} ud ({it["origen"]})</li>'
         huerfanos_html += '</ul></div>'
 
     return f'''<!DOCTYPE html>
 <html><body style="font-family:-apple-system,sans-serif;background:#f3f4f6;padding:20px;margin:0">
-  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+  <div style="max-width:640px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
     <div style="background:{bgHeader};color:#fff;padding:20px">
       <h2 style="margin:0;font-size:20px">{titulo}</h2>
       <p style="margin:4px 0 0;opacity:.9;font-size:13px">{fecha_hoy.strftime("%d-%b-%Y")} · Auto-Plan IA · MEE</p>
     </div>
     <div style="padding:20px">
-      <div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#065f46">
+      <div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:6px;margin-bottom:14px;font-size:13px;color:var(--cx-success-text, #065f46)">
         ✅ <b>{len(scs_creadas)} solicitudes creadas</b> · {plan["kpis"]["total_items"]} MEE · {plan["kpis"]["total_unidades"]:,.0f} unidades<br>
-        Estado: <b>Pendiente</b> · Catalina y Alejandro revisan en <a href="/solicitudes" style="color:#065f46">/solicitudes</a>
+        Estado: <b>Pendiente</b> · Catalina y Alejandro revisan en <a href="/solicitudes" style="color:var(--cx-success-text, #065f46)">/solicitudes</a>
       </div>
-      <h3 style="color:#0f172a;font-size:14px;margin:14px 0 8px">📦 Solicitudes MEE creadas</h3>
+      <h3 style="color:var(--cx-text, #0f172a);font-size:14px;margin:14px 0 8px">📦 Solicitudes MEE creadas</h3>
       {html_scs}
       {huerfanos_html}
-      <div style="margin-top:18px;padding:12px;background:#f1f5f9;border-radius:8px;font-size:11px;color:#64748b">
+      <div style="margin-top:18px;padding:12px;background:var(--cx-border-soft, #f1f5f9);border-radius:8px;font-size:11px;color:var(--cx-text-mute, #64748b)">
         Horizontes: 🇨🇳 China 9m (270d) · 🇨🇴 Local 90d · Urgente 30d.<br>
         MOQ aplicado por proveedor. Buffer IA tendencia + estacional aplicados.<br>
         Serigrafía/tampografía van por cron D-20 (no incluidas aquí). Etiquetas se piden post-envasado.
@@ -8273,24 +8273,24 @@ def planta_auditoria_sorpresa_pdf():
 <title>Auditoría Sorpresa · últimas {horas}h · {ts_gen}</title>
 <style>
 *{{box-sizing:border-box;font-family:Arial,sans-serif}}
-body{{margin:14px;color:#1e293b;font-size:11px}}
-h1{{margin:0 0 4px;color:#0f766e;font-size:18px}}
-h2{{margin:14px 0 6px;color:#475569;font-size:13px;border-bottom:1px solid #cbd5e1;padding-bottom:3px}}
+body{{margin:14px;color:var(--cx-text, #1e293b);font-size:11px}}
+h1{{margin:0 0 4px;color:var(--cx-info-text, #0f766e);font-size:18px}}
+h2{{margin:14px 0 6px;color:var(--cx-text-soft, #475569);font-size:13px;border-bottom:1px solid var(--cx-border, #cbd5e1);padding-bottom:3px}}
 table{{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:8px}}
-th{{background:#0f766e;color:#fff;padding:4px 6px;text-align:left}}
-td{{padding:3px 6px;border-bottom:1px solid #e2e8f0}}
-.cabecera{{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0f766e;padding-bottom:8px;margin-bottom:10px}}
-.sello{{background:#0f766e;color:#fff;padding:4px 10px;border-radius:4px;font-weight:700;font-size:10px}}
+th{{background:var(--cx-info, #0f766e);color:#fff;padding:4px 6px;text-align:left}}
+td{{padding:3px 6px;border-bottom:1px solid var(--cx-border, #e2e8f0)}}
+.cabecera{{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--cx-info, #0f766e);padding-bottom:8px;margin-bottom:10px}}
+.sello{{background:var(--cx-info, #0f766e);color:#fff;padding:4px 10px;border-radius:4px;font-weight:700;font-size:10px}}
 @media print{{button{{display:none}}}}
 </style></head><body>
 <div class="cabecera">
   <div>
     <h1>📋 Auditoría Sorpresa · {horas}h</h1>
-    <div style="color:#64748b">Espagiria Laboratorio · ÁNIMUS Lab · Generado por <b>{_esc(user)}</b> el {ts_gen}</div>
+    <div style="color:var(--cx-text-mute, #64748b)">Espagiria Laboratorio · ÁNIMUS Lab · Generado por <b>{_esc(user)}</b> el {ts_gen}</div>
   </div>
   <div class="sello">EOS · post-INVIMA abr-2026</div>
 </div>
-<button onclick="window.print()" style="background:#0f766e;color:#fff;padding:8px 16px;border:none;border-radius:5px;cursor:pointer;float:right">🖨 Imprimir / Guardar PDF</button>
+<button onclick="window.print()" style="background:var(--cx-info, #0f766e);color:#fff;padding:8px 16px;border:none;border-radius:5px;cursor:pointer;float:right">🖨 Imprimir / Guardar PDF</button>
 <h2>🏭 Producciones (inicio o fin en últimas {horas}h)</h2>
 <table><thead><tr><th>ID</th><th>Producto</th><th>kg</th><th>Estado</th><th>Inicio</th><th>Fin</th><th>Granel aprob.</th></tr></thead><tbody>"""
     for r in prods:
@@ -8316,7 +8316,7 @@ td{{padding:3px 6px;border-bottom:1px solid #e2e8f0}}
     for r in audits[:300]:
         html += f"<tr><td>{_esc(r[5])[:16]}</td><td>{_esc(r[0])}</td><td>{_esc(r[1])}</td><td>{_esc(r[2])}</td><td>{_esc(r[3])}</td><td>{_esc(r[4])[:200]}</td></tr>"
     html += "</tbody></table>"
-    html += f"<div style='margin-top:20px;font-size:9px;color:#94a3b8'>Documento generado automáticamente · EOS · {ts_gen} · usuario {_esc(user)}</div>"
+    html += f"<div style='margin-top:20px;font-size:9px;color:var(--cx-text-faint, #94a3b8)'>Documento generado automáticamente · EOS · {ts_gen} · usuario {_esc(user)}</div>"
     html += "</body></html>"
     # audit
     try:
@@ -9121,23 +9121,23 @@ def planta_despeje_linea_page():
 <title>Despeje de línea · EOS</title>
 <style>
 *{box-sizing:border-box;font-family:'Segoe UI',Roboto,sans-serif}
-body{margin:0;background:#f1f5f9;padding:18px;color:#0f172a}
-.wrap{max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
-h1{color:#0f766e;margin:0 0 6px}
-.subtitle{color:#64748b;font-size:13px;margin-bottom:18px}
+body{margin:0;background:var(--cx-border-soft, #f1f5f9);padding:18px;color:var(--cx-text, #0f172a)}
+.wrap{max-width:600px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+h1{color:var(--cx-info-text, #0f766e);margin:0 0 6px}
+.subtitle{color:var(--cx-text-mute, #64748b);font-size:13px;margin-bottom:18px}
 .field{margin-bottom:14px}
-.field label{display:block;font-weight:700;font-size:13px;color:#475569;margin-bottom:5px}
-.field select,.field input,.field textarea{width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px}
+.field label{display:block;font-weight:700;font-size:13px;color:var(--cx-text-soft, #475569);margin-bottom:5px}
+.field select,.field input,.field textarea{width:100%;padding:9px 11px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:14px}
 .checks{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
-.chk{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer}
+.chk{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;cursor:pointer}
 .chk input{width:22px;height:22px;cursor:pointer}
-.chk.ok{background:#dcfce7;border-color:#16a34a}
-.warning{background:#fef3c7;border:1px solid #ca8a04;padding:10px 14px;border-radius:8px;font-size:12px;color:#78350f;margin-bottom:14px}
-button.primary{width:100%;background:#0f766e;color:#fff;border:none;padding:14px 20px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer}
+.chk.ok{background:var(--cx-success-pale, #dcfce7);border-color:var(--cx-success, #16a34a)}
+.warning{background:var(--cx-warn-pale, #fef3c7);border:1px solid var(--cx-accent-dark, #ca8a04);padding:10px 14px;border-radius:8px;font-size:12px;color:var(--cx-warn-text, #78350f);margin-bottom:14px}
+button.primary{width:100%;background:var(--cx-info, #0f766e);color:#fff;border:none;padding:14px 20px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer}
 button.primary:disabled{opacity:.5;cursor:not-allowed}
 #msg{padding:12px;border-radius:6px;margin-top:14px;display:none}
-.success{background:#dcfce7;color:#166534}
-.error{background:#fee2e2;color:#991b1b}
+.success{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534)}
+.error{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)}
 </style></head><body>
 <div class="wrap">
 <h1>🧽 Despeje de línea</h1>
@@ -9962,58 +9962,58 @@ _KANBAN_HTML = r"""<!DOCTYPE html>
 <title>🏭 Kanban Planta · EOS</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;padding:14px;font-size:14px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-text, #0f172a);color:var(--cx-border, #e2e8f0);min-height:100vh;padding:14px;font-size:14px}
 .hdr{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px}
 .hdr h1{font-size:18px;font-weight:800;color:#fff}
 .hdr .sub{font-size:11px;opacity:.7}
 .kpis{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-.kpi{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:8px 14px;text-align:center;min-width:88px}
-.kpi-lbl{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px}
+.kpi{background:var(--cx-text, #1e293b);border:1px solid var(--cx-text-soft, #334155);border-radius:8px;padding:8px 14px;text-align:center;min-width:88px}
+.kpi-lbl{font-size:10px;color:var(--cx-text-faint, #94a3b8);text-transform:uppercase;letter-spacing:.5px}
 .kpi-val{font-size:18px;font-weight:800;color:#fff;margin-top:2px}
 .kpi.danger .kpi-val{color:#f87171}
-.kpi.warn .kpi-val{color:#fbbf24}
+.kpi.warn .kpi-val{color:var(--cx-accent, #fbbf24)}
 .kpi.ok .kpi-val{color:#34d399}
 .kpi.live .kpi-val{color:#60a5fa}
 .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.btn{background:#334155;color:#e2e8f0;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
-.btn:hover{background:#475569}
-.btn.primary{background:#0891b2;color:#fff}
-input[type=date]{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:12px}
+.btn{background:var(--cx-text-soft, #334155);color:var(--cx-border, #e2e8f0);border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--cx-text-soft, #475569)}
+.btn.primary{background:var(--cx-info, #0891b2);color:#fff}
+input[type=date]{background:var(--cx-text, #1e293b);color:var(--cx-border, #e2e8f0);border:1px solid var(--cx-text-soft, #334155);border-radius:6px;padding:6px 10px;font-size:12px}
 .cols-wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:start}
-.col{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px;min-height:120px}
+.col{background:var(--cx-text, #1e293b);border:1px solid var(--cx-text-soft, #334155);border-radius:10px;padding:12px;min-height:120px}
 .col-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .col-title{font-size:13px;font-weight:800;color:#fff}
-.col-count{font-size:10px;color:#94a3b8;background:#0f172a;padding:2px 8px;border-radius:10px}
-.card{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;margin-bottom:8px;border-left:4px solid #64748b;font-size:12px}
-.card.curso{border-left-color:#fbbf24}
+.col-count{font-size:10px;color:var(--cx-text-faint, #94a3b8);background:var(--cx-text, #0f172a);padding:2px 8px;border-radius:10px}
+.card{background:var(--cx-text, #0f172a);border:1px solid var(--cx-text-soft, #334155);border-radius:8px;padding:10px;margin-bottom:8px;border-left:4px solid var(--cx-text-mute, #64748b);font-size:12px}
+.card.curso{border-left-color:var(--cx-accent, #fbbf24)}
 .card.terminada{border-left-color:#34d399;opacity:.7}
-.card.pendiente{border-left-color:#64748b}
+.card.pendiente{border-left-color:var(--cx-text-mute, #64748b)}
 .card-prod{font-weight:700;color:#fff;font-size:13px}
-.card-meta{font-size:10px;color:#94a3b8;margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
-.chip{background:#1e293b;color:#cbd5e1;padding:2px 7px;border-radius:6px;font-size:10px;display:inline-block}
+.card-meta{font-size:10px;color:var(--cx-text-faint, #94a3b8);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:var(--cx-text, #1e293b);color:var(--cx-border, #cbd5e1);padding:2px 7px;border-radius:6px;font-size:10px;display:inline-block}
 .chip.area{background:#1e3a8a;color:#dbeafe}
-.chip.sucia{background:#7f1d1d;color:#fecaca}
-.chip.ocupada{background:#854d0e;color:#fef3c7}
-.chip.libre{background:#065f46;color:#d1fae5}
-.chip.curso{background:#854d0e;color:#fef3c7}
-.chip.terminada{background:#065f46;color:#d1fae5}
-.empty{text-align:center;color:#475569;font-size:11px;padding:20px;font-style:italic}
+.chip.sucia{background:var(--cx-danger, #7f1d1d);color:#fecaca}
+.chip.ocupada{background:#854d0e;color:var(--cx-warn-pale, #fef3c7)}
+.chip.libre{background:var(--cx-success, #065f46);color:#d1fae5}
+.chip.curso{background:#854d0e;color:var(--cx-warn-pale, #fef3c7)}
+.chip.terminada{background:var(--cx-success, #065f46);color:#d1fae5}
+.empty{text-align:center;color:var(--cx-text-soft, #475569);font-size:11px;padding:20px;font-style:italic}
 .tabs-mobile{display:none;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px}
-.tab{flex-shrink:0;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
-.tab.active{background:#0891b2;color:#fff;border-color:#0891b2}
+.tab{flex-shrink:0;background:var(--cx-text, #1e293b);color:var(--cx-text-faint, #94a3b8);border:1px solid var(--cx-text-soft, #334155);border-radius:6px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.tab.active{background:var(--cx-info, #0891b2);color:#fff;border-color:var(--cx-info, #0891b2)}
 @media (max-width:900px){
   .cols-wrap{grid-template-columns:1fr;gap:8px}
   .col{display:none}
   .col.active{display:block}
   .tabs-mobile{display:flex}
 }
-.diag{font-size:10px;color:#475569;margin-top:14px;text-align:center;font-family:monospace}
-.timer{color:#fbbf24;font-weight:700}
+.diag{font-size:10px;color:var(--cx-text-soft, #475569);margin-top:14px;text-align:center;font-family:monospace}
+.timer{color:var(--cx-accent, #fbbf24);font-weight:700}
 .card-btn{width:100%;padding:8px 10px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
-.card-btn.iniciar{background:#0891b2}
-.card-btn.iniciar:hover{background:#0e7490}
-.card-btn.terminar{background:#16a34a}
-.card-btn.terminar:hover{background:#15803d}
+.card-btn.iniciar{background:var(--cx-info, #0891b2)}
+.card-btn.iniciar:hover{background:var(--cx-info, #0e7490)}
+.card-btn.terminar{background:var(--cx-success, #16a34a)}
+.card-btn.terminar:hover{background:var(--cx-success, #15803d)}
 .card-btn:disabled{opacity:.6;cursor:not-allowed}
 </style>
 </head><body>
@@ -10149,7 +10149,7 @@ function renderCard(t, rol){
     splitB2B = '<div style="margin-top:8px;background:#fdf4ff;border-left:3px solid #7e22ce;border-radius:5px;padding:6px 8px;font-size:11px">'
              + '<div style="font-weight:700;color:#7e22ce;margin-bottom:3px">🤝 Envasado split por cliente</div>';
     aportes.forEach(function(a){
-      splitB2B += '<div style="display:flex;justify-content:space-between;color:#475569;margin-top:2px">'
+      splitB2B += '<div style="display:flex;justify-content:space-between;color:var(--cx-text-soft, #475569);margin-top:2px">'
                + '<span><strong>'+esc(a.cliente||'?')+'</strong></span>'
                + '<span>'+a.unidades+' uds · '+esc(a.envase_codigo)+(a.envase_descripcion?' ('+esc(a.envase_descripcion.slice(0,25))+')':'')+'</span>'
                + '</div>';
@@ -12501,13 +12501,13 @@ def _generar_html_auditor_semanal(c):
         evs = por_dia.get(d, [])
         if not evs and delta > 0: continue  # solo hoy aunque vacío
         col = '#dc2626' if delta == 0 else '#0f172a'
-        html_eventos += f'<div style="border-left:4px solid {col};padding:8px 12px;margin-bottom:6px;background:#f8fafc;border-radius:0 6px 6px 0">'
+        html_eventos += f'<div style="border-left:4px solid {col};padding:8px 12px;margin-bottom:6px;background:var(--cx-bg-alt, #f8fafc);border-radius:0 6px 6px 0">'
         html_eventos += f'<b>{nombres_dia[d.weekday()]} {d.strftime("%d-%b")}</b>'
         if not evs:
-            html_eventos += '<div style="font-size:12px;color:#94a3b8;margin-top:3px">Sin producciones</div>'
+            html_eventos += '<div style="font-size:12px;color:var(--cx-text-faint, #94a3b8);margin-top:3px">Sin producciones</div>'
         else:
             for e in evs:
-                html_eventos += f'<div style="font-size:12px;color:#475569;margin-top:3px">• {e["titulo"]}</div>'
+                html_eventos += f'<div style="font-size:12px;color:var(--cx-text-soft, #475569);margin-top:3px">• {e["titulo"]}</div>'
         html_eventos += '</div>'
 
     html_alertas = ''
@@ -12517,21 +12517,21 @@ def _generar_html_auditor_semanal(c):
             col = colores.get(a['urg'], '#dc2626')
             html_alertas += f'<div style="background:{col}15;border-left:4px solid {col};padding:8px 12px;margin-bottom:6px;border-radius:0 6px 6px 0"><b>{a["producto"]}</b> · {a["estado"]} · próx {a["proxima"]}</div>'
     else:
-        html_alertas = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:8px;color:#065f46">✅ Sin alertas críticas · todos los SKUs alineados con su plan</div>'
+        html_alertas = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:8px;color:var(--cx-success-text, #065f46)">✅ Sin alertas críticas · todos los SKUs alineados con su plan</div>'
 
     html = f'''<!DOCTYPE html>
 <html><body style="font-family:-apple-system,Segoe UI,sans-serif;background:#f3f4f6;padding:20px;margin:0">
-  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+  <div style="max-width:640px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
     <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:20px">
       <h2 style="margin:0;font-size:20px">📅 Auditor Semanal Producción</h2>
       <p style="margin:4px 0 0;opacity:.9;font-size:13px">Lunes {fecha_hoy.strftime("%d-%b-%Y")} · Ánimus Lab</p>
     </div>
     <div style="padding:20px">
-      <h3 style="color:#0f172a;font-size:15px;margin:0 0 10px">🗓️ Producciones esta semana</h3>
+      <h3 style="color:var(--cx-text, #0f172a);font-size:15px;margin:0 0 10px">🗓️ Producciones esta semana</h3>
       {html_eventos}
-      <h3 style="color:#0f172a;font-size:15px;margin:18px 0 10px">🚨 Alertas críticas</h3>
+      <h3 style="color:var(--cx-text, #0f172a);font-size:15px;margin:18px 0 10px">🚨 Alertas críticas</h3>
       {html_alertas}
-      <div style="margin-top:18px;padding:12px;background:#f1f5f9;border-radius:8px;font-size:11px;color:#64748b">
+      <div style="margin-top:18px;padding:12px;background:var(--cx-border-soft, #f1f5f9);border-radius:8px;font-size:11px;color:var(--cx-text-mute, #64748b)">
         Generado automáticamente por EOS Inventarios.<br>
         Para cambiar destinatarios: Plan → Configuración → Email destinatarios.
       </div>
@@ -12616,7 +12616,7 @@ def email_test():
     asunto = '🤖 Test EOS Auto-Plan'
     html = f"""<!DOCTYPE html>
 <html><body style="font-family:-apple-system,sans-serif;background:#f3f4f6;padding:20px">
-  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+  <div style="max-width:520px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
     <div style="background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;padding:20px">
       <h2 style="margin:0">✅ Email funcionando</h2>
       <p style="margin:6px 0 0;opacity:.9;font-size:13px">EOS · Auto-Plan Maestro</p>
@@ -12625,7 +12625,7 @@ def email_test():
       <p>Hola,</p>
       <p>Este es un email de prueba enviado desde el módulo Auto-Plan de EOS.</p>
       <p>Si recibes esto, los emails automáticos del cron diario funcionarán correctamente.</p>
-      <p style="margin-top:18px;font-size:12px;color:#6b7280">Disparado por: <b>{u}</b><br>Fecha: {datetime.now().isoformat()}</p>
+      <p style="margin-top:18px;font-size:12px;color:var(--cx-text-mute, #6b7280)">Disparado por: <b>{u}</b><br>Fecha: {datetime.now().isoformat()}</p>
     </div>
   </div>
 </body></html>"""

@@ -8,18 +8,18 @@ COMPRAS_HTML = """<!DOCTYPE html>
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-size:14px;}
-.topbar{background:#292524;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
+body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);font-size:14px;}
+.topbar{background:var(--cx-text);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
 .topbar h1{font-size:17px;font-weight:600;flex:1;}
-.topbar a{color:#d6d3d1;text-decoration:none;font-size:13px;}
+.topbar a{color:var(--cx-border);text-decoration:none;font-size:13px;}
 .topbar a:hover{color:#fff;}
-.tab-nav{background:#fff;border-bottom:2px solid #e7e5e4;display:flex;gap:0;overflow-x:auto;white-space:nowrap;}
-.tn{padding:11px 14px;font-size:13px;font-weight:500;color:#78716c;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
-.tn:hover{color:#6d28d9;background:#faf7ff;}
-.tn.on{color:#6d28d9;border-bottom-color:#6d28d9;font-weight:700;}
-.sp-tab{padding:9px 18px;font-size:13px;font-weight:600;color:#78716c;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
-.sp-tab:hover{color:#292524;}
-.sp-tab.sp-on{color:#7c3aed;border-bottom-color:#7c3aed;font-weight:800;}
+.tab-nav{background:var(--cx-card);border-bottom:2px solid var(--cx-border);display:flex;gap:0;overflow-x:auto;white-space:nowrap;}
+.tn{padding:11px 14px;font-size:13px;font-weight:500;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.tn:hover{color:var(--cx-primary-text);background:#faf7ff;}
+.tn.on{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);font-weight:700;}
+.sp-tab{padding:9px 18px;font-size:13px;font-weight:600;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.sp-tab:hover{color:var(--cx-text);}
+.sp-tab.sp-on{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);font-weight:800;}
 .pane{display:none;padding:18px 28px;max-width:1900px;margin:0 auto;}
 #pane-planta{max-width:96vw;}
 #pane-consol{max-width:96vw;}  /* Sebastian 15-jul · OCs Activas ocupa casi todo el ancho */
@@ -29,11 +29,11 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .pane.on{display:block;}
 /* KPI */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px;}
-.kpi{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;}
-.kpi-l{font-size:10px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.kpi{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;padding:14px;}
+.kpi-l{font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
 .kpi-v{font-size:22px;font-weight:800;color:inherit;}
-.kpi-v.w{color:#d97706;} .kpi-v.r{color:#dc2626;} .kpi-v.g{color:#16a34a;}
-.kpi-s{font-size:11px;color:#78716c;margin-top:2px;}
+.kpi-v.w{color:var(--cx-warn-text);} .kpi-v.r{color:var(--cx-danger-text);} .kpi-v.g{color:var(--cx-success-text);}
+.kpi-s{font-size:11px;color:var(--cx-text-mute);margin-top:2px;}
 /* KPIs premium de Pagos (Sebastián 21-jul) · tarjetas cohesivas, número tabular, saldo-a-favor interactivo */
 .pkpi{position:relative;border-radius:15px;padding:16px 17px;color:#fff;overflow:hidden;box-shadow:0 7px 20px rgba(15,23,42,.16);border:1px solid rgba(255,255,255,.10);}
 .pkpi .pk-top{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
@@ -45,68 +45,68 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .pkpi-act:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(16,185,129,.36);}
 .pkpi-act::after{content:"";position:absolute;right:-20px;top:-20px;width:74px;height:74px;border-radius:50%;background:rgba(255,255,255,.10);pointer-events:none;}
 /* Tablas premium compartidas · recorrido Compras (Facturas/Atrasadas/Cotizaciones/Preparar envases) */
-.cxt-wrap{background:#fff;border:1px solid #eef0f2;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);overflow:hidden;}
+.cxt-wrap{background:var(--cx-card);border:1px solid #eef0f2;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);overflow:hidden;}
 .cxt-wrap.scroll{overflow-x:auto;}
 .cxt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;}
-.cxt thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:#78716c;font-weight:700;padding:11px 14px;background:#faf7ff;border-bottom:1px solid #ece9f6;white-space:nowrap;}
-.cxt tbody td{padding:11px 14px;border-bottom:1px solid #f5f4f2;color:#44403c;vertical-align:middle;}
+.cxt thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--cx-text-mute);font-weight:700;padding:11px 14px;background:#faf7ff;border-bottom:1px solid #ece9f6;white-space:nowrap;}
+.cxt tbody td{padding:11px 14px;border-bottom:1px solid #f5f4f2;color:var(--cx-text-soft);vertical-align:middle;}
 .cxt tbody tr{transition:background .12s;}
 .cxt tbody tr:hover{background:#faf7ff;}
 .cxt tbody tr:last-child td{border-bottom:none;}
 .cxt-mono{font-family:ui-monospace,'SF Mono',monospace;font-variant-numeric:tabular-nums;}
 .cxt-chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap;}
-.cxt-chip.ok{background:#dcfce7;color:#15803d;} .cxt-chip.no{background:#fee2e2;color:#b91c1c;}
-.cxt-chip.wait{background:#fef3c7;color:#b45309;} .cxt-chip.info{background:#dbeafe;color:#1d4ed8;}
-.cxt-chip.mute{background:#f5f4f2;color:#78716c;}
+.cxt-chip.ok{background:var(--cx-success-pale);color:var(--cx-success-text);} .cxt-chip.no{background:var(--cx-danger-pale);color:var(--cx-danger-text);}
+.cxt-chip.wait{background:var(--cx-warn-pale);color:var(--cx-warn-text);} .cxt-chip.info{background:var(--cx-info-pale);color:#1d4ed8;}
+.cxt-chip.mute{background:#f5f4f2;color:var(--cx-text-mute);}
 .cxt-btnp{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px -4px rgba(109,40,217,.5);}
 .cxt-btnp:hover{filter:brightness(1.06);}
-.cxt-hint{font-size:11px;color:#78716c;padding:10px 14px;background:#faf7ff;border-top:1px solid #ece9f6;line-height:1.5;}
+.cxt-hint{font-size:11px;color:var(--cx-text-mute);padding:10px 14px;background:#faf7ff;border-top:1px solid #ece9f6;line-height:1.5;}
 /* Cards */
-.bar{background:#fff;border:1px solid #eef0f2;border-radius:12px;padding:11px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;box-shadow:0 1px 3px rgba(15,23,42,.04);}
-.bar input,.bar select{padding:9px 12px;border:1px solid #e2e8f0;border-radius:9px;font-size:13px;color:#292524;transition:border-color .15s,box-shadow .15s;}
-.bar input:focus,.bar select:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+.bar{background:var(--cx-card);border:1px solid #eef0f2;border-radius:12px;padding:11px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;box-shadow:0 1px 3px rgba(15,23,42,.04);}
+.bar input,.bar select{padding:9px 12px;border:1px solid var(--cx-border);border-radius:9px;font-size:13px;color:var(--cx-text);transition:border-color .15s,box-shadow .15s;}
+.bar input:focus,.bar select:focus{outline:none;border-color:var(--cx-primary);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
 .bar input{min-width:190px;}
 /* Premium base para inputs de sub-formularios de modal sin clase (proveedor nuevo, datos bancarios) · Sebastián 21-jul */
-.mb input:not([type=checkbox]):not([type=radio]):not([type=date]),.mb select,.mb textarea{border:1px solid #e2e8f0;border-radius:9px;padding:9px 11px;font-size:13px;color:#292524;transition:border-color .15s,box-shadow .15s;}
-.mb input:not([type=checkbox]):not([type=radio]):focus,.mb select:focus,.mb textarea:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+.mb input:not([type=checkbox]):not([type=radio]):not([type=date]),.mb select,.mb textarea{border:1px solid var(--cx-border);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--cx-text);transition:border-color .15s,box-shadow .15s;}
+.mb input:not([type=checkbox]):not([type=radio]):focus,.mb select:focus,.mb textarea:focus{outline:none;border-color:var(--cx-primary);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
 .pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
 .pill{padding:3px 11px;border-radius:12px;font-size:11px;font-weight:600;background:#f3f4f6;color:#374151;}
-.pill.y{background:#fef3c7;color:#92400e;} .pill.b{background:#dbeafe;color:#1e40af;} .pill.g{background:#dcfce7;color:#166534;}
+.pill.y{background:var(--cx-warn-pale);color:var(--cx-warn-text);} .pill.b{background:var(--cx-info-pale);color:var(--cx-info-text);} .pill.g{background:var(--cx-success-pale);color:var(--cx-success-text);}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
-.card{background:#fff;border:1px solid #eef0f2;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:7px;box-shadow:0 1px 3px rgba(15,23,42,.04);transition:box-shadow .15s,transform .1s,border-color .15s;}
+.card{background:var(--cx-card);border:1px solid #eef0f2;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:7px;box-shadow:0 1px 3px rgba(15,23,42,.04);transition:box-shadow .15s,transform .1s,border-color .15s;}
 .card:hover{border-color:#ddd6fe;box-shadow:0 6px 18px rgba(15,23,42,.09);transform:translateY(-1px);}
 .ch{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
-.cnum{font-weight:700;font-size:13px;} .cprov{font-size:13px;color:#1c1917;font-weight:600;margin-top:2px;}
-.cprov-label{font-size:9px;color:#a8a29e;text-transform:uppercase;letter-spacing:0.05em;display:block;}
+.cnum{font-weight:700;font-size:13px;} .cprov{font-size:13px;color:var(--cx-text);font-weight:600;margin-top:2px;}
+.cprov-label{font-size:9px;color:var(--cx-text-faint);text-transform:uppercase;letter-spacing:0.05em;display:block;}
 .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;box-shadow:0 1px 2px rgba(15,23,42,.06);}
-.b-bor{background:#f3f4f6;color:#6b7280;} .b-rev{background:#fef3c7;color:#92400e;}
-.b-aut{background:#dbeafe;color:#1e40af;} .b-pag{background:#dcfce7;color:#166534;}
-.b-rec{background:#f0fdf4;color:#14532d;border:1px solid #bbf7d0;}
-.cmeta{font-size:11px;color:#78716c;display:flex;gap:10px;flex-wrap:wrap;}
-.cval{font-size:15px;font-weight:800;color:#292524;}
-.cobs{font-size:11px;color:#78716c;font-style:italic;}
+.b-bor{background:#f3f4f6;color:var(--cx-text-mute);} .b-rev{background:var(--cx-warn-pale);color:var(--cx-warn-text);}
+.b-aut{background:var(--cx-info-pale);color:var(--cx-info-text);} .b-pag{background:var(--cx-success-pale);color:var(--cx-success-text);}
+.b-rec{background:var(--cx-success-pale);color:#14532d;border:1px solid #bbf7d0;}
+.cmeta{font-size:11px;color:var(--cx-text-mute);display:flex;gap:10px;flex-wrap:wrap;}
+.cval{font-size:15px;font-weight:800;color:var(--cx-text);}
+.cobs{font-size:11px;color:var(--cx-text-mute);font-style:italic;}
 .acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:3px;}
 .btn{padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;border:none;cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.08);transition:box-shadow .15s,transform .1s,filter .15s,background-color .15s;}
 .btn:hover{transform:translateY(-1px);box-shadow:0 5px 14px rgba(15,23,42,.14);}
 .btn:active{transform:translateY(0);box-shadow:0 1px 3px rgba(15,23,42,.10);}
-.bp{background:#292524;color:#fff;} .bp:hover{background:#44403c;}
+.bp{background:var(--cx-text);color:#fff;} .bp:hover{background:var(--cx-text-soft);}
 .bg{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;} .bg:hover{filter:brightness(1.06);}
 .bw{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;} .bw:hover{filter:brightness(1.06);}
 .bi{background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;} .bi:hover{filter:brightness(1.06);}
-.bo{background:#fff;color:#292524;border:1px solid #e7e5e4;box-shadow:0 1px 2px rgba(15,23,42,.05);} .bo:hover{background:#faf9fb;border-color:#ddd6fe;}
+.bo{background:var(--cx-card);color:var(--cx-text);border:1px solid var(--cx-border);box-shadow:0 1px 2px rgba(15,23,42,.05);} .bo:hover{background:#faf9fb;border-color:#ddd6fe;}
 .bs{padding:4px 10px;font-size:11px;}
-.empty{text-align:center;padding:36px;color:#78716c;font-size:13px;}
-.err{text-align:center;padding:20px;color:#dc2626;font-size:13px;}
+.empty{text-align:center;padding:36px;color:var(--cx-text-mute);font-size:13px;}
+.err{text-align:center;padding:20px;color:var(--cx-danger-text);font-size:13px;}
 /* Prov */
 .pg{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;}
-.pc{background:#fff;border:1px solid #eceaf3;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:box-shadow .15s,transform .15s,border-color .15s;position:relative;overflow:hidden;}
+.pc{background:var(--cx-card);border:1px solid #eceaf3;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:box-shadow .15s,transform .15s,border-color .15s;position:relative;overflow:hidden;}
 .pc:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#a78bfa,#6d28d9);opacity:0;transition:opacity .15s;}
 .pc:hover{box-shadow:0 8px 24px -8px rgba(109,40,217,.28);transform:translateY(-2px);border-color:#ddd6fe;}
 .pc:hover:before{opacity:1;}
-.pc-av{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#ede9fe,#ddd6fe);color:#6d28d9;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.pc-av{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#ede9fe,#ddd6fe);color:var(--cx-primary-text);font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .pn{font-weight:800;font-size:14px;margin-bottom:2px;color:#1e1b2e;line-height:1.25;overflow-wrap:anywhere;word-break:break-word;}
 .pnit{font-size:11px;color:#a1a1aa;font-family:ui-monospace,monospace;}
-.pd{font-size:12px;color:#57534e;display:flex;flex-direction:column;gap:4px;margin-top:12px;padding-top:12px;border-top:1px solid #f4f2f9;}
+.pd{font-size:12px;color:var(--cx-text-soft);display:flex;flex-direction:column;gap:4px;margin-top:12px;padding-top:12px;border-top:1px solid #f4f2f9;}
 .pd:empty{display:none;}
 .pd span{display:flex;align-items:center;gap:7px;word-break:break-word;}
 .pd .pd-k{color:#a1a1aa;width:15px;text-align:center;flex-shrink:0;}
@@ -114,44 +114,44 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .pc-actions .pc-sc{flex:1;text-align:center;}
 .pc-sc{font-size:11.5px;padding:7px 11px;white-space:nowrap;border:none;border-radius:9px;font-weight:700;cursor:pointer;}
 .pc-sc.score{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;box-shadow:0 4px 12px -4px rgba(109,40,217,.4);}
-.pc-sc.v360{background:#f5f3ff;color:#6d28d9;border:1px solid #ede9fe;}
+.pc-sc.v360{background:var(--cx-primary-pale);color:var(--cx-primary-text);border:1px solid var(--cx-primary-soft);}
 .pc-sc:hover{filter:brightness(1.05);}
 /* Queue */
 .queue-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
 @media(max-width:700px){.queue-row{grid-template-columns:1fr;}}
-.qbox{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;}
-.qtit{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#78716c;margin-bottom:10px;}
+.qbox{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;padding:14px;}
+.qtit{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--cx-text-mute);margin-bottom:10px;}
 /* Modal */
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:none;align-items:center;justify-content:center;padding:16px;}
 .ov.on{display:flex;}
-.mdl{background:#fff;border-radius:16px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;box-shadow:0 24px 70px rgba(0,0,0,.35);}
+.mdl{background:var(--cx-card);border-radius:16px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;box-shadow:0 24px 70px rgba(0,0,0,.35);}
 .mdl-lg{max-width:700px;}
 .mh{padding:16px 22px;border-bottom:1px solid #eef0f2;display:flex;align-items:center;justify-content:space-between;border-radius:16px 16px 0 0;}
 .mh h3{font-size:15px;font-weight:800;letter-spacing:-.01em;}
-.mx{background:none;border:none;font-size:20px;cursor:pointer;color:#78716c;line-height:1;}
+.mx{background:none;border:none;font-size:20px;cursor:pointer;color:var(--cx-text-mute);line-height:1;}
 .mb{padding:18px 20px;display:flex;flex-direction:column;gap:12px;}
-.mf{padding:12px 20px;border-top:1px solid #e7e5e4;display:flex;gap:8px;justify-content:flex-end;}
-.fg label{display:block;font-size:11px;font-weight:700;color:#44403c;margin-bottom:4px;}
-.fg input,.fg select,.fg textarea{width:100%;padding:8px 11px;border:1px solid #e2e8f0;border-radius:9px;font-size:13px;transition:border-color .15s,box-shadow .15s;}
-.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+.mf{padding:12px 20px;border-top:1px solid var(--cx-border);display:flex;gap:8px;justify-content:flex-end;}
+.fg label{display:block;font-size:11px;font-weight:700;color:var(--cx-text-soft);margin-bottom:4px;}
+.fg input,.fg select,.fg textarea{width:100%;padding:8px 11px;border:1px solid var(--cx-border);border-radius:9px;font-size:13px;transition:border-color .15s,box-shadow .15s;}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--cx-primary);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
 .fg textarea{min-height:65px;resize:vertical;}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.ibox{background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:12px;color:#57534e;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-top:4px;}
-.ibox .lbl{color:#78716c;font-weight:600;white-space:nowrap;}
+.ibox{background:#f9f8f7;border:1px solid var(--cx-border);border-radius:6px;padding:10px;font-size:12px;color:var(--cx-text-soft);display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-top:4px;}
+.ibox .lbl{color:var(--cx-text-mute);font-weight:600;white-space:nowrap;}
 .itbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;}
-.itbl th{background:#f5f4f2;padding:5px 7px;text-align:left;font-size:11px;font-weight:700;color:#44403c;}
+.itbl th{background:#f5f4f2;padding:5px 7px;text-align:left;font-size:11px;font-weight:700;color:var(--cx-text-soft);}
 .itbl td{padding:5px 7px;border-bottom:1px solid #f3f4f6;}
-.itbl input{width:100%;border:1px solid #e2e8f0;border-radius:7px;padding:5px 8px;font-size:12px;transition:border-color .15s,box-shadow .15s;}
-.itbl input:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.1);}
+.itbl input{width:100%;border:1px solid var(--cx-border);border-radius:7px;padding:5px 8px;font-size:12px;transition:border-color .15s,box-shadow .15s;}
+.itbl input:focus{outline:none;border-color:var(--cx-primary);box-shadow:0 0 0 3px rgba(124,58,237,.1);}
 .total-row{text-align:right;margin-top:10px;font-size:15px;font-weight:700;}
-.fab{position:fixed;bottom:22px;right:22px;background:#292524;color:#fff;border:none;width:50px;height:50px;border-radius:50%;font-size:22px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;}
+.fab{position:fixed;bottom:22px;right:22px;background:var(--cx-text);color:#fff;border:none;width:50px;height:50px;border-radius:50%;font-size:22px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;}
 .mh-ent{background:linear-gradient(135deg,#4c1d95 0%,#6d28d9 100%)!important;border-bottom:none;}
 .mh-ent h3{color:#fff!important;}
 .mh-ent .mx{color:#e9d5ff!important;}
 .cat-pills{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
-.pill{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#f5f3ff;padding:5px 12px;border-radius:999px;cursor:pointer;font-size:11px;font-weight:600;transition:all .15s;}
+.pill{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:var(--cx-primary-pale);padding:5px 12px;border-radius:999px;cursor:pointer;font-size:11px;font-weight:600;transition:all .15s;}
 .pill:hover{background:rgba(255,255,255,.26);}
-.pill-on{background:#f59e0b!important;border-color:#f59e0b!important;color:#fff!important;font-weight:800;box-shadow:0 2px 8px rgba(245,158,11,.4);}
+.pill-on{background:var(--cx-warn)!important;border-color:var(--cx-warn)!important;color:#fff!important;font-weight:800;box-shadow:0 2px 8px rgba(245,158,11,.4);}
 /* Premium · modal Nueva OC GRANDE (Sebastián 15-jul · "que ocupe más pantalla, sobre todo con los ítems") */
 .mdl-oc{max-width:min(1320px,95vw)!important;max-height:95vh;}
 .mdl-oc .mh{padding:22px 32px;}
@@ -162,17 +162,17 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .mdl-oc .fg label{font-size:12.5px;margin-bottom:6px;}
 .mdl-oc .fg input,.mdl-oc .fg select,.mdl-oc .fg textarea{padding:11px 14px;font-size:14px;border-radius:11px;}
 .mdl-oc .fg textarea{min-height:78px;}
-.oc-items-card{background:linear-gradient(180deg,#faf9fe 0%,#fbfaff 100%);border:1px solid #ede9fe;border-radius:16px;padding:18px 20px;box-shadow:inset 0 1px 0 rgba(255,255,255,.7);}
-.oc-items-card>label{font-size:13px!important;color:#5b21b6!important;text-transform:uppercase;letter-spacing:.05em;}
+.oc-items-card{background:linear-gradient(180deg,#faf9fe 0%,#fbfaff 100%);border:1px solid var(--cx-primary-soft);border-radius:16px;padding:18px 20px;box-shadow:inset 0 1px 0 rgba(255,255,255,.7);}
+.oc-items-card>label{font-size:13px!important;color:var(--cx-primary-text)!important;text-transform:uppercase;letter-spacing:.05em;}
 #m-noc .itbl{font-size:13.5px;margin-top:12px;}
-#m-noc .itbl th{background:#f5f3ff;color:#5b21b6;padding:11px 13px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;border-bottom:2px solid #e9d5ff;}
+#m-noc .itbl th{background:var(--cx-primary-pale);color:var(--cx-primary-text);padding:11px 13px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;border-bottom:2px solid #e9d5ff;}
 #m-noc .itbl td{padding:9px 13px;border-bottom:1px solid #f1eefb;}
-#m-noc .itbl input{padding:10px 12px;font-size:13.5px;border-radius:10px;background:#fff;}
+#m-noc .itbl input{padding:10px 12px;font-size:13.5px;border-radius:10px;background:var(--cx-card);}
 #m-noc .itbl tbody tr:hover td{background:#faf7ff;}
 #m-noc .itbl tbody tr:last-child td{border-bottom:none;}
-#m-noc .total-row{font-size:19px;color:#4c1d95;}
+#m-noc .total-row{font-size:19px;color:var(--cx-primary-text);}
 /* Premium · tarjetas de OC de la lista OCs Activas (Sebastián 15-jul · "premium todo") */
-.consol-card{background:#fff;border:1px solid #edeaf6;border-left:5px solid #cbd5e1;border-radius:16px;margin-bottom:18px;overflow:hidden;box-shadow:0 4px 20px rgba(76,29,149,.06);transition:transform .16s ease,box-shadow .16s ease;}
+.consol-card{background:var(--cx-card);border:1px solid #edeaf6;border-left:5px solid var(--cx-border);border-radius:16px;margin-bottom:18px;overflow:hidden;box-shadow:0 4px 20px rgba(76,29,149,.06);transition:transform .16s ease,box-shadow .16s ease;}
 .consol-card:hover{transform:translateY(-2px);box-shadow:0 12px 34px rgba(76,29,149,.13);}
 .consol-hd{background:linear-gradient(135deg,#f7f3ff 0%,#fdfcff 55%,#f5f9ff 100%);padding:16px 20px;display:flex;align-items:flex-start;gap:13px;border-bottom:1px solid #f0eef8;}
 .consol-hd .consol-ico{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;background:linear-gradient(135deg,#7c3aed,#5b21b6);box-shadow:0 3px 10px rgba(124,58,237,.28);flex-shrink:0;}
@@ -183,16 +183,16 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .consol-body tbody td{padding:8px 10px;border-bottom:1px solid #f6f5fb;}
 .consol-body tbody tr:last-child td{border-bottom:none;}
 .consol-body tbody tr:hover td{background:#faf8ff;}
-.btn.br{background:#dc2626;color:#fff;border:1px solid #b91c1c;}
-.btn.br:hover{background:#b91c1c;}
-.ocs-cpill{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid #d6d3d1;background:#fff;color:#57534e;cursor:pointer;transition:all .15s;white-space:nowrap;}
-.ocs-cpill:hover{background:#f5f5f4;border-color:#a8a29e;}
+.btn.br{background:var(--cx-danger);color:#fff;border:1px solid var(--cx-danger);}
+.btn.br:hover{background:var(--cx-danger);}
+.ocs-cpill{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid var(--cx-border);background:var(--cx-card);color:var(--cx-text-soft);cursor:pointer;transition:all .15s;white-space:nowrap;}
+.ocs-cpill:hover{background:var(--cx-bg-alt);border-color:var(--cx-text-faint);}
 .ocs-cpill.on{background:#ea580c;border-color:#ea580c;color:#fff;}
 .ptbl{width:100%;border-collapse:collapse;font-size:13px;}
-.ptbl th{background:#fbfbfd;color:#64748b;font-weight:800;font-size:10px;text-transform:uppercase;letter-spacing:.4px;padding:9px 11px;text-align:left;border-bottom:1px solid #eef0f2;}
+.ptbl th{background:#fbfbfd;color:var(--cx-text-mute);font-weight:800;font-size:10px;text-transform:uppercase;letter-spacing:.4px;padding:9px 11px;text-align:left;border-bottom:1px solid #eef0f2;}
 .ptbl td{padding:10px 11px;border-bottom:1px solid #f4f4f8;vertical-align:middle;}
 .ptbl tr:hover td{background:#faf9ff;}
-.pgrp-card{background:#fff;border:1px solid #e7e5e4;border-radius:8px;margin-bottom:14px;overflow:hidden;}
+.pgrp-card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;margin-bottom:14px;overflow:hidden;}
 /* Mobile responsive · Catalina/Mayra tablet · 27-may-2026 */
 @media (max-width: 768px) {
   .pane { padding: 12px 10px; }
@@ -227,10 +227,10 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">Compras</div>
-    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; OCs, proveedores &amp; pagos &middot; <span style="color:#a8a29e">{usuario}</span></div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; OCs, proveedores &amp; pagos &middot; <span style="color:var(--cx-text-faint)">{usuario}</span></div>
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">Módulos</a>
@@ -257,21 +257,21 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
      De 4 grupos top a 4 con menos sub-tabs cada uno · "Mis Solicitudes" pasa a
      widget en Dashboard · default landing = Dashboard (consolidado · KPIs grandes
      arriba). Influencers solo admin. -->
-<div class="tab-nav" id="cx-grp-bar" style="display:flex;gap:8px;padding:8px 0;border-bottom:2px solid #e2e8f0;margin-bottom:12px">
+<div class="tab-nav" id="cx-grp-bar" style="display:flex;gap:8px;padding:8px 0;border-bottom:2px solid var(--cx-border);margin-bottom:12px">
   <button class="cx-grp-btn on" data-cx-grp="analitica"  data-default-tab="dash"
     style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"
     title="Vista ejecutiva · 4 KPIs + alertas + tus solicitudes">📊 Dashboard</button>
   <button class="cx-grp-btn" data-cx-grp="entradas"      data-default-tab="planta"
-    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
+    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:var(--cx-border);color:var(--cx-text-soft)"
     title="Bandeja: SOLs de Planta (MP+Empaque) y Solicitudes generales">📋 Bandeja</button>
   <button class="cx-grp-btn" data-cx-grp="ocs"           data-default-tab="consol"
-    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
+    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:var(--cx-border);color:var(--cx-text-soft)"
     title="Órdenes de Compra · OCs activas · pagos · servicios">📦 OCs</button>
   <button class="cx-grp-btn" data-cx-grp="maestros"      data-default-tab="prov"
-    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
+    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:var(--cx-border);color:var(--cx-text-soft)"
     title="Maestro de Proveedores + scorecard + ROI">🏭 Proveedores</button>
   <button class="cx-grp-btn" data-cx-grp="catalogo" data-default-tab="catalogo"
-    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
+    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:var(--cx-border);color:var(--cx-text-soft)"
     title="Catálogo de consumibles + crear compra + reporte de gasto por categoría">🗂️ Catálogo / Gastos</button>
   <span data-cx-sub="catalogo" style="display:none;gap:6px;flex-wrap:wrap">
     <button class="tn" style="display:none" data-tab="catalogo" id="tn-catalogo"
@@ -281,7 +281,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 </div>
 
 <!-- Sub-barras por grupo (1 visible a la vez) -->
-<div class="tab-nav" id="cx-sub-bar" style="display:none;padding:6px 4px;border-bottom:1px dashed #cbd5e1;margin-bottom:14px;flex-wrap:wrap">
+<div class="tab-nav" id="cx-sub-bar" style="display:none;padding:6px 4px;border-bottom:1px dashed var(--cx-border);margin-bottom:14px;flex-wrap:wrap">
   <!-- Sub-tabs del grupo ENTRADAS (default visible) -->
   <!-- Sebastián 21-may-2026 · INFLUENCERS quitado de Compras · solo
        lo paga Sebastián · Catalina no tiene visibilidad. Botón sigue
@@ -291,7 +291,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <button class="tn"      data-tab="planta" id="tn-planta" title="MP+Empaque · Centro Programación + Pre-Producción fusionado">🏭 Planta</button>
     <button class="tn"      data-tab="solic" id="tn-solic" title="Solicitudes generales (papelería, servicios, EPP, mantenimiento)">📋 Solicitudes</button>
     <!-- Producción · OCULTO 21-may-2026 · fusionado en Planta con badge Pre-Prod -->
-    <button class="tn" data-tab="solprod" id="tn-solprod" style="display:none">🛠️ Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn" data-tab="solprod" id="tn-solprod" style="display:none">🛠️ Producción <span id="solprod-badge" style="display:none;background:var(--cx-danger);color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- Gerencia (Sebastián 14-jul) · Cargos Fijos (Catalina monta/vigila) +
          Influencers (sub-vista solo admin). El tab lo ve compras+admin; la
          sub-vista Influencers se gatea a admin dentro del pane. -->
@@ -302,14 +302,14 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   </span>
   <!-- Sub-tabs del grupo OCs Y PAGOS -->
   <span data-cx-sub="ocs" style="display:none;gap:6px;flex-wrap:wrap">
-    <button class="tn"      data-tab="consol" id="tn-consol" title="OCs activas (Borrador/Revisada/Autorizada) agrupadas por proveedor">📦 OCs Activas <span style="font-size:9px;background:#cbd5e1;color:#475569;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">activas</span></button>
+    <button class="tn"      data-tab="consol" id="tn-consol" title="OCs activas (Borrador/Revisada/Autorizada) agrupadas por proveedor">📦 OCs Activas <span style="font-size:9px;background:var(--cx-border);color:var(--cx-text-soft);padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">activas</span></button>
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
-    <button class="tn" style="display:none"     data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
-    <button class="tn" style="display:none" data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
-    <button class="tn" style="display:none" data-tab="mailbox" id="tn-mailbox" title="Facturas detectadas por el cron mailbox · revisar/completar/descartar · Sebastián 23-may">📧 Mailbox <span id="mailbox-badge" style="display:none;background:#7c3aed;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn" style="display:none"     data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:var(--cx-danger);color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn" style="display:none" data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:var(--cx-danger);color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn" style="display:none" data-tab="mailbox" id="tn-mailbox" title="Facturas detectadas por el cron mailbox · revisar/completar/descartar · Sebastián 23-may">📧 Mailbox <span id="mailbox-badge" style="display:none;background:var(--cx-primary);color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- COT comparador · Sebastián 23-may-2026 PM · backend ya estaba listo, UI nueva -->
-    <button class="tn"      data-tab="cotiz" id="tn-cotiz" title="Rondas de cotizaciones · comparar proveedores lado a lado · elegir ganadora">💬 Cotizaciones <span id="cotiz-badge" style="display:none;background:#0891b2;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn"      data-tab="cotiz" id="tn-cotiz" title="Rondas de cotizaciones · comparar proveedores lado a lado · elegir ganadora">💬 Cotizaciones <span id="cotiz-badge" style="display:none;background:var(--cx-info);color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- Sebastián 21-may-2026 · Órdenes de Servicio (serigrafía/tampografía) -->
     <button class="tn" style="display:none" data-tab="ordserv" id="tn-ordserv" title="Órdenes de Servicio · serigrafía, tampografía, etiquetado">🎨 Órdenes de Servicio</button>
     <button class="tn"      data-tab="prepenv" id="tn-prepenv" title="Envases a marcar · método+proveedor y ciclo completo enviar→recibir→cuarentena→liberar (serigrafía/tampografía)">🏷️ Envases a marcar</button>
@@ -331,9 +331,9 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 
 <!-- PANES -->
 <div id="pane-catalogo" class="pane">
-  <div style="font-size:12px;color:#64748b;margin-bottom:8px">🗂️ Catálogo de consumibles + gastos generales · sin salir de Compras. Aquí viven papelería, EPP, servicios, aseo… con su proveedor y precio, editables y reutilizables.</div>
+  <div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:8px">🗂️ Catálogo de consumibles + gastos generales · sin salir de Compras. Aquí viven papelería, EPP, servicios, aseo… con su proveedor y precio, editables y reutilizables.</div>
   <iframe id="cat-iframe" data-src="/compras/consumos" title="Catálogo / Gastos"
-    style="width:100%;height:80vh;border:1px solid #e2e8f0;border-radius:12px;background:#fff"></iframe>
+    style="width:100%;height:80vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"></iframe>
 </div>
 <div id="pane-dash" class="pane on">
   <!-- Compras PRO · Sebastián 21-may-2026 · Dashboard CONSOLIDADO con 4 KPIs grandes. -->
@@ -363,26 +363,26 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 
 <div id="pane-pagos" class="pane">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
-    <div style="font-weight:700;font-size:15px;color:#1c1917;">&#x1F4B8; Registro de Pagos</div>
+    <div style="font-weight:700;font-size:15px;color:var(--cx-text);">&#x1F4B8; Registro de Pagos</div>
     <input type="text" id="q-pagos" placeholder="Buscar proveedor, OC, medio, factura, referencia..." oninput="renderPagos()"
-      style="flex:1;min-width:180px;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
-    <select id="s-pagos-cat" onchange="renderPagos()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      style="flex:1;min-width:180px;padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
+    <select id="s-pagos-cat" onchange="renderPagos()" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
       <option value="">Todas las categorias</option>
       <option value="mp">Mat. Primas</option><option value="mee">Empaque</option>
       <option value="svc">Servicios</option><option value="adm">Adm</option>
       <option value="inf">Infra</option><option value="cc">CC</option>
     </select>
-    <select id="s-pagos-estado" onchange="renderPagos()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+    <select id="s-pagos-estado" onchange="renderPagos()" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
       <option value="">Todos los estados</option>
       <option value="Pagada">Pagadas</option>
       <option value="Parcial">Parciales (deben)</option>
     </select>
-    <button onclick="abrirOCRFactura()" style="padding:7px 14px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subí foto de factura · la IA extrae items, totales · auto-match con OC pendiente">📤 Subir factura</button>
-    <a href="/tesoreria" target="_blank" style="padding:7px 14px;background:#faf7ff;color:#6d28d9;border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Tesorería · vista de gerencia: por-pagar + precios que se elevan + rechazos">&#127974; Tesorería</a>
-    <a href="/compras/discrepancias" target="_blank" style="padding:7px 14px;background:#faf7ff;color:#6d28d9;border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Discrepancias de compra por artículo · ¿subió por precio o por cantidad? (MP, envases y consumibles)">&#128202; Discrepancias</a>
+    <button onclick="abrirOCRFactura()" style="padding:7px 14px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subí foto de factura · la IA extrae items, totales · auto-match con OC pendiente">📤 Subir factura</button>
+    <a href="/tesoreria" target="_blank" style="padding:7px 14px;background:#faf7ff;color:var(--cx-primary-text);border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Tesorería · vista de gerencia: por-pagar + precios que se elevan + rechazos">&#127974; Tesorería</a>
+    <a href="/compras/discrepancias" target="_blank" style="padding:7px 14px;background:#faf7ff;color:var(--cx-primary-text);border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Discrepancias de compra por artículo · ¿subió por precio o por cantidad? (MP, envases y consumibles)">&#128202; Discrepancias</a>
   </div>
   <div id="pagos-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px;"></div>
-  <div id="pagos-saldos-panel" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px 16px;margin-bottom:14px;"></div>
+  <div id="pagos-saldos-panel" style="display:none;background:var(--cx-success-pale);border:1px solid #bbf7d0;border-radius:12px;padding:14px 16px;margin-bottom:14px;"></div>
   <div id="pagos-bar-extra"></div>
   <div id="pagos-wrap">
     <div class="empty">Cargando pagos...</div>
@@ -393,15 +393,15 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   <!-- Sub-nav Gerencia: Cargos Fijos (Catalina+admin) · Influencers (solo admin) -->
   <div style="display:flex;gap:6px;margin:2px 0 16px;border-bottom:1px solid #ececf1;">
     <button type="button" class="sp-tab sp-on" id="gtn-cargos" onclick="showGerencia('cargos')">🏛️ Cargos fijos</button>
-    <button type="button" class="sp-tab" id="gtn-influencer" data-admin-only="1" style="display:none" onclick="showGerencia('influencer')">💸 Influencers <span style="font-size:9px;background:#dc2626;color:#fff;padding:1px 5px;border-radius:6px;font-weight:700">admin</span></button>
+    <button type="button" class="sp-tab" id="gtn-influencer" data-admin-only="1" style="display:none" onclick="showGerencia('influencer')">💸 Influencers <span style="font-size:9px;background:var(--cx-danger);color:#fff;padding:1px 5px;border-radius:6px;font-weight:700">admin</span></button>
   </div>
   <!-- VISTA · Cargos fijos -->
   <div id="gv-cargos">
     <div id="cargos-alert" style="display:none;"></div>
     <div class="bar" style="justify-content:space-between;flex-wrap:wrap;gap:10px;">
       <div>
-        <span style="font-weight:800;color:#1e293b;font-size:16px;letter-spacing:-.01em;">🏛️ Cargos fijos · Gerencia</span>
-        <div style="font-size:11px;color:#64748b;margin-top:3px;">Arriendo, servicios públicos y gastos recurrentes · <b>Catalina</b> los monta y vigila · <b>solo Sebastián</b> los paga · <span id="cargos-periodo"></span></div>
+        <span style="font-weight:800;color:var(--cx-text);font-size:16px;letter-spacing:-.01em;">🏛️ Cargos fijos · Gerencia</span>
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px;">Arriendo, servicios públicos y gastos recurrentes · <b>Catalina</b> los monta y vigila · <b>solo Sebastián</b> los paga · <span id="cargos-periodo"></span></div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn bo" onclick="loadCargosFijos()" style="font-size:12px;">↻ Actualizar</button>
@@ -409,7 +409,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       </div>
     </div>
     <input type="text" id="q-cargos" oninput="renderCargos()" placeholder="🔍 Buscar concepto, beneficiario…" style="width:100%;max-width:360px;padding:10px 13px;border:1px solid #eef0f2;border-radius:12px;font-size:13px;margin-bottom:12px;box-shadow:0 1px 3px rgba(15,23,42,.04);">
-    <div id="cargos-body"><div style="color:#94a3b8;text-align:center;padding:36px;">Cargando…</div></div>
+    <div id="cargos-body"><div style="color:var(--cx-text-faint);text-align:center;padding:36px;">Cargando…</div></div>
   </div>
   <!-- VISTA · Influencers (solo admin) -->
   <div id="gv-influencer" style="display:none;">
@@ -424,7 +424,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <option value="Pagada">✅ Pagadas</option>
       <option value="Rechazada">❌ Rechazadas</option>
     </select>
-    <select id="order-influencer" onchange="renderInfluencers()" title="Ordenar por" style="background:#faf5ff;border:1px solid #c4b5fd;color:#5b21b6;font-weight:600;">
+    <select id="order-influencer" onchange="renderInfluencers()" title="Ordenar por" style="background:#faf5ff;border:1px solid var(--cx-primary-light);color:var(--cx-primary-text);font-weight:600;">
       <option value="urgente">⏰ Más urgente arriba (default · vence antes)</option>
       <option value="estado_fecha">📌 Por pagar primero (estado + fecha)</option>
       <option value="valor_desc">💰 Mayor valor primero</option>
@@ -432,9 +432,9 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <option value="reciente">🆕 Más reciente arriba</option>
       <option value="antiguo">📜 Más antiguo arriba</option>
     </select>
-    <button onclick="limpiarSolsNoPagadas()" style="margin-left:auto;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Eliminar SOLs Influencer/Marketing/CC NO pagadas (preserva las Pagadas)">🧹 Limpiar no-pagadas</button>
+    <button onclick="limpiarSolsNoPagadas()" style="margin-left:auto;background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fca5a5;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Eliminar SOLs Influencer/Marketing/CC NO pagadas (preserva las Pagadas)">🧹 Limpiar no-pagadas</button>
   </div>
-  <div id="pills-influencer-help" style="font-size:11px;color:#64748b;padding:0 4px 8px;"></div>
+  <div id="pills-influencer-help" style="font-size:11px;color:var(--cx-text-mute);padding:0 4px 8px;"></div>
   <div id="pills-influencer" class="pills"></div>
   <div id="grid-influencer"></div>
   <div id="grid-influencer-pagadas"></div>
@@ -443,19 +443,19 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <!-- Modal rechazo influencer -->
 <div id="m-rechazar-inf" class="ov">
   <div class="mdl" style="max-width:440px;">
-    <div class="mh" style="background:#fef2f2;border-bottom:1px solid #fecaca;">
+    <div class="mh" style="background:var(--cx-danger-pale);border-bottom:1px solid #fecaca;">
       <div style="display:flex;align-items:center;gap:10px;">
         <span style="font-size:22px;line-height:1;">&#x274C;</span>
         <div>
-          <div style="font-size:15px;font-weight:700;color:#991b1b;">Rechazar solicitud</div>
-          <div id="m-rechazar-inf-sub" style="font-size:12px;color:#b91c1c;margin-top:1px;"></div>
+          <div style="font-size:15px;font-weight:700;color:var(--cx-danger-text);">Rechazar solicitud</div>
+          <div id="m-rechazar-inf-sub" style="font-size:12px;color:var(--cx-danger-text);margin-top:1px;"></div>
         </div>
       </div>
       <button class="mx" onclick="closeModal('m-rechazar-inf')">&#x2715;</button>
     </div>
     <div class="mb">
       <div class="fg">
-        <label>Motivo del rechazo <span style="color:#dc2626;">*</span> <span style="font-weight:400;color:#78716c;">(visible para el solicitante)</span></label>
+        <label>Motivo del rechazo <span style="color:var(--cx-danger-text);">*</span> <span style="font-weight:400;color:var(--cx-text-mute);">(visible para el solicitante)</span></label>
         <textarea id="motivo-rechazo-inf" rows="4" placeholder="Ej: Falta información de cuenta, monto incorrecto, valor no coincide..."></textarea>
       </div>
       <div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:10px 12px;font-size:12px;color:#854d0e;">
@@ -463,8 +463,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       </div>
     </div>
     <div class="mf">
-      <button class="btn" onclick="closeModal('m-rechazar-inf')" style="background:#f5f5f4;color:#44403c;border:1px solid #d6d3d1;">Cancelar</button>
-      <button class="btn" id="btn-confirmar-rechazo" style="background:#dc2626;color:#fff;">&#x274C; Confirmar Rechazo</button>
+      <button class="btn" onclick="closeModal('m-rechazar-inf')" style="background:var(--cx-bg-alt);color:var(--cx-text-soft);border:1px solid var(--cx-border);">Cancelar</button>
+      <button class="btn" id="btn-confirmar-rechazo" style="background:var(--cx-danger);color:#fff;">&#x274C; Confirmar Rechazo</button>
     </div>
   </div>
 </div>
@@ -505,7 +505,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <div class="mh mh-ent"><h3>✎ Cargar monto del mes</h3><button class="mx" onclick="closeModal('m-cargomonto')">&times;</button></div>
     <div class="mb">
       <input type="hidden" id="cfm-pid">
-      <div style="background:linear-gradient(135deg,rgba(124,58,237,.06),rgba(124,58,237,.02));border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:700;color:#5b21b6;" id="cfm-concepto"></div>
+      <div style="background:linear-gradient(135deg,rgba(124,58,237,.06),rgba(124,58,237,.02));border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:700;color:var(--cx-primary-text);" id="cfm-concepto"></div>
       <div class="fg"><label>Monto a pagar este mes *</label><input type="number" id="cfm-monto" min="0" step="0.01" placeholder="0"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="fg"><label>Medio de pago</label><select id="cfm-medio"><option value="referencia">Referencia</option><option value="cuenta">Cuenta</option><option value="link">Link</option><option value="otro">Otro</option></select></div>
@@ -524,14 +524,14 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 
 <div id="pane-prov" class="pane">
   <div class="bar" style="align-items:center;gap:10px">
-    <input type="text" id="q-prov" placeholder="&#128269; Buscar proveedor por nombre o NIT..." oninput="renderProv()" style="flex:1;min-width:240px;padding:10px 16px;border:1px solid #e7e5e4;border-radius:999px;font-size:13px;color:#292524;background:#fff">
+    <input type="text" id="q-prov" placeholder="&#128269; Buscar proveedor por nombre o NIT..." oninput="renderProv()" style="flex:1;min-width:240px;padding:10px 16px;border:1px solid var(--cx-border);border-radius:999px;font-size:13px;color:var(--cx-text);background:var(--cx-card)">
     <button onclick="openModal('m-nprov')" style="padding:10px 18px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px -6px rgba(109,40,217,.5);white-space:nowrap">&#10133; Nuevo proveedor</button>
-    <span style="width:1px;height:24px;background:#e7e5e4"></span>
-    <button onclick="abrirROIProveedores()" style="padding:8px 12px;background:#faf7ff;color:#78716c;border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="ROI 12 meses · cumplimiento · top por monto">&#128202; ROI</button>
-    <button onclick="abrirProvDuplicados()" style="padding:8px 12px;background:#faf7ff;color:#78716c;border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="Detectar y fusionar proveedores duplicados (case-insensitive)">&#128279; Duplicados</button>
-    <button onclick="toggleProvCalidad()" style="padding:8px 12px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap" title="Ranking de calidad de despacho por proveedor (tasa de discrepancia en recepciones)">&#127942; Ranking calidad</button>
+    <span style="width:1px;height:24px;background:var(--cx-border)"></span>
+    <button onclick="abrirROIProveedores()" style="padding:8px 12px;background:#faf7ff;color:var(--cx-text-mute);border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="ROI 12 meses · cumplimiento · top por monto">&#128202; ROI</button>
+    <button onclick="abrirProvDuplicados()" style="padding:8px 12px;background:#faf7ff;color:var(--cx-text-mute);border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="Detectar y fusionar proveedores duplicados (case-insensitive)">&#128279; Duplicados</button>
+    <button onclick="toggleProvCalidad()" style="padding:8px 12px;background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid #bbf7d0;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap" title="Ranking de calidad de despacho por proveedor (tasa de discrepancia en recepciones)">&#127942; Ranking calidad</button>
   </div>
-  <div id="prov-calidad-panel" style="display:none;background:#fff;border:1px solid #e7e5e4;border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(15,23,42,.04)"></div>
+  <div id="prov-calidad-panel" style="display:none;background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(15,23,42,.04)"></div>
   <div class="kpis" id="prov-kpis" style="margin-bottom:16px"></div>
   <div id="prov-grid" class="pg"><div class="empty">Cargando...</div></div>
 </div>
@@ -560,7 +560,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
          Solo limpiar / Limpiar y regenerar): operaban sobre la fuente PLANTA (Materia Prima),
          no sobre estas solicitudes de usuarios → confundían y no aplicaban acá. Su lugar es la
          pestaña Planta. Se conserva "Agrupar por proveedor" (sí agrupa las de usuarios en una OC). -->
-    <button id="btn-toggle-vista" class="btn" onclick="toggleVistaSolicitudes()" style="background:#0e7490;color:#fff;" title="Agrupar todas las solicitudes pendientes por proveedor - crea una sola OC para todas las del mismo proveedor">&#x1F4E6; Agrupar por proveedor</button>
+    <button id="btn-toggle-vista" class="btn" onclick="toggleVistaSolicitudes()" style="background:var(--cx-info);color:#fff;" title="Agrupar todas las solicitudes pendientes por proveedor - crea una sola OC para todas las del mismo proveedor">&#x1F4E6; Agrupar por proveedor</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -573,11 +573,11 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div id="pane-ordserv" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px">
     <div>
-      <span style="font-weight:700;color:#1e293b;font-size:15px">🎨 Órdenes de Servicio</span>
-      <div style="font-size:11px;color:#64748b;margin-top:2px">Serigrafía · Tampografía · Etiquetado · cualquier servicio sobre envases existentes</div>
+      <span style="font-weight:700;color:var(--cx-text);font-size:15px">🎨 Órdenes de Servicio</span>
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">Serigrafía · Tampografía · Etiquetado · cualquier servicio sobre envases existentes</div>
     </div>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
-      <select id="os-filtro-estado" onchange="loadOrdenesServicio()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+      <select id="os-filtro-estado" onchange="loadOrdenesServicio()" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:12px">
         <option value="">Todos los estados</option>
         <option value="Borrador">Borrador</option>
         <option value="Enviada">Enviada</option>
@@ -588,13 +588,13 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
         <option value="Cancelada">Cancelada</option>
       </select>
       <button class="btn bp" onclick="loadOrdenesServicio()" style="padding:6px 14px;font-size:12px">↺ Actualizar</button>
-      <button class="btn" onclick="abrirNuevaOS()" style="padding:6px 14px;font-size:12px;background:#0f766e;color:#fff;font-weight:700">➕ Nueva OS</button>
+      <button class="btn" onclick="abrirNuevaOS()" style="padding:6px 14px;font-size:12px;background:var(--cx-info);color:#fff;font-weight:700">➕ Nueva OS</button>
     </div>
   </div>
   <div id="os-counts" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;font-size:11px"></div>
   <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:#0f766e;color:#fff">
+      <thead><tr style="background:var(--cx-info);color:#fff">
         <th style="padding:8px">N° OS</th>
         <th style="padding:8px">Proveedor</th>
         <th style="padding:8px">Servicio</th>
@@ -606,7 +606,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
         <th style="padding:8px">Estado</th>
         <th style="padding:8px;text-align:center">Acciones</th>
       </tr></thead>
-      <tbody id="os-tbody"><tr><td colspan="10" style="text-align:center;padding:18px;color:#94a3b8">Cargando…</td></tr></tbody>
+      <tbody id="os-tbody"><tr><td colspan="10" style="text-align:center;padding:18px;color:var(--cx-text-faint)">Cargando…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -615,23 +615,23 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div id="pane-prepenv" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px">
     <div>
-      <span style="font-weight:700;color:#1e293b;font-size:15px">&#127991;&#65039; Envases a marcar &middot; serigrafía / tampografía</span>
-      <div style="font-size:11px;color:#64748b;margin-top:2px">Compras define <b>método</b> y <b>proveedor</b> de cada envase y lo manda a marcar (15 días antes de producir). Ciclo completo: enviar &rarr; recibir &rarr; cuarentena &rarr; Calidad libera. Planta solo alista/recibe.</div>
+      <span style="font-weight:700;color:var(--cx-text);font-size:15px">&#127991;&#65039; Envases a marcar &middot; serigrafía / tampografía</span>
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">Compras define <b>método</b> y <b>proveedor</b> de cada envase y lo manda a marcar (15 días antes de producir). Ciclo completo: enviar &rarr; recibir &rarr; cuarentena &rarr; Calidad libera. Planta solo alista/recibe.</div>
     </div>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
-      <button class="btn" onclick="recalcularMinimosEnvases()" style="padding:6px 14px;font-size:12px;background:#7c3aed;color:#fff;font-weight:700" title="Recalcula el mínimo de cada envase según el consumo real del plan (dinámico, en vez del estático del maestro)">&#9881; Mínimos de envases</button>
+      <button class="btn" onclick="recalcularMinimosEnvases()" style="padding:6px 14px;font-size:12px;background:var(--cx-primary);color:#fff;font-weight:700" title="Recalcula el mínimo de cada envase según el consumo real del plan (dinámico, en vez del estático del maestro)">&#9881; Mínimos de envases</button>
       <button class="btn bp" onclick="loadMarcacionOC(true)" style="padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
     </div>
   </div>
-  <iframe id="marcacion-iframe-oc" src="about:blank" style="width:100%;height:82vh;border:1px solid #e2e8f0;border-radius:12px;background:#fff;margin-top:6px" title="Envases a marcar"></iframe>
+  <iframe id="marcacion-iframe-oc" src="about:blank" style="width:100%;height:82vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card);margin-top:6px" title="Envases a marcar"></iframe>
 </div>
 
 <!-- Sebastián 31-may-2026 · Feed de necesidades (Pieza 2) -->
 <div id="pane-feedneed" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px">
     <div>
-      <span style="font-weight:700;color:#1e293b;font-size:15px">&#128276; Necesidades de compra</span>
-      <div style="font-size:11px;color:#64748b;margin-top:2px">Materias primas y envases por debajo del mínimo, en un solo lugar &middot; lo más crítico arriba.</div>
+      <span style="font-weight:700;color:var(--cx-text);font-size:15px">&#128276; Necesidades de compra</span>
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">Materias primas y envases por debajo del mínimo, en un solo lugar &middot; lo más crítico arriba.</div>
     </div>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
       <button class="btn bp" onclick="loadFeedNecesidades()" style="padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
@@ -645,12 +645,12 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div id="pane-facprov" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px">
     <div>
-      <span style="font-weight:700;color:#1e293b;font-size:15px">&#129534; Facturas de proveedor &middot; cuentas por pagar</span>
-      <div style="font-size:11px;color:#64748b;margin-top:2px">Cada factura es un documento del proveedor (con retenciones y vencimiento) que se va saldando con pagos. Lo vencido arriba.</div>
+      <span style="font-weight:700;color:var(--cx-text);font-size:15px">&#129534; Facturas de proveedor &middot; cuentas por pagar</span>
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">Cada factura es un documento del proveedor (con retenciones y vencimiento) que se va saldando con pagos. Lo vencido arriba.</div>
     </div>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-      <input type="text" id="fp-q" placeholder="Buscar nº, proveedor, OC…" oninput="_fpDeb()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;min-width:180px">
-      <select id="fp-estado" onchange="loadFacturasProv()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+      <input type="text" id="fp-q" placeholder="Buscar nº, proveedor, OC…" oninput="_fpDeb()" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:12px;min-width:180px">
+      <select id="fp-estado" onchange="loadFacturasProv()" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:12px">
         <option value="todas">Todos los estados</option>
         <option value="pendiente">Pendiente</option>
         <option value="parcial">Parcial</option>
@@ -658,7 +658,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
         <option value="anulada">Anulada</option>
       </select>
       <button class="btn bp" onclick="loadFacturasProv()" style="padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
-      <button class="btn" onclick="fpNuevaModal()" style="padding:6px 14px;font-size:12px;background:#0f766e;color:#fff;font-weight:700">&#10133; Nueva factura</button>
+      <button class="btn" onclick="fpNuevaModal()" style="padding:6px 14px;font-size:12px;background:var(--cx-info);color:#fff;font-weight:700">&#10133; Nueva factura</button>
     </div>
   </div>
   <div id="fp-kpis" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"></div>
@@ -668,11 +668,11 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div id="pane-solprod" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
     <div>
-      <span style="font-weight:700;color:#1e293b;font-size:15px;">&#128737;&#65039; Solicitudes desde Producción</span>
-      <div style="font-size:12px;color:#64748b;margin-top:2px;">Llegan del checklist Pre-Producción · Decide ruta: inventario / OC / serigrafía / tampografía</div>
+      <span style="font-weight:700;color:var(--cx-text);font-size:15px;">&#128737;&#65039; Solicitudes desde Producción</span>
+      <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px;">Llegan del checklist Pre-Producción · Decide ruta: inventario / OC / serigrafía / tampografía</div>
     </div>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
-      <select id="solprod-filtro-estado" onchange="loadSolicitudesProduccion()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+      <select id="solprod-filtro-estado" onchange="loadSolicitudesProduccion()" style="padding:6px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:12px">
         <option value="pendiente">Pendientes</option>
         <option value="decidida">Decididas</option>
         <option value="completada">Completadas</option>
@@ -682,16 +682,16 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     </div>
   </div>
   <div id="solprod-lista" style="display:flex;flex-direction:column;gap:10px;margin-top:14px"></div>
-  <div id="solprod-empty" style="display:none;text-align:center;color:#94a3b8;padding:40px;font-size:13px">Sin solicitudes en este estado.</div>
+  <div id="solprod-empty" style="display:none;text-align:center;color:var(--cx-text-faint);padding:40px;font-size:13px">Sin solicitudes en este estado.</div>
 </div>
 
 <!-- ════════════ TAB: MIS SOLICITUDES ════════════ -->
 <div id="pane-mis-sol" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
-    <span style="font-weight:700;color:#1e293b;font-size:15px;">&#128100; Mis solicitudes - ciclo completo</span>
+    <span style="font-weight:700;color:var(--cx-text);font-size:15px;">&#128100; Mis solicitudes - ciclo completo</span>
     <div style="display:flex;gap:8px;margin-left:auto;align-items:center;">
-      <label style="font-size:12px;color:#64748b;">Mostrar:</label>
-      <select id="mis-sol-filtro" onchange="loadMisSolicitudes()" style="padding:5px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer">
+      <label style="font-size:12px;color:var(--cx-text-mute);">Mostrar:</label>
+      <select id="mis-sol-filtro" onchange="loadMisSolicitudes()" style="padding:5px 10px;font-size:12px;border:1px solid var(--cx-border);border-radius:6px;cursor:pointer">
         <option value="abiertas" selected>Abiertas (en ciclo)</option>
         <option value="cerradas">Cerradas (recibidas / canceladas)</option>
         <option value="todas">Todas</option>
@@ -699,12 +699,12 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <button class="btn bp" onclick="loadMisSolicitudes()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
     </div>
   </div>
-  <div style="padding:8px 0 14px;color:#64748b;font-size:12px;line-height:1.5">
+  <div style="padding:8px 0 14px;color:var(--cx-text-mute);font-size:12px;line-height:1.5">
     Aquí ves <b>tus</b> solicitudes con el seguimiento completo: pendiente → aprobada → OC → pagada → en tránsito → recibida.<br>
     Cuando te llegue la mercancía, click <b>✅ Marcar Recibido</b> para cerrar el ciclo sin esperar a Catalina.
   </div>
   <div id="mis-sol-body">
-    <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>
+    <div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Cargando...</div>
   </div>
 </div>
 
@@ -723,7 +723,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   <div id="mp-alert-banner" style="display:none;background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1px solid #fcd34d;border-radius:12px;padding:12px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(245,158,11,.08);">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span style="font-size:18px;">&#x26A0;&#xFE0F;</span>
-      <div id="mp-alert-text" style="flex:1;font-size:13px;font-weight:700;color:#92400e;"></div>
+      <div id="mp-alert-text" style="flex:1;font-size:13px;font-weight:700;color:var(--cx-warn-text);"></div>
       <button style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;font-size:12px;font-weight:700;padding:7px 14px;border:none;border-radius:8px;cursor:pointer;white-space:nowrap;box-shadow:0 2px 8px rgba(217,119,6,.3);" onclick="openOCSugerida()">&#x1F4CB; Crear OC Sugerida</button>
     </div>
     <div id="mp-alert-list" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
@@ -732,16 +732,16 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span style="font-size:18px;">&#x1F4E1;</span>
       <div style="flex:1;">
-        <div id="prog-alert-text" style="font-size:13px;font-weight:700;color:#7f1d1d;"></div>
-        <div style="font-size:11px;color:#991b1b;margin-top:2px;">Centro de Programaci&#xF3;n - velocidad Shopify + f&#xF3;rmulas + stock MP</div>
+        <div id="prog-alert-text" style="font-size:13px;font-weight:700;color:var(--cx-danger-text);"></div>
+        <div style="font-size:11px;color:var(--cx-danger-text);margin-top:2px;">Centro de Programaci&#xF3;n - velocidad Shopify + f&#xF3;rmulas + stock MP</div>
       </div>
-      <a href="/planta" style="background:#fff;color:#dc2626;border:1px solid #fca5a5;font-size:12px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap;font-weight:700;">&#x1F4CA; Ver Programaci&#xF3;n</a>
+      <a href="/planta" style="background:var(--cx-card);color:var(--cx-danger-text);border:1px solid #fca5a5;font-size:12px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap;font-weight:700;">&#x1F4CA; Ver Programaci&#xF3;n</a>
       <button onclick="generarOCDesdeCompras(this)" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:8px;font-size:12px;padding:7px 14px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(185,28,28,.3);">&#x1F6D2; Generar OC</button>
     </div>
   </div>
-  <div style="font-size:11px;color:#94a3b8;margin:2px 2px 12px;line-height:1.5;">
+  <div style="font-size:11px;color:var(--cx-text-faint);margin:2px 2px 12px;line-height:1.5;">
     Pedidos de planta agrupados por proveedor · vienen del Centro de Programación (Materia Prima + Empaque).
-    Editá <b style="color:#64748b">proveedor / cantidad / valor</b> de cada ítem · al guardar se sincroniza con toda la app
+    Editá <b style="color:var(--cx-text-mute)">proveedor / cantidad / valor</b> de cada ítem · al guardar se sincroniza con toda la app
     (maestro, lead time, precio de referencia).
   </div>
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
@@ -752,11 +752,11 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <option value="all">Todos</option>
     </select>
     <button class="btn bp" onclick="loadPlanta(true)" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
-    <button class="btn" onclick="limpiarSolsPlantaLegacy()" style="background:#dc2626;color:#fff;font-size:12px;padding:7px 14px;" title="Borra TODAS las SOLs Pendientes de planta sin OC vinculada · útil para borrón y cuenta nueva">&#x1F5D1;&#xFE0F; Limpiar SOLs planta</button>
+    <button class="btn" onclick="limpiarSolsPlantaLegacy()" style="background:var(--cx-danger);color:#fff;font-size:12px;padding:7px 14px;" title="Borra TODAS las SOLs Pendientes de planta sin OC vinculada · útil para borrón y cuenta nueva">&#x1F5D1;&#xFE0F; Limpiar SOLs planta</button>
   </div>
-  <div id="planta-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:#64748b;"></div>
+  <div id="planta-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--cx-text-mute);"></div>
   <div id="planta-body" style="display:flex;flex-direction:column;gap:12px;">
-    <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>
+    <div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Cargando...</div>
   </div>
   </div>
 </div>
@@ -765,8 +765,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   <div class="bar" style="flex-direction:column;align-items:stretch;gap:12px;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
       <div>
-        <span style="font-weight:800;color:#1e293b;font-size:16px;letter-spacing:-.01em;">&#x1F4E6; Órdenes de compra activas</span>
-        <div style="font-size:11px;color:#64748b;margin-top:3px">OCs <b>por autorizar</b> (Borrador / Revisada) · las autorizadas listas para pagar están en <b>💰 Por Pagar</b> · las SOLs pendientes en <b>🏭 Planta</b></div>
+        <span style="font-weight:800;color:var(--cx-text);font-size:16px;letter-spacing:-.01em;">&#x1F4E6; Órdenes de compra activas</span>
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px">OCs <b>por autorizar</b> (Borrador / Revisada) · las autorizadas listas para pagar están en <b>💰 Por Pagar</b> · las SOLs pendientes en <b>🏭 Planta</b></div>
       </div>
       <button class="btn bg" onclick="openNuevaOC('')" style="padding:9px 20px;font-size:14px;" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · autorizar al crear va directo a Por Pagar">&#10133; Crear OC</button>
     </div>
@@ -781,14 +781,14 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     </div>
   </div>
   <div style="position:relative;margin:2px 0 6px;">
-    <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#a8a29e;font-size:15px;pointer-events:none;">&#x1F50D;</span>
+    <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--cx-text-faint);font-size:15px;pointer-events:none;">&#x1F50D;</span>
     <input id="consol-search" type="text" oninput="renderConsolBody()" placeholder="Buscar por proveedor, N° OC o producto…"
-      style="width:100%;padding:11px 14px 11px 40px;border:1px solid #eef0f2;border-radius:12px;font-size:13px;color:#292524;box-shadow:0 1px 3px rgba(15,23,42,.04);outline:none;"
+      style="width:100%;padding:11px 14px 11px 40px;border:1px solid #eef0f2;border-radius:12px;font-size:13px;color:var(--cx-text);box-shadow:0 1px 3px rgba(15,23,42,.04);outline:none;"
       onfocus="this.style.borderColor='#c4b5fd';this.style.boxShadow='0 0 0 3px rgba(124,58,237,.12)'"
       onblur="this.style.borderColor='#eef0f2';this.style.boxShadow='0 1px 3px rgba(15,23,42,.04)'">
   </div>
   <div id="consol-body" style="padding:10px 0;">
-    <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando consolidado...</div>
+    <div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Cargando consolidado...</div>
   </div>
 </div>
 
@@ -796,47 +796,47 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div id="pane-por-pagar" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
     <div>
-      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4B0; Pendiente de pago</h2>
-      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+      <h2 style="margin:0;font-size:18px;color:var(--cx-text);">&#x1F4B0; Pendiente de pago</h2>
+      <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px;">
         Mercanc&iacute;a recibida + servicios sin recepci&oacute;n (Influencers, Cuentas de Cobro)
       </div>
     </div>
     <div style="display:flex;gap:6px;">
-      <button class="btn" onclick="openSaldoFavor()" style="padding:6px 14px;font-size:12px;background:#16a34a;color:#fff;border:0;border-radius:5px;font-weight:700;cursor:pointer;" title="Anticipos, saldos a favor y notas crédito por proveedor">&#x1F4B3; Saldo a favor</button>
-      <button class="btn" onclick="exportOcsConsolidado()" style="padding:6px 14px;font-size:12px;background:#059669;color:#fff;border:0;border-radius:5px;font-weight:700;cursor:pointer;" title="Excel consolidado de todas las OCs activas (estados, info bancaria, recepción, discrepancia)">&#x1F4CA; Excel consolidado</button>
+      <button class="btn" onclick="openSaldoFavor()" style="padding:6px 14px;font-size:12px;background:var(--cx-success);color:#fff;border:0;border-radius:5px;font-weight:700;cursor:pointer;" title="Anticipos, saldos a favor y notas crédito por proveedor">&#x1F4B3; Saldo a favor</button>
+      <button class="btn" onclick="exportOcsConsolidado()" style="padding:6px 14px;font-size:12px;background:var(--cx-success);color:#fff;border:0;border-radius:5px;font-weight:700;cursor:pointer;" title="Excel consolidado de todas las OCs activas (estados, info bancaria, recepción, discrepancia)">&#x1F4CA; Excel consolidado</button>
       <button class="btn bp" onclick="loadPorPagar()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
     </div>
   </div>
 
   <div id="por-pagar-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px;">
-    <div style="background:#1e1b4b;border:1px solid #4c1d95;border-radius:10px;padding:14px;">
-      <div style="font-size:10px;color:#a78bfa;text-transform:uppercase;letter-spacing:0.05em;">Total pendiente</div>
+    <div style="background:#1e1b4b;border:1px solid var(--cx-primary-dark);border-radius:10px;padding:14px;">
+      <div style="font-size:10px;color:var(--cx-primary-light);text-transform:uppercase;letter-spacing:0.05em;">Total pendiente</div>
       <div style="font-size:22px;font-weight:800;color:#fff;" id="por-pagar-total">-</div>
     </div>
     <div style="background:#0c1a4d;border:1px solid #1e3a8a;border-radius:10px;padding:14px;">
       <div style="font-size:10px;color:#93c5fd;text-transform:uppercase;letter-spacing:0.05em;">Mercanc&iacute;a recibida</div>
       <div style="font-size:18px;font-weight:800;color:#fff;" id="por-pagar-merc">-</div>
     </div>
-    <div style="background:#3a2a00;border:1px solid #92400e;border-radius:10px;padding:14px;">
-      <div style="font-size:10px;color:#fbbf24;text-transform:uppercase;letter-spacing:0.05em;">Pago directo (servicios)</div>
+    <div style="background:#3a2a00;border:1px solid var(--cx-accent-dark);border-radius:10px;padding:14px;">
+      <div style="font-size:10px;color:var(--cx-accent);text-transform:uppercase;letter-spacing:0.05em;">Pago directo (servicios)</div>
       <div style="font-size:18px;font-weight:800;color:#fff;" id="por-pagar-svc">-</div>
     </div>
   </div>
 
   <!-- Sección destacada: pagos directos (Influencers) -->
   <div id="por-pagar-directos-wrap" style="display:none;margin-bottom:20px;">
-    <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:10px;">
-      <div style="font-weight:700;color:#92400e;font-size:14px;">&#x1F4B8; Pagos directos (Influencers, Cuentas de Cobro)</div>
-      <div style="font-size:11px;color:#78350f;margin-top:4px;">Estas OCs no requieren recepci&oacute;n f&iacute;sica - son servicios listos para pagar.</div>
+    <div style="background:var(--cx-warn-pale);border:1px solid var(--cx-warn);border-radius:10px;padding:14px 16px;margin-bottom:10px;">
+      <div style="font-weight:700;color:var(--cx-warn-text);font-size:14px;">&#x1F4B8; Pagos directos (Influencers, Cuentas de Cobro)</div>
+      <div style="font-size:11px;color:var(--cx-warn-text);margin-top:4px;">Estas OCs no requieren recepci&oacute;n f&iacute;sica - son servicios listos para pagar.</div>
     </div>
     <div id="por-pagar-directos" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;"></div>
   </div>
 
   <!-- Mercancía recibida -->
   <div style="margin-bottom:14px;">
-    <div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:10px;">&#x1F4E6; Mercanc&iacute;a recibida pendiente de pago</div>
+    <div style="font-weight:700;color:var(--cx-text);font-size:14px;margin-bottom:10px;">&#x1F4E6; Mercanc&iacute;a recibida pendiente de pago</div>
     <div id="por-pagar-merc-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">
-      <div style="color:#94a3b8;text-align:center;padding:20px;">Cargando...</div>
+      <div style="color:var(--cx-text-faint);text-align:center;padding:20px;">Cargando...</div>
     </div>
   </div>
 </div>
@@ -848,19 +848,19 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div id="pane-mailbox" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
     <div>
-      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4E7; Mailbox facturas proveedor</h2>
-      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+      <h2 style="margin:0;font-size:18px;color:var(--cx-text);">&#x1F4E7; Mailbox facturas proveedor</h2>
+      <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px;">
         Facturas detectadas por el cron IMAP (compras@hhagroup.co) ·
         ventana
-        <input type="number" id="mailbox-dias" value="30" min="7" max="180" style="width:50px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px" onchange="cargarMailbox()"> d&iacute;as
+        <input type="number" id="mailbox-dias" value="30" min="7" max="180" style="width:50px;padding:2px 6px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px" onchange="cargarMailbox()"> d&iacute;as
       </div>
     </div>
     <button class="btn bp" onclick="cargarMailbox()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
   </div>
 
-  <div id="mailbox-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
-  <div id="mailbox-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
-    <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar</div>
+  <div id="mailbox-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--cx-text-soft)"></div>
+  <div id="mailbox-contenido" style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;overflow-x:auto">
+    <div style="text-align:center;color:var(--cx-text-faint);padding:30px">Click &#x21BA; Actualizar</div>
   </div>
 </div>
 
@@ -869,8 +869,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div id="pane-cotiz" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
     <div>
-      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4AC; Rondas de cotizaciones</h2>
-      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+      <h2 style="margin:0;font-size:18px;color:var(--cx-text);">&#x1F4AC; Rondas de cotizaciones</h2>
+      <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px;">
         Compar&aacute; precios de varios proveedores lado a lado &middot; eleg&iacute; ganadora &middot; gener&aacute; OC autom&aacute;ticamente. Sirve para cualquier cosa, incluso algo que <b>nunca hemos comprado</b>.
       </div>
     </div>
@@ -879,10 +879,10 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <button class="btn bp" onclick="cargarCotizaciones()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
     </div>
   </div>
-  <div id="cotiz-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
+  <div id="cotiz-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--cx-text-soft)"></div>
   <div id="cotiz-candidatos" style="margin-bottom:16px"></div>
-  <div id="cotiz-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
-    <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar</div>
+  <div id="cotiz-contenido" style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;overflow-x:auto">
+    <div style="text-align:center;color:var(--cx-text-faint);padding:30px">Click &#x21BA; Actualizar</div>
   </div>
 </div>
 
@@ -890,52 +890,52 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div id="pane-alertas" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
     <div>
-      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F6A8; Alertas vivas de Compras</h2>
-      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+      <h2 style="margin:0;font-size:18px;color:var(--cx-text);">&#x1F6A8; Alertas vivas de Compras</h2>
+      <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px;">
         Lo que requiere atenci&oacute;n hoy. Revisa cada secci&oacute;n y ataca las cr&iacute;ticas primero.
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
-      <span id="alertas-sev-pill" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;background:#e2e8f0;color:#64748b;">cargando...</span>
+      <span id="alertas-sev-pill" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;background:var(--cx-border);color:var(--cx-text-mute);">cargando...</span>
       <button class="btn bp" onclick="loadAlertasCompras()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
     </div>
   </div>
 
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;">
     <!-- Card 1: OCs sin recibir -->
-    <div style="background:#fff;border:1px solid #fcd34d;border-radius:12px;padding:14px;">
+    <div style="background:var(--cx-card);border:1px solid #fcd34d;border-radius:12px;padding:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-weight:700;font-size:13px;color:#92400e;">&#x23F3; OCs sin recibir &gt; 15 d&iacute;as</div>
-        <span id="alertas-sin-recibir-count" style="background:#f59e0b;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
+        <div style="font-weight:700;font-size:13px;color:var(--cx-warn-text);">&#x23F3; OCs sin recibir &gt; 15 d&iacute;as</div>
+        <span id="alertas-sin-recibir-count" style="background:var(--cx-warn);color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
       </div>
-      <div id="alertas-sin-recibir" style="font-size:12px;color:#1e293b;max-height:280px;overflow-y:auto;">Cargando...</div>
+      <div id="alertas-sin-recibir" style="font-size:12px;color:var(--cx-text);max-height:280px;overflow-y:auto;">Cargando...</div>
     </div>
 
     <!-- Card 2: Pagos por vencer -->
-    <div style="background:#fff;border:1px solid #fca5a5;border-radius:12px;padding:14px;">
+    <div style="background:var(--cx-card);border:1px solid #fca5a5;border-radius:12px;padding:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-weight:700;font-size:13px;color:#7f1d1d;">&#x1F4B5; Pagos por vencer</div>
-        <span id="alertas-pagos-vencer-count" style="background:#dc2626;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
+        <div style="font-weight:700;font-size:13px;color:var(--cx-danger-text);">&#x1F4B5; Pagos por vencer</div>
+        <span id="alertas-pagos-vencer-count" style="background:var(--cx-danger);color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
       </div>
-      <div id="alertas-pagos-vencer" style="font-size:12px;color:#1e293b;max-height:280px;overflow-y:auto;">Cargando...</div>
+      <div id="alertas-pagos-vencer" style="font-size:12px;color:var(--cx-text);max-height:280px;overflow-y:auto;">Cargando...</div>
     </div>
 
     <!-- Card 3: Solicitudes Pendientes -->
-    <div style="background:#fff;border:1px solid #93c5fd;border-radius:12px;padding:14px;">
+    <div style="background:var(--cx-card);border:1px solid #93c5fd;border-radius:12px;padding:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div style="font-weight:700;font-size:13px;color:#1e3a8a;">&#x1F4DD; Solicitudes pendientes &gt; 3 d&iacute;as</div>
-        <span id="alertas-solic-count" style="background:#3b82f6;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
+        <span id="alertas-solic-count" style="background:var(--cx-info);color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
       </div>
-      <div id="alertas-solic" style="font-size:12px;color:#1e293b;max-height:280px;overflow-y:auto;">Cargando...</div>
+      <div id="alertas-solic" style="font-size:12px;color:var(--cx-text);max-height:280px;overflow-y:auto;">Cargando...</div>
     </div>
 
     <!-- Card 4: Borradores estancados -->
-    <div style="background:#fff;border:1px solid #d4d4d8;border-radius:12px;padding:14px;">
+    <div style="background:var(--cx-card);border:1px solid #d4d4d8;border-radius:12px;padding:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div style="font-weight:700;font-size:13px;color:#52525b;">&#x1F4D1; OCs Borrador &gt; 7 d&iacute;as</div>
         <span id="alertas-borrador-count" style="background:#71717a;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
       </div>
-      <div id="alertas-borrador" style="font-size:12px;color:#1e293b;max-height:280px;overflow-y:auto;">Cargando...</div>
+      <div id="alertas-borrador" style="font-size:12px;color:var(--cx-text);max-height:280px;overflow-y:auto;">Cargando...</div>
     </div>
   </div>
 </div>
@@ -944,7 +944,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div class="mdl mdl-lg" style="max-width:780px;max-height:88vh;overflow-y:auto;">
   <div class="mh"><h3>&#x1F4CA; Proveedor 360</h3><button class="mx" onclick="closeModal('m-ficha360')">&times;</button></div>
   <div class="mb" id="ficha360-content" style="padding:0 4px;">
-    <div style="text-align:center;color:#a8a29e;padding:40px;">Cargando ficha...</div>
+    <div style="text-align:center;color:var(--cx-text-faint);padding:40px;">Cargando ficha...</div>
   </div>
   <div class="mf" id="ficha360-footer" style="gap:8px;justify-content:flex-end;"></div>
 </div>
@@ -972,9 +972,9 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
           <button type="button" class="btn bo" style="font-size:11px;padding:3px 10px;" onclick="showNewProvForm()">&#x2795; Crear proveedor nuevo</button>
         </div>
         <div id="noc-ibox" class="ibox" style="display:none"></div>
-        <div id="noc-new-prov-form" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;margin-top:8px;">
-          <div style="font-weight:700;font-size:12px;color:#166534;margin-bottom:8px;">&#x2795; Nuevo Proveedor (form completo · queda cargado para todo el sistema)</div>
-          <div id="np-dup-warning" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px;color:#92400e;"></div>
+        <div id="noc-new-prov-form" style="display:none;background:var(--cx-success-pale);border:1px solid #86efac;border-radius:8px;padding:12px;margin-top:8px;">
+          <div style="font-weight:700;font-size:12px;color:var(--cx-success-text);margin-bottom:8px;">&#x2795; Nuevo Proveedor (form completo · queda cargado para todo el sistema)</div>
+          <div id="np-dup-warning" style="display:none;background:var(--cx-warn-pale);border:1px solid var(--cx-warn);border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px;color:var(--cx-warn-text);"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
             <div><label style="font-size:11px;font-weight:600;">Nombre *</label><input id="np-nombre" placeholder="Razon social o nombre" oninput="checkProvDuplicado()" style="width:100%"></div>
             <div><label style="font-size:11px;font-weight:600;">NIT / Cedula</label><input id="np-nit" placeholder="NIT" style="width:100%"></div>
@@ -983,12 +983,12 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
             <div><label style="font-size:11px;font-weight:600;">Email</label><input id="np-email" placeholder="Email" style="width:100%"></div>
             <div><label style="font-size:11px;font-weight:600;">Direccion</label><input id="np-direccion" placeholder="Direccion completa" style="width:100%"></div>
           </div>
-          <div style="font-weight:700;font-size:11px;color:#166534;margin:6px 0 4px;">Datos bancarios (para pagos)</div>
+          <div style="font-weight:700;font-size:11px;color:var(--cx-success-text);margin:6px 0 4px;">Datos bancarios (para pagos)</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
             <div><label style="font-size:11px;font-weight:600;">Banco</label><input id="np-banco" placeholder="Bancolombia, Davivienda..." style="width:100%"></div>
-            <div><label style="font-size:11px;font-weight:600;">Tipo cuenta</label><select id="np-tipo-cuenta" style="width:100%;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:12px;"><option value="">Seleccionar...</option><option value="Ahorros">Ahorros</option><option value="Corriente">Corriente</option><option value="Nequi">Nequi</option><option value="Daviplata">Daviplata</option></select></div>
+            <div><label style="font-size:11px;font-weight:600;">Tipo cuenta</label><select id="np-tipo-cuenta" style="width:100%;padding:6px 8px;border:1px solid var(--cx-border);border-radius:6px;font-size:12px;"><option value="">Seleccionar...</option><option value="Ahorros">Ahorros</option><option value="Corriente">Corriente</option><option value="Nequi">Nequi</option><option value="Daviplata">Daviplata</option></select></div>
             <div><label style="font-size:11px;font-weight:600;">Numero de cuenta</label><input id="np-num-cuenta" placeholder="Numero de cuenta o celular" style="width:100%"></div>
-            <div><label style="font-size:11px;font-weight:600;">Condiciones pago</label><select id="np-cond-pago" style="width:100%;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:12px;"><option value="Contado">Contado</option><option value="15 dias">15 dias</option><option value="30 dias" selected>30 dias</option><option value="45 dias">45 dias</option><option value="60 dias">60 dias</option></select></div>
+            <div><label style="font-size:11px;font-weight:600;">Condiciones pago</label><select id="np-cond-pago" style="width:100%;padding:6px 8px;border:1px solid var(--cx-border);border-radius:6px;font-size:12px;"><option value="Contado">Contado</option><option value="15 dias">15 dias</option><option value="30 dias" selected>30 dias</option><option value="45 dias">45 dias</option><option value="60 dias">60 dias</option></select></div>
           </div>
           <div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:600;">Concepto de compra</label><input id="np-concepto" placeholder="Ej: Materias primas cosmeticas" style="width:100%"></div>
           <div style="display:flex;gap:8px;">
@@ -996,11 +996,11 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
             <button class="btn bo" style="font-size:12px;" onclick="cancelarNuevoProv()">Cancelar</button>
           </div>
         </div>
-        <div id="noc-cc-pago" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px;margin-top:8px;">
-          <div style="font-weight:700;font-size:12px;color:#92400e;margin-bottom:8px;">&#x1F4B3; Datos bancarios del beneficiario</div>
+        <div id="noc-cc-pago" style="display:none;background:var(--cx-warn-pale);border:1px solid #fcd34d;border-radius:8px;padding:12px;margin-top:8px;">
+          <div style="font-weight:700;font-size:12px;color:var(--cx-warn-text);margin-bottom:8px;">&#x1F4B3; Datos bancarios del beneficiario</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
             <div><label style="font-size:11px;font-weight:600;">Banco *</label><input id="noc-cc-banco" placeholder="Bancolombia, Davivienda..." style="width:100%"></div>
-            <div><label style="font-size:11px;font-weight:600;">Tipo de cuenta</label><select id="noc-cc-tipo" style="width:100%;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:12px;"><option value="Ahorros">Ahorros</option><option value="Corriente">Corriente</option><option value="Ahorros Damas">Ahorros Damas</option><option value="Nequi / Daviplata">Nequi / Daviplata</option></select></div>
+            <div><label style="font-size:11px;font-weight:600;">Tipo de cuenta</label><select id="noc-cc-tipo" style="width:100%;padding:6px 8px;border:1px solid var(--cx-border);border-radius:6px;font-size:12px;"><option value="Ahorros">Ahorros</option><option value="Corriente">Corriente</option><option value="Ahorros Damas">Ahorros Damas</option><option value="Nequi / Daviplata">Nequi / Daviplata</option></select></div>
             <div><label style="font-size:11px;font-weight:600;">N\u00BA de cuenta / Cel</label><input id="noc-cc-cuenta" placeholder="Numero de cuenta" style="width:100%"></div>
             <div><label style="font-size:11px;font-weight:600;">NIT / CC</label><input id="noc-cc-nit" placeholder="Documento de identidad" style="width:100%"></div>
           </div>
@@ -1010,13 +1010,13 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     </div>
     <div class="fg"><label>Concepto / Observaciones</label><textarea id="noc-obs" placeholder="Descripcion del pedido..."></textarea></div>
     <div class="oc-items-card">
-      <label style="font-weight:800;color:#44403c;display:block;margin-bottom:6px;">Items del pedido</label>
+      <label style="font-weight:800;color:var(--cx-text-soft);display:block;margin-bottom:6px;">Items del pedido</label>
       <datalist id="mp-noc-dl"></datalist>
       <table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th>Precio U.</th><th>Subtotal</th><th></th></tr></thead>
       <tbody id="noc-tbody"></tbody></table>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
         <button class="btn bo bs" onclick="addRow()">+ Item</button>
-        <button class="btn bs" style="background:#10b981;color:#fff;border-color:#10b981;font-weight:600;" onclick="abrirNuevaMP()" title="Crear MP nueva sin cerrar la OC">+ Nueva MP</button>
+        <button class="btn bs" style="background:var(--cx-success);color:#fff;border-color:var(--cx-success);font-weight:600;" onclick="abrirNuevaMP()" title="Crear MP nueva sin cerrar la OC">+ Nueva MP</button>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin:10px 0 4px;">
@@ -1025,13 +1025,13 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     </div>
     <div id="noc-iva-row" style="display:none;background:#fefce8;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:4px;">
       <div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span>Subtotal sin IVA</span><span id="noc-sub">$0</span></div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:#92400e;"><span>IVA 19%</span><span id="noc-iva-monto">$0</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:var(--cx-warn-text);"><span>IVA 19%</span><span id="noc-iva-monto">$0</span></div>
       <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #fde047;padding-top:4px;"><span>Total con IVA</span><span id="noc-iva-total">$0</span></div>
     </div>
     <div class="total-row">Total: <span id="noc-tot">$0</span></div>
   </div>
   <div class="mf">
-    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;margin-right:auto;cursor:pointer" title="Autoriza la OC al crearla → va directo a Por Pagar (dentro de tu límite). Si el monto la excede, queda en Borrador para gerencia.">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--cx-text-soft);margin-right:auto;cursor:pointer" title="Autoriza la OC al crearla → va directo a Por Pagar (dentro de tu límite). Si el monto la excede, queda en Borrador para gerencia.">
       <input type="checkbox" id="noc-autorizar" checked> Autorizar al crear (va directo a Por Pagar)
     </label>
     <button class="btn bo" onclick="closeModal('m-noc')">Cancelar</button>
@@ -1045,7 +1045,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div class="mdl">
   <div class="mh"><h3>&#x270F; Revisar &amp; Asignar</h3><button class="mx" onclick="closeModal('m-rev')">&times;</button></div>
   <div class="mb">
-    <div id="rev-info" style="background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:13px;"></div>
+    <div id="rev-info" style="background:#f9f8f7;border:1px solid var(--cx-border);border-radius:6px;padding:10px;font-size:13px;"></div>
     <div class="fg">
       <label>Proveedor / Beneficiario</label>
       <select id="rev-prov" onchange="fillProv('rev-prov','rev-ibox')"><option value="">-- Seleccionar --</option></select>
@@ -1061,7 +1061,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     </div>
     <div id="rev-iva-breakdown" style="display:none;background:#fefce8;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:4px;">
       <div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span>Subtotal</span><span id="rev-iva-sub">$0</span></div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:#92400e;"><span>IVA 19%</span><span id="rev-iva-monto">$0</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:var(--cx-warn-text);"><span>IVA 19%</span><span id="rev-iva-monto">$0</span></div>
       <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #fde047;padding-top:4px;"><span>Total con IVA</span><span id="rev-iva-total">$0</span></div>
     </div>
     <div class="fg"><label>Observaciones</label><textarea id="rev-obs" placeholder="Notas de revision..."></textarea></div>
@@ -1080,7 +1080,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   <div class="mh mh-ent"><h3>&#x1F4B8; Registrar Pago</h3><button class="mx" onclick="closeModal('m-pago')">&times;</button></div>
   <div class="mb">
     <div id="pago-info" style="background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid #e9d5ff;border-radius:11px;padding:13px 15px;font-size:13.5px;color:#3730a3;font-weight:600;"></div>
-    <div id="pago-saldofavor" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:9px 11px;font-size:12px;margin-top:8px"></div>
+    <div id="pago-saldofavor" style="display:none;background:var(--cx-success-pale);border:1px solid #86efac;border-radius:6px;padding:9px 11px;font-size:12px;margin-top:8px"></div>
     <div class="g2">
       <div class="fg"><label>Monto Pagado ($)</label><input type="number" id="pago-monto" min="0" step="0.01" placeholder="0"></div>
       <div class="fg"><label>Medio de Pago</label>
@@ -1097,10 +1097,10 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
         <input type="text" id="pago-transaccion" placeholder="Ref. de la transferencia (opc)">
       </div>
     </div>
-    <div style="font-size:11px;color:#64748b;margin-top:-4px;margin-bottom:6px;">La factura sirve para el 3-way matching · el N&deg; de transacci&oacute;n queda pegado a la OC para la contabilidad.</div>
+    <div style="font-size:11px;color:var(--cx-text-mute);margin-top:-4px;margin-bottom:6px;">La factura sirve para el 3-way matching · el N&deg; de transacci&oacute;n queda pegado a la OC para la contabilidad.</div>
     <!-- Toggles fiscales (retefuente/retica/IVA) - para legalidad -->
-    <div class="fg" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-      <label style="display:block;font-weight:700;color:#1e293b;margin-bottom:6px;">&#x1F4CA; Retenciones e IVA (opcional)</label>
+    <div class="fg" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:10px 12px;">
+      <label style="display:block;font-weight:700;color:var(--cx-text);margin-bottom:6px;">&#x1F4CA; Retenciones e IVA (opcional)</label>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
           <input type="checkbox" id="pago-aplicar-retefuente"> Aplicar ReteFuente 10%
@@ -1112,19 +1112,19 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
           <input type="checkbox" id="pago-aplicar-iva"> Aplicar IVA 19%
         </label>
       </div>
-      <div style="font-size:11px;color:#64748b;margin-top:6px;">
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:6px;">
         Por defecto NO se aplican (pago bruto al proveedor). Activa solo cuando corresponda fiscalmente.
       </div>
     </div>
     <div class="fg"><label>Comprobante / Referencia</label><textarea id="pago-obs" rows="2" placeholder="No. transaccion, referencia..."></textarea></div>
     <div class="fg"><label>&#x1F5BC; Captura de transferencia (opcional)</label>
       <input type="file" id="pago-img-file" accept="image/*" onchange="previewPagoImg()" style="display:block;margin-bottom:6px;font-size:12px;">
-      <img id="pago-img-preview" src="" alt="" style="display:none;max-width:100%;max-height:160px;border-radius:6px;border:1px solid #e7e5e4;">
+      <img id="pago-img-preview" src="" alt="" style="display:none;max-width:100%;max-height:160px;border-radius:6px;border:1px solid var(--cx-border);">
     </div>
     <!-- Historial de pagos previos (pagos parciales) -->
-    <div id="pago-historial" style="display:none;margin-top:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px;">
-      <div style="font-size:12px;font-weight:700;color:#1e293b;margin-bottom:6px;">&#x1F4DC; Pagos previos de esta OC</div>
-      <div id="pago-historial-list" style="font-size:11px;color:#64748b;"></div>
+    <div id="pago-historial" style="display:none;margin-top:10px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:10px;">
+      <div style="font-size:12px;font-weight:700;color:var(--cx-text);margin-bottom:6px;">&#x1F4DC; Pagos previos de esta OC</div>
+      <div id="pago-historial-list" style="font-size:11px;color:var(--cx-text-mute);"></div>
     </div>
     <input type="hidden" id="pago-num">
   </div>
@@ -1140,32 +1140,32 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   <div class="mc" style="max-width:760px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div>
-        <h3 style="margin:0;font-size:17px;color:#16a34a;">&#x1F4B3; Saldos a favor &middot; contabilidad de proveedores</h3>
-        <div style="font-size:11px;color:#64748b;margin-top:2px;">Anticipos, sobrepagos y notas cr&eacute;dito &middot; se aplican al pagar una OC del proveedor</div>
+        <h3 style="margin:0;font-size:17px;color:var(--cx-success-text);">&#x1F4B3; Saldos a favor &middot; contabilidad de proveedores</h3>
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Anticipos, sobrepagos y notas cr&eacute;dito &middot; se aplican al pagar una OC del proveedor</div>
       </div>
-      <button onclick="closeModal('m-saldofavor')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8;">&#10005;</button>
+      <button onclick="closeModal('m-saldofavor')" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--cx-text-faint);">&#10005;</button>
     </div>
     <div id="sf-total" style="background:linear-gradient(135deg,#065f46,#16a34a);border-radius:10px;padding:14px 16px;margin-bottom:12px;color:#fff;display:flex;justify-content:space-between;align-items:center;">
       <span style="font-size:12px;font-weight:700;opacity:.9;">TOTAL A FAVOR (todos los proveedores)</span>
       <span id="sf-total-val" style="font-size:22px;font-weight:800;">-</span>
     </div>
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 13px;margin-bottom:12px;">
-      <div style="font-size:12px;font-weight:800;color:#166534;margin-bottom:7px;">Registrar saldo a favor</div>
+    <div style="background:var(--cx-success-pale);border:1px solid #bbf7d0;border-radius:8px;padding:11px 13px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:800;color:var(--cx-success-text);margin-bottom:7px;">Registrar saldo a favor</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        <input id="sf-prov" placeholder="Proveedor" list="sf-prov-dl" style="flex:1;min-width:150px;padding:6px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;">
+        <input id="sf-prov" placeholder="Proveedor" list="sf-prov-dl" style="flex:1;min-width:150px;padding:6px 9px;border:1px solid var(--cx-border);border-radius:5px;font-size:12px;">
         <datalist id="sf-prov-dl"></datalist>
-        <select id="sf-origen" style="padding:6px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;background:#fff;">
+        <select id="sf-origen" style="padding:6px 9px;border:1px solid var(--cx-border);border-radius:5px;font-size:12px;background:var(--cx-card);">
           <option value="anticipo">Anticipo (sale plata)</option>
           <option value="ajuste">Ajuste / nota cr&eacute;dito</option>
         </select>
-        <input id="sf-monto" type="number" min="0" placeholder="$ monto" style="width:110px;padding:6px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;">
-        <button type="button" onclick="registrarSaldoFavor()" style="padding:6px 13px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700;font-size:12px;">Registrar</button>
+        <input id="sf-monto" type="number" min="0" placeholder="$ monto" style="width:110px;padding:6px 9px;border:1px solid var(--cx-border);border-radius:5px;font-size:12px;">
+        <button type="button" onclick="registrarSaldoFavor()" style="padding:6px 13px;background:var(--cx-success);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700;font-size:12px;">Registrar</button>
       </div>
-      <input id="sf-obs" placeholder="Observaci&oacute;n (opcional)" style="width:100%;margin-top:6px;padding:6px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;box-sizing:border-box;">
-      <div style="font-size:10px;color:#166534;margin-top:5px;"><b>Anticipo</b> = le pagás por adelantado (sale plata, queda a favor). <b>Ajuste</b> = nota crédito/devolución (no sale plata). Aplicás el saldo al pagar una OC de ese proveedor.</div>
+      <input id="sf-obs" placeholder="Observaci&oacute;n (opcional)" style="width:100%;margin-top:6px;padding:6px 9px;border:1px solid var(--cx-border);border-radius:5px;font-size:12px;box-sizing:border-box;">
+      <div style="font-size:10px;color:var(--cx-success-text);margin-top:5px;"><b>Anticipo</b> = le pagás por adelantado (sale plata, queda a favor). <b>Ajuste</b> = nota crédito/devolución (no sale plata). Aplicás el saldo al pagar una OC de ese proveedor.</div>
     </div>
-    <div style="font-size:12px;font-weight:800;color:#334155;margin-bottom:5px;">Saldos vigentes</div>
-    <div id="sf-lista" style="font-size:12px;color:#64748b;max-height:38vh;overflow:auto;">cargando&hellip;</div>
+    <div style="font-size:12px;font-weight:800;color:var(--cx-text-soft);margin-bottom:5px;">Saldos vigentes</div>
+    <div id="sf-lista" style="font-size:12px;color:var(--cx-text-mute);max-height:38vh;overflow:auto;">cargando&hellip;</div>
   </div>
 </div>
 
@@ -1211,7 +1211,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div id="m-oc-det" class="ov">
 <div class="mdl mdl-lg">
   <div class="mh"><h3>&#128203; Detalle Orden de Compra</h3><button class="mx" onclick="closeModal('m-oc-det')">&times;</button></div>
-  <div class="mb" id="oc-det-body" style="padding:0 4px;"><div style="text-align:center;padding:40px;color:#78716c;">Cargando...</div></div>
+  <div class="mb" id="oc-det-body" style="padding:0 4px;"><div style="text-align:center;padding:40px;color:var(--cx-text-mute);">Cargando...</div></div>
   <div class="mf" id="oc-det-footer">
     <button class="btn bo" onclick="closeModal('m-oc-det')">Cerrar</button>
   </div>
@@ -1246,19 +1246,19 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   </div>
   <div class="mb" style="padding:18px;">
     <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
-      <div style="font-size:11px;color:#0f766e;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">MP</div>
-      <div id="epm-info" style="font-weight:700;color:#0f172a;font-size:14px;">-</div>
-      <div id="epm-prov-actual" style="color:#64748b;font-size:12px;margin-top:2px;">-</div>
+      <div style="font-size:11px;color:var(--cx-info-text);font-weight:700;text-transform:uppercase;letter-spacing:.5px;">MP</div>
+      <div id="epm-info" style="font-weight:700;color:var(--cx-text);font-size:14px;">-</div>
+      <div id="epm-prov-actual" style="color:var(--cx-text-mute);font-size:12px;margin-top:2px;">-</div>
     </div>
-    <p style="font-size:12px;color:#64748b;margin-bottom:6px;">Solo afecta la MP seleccionada en el cat&aacute;logo (maestro_mps). Las dem&aacute;s MPs de la solicitud no se tocan. Audit log captura el cambio.</p>
+    <p style="font-size:12px;color:var(--cx-text-mute);margin-bottom:6px;">Solo afecta la MP seleccionada en el cat&aacute;logo (maestro_mps). Las dem&aacute;s MPs de la solicitud no se tocan. Audit log captura el cambio.</p>
     <div style="margin-bottom:10px;">
       <label style="font-size:12px;color:#374151;font-weight:600;display:block;margin-bottom:4px;">Proveedor *</label>
-      <input type="text" id="epm-input" list="prov-dl" placeholder="Selecciona o escribe nuevo" autocomplete="off" style="width:100%;padding:8px 12px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px;">
-      <small id="epm-hint" style="color:#94a3b8;font-size:11px;display:block;margin-top:4px;">Usa el desplegable para evitar duplicados por typo.</small>
+      <input type="text" id="epm-input" list="prov-dl" placeholder="Selecciona o escribe nuevo" autocomplete="off" style="width:100%;padding:8px 12px;border:1px solid var(--cx-border);border-radius:8px;font-size:13px;">
+      <small id="epm-hint" style="color:var(--cx-text-faint);font-size:11px;display:block;margin-top:4px;">Usa el desplegable para evitar duplicados por typo.</small>
     </div>
     <div style="display:flex;gap:8px;">
-      <button onclick="guardarProvItemMP()" style="flex:1;background:#0f766e;color:#fff;border:none;border-radius:8px;padding:9px;font-weight:700;cursor:pointer;">&#10003; Guardar</button>
-      <button onclick="closeModal('m-edit-prov-mp')" style="flex:1;background:#e7e5e4;color:#374151;border:none;border-radius:8px;padding:9px;cursor:pointer;">Cancelar</button>
+      <button onclick="guardarProvItemMP()" style="flex:1;background:var(--cx-info);color:#fff;border:none;border-radius:8px;padding:9px;font-weight:700;cursor:pointer;">&#10003; Guardar</button>
+      <button onclick="closeModal('m-edit-prov-mp')" style="flex:1;background:var(--cx-border);color:#374151;border:none;border-radius:8px;padding:9px;cursor:pointer;">Cancelar</button>
     </div>
     <div id="epm-msg" style="margin-top:10px;font-size:12px;"></div>
   </div>
@@ -1270,8 +1270,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div class="mdl" style="max-width:1200px;width:96vw;max-height:94vh;overflow-y:auto;position:relative;">
   <div class="mh" style="display:none;"><h3>&#128203; Solicitud de Compra</h3><button class="mx" onclick="closeModal('m-sol-det')">&times;</button></div>
   <button onclick="closeModal('m-sol-det')" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:20px;font-weight:700;z-index:10;display:flex;align-items:center;justify-content:center;">&times;</button>
-  <div class="mb" id="sol-det-body" style="padding:0;"><div style="text-align:center;padding:60px 40px;color:#78716c;">Cargando...</div></div>
-  <div class="mf" id="sol-det-footer" style="padding:14px 26px;background:#fafaf9;border-top:1px solid #e7e5e4;">
+  <div class="mb" id="sol-det-body" style="padding:0;"><div style="text-align:center;padding:60px 40px;color:var(--cx-text-mute);">Cargando...</div></div>
+  <div class="mf" id="sol-det-footer" style="padding:14px 26px;background:var(--cx-bg-alt);border-top:1px solid var(--cx-border);">
     <button class="btn bo" onclick="closeModal('m-sol-det')">Cerrar</button>
   </div>
 </div>
@@ -1282,25 +1282,25 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div class="mdl mdl-lg">
   <div class="mh"><h3>&#x1F9EA; Nueva OC &#x2014; Materias Primas</h3><button class="mx" onclick="closeModal('m-noc-mp')">&times;</button></div>
   <div class="mb">
-    <div id="nmp-alert-info" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#92400e;"></div>
+    <div id="nmp-alert-info" style="display:none;background:var(--cx-warn-pale);border:1px solid var(--cx-warn);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:var(--cx-warn-text);"></div>
     <div class="fg" style="margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Proveedor</label>
-      <select id="nmp-prov" onchange="fillProv('nmp-prov','nmp-ibox')" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></select>
+      <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Proveedor</label>
+      <select id="nmp-prov" onchange="fillProv('nmp-prov','nmp-ibox')" style="width:100%;padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;"></select>
       <div id="nmp-ibox" class="ibox" style="display:none;margin-top:6px;"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
       <div>
-        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Fecha entrega estimada</label>
-        <input type="date" id="nmp-fent" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+        <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Fecha entrega estimada</label>
+        <input type="date" id="nmp-fent" style="width:100%;padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
       </div>
       <div>
-        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Observaciones</label>
-        <input type="text" id="nmp-obs" placeholder="Opcional..." style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+        <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Observaciones</label>
+        <input type="text" id="nmp-obs" placeholder="Opcional..." style="width:100%;padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
       </div>
     </div>
     <datalist id="mp-codes-dl"></datalist>
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead><tr style="background:#f5f5f4;font-weight:600;color:#44403c;">
+      <thead><tr style="background:var(--cx-bg-alt);font-weight:600;color:var(--cx-text-soft);">
         <th style="padding:6px 4px;text-align:left;width:100px;">Codigo MP</th>
         <th style="padding:6px 4px;text-align:left;">Material</th>
         <th style="padding:6px 4px;text-align:center;width:85px;">Cant (g)</th>
@@ -1313,13 +1313,13 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn bo" style="font-size:12px;" onclick="addRowMP(null)">+ Agregar item</button>
-        <button class="btn bo" style="font-size:12px;background:#10b981;color:#fff;border-color:#10b981;" onclick="abrirNuevaMP()" title="Crear MP nueva sin salir del form">+ Nueva MP</button>
+        <button class="btn bo" style="font-size:12px;background:var(--cx-success);color:#fff;border-color:var(--cx-success);" onclick="abrirNuevaMP()" title="Crear MP nueva sin salir del form">+ Nueva MP</button>
       </div>
-      <div style="font-size:15px;font-weight:700;color:#1c1917;">Total: <span id="nmp-tot">$0</span></div>
+      <div style="font-size:15px;font-weight:700;color:var(--cx-text);">Total: <span id="nmp-tot">$0</span></div>
     </div>
   </div>
   <div class="mf">
-    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;margin-right:auto;cursor:pointer" title="Si lo dejás marcado, la OC se autoriza al crearla y va directo a Por Pagar (dentro de tu límite). Si el monto la excede, queda en Borrador para que la apruebe gerencia.">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--cx-text-soft);margin-right:auto;cursor:pointer" title="Si lo dejás marcado, la OC se autoriza al crearla y va directo a Por Pagar (dentro de tu límite). Si el monto la excede, queda en Borrador para que la apruebe gerencia.">
       <input type="checkbox" id="noc-mp-autorizar" checked> Autorizar al crear (va directo a Por Pagar)
     </label>
     <button class="btn bo" onclick="closeModal('m-noc-mp')">Cancelar</button>
@@ -1333,17 +1333,17 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div class="mdl">
   <div class="mh"><h3>&#x1F195; Nueva Materia Prima</h3><button class="mx" onclick="closeModal('m-nueva-mp')">&times;</button></div>
   <div class="mb">
-    <div style="background:#f0f9ff;border-left:4px solid #0e7490;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:#0c4a6e;">
+    <div style="background:#f0f9ff;border-left:4px solid var(--cx-info);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--cx-info-text);">
       💡 Crea una MP nueva sin salir del form de OC. Los precios y stock que ingreses despues quedaran cargados en planta.
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
       <div>
-        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Codigo MP *</label>
-        <input id="nmp-codigo" placeholder="MP-NUEVA-001" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;text-transform:uppercase;">
+        <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Codigo MP *</label>
+        <input id="nmp-codigo" placeholder="MP-NUEVA-001" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;text-transform:uppercase;">
       </div>
       <div>
-        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Tipo material *</label>
-        <select id="nmp-tipomat" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+        <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Tipo material *</label>
+        <select id="nmp-tipomat" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
           <option value="MP">Materia Prima</option>
           <option value="Envase Primario">Envase Primario</option>
           <option value="Envase Secundario">Envase Secundario</option>
@@ -1352,32 +1352,32 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       </div>
     </div>
     <div style="margin-bottom:10px;">
-      <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Nombre comercial *</label>
-      <input id="nmp-nomcomer" placeholder="Ej: Glicerina vegetal USP" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Nombre comercial *</label>
+      <input id="nmp-nomcomer" placeholder="Ej: Glicerina vegetal USP" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
     </div>
     <div style="margin-bottom:10px;">
-      <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Nombre INCI (opcional)</label>
-      <input id="nmp-nominci" placeholder="Glycerin" oninput="checkInciNuevaMP()" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Nombre INCI (opcional)</label>
+      <input id="nmp-nominci" placeholder="Glycerin" oninput="checkInciNuevaMP()" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
       <div id="nmp-inci-warn" style="font-size:12px;margin-top:4px;"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
       <div>
-        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Tipo (categoria)</label>
-        <input id="nmp-tipo" placeholder="Ej: Humectante, Surfactante..." style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+        <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Tipo (categoria)</label>
+        <input id="nmp-tipo" placeholder="Ej: Humectante, Surfactante..." style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
       </div>
       <div>
-        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Proveedor preferido</label>
-        <input id="nmp-prov-pref" placeholder="(opcional)" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+        <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Proveedor preferido</label>
+        <input id="nmp-prov-pref" placeholder="(opcional)" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
       <div>
-        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Stock minimo (g)</label>
-        <input id="nmp-stockmin" type="number" min="0" placeholder="0" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+        <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Stock minimo (g)</label>
+        <input id="nmp-stockmin" type="number" min="0" placeholder="0" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
       </div>
       <div>
-        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Precio referencia ($/g)</label>
-        <input id="nmp-precio" type="number" min="0" step="0.001" placeholder="0" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+        <label style="font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Precio referencia ($/g)</label>
+        <input id="nmp-precio" type="number" min="0" step="0.001" placeholder="0" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">
       </div>
     </div>
     <div id="nmp-msg" style="font-size:12px;margin-top:8px;"></div>
@@ -1394,10 +1394,10 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div class="mdl mdl-lg" style="max-width:980px;">
   <div class="mh"><h3>&#x26A0;&#xFE0F; OC Sugerida &#x2014; MPs Bajo Stock</h3><button class="mx" onclick="closeModal('m-oc-sug')">&times;</button></div>
   <div class="mb">
-    <div style="font-size:12px;color:#78716c;margin-bottom:12px;">Cantidades incluyen 20% buffer sobre deficit. Ajusta, selecciona proveedor y crea cada OC individualmente &#x2014; o usa <strong>Crear Todas</strong> para agrupar por proveedor automaticamente.</div>
+    <div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:12px;">Cantidades incluyen 20% buffer sobre deficit. Ajusta, selecciona proveedor y crea cada OC individualmente &#x2014; o usa <strong>Crear Todas</strong> para agrupar por proveedor automaticamente.</div>
     <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead><tr style="background:#fef3c7;font-weight:600;color:#78350f;">
+      <thead><tr style="background:var(--cx-warn-pale);font-weight:600;color:var(--cx-warn-text);">
         <th style="padding:6px 8px;text-align:left;">Material</th>
         <th style="padding:6px 4px;text-align:right;width:72px;">Stock</th>
         <th style="padding:6px 4px;text-align:right;width:68px;">Deficit</th>
@@ -1410,7 +1410,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <tbody id="sug-tbody"></tbody>
     </table>
     </div>
-    <div style="display:flex;justify-content:flex-end;margin-top:10px;font-size:15px;font-weight:700;color:#1c1917;">
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;font-size:15px;font-weight:700;color:var(--cx-text);">
       Total: <span id="sug-tot" style="margin-left:6px;">$0</span>
     </div>
   </div>
@@ -1483,16 +1483,16 @@ function _paginar(data, page, size) {
 function _renderPag(tabla, info) {
   var s = TBL_STATE[tabla];
   if (info.total <= s.size && info.total < 51) {
-    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+    return '<div style="font-size:11px;color:var(--cx-text-mute);padding:6px 0;">' + info.total + ' filas</div>';
   }
-  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#64748b;">';
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:var(--cx-text-mute);">';
   html += '<span>Pag ' + info.page + '/' + info.totalPages + ' &middot; ' + info.total + '</span>';
   html += '<span style="flex:1"></span>';
   html += '<button data-act="prev" data-tbl="' + tabla + '"' +
-          (info.page <= 1 ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&larr;</button>';
+          (info.page <= 1 ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid var(--cx-border);border-radius:5px;background:var(--cx-card);cursor:pointer">&larr;</button>';
   html += '<button data-act="next" data-tbl="' + tabla + '"' +
-          (info.page >= info.totalPages ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&rarr;</button>';
-  html += '<select data-act="size" data-tbl="' + tabla + '" style="border:1px solid #cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+          (info.page >= info.totalPages ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid var(--cx-border);border-radius:5px;background:var(--cx-card);cursor:pointer">&rarr;</button>';
+  html += '<select data-act="size" data-tbl="' + tabla + '" style="border:1px solid var(--cx-border);padding:4px 6px;border-radius:5px;font-size:12px;">';
   ['50','100','200','999'].forEach(function(o){
     var label = o === '999' ? 'Todas' : o;
     html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
@@ -1732,7 +1732,7 @@ async function loadFacturasProv(){
     var r=await fetch('/api/compras/facturas-proveedor?estado='+encodeURIComponent(est)+'&q='+encodeURIComponent(q),{cache:'no-store'});
     if(r.status===401){ location.href='/login'; return; }
     var d=await r.json();
-    if(!d.ok){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
+    if(!d.ok){ wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
     window._FP=d.items||[];
     if(kpis){
       kpis.innerHTML='<div class="kpis" style="margin-bottom:0">'
@@ -1743,7 +1743,7 @@ async function loadFacturasProv(){
     }
     var b=document.getElementById('facprov-badge'); var nv=window._FP.filter(function(x){return x.vencida;}).length;
     if(b){ if(nv>0){ b.textContent=nv; b.style.display='inline-block'; } else b.style.display='none'; }
-    if(!window._FP.length){ wrap.innerHTML='<div class="cxt-wrap" style="padding:34px;text-align:center;color:#78716c;font-weight:600">No hay facturas registradas. Us&aacute; "&#10133; Nueva factura".</div>'; return; }
+    if(!window._FP.length){ wrap.innerHTML='<div class="cxt-wrap" style="padding:34px;text-align:center;color:var(--cx-text-mute);font-weight:600">No hay facturas registradas. Us&aacute; "&#10133; Nueva factura".</div>'; return; }
     var html='<div class="cxt-wrap scroll"><table class="cxt" style="font-size:12px"><thead><tr>';
     ['N&ordm; Factura','Proveedor','OC','Vence','Total','Pagado','Saldo','Estado','Acciones'].forEach(function(h,i){ html+='<th style="text-align:'+((i>=4&&i<=6)?'right':'left')+'">'+h+'</th>'; });
     html+='</tr></thead><tbody>';
@@ -1754,50 +1754,50 @@ async function loadFacturasProv(){
       var diasTxt=(it.dias_vencimiento!=null&&ef!=='pagada'&&ef!=='anulada')?(' <span style="font-size:10px;color:'+(it.dias_vencimiento<0?'#b91c1c':'#78716c')+'">('+(it.dias_vencimiento<0?Math.abs(it.dias_vencimiento)+'d venc':it.dias_vencimiento+'d')+')</span>'):'';
       var sobre=it.sobre_facturada?' <span class="cxt-chip no" title="total factura &gt; valor OC" style="font-size:9px;padding:1px 6px">&#9888; &gt;OC</span>':'';
       html+='<tr style="'+(it.estado==='anulada'?'opacity:.55':'')+'">';
-      html+='<td class="cxt-mono" style="font-weight:700;color:#6d28d9">'+_esc(it.numero_factura)+sobre+(it.tiene_pdf?' <a href="/api/compras/facturas-proveedor/'+it.id+'/pdf" target="_blank" title="ver PDF" style="text-decoration:none">&#128206;</a>':'')+'</td>';
-      html+='<td style="font-weight:600;color:#292524">'+_esc(it.proveedor||'')+'</td>';
-      html+='<td class="cxt-mono" style="font-size:11px;color:#78716c">'+_esc(it.numero_oc||'-')+'</td>';
+      html+='<td class="cxt-mono" style="font-weight:700;color:var(--cx-primary-text)">'+_esc(it.numero_factura)+sobre+(it.tiene_pdf?' <a href="/api/compras/facturas-proveedor/'+it.id+'/pdf" target="_blank" title="ver PDF" style="text-decoration:none">&#128206;</a>':'')+'</td>';
+      html+='<td style="font-weight:600;color:var(--cx-text)">'+_esc(it.proveedor||'')+'</td>';
+      html+='<td class="cxt-mono" style="font-size:11px;color:var(--cx-text-mute)">'+_esc(it.numero_oc||'-')+'</td>';
       html+='<td style="white-space:nowrap">'+_esc(venc)+diasTxt+'</td>';
       html+='<td class="cxt-mono" style="text-align:right">'+_fpMoney(it.total)+'</td>';
-      html+='<td class="cxt-mono" style="text-align:right;color:#15803d">'+_fpMoney(it.pagado)+'</td>';
+      html+='<td class="cxt-mono" style="text-align:right;color:var(--cx-success-text)">'+_fpMoney(it.pagado)+'</td>';
       html+='<td class="cxt-mono" style="text-align:right;font-weight:700">'+_fpMoney(it.saldo)+'</td>';
       html+='<td><span class="cxt-chip '+em[0]+'">'+em[1]+'</span></td>';
       html+='<td style="white-space:nowrap">';
       if(it.estado!=='anulada'){
         if(it.saldo>0.5) html+='<button class="cxt-btnp" onclick="fpPagarModal('+it.id+')" style="margin-right:4px">Pagar</button>';
-        html+='<button onclick="fpDetalle('+it.id+')" style="background:#f5f4f2;color:#44403c;border:1px solid #e7e5e4;padding:5px 11px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;margin-right:4px">Ver</button>';
-        html+='<button onclick="fpAnular('+it.id+')" style="background:#fff;color:#dc2626;border:1px solid #fca5a5;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Anular</button>';
-      } else { html+='<span style="color:#a8a29e;font-size:11px">-</span>'; }
+        html+='<button onclick="fpDetalle('+it.id+')" style="background:#f5f4f2;color:var(--cx-text-soft);border:1px solid var(--cx-border);padding:5px 11px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;margin-right:4px">Ver</button>';
+        html+='<button onclick="fpAnular('+it.id+')" style="background:var(--cx-card);color:var(--cx-danger-text);border:1px solid #fca5a5;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Anular</button>';
+      } else { html+='<span style="color:var(--cx-text-faint);font-size:11px">-</span>'; }
       html+='</td></tr>';
     });
     html+='</tbody></table></div>';
     wrap.innerHTML=html;
-  }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
+  }catch(e){ wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
 }
 function _fpModalShell(inner, maxw){
   var m=document.getElementById('fp-modal'); if(m) m.remove();
   m=document.createElement('div'); m.id='fp-modal';
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
-  m.innerHTML='<div style="background:#fff;border-radius:12px;max-width:'+(maxw||640)+'px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px">'+inner+'</div>';
+  m.innerHTML='<div style="background:var(--cx-card);border-radius:12px;max-width:'+(maxw||640)+'px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px">'+inner+'</div>';
   document.body.appendChild(m);
   m.addEventListener('click',function(e){ if(e.target===m) m.remove(); });
   return m;
 }
 function _fpClose(){ var m=document.getElementById('fp-modal'); if(m) m.remove(); }
 function fpNuevaModal(){
-  function fld(lbl,id,tp,ph){ return '<div><label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px">'+lbl+'</label><input id="'+id+'" type="'+(tp||'text')+'" placeholder="'+(ph||'')+'" oninput="_fpRecalc()" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"></div>'; }
-  var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:17px;color:#0f766e">🧾 Nueva factura de proveedor</h2><button onclick="_fpClose()" style="background:#e2e8f0;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
+  function fld(lbl,id,tp,ph){ return '<div><label style="font-size:11px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:3px">'+lbl+'</label><input id="'+id+'" type="'+(tp||'text')+'" placeholder="'+(ph||'')+'" oninput="_fpRecalc()" style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:5px;box-sizing:border-box"></div>'; }
+  var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--cx-border);padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:17px;color:var(--cx-info-text)">🧾 Nueva factura de proveedor</h2><button onclick="_fpClose()" style="background:var(--cx-border);border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
   h+=fld('Nº Factura *','fp-n-num')+fld('Proveedor *','fp-n-prov')+fld('NIT','fp-n-nit')+fld('OC vinculada','fp-n-oc','text','OC-2026-...')+fld('Fecha emisión','fp-n-emi','date')+fld('Fecha vencimiento','fp-n-venc','date');
   h+='</div>';
-  h+='<div style="margin-top:12px;font-weight:700;color:#334155;font-size:13px">Valores (el total se calcula solo)</div>';
+  h+='<div style="margin-top:12px;font-weight:700;color:var(--cx-text-soft);font-size:13px">Valores (el total se calcula solo)</div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:6px">';
   h+=fld('Subtotal','fp-n-sub','number')+fld('IVA','fp-n-iva','number')+fld('Retefuente','fp-n-rf','number')+fld('ReteICA','fp-n-ri','number');
-  h+='<div><label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px">Total a pagar</label><input id="fp-n-total" type="number" style="width:100%;padding:7px;border:2px solid #0f766e;border-radius:5px;box-sizing:border-box;font-weight:700"></div>';
+  h+='<div><label style="font-size:11px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:3px">Total a pagar</label><input id="fp-n-total" type="number" style="width:100%;padding:7px;border:2px solid var(--cx-info);border-radius:5px;box-sizing:border-box;font-weight:700"></div>';
   h+='</div>';
-  h+='<div style="margin-top:10px"><label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px">Observaciones</label><input id="fp-n-obs" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"></div>';
+  h+='<div style="margin-top:10px"><label style="font-size:11px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:3px">Observaciones</label><input id="fp-n-obs" style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:5px;box-sizing:border-box"></div>';
   h+='<div id="fp-n-msg" style="margin-top:8px;font-size:12px"></div>';
-  h+='<div style="margin-top:14px;text-align:right"><button onclick="_fpClose()" style="background:#e2e8f0;color:#334155;border:none;padding:8px 16px;border-radius:6px;margin-right:6px;cursor:pointer">Cancelar</button><button onclick="fpGuardar()" style="background:#0f766e;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer">Guardar factura</button></div>';
+  h+='<div style="margin-top:14px;text-align:right"><button onclick="_fpClose()" style="background:var(--cx-border);color:var(--cx-text-soft);border:none;padding:8px 16px;border-radius:6px;margin-right:6px;cursor:pointer">Cancelar</button><button onclick="fpGuardar()" style="background:var(--cx-info);color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer">Guardar factura</button></div>';
   _fpModalShell(h, 700);
 }
 function _fpRecalc(){
@@ -1812,40 +1812,40 @@ async function fpGuardar(){
     subtotal:parseFloat(g('fp-n-sub'))||0, iva:parseFloat(g('fp-n-iva'))||0,
     retefuente:parseFloat(g('fp-n-rf'))||0, retica:parseFloat(g('fp-n-ri'))||0,
     total:parseFloat(g('fp-n-total'))||0, observaciones:g('fp-n-obs').trim()};
-  if(!body.numero_factura||!body.proveedor){ document.getElementById('fp-n-msg').innerHTML='<span style="color:#dc2626">Nº factura y proveedor son obligatorios</span>'; return; }
+  if(!body.numero_factura||!body.proveedor){ document.getElementById('fp-n-msg').innerHTML='<span style="color:var(--cx-danger-text)">Nº factura y proveedor son obligatorios</span>'; return; }
   try{
     var r=await fetch('/api/compras/facturas-proveedor', _fetchOpts('POST', body));
     var d=await r.json();
-    if(!r.ok||!d.ok){ document.getElementById('fp-n-msg').innerHTML='<span style="color:#dc2626">'+_esc((d&&(d.detail||d.error))||r.status)+'</span>'; return; }
+    if(!r.ok||!d.ok){ document.getElementById('fp-n-msg').innerHTML='<span style="color:var(--cx-danger-text)">'+_esc((d&&(d.detail||d.error))||r.status)+'</span>'; return; }
     if(d.warning) alert('⚠ '+d.warning);
     _fpClose(); loadFacturasProv();
-  }catch(e){ document.getElementById('fp-n-msg').innerHTML='<span style="color:#dc2626">Error red: '+_esc(e.message||e)+'</span>'; }
+  }catch(e){ document.getElementById('fp-n-msg').innerHTML='<span style="color:var(--cx-danger-text)">Error red: '+_esc(e.message||e)+'</span>'; }
 }
 function fpPagarModal(fid){
   var it=(window._FP||[]).find(function(x){return x.id===fid;}); if(!it) return;
-  var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:16px;color:#0f766e">Pagar factura '+_esc(it.numero_factura)+'</h2><button onclick="_fpClose()" style="background:#e2e8f0;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
-  h+='<div style="font-size:12px;color:#64748b;margin-bottom:10px">'+_esc(it.proveedor)+(it.numero_oc?' · OC '+_esc(it.numero_oc):'')+' · saldo <b>'+_fpMoney(it.saldo)+'</b></div>';
+  var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--cx-border);padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:16px;color:var(--cx-info-text)">Pagar factura '+_esc(it.numero_factura)+'</h2><button onclick="_fpClose()" style="background:var(--cx-border);border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
+  h+='<div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:10px">'+_esc(it.proveedor)+(it.numero_oc?' · OC '+_esc(it.numero_oc):'')+' · saldo <b>'+_fpMoney(it.saldo)+'</b></div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
-  h+='<div><label style="font-size:11px;color:#64748b;font-weight:700">Monto</label><input id="fp-p-monto" type="number" value="'+(it.saldo||0)+'" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"></div>';
-  h+='<div><label style="font-size:11px;color:#64748b;font-weight:700">Medio</label><select id="fp-p-medio" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"><option>Transferencia</option><option>Nequi</option><option>Daviplata</option><option>Efectivo</option><option>Cheque</option><option>Tarjeta</option></select></div>';
+  h+='<div><label style="font-size:11px;color:var(--cx-text-mute);font-weight:700">Monto</label><input id="fp-p-monto" type="number" value="'+(it.saldo||0)+'" style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:5px;box-sizing:border-box"></div>';
+  h+='<div><label style="font-size:11px;color:var(--cx-text-mute);font-weight:700">Medio</label><select id="fp-p-medio" style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:5px;box-sizing:border-box"><option>Transferencia</option><option>Nequi</option><option>Daviplata</option><option>Efectivo</option><option>Cheque</option><option>Tarjeta</option></select></div>';
   h+='</div>';
-  h+='<div style="margin-top:10px"><label style="font-size:11px;color:#64748b;font-weight:700">Observaciones</label><input id="fp-p-obs" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"></div>';
+  h+='<div style="margin-top:10px"><label style="font-size:11px;color:var(--cx-text-mute);font-weight:700">Observaciones</label><input id="fp-p-obs" style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:5px;box-sizing:border-box"></div>';
   h+='<div id="fp-p-msg" style="margin-top:8px;font-size:12px"></div>';
-  h+='<div style="margin-top:14px;text-align:right"><button onclick="_fpClose()" style="background:#e2e8f0;color:#334155;border:none;padding:8px 16px;border-radius:6px;margin-right:6px;cursor:pointer">Cancelar</button><button onclick="fpDoPagar('+fid+')" style="background:#0f766e;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer">Registrar pago</button></div>';
+  h+='<div style="margin-top:14px;text-align:right"><button onclick="_fpClose()" style="background:var(--cx-border);color:var(--cx-text-soft);border:none;padding:8px 16px;border-radius:6px;margin-right:6px;cursor:pointer">Cancelar</button><button onclick="fpDoPagar('+fid+')" style="background:var(--cx-info);color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer">Registrar pago</button></div>';
   _fpModalShell(h, 480);
 }
 async function fpDoPagar(fid){
   var monto=parseFloat((document.getElementById('fp-p-monto')||{}).value||'0')||0;
   var medio=(document.getElementById('fp-p-medio')||{}).value||'Transferencia';
   var obs=(document.getElementById('fp-p-obs')||{}).value||'';
-  if(monto<=0){ document.getElementById('fp-p-msg').innerHTML='<span style="color:#dc2626">Monto inválido</span>'; return; }
+  if(monto<=0){ document.getElementById('fp-p-msg').innerHTML='<span style="color:var(--cx-danger-text)">Monto inválido</span>'; return; }
   try{
     var r=await fetch('/api/compras/facturas-proveedor/'+fid+'/pagar', _fetchOpts('POST', {monto:monto, medio:medio, observaciones:obs}));
     var d=await r.json();
-    if(!r.ok||!d.ok){ document.getElementById('fp-p-msg').innerHTML='<span style="color:#dc2626">'+_esc((d&&d.error)||r.status)+(d&&d.saldo!=null?' (saldo '+_fpMoney(d.saldo)+')':'')+'</span>'; return; }
+    if(!r.ok||!d.ok){ document.getElementById('fp-p-msg').innerHTML='<span style="color:var(--cx-danger-text)">'+_esc((d&&d.error)||r.status)+(d&&d.saldo!=null?' (saldo '+_fpMoney(d.saldo)+')':'')+'</span>'; return; }
     if(d.oc_estado) alert('✅ Pago registrado · la OC quedó "'+d.oc_estado+'"');
     _fpClose(); loadFacturasProv();
-  }catch(e){ document.getElementById('fp-p-msg').innerHTML='<span style="color:#dc2626">Error red: '+_esc(e.message||e)+'</span>'; }
+  }catch(e){ document.getElementById('fp-p-msg').innerHTML='<span style="color:var(--cx-danger-text)">Error red: '+_esc(e.message||e)+'</span>'; }
 }
 async function fpDetalle(fid){
   try{
@@ -1853,18 +1853,18 @@ async function fpDetalle(fid){
     var d=await r.json();
     if(!r.ok||!d.ok){ alert('Error: '+((d&&d.error)||r.status)); return; }
     var f=d.factura;
-    function rw(k,v){ return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9"><span style="color:#64748b">'+k+'</span><span style="font-weight:600">'+v+'</span></div>'; }
-    var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:16px;color:#0f766e">Factura '+_esc(f.numero_factura)+'</h2><button onclick="_fpClose()" style="background:#e2e8f0;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
+    function rw(k,v){ return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--cx-border-soft)"><span style="color:var(--cx-text-mute)">'+k+'</span><span style="font-weight:600">'+v+'</span></div>'; }
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--cx-border);padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:16px;color:var(--cx-info-text)">Factura '+_esc(f.numero_factura)+'</h2><button onclick="_fpClose()" style="background:var(--cx-border);border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
     h+=rw('Proveedor', _esc(f.proveedor||'')+(f.nit?' · '+_esc(f.nit):''));
     h+=rw('OC', _esc(f.numero_oc||'-'));
     h+=rw('Emisión / Vence', _esc(f.fecha_emision||'-')+' → '+_esc(f.fecha_vencimiento||'-'));
     h+=rw('Subtotal', _fpMoney(f.subtotal))+rw('IVA', _fpMoney(f.iva))+rw('Retefuente', '-'+_fpMoney(f.retefuente))+rw('ReteICA', '-'+_fpMoney(f.retica));
     h+=rw('Total', '<b>'+_fpMoney(f.total)+'</b>')+rw('Pagado', _fpMoney(f.pagado))+rw('Saldo', '<b>'+_fpMoney(f.saldo)+'</b>');
     if(f.observaciones) h+=rw('Obs', _esc(f.observaciones));
-    h+='<div style="margin-top:12px;font-weight:700;color:#334155;font-size:13px">Pagos ('+f.pagos.length+')</div>';
-    if(f.pagos.length){ h+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px">'; f.pagos.forEach(function(p){ h+='<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px">'+_esc((p.fecha_pago||'').slice(0,10))+'</td><td style="padding:4px">'+_esc(p.medio||'')+'</td><td style="padding:4px;text-align:right;font-weight:600">'+_fpMoney(p.monto)+'</td><td style="padding:4px;color:#64748b;font-size:11px">'+_esc(p.registrado_por||'')+'</td></tr>'; }); h+='</table>'; }
-    else h+='<div style="color:#94a3b8;font-size:12px;padding:6px 0">Sin pagos aún.</div>';
-    if(f.tiene_pdf) h+='<div style="margin-top:10px"><a href="/api/compras/facturas-proveedor/'+fid+'/pdf" target="_blank" style="color:#0f766e;font-weight:700">📎 Ver PDF de la factura</a></div>';
+    h+='<div style="margin-top:12px;font-weight:700;color:var(--cx-text-soft);font-size:13px">Pagos ('+f.pagos.length+')</div>';
+    if(f.pagos.length){ h+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px">'; f.pagos.forEach(function(p){ h+='<tr style="border-bottom:1px solid var(--cx-border-soft)"><td style="padding:4px">'+_esc((p.fecha_pago||'').slice(0,10))+'</td><td style="padding:4px">'+_esc(p.medio||'')+'</td><td style="padding:4px;text-align:right;font-weight:600">'+_fpMoney(p.monto)+'</td><td style="padding:4px;color:var(--cx-text-mute);font-size:11px">'+_esc(p.registrado_por||'')+'</td></tr>'; }); h+='</table>'; }
+    else h+='<div style="color:var(--cx-text-faint);font-size:12px;padding:6px 0">Sin pagos aún.</div>';
+    if(f.tiene_pdf) h+='<div style="margin-top:10px"><a href="/api/compras/facturas-proveedor/'+fid+'/pdf" target="_blank" style="color:var(--cx-info-text);font-weight:700">📎 Ver PDF de la factura</a></div>';
     _fpModalShell(h, 560);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
@@ -1887,35 +1887,35 @@ async function loadFeedNecesidades(){
     var r=await fetch('/api/compras/feed-necesidades',{cache:'no-store'});
     if(r.status===401){ location.href='/login'; return; }
     var d=await r.json();
-    if(!d.ok){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
+    if(!d.ok){ wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
     if(kpis){
       kpis.innerHTML=
-        '<div style="background:#fee2e2;border:1px solid #fecaca;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:800;color:#991b1b">'+d.n+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Necesidades</div></div>'+
-        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1e293b">'+d.n_mp+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Materias primas</div></div>'+
-        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1e293b">'+d.n_mee+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Envases</div></div>';
+        '<div style="background:var(--cx-danger-pale);border:1px solid #fecaca;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:800;color:var(--cx-danger-text)">'+d.n+'</div><div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase">Necesidades</div></div>'+
+        '<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:800;color:var(--cx-text)">'+d.n_mp+'</div><div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase">Materias primas</div></div>'+
+        '<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:800;color:var(--cx-text)">'+d.n_mee+'</div><div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase">Envases</div></div>';
     }
     var bdg=document.getElementById('feedneed-badge'); if(bdg){ if(d.n>0){ bdg.textContent=d.n; bdg.style.display='inline-block'; } else bdg.style.display='none'; }
-    if(!d.items.length){ wrap.innerHTML='<div style="padding:18px;color:#15803d">✓ Todo por encima del mínimo · nada urgente por comprar.</div>'; return; }
-    var html='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#0f766e;color:#fff">';
+    if(!d.items.length){ wrap.innerHTML='<div style="padding:18px;color:var(--cx-success-text)">✓ Todo por encima del mínimo · nada urgente por comprar.</div>'; return; }
+    var html='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--cx-info);color:#fff">';
     ['Tipo','Código','Nombre','Stock','Mínimo','Falta','Cobertura','Proveedor'].forEach(function(h,i){ html+='<th style="padding:7px;text-align:'+((i>=3&&i<=5)?'right':'left')+'">'+h+'</th>'; });
     html+='</tr></thead><tbody>';
     d.items.forEach(function(it){
       var pct=it.pct||0, col=pct<25?'#991b1b':(pct<60?'#b45309':'#475569'), bg=pct<25?'#fff1f2':'';
-      var tip=it.tipo==='MP'?'<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;font-weight:700;font-size:10px">MP</span>':'<span style="background:#ede9fe;color:#5b21b6;padding:1px 6px;border-radius:4px;font-weight:700;font-size:10px">Envase</span>';
-      html+='<tr style="border-top:1px solid #f1f5f9'+(bg?';background:'+bg:'')+'">';
+      var tip=it.tipo==='MP'?'<span style="background:var(--cx-info-pale);color:var(--cx-info-text);padding:1px 6px;border-radius:4px;font-weight:700;font-size:10px">MP</span>':'<span style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:1px 6px;border-radius:4px;font-weight:700;font-size:10px">Envase</span>';
+      html+='<tr style="border-top:1px solid var(--cx-border-soft)'+(bg?';background:'+bg:'')+'">';
       html+='<td style="padding:6px">'+tip+'</td>';
       html+='<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.codigo)+'</td>';
       html+='<td style="padding:6px">'+_esc(it.nombre||'')+'</td>';
       html+='<td style="padding:6px;text-align:right">'+it.stock+(it.unidad==='g'?'g':'')+'</td>';
       html+='<td style="padding:6px;text-align:right">'+it.minimo+'</td>';
-      html+='<td style="padding:6px;text-align:right;color:#b91c1c;font-weight:700">'+it.faltante+'</td>';
+      html+='<td style="padding:6px;text-align:right;color:var(--cx-danger-text);font-weight:700">'+it.faltante+'</td>';
       html+='<td style="padding:6px;text-align:right;color:'+col+';font-weight:700">'+pct+'%</td>';
       html+='<td style="padding:6px">'+_esc(it.proveedor||'-')+'</td>';
       html+='</tr>';
     });
     html+='</tbody></table>';
     wrap.innerHTML=html;
-  }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
+  }catch(e){ wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
 }
 
 // Envases a marcar · carga la página de Marcación (ciclo completo) embebida por iframe (unificado 18-jul)
@@ -1937,11 +1937,11 @@ async function loadPreparacionEnvases(){
     var r = await fetch('/api/compras/preparacion-envases?dias='+dias+'&anticipo=30', {cache:'no-store'});
     if(r.status===401){ location.href='/login'; return; }
     var d = await r.json();
-    if(!d.ok){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
+    if(!d.ok){ wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
     // Sebastián 7-jul (Catalina) · AGRUPADO por envase: la próxima producción + las siguientes (acumulado) para
     // consolidar el envío a serigrafía. Fallback a items si el backend viejo no manda grupos.
     window._PREP_ITEMS = d.grupos || d.items || [];
-    if(!window._PREP_ITEMS.length){ wrap.innerHTML='<div class="cxt-wrap" style="padding:34px;text-align:center;color:#78716c;font-weight:600">No hay envases en producciones pr&oacute;ximas ('+dias+'d).</div>'; return; }
+    if(!window._PREP_ITEMS.length){ wrap.innerHTML='<div class="cxt-wrap" style="padding:34px;text-align:center;color:var(--cx-text-mute);font-weight:600">No hay envases en producciones pr&oacute;ximas ('+dias+'d).</div>'; return; }
     var _totUds=0, _nAtr=0;
     window._PREP_ITEMS.forEach(function(it){ _totUds += (it.uds||0); if(it.lista_atrasada) _nAtr++; });
     var h='<div class="kpis">'
@@ -1956,8 +1956,8 @@ async function loadPreparacionEnvases(){
       '<th>Tipo</th><th style="text-align:center">Acci&oacute;n</th></tr></thead><tbody>';
     window._PREP_ITEMS.forEach(function(it,i){
       var fl = it.fecha_lista_sugerida||'';
-      var flStyle = it.lista_atrasada ? 'background:#fee2e2;color:#991b1b;font-weight:700' : '';
-      var osTag = it.os_existentes ? ' <span title="ya hay OS para este envase" style="background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;font-size:10px">OS×'+it.os_existentes+'</span>' : '';
+      var flStyle = it.lista_atrasada ? 'background:var(--cx-danger-pale);color:var(--cx-danger-text);font-weight:700' : '';
+      var osTag = it.os_existentes ? ' <span title="ya hay OS para este envase" style="background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:1px 5px;border-radius:4px;font-size:10px">OS×'+it.os_existentes+'</span>' : '';
       // Sebastián 2-jul · desglose COLAPSABLE por cliente (Animus vs cada B2B) · solo si hay B2B
       var pc = it.por_cliente||[];
       var hasB2B = pc.some(function(x){ return !x.es_dtc; });
@@ -1968,32 +1968,32 @@ async function loadPreparacionEnvases(){
                  '<span>'+(x.es_dtc?'🛍️':'📦')+' '+_esc(x.cliente||'')+'</span>'+
                  '<b>'+(x.uds||0).toLocaleString('es-CO')+' uds</b></div>';
         }).join('');
-        pcHtml = '<details style="margin-top:4px"><summary style="cursor:pointer;color:#0f766e;font-size:10px;font-weight:700">&#9656; por cliente ('+pc.length+')</summary>'+
-                 '<div style="font-size:10px;color:#475569;padding:4px 0 0 10px;border-left:2px solid #99f6e4;margin-top:2px">'+pcRows+'</div></details>';
+        pcHtml = '<details style="margin-top:4px"><summary style="cursor:pointer;color:var(--cx-info-text);font-size:10px;font-weight:700">&#9656; por cliente ('+pc.length+')</summary>'+
+                 '<div style="font-size:10px;color:var(--cx-text-soft);padding:4px 0 0 10px;border-left:2px solid #99f6e4;margin-top:2px">'+pcRows+'</div></details>';
       }
       // Sebastián 7-jul (Catalina) · próximas producciones del MISMO envase · consolidar (preparar para N de una)
       var prods = it.producciones||[];
       var proxHtml = '';
       if(prods.length > 1){
         var prows = prods.map(function(p,j){
-          var atr = p.lista_atrasada ? 'color:#b91c1c;font-weight:700' : '';
+          var atr = p.lista_atrasada ? 'color:var(--cx-danger-text);font-weight:700' : '';
           return '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;align-items:center">'+
                  '<span style="'+atr+'">'+_esc(p.fecha_produccion||'')+' &rarr; '+(p.uds||0).toLocaleString('es-CO')+'</span>'+
-                 '<span style="color:#64748b">&sum; '+(p.uds_acumulado||0).toLocaleString('es-CO')+'</span>'+
+                 '<span style="color:var(--cx-text-mute)">&sum; '+(p.uds_acumulado||0).toLocaleString('es-CO')+'</span>'+
                  '<button onclick="prepSetUds('+i+','+(p.uds_acumulado||0)+')" style="background:#e0f2fe;color:#0369a1;border:none;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">preparar '+(j+1)+'</button></div>';
         }).join('');
-        proxHtml = '<details style="margin-top:4px"><summary style="cursor:pointer;color:#7c3aed;font-size:10px;font-weight:700">&#9656; próximas '+prods.length+' producciones · consolidar</summary>'+
-                   '<div style="font-size:10px;color:#475569;padding:4px 0 0 8px;border-left:2px solid #ddd6fe;margin-top:2px">'+prows+
-                   '<div style="color:#94a3b8;font-size:9px;margin-top:3px">Apretá "preparar N" → deja el Uds para cubrir esas N producciones (1 solo envío = más barato).</div></div></details>';
+        proxHtml = '<details style="margin-top:4px"><summary style="cursor:pointer;color:var(--cx-primary-text);font-size:10px;font-weight:700">&#9656; próximas '+prods.length+' producciones · consolidar</summary>'+
+                   '<div style="font-size:10px;color:var(--cx-text-soft);padding:4px 0 0 8px;border-left:2px solid #ddd6fe;margin-top:2px">'+prows+
+                   '<div style="color:var(--cx-text-faint);font-size:9px;margin-top:3px">Apretá "preparar N" → deja el Uds para cubrir esas N producciones (1 solo envío = más barato).</div></div></details>';
       }
       h+='<tr id="prep-row-'+i+'">'+
-        '<td style="font-weight:600;color:#292524">'+_esc(it.producto||'')+osTag+'</td>'+
-        '<td class="cxt-mono" style="font-size:11px">'+_esc(it.envase_codigo||'')+'<div style="color:#78716c;font-size:10px;font-family:\\'Segoe UI\\',sans-serif">'+_esc(it.presentacion||'')+'</div>'+pcHtml+proxHtml+'</td>'+
-        '<td style="text-align:right"><input id="prep-cant-'+i+'" type="number" min="1" value="'+(it.uds||0)+'" style="width:78px;padding:4px;border:1px solid #d6d3d1;border-radius:6px;text-align:right"></td>'+
-        '<td style="white-space:nowrap;color:#57534e">'+_esc(it.fecha_produccion||'')+'</td>'+
-        '<td><input id="prep-fecha-'+i+'" type="date" value="'+_esc(fl)+'" style="padding:4px;border:1px solid #d6d3d1;border-radius:6px;'+flStyle+'"></td>'+
-        '<td><input id="prep-prov-'+i+'" placeholder="proveedor" style="width:140px;padding:4px;border:1px solid #d6d3d1;border-radius:6px"></td>'+
-        '<td><select id="prep-tipo-'+i+'" style="padding:4px;border:1px solid #d6d3d1;border-radius:6px"><option>Serigraf&iacute;a</option><option>Tampograf&iacute;a</option><option>Etiquetado</option></select></td>'+
+        '<td style="font-weight:600;color:var(--cx-text)">'+_esc(it.producto||'')+osTag+'</td>'+
+        '<td class="cxt-mono" style="font-size:11px">'+_esc(it.envase_codigo||'')+'<div style="color:var(--cx-text-mute);font-size:10px;font-family:\\'Segoe UI\\',sans-serif">'+_esc(it.presentacion||'')+'</div>'+pcHtml+proxHtml+'</td>'+
+        '<td style="text-align:right"><input id="prep-cant-'+i+'" type="number" min="1" value="'+(it.uds||0)+'" style="width:78px;padding:4px;border:1px solid var(--cx-border);border-radius:6px;text-align:right"></td>'+
+        '<td style="white-space:nowrap;color:var(--cx-text-soft)">'+_esc(it.fecha_produccion||'')+'</td>'+
+        '<td><input id="prep-fecha-'+i+'" type="date" value="'+_esc(fl)+'" style="padding:4px;border:1px solid var(--cx-border);border-radius:6px;'+flStyle+'"></td>'+
+        '<td><input id="prep-prov-'+i+'" placeholder="proveedor" style="width:140px;padding:4px;border:1px solid var(--cx-border);border-radius:6px"></td>'+
+        '<td><select id="prep-tipo-'+i+'" style="padding:4px;border:1px solid var(--cx-border);border-radius:6px"><option>Serigraf&iacute;a</option><option>Tampograf&iacute;a</option><option>Etiquetado</option></select></td>'+
         '<td style="text-align:center"><button class="cxt-btnp" onclick="generarOSDesdePrep('+i+')">Generar OS</button></td>'+
         '</tr>';
     });
@@ -2001,7 +2001,7 @@ async function loadPreparacionEnvases(){
     h+='<div class="cxt-hint">&#128161; Jalona los envases de las producciones pr&oacute;ximas para mandarlos a serigraf&iacute;a/tampograf&iacute;a con anticipaci&oacute;n. Abr&iacute; "pr&oacute;ximas N producciones" para consolidar varios env&iacute;os en uno.</div>';
     h+='</div>';
     wrap.innerHTML=h;
-  }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
+  }catch(e){ wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
 }
 function prepSetUds(i, uds){
   var el=document.getElementById('prep-cant-'+i);
@@ -2024,7 +2024,7 @@ async function generarOSDesdePrep(i){
     var d=await r.json();
     if(!r.ok || (d&&d.error)){ alert('Error: '+((d&&d.error)||r.status)); return; }
     var row=document.getElementById('prep-row-'+i);
-    if(row){ row.style.opacity='0.55'; var ac=row.querySelector('td:last-child'); if(ac) ac.innerHTML='<span style="color:#15803d;font-weight:700;font-size:11px">✓ '+_esc(d.numero_os||'OS creada')+'</span>'; }
+    if(row){ row.style.opacity='0.55'; var ac=row.querySelector('td:last-child'); if(ac) ac.innerHTML='<span style="color:var(--cx-success-text);font-weight:700;font-size:11px">✓ '+_esc(d.numero_os||'OS creada')+'</span>'; }
   }catch(e){ alert('Error red: '+(e.message||e)); }
 }
 
@@ -2034,29 +2034,29 @@ async function recalcularMinimosEnvases(){
   var m=document.getElementById('modal-min-env'); if(m) m.remove();
   m=document.createElement('div'); m.id='modal-min-env';
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
-  m.innerHTML='<div style="background:#fff;border-radius:12px;max-width:1000px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Calculando mínimos…</div></div>';
+  m.innerHTML='<div style="background:var(--cx-card);border-radius:12px;max-width:1000px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px"><div style="text-align:center;padding:40px;color:var(--cx-text-faint)">Calculando mínimos…</div></div>';
   document.body.appendChild(m);
   m.addEventListener('click',function(e){ if(e.target===m) m.remove(); });
   try{
     var r=await fetch('/api/compras/minimos-envases-sugeridos?dias=90&cobertura_dias=45',{cache:'no-store'});
     if(r.status===401){ location.href='/login'; return; }
     var d=await r.json();
-    if(!d.ok){ m.querySelector('div').innerHTML='<div style="color:#dc2626;padding:30px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
+    if(!d.ok){ m.querySelector('div').innerHTML='<div style="color:var(--cx-danger-text);padding:30px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
     window._MINENV=d.items||[];
     var html='';
-    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px">';
-    html+='<div><h2 style="margin:0;font-size:18px;color:#7c3aed">⚙ Mínimos de envases · sugeridos por consumo</h2><div style="font-size:11px;color:#64748b;margin-top:3px">Mínimo = consumo diario del plan × '+d.cobertura_dias+'d de cobertura · horizonte '+d.dias+'d. Marcá los que querés aplicar.</div></div>';
-    html+='<button onclick="document.getElementById(&quot;modal-min-env&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div>';
-    html+='<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f8fafc;color:#475569">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--cx-border);padding-bottom:12px;margin-bottom:14px">';
+    html+='<div><h2 style="margin:0;font-size:18px;color:var(--cx-primary-text)">⚙ Mínimos de envases · sugeridos por consumo</h2><div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px">Mínimo = consumo diario del plan × '+d.cobertura_dias+'d de cobertura · horizonte '+d.dias+'d. Marcá los que querés aplicar.</div></div>';
+    html+='<button onclick="document.getElementById(&quot;modal-min-env&quot;).remove()" style="background:var(--cx-border);color:var(--cx-text-soft);border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div>';
+    html+='<div style="overflow-x:auto;border:1px solid var(--cx-border);border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--cx-bg-alt);color:var(--cx-text-soft)">';
     html+='<th style="padding:7px;text-align:center"><input type="checkbox" id="min-all" onchange="_minToggleAll(this.checked)"></th>';
     ['Envase','Consumo '+d.dias+'d','Diario','Mín actual','Mín sugerido','Stock'].forEach(function(h,i){ html+='<th style="padding:7px;text-align:'+(i===0?'left':'right')+'">'+h+'</th>'; });
     html+='</tr></thead><tbody>';
     window._MINENV.forEach(function(it,i){
       var sube=it.minimo_sugerido>it.minimo_actual, baja=it.minimo_sugerido<it.minimo_actual;
       var difCol=sube?'#b45309':(baja?'#15803d':'#475569'), noM=!it.en_maestro;
-      html+='<tr style="border-top:1px solid #f1f5f9'+(noM?';background:#fff7ed':'')+'">';
+      html+='<tr style="border-top:1px solid var(--cx-border-soft)'+(noM?';background:var(--cx-warn-pale)':'')+'">';
       html+='<td style="padding:6px;text-align:center"><input type="checkbox" class="min-chk" data-i="'+i+'"'+(((sube||baja)&&!noM)?' checked':'')+(noM?' disabled':'')+'></td>';
-      html+='<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.envase_codigo)+(noM?' <span style="color:#b45309;font-size:10px">⚠ no en maestro</span>':'')+'<div style="color:#64748b;font-size:10px">'+_esc(it.descripcion||'')+'</div></td>';
+      html+='<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.envase_codigo)+(noM?' <span style="color:var(--cx-warn-text);font-size:10px">⚠ no en maestro</span>':'')+'<div style="color:var(--cx-text-mute);font-size:10px">'+_esc(it.descripcion||'')+'</div></td>';
       html+='<td style="padding:6px;text-align:right">'+it.consumo_horizonte+'</td>';
       html+='<td style="padding:6px;text-align:right">'+it.consumo_diario+'</td>';
       html+='<td style="padding:6px;text-align:right">'+it.minimo_actual+'</td>';
@@ -2064,12 +2064,12 @@ async function recalcularMinimosEnvases(){
       html+='<td style="padding:6px;text-align:right">'+it.stock_actual+'</td>';
       html+='</tr>';
     });
-    if(!window._MINENV.length) html+='<tr><td colspan="7" style="padding:20px;text-align:center;color:#94a3b8">Sin consumo de envases en el horizonte.</td></tr>';
+    if(!window._MINENV.length) html+='<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--cx-text-faint)">Sin consumo de envases en el horizonte.</td></tr>';
     html+='</tbody></table></div>';
-    html+='<div style="margin-top:12px;text-align:right"><button onclick="_aplicarMinimosEnvases()" style="background:#7c3aed;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer">Aplicar seleccionados</button></div>';
+    html+='<div style="margin-top:12px;text-align:right"><button onclick="_aplicarMinimosEnvases()" style="background:var(--cx-primary);color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer">Aplicar seleccionados</button></div>';
     html+='<div id="min-out" style="margin-top:8px;font-size:12px"></div>';
     m.querySelector('div').innerHTML=html;
-  }catch(e){ m.querySelector('div').innerHTML='<div style="color:#dc2626;padding:30px">Error red: '+_esc(e.message||e)+'</div>'; }
+  }catch(e){ m.querySelector('div').innerHTML='<div style="color:var(--cx-danger-text);padding:30px">Error red: '+_esc(e.message||e)+'</div>'; }
 }
 function _minToggleAll(ch){ document.querySelectorAll('.min-chk:not([disabled])').forEach(function(x){ x.checked=ch; }); }
 async function _aplicarMinimosEnvases(){
@@ -2080,10 +2080,10 @@ async function _aplicarMinimosEnvases(){
   try{
     var r=await fetch('/api/compras/minimos-envases-aplicar', _fetchOpts('POST', {items:sel}));
     var d=await r.json();
-    if(!r.ok||!d.ok){ if(out) out.innerHTML='<span style="color:#dc2626">Error: '+_esc((d&&d.error)||r.status)+'</span>'; return; }
-    if(out) out.innerHTML='<span style="color:#15803d;font-weight:700">✓ '+d.actualizados+' mínimos actualizados</span>';
+    if(!r.ok||!d.ok){ if(out) out.innerHTML='<span style="color:var(--cx-danger-text)">Error: '+_esc((d&&d.error)||r.status)+'</span>'; return; }
+    if(out) out.innerHTML='<span style="color:var(--cx-success-text);font-weight:700">✓ '+d.actualizados+' mínimos actualizados</span>';
     setTimeout(recalcularMinimosEnvases, 800);
-  }catch(e){ if(out) out.innerHTML='<span style="color:#dc2626">Error red: '+_esc(e.message||e)+'</span>'; }
+  }catch(e){ if(out) out.innerHTML='<span style="color:var(--cx-danger-text)">Error red: '+_esc(e.message||e)+'</span>'; }
 }
 
 async function loadOrdenesServicio(){
@@ -2096,7 +2096,7 @@ async function loadOrdenesServicio(){
     var d = await r.json();
     if(!r.ok){
       // FIX 27-may (P0 XSS) · esc del error · server podría devolver HTML en d.error
-      tb.innerHTML = '<tr><td colspan="10" style="color:#dc2626;text-align:center;padding:14px">Error: '+esc(d.error||r.status)+'</td></tr>';
+      tb.innerHTML = '<tr><td colspan="10" style="color:var(--cx-danger-text);text-align:center;padding:14px">Error: '+esc(d.error||r.status)+'</td></tr>';
       return;
     }
     var items = d.items || [];
@@ -2111,28 +2111,28 @@ async function loadOrdenesServicio(){
       return '<span style="background:'+color+';color:#fff;padding:3px 10px;border-radius:10px;font-weight:700">'+e+' · '+n+'</span>';
     }).join(' ');
     if(!items.length){
-      tb.innerHTML = '<tr><td colspan="10" style="color:#94a3b8;text-align:center;padding:18px">Sin órdenes de servicio</td></tr>';
+      tb.innerHTML = '<tr><td colspan="10" style="color:var(--cx-text-faint);text-align:center;padding:18px">Sin órdenes de servicio</td></tr>';
       return;
     }
     tb.innerHTML = items.map(function(o){
       var col = colorEst[o.estado] || '#475569';
       var acc = '';
       if(o.estado === 'Borrador'){
-        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="Enviada" style="background:#0891b2;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">📧 Enviar</button>';
+        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="Enviada" style="background:var(--cx-info);color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">📧 Enviar</button>';
       } else if(o.estado === 'Enviada'){
-        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="Recogida" style="background:#ca8a04;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">🚚 Recogida</button>';
+        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="Recogida" style="background:var(--cx-accent-dark);color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">🚚 Recogida</button>';
       } else if(o.estado === 'Recogida'){
-        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="En proceso" style="background:#7c3aed;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">⚙️ En proceso</button>';
+        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="En proceso" style="background:var(--cx-primary);color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">⚙️ En proceso</button>';
       } else if(o.estado === 'En proceso'){
-        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="Entregada" style="background:#16a34a;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">✓ Entregada</button>';
+        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="Entregada" style="background:var(--cx-success);color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">✓ Entregada</button>';
       } else if(o.estado === 'Entregada'){
-        acc = '<span style="color:#16a34a;font-size:10px;font-weight:700">⏳ Esperando confirmación planta</span>';
+        acc = '<span style="color:var(--cx-success-text);font-size:10px;font-weight:700">⏳ Esperando confirmación planta</span>';
       } else if(o.estado === 'Confirmada'){
-        acc = '<span style="color:#0f766e;font-size:10px;font-weight:700">✓ '+_esc(o.planta_confirmado_por||'')+' confirmó</span>';
+        acc = '<span style="color:var(--cx-info-text);font-size:10px;font-weight:700">✓ '+_esc(o.planta_confirmado_por||'')+' confirmó</span>';
       }
-      acc += ' <button data-os-act="detalle" data-num="'+_esc(o.numero_os)+'" style="background:#475569;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">📋</button>';
-      return '<tr style="border-bottom:1px solid #e7e5e4">'+
-        '<td style="padding:6px;font-family:monospace;font-weight:700;color:#0f766e">'+_esc(o.numero_os)+'</td>'+
+      acc += ' <button data-os-act="detalle" data-num="'+_esc(o.numero_os)+'" style="background:var(--cx-text-soft);color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">📋</button>';
+      return '<tr style="border-bottom:1px solid var(--cx-border)">'+
+        '<td style="padding:6px;font-family:monospace;font-weight:700;color:var(--cx-info-text)">'+_esc(o.numero_os)+'</td>'+
         '<td style="padding:6px">'+_esc(o.proveedor)+'</td>'+
         '<td style="padding:6px;font-size:11px">'+_esc(o.tipo_servicio)+'</td>'+
         '<td style="padding:6px;font-size:12px">'+_esc(o.producto_final)+'</td>'+
@@ -2145,7 +2145,7 @@ async function loadOrdenesServicio(){
       '</tr>';
     }).join('');
   }catch(e){
-    tb.innerHTML = '<tr><td colspan="10" style="color:#dc2626;text-align:center;padding:14px">Error red: '+_esc(e.message)+'</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" style="color:var(--cx-danger-text);text-align:center;padding:14px">Error red: '+_esc(e.message)+'</td></tr>';
   }
 }
 
@@ -2154,31 +2154,31 @@ function abrirNuevaOS(){
   var m = document.createElement('div');
   m.id = 'modal-nueva-os';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-  m.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0f766e">🎨 Nueva Orden de Servicio</h3>'+
+  m.innerHTML = '<div style="background:var(--cx-card);border-radius:14px;padding:24px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:var(--cx-info-text)">🎨 Nueva Orden de Servicio</h3>'+
     '<button id="os-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div style="font-size:11px;color:#64748b;margin-bottom:12px">Para serigrafía, tampografía, etiquetado u otro servicio sobre envases existentes (NO compra de material)</div>'+
+    '<div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:12px">Para serigrafía, tampografía, etiquetado u otro servicio sobre envases existentes (NO compra de material)</div>'+
     '<div style="display:grid;gap:10px">'+
-      '<div><label style="font-size:12px;font-weight:600;color:#475569">Tipo de servicio *</label><select id="os-tipo" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px">'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Tipo de servicio *</label><select id="os-tipo" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px">'+
         '<option>Serigrafía</option><option>Tampografía</option><option>Etiquetado</option><option>Sleeve termoencogible</option><option>Hot stamping</option><option>Otro</option>'+
       '</select></div>'+
-      '<div><label style="font-size:12px;font-weight:600;color:#475569">Proveedor *</label><input id="os-proveedor" type="text" list="planta-prov-datalist" placeholder="Nombre del taller" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
-      '<div><label style="font-size:12px;font-weight:600;color:#475569">Producto final *</label><input id="os-producto" type="text" placeholder="Ej: Renova C 10 30ml" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Proveedor *</label><input id="os-proveedor" type="text" list="planta-prov-datalist" placeholder="Nombre del taller" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px"></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Producto final *</label><input id="os-producto" type="text" placeholder="Ej: Renova C 10 30ml" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px"></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-        '<div><label style="font-size:12px;font-weight:600;color:#475569">Envase (cód MEE)</label><input id="os-envase-cod" type="text" placeholder="MEE0023" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
-        '<div><label style="font-size:12px;font-weight:600;color:#475569">Cantidad uds *</label><input id="os-cantidad" type="number" min="1" placeholder="500" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+        '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Envase (cód MEE)</label><input id="os-envase-cod" type="text" placeholder="MEE0023" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px"></div>'+
+        '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Cantidad uds *</label><input id="os-cantidad" type="number" min="1" placeholder="500" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px"></div>'+
       '</div>'+
-      '<div><label style="font-size:12px;font-weight:600;color:#475569">Envase descripción</label><input id="os-envase-desc" type="text" placeholder="Frasco vidrio ambar 30ml gotero" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
-      '<div><label style="font-size:12px;font-weight:600;color:#475569">Arte / descripción del trabajo *</label><textarea id="os-arte" rows="3" placeholder="Logo Espagiria + lote + fecha venc · color blanco · ubicación frente" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></textarea></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Envase descripción</label><input id="os-envase-desc" type="text" placeholder="Frasco vidrio ambar 30ml gotero" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px"></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Arte / descripción del trabajo *</label><textarea id="os-arte" rows="3" placeholder="Logo Espagiria + lote + fecha venc · color blanco · ubicación frente" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px"></textarea></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-        '<div><label style="font-size:12px;font-weight:600;color:#475569">Fecha requerida entrega</label><input id="os-fecha-req" type="date" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
-        '<div><label style="font-size:12px;font-weight:600;color:#475569">Costo estimado ($)</label><input id="os-costo" type="number" min="0" placeholder="450000" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+        '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Fecha requerida entrega</label><input id="os-fecha-req" type="date" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px"></div>'+
+        '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Costo estimado ($)</label><input id="os-costo" type="number" min="0" placeholder="450000" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px"></div>'+
       '</div>'+
-      '<div><label style="font-size:12px;font-weight:600;color:#475569">Observaciones</label><textarea id="os-obs" rows="2" placeholder="(opcional)" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></textarea></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Observaciones</label><textarea id="os-obs" rows="2" placeholder="(opcional)" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px"></textarea></div>'+
     '</div>'+
     '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
-      '<button id="os-cancel" style="background:#94a3b8;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer">Cancelar</button>'+
-      '<button id="os-crear" style="background:#0f766e;color:#fff;padding:8px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">✓ Crear OS</button>'+
+      '<button id="os-cancel" style="background:var(--cx-text-faint);color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer">Cancelar</button>'+
+      '<button id="os-crear" style="background:var(--cx-info);color:#fff;padding:8px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">✓ Crear OS</button>'+
     '</div></div>';
   document.body.appendChild(m);
   document.getElementById('os-close').onclick = function(){ m.remove(); };
@@ -2250,26 +2250,26 @@ async function verDetalleOS(num){
     m.id = 'modal-os-det';
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
     var tl = (d.timeline||[]).map(function(e){
-      return '<div style="border-left:3px solid #0891b2;padding:6px 10px;margin-bottom:6px;background:#f8fafc;font-size:12px"><b>'+_esc(e.estado_nuevo)+'</b> <span style="color:#94a3b8">'+(e.ts||'').substring(0,16)+' · '+_esc(e.usuario)+'</span>'+(e.observaciones?'<br><span style="color:#475569">'+_esc(e.observaciones)+'</span>':'')+'</div>';
+      return '<div style="border-left:3px solid var(--cx-info);padding:6px 10px;margin-bottom:6px;background:var(--cx-bg-alt);font-size:12px"><b>'+_esc(e.estado_nuevo)+'</b> <span style="color:var(--cx-text-faint)">'+(e.ts||'').substring(0,16)+' · '+_esc(e.usuario)+'</span>'+(e.observaciones?'<br><span style="color:var(--cx-text-soft)">'+_esc(e.observaciones)+'</span>':'')+'</div>';
     }).join('');
-    m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0f766e">🎨 '+_esc(d.numero_os)+'</h3><button id="osd-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:14px;font-size:12px">'+
+    m.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;padding:20px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:var(--cx-info-text)">🎨 '+_esc(d.numero_os)+'</h3><button id="osd-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;background:var(--cx-bg-alt);padding:12px;border-radius:8px;margin-bottom:14px;font-size:12px">'+
         '<div><b>Proveedor</b><br>'+_esc(d.proveedor||'')+'</div>'+
         '<div><b>Tipo</b><br>'+_esc(d.tipo_servicio||'')+'</div>'+
         '<div><b>Producto</b><br>'+_esc(d.producto_final||'')+'</div>'+
         '<div><b>Envase</b><br>'+_esc(d.envase_descripcion||d.envase_codigo_mee||'-')+'</div>'+
-        '<div><b>Unidades</b><br><span style="font-size:18px;font-weight:800;color:#0f766e">'+(d.cantidad_unidades||0)+'</span></div>'+
+        '<div><b>Unidades</b><br><span style="font-size:18px;font-weight:800;color:var(--cx-info-text)">'+(d.cantidad_unidades||0)+'</span></div>'+
         '<div><b>Estado</b><br>'+_esc(d.estado||'')+'</div>'+
         '<div><b>F. solicitud</b><br>'+_esc((d.fecha_solicitud||'').substring(0,10))+'</div>'+
         '<div><b>F. requerida</b><br>'+_esc((d.fecha_requerida_entrega||'').substring(0,10) || '-')+'</div>'+
         '<div><b>Costo est.</b><br>'+fmt((d.costo_estimado_cop||0).toFixed(0))+'</div>'+
         '<div><b>Costo real</b><br>'+fmt((d.costo_real_cop||0).toFixed(0))+'</div>'+
       '</div>'+
-      '<div style="margin-bottom:10px;background:#fef3c7;border-left:3px solid #ca8a04;padding:10px;font-size:12px"><b>Arte solicitado:</b><br>'+_esc(d.arte_descripcion||'-')+'</div>'+
-      (d.observaciones ? '<div style="margin-bottom:10px;padding:8px;background:#f1f5f9;font-size:12px"><b>Observaciones:</b><br>'+_esc(d.observaciones)+'</div>' : '')+
-      '<h4 style="margin:14px 0 6px;color:#475569">📜 Timeline</h4>'+
-      (tl || '<div style="color:#94a3b8;font-size:12px">Sin eventos</div>')+
+      '<div style="margin-bottom:10px;background:var(--cx-warn-pale);border-left:3px solid var(--cx-accent-dark);padding:10px;font-size:12px"><b>Arte solicitado:</b><br>'+_esc(d.arte_descripcion||'-')+'</div>'+
+      (d.observaciones ? '<div style="margin-bottom:10px;padding:8px;background:var(--cx-border-soft);font-size:12px"><b>Observaciones:</b><br>'+_esc(d.observaciones)+'</div>' : '')+
+      '<h4 style="margin:14px 0 6px;color:var(--cx-text-soft)">📜 Timeline</h4>'+
+      (tl || '<div style="color:var(--cx-text-faint);font-size:12px">Sin eventos</div>')+
       '</div>';
     document.body.appendChild(m);
     document.getElementById('osd-close').onclick = function(){ m.remove(); };
@@ -2338,7 +2338,7 @@ async function renderKpisGrandes(){
         '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:2px">'+(counts.por_pagar||0)+' por pagar · '+((counts.planta||0)+(counts.solic||0))+' SOLs</div>'+
       '</div>';
   }catch(e){
-    cont.innerHTML = '<div style="color:#64748b;padding:10px;text-align:center;font-size:12px">⚠ KPIs no disponibles</div>';
+    cont.innerHTML = '<div style="color:var(--cx-text-mute);padding:10px;text-align:center;font-size:12px">⚠ KPIs no disponibles</div>';
   }
 }
 
@@ -2369,9 +2369,9 @@ async function renderAlertasBanner(){
     });
     alertas = alertas.slice(0, 5);
     if(!alertas.length){ cont.innerHTML = ''; return; }
-    cont.innerHTML = '<div style="background:#fef2f2;border:2px solid #dc2626;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
+    cont.innerHTML = '<div style="background:var(--cx-danger-pale);border:2px solid var(--cx-danger);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
       '<div style="font-size:1.4em">🚨</div>'+
-      '<div style="flex:1;font-size:13px;color:#991b1b"><b>'+alertas.length+' alerta(s) críticas:</b> '+
+      '<div style="flex:1;font-size:13px;color:var(--cx-danger-text)"><b>'+alertas.length+' alerta(s) críticas:</b> '+
       alertas.map(function(m){return _esc(m);}).join(' · ')+
       '</div></div>';
   }catch(e){ cont.innerHTML = ''; }
@@ -2385,11 +2385,11 @@ async function renderMisSolicWidget(){
     var d = await r.json();
     var sols = (d.solicitudes || d.items || []).slice(0, 5);
     if(!sols.length){ cont.innerHTML = ''; return; }
-    var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-weight:800;color:#0f172a;font-size:13px;margin-bottom:8px">👤 Solicitudes recientes</div>';
+    var html = '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:14px"><div style="font-weight:800;color:var(--cx-text);font-size:13px;margin-bottom:8px">👤 Solicitudes recientes</div>';
     html += '<div style="font-size:12px">';
     sols.forEach(function(s){
       var col = s.estado === 'Aprobada' ? '#16a34a' : (s.estado === 'Rechazada' ? '#dc2626' : (s.estado === 'Pendiente' ? '#ca8a04' : '#64748b'));
-      html += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9"><span><b style="font-family:monospace">'+_esc(s.numero)+'</b> · '+_esc((s.observaciones||s.categoria||'').substring(0,60))+'</span><span style="background:'+col+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">'+_esc(s.estado)+'</span></div>';
+      html += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--cx-border-soft)"><span><b style="font-family:monospace">'+_esc(s.numero)+'</b> · '+_esc((s.observaciones||s.categoria||'').substring(0,60))+'</span><span style="background:'+col+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">'+_esc(s.estado)+'</span></div>';
     });
     html += '</div></div>';
     cont.innerHTML = html;
@@ -2403,11 +2403,11 @@ async function renderDashHome2(){
   try{
     var hHome = await _fetchDashHome();
     if(hHome.status === 401){
-      cont.innerHTML = '<div style="background:#fef2f2;color:#991b1b;padding:14px;border-radius:8px;font-weight:700">⚠ Sesión expirada · <a href="/login?next=/compras" style="color:#dc2626;text-decoration:underline">re-loguear</a></div>';
+      cont.innerHTML = '<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:14px;border-radius:8px;font-weight:700">⚠ Sesión expirada · <a href="/login?next=/compras" style="color:var(--cx-danger-text);text-decoration:underline">re-loguear</a></div>';
       return;
     }
     if(!hHome.ok){
-      cont.innerHTML = '<div style="color:#dc2626;padding:14px">Error '+hHome.status+' al cargar dashboard</div>';
+      cont.innerHTML = '<div style="color:var(--cx-danger-text);padding:14px">Error '+hHome.status+' al cargar dashboard</div>';
       return;
     }
     var d = hHome.data || {};
@@ -2422,7 +2422,7 @@ async function renderDashHome2(){
       if(n > 0){
         var span = document.createElement('span');
         span.className = 'cx-tab-badge';
-        span.style.cssText = 'background:#dc2626;color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:6px';
+        span.style.cssText = 'background:var(--cx-danger);color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:6px';
         span.textContent = n;
         btn.appendChild(span);
       }
@@ -2441,61 +2441,61 @@ async function renderDashHome2(){
       var inflTot = (d.influencers_monto_total || 0);
       var inflList = d.influencers_pendientes || [];
       html += '<div style="background:linear-gradient(135deg,#fdf2f8,#f5f3ff);border:1px solid #ddd6fe;border-radius:12px;padding:18px;box-shadow:var(--cx-sh-card)">'+
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-weight:800;font-size:15px;color:#9f1239">💸 Influencers <span style="font-weight:600;font-size:11px;color:#a78bfa">privado · solo tú</span></div>'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-weight:800;font-size:15px;color:#9f1239">💸 Influencers <span style="font-weight:600;font-size:11px;color:var(--cx-primary-light)">privado · solo tú</span></div>'+
         '<a href="/admin/influencers" style="font-size:11px;color:#9f1239;font-weight:700;text-decoration:none">Ver todos →</a></div>'+
         '<div style="display:grid;grid-template-columns:minmax(160px,220px) 1fr;gap:14px;align-items:start">'+
-          '<div style="background:#fff;padding:12px 14px;border-radius:10px;border:1px solid #f5d0e8"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:#9f1239;font-weight:700">Por pagar</div><div style="font-size:2em;font-weight:800;color:#be185d;line-height:1.1">'+fmt(inflTot.toFixed(0))+'</div><div style="font-size:11px;color:#9f1239">'+inflList.length+' pendiente(s)</div></div>';
+          '<div style="background:var(--cx-card);padding:12px 14px;border-radius:10px;border:1px solid #f5d0e8"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:#9f1239;font-weight:700">Por pagar</div><div style="font-size:2em;font-weight:800;color:#be185d;line-height:1.1">'+fmt(inflTot.toFixed(0))+'</div><div style="font-size:11px;color:#9f1239">'+inflList.length+' pendiente(s)</div></div>';
       html += '<div style="font-size:11px;color:#9f1239">';
       if(inflList.length){
         html += '<div style="max-height:170px;overflow-y:auto;display:flex;flex-direction:column;gap:5px">';
         inflList.slice(0,6).forEach(function(it){
-          html += '<div style="background:#fff;padding:7px 10px;border-radius:7px;display:flex;justify-content:space-between;align-items:center"><div><b>'+_esc(it.solicitante||'?')+'</b> <span style="color:#94a3b8;font-size:10px">'+_esc(it.concepto||'')+'</span></div><div style="text-align:right;white-space:nowrap;margin-left:8px"><b style="color:#be185d">'+fmt(it.monto.toFixed(0))+'</b> <a href="/admin/influencers" style="font-size:9px;color:#0e7490">pagar</a></div></div>';
+          html += '<div style="background:var(--cx-card);padding:7px 10px;border-radius:7px;display:flex;justify-content:space-between;align-items:center"><div><b>'+_esc(it.solicitante||'?')+'</b> <span style="color:var(--cx-text-faint);font-size:10px">'+_esc(it.concepto||'')+'</span></div><div style="text-align:right;white-space:nowrap;margin-left:8px"><b style="color:#be185d">'+fmt(it.monto.toFixed(0))+'</b> <a href="/admin/influencers" style="font-size:9px;color:var(--cx-info-text)">pagar</a></div></div>';
         });
         html += '</div>';
       } else {
-        html += '<div style="color:#a78bfa;text-align:center;padding:18px 0">✓ Sin pagos pendientes</div>';
+        html += '<div style="color:var(--cx-primary-light);text-align:center;padding:18px 0">✓ Sin pagos pendientes</div>';
       }
       html += '</div>';   // fin col derecha
       html += '</div>';   // fin grid interno
       // Top proveedores 30d (pie · dato útil que estaba en el panel Salud)
-      html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #f5d0e8;font-size:11px;color:#475569">'+
+      html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #f5d0e8;font-size:11px;color:var(--cx-text-soft)">'+
         '<b>Top proveedores 30d:</b> '+
         ((d.top_proveedores_30d||[]).map(function(p){
-          return '<span style="background:#fff;padding:3px 8px;border-radius:8px;margin:2px 3px 0 0;display:inline-block;border:1px solid #eee">'+_esc(p.proveedor)+' · '+fmt(p.monto.toFixed(0))+'</span>';
-        }).join('') || '<span style="color:#cbd5e1">sin datos</span>')+
+          return '<span style="background:var(--cx-card);padding:3px 8px;border-radius:8px;margin:2px 3px 0 0;display:inline-block;border:1px solid var(--cx-border-soft)">'+_esc(p.proveedor)+' · '+fmt(p.monto.toFixed(0))+'</span>';
+        }).join('') || '<span style="color:var(--cx-border)">sin datos</span>')+
       '</div>';
       html += '</div>';   // fin panel influencers
     } else {
       // VISTA CATALINA · Buzón de pedidos priorizado
-      html += '<div style="background:linear-gradient(135deg,#ecfdf5,#dcfce7);border:1px solid #16a34a;border-radius:10px;padding:16px;margin-bottom:14px">'+
+      html += '<div style="background:linear-gradient(135deg,#ecfdf5,#dcfce7);border:1px solid var(--cx-success);border-radius:10px;padding:16px;margin-bottom:14px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'+
-          '<div><h2 style="margin:0;color:#166534;font-size:18px">📥 Tu buzón de hoy</h2><div style="font-size:12px;color:#15803d;margin-top:2px">SOLs nuevas que requieren acción</div></div>'+
-          '<div style="text-align:right"><div style="font-size:2em;font-weight:800;color:#166534">'+((counts.planta||0) + (counts.solic||0))+'</div><div style="font-size:11px;color:#15803d">total pendientes</div></div>'+
+          '<div><h2 style="margin:0;color:var(--cx-success-text);font-size:18px">📥 Tu buzón de hoy</h2><div style="font-size:12px;color:var(--cx-success-text);margin-top:2px">SOLs nuevas que requieren acción</div></div>'+
+          '<div style="text-align:right"><div style="font-size:2em;font-weight:800;color:var(--cx-success-text)">'+((counts.planta||0) + (counts.solic||0))+'</div><div style="font-size:11px;color:var(--cx-success-text)">total pendientes</div></div>'+
         '</div></div>';
       // Cards de las 2 fuentes
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">';
-      html += '<div onclick="document.querySelector(\\'[data-tab=planta]\\').click()" style="background:#fff;border:1px solid #0e7490;border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'\\'">'+
-        '<div style="font-size:11px;color:#0e7490;font-weight:700;text-transform:uppercase">🏭 Planta</div>'+
-        '<div style="font-size:2.4em;font-weight:800;color:#0e7490;line-height:1">'+(counts.planta||0)+'</div>'+
-        '<div style="font-size:11px;color:#64748b;margin-top:4px">MP+Empaque pendientes · agrupar por proveedor</div>'+
+      html += '<div onclick="document.querySelector(\\'[data-tab=planta]\\').click()" style="background:var(--cx-card);border:1px solid var(--cx-info);border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'\\'">'+
+        '<div style="font-size:11px;color:var(--cx-info-text);font-weight:700;text-transform:uppercase">🏭 Planta</div>'+
+        '<div style="font-size:2.4em;font-weight:800;color:var(--cx-info-text);line-height:1">'+(counts.planta||0)+'</div>'+
+        '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">MP+Empaque pendientes · agrupar por proveedor</div>'+
       '</div>';
-      html += '<div onclick="document.querySelector(\\'[data-tab=solic]\\').click()" style="background:#fff;border:1px solid #475569;border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'\\'">'+
-        '<div style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase">📋 Solicitudes</div>'+
-        '<div style="font-size:2.4em;font-weight:800;color:#475569;line-height:1">'+(counts.solic||0)+'</div>'+
-        '<div style="font-size:11px;color:#64748b;margin-top:4px">Generales (papelería, EPP, servicios)</div>'+
+      html += '<div onclick="document.querySelector(\\'[data-tab=solic]\\').click()" style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'\\'">'+
+        '<div style="font-size:11px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase">📋 Solicitudes</div>'+
+        '<div style="font-size:2.4em;font-weight:800;color:var(--cx-text-soft);line-height:1">'+(counts.solic||0)+'</div>'+
+        '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">Generales (papelería, EPP, servicios)</div>'+
       '</div>';
-      html += '<div onclick="document.querySelector(\\'[data-tab=por-pagar]\\').click()" style="background:#fff;border:1px solid #ca8a04;border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'\\'">'+
-        '<div style="font-size:11px;color:#ca8a04;font-weight:700;text-transform:uppercase">💰 Por pagar</div>'+
-        '<div style="font-size:2.4em;font-weight:800;color:#ca8a04;line-height:1">'+(counts.por_pagar||0)+'</div>'+
-        '<div style="font-size:11px;color:#64748b;margin-top:4px">OCs autorizadas sin pago</div>'+
+      html += '<div onclick="document.querySelector(\\'[data-tab=por-pagar]\\').click()" style="background:var(--cx-card);border:1px solid var(--cx-accent-dark);border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'\\'">'+
+        '<div style="font-size:11px;color:var(--cx-warn-text);font-weight:700;text-transform:uppercase">💰 Por pagar</div>'+
+        '<div style="font-size:2.4em;font-weight:800;color:var(--cx-warn-text);line-height:1">'+(counts.por_pagar||0)+'</div>'+
+        '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">OCs autorizadas sin pago</div>'+
       '</div>';
       html += '</div>';
       // Lista de últimas SOLs entrantes
       if((d.buzon_recientes||[]).length){
-        html += '<div style="margin-top:14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px"><b style="color:#0f172a;font-size:13px">Últimas SOLs (48h):</b>';
+        html += '<div style="margin-top:14px;background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:12px"><b style="color:var(--cx-text);font-size:13px">Últimas SOLs (48h):</b>';
         html += '<div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;font-size:12px">';
         d.buzon_recientes.slice(0,5).forEach(function(s){
-          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#f8fafc;border-radius:5px"><div><b style="font-family:monospace">'+_esc(s.numero)+'</b> · '+_esc(s.solicitante)+' <span style="color:#94a3b8;font-size:10px">('+_esc(s.categoria)+')</span></div><div style="font-weight:700;color:#0f172a">'+fmt(s.valor.toFixed(0))+'</div></div>';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:var(--cx-bg-alt);border-radius:5px"><div><b style="font-family:monospace">'+_esc(s.numero)+'</b> · '+_esc(s.solicitante)+' <span style="color:var(--cx-text-faint);font-size:10px">('+_esc(s.categoria)+')</span></div><div style="font-weight:700;color:var(--cx-text)">'+fmt(s.valor.toFixed(0))+'</div></div>';
         });
         html += '</div></div>';
       }
@@ -2514,7 +2514,7 @@ async function renderDashHome2(){
       cargarWidgetsExtra();
     }
   }catch(e){
-    cont.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+_esc(e.message)+'</div>';
+    cont.innerHTML = '<div style="color:var(--cx-danger-text);padding:14px">Error: '+_esc(e.message)+'</div>';
   }
 }
 // Consumos elevados (gasto que sube) · reusa /api/compras/consumos/tendencia · Catalina + admin
@@ -2525,13 +2525,13 @@ async function cargarConsumosElevados(){
     var al=(j&&j.alertas)?j.alertas:[];
     if(!al.length){ cont.innerHTML=''; return; }
     var _f=function(n){return '$'+(Math.round(n||0)).toLocaleString('es-CO');};
-    var h='<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:12px 16px">'+
-      '<div style="font-weight:800;color:#9a3412;font-size:14px;margin-bottom:6px">&#128200; Consumos elevados <span style="font-size:11px;font-weight:600;color:#b45309">· gasto que subió este mes</span></div>';
+    var h='<div style="background:var(--cx-warn-pale);border:1px solid #fdba74;border-radius:10px;padding:12px 16px">'+
+      '<div style="font-weight:800;color:var(--cx-warn-text);font-size:14px;margin-bottom:6px">&#128200; Consumos elevados <span style="font-size:11px;font-weight:600;color:var(--cx-warn-text)">· gasto que subió este mes</span></div>';
     al.slice(0,5).forEach(function(a){
       h+='<div style="font-size:13px;color:#7c2d12;padding:3px 0">&#9888;&#65039; <b>'+_esc(a.categoria)+'</b> subió <b>+'+a.variacion_pct+'%</b> ('+_f(a.ultimo)+' vs prom '+_f(a.promedio_previo)+')</div>';
     });
-    h+='<a href="/compras/consumos" style="font-size:12px;color:#9a3412;font-weight:700">ver tendencia completa &rarr;</a>'
-      +' &nbsp;&middot;&nbsp; <a href="/compras/discrepancias" style="font-size:12px;color:#6d28d9;font-weight:700">&#128202; discrepancias por artículo (precio vs cantidad) &rarr;</a></div>';
+    h+='<a href="/compras/consumos" style="font-size:12px;color:var(--cx-warn-text);font-weight:700">ver tendencia completa &rarr;</a>'
+      +' &nbsp;&middot;&nbsp; <a href="/compras/discrepancias" style="font-size:12px;color:var(--cx-primary-text);font-weight:700">&#128202; discrepancias por artículo (precio vs cantidad) &rarr;</a></div>';
     cont.innerHTML=h;
   }catch(e){ cont.innerHTML=''; }
 }
@@ -2545,29 +2545,29 @@ async function cargarWidgetsExtra(){
     var dp = await rp.json();
     var urgentes = (dp.items||[]).filter(function(x){return x.accion==='URGENTE';}).slice(0,5);
     var pronto = (dp.items||[]).filter(function(x){return x.accion==='PEDIR_PRONTO';}).slice(0,5);
-    var predHtml = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px">'+
-      '<div style="font-weight:800;color:#0f172a;font-size:13px;margin-bottom:8px">🔮 Predicción demanda</div>'+
+    var predHtml = '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:14px">'+
+      '<div style="font-weight:800;color:var(--cx-text);font-size:13px;margin-bottom:8px">🔮 Predicción demanda</div>'+
       '<div style="display:flex;gap:8px;margin-bottom:8px;font-size:11px">'+
-        '<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:8px;font-weight:700">🔴 '+((dp.counts||{}).URGENTE||0)+' urgentes</span>'+
-        '<span style="background:#fef3c7;color:#78350f;padding:3px 10px;border-radius:8px;font-weight:700">🟡 '+((dp.counts||{}).PEDIR_PRONTO||0)+' pronto</span>'+
-        '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:8px;font-weight:700">🟢 '+((dp.counts||{}).OK||0)+' OK</span>'+
+        '<span style="background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:3px 10px;border-radius:8px;font-weight:700">🔴 '+((dp.counts||{}).URGENTE||0)+' urgentes</span>'+
+        '<span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:3px 10px;border-radius:8px;font-weight:700">🟡 '+((dp.counts||{}).PEDIR_PRONTO||0)+' pronto</span>'+
+        '<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:3px 10px;border-radius:8px;font-weight:700">🟢 '+((dp.counts||{}).OK||0)+' OK</span>'+
       '</div>';
     if(urgentes.length){
-      predHtml += '<div style="font-size:11px"><b style="color:#991b1b">🔴 Pedir AHORA:</b>';
+      predHtml += '<div style="font-size:11px"><b style="color:var(--cx-danger-text)">🔴 Pedir AHORA:</b>';
       urgentes.forEach(function(it){
-        predHtml += '<div style="background:#fef2f2;padding:4px 8px;border-radius:5px;margin-top:3px;display:flex;justify-content:space-between"><span><b>'+_esc(it.nombre)+'</b> <span style="color:#94a3b8;font-size:10px">'+_esc(it.codigo_mp)+'</span></span><span style="color:#dc2626;font-weight:700">'+it.dias_hasta_quiebre+'d · '+fmt(it.cantidad_sugerida_g)+'g</span></div>';
+        predHtml += '<div style="background:var(--cx-danger-pale);padding:4px 8px;border-radius:5px;margin-top:3px;display:flex;justify-content:space-between"><span><b>'+_esc(it.nombre)+'</b> <span style="color:var(--cx-text-faint);font-size:10px">'+_esc(it.codigo_mp)+'</span></span><span style="color:var(--cx-danger-text);font-weight:700">'+it.dias_hasta_quiebre+'d · '+fmt(it.cantidad_sugerida_g)+'g</span></div>';
       });
       predHtml += '</div>';
     }
     if(pronto.length){
-      predHtml += '<div style="margin-top:6px;font-size:11px"><b style="color:#78350f">🟡 Pedir pronto:</b>';
+      predHtml += '<div style="margin-top:6px;font-size:11px"><b style="color:var(--cx-warn-text)">🟡 Pedir pronto:</b>';
       pronto.forEach(function(it){
-        predHtml += '<div style="background:#fffbeb;padding:4px 8px;border-radius:5px;margin-top:3px;display:flex;justify-content:space-between"><span>'+_esc(it.nombre)+'</span><span style="color:#92400e">'+it.dias_hasta_quiebre+'d</span></div>';
+        predHtml += '<div style="background:var(--cx-warn-pale);padding:4px 8px;border-radius:5px;margin-top:3px;display:flex;justify-content:space-between"><span>'+_esc(it.nombre)+'</span><span style="color:var(--cx-warn-text)">'+it.dias_hasta_quiebre+'d</span></div>';
       });
       predHtml += '</div>';
     }
     if(!urgentes.length && !pronto.length){
-      predHtml += '<div style="color:#166534;text-align:center;padding:14px;font-size:12px">✓ Stock adecuado · sin urgencias</div>';
+      predHtml += '<div style="color:var(--cx-success-text);text-align:center;padding:14px;font-size:12px">✓ Stock adecuado · sin urgencias</div>';
     }
     predHtml += '</div>';
     cont.innerHTML += predHtml;
@@ -2588,11 +2588,11 @@ async function loadDashboardEjecutivo(){
                 (k.salud_color === 'amarillo' ? '#ca8a04' : '#dc2626');
     var topProv = (d.top_proveedores_mes||[]).slice(0,3);
     var topHtml = topProv.map(function(p){
-      return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:8px;font-size:11px;margin-right:5px"><b>'+esc(p.proveedor)+'</b> · '+p.ocs+' OCs · '+fmt(p.monto.toFixed(0))+'</span>';
+      return '<span style="background:var(--cx-border-soft);padding:3px 8px;border-radius:8px;font-size:11px;margin-right:5px"><b>'+esc(p.proveedor)+'</b> · '+p.ocs+' OCs · '+fmt(p.monto.toFixed(0))+'</span>';
     }).join('');
     cont.innerHTML =
       '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">'+
-        '<div style="font-weight:700;font-size:14px;color:#0f172a">📊 Dashboard ejecutivo Catalina</div>'+
+        '<div style="font-weight:700;font-size:14px;color:var(--cx-text)">📊 Dashboard ejecutivo Catalina</div>'+
         '<div style="background:'+color+';color:#fff;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700">Salud '+k.salud_score+'/100</div>'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">'+
@@ -2602,14 +2602,14 @@ async function loadDashboardEjecutivo(){
         _wkpi('📋 Cotizaciones', k.cotizaciones_pendientes, 'sin respuesta', '#0e7490')+
         _wkpi('📄 OCs Borrador', k.ocs_borrador, 'sin enviar', '#475569')+
       '</div>'+
-      (topHtml ? '<div style="margin-top:10px;font-size:11px;color:#64748b">Top proveedores 30d: '+topHtml+'</div>' : '');
+      (topHtml ? '<div style="margin-top:10px;font-size:11px;color:var(--cx-text-mute)">Top proveedores 30d: '+topHtml+'</div>' : '');
   }catch(e){ /* silenciar · widget opcional */ }
 }
 function _wkpi(label, valor, sub, color){
-  return '<div style="background:#fff;border:1px solid #e7e5e4;border-radius:6px;padding:7px 9px">'+
-    '<div style="font-size:10px;color:#64748b">'+label+'</div>'+
+  return '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:6px;padding:7px 9px">'+
+    '<div style="font-size:10px;color:var(--cx-text-mute)">'+label+'</div>'+
     '<div style="font-size:1.4em;font-weight:800;color:'+color+'">'+(valor||0)+'</div>'+
-    '<div style="font-size:9px;color:#94a3b8">'+sub+'</div>'+
+    '<div style="font-size:9px;color:var(--cx-text-faint)">'+sub+'</div>'+
   '</div>';
 }
 
@@ -2768,16 +2768,16 @@ async function renderDash(){
   // cada modal: items, observaciones completas, justificacion, total estimado.
   // Footer cuando hay influencer items ocultos: link al tab Influencers (admin only).
   var _hintInflSol = (solicPendInfl>0)
-    ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:#5b21b6;">'
+    ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:var(--cx-primary-text);">'
       +'+ '+solicPendInfl+' SOL de influencers ocultas - ver tab '
       +'<button onclick="document.querySelector(&quot;[data-tab=influencer]&quot;).click()" '
-      +'style="background:none;border:none;color:#7c3aed;text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
+      +'style="background:none;border:none;color:var(--cx-primary-text);text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
       +'</div>' : '';
   var _hintInflOC = (ocsPorPagarInfl>0)
-    ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:#5b21b6;">'
+    ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:var(--cx-primary-text);">'
       +'+ '+ocsPorPagarInfl+' OC de influencers ocultas - ver tab '
       +'<button onclick="document.querySelector(&quot;[data-tab=influencer]&quot;).click()" '
-      +'style="background:none;border:none;color:#7c3aed;text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
+      +'style="background:none;border:none;color:var(--cx-primary-text);text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
       +'</div>' : '';
   document.getElementById('q-aut').innerHTML=(solicPendVisible.length
     ? solicPendVisible.slice(0,8).map(function(s){
@@ -2789,7 +2789,7 @@ async function renderDash(){
         // aqui solo mostramos lo que ya viene en el listado)
         var itemsHint = '';
         if (s.numero) {
-          itemsHint = '<div id="solitems-'+esc(s.numero)+'" style="margin-top:6px;font-size:11px;color:#57534e;line-height:1.5;"></div>';
+          itemsHint = '<div id="solitems-'+esc(s.numero)+'" style="margin-top:6px;font-size:11px;color:var(--cx-text-soft);line-height:1.5;"></div>';
           // Lazy-load items para esta SOL
           (function(num){
             setTimeout(function(){
@@ -2798,18 +2798,18 @@ async function renderDash(){
                 .then(function(d){
                   var box = document.getElementById('solitems-'+num);
                   if (!box || !d.items || !d.items.length) return;
-                  var html = '<div style="background:#fafaf9;border-radius:6px;padding:6px 8px;margin-top:4px;">';
-                  html += '<div style="font-size:10px;font-weight:700;color:#78716c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">'
+                  var html = '<div style="background:var(--cx-bg-alt);border-radius:6px;padding:6px 8px;margin-top:4px;">';
+                  html += '<div style="font-size:10px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">'
                        + d.items.length + ' item(s) solicitados</div>';
                   d.items.slice(0,6).forEach(function(it){
                     var prov = it.proveedor||it.proveedor_sugerido||'';
                     html += '<div style="font-size:11px;display:flex;justify-content:space-between;gap:6px;padding:2px 0;">'
                          + '<span style="flex:1;">&bull; '+esc((it.nombre_mp||it.codigo_mp||'?').substring(0,40))+'</span>'
-                         + '<span style="color:#78716c;white-space:nowrap;">'+(parseFloat(it.cantidad_g||0).toLocaleString('es-CO'))+' '+esc(it.unidad||'g')+'</span>'
-                         + (prov?'<span style="color:#6d28d9;font-size:10px;">'+esc(prov.substring(0,12))+'</span>':'')
+                         + '<span style="color:var(--cx-text-mute);white-space:nowrap;">'+(parseFloat(it.cantidad_g||0).toLocaleString('es-CO'))+' '+esc(it.unidad||'g')+'</span>'
+                         + (prov?'<span style="color:var(--cx-primary-text);font-size:10px;">'+esc(prov.substring(0,12))+'</span>':'')
                          + '</div>';
                   });
-                  if (d.items.length > 6) html += '<div style="font-size:10px;color:#a8a29e;margin-top:2px;">... y '+(d.items.length-6)+' mas</div>';
+                  if (d.items.length > 6) html += '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:2px;">... y '+(d.items.length-6)+' mas</div>';
                   html += '</div>';
                   box.innerHTML = html;
                 }).catch(function(){});
@@ -2819,41 +2819,41 @@ async function renderDash(){
         return '<div class="card" style="margin-bottom:10px;">'
           +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
           +'<div class="cprov">'+esc(s.solicitante||'-')+' &middot; '+esc(s.categoria||'-')+'</div></div>'
-          +'<span class="badge" style="background:#fef3c7;color:#92400e;">Pendiente</span></div>'
+          +'<span class="badge" style="background:var(--cx-warn-pale);color:var(--cx-warn-text);">Pendiente</span></div>'
           +'<div class="cmeta" style="flex-wrap:wrap;gap:8px;">'
           +'<span>&#128197; '+fdate(s.fecha)+'</span>'
-          +(s.fecha_requerida?'<span style="color:#dc2626;">Requiere: '+esc(s.fecha_requerida)+'</span>':'')
-          +(valTot>0?'<span style="font-weight:700;color:#15803d;">$'+valTot.toLocaleString('es-CO')+'</span>':'')
+          +(s.fecha_requerida?'<span style="color:var(--cx-danger-text);">Requiere: '+esc(s.fecha_requerida)+'</span>':'')
+          +(valTot>0?'<span style="font-weight:700;color:var(--cx-success-text);">$'+valTot.toLocaleString('es-CO')+'</span>':'')
           +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span>'
           +'</div>'
           // Justificacion / observaciones COMPLETAS (no truncadas)
-          +(obs?'<div style="margin-top:6px;background:#fffbeb;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:0 6px 6px 0;font-size:11px;color:#78350f;line-height:1.5;">'+esc(obs)+'</div>':'')
+          +(obs?'<div style="margin-top:6px;background:var(--cx-warn-pale);border-left:3px solid var(--cx-warn);padding:6px 10px;border-radius:0 6px 6px 0;font-size:11px;color:var(--cx-warn-text);line-height:1.5;">'+esc(obs)+'</div>':'')
           // Items lazy-loaded
           + itemsHint
           +'<div class="acts" style="margin-top:8px;"><button class="btn bi bs" onclick="revisarSolicitudPendiente(&quot;'+esc(s.numero)+'&quot;)">Revisar / Editar</button></div>'
           +'</div>';
       }).join('')
-    : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin solicitudes pendientes ✓</div>') + _hintInflSol;
+    : '<div class="empty" style="padding:20px;text-align:center;color:var(--cx-text-faint);">Sin solicitudes pendientes ✓</div>') + _hintInflSol;
 
   // Right queue: OCs autorizadas (ready to pay) - sin influencers
   document.getElementById('q-pag').innerHTML=(ocsPorPagarVisible.length
     ? ocsPorPagarVisible.slice(0,8).map(function(o){ return miniCard(o); }).join('')
-    : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin OCs autorizadas ✓</div>') + _hintInflOC;
+    : '<div class="empty" style="padding:20px;text-align:center;color:var(--cx-text-faint);">Sin OCs autorizadas ✓</div>') + _hintInflOC;
 
   // Spending chart by category
   var _catLabels=['MP','MEE','SVC','ADM','INF','CC'];
   var _catColors=['#f59e0b','#3b82f6','#8b5cf6','#10b981','#ef4444','#7c3aed'];
   var _catTotals=_catLabels.map(function(g){ return OCS.filter(function(o){ return inGroup(o.categoria,g.toLowerCase())&&o.estado==='Pagada'; }).reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0); });
   var _maxV=Math.max.apply(null,_catTotals)||1;
-  var _chartHTML='<div style="background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:14px 16px;margin-top:14px;">';
-  _chartHTML+='<div style="font-weight:700;font-size:13px;color:#1c1917;margin-bottom:12px;">&#x1F4CA; Gasto acumulado por categoría (OCs Pagadas)</div>';
+  var _chartHTML='<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:14px 16px;margin-top:14px;">';
+  _chartHTML+='<div style="font-weight:700;font-size:13px;color:var(--cx-text);margin-bottom:12px;">&#x1F4CA; Gasto acumulado por categoría (OCs Pagadas)</div>';
   _chartHTML+='<div style="display:grid;gap:7px;">';
   _catLabels.forEach(function(g,i){
     var pct=_catTotals[i]/_maxV*100;
     _chartHTML+='<div style="display:grid;grid-template-columns:48px 1fr 80px;align-items:center;gap:8px;">';
-    _chartHTML+='<span style="font-size:11px;font-weight:600;color:#57534e;">'+g+'</span>';
-    _chartHTML+='<div style="background:#f5f5f4;border-radius:4px;height:18px;overflow:hidden;"><div style="background:'+_catColors[i]+';width:'+pct.toFixed(1)+'%;height:100%;border-radius:4px;transition:width .4s;"></div></div>';
-    _chartHTML+='<span style="font-size:11px;color:#57534e;text-align:right;">'+fmt(_catTotals[i])+'</span>';
+    _chartHTML+='<span style="font-size:11px;font-weight:600;color:var(--cx-text-soft);">'+g+'</span>';
+    _chartHTML+='<div style="background:var(--cx-bg-alt);border-radius:4px;height:18px;overflow:hidden;"><div style="background:'+_catColors[i]+';width:'+pct.toFixed(1)+'%;height:100%;border-radius:4px;transition:width .4s;"></div></div>';
+    _chartHTML+='<span style="font-size:11px;color:var(--cx-text-soft);text-align:right;">'+fmt(_catTotals[i])+'</span>';
     _chartHTML+='</div>';
   });
   _chartHTML+='</div></div>';
@@ -2887,7 +2887,7 @@ function miniCard(o){
   if(o.estado==='Autorizada'&&ES_AUTORIZA) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Pagar</button>';
   return '<div class="card" style="margin-bottom:8px;">'+
     '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
-    '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
+    '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:var(--cx-warn-text);border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
     '<div class="cmeta"><span>'+fdate(o.fecha)+'</span>'+(o.fecha_entrega_est?'<span>&#x23F0; '+fdate(o.fecha_entrega_est)+'</span>':'')+'</div>'+
     (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
 }
@@ -2909,7 +2909,7 @@ function renderCat(grp){
   if(counts.Revisada) pills+='<span class="pill y">Revisada: '+counts.Revisada+'</span>';
   if(counts.Autorizada) pills+='<span class="pill b">Autorizada: '+counts.Autorizada+'</span>';
   if(counts.Pagada) pills+='<span class="pill g">Pagada: '+counts.Pagada+'</span>';
-  pills+='<span class="pill" style="background:#e7e5e4;">'+fmt(vTotal)+'</span>';
+  pills+='<span class="pill" style="background:var(--cx-border);">'+fmt(vTotal)+'</span>';
   document.getElementById('pills-'+grp).innerHTML=pills;
   if(!list.length){
     document.getElementById('grid-'+grp).innerHTML='<div class="empty">No hay OCs en esta categoria</div>'; return;
@@ -2939,7 +2939,7 @@ function fullCard(o,grp){
     '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div>'+provLabel+'<div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
     '<div class="cmeta"><span>&#x1F4C5; '+fdate(o.fecha)+'</span>'+(o.fecha_entrega_est?'<span>&#x23F0; '+fdate(o.fecha_entrega_est)+'</span>':'')+'<span>'+o.num_items+' item(s)</span></div>'+
     (o.observaciones?'<div class="cobs" title="'+esc(o.observaciones||'')+'">&#128172; '+esc((o.observaciones||'').substring(0,120))+(o.observaciones.length>120?'...':'')+'</div>':'')+
-    '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
+    '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:var(--cx-warn-text);border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
     (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
 }
 
@@ -2992,7 +2992,7 @@ function renderOCS(){
   if(counts.Autorizada) pills+='<span class="pill b">Autorizada: '+counts.Autorizada+'</span>';
   if(counts.Pagada) pills+='<span class="pill g">Pagada: '+counts.Pagada+'</span>';
   if(counts.Recibida) pills+='<span class="pill">Recibida: '+counts.Recibida+'</span>';
-  pills+='<span class="pill" style="background:#e7e5e4;">'+fmt(vTotal)+'</span>';
+  pills+='<span class="pill" style="background:var(--cx-border);">'+fmt(vTotal)+'</span>';
   document.getElementById('pills-ocs').innerHTML=pills;
   if(!list.length){
     document.getElementById('grid-ocs').innerHTML='<div class="empty">No hay OCs'+(q?' para esa busqueda':_ocsCatFilter!=='ALL'?' en esta categor\u00EDa':'')+'</div>';
@@ -3049,34 +3049,34 @@ function renderPagos(){
   document.getElementById('pagos-kpis').innerHTML=kpiHTML;
   var bar=document.getElementById('pagos-bar-extra');
   if(bar){
-    var guia=(nParc>0)?'<div style="flex:1;min-width:220px;font-size:12px;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:9px 13px;line-height:1.4"><b>'+nParc+'</b> OC'+(nParc>1?'s':'')+' con saldo pendiente &middot; us&aacute; <b style="color:#15803d">&#128181; Abonar</b> en la fila para completar el pago (ah&iacute; mismo podés aplicar <b>saldo a favor</b>).</div>':'<div style="flex:1"></div>';
-    bar.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+guia+'<button onclick="descargarPagosExcel()" class="btn" style="background:#059669;color:#fff;font-size:12px;padding:7px 15px;border:0;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap">&#128202; Descargar Excel</button></div>';
+    var guia=(nParc>0)?'<div style="flex:1;min-width:220px;font-size:12px;color:#7c2d12;background:var(--cx-warn-pale);border:1px solid #fed7aa;border-radius:10px;padding:9px 13px;line-height:1.4"><b>'+nParc+'</b> OC'+(nParc>1?'s':'')+' con saldo pendiente &middot; us&aacute; <b style="color:var(--cx-success-text)">&#128181; Abonar</b> en la fila para completar el pago (ah&iacute; mismo podés aplicar <b>saldo a favor</b>).</div>':'<div style="flex:1"></div>';
+    bar.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+guia+'<button onclick="descargarPagosExcel()" class="btn" style="background:var(--cx-success);color:#fff;font-size:12px;padding:7px 15px;border:0;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap">&#128202; Descargar Excel</button></div>';
   }
   if(!list.length){ document.getElementById('pagos-wrap').innerHTML='<div class="empty">No hay pagos que coincidan</div>'; return; }
   var rows=list.map(function(p,i){
-    var estChip=(p.estado==='Parcial')?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:10px;padding:2px 8px;font-weight:700">&#9680; Parcial</span>':'<span style="font-size:10px;background:#dcfce7;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:700">&#10003; Pagada</span>';
-    var pend=(p.estado==='Parcial')?'<span style="color:#dc2626;font-weight:700">'+fmt(Math.max(0,p.saldo_pendiente||0))+'</span>':'<span style="color:#cbd5e1">-</span>';
-    var trx=p.numero_transaccion?('🏦 '+esc(p.numero_transaccion)):(p.numero_factura_proveedor?('fac '+esc(p.numero_factura_proveedor)):'<span style="color:#cbd5e1">-</span>');
+    var estChip=(p.estado==='Parcial')?'<span style="font-size:10px;background:var(--cx-warn-pale);color:var(--cx-warn-text);border-radius:10px;padding:2px 8px;font-weight:700">&#9680; Parcial</span>':'<span style="font-size:10px;background:var(--cx-success-pale);color:var(--cx-success-text);border-radius:10px;padding:2px 8px;font-weight:700">&#10003; Pagada</span>';
+    var pend=(p.estado==='Parcial')?'<span style="color:var(--cx-danger-text);font-weight:700">'+fmt(Math.max(0,p.saldo_pendiente||0))+'</span>':'<span style="color:var(--cx-border)">-</span>';
+    var trx=p.numero_transaccion?('🏦 '+esc(p.numero_transaccion)):(p.numero_factura_proveedor?('fac '+esc(p.numero_factura_proveedor)):'<span style="color:var(--cx-border)">-</span>');
     var imgBtn=p.tiene_comprobante?'<button class="btn bo bs" data-oc="'+esc(p.numero_oc)+'" onclick="verComprobante(this.dataset.oc)" title="Ver comprobante">📸</button>':'';
-    var regenBtn=p.comprobante_id?'<button class="btn bs" style="background:#7c3aed;color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-cid="'+p.comprobante_id+'" data-oc="'+esc(p.numero_oc)+'" onclick="regenerarCEInline(this.dataset.cid, this.dataset.oc)" title="Regenerar PDF CE">🔄</button>':'';
-    var revBtn=(typeof ES_ADMIN!=='undefined' && ES_ADMIN)?'<button class="btn bs" style="background:#dc2626;color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-oc="'+esc(p.numero_oc)+'" onclick="revertirPagoOC(this.dataset.oc)" title="Revertir pago">↩️</button>':'';
+    var regenBtn=p.comprobante_id?'<button class="btn bs" style="background:var(--cx-primary);color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-cid="'+p.comprobante_id+'" data-oc="'+esc(p.numero_oc)+'" onclick="regenerarCEInline(this.dataset.cid, this.dataset.oc)" title="Regenerar PDF CE">🔄</button>':'';
+    var revBtn=(typeof ES_ADMIN!=='undefined' && ES_ADMIN)?'<button class="btn bs" style="background:var(--cx-danger);color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-oc="'+esc(p.numero_oc)+'" onclick="revertirPagoOC(this.dataset.oc)" title="Revertir pago">↩️</button>':'';
     var abonosBtn=(p.n_abonos>1)?'<button class="btn bs" style="background:#e0f2fe;color:#0369a1;font-size:10px;padding:3px 7px;margin-right:3px" data-oc="'+esc(p.numero_oc)+'" data-i="'+i+'" onclick="toggleAbonos(this.dataset.oc,this.dataset.i)" title="Ver abonos parciales">&#9656; '+p.n_abonos+' abonos</button>':'';
     // 💵 Abonar el saldo pendiente directo desde Pagos (Sebastián 21-jul) · el modal ya aplica saldo a favor
-    var pagarBtn=(p.estado==='Parcial')?'<button class="btn bs" style="background:#16a34a;color:#fff;font-size:10px;padding:3px 10px;margin-right:3px;font-weight:800" data-oc="'+esc(p.numero_oc)+'" onclick="payOC(this.dataset.oc)" title="Registrar el pago pendiente de esta OC · podés aplicar saldo a favor del proveedor">&#128181; Abonar</button>':'';
+    var pagarBtn=(p.estado==='Parcial')?'<button class="btn bs" style="background:var(--cx-success);color:#fff;font-size:10px;padding:3px 10px;margin-right:3px;font-weight:800" data-oc="'+esc(p.numero_oc)+'" onclick="payOC(this.dataset.oc)" title="Registrar el pago pendiente de esta OC · podés aplicar saldo a favor del proveedor">&#128181; Abonar</button>':'';
     return '<tr>'
       +'<td><strong>'+esc(p.numero_oc)+'</strong></td>'
       +'<td>'+esc(p.proveedor||'-')+'</td>'
-      +'<td class="mob-hide"><span style="font-size:10px;background:#e7e5e4;border-radius:3px;padding:2px 6px;">'+esc(p.categoria||'-')+'</span></td>'
+      +'<td class="mob-hide"><span style="font-size:10px;background:var(--cx-border);border-radius:3px;padding:2px 6px;">'+esc(p.categoria||'-')+'</span></td>'
       +'<td>'+estChip+'</td>'
-      +'<td style="font-weight:600;color:#16a34a;">'+fmt(p.monto||0)+'</td>'
+      +'<td style="font-weight:600;color:var(--cx-success-text);">'+fmt(p.monto||0)+'</td>'
       +'<td>'+pend+'</td>'
       +'<td class="mob-hide">'+esc(p.medio_pago||'-')+'</td>'
-      +'<td class="mob-hide" style="font-size:11px;color:#475569">'+trx+'</td>'
+      +'<td class="mob-hide" style="font-size:11px;color:var(--cx-text-soft)">'+trx+'</td>'
       +'<td>'+fdate(p.fecha_pago)+'</td>'
       +'<td class="mob-hide">'+esc(p.pagado_por||'-')+'</td>'
       +'<td style="white-space:nowrap">'+pagarBtn+abonosBtn+imgBtn+regenBtn+revBtn+'</td>'
       +'</tr>'
-      +'<tr id="abonos-'+i+'" style="display:none"><td colspan="11" style="padding:0 12px 10px;background:#f8fafc"></td></tr>';
+      +'<tr id="abonos-'+i+'" style="display:none"><td colspan="11" style="padding:0 12px 10px;background:var(--cx-bg-alt)"></td></tr>';
   }).join('');
   document.getElementById('pagos-wrap').innerHTML='<div style="overflow-x:auto;"><table class="ptbl"><thead><tr><th>OC</th><th>Proveedor</th><th class="mob-hide">Categoría</th><th>Estado</th><th>Pagado</th><th>Pendiente</th><th class="mob-hide">Medio</th><th class="mob-hide">🏦 N° trx / fac</th><th>Fecha</th><th class="mob-hide">Por</th><th>Acciones</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
@@ -3089,7 +3089,7 @@ async function toggleAbonos(oc, i){
   try{
     var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(oc)+'/pagos');
     var d=await r.json(); var pagos=(d&&d.pagos)||[];
-    var hd='<div style="font-size:11px;font-weight:700;color:#334155;padding:7px 0 4px">Abonos de '+esc(oc)+' · valor '+fmt(d.valor_total_oc)+' · pagado '+fmt(d.total_pagado)+' · pendiente <b style="color:#dc2626">'+fmt(d.pendiente)+'</b></div>';
+    var hd='<div style="font-size:11px;font-weight:700;color:var(--cx-text-soft);padding:7px 0 4px">Abonos de '+esc(oc)+' · valor '+fmt(d.valor_total_oc)+' · pagado '+fmt(d.total_pagado)+' · pendiente <b style="color:var(--cx-danger-text)">'+fmt(d.pendiente)+'</b></div>';
     var body=pagos.map(function(p){
       var esSaldo=(p.medio==='SaldoAFavor');
       return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid #eef2f7">'
@@ -3100,7 +3100,7 @@ async function toggleAbonos(oc, i){
         +'<b style="color:'+(esSaldo?'#16a34a':'#0f172a')+'">'+fmt(p.monto)+(esSaldo?' · saldo a favor':'')+'</b></div>';
     }).join('');
     td.innerHTML=hd+body;
-  }catch(e){ td.innerHTML='<span style="color:#b91c1c">Error cargando abonos</span>'; }
+  }catch(e){ td.innerHTML='<span style="color:var(--cx-danger-text)">Error cargando abonos</span>'; }
 }
 // Panel de saldos a favor integrado en la vista Pagos (Catalina/Sebastián · contabilidad)
 function togglePagosSaldos(){
@@ -3111,16 +3111,16 @@ function togglePagosSaldos(){
 async function _renderPagosSaldosPanel(){
   var panel=document.getElementById('pagos-saldos-panel');
   panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
-    +'<b style="color:#166534;font-size:14px">&#128179; Saldos a favor por proveedor</b>'
-    +'<button onclick="openSaldoFavor()" style="padding:7px 13px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(22,163,74,.28)">&#10133; Registrar anticipo / ajuste</button></div>'
-    +'<div style="font-size:11.5px;color:#3f6212;background:#fff;border:1px dashed #86efac;border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.45">'
+    +'<b style="color:var(--cx-success-text);font-size:14px">&#128179; Saldos a favor por proveedor</b>'
+    +'<button onclick="openSaldoFavor()" style="padding:7px 13px;background:var(--cx-success);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(22,163,74,.28)">&#10133; Registrar anticipo / ajuste</button></div>'
+    +'<div style="font-size:11.5px;color:#3f6212;background:var(--cx-card);border:1px dashed #86efac;border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.45">'
     +'El <b>saldo a favor</b> nace cuando le pagaste de m&aacute;s a un proveedor (sobrepago) o le diste un <b>anticipo</b>. Para <b>usarlo</b>: abr&iacute; <b>&#128181; Abonar</b> en la OC de ese proveedor y aplic&aacute;s el saldo &mdash; baja lo pendiente sin volver a sacar plata.</div>'
-    +'<div id="pagos-sf-lista" style="font-size:12px;color:#64748b">cargando&hellip;</div>';
+    +'<div id="pagos-sf-lista" style="font-size:12px;color:var(--cx-text-mute)">cargando&hellip;</div>';
   try{
     var r=await fetch('/api/compras/saldos-favor'); var d=await r.json();
     var saldos=(d&&d.saldos)||[]; var box=document.getElementById('pagos-sf-lista');
     if(!saldos.length){ box.innerHTML='<div style="opacity:.75;padding:6px 0">Sin saldos a favor por ahora &middot; registr&aacute; un anticipo si se pag&oacute; por adelantado, o al pagar una OC dej&aacute; el excedente a favor.</div>'; return; }
-    box.innerHTML=saldos.map(function(s){ return '<div style="display:flex;justify-content:space-between;padding:6px 2px;border-bottom:1px solid #dcfce7"><span style="color:#334155">'+esc(s.proveedor)+'</span><b style="color:#16a34a;font-variant-numeric:tabular-nums">'+fmt(s.saldo)+'</b></div>'; }).join('')+'<div style="text-align:right;font-weight:800;color:#166534;margin-top:8px">Total a favor: '+fmt(d.total||0)+'</div>';
+    box.innerHTML=saldos.map(function(s){ return '<div style="display:flex;justify-content:space-between;padding:6px 2px;border-bottom:1px solid #dcfce7"><span style="color:var(--cx-text-soft)">'+esc(s.proveedor)+'</span><b style="color:var(--cx-success-text);font-variant-numeric:tabular-nums">'+fmt(s.saldo)+'</b></div>'; }).join('')+'<div style="text-align:right;font-weight:800;color:var(--cx-success-text);margin-top:8px">Total a favor: '+fmt(d.total||0)+'</div>';
   }catch(e){}
 }
 
@@ -3227,7 +3227,7 @@ function toggleProvCalidad(){
 }
 async function _renderProvCalidad(){
   var panel=document.getElementById('prov-calidad-panel');
-  panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px"><b style="color:#166534;font-size:14px">&#127942; Ranking de calidad de despacho</b><span style="font-size:11px;color:#94a3b8">tasa de discrepancia = OCs que llegaron con faltante / recibidas &middot; la discrepancia ya puntea en el &#127919; Score</span></div><div id="prov-calidad-body" style="font-size:12px;color:#64748b">cargando&hellip;</div>';
+  panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px"><b style="color:var(--cx-success-text);font-size:14px">&#127942; Ranking de calidad de despacho</b><span style="font-size:11px;color:var(--cx-text-faint)">tasa de discrepancia = OCs que llegaron con faltante / recibidas &middot; la discrepancia ya puntea en el &#127919; Score</span></div><div id="prov-calidad-body" style="font-size:12px;color:var(--cx-text-mute)">cargando&hellip;</div>';
   try{
     var r=await fetch('/api/compras/recepciones-discrepancias?dias=180'); var d=await r.json();
     var rk=(d&&d.ranking_proveedores)||[]; var box=document.getElementById('prov-calidad-body');
@@ -3235,14 +3235,14 @@ async function _renderProvCalidad(){
     var rows=rk.map(function(s){
       var t=s.tasa_discrepancia_pct||0;
       var col=t<=5?'#16a34a':(t<=15?'#ca8a04':'#dc2626');
-      return '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:6px 4px;font-weight:600;color:#334155">'+esc(s.proveedor)+'</td>'
-        +'<td style="padding:6px 4px;text-align:right;color:#64748b">'+(s.total_recibidas||0)+'</td>'
-        +'<td style="padding:6px 4px;text-align:right;color:#64748b">'+(s.con_discrepancia||0)+'</td>'
+      return '<tr style="border-bottom:1px solid var(--cx-border-soft)"><td style="padding:6px 4px;font-weight:600;color:var(--cx-text-soft)">'+esc(s.proveedor)+'</td>'
+        +'<td style="padding:6px 4px;text-align:right;color:var(--cx-text-mute)">'+(s.total_recibidas||0)+'</td>'
+        +'<td style="padding:6px 4px;text-align:right;color:var(--cx-text-mute)">'+(s.con_discrepancia||0)+'</td>'
         +'<td style="padding:6px 4px;text-align:right;font-weight:800;color:'+col+';font-variant-numeric:tabular-nums">'+t+'%</td>'
         +'<td style="padding:6px 4px;text-align:right"><button class="pc-sc score" data-scorecard="'+esc(s.proveedor)+'" style="font-size:10px;padding:3px 8px">&#127919; Score</button></td></tr>';
     }).join('');
-    box.innerHTML='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:#6d28d9;text-align:right"><th style="padding:6px 4px;text-align:left">Proveedor</th><th style="padding:6px 4px">Recibidas</th><th style="padding:6px 4px">Con discrep.</th><th style="padding:6px 4px">Tasa</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
-  }catch(e){ var b=document.getElementById('prov-calidad-body'); if(b) b.innerHTML='<span style="color:#b91c1c">Error cargando el ranking</span>'; }
+    box.innerHTML='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--cx-primary-text);text-align:right"><th style="padding:6px 4px;text-align:left">Proveedor</th><th style="padding:6px 4px">Recibidas</th><th style="padding:6px 4px">Con discrep.</th><th style="padding:6px 4px">Tasa</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }catch(e){ var b=document.getElementById('prov-calidad-body'); if(b) b.innerHTML='<span style="color:var(--cx-danger-text)">Error cargando el ranking</span>'; }
 }
 
 // ─── Proveedor 360 ────────────────────────────────────────────────
@@ -3255,33 +3255,33 @@ document.addEventListener('click', function(e){
 async function abrirFicha360(nombre) {
   openModal('m-ficha360');
   var el = document.getElementById('ficha360-content');
-  el.innerHTML = '<div style="text-align:center;color:#a8a29e;padding:40px;">Cargando ficha 360...</div>';
+  el.innerHTML = '<div style="text-align:center;color:var(--cx-text-faint);padding:40px;">Cargando ficha 360...</div>';
   try {
     var r = await fetch('/api/proveedores-compras/' + encodeURIComponent(nombre) + '/ficha');
     var d = await r.json();
-    if (d.error) { el.innerHTML = '<p style="color:#dc2626;">'+esc(d.error)+'</p>'; return; }
+    if (d.error) { el.innerHTML = '<p style="color:var(--cx-danger-text);">'+esc(d.error)+'</p>'; return; }
     var p = d.proveedor, s = d.stats;
     var scoreColor = s.score >= 80 ? '#16a34a' : s.score >= 50 ? '#d97706' : '#dc2626';
     var scoreLbl = s.score >= 80 ? 'Excelente' : s.score >= 50 ? 'Aceptable' : 'Critico';
     var catColor = (p.categoria||'').indexOf('Critico') >= 0 ? '#dc2626' : (p.categoria||'').indexOf('Mayor') >= 0 ? '#d97706' : '#16a34a';
     var h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
       // Card: Info
-      +'<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:10px;padding:14px;">'
+      +'<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:10px;padding:14px;">'
       +'<div style="font-weight:700;font-size:14px;margin-bottom:8px;">&#x1F3ED; Datos del Proveedor</div>'
       +'<div style="font-size:13px;line-height:1.9;">'
-      +(p.nit?'<div><span style="color:#78716c;">NIT:</span> <strong>'+esc(p.nit)+'</strong></div>':'')+
-      (p.contacto?'<div><span style="color:#78716c;">Contacto:</span> '+esc(p.contacto)+'</div>':'')+
-      (p.email?'<div><span style="color:#78716c;">Email:</span> '+esc(p.email)+'</div>':'')+
-      (p.telefono?'<div><span style="color:#78716c;">Tel:</span> '+esc(p.telefono)+'</div>':'')+
-      (p.concepto_compra?'<div><span style="color:#78716c;">Concepto:</span> '+esc(p.concepto_compra)+'</div>':'')+
-      (p.condiciones_pago?'<div><span style="color:#78716c;">Pago:</span> '+esc(p.condiciones_pago)+'</div>':'')+
-      (p.banco?'<div><span style="color:#78716c;">Banco:</span> '+esc(p.banco)+'</div>':'')+
-      (p.num_cuenta?'<div><span style="color:#78716c;">Cuenta:</span> '+esc((p.tipo_cuenta||'')+' '+p.num_cuenta)+'</div>':'')+
-      (p.acuerdo_calidad?'<div><span style="color:#78716c;">Acuerdo calidad:</span> '+esc(p.acuerdo_calidad)+'</div>':'')+
-      '<div><span style="color:#78716c;">Categoria:</span> <span style="color:'+catColor+';font-weight:600;">'+esc(p.categoria||'N/A')+'</span></div>'
+      +(p.nit?'<div><span style="color:var(--cx-text-mute);">NIT:</span> <strong>'+esc(p.nit)+'</strong></div>':'')+
+      (p.contacto?'<div><span style="color:var(--cx-text-mute);">Contacto:</span> '+esc(p.contacto)+'</div>':'')+
+      (p.email?'<div><span style="color:var(--cx-text-mute);">Email:</span> '+esc(p.email)+'</div>':'')+
+      (p.telefono?'<div><span style="color:var(--cx-text-mute);">Tel:</span> '+esc(p.telefono)+'</div>':'')+
+      (p.concepto_compra?'<div><span style="color:var(--cx-text-mute);">Concepto:</span> '+esc(p.concepto_compra)+'</div>':'')+
+      (p.condiciones_pago?'<div><span style="color:var(--cx-text-mute);">Pago:</span> '+esc(p.condiciones_pago)+'</div>':'')+
+      (p.banco?'<div><span style="color:var(--cx-text-mute);">Banco:</span> '+esc(p.banco)+'</div>':'')+
+      (p.num_cuenta?'<div><span style="color:var(--cx-text-mute);">Cuenta:</span> '+esc((p.tipo_cuenta||'')+' '+p.num_cuenta)+'</div>':'')+
+      (p.acuerdo_calidad?'<div><span style="color:var(--cx-text-mute);">Acuerdo calidad:</span> '+esc(p.acuerdo_calidad)+'</div>':'')+
+      '<div><span style="color:var(--cx-text-mute);">Categoria:</span> <span style="color:'+catColor+';font-weight:600;">'+esc(p.categoria||'N/A')+'</span></div>'
       +'</div></div>'
       // Card: Score
-      +'<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:10px;padding:14px;">'
+      +'<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:10px;padding:14px;">'
       +'<div style="font-weight:700;font-size:14px;margin-bottom:12px;">&#x2B50; Score Proveedor</div>'
       +'<div style="text-align:center;margin-bottom:12px;">'
       +'<div style="font-size:42px;font-weight:800;color:'+scoreColor+';">'+s.score+'</div>'
@@ -3307,7 +3307,7 @@ async function abrirFicha360(nombre) {
           +'<td style="color:'+estColor+';font-weight:600;">'+esc(o.estado)+'</td>'
           +'<td>'+esc(o.categoria||'')+'</td>'
           +'<td style="text-align:right;">$'+Number(o.valor_total||0).toLocaleString('es-CO',{maximumFractionDigits:0})+'</td>'
-          +'<td style="text-align:center;">'+(o.tiene_discrepancias?'<span style="color:#dc2626;">&#x26A0; Si</span>':'<span style="color:#16a34a;">&#x2713;</span>')+'</td>'
+          +'<td style="text-align:center;">'+(o.tiene_discrepancias?'<span style="color:var(--cx-danger-text);">&#x26A0; Si</span>':'<span style="color:var(--cx-success-text);">&#x2713;</span>')+'</td>'
           +'</tr>';
       });
       h += '</tbody></table></div></div>';
@@ -3331,13 +3331,13 @@ async function abrirFicha360(nombre) {
     if(ft){
       ft.innerHTML=
         '<button class="btn bo" onclick="closeModal(\\'m-ficha360\\')">Cerrar</button>'
-        +'<button class="btn bw" style="background:#2563eb;" onclick="editarProv360(\\''+ nombre.replace(/'/g,\"&#39;\")+'\\')">'
+        +'<button class="btn bw" style="background:var(--cx-info);" onclick="editarProv360(\\''+ nombre.replace(/'/g,\"&#39;\")+'\\')">'
         +'&#x270F; Editar</button>'
-        +'<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" '
+        +'<button class="btn" style="background:var(--cx-danger);color:#fff;font-weight:700;" '
         +'onclick="bajaProv360(\\''+ nombre.replace(/'/g,\"&#39;\")+'\\')">'
         +'&#x1F6AB; Dar de baja</button>';
     }
-  } catch(e) { el.innerHTML = '<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
+  } catch(e) { el.innerHTML = '<p style="color:var(--cx-danger-text);">Error: '+e.message+'</p>'; }
 }
 
 // ─── Editar proveedor 360 ──────────────────────────────────────────
@@ -3348,9 +3348,9 @@ function editarProv360(nombre){
   var p=PROVS.find(function(x){ return x.nombre===nombre; })||{};
   function fld(id,lbl,val,ph){
     return '<div class="fg" style="margin-bottom:8px;">'
-      +'<label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:3px;">'+lbl+'</label>'
+      +'<label style="font-size:11px;font-weight:700;color:var(--cx-text-soft);display:block;margin-bottom:3px;">'+lbl+'</label>'
       +'<input id="ep-'+id+'" value="'+esc(val||'')+'" placeholder="'+ph+'" '
-      +'style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></div>';
+      +'style="width:100%;padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;"></div>';
   }
   var h='<div style="padding:16px 20px;">';
   h+='<div style="font-weight:800;font-size:14px;margin-bottom:14px;">&#x270F; Editar: '+esc(nombre)+'</div>';
@@ -3361,8 +3361,8 @@ function editarProv360(nombre){
   h+=fld('nit','NIT / CC',p.nit,'NIT o cédula');
   h+='<div style="grid-column:span 2;">'+fld('direccion','Dirección',p.direccion,'Dirección completa')+'</div>';
   h+=fld('banco','Banco',p.banco,'Bancolombia, Davivienda...');
-  h+='<div class="fg" style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:3px;">Tipo de cuenta</label>'
-    +'<select id="ep-tipo_cuenta" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">'
+  h+='<div class="fg" style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--cx-text-soft);display:block;margin-bottom:3px;">Tipo de cuenta</label>'
+    +'<select id="ep-tipo_cuenta" style="width:100%;padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">'
     +'<option value="Ahorros"'+(p.tipo_cuenta==='Ahorros'?' selected':'')+ '>Ahorros</option>'
     +'<option value="Corriente"'+(p.tipo_cuenta==='Corriente'?' selected':'')+'>Corriente</option>'
     +'<option value="Ahorros Damas"'+(p.tipo_cuenta==='Ahorros Damas'?' selected':'')+'>Ahorros Damas</option>'
@@ -3370,8 +3370,8 @@ function editarProv360(nombre){
     +'</select></div>';
   h+=fld('num_cuenta','N° de cuenta',p.num_cuenta,'Número de cuenta');
   h+=fld('concepto_compra','Concepto de compra',p.concepto_compra,'Ej: Materias primas');
-  h+='<div class="fg" style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:3px;">Categoría LPA</label>'
-    +'<select id="ep-categoria" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">'
+  h+='<div class="fg" style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--cx-text-soft);display:block;margin-bottom:3px;">Categoría LPA</label>'
+    +'<select id="ep-categoria" style="width:100%;padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;">'
     +'<option value="">-- Sin categoría --</option>'
     +'<option value="\U0001F534 Crítico"'+(( p.categoria||'').indexOf('rico')>=0?' selected':'')+'>🔴 Crítico</option>'
     +'<option value="\U0001F7E0 Mayor"'+((p.categoria||'').indexOf('ayor')>=0?' selected':'')+'>🟠 Mayor</option>'
@@ -3404,14 +3404,14 @@ function bajaProv360(nombre){
   var el=document.getElementById('ficha360-content');
   var ft=document.getElementById('ficha360-footer');
   var h='<div style="padding:24px 20px;">';
-  h+='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:20px;">';
+  h+='<div style="background:var(--cx-danger-pale);border:1px solid #fca5a5;border-radius:10px;padding:20px;">';
   h+='<div style="font-size:28px;text-align:center;margin-bottom:8px;">&#x1F6AB;</div>';
-  h+='<div style="font-weight:800;font-size:15px;color:#dc2626;text-align:center;margin-bottom:4px;">Dar de baja al proveedor</div>';
-  h+='<div style="font-size:13px;color:#7f1d1d;text-align:center;margin-bottom:16px;">'
+  h+='<div style="font-weight:800;font-size:15px;color:var(--cx-danger-text);text-align:center;margin-bottom:4px;">Dar de baja al proveedor</div>';
+  h+='<div style="font-size:13px;color:var(--cx-danger-text);text-align:center;margin-bottom:16px;">'
     +'<strong>'+esc(nombre)+'</strong> dejará de aparecer en nuevas OCs.'
     +'<br>El historial de compras se conserva intacto.</div>';
-  h+='<div class="fg"><label style="font-size:12px;font-weight:700;color:#7f1d1d;display:block;margin-bottom:6px;">'
-    +'Motivo de baja <span style="color:#dc2626;">*</span></label>';
+  h+='<div class="fg"><label style="font-size:12px;font-weight:700;color:var(--cx-danger-text);display:block;margin-bottom:6px;">'
+    +'Motivo de baja <span style="color:var(--cx-danger-text);">*</span></label>';
   h+='<textarea id="baja-motivo" rows="3" placeholder="Ej: Incumplimiento reiterado de fechas, pérdida de confianza, mejor alternativa disponible..." '
     +'style="width:100%;padding:8px 10px;border:1px solid #fca5a5;border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
   h+='</div></div>';
@@ -3419,7 +3419,7 @@ function bajaProv360(nombre){
   if(ft) ft.innerHTML=
     '<button class="btn bo" onclick="abrirFicha360(\\''+ nombre.replace(/'/g,\"&#39;\")+'\\')">'
     +'&#x2190; Cancelar</button>'
-    +'<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" '
+    +'<button class="btn" style="background:var(--cx-danger);color:#fff;font-weight:700;" '
     +'onclick="confirmarBajaProv360(\\''+ nombre.replace(/'/g,\"&#39;\")+'\\')">'
     +'&#x26A0; Confirmar baja definitiva</button>';
 }
@@ -3998,7 +3998,7 @@ function renderMPAlerts(){
                     Math.round(a.stock_actual||0).toLocaleString('es-CO')+' g';
     var prov_str = a.proveedor ? ' · '+a.proveedor : '';
     var china_mark = a.es_china ? '🇨🇳 ' : '';
-    return '<span style="background:#fff;border:1px solid '+col+';color:'+col
+    return '<span style="background:var(--cx-card);border:1px solid '+col+';color:'+col
       +';border-radius:999px;padding:3px 11px;font-size:11px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.05);" title="Stock: '+stock_str+prov_str+'">'
       +china_mark+esc(a.nombre.substring(0,28))+' (faltan '+deficit_str+')</span>';
   });
@@ -4006,7 +4006,7 @@ function renderMPAlerts(){
   var meeChips=(_ALERTAS_MEE||[]).slice(0,8).map(function(m){
     var def_str=Math.round(m.deficit||0).toLocaleString('es-CO')+' u';
     var prov=m.proveedor?' · '+m.proveedor:'';
-    return '<span style="background:#fff;border:1px solid #0f766e;color:#0f766e;border-radius:999px;padding:3px 11px;font-size:11px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.05);" title="Envase'+prov+'">📦 '+esc((m.nombre||m.codigo||'').substring(0,28))+' (faltan '+def_str+')</span>';
+    return '<span style="background:var(--cx-card);border:1px solid var(--cx-info);color:var(--cx-info-text);border-radius:999px;padding:3px 11px;font-size:11px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.05);" title="Envase'+prov+'">📦 '+esc((m.nombre||m.codigo||'').substring(0,28))+' (faltan '+def_str+')</span>';
   });
   list.innerHTML=mpChips.concat(meeChips).join('');
 }
@@ -4047,22 +4047,22 @@ function addRowMP(prefill){
   tr.innerHTML=
     '<td style="padding:3px;">'
       +'<input id="mprc'+n+'" list="mp-codes-dl" placeholder="COD" value="'+esc(cod)+'"'
-      +' style="width:95px;padding:5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;"'
+      +' style="width:95px;padding:5px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px;"'
       +' onchange="mpLookup('+n+')" oninput="mpLookupDebounce('+n+')">';
   tr.innerHTML+=
     '</td>'
     +'<td style="padding:3px;min-width:150px;">'
       +'<input id="mprn'+n+'" placeholder="Descripcion" value="'+esc(nom)+'"'
-      +' style="width:100%;padding:5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;">'
+      +' style="width:100%;padding:5px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px;">'
       +'<div id="mpri'+n+'" style="font-size:10px;margin-top:2px;"></div>'
     +'</td>'
     +'<td style="padding:3px;">'
       +'<input id="mprq'+n+'" type="number" value="'+esc(qty)+'" min="0" placeholder="g"'
-      +' oninput="calcTotMP()" style="width:80px;padding:5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+      +' oninput="calcTotMP()" style="width:80px;padding:5px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px;text-align:right;">'
     +'</td>'
     +'<td style="padding:3px;">'
       +'<input id="mprp'+n+'" type="number" value="'+esc(prc)+'" min="0" step="0.001" placeholder="$/g"'
-      +' oninput="calcTotMP()" style="width:85px;padding:5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+      +' oninput="calcTotMP()" style="width:85px;padding:5px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px;text-align:right;">'
     +'</td>'
     +'<td id="mprs'+n+'" style="padding:3px 6px;text-align:right;white-space:nowrap;font-size:12px;">$0</td>'
     +'<td style="padding:3px 2px;">'
@@ -4100,7 +4100,7 @@ function mpLookup(n){
       // Usa data attribute + event delegation para evitar quoting issues
       infEl.innerHTML = '⚠ Código <b>'+esc(cod)+'</b> no existe en maestro · '
         +'<a href="#" data-action="crear-mp-rapida" data-codigo="'+esc(cod)+'" '
-        +'style="color:#10b981;font-weight:700;text-decoration:underline;">crear MP nueva</a>';
+        +'style="color:var(--cx-success-text);font-weight:700;text-decoration:underline;">crear MP nueva</a>';
     } else {
       infEl.textContent='';
       infEl.style.color='#78716c';
@@ -4215,7 +4215,7 @@ async function guardarNuevaMP(){
     if (r.status === 409) {
       msg.style.color='#dc2626';
       msg.innerHTML='⚠ '+d.error+' '+
-        '<a href="#" onclick="event.preventDefault();forzarActualizarMP();" style="color:#0e7490;text-decoration:underline;">Sobrescribir</a>';
+        '<a href="#" onclick="event.preventDefault();forzarActualizarMP();" style="color:var(--cx-info-text);text-decoration:underline;">Sobrescribir</a>';
       return;
     }
     if (!r.ok || d.error) {
@@ -4348,24 +4348,24 @@ function openOCSugerida(){
     return '<tr id="sugr'+i+'">'
       +'<td style="padding:5px 8px;">'
         +'<div style="font-weight:600;font-size:12px;">'+esc(a.nombre.substring(0,35))+'</div>'
-        +'<div style="font-size:10px;color:#78716c;">'+esc(a.codigo_mp)+'</div>'
+        +'<div style="font-size:10px;color:var(--cx-text-mute);">'+esc(a.codigo_mp)+'</div>'
       +'</td>'
       +'<td style="padding:5px 4px;text-align:right;font-size:12px;">'+Math.round(a.stock_actual)+'g</td>'
-      +'<td style="padding:5px 4px;text-align:right;font-size:12px;color:#dc2626;font-weight:600;">'+Math.round(a.deficit)+'g</td>'
+      +'<td style="padding:5px 4px;text-align:right;font-size:12px;color:var(--cx-danger-text);font-weight:600;">'+Math.round(a.deficit)+'g</td>'
       +'<td style="padding:5px 4px;">'
         +'<input id="sugq'+i+'" type="number" value="'+qty+'" min="0" oninput="calcTotSug()"'
-        +' style="width:88px;padding:4px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+        +' style="width:88px;padding:4px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px;text-align:right;">'
       +'</td>'
       +'<td style="padding:5px 4px;">'
         +'<input id="sugp'+i+'" type="number" value="'+pref+'" min="0" step="0.001" placeholder="$/g" oninput="calcTotSug()"'
-        +' style="width:72px;padding:4px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+        +' style="width:72px;padding:4px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px;text-align:right;">'
       +'</td>'
       +'<td style="padding:5px 4px;">'
-        +'<select id="sugprov'+i+'" style="width:100%;padding:3px 4px;border:1px solid #d6d3d1;border-radius:4px;font-size:11px;">'+provOpts+'</select>'
+        +'<select id="sugprov'+i+'" style="width:100%;padding:3px 4px;border:1px solid var(--cx-border);border-radius:4px;font-size:11px;">'+provOpts+'</select>'
       +'</td>'
       +'<td id="sugs'+i+'" style="padding:5px 4px;text-align:right;font-size:12px;white-space:nowrap;">$0</td>'
       +'<td style="padding:5px 4px;text-align:center;" id="sugact'+i+'">'
-        +'<button onclick="crearOCFila('+i+')" style="padding:3px 8px;font-size:11px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;">Crear OC</button>'
+        +'<button onclick="crearOCFila('+i+')" style="padding:3px 8px;font-size:11px;background:var(--cx-info);color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;">Crear OC</button>'
       +'</td>'
       +'</tr>';
   }).join('');
@@ -4426,23 +4426,23 @@ async function crearOCFila(i){
   if(q<=0){ alert('Ingresa una cantidad mayor a 0'); return; }
   if(!prov){ alert('Selecciona un proveedor para: '+a.nombre); return; }
   var actEl=document.getElementById('sugact'+i);
-  if(actEl) actEl.innerHTML='<span style="font-size:11px;color:#78716c;">Enviando...</span>';
+  if(actEl) actEl.innerHTML='<span style="font-size:11px;color:var(--cx-text-mute);">Enviando...</span>';
   try{
     var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', {proveedor:prov,categoria:'MP',creado_por:'{usuario}',
         observaciones:'OC sugerida - '+a.nombre+' ('+new Date().toLocaleDateString('es-CO')+')',
         items:[{codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p}]}));
     var res=null; try{res=await r.json();}catch(_){res=null;}
     if(r.ok&&res&&!res.error){
-      if(actEl) actEl.innerHTML='<span style="color:#16a34a;font-size:13px;">&#x2713; '+esc(res.numero_oc||'OK')+'</span>';
+      if(actEl) actEl.innerHTML='<span style="color:var(--cx-success-text);font-size:13px;">&#x2713; '+esc(res.numero_oc||'OK')+'</span>';
       var row=document.getElementById('sugr'+i);
       if(row) row.style.background='#f0fdf4';
       await loadData(); renderDash(); renderDashHome2(); if(typeof renderKpisGrandes==='function') renderKpisGrandes(); if(typeof renderAlertasBanner==='function') renderAlertasBanner(); if(typeof renderMisSolicWidget==='function') renderMisSolicWidget();
     } else {
       var msg=(res&&res.error)?res.error:'Error '+r.status;
-      if(actEl) actEl.innerHTML='<span style="color:#dc2626;font-size:11px;">'+esc(msg)+'</span>';
+      if(actEl) actEl.innerHTML='<span style="color:var(--cx-danger-text);font-size:11px;">'+esc(msg)+'</span>';
     }
   }catch(e){
-    if(actEl) actEl.innerHTML='<span style="color:#dc2626;font-size:11px;">'+esc(e.message)+'</span>';
+    if(actEl) actEl.innerHTML='<span style="color:var(--cx-danger-text);font-size:11px;">'+esc(e.message)+'</span>';
   }
 }
 
@@ -4452,7 +4452,7 @@ function openRev(num,prov,val,obs,conIva,valBase){
   var ivaActivo=conIva!==undefined ? !!conIva : !!(oc.con_iva);
   var base=valBase!==undefined ? valBase : (oc.valor_sin_iva>0 ? oc.valor_sin_iva : (ivaActivo ? parseFloat(val||0)/1.19 : parseFloat(val||0)));
   document.getElementById('rev-num').value=num;
-  document.getElementById('rev-info').innerHTML='<strong>'+num+'</strong><br><span style="color:#78716c;">'+esc(obs||'-')+'</span>';
+  document.getElementById('rev-info').innerHTML='<strong>'+num+'</strong><br><span style="color:var(--cx-text-mute);">'+esc(obs||'-')+'</span>';
   document.getElementById('rev-val').value=base>0 ? base.toFixed(0) : (val||'');
   document.getElementById('rev-iva-chk').checked=ivaActivo;
   document.getElementById('rev-obs').value='';
@@ -4516,7 +4516,7 @@ function autorizarOC(num){
   document.getElementById('aut-motivo').value='';
   document.getElementById('m-aut-info').innerHTML=
     '<strong>'+esc(num)+'</strong> - '+esc(oc.proveedor||'-')+
-    '<br><span style="color:#78716c;font-size:12px;">Valor: <strong>'+fmt(oc.valor_total)+'</strong>'+
+    '<br><span style="color:var(--cx-text-mute);font-size:12px;">Valor: <strong>'+fmt(oc.valor_total)+'</strong>'+
     (oc.observaciones?' &nbsp;|&nbsp; '+esc((oc.observaciones||'').substring(0,80)):'')+
     '</span>';
   openModal('m-aut');
@@ -4679,15 +4679,15 @@ async function marcarRecibida(num){
   var m = document.createElement('div');
   m.id = 'm-recepcion';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-  m.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:920px;width:100%;max-height:90vh;overflow-y:auto">'+
+  m.innerHTML = '<div style="background:var(--cx-card);border-radius:14px;padding:24px;max-width:920px;width:100%;max-height:90vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'+
-      '<h3 style="margin:0;color:#0e7490">📦 Recibir OC '+esc(num)+'</h3>'+
+      '<h3 style="margin:0;color:var(--cx-info-text)">📦 Recibir OC '+esc(num)+'</h3>'+
       '<button id="rec-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div style="background:#fef3c7;color:#78350f;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px"><b>⚠ INVIMA:</b> ingresá lote del proveedor + link al COA · queda en audit · dossier auditoría se arma solo.</div>'+
-    '<div id="rec-items" style="text-align:center;color:#94a3b8;padding:14px">Cargando items…</div>'+
+    '<div style="background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px"><b>⚠ INVIMA:</b> ingresá lote del proveedor + link al COA · queda en audit · dossier auditoría se arma solo.</div>'+
+    '<div id="rec-items" style="text-align:center;color:var(--cx-text-faint);padding:14px">Cargando items…</div>'+
     '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
-      '<button id="rec-cancel" style="background:#94a3b8;color:#fff;padding:8px 18px;border:none;border-radius:6px;cursor:pointer">Cancelar</button>'+
-      '<button id="rec-confirm" style="background:#16a34a;color:#fff;padding:8px 22px;border:none;border-radius:6px;font-weight:700;cursor:pointer">✓ Confirmar recepción</button>'+
+      '<button id="rec-cancel" style="background:var(--cx-text-faint);color:#fff;padding:8px 18px;border:none;border-radius:6px;cursor:pointer">Cancelar</button>'+
+      '<button id="rec-confirm" style="background:var(--cx-success);color:#fff;padding:8px 22px;border:none;border-radius:6px;font-weight:700;cursor:pointer">✓ Confirmar recepción</button>'+
     '</div></div>';
   document.body.appendChild(m);
   document.getElementById('rec-close').onclick = function(){ m.remove(); };
@@ -4696,31 +4696,31 @@ async function marcarRecibida(num){
   try{
     var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(num));
     var d = await r.json();
-    if(!r.ok){ document.getElementById('rec-items').innerHTML = '<div style="color:#dc2626">Error: '+(d.error||r.status)+'</div>'; return; }
+    if(!r.ok){ document.getElementById('rec-items').innerHTML = '<div style="color:var(--cx-danger-text)">Error: '+(d.error||r.status)+'</div>'; return; }
     var items = d.items || d.ordenes_compra_items || [];
     if(!items.length){
-      document.getElementById('rec-items').innerHTML = '<div style="color:#64748b;padding:14px">Esta OC no tiene items</div>';
+      document.getElementById('rec-items').innerHTML = '<div style="color:var(--cx-text-mute);padding:14px">Esta OC no tiene items</div>';
       return;
     }
     var html = '<div style="display:flex;flex-direction:column;gap:14px">';
     items.forEach(function(it, idx){
-      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px" data-rec-idx="'+idx+'" data-codigo="'+esc(it.codigo_mp||'')+'">'+
-        '<div style="font-weight:700;color:#0f172a;margin-bottom:6px">'+esc(it.nombre_mp||it.codigo_mp||'item '+idx)+' <span style="font-size:11px;color:#94a3b8">'+esc(it.codigo_mp||'')+'</span></div>'+
+      html += '<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:12px" data-rec-idx="'+idx+'" data-codigo="'+esc(it.codigo_mp||'')+'">'+
+        '<div style="font-weight:700;color:var(--cx-text);margin-bottom:6px">'+esc(it.nombre_mp||it.codigo_mp||'item '+idx)+' <span style="font-size:11px;color:var(--cx-text-faint)">'+esc(it.codigo_mp||'')+'</span></div>'+
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">'+
-          '<div><label style="font-size:11px;color:#64748b;font-weight:600">Cantidad recibida (g)</label><input type="number" step="any" class="rec-cant" data-idx="'+idx+'" value="'+(it.cantidad_g||0)+'" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
-          '<div><label style="font-size:11px;color:#64748b;font-weight:600">Lote interno</label><input type="text" class="rec-lote" data-idx="'+idx+'" placeholder="auto si vacío" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
-          '<div><label style="font-size:11px;color:#7c3aed;font-weight:700">📋 Lote proveedor *</label><input type="text" class="rec-lote-prov" data-idx="'+idx+'" placeholder="según etiqueta proveedor" style="width:100%;padding:6px 8px;border:1px solid #7c3aed;border-radius:5px;font-size:13px"></div>'+
-          '<div><label style="font-size:11px;color:#64748b;font-weight:600">Fecha vencimiento</label><input type="date" class="rec-fv" data-idx="'+idx+'" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
-          '<div style="grid-column:span 2"><label style="font-size:11px;color:#dc2626;font-weight:700">📑 Link al COA (Drive/Dropbox) *</label><input type="url" class="rec-coa-url" data-idx="'+idx+'" placeholder="https://drive.google.com/file/..." style="width:100%;padding:6px 8px;border:1px solid #dc2626;border-radius:5px;font-size:13px"></div>'+
-          '<div style="grid-column:span 2"><label style="font-size:11px;color:#64748b;font-weight:600">Link ficha seguridad (MSDS · opcional)</label><input type="url" class="rec-ficha" data-idx="'+idx+'" placeholder="https://..." style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
-          '<div style="grid-column:span 2"><label style="font-size:11px;color:#64748b;font-weight:600">Notas / discrepancias</label><input type="text" class="rec-notas" data-idx="'+idx+'" placeholder="opcional" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
+          '<div><label style="font-size:11px;color:var(--cx-text-mute);font-weight:600">Cantidad recibida (g)</label><input type="number" step="any" class="rec-cant" data-idx="'+idx+'" value="'+(it.cantidad_g||0)+'" style="width:100%;padding:6px 8px;border:1px solid var(--cx-border);border-radius:5px;font-size:13px"></div>'+
+          '<div><label style="font-size:11px;color:var(--cx-text-mute);font-weight:600">Lote interno</label><input type="text" class="rec-lote" data-idx="'+idx+'" placeholder="auto si vacío" style="width:100%;padding:6px 8px;border:1px solid var(--cx-border);border-radius:5px;font-size:13px"></div>'+
+          '<div><label style="font-size:11px;color:var(--cx-primary-text);font-weight:700">📋 Lote proveedor *</label><input type="text" class="rec-lote-prov" data-idx="'+idx+'" placeholder="según etiqueta proveedor" style="width:100%;padding:6px 8px;border:1px solid var(--cx-primary);border-radius:5px;font-size:13px"></div>'+
+          '<div><label style="font-size:11px;color:var(--cx-text-mute);font-weight:600">Fecha vencimiento</label><input type="date" class="rec-fv" data-idx="'+idx+'" style="width:100%;padding:6px 8px;border:1px solid var(--cx-border);border-radius:5px;font-size:13px"></div>'+
+          '<div style="grid-column:span 2"><label style="font-size:11px;color:var(--cx-danger-text);font-weight:700">📑 Link al COA (Drive/Dropbox) *</label><input type="url" class="rec-coa-url" data-idx="'+idx+'" placeholder="https://drive.google.com/file/..." style="width:100%;padding:6px 8px;border:1px solid var(--cx-danger);border-radius:5px;font-size:13px"></div>'+
+          '<div style="grid-column:span 2"><label style="font-size:11px;color:var(--cx-text-mute);font-weight:600">Link ficha seguridad (MSDS · opcional)</label><input type="url" class="rec-ficha" data-idx="'+idx+'" placeholder="https://..." style="width:100%;padding:6px 8px;border:1px solid var(--cx-border);border-radius:5px;font-size:13px"></div>'+
+          '<div style="grid-column:span 2"><label style="font-size:11px;color:var(--cx-text-mute);font-weight:600">Notas / discrepancias</label><input type="text" class="rec-notas" data-idx="'+idx+'" placeholder="opcional" style="width:100%;padding:6px 8px;border:1px solid var(--cx-border);border-radius:5px;font-size:13px"></div>'+
         '</div>'+
       '</div>';
     });
     html += '</div>';
     document.getElementById('rec-items').innerHTML = html;
   }catch(e){
-    document.getElementById('rec-items').innerHTML = '<div style="color:#dc2626;padding:14px">Error red: '+esc(e.message)+'</div>';
+    document.getElementById('rec-items').innerHTML = '<div style="color:var(--cx-danger-text);padding:14px">Error red: '+esc(e.message)+'</div>';
   }
   document.getElementById('rec-confirm').onclick = async function(){
     var btn = this;
@@ -4901,20 +4901,20 @@ async function guardarProvItemMP(){
   var msg = document.getElementById('epm-msg');
   var nuevo = (document.getElementById('epm-input').value || '').trim();
   if (nuevo.length < 2){
-    msg.innerHTML = '<span style="color:#dc2626;">Proveedor invalido (min 2 chars).</span>';
+    msg.innerHTML = '<span style="color:var(--cx-danger-text);">Proveedor invalido (min 2 chars).</span>';
     return;
   }
   if (nuevo === (_epmActual.provActual || '')){
-    msg.innerHTML = '<span style="color:#64748b;">Sin cambios.</span>';
+    msg.innerHTML = '<span style="color:var(--cx-text-mute);">Sin cambios.</span>';
     return;
   }
-  msg.innerHTML = '<span style="color:#64748b;">Guardando...</span>';
+  msg.innerHTML = '<span style="color:var(--cx-text-mute);">Guardando...</span>';
   try {
     await _ensureCsrf();  // /api/maestro-mps/ exige X-CSRF-Token (FIX 1-jun-2026)
     var r = await fetch('/api/maestro-mps/' + encodeURIComponent(_epmActual.cod) + '/proveedor', _fetchOpts('PUT', {proveedor: nuevo}));
     var d = await r.json();
     if (r.ok) {
-      msg.innerHTML = '<span style="color:#16a34a;font-weight:700;">&#10003; ' + (d.message || 'Proveedor actualizado') + '</span>';
+      msg.innerHTML = '<span style="color:var(--cx-success-text);font-weight:700;">&#10003; ' + (d.message || 'Proveedor actualizado') + '</span>';
       // Actualiza la celda + atributo data-prov para futuras ediciones
       try {
         var celda = document.querySelector('.td-prov[data-cod="'+_epmActual.cod+'"]');
@@ -4932,10 +4932,10 @@ async function guardarProvItemMP(){
       } catch(e){}
       setTimeout(function(){closeModal('m-edit-prov-mp');}, 900);
     } else {
-      msg.innerHTML = '<span style="color:#dc2626;">Error: ' + (d.error || r.status) + (d.detail ? ' - ' + d.detail : '') + '</span>';
+      msg.innerHTML = '<span style="color:var(--cx-danger-text);">Error: ' + (d.error || r.status) + (d.detail ? ' - ' + d.detail : '') + '</span>';
     }
   } catch(e) {
-    msg.innerHTML = '<span style="color:#dc2626;">Error de red: ' + e.message + '</span>';
+    msg.innerHTML = '<span style="color:var(--cx-danger-text);">Error de red: ' + e.message + '</span>';
   }
 }
 function _solDetApr(){ gestionarSol('Aprobada'); }
@@ -5109,7 +5109,7 @@ function recalcularValorEst(input){
       var v = Math.round(cant * precio);
       celdaValor.innerHTML = '<strong style="color:#1F5F5B;">$'+v.toLocaleString('es-CO')+'</strong>';
     } else {
-      celdaValor.innerHTML = '<span style="color:#a8a29e;font-size:11px;">-</span>';
+      celdaValor.innerHTML = '<span style="color:var(--cx-text-faint);font-size:11px;">-</span>';
     }
   } catch(e) {}
 }
@@ -5129,40 +5129,40 @@ async function verHistoricoPrecio(codigoMp){
     var color = alertaColor[stats.alerta] || '#6d28d9';
     var modalId = 'cx-hist-' + Date.now();
     var html = '<div id="'+modalId+'" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)document.getElementById(&quot;'+modalId+'&quot;).remove()">';
-    html += '<div style="background:#fff;border-radius:12px;max-width:720px;width:100%;max-height:85vh;overflow-y:auto;padding:24px;">';
+    html += '<div style="background:var(--cx-card);border-radius:12px;max-width:720px;width:100%;max-height:85vh;overflow-y:auto;padding:24px;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px;">';
-    html += '<div><div style="font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;">Histórico de precios</div>';
-    html += '<div style="font-size:18px;font-weight:700;color:#1c1917;font-family:monospace;">'+esc(d.codigo_mp)+'</div>';
-    html += '<div style="font-size:13px;color:#57534e;">'+esc(d.nombre_mp||'')+'</div></div>';
-    html += '<button onclick="document.getElementById(&quot;'+modalId+'&quot;).remove()" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:#78716c;">×</button>';
+    html += '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;">Histórico de precios</div>';
+    html += '<div style="font-size:18px;font-weight:700;color:var(--cx-text);font-family:monospace;">'+esc(d.codigo_mp)+'</div>';
+    html += '<div style="font-size:13px;color:var(--cx-text-soft);">'+esc(d.nombre_mp||'')+'</div></div>';
+    html += '<button onclick="document.getElementById(&quot;'+modalId+'&quot;).remove()" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:var(--cx-text-mute);">×</button>';
     html += '</div>';
     if (!serie.length) {
-      html += '<div style="text-align:center;padding:40px;color:#78716c;">Sin histórico aún. Cuando guardes precios en SOLs/OCs irán quedando aquí.</div>';
+      html += '<div style="text-align:center;padding:40px;color:var(--cx-text-mute);">Sin histórico aún. Cuando guardes precios en SOLs/OCs irán quedando aquí.</div>';
     } else {
       // Stats
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px;">';
-      html += '<div style="background:#fafaf9;border-radius:8px;padding:10px;"><div style="font-size:10px;color:#78716c;text-transform:uppercase;">Último precio</div><div style="font-size:18px;font-weight:800;">$'+(stats.ultimo_precio||0).toLocaleString('es-CO')+'/g</div></div>';
-      html += '<div style="background:#fafaf9;border-radius:8px;padding:10px;"><div style="font-size:10px;color:#78716c;text-transform:uppercase;">Variación</div><div style="font-size:18px;font-weight:800;color:'+color+';">'+(stats.variacion_pct>=0?'+':'')+(stats.variacion_pct||0)+'%</div></div>';
-      html += '<div style="background:#fafaf9;border-radius:8px;padding:10px;"><div style="font-size:10px;color:#78716c;text-transform:uppercase;">Promedio 90d</div><div style="font-size:18px;font-weight:800;">$'+(stats.promedio_90d||0).toLocaleString('es-CO')+'</div></div>';
-      html += '<div style="background:#fafaf9;border-radius:8px;padding:10px;"><div style="font-size:10px;color:#78716c;text-transform:uppercase;">Proveedores</div><div style="font-size:18px;font-weight:800;">'+(stats.n_proveedores_distintos||0)+'</div></div>';
+      html += '<div style="background:var(--cx-bg-alt);border-radius:8px;padding:10px;"><div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;">Último precio</div><div style="font-size:18px;font-weight:800;">$'+(stats.ultimo_precio||0).toLocaleString('es-CO')+'/g</div></div>';
+      html += '<div style="background:var(--cx-bg-alt);border-radius:8px;padding:10px;"><div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;">Variación</div><div style="font-size:18px;font-weight:800;color:'+color+';">'+(stats.variacion_pct>=0?'+':'')+(stats.variacion_pct||0)+'%</div></div>';
+      html += '<div style="background:var(--cx-bg-alt);border-radius:8px;padding:10px;"><div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;">Promedio 90d</div><div style="font-size:18px;font-weight:800;">$'+(stats.promedio_90d||0).toLocaleString('es-CO')+'</div></div>';
+      html += '<div style="background:var(--cx-bg-alt);border-radius:8px;padding:10px;"><div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;">Proveedores</div><div style="font-size:18px;font-weight:800;">'+(stats.n_proveedores_distintos||0)+'</div></div>';
       html += '</div>';
       if (stats.alerta_msg) {
         html += '<div style="background:'+color+'1a;border-left:4px solid '+color+';padding:10px 14px;border-radius:0 6px 6px 0;margin-bottom:14px;color:'+color+';font-size:13px;font-weight:600;">'+esc(stats.alerta_msg)+'</div>';
       }
       // Tabla
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-      html += '<thead style="background:#f5f3ff;color:#4c1d95;"><tr>';
+      html += '<thead style="background:var(--cx-primary-pale);color:var(--cx-primary-text);"><tr>';
       html += '<th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Fecha</th>';
       html += '<th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Proveedor</th>';
       html += '<th style="text-align:right;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Precio/g</th>';
       html += '<th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Origen</th>';
       html += '</tr></thead><tbody>';
       serie.slice(0,40).forEach(function(s){
-        html += '<tr style="border-top:1px solid #f5f5f4;">';
+        html += '<tr style="border-top:1px solid var(--cx-bg-alt);">';
         html += '<td style="padding:7px 10px;font-family:monospace;font-size:11px;">'+esc((s.fecha||'').substring(0,10))+'</td>';
         html += '<td style="padding:7px 10px;">'+esc(s.proveedor||'-')+'</td>';
         html += '<td style="padding:7px 10px;text-align:right;font-weight:700;">$'+(s.precio_unit_g||0).toLocaleString('es-CO')+'</td>';
-        html += '<td style="padding:7px 10px;font-size:10px;color:#78716c;">'+esc(s.fuente||'')+(s.sol_numero?' '+esc(s.sol_numero):'')+(s.oc_numero?' '+esc(s.oc_numero):'')+'</td>';
+        html += '<td style="padding:7px 10px;font-size:10px;color:var(--cx-text-mute);">'+esc(s.fuente||'')+(s.sol_numero?' '+esc(s.sol_numero):'')+(s.oc_numero?' '+esc(s.oc_numero):'')+'</td>';
         html += '</tr>';
       });
       html += '</tbody></table>';
@@ -5179,39 +5179,39 @@ async function openOCDetail(num){
   openModal('m-oc-det');
   var body=document.getElementById('oc-det-body');
   var footer=document.getElementById('oc-det-footer');
-  body.innerHTML='<div style="text-align:center;padding:40px;color:#78716c;">Cargando...</div>';
+  body.innerHTML='<div style="text-align:center;padding:40px;color:var(--cx-text-mute);">Cargando...</div>';
   footer.innerHTML='<button class="btn bo" onclick="_ocDetClose()">Cerrar</button>';
   _detOC={};
   try{
     var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(num));
     var d=await r.json();
-    if(d.error){ body.innerHTML='<p style="color:#dc2626;">'+esc(d.error)+'</p>'; return; }
+    if(d.error){ body.innerHTML='<p style="color:var(--cx-danger-text);">'+esc(d.error)+'</p>'; return; }
     var o=d.oc||{}; _detOC=o;
     var items=d.items||[];
     var estColor={'Borrador':'#78716c','Revisada':'#d97706','Autorizada':'#2563eb','Pagada':'#16a34a','Recibida':'#14532d','Rechazada':'#dc2626'}[o.estado]||'#78716c';
     var h='<div style="padding:16px 20px;">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
     h+='<div><div style="font-weight:800;font-size:16px;font-family:monospace;">'+esc(o.numero_oc||num)+'</div>';
-    h+='<div style="color:#57534e;font-size:13px;">'+esc(o.proveedor||'-')+'</div></div>';
+    h+='<div style="color:var(--cx-text-soft);font-size:13px;">'+esc(o.proveedor||'-')+'</div></div>';
     h+='<span class="badge" style="background:'+estColor+'22;color:'+estColor+';font-size:12px;">'+esc(o.estado||'')+'</span></div>';
     h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:12px;background:#f9f8f7;border-radius:6px;padding:10px;">';
-    h+='<div><span style="color:#78716c;">Fecha:</span> '+fdate(o.fecha)+'</div>';
-    h+='<div><span style="color:#78716c;">Entrega est.:</span> '+(o.fecha_entrega_est?fdate(o.fecha_entrega_est):'-')+'</div>';
-    h+='<div><span style="color:#78716c;">Creado por:</span> '+esc(o.creado_por||'-')+'</div>';
-    h+='<div><span style="color:#78716c;">Autorizado por:</span> '+esc(o.autorizado_por||'-')+'</div>';
+    h+='<div><span style="color:var(--cx-text-mute);">Fecha:</span> '+fdate(o.fecha)+'</div>';
+    h+='<div><span style="color:var(--cx-text-mute);">Entrega est.:</span> '+(o.fecha_entrega_est?fdate(o.fecha_entrega_est):'-')+'</div>';
+    h+='<div><span style="color:var(--cx-text-mute);">Creado por:</span> '+esc(o.creado_por||'-')+'</div>';
+    h+='<div><span style="color:var(--cx-text-mute);">Autorizado por:</span> '+esc(o.autorizado_por||'-')+'</div>';
     if(o.valor_total){
       var ivaTxt='';
       if(o.con_iva && o.valor_sin_iva>0){
         var ivaAmt=Math.round(o.valor_sin_iva*0.19);
-        ivaTxt=' <span style="font-size:11px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 6px;margin-left:4px;">+IVA incl.</span>'
-          +'<div style="color:#78716c;font-size:11px;margin-top:2px;">Subtotal: '+fmt(o.valor_sin_iva)+' &nbsp;|&nbsp; IVA 19%: '+fmt(ivaAmt)+'</div>';
+        ivaTxt=' <span style="font-size:11px;background:#fde047;color:var(--cx-warn-text);border-radius:3px;padding:1px 6px;margin-left:4px;">+IVA incl.</span>'
+          +'<div style="color:var(--cx-text-mute);font-size:11px;margin-top:2px;">Subtotal: '+fmt(o.valor_sin_iva)+' &nbsp;|&nbsp; IVA 19%: '+fmt(ivaAmt)+'</div>';
       }
-      h+='<div style="grid-column:span 2;"><span style="color:#78716c;">Valor total:</span> <strong style="font-size:15px;">'+fmt(o.valor_total)+'</strong>'+ivaTxt+'</div>';
+      h+='<div style="grid-column:span 2;"><span style="color:var(--cx-text-mute);">Valor total:</span> <strong style="font-size:15px;">'+fmt(o.valor_total)+'</strong>'+ivaTxt+'</div>';
     }
-    if(o.observaciones) h+='<div style="grid-column:span 2;"><span style="color:#78716c;">Observaciones:</span> '+esc(o.observaciones)+'</div>';
+    if(o.observaciones) h+='<div style="grid-column:span 2;"><span style="color:var(--cx-text-mute);">Observaciones:</span> '+esc(o.observaciones)+'</div>';
     h+='</div>';
     if(items.length){
-      h+='<div style="font-weight:700;font-size:12px;color:#44403c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Items del pedido</div>';
+      h+='<div style="font-weight:700;font-size:12px;color:var(--cx-text-soft);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Items del pedido</div>';
       h+='<div style="overflow-x:auto;"><table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th style="text-align:right;">Precio U.</th><th style="text-align:right;">Subtotal</th></tr></thead><tbody>';
       items.forEach(function(it){
         var cant=it[3]||it.cantidad_g||0;
@@ -5225,7 +5225,7 @@ async function openOCDetail(num){
         h+='<td style="text-align:right;font-weight:700;">'+(sub?fmt(sub):'-')+'</td></tr>';
       });
       h+='</tbody></table></div>';
-    } else { h+='<div style="color:#78716c;font-size:13px;">Sin items registrados</div>'; }
+    } else { h+='<div style="color:var(--cx-text-mute);font-size:13px;">Sin items registrados</div>'; }
     // ── Datos de Pago ──
     var _pd=d.prov_data||null;
     if(!_pd&&o.proveedor){
@@ -5248,24 +5248,24 @@ async function openOCDetail(num){
       }
     }
     if(_pd&&(_pd.banco||_pd.num_cuenta)){
-      h+='<div style="margin-top:14px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;">';
-      h+='<div style="font-weight:800;font-size:12px;color:#166534;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">&#x1F4B3; Datos de Pago</div>';
+      h+='<div style="margin-top:14px;background:var(--cx-success-pale);border:1px solid #86efac;border-radius:8px;padding:12px;">';
+      h+='<div style="font-weight:800;font-size:12px;color:var(--cx-success-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">&#x1F4B3; Datos de Pago</div>';
       h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12px;">';
-      if(_pd.banco) h+='<div><span style="color:#166534;font-weight:600;">Banco:</span> <strong>'+esc(_pd.banco)+'</strong></div>';
-      if(_pd.tipo_cuenta) h+='<div><span style="color:#166534;font-weight:600;">Tipo cuenta:</span> '+esc(_pd.tipo_cuenta)+'</div>';
-      if(_pd.num_cuenta) h+='<div style="grid-column:span 2;"><span style="color:#166534;font-weight:600;">N\u00BA cuenta:</span> <strong style="font-family:monospace;font-size:13px;letter-spacing:.5px;">'+esc(_pd.num_cuenta)+'</strong></div>';
-      if(_pd.nit) h+='<div><span style="color:#166534;font-weight:600;">NIT / CC:</span> '+esc(_pd.nit)+'</div>';
-      if(_pd.email) h+='<div><span style="color:#166534;font-weight:600;">Email:</span> '+esc(_pd.email)+'</div>';
-      if(_pd.telefono) h+='<div><span style="color:#166534;font-weight:600;">Tel:</span> '+esc(_pd.telefono)+'</div>';
+      if(_pd.banco) h+='<div><span style="color:var(--cx-success-text);font-weight:600;">Banco:</span> <strong>'+esc(_pd.banco)+'</strong></div>';
+      if(_pd.tipo_cuenta) h+='<div><span style="color:var(--cx-success-text);font-weight:600;">Tipo cuenta:</span> '+esc(_pd.tipo_cuenta)+'</div>';
+      if(_pd.num_cuenta) h+='<div style="grid-column:span 2;"><span style="color:var(--cx-success-text);font-weight:600;">N\u00BA cuenta:</span> <strong style="font-family:monospace;font-size:13px;letter-spacing:.5px;">'+esc(_pd.num_cuenta)+'</strong></div>';
+      if(_pd.nit) h+='<div><span style="color:var(--cx-success-text);font-weight:600;">NIT / CC:</span> '+esc(_pd.nit)+'</div>';
+      if(_pd.email) h+='<div><span style="color:var(--cx-success-text);font-weight:600;">Email:</span> '+esc(_pd.email)+'</div>';
+      if(_pd.telefono) h+='<div><span style="color:var(--cx-success-text);font-weight:600;">Tel:</span> '+esc(_pd.telefono)+'</div>';
       h+='</div>';
       if(o.valor_total){
         h+='<div style="margin-top:10px;padding-top:8px;border-top:1px solid #bbf7d0;">';
         if(o.con_iva&&o.valor_sin_iva>0){
           var _iva=Math.round(o.valor_sin_iva*0.19);
-          h+='<div style="font-size:11px;color:#166534;">Subtotal: '+fmt(o.valor_sin_iva)+'</div>';
-          h+='<div style="font-size:11px;color:#166534;">IVA 19%: '+fmt(_iva)+'</div>';
+          h+='<div style="font-size:11px;color:var(--cx-success-text);">Subtotal: '+fmt(o.valor_sin_iva)+'</div>';
+          h+='<div style="font-size:11px;color:var(--cx-success-text);">IVA 19%: '+fmt(_iva)+'</div>';
         }
-        h+='<div style="font-size:15px;font-weight:800;color:#15803d;margin-top:3px;">Total a pagar: '+fmt(o.valor_total)+'</div>';
+        h+='<div style="font-size:15px;font-weight:800;color:var(--cx-success-text);margin-top:3px;">Total a pagar: '+fmt(o.valor_total)+'</div>';
       }
       h+='</div>';
     }
@@ -5276,7 +5276,7 @@ async function openOCDetail(num){
     if(o.estado==='Autorizada'&&ES_AUTORIZA) fbtns+='<button class="btn bg" onclick="_ocDetPago()">Registrar Pago</button>';
     if(o.estado==='Borrador'&&ES_C) fbtns+='<button class="btn bw" onclick="_ocDetRev()">Revisar &amp; Asignar</button>';
     footer.innerHTML=fbtns;
-  }catch(e){ body.innerHTML='<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
+  }catch(e){ body.innerHTML='<p style="color:var(--cx-danger-text);">Error: '+e.message+'</p>'; }
 }
 
 // ─── Solicitudes para Catalina ────────────────────────────────────────
@@ -5377,7 +5377,7 @@ async function loadPlanta(force){
 async function _doLoadPlanta(force){
   var estado = (document.getElementById('s-planta-estado')||{value:'Pendiente'}).value;
   document.getElementById('planta-body').innerHTML =
-    '<div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>';
+    '<div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Cargando...</div>';
   // PERF 13-jul · proveedores (independiente) en PARALELO con las solicitudes agrupadas
   var _provP = fetch('/api/proveedores-unicos').then(function(rp){return rp.json();}).catch(function(){return {proveedores:[]};});
   try{
@@ -5386,7 +5386,7 @@ async function _doLoadPlanta(force){
     var d = await r.json();
     if(!r.ok){
       document.getElementById('planta-body').innerHTML =
-        '<div style="color:#dc2626;padding:20px;">Error: '+esc(d.error||r.status)+'</div>';
+        '<div style="color:var(--cx-danger-text);padding:20px;">Error: '+esc(d.error||r.status)+'</div>';
       return;
     }
     // CRITICA-1 fix · sin_proveedor son SOLs sueltas con shape distinto a grupos.
@@ -5409,7 +5409,7 @@ async function _doLoadPlanta(force){
     PLANTA_GRUPOS = _gruposReales.concat(_huerfanas);
   }catch(e){
     document.getElementById('planta-body').innerHTML =
-      '<div style="color:#dc2626;padding:20px;">Error de red: '+esc(e.message)+'</div>';
+      '<div style="color:var(--cx-danger-text);padding:20px;">Error de red: '+esc(e.message)+'</div>';
     return;
   }
   // Proveedores ya se pidieron en PARALELO arriba · solo esperamos su resultado
@@ -5478,7 +5478,7 @@ function renderPlanta(){
     });
     var filtroActivo = (q && q.length > 0);
     var sufijo = filtroActivo
-      ? '<span style="color:#94a3b8;font-size:11px;margin-left:8px">(filtrado · total: '+globalGrupos+' grupos · '+globalSols+' SOLs · '+fmt(globalValor)+')</span>'
+      ? '<span style="color:var(--cx-text-faint);font-size:11px;margin-left:8px">(filtrado · total: '+globalGrupos+' grupos · '+globalSols+' SOLs · '+fmt(globalValor)+')</span>'
       : '';
     kpis.innerHTML =
       '<span><b>'+totalGrupos+'</b> proveedores</span> · ' +
@@ -5487,7 +5487,7 @@ function renderPlanta(){
       '<span><b>'+fmt(totalValor)+'</b> valor estimado</span>' + sufijo;
   }
   if(!grupos.length){
-    body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;">' +
+    body.innerHTML = '<div style="color:var(--cx-text-faint);text-align:center;padding:40px;">' +
       'No hay solicitudes de planta pendientes.</div>';
     return;
   }
@@ -5517,7 +5517,7 @@ function _plantaCardHTML(g, idx){
     return _plantaItemRowHTML(g, it);
   }).join('');
 
-  return '<div class="planta-card" data-prov="'+esc(label)+'" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(15,23,42,.06);">' +
+  return '<div class="planta-card" data-prov="'+esc(label)+'" style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(15,23,42,.06);">' +
     '<div style="background:'+hdrColor+';color:#fff;padding:11px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
       '<div style="font-weight:800;font-size:14px;flex:1;letter-spacing:.01em;">&#x1F3ED; '+esc(label)+'</div>' +
       '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+solCount+' SOLs</span>' +
@@ -5528,25 +5528,25 @@ function _plantaCardHTML(g, idx){
       // Antes solo existían en tab "Solicitudes Agrupadas" · ahora visibles
       // donde Catalina realmente está (Planta).
       (!g.es_sin_proveedor ?
-        '<button onclick="abrirCrearOCDesdeGrupoPlanta('+idx+')" style="background:#fff;color:#0e7490;border:none;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px" title="Crear UNA OC con todos los items del grupo · preview con Δ% precios">&#x1F6D2; Crear OC</button>' +
+        '<button onclick="abrirCrearOCDesdeGrupoPlanta('+idx+')" style="background:var(--cx-card);color:var(--cx-info-text);border:none;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px" title="Crear UNA OC con todos los items del grupo · preview con Δ% precios">&#x1F6D2; Crear OC</button>' +
         '<button onclick="abrirPedirCotizacionPlanta('+idx+')" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px" title="Pedir 3 cotizaciones a top proveedores históricos">&#x1F4AC; Cotizar</button>'
       : '<span style="font-size:10px;color:#fff;opacity:.8;margin-left:6px">⚠ asignar proveedor</span>') +
     '</div>' +
-    '<div style="padding:10px 14px;font-size:11px;color:#64748b;">SOLs incluidas: ' +
-      (g.solicitudes||[]).map(function(s){ return '<span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;margin-right:4px;font-weight:600;color:#334155;">'+esc(s.numero)+'</span>'; }).join('') +
+    '<div style="padding:10px 14px;font-size:11px;color:var(--cx-text-mute);">SOLs incluidas: ' +
+      (g.solicitudes||[]).map(function(s){ return '<span style="background:var(--cx-border-soft);padding:2px 6px;border-radius:4px;margin-right:4px;font-weight:600;color:var(--cx-text-soft);">'+esc(s.numero)+'</span>'; }).join('') +
       // Botón split inline si es sin_proveedor (mixto)
       (g.es_sin_proveedor && (g.solicitudes||[])[0] ?
-        '<button data-act="split-sol" data-sol="'+esc(g.solicitudes[0].numero)+'" style="background:#9a3412;color:#fff;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700;margin-left:6px" title="Dividir esta SOL en N hijas, una por proveedor distinto">&#x2702; Split</button>'
+        '<button data-act="split-sol" data-sol="'+esc(g.solicitudes[0].numero)+'" style="background:var(--cx-accent-dark);color:#fff;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700;margin-left:6px" title="Dividir esta SOL en N hijas, una por proveedor distinto">&#x2702; Split</button>'
       : '') +
     '</div>' +
     '<div style="padding:0 14px 14px;">' +
       '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
-        '<thead><tr style="background:#f8fafc;border-bottom:1px solid #e2e8f0;">' +
-          '<th style="text-align:left;padding:6px;font-weight:700;color:#64748b;">MP</th>' +
-          '<th style="text-align:left;padding:6px;font-weight:700;color:#64748b;width:160px;">Proveedor</th>' +
-          '<th style="text-align:right;padding:6px;font-weight:700;color:#64748b;width:120px;">Cantidad (g)</th>' +
-          '<th style="text-align:right;padding:6px;font-weight:700;color:#64748b;width:120px;">Valor</th>' +
-          '<th style="text-align:right;padding:6px;font-weight:700;color:#64748b;width:80px;">SOL</th>' +
+        '<thead><tr style="background:var(--cx-bg-alt);border-bottom:1px solid var(--cx-border);">' +
+          '<th style="text-align:left;padding:6px;font-weight:700;color:var(--cx-text-mute);">MP</th>' +
+          '<th style="text-align:left;padding:6px;font-weight:700;color:var(--cx-text-mute);width:160px;">Proveedor</th>' +
+          '<th style="text-align:right;padding:6px;font-weight:700;color:var(--cx-text-mute);width:120px;">Cantidad (g)</th>' +
+          '<th style="text-align:right;padding:6px;font-weight:700;color:var(--cx-text-mute);width:120px;">Valor</th>' +
+          '<th style="text-align:right;padding:6px;font-weight:700;color:var(--cx-text-mute);width:80px;">SOL</th>' +
           '<th style="width:100px;"></th>' +
         '</tr></thead>' +
         '<tbody>'+itemsHTML+'</tbody>' +
@@ -5574,20 +5574,20 @@ function _plantaItemRowHTML(g, it){
   var sigla = refsCount === 0 ? '-' : (refsCount === 1 ? refs[0].numero : (refsCount + ' SOLs'));
   var refsAttr = encodeURIComponent(JSON.stringify(refs));
   var rowId = 'planta-row-'+(it.codigo_mp || Math.random().toString(36).slice(2));
-  return '<tr id="'+rowId+'" style="border-bottom:1px solid #f1f5f9;" data-refs="'+refsAttr+'" data-codigo-mp="'+esc(it.codigo_mp||'')+'">' +
+  return '<tr id="'+rowId+'" style="border-bottom:1px solid var(--cx-border-soft);" data-refs="'+refsAttr+'" data-codigo-mp="'+esc(it.codigo_mp||'')+'">' +
     '<td style="padding:6px;">' +
-      '<div style="font-weight:600;color:#1e293b;">'+esc(it.nombre_mp||it.codigo_mp||'')+'</div>' +
-      '<div style="font-size:10px;color:#94a3b8;">'+esc(it.codigo_mp||'')+'</div>' +
+      '<div style="font-weight:600;color:var(--cx-text);">'+esc(it.nombre_mp||it.codigo_mp||'')+'</div>' +
+      '<div style="font-size:10px;color:var(--cx-text-faint);">'+esc(it.codigo_mp||'')+'</div>' +
     '</td>' +
     '<td style="padding:6px;">' +
-      '<input type="text" class="planta-prov-inp" value="'+esc((it.proveedor_sugerido)||g.proveedor||'')+'" list="planta-prov-datalist" placeholder="(sin proveedor)" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;">' +
+      '<input type="text" class="planta-prov-inp" value="'+esc((it.proveedor_sugerido)||g.proveedor||'')+'" list="planta-prov-datalist" placeholder="(sin proveedor)" style="width:100%;padding:4px 6px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px;">' +
     '</td>' +
     '<td style="padding:6px;text-align:right;">' +
       // MEDIA-9 fix · 21-may-2026 · readonly cantidad si hay >1 SOL (no se
       // puede redistribuir cantidad entre SOLs sin lógica explícita)
       '<input type="number" step="any" class="planta-cant-inp" value="'+(parseFloat(it.cantidad_g||0))+'"' +
       (refsCount > 1 ? ' readonly title="Cantidad consolidada de '+refsCount+' SOLs · solo modificable individualmente"' : '') +
-      ' style="width:100%;padding:4px 6px;border:1px solid '+(refsCount>1?'#cbd5e1;background:#f1f5f9':'#cbd5e1')+';border-radius:4px;font-size:12px;text-align:right;">' +
+      ' style="width:100%;padding:4px 6px;border:1px solid '+(refsCount>1?'#cbd5e1;background:var(--cx-border-soft)':'#cbd5e1')+';border-radius:4px;font-size:12px;text-align:right;">' +
     '</td>' +
     '<td style="padding:6px;text-align:right;">' +
       (function(){
@@ -5610,14 +5610,14 @@ function _plantaItemRowHTML(g, it){
                       ((hist.dias_atras != null && hist.dias_atras > 60) ? '#ca8a04' : '#16a34a');
           badgeHtml = '<div style="font-size:9px;color:'+color+';margin-top:2px;line-height:1.2" title="Precio último: $'+Number(hist.precio_ultimo).toFixed(0)+'/kg · OC '+(hist.oc_ultima||'?')+'">$'+(Number(hist.precio_ultimo).toLocaleString('es-CO',{maximumFractionDigits:0}))+'/kg · hace '+dias+oc+'</div>';
         }
-        return '<input type="number" step="any" class="planta-val-inp" value="'+valFinal+'" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:right;">' + badgeHtml;
+        return '<input type="number" step="any" class="planta-val-inp" value="'+valFinal+'" style="width:100%;padding:4px 6px;border:1px solid var(--cx-border);border-radius:4px;font-size:12px;text-align:right;">' + badgeHtml;
       })() +
     '</td>' +
-    '<td style="padding:6px;text-align:right;font-size:11px;color:#64748b;font-weight:600;" title="'+esc(refs.map(function(r){return r.numero;}).join(', '))+'">'+esc(sigla)+'</td>' +
+    '<td style="padding:6px;text-align:right;font-size:11px;color:var(--cx-text-mute);font-weight:600;" title="'+esc(refs.map(function(r){return r.numero;}).join(', '))+'">'+esc(sigla)+'</td>' +
     '<td style="padding:6px;text-align:right;white-space:nowrap;">' +
-      (refsCount > 0 ? '<button class="btn" onclick="plantaGuardarItem(this)" style="padding:4px 10px;font-size:11px;background:#16a34a;color:#fff;" title="'+(refsCount > 1 ? 'Guarda los '+refsCount+' items relacionados' : 'Guardar')+'">&#x1F4BE; Guardar'+(refsCount > 1 ? ' ('+refsCount+')' : '')+'</button>'
-        + ' <button class="btn" onclick="plantaEliminarItem(this)" style="padding:4px 8px;font-size:11px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;" title="Quitar SOLO esta MP del pedido (no borra el resto de la orden)">&#x1F5D1;</button>' :
-             '<span style="font-size:10px;color:#94a3b8;">-</span>') +
+      (refsCount > 0 ? '<button class="btn" onclick="plantaGuardarItem(this)" style="padding:4px 10px;font-size:11px;background:var(--cx-success);color:#fff;" title="'+(refsCount > 1 ? 'Guarda los '+refsCount+' items relacionados' : 'Guardar')+'">&#x1F4BE; Guardar'+(refsCount > 1 ? ' ('+refsCount+')' : '')+'</button>'
+        + ' <button class="btn" onclick="plantaEliminarItem(this)" style="padding:4px 8px;font-size:11px;background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fca5a5;" title="Quitar SOLO esta MP del pedido (no borra el resto de la orden)">&#x1F5D1;</button>' :
+             '<span style="font-size:10px;color:var(--cx-text-faint);">-</span>') +
     '</td>' +
   '</tr>';
 }
@@ -5749,31 +5749,31 @@ function loadGerencia(){
 var _CARGOS_CACHE={pagos:[],plantillas:[],alertas:{},periodo:''};
 async function loadCargosFijos(){
   var body=document.getElementById('cargos-body');
-  if(body) body.innerHTML='<div style="color:#94a3b8;text-align:center;padding:36px;">Cargando…</div>';
+  if(body) body.innerHTML='<div style="color:var(--cx-text-faint);text-align:center;padding:36px;">Cargando…</div>';
   try{
     var r=await fetch('/api/compras/cargos-fijos',{credentials:'same-origin'});
     var d=await r.json();
-    if(!r.ok){ if(body) body.innerHTML='<div style="color:#dc2626;padding:16px;">Error: '+esc(d.error||r.status)+'</div>'; return; }
+    if(!r.ok){ if(body) body.innerHTML='<div style="color:var(--cx-danger-text);padding:16px;">Error: '+esc(d.error||r.status)+'</div>'; return; }
     _CARGOS_CACHE=d;
     var pe=document.getElementById('cargos-periodo'); if(pe) pe.textContent='período '+(d.periodo||'');
     renderCargosAlert(d.alertas||{});
     renderCargos();
-  }catch(e){ if(body) body.innerHTML='<div style="color:#dc2626;padding:16px;">Error de red: '+esc(e.message)+'</div>'; }
+  }catch(e){ if(body) body.innerHTML='<div style="color:var(--cx-danger-text);padding:16px;">Error de red: '+esc(e.message)+'</div>'; }
 }
 function renderCargosAlert(a){
   var el=document.getElementById('cargos-alert'); if(!el) return;
   var parts=[];
-  if(a.falta_monto>0) parts.push('<span style="color:#b45309;font-weight:700;">⚠ '+a.falta_monto+' sin monto cargado</span> (Catalina debe subirlos)');
-  if(a.por_pagar>0) parts.push('<span style="color:#15803d;font-weight:700;">💰 '+a.por_pagar+' por pagar</span> · '+fmt(a.total_por_pagar||0)+(a.vencidos>0?(' · <span style="color:#dc2626;font-weight:700;">'+a.vencidos+' vencido(s)</span>'):''));
+  if(a.falta_monto>0) parts.push('<span style="color:var(--cx-warn-text);font-weight:700;">⚠ '+a.falta_monto+' sin monto cargado</span> (Catalina debe subirlos)');
+  if(a.por_pagar>0) parts.push('<span style="color:var(--cx-success-text);font-weight:700;">💰 '+a.por_pagar+' por pagar</span> · '+fmt(a.total_por_pagar||0)+(a.vencidos>0?(' · <span style="color:var(--cx-danger-text);font-weight:700;">'+a.vencidos+' vencido(s)</span>'):''));
   if(!parts.length){ el.style.display='none'; return; }
   el.style.display='block';
   el.style.cssText='display:block;background:linear-gradient(135deg,rgba(245,158,11,.10),rgba(245,158,11,.03));border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:11px 15px;margin-bottom:12px;font-size:13px;';
   el.innerHTML=parts.join(' &nbsp;·&nbsp; ');
 }
 function _cargoEstadoPill(est){
-  if(est==='pagado') return '<span class="badge" style="background:#dcfce7;color:#166534;">✓ Pagado</span>';
+  if(est==='pagado') return '<span class="badge" style="background:var(--cx-success-pale);color:var(--cx-success-text);">✓ Pagado</span>';
   if(est==='por_pagar') return '<span class="badge" style="background:#fef9c3;color:#854d0e;">💰 Por pagar</span>';
-  return '<span class="badge" style="background:#fee2e2;color:#991b1b;">⚠ Falta monto</span>';
+  return '<span class="badge" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);">⚠ Falta monto</span>';
 }
 function renderCargos(){
   var body=document.getElementById('cargos-body'); if(!body) return;
@@ -5782,7 +5782,7 @@ function renderCargos(){
     if(!q) return true;
     return ((p.concepto||'')+' '+(p.beneficiario||'')+' '+(p.categoria||'')).toLowerCase().indexOf(q)>=0;
   });
-  if(!pagos.length){ body.innerHTML='<div style="color:#94a3b8;text-align:center;padding:36px;">'+(q?'Sin resultados':'No hay cargos fijos este mes · creá el primero con "➕ Nuevo cargo fijo"')+'</div>'; return; }
+  if(!pagos.length){ body.innerHTML='<div style="color:var(--cx-text-faint);text-align:center;padding:36px;">'+(q?'Sin resultados':'No hay cargos fijos este mes · creá el primero con "➕ Nuevo cargo fijo"')+'</div>'; return; }
   var isAdmin=(typeof ES_ADMIN!=='undefined' && ES_ADMIN);
   var rows=pagos.map(function(p){
     var medio=(p.medio_pago||'')+(p.dato_pago?(': '+p.dato_pago):'');
@@ -5790,18 +5790,18 @@ function renderCargos(){
     if(p.estado==='pendiente_monto'){
       acc='<button class="btn bw" style="font-size:11px;" onclick="abrirMontoCargo('+p.id+')">✎ Cargar monto</button>';
     } else if(p.estado==='por_pagar'){
-      acc=(isAdmin?'<button class="btn bg" style="font-size:11px;" onclick="pagarCargoFijo('+p.id+')">💵 Pagar</button> ':'<span style="font-size:11px;color:#78716c;">esperando pago de gerencia</span> ')
+      acc=(isAdmin?'<button class="btn bg" style="font-size:11px;" onclick="pagarCargoFijo('+p.id+')">💵 Pagar</button> ':'<span style="font-size:11px;color:var(--cx-text-mute);">esperando pago de gerencia</span> ')
          +'<button class="btn bo" style="font-size:11px;" onclick="abrirMontoCargo('+p.id+')">✎</button>';
     } else {
-      acc='<span style="font-size:11px;color:#16a34a;">'+(p.pagado_at?('pagado '+(p.pagado_at||'').substring(0,10)):'pagado')+'</span>';
+      acc='<span style="font-size:11px;color:var(--cx-success-text);">'+(p.pagado_at?('pagado '+(p.pagado_at||'').substring(0,10)):'pagado')+'</span>';
     }
     var editPlantilla='<button class="btn bo" style="font-size:11px;padding:2px 8px;" title="Editar plantilla" onclick="abrirCargoFijo('+p.cargo_fijo_id+')">⚙</button>';
     return '<tr>'
-      +'<td><strong>'+esc(p.concepto||'')+'</strong>'+(p.beneficiario?'<br><small style="color:#78716c">'+esc(p.beneficiario)+'</small>':'')+'</td>'
-      +'<td style="font-size:12px;color:#57534e;">'+esc(p.categoria||'')+'</td>'
+      +'<td><strong>'+esc(p.concepto||'')+'</strong>'+(p.beneficiario?'<br><small style="color:var(--cx-text-mute)">'+esc(p.beneficiario)+'</small>':'')+'</td>'
+      +'<td style="font-size:12px;color:var(--cx-text-soft);">'+esc(p.categoria||'')+'</td>'
       +'<td class="valor" style="font-weight:700;">'+(p.monto>0?fmt(p.monto):'-')+'</td>'
       +'<td style="font-size:12px;">'+esc(p.fecha_limite||'')+'</td>'
-      +'<td style="font-size:12px;color:#57534e;">'+esc(medio||'-')+'</td>'
+      +'<td style="font-size:12px;color:var(--cx-text-soft);">'+esc(medio||'-')+'</td>'
       +'<td>'+_cargoEstadoPill(p.estado)+'</td>'
       +'<td style="white-space:nowrap;text-align:right;">'+acc+' '+editPlantilla+'</td>'
       +'</tr>';
@@ -6111,23 +6111,23 @@ function renderInfluencers(){
     var urg=_infUrgencia(s);
     var urgBadge='';
     if(urg.nivel==='vencido'){
-      urgBadge='<span style="background:#dc2626;color:#fff;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #991b1b;" title="ATRASADO · pago vencido hace '+Math.abs(urg.dias)+' días. Promesa: 30d desde el contenido. Vencía '+esc(urg.vence)+'">🔴 ATRASADO '+Math.abs(urg.dias)+'d</span>';
+      urgBadge='<span style="background:var(--cx-danger);color:#fff;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid var(--cx-danger);" title="ATRASADO · pago vencido hace '+Math.abs(urg.dias)+' días. Promesa: 30d desde el contenido. Vencía '+esc(urg.vence)+'">🔴 ATRASADO '+Math.abs(urg.dias)+'d</span>';
     } else if(urg.nivel==='urgente'){
-      urgBadge='<span style="background:#f59e0b;color:#fff;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;" title="Vence en '+urg.dias+' días ('+esc(urg.vence)+')">🟡 Vence en '+urg.dias+'d</span>';
+      urgBadge='<span style="background:var(--cx-warn);color:#fff;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;" title="Vence en '+urg.dias+' días ('+esc(urg.vence)+')">🟡 Vence en '+urg.dias+'d</span>';
     } else if(urg.nivel==='proximo'){
-      urgBadge='<span style="background:#bfdbfe;color:#1e40af;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;" title="Vence '+esc(urg.vence)+'">🔵 '+urg.dias+'d</span>';
+      urgBadge='<span style="background:#bfdbfe;color:var(--cx-info-text);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;" title="Vence '+esc(urg.vence)+'">🔵 '+urg.dias+'d</span>';
     } else if(urg.nivel==='normal'){
-      urgBadge='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;" title="Al día · vence '+esc(urg.vence)+'">🟢 '+urg.dias+'d</span>';
+      urgBadge='<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;" title="Al día · vence '+esc(urg.vence)+'">🟢 '+urg.dias+'d</span>';
     }
 
     // Bank info row - only show if parsed
     var bankRow='';
     if(b.nombre||b.banco||b.cuenta){
-      bankRow='<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:10px 0;display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px;">'
-        +(b.nombre?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Beneficiario</span><div style="color:#1e293b;font-weight:600;margin-top:1px;">'+esc(b.nombre)+'</div></div>':'')
-        +(b.banco?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Banco</span><div style="color:#1e293b;margin-top:1px;">'+esc(b.banco)+'</div></div>':'')
-        +(b.cuenta?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Cuenta / Cel</span><div style="color:#1e293b;font-family:monospace;margin-top:1px;">'+esc(b.cuenta)+'</div></div>':'')
-        +(b.cedNit?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Cédula / NIT</span><div style="color:#1e293b;font-family:monospace;margin-top:1px;">'+esc(b.cedNit)+'</div></div>':'')
+      bankRow='<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:10px 14px;margin:10px 0;display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px;">'
+        +(b.nombre?'<div><span style="color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;font-size:10px;">Beneficiario</span><div style="color:var(--cx-text);font-weight:600;margin-top:1px;">'+esc(b.nombre)+'</div></div>':'')
+        +(b.banco?'<div><span style="color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;font-size:10px;">Banco</span><div style="color:var(--cx-text);margin-top:1px;">'+esc(b.banco)+'</div></div>':'')
+        +(b.cuenta?'<div><span style="color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;font-size:10px;">Cuenta / Cel</span><div style="color:var(--cx-text);font-family:monospace;margin-top:1px;">'+esc(b.cuenta)+'</div></div>':'')
+        +(b.cedNit?'<div><span style="color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;font-size:10px;">Cédula / NIT</span><div style="color:var(--cx-text);font-family:monospace;margin-top:1px;">'+esc(b.cedNit)+'</div></div>':'')
         +'</div>';
     }
 
@@ -6135,8 +6135,8 @@ function renderInfluencers(){
     var btns='';
     if(s.estado==='Aprobada'){
       btns='<button class="btn inf-pagar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;border:none;border-radius:8px;box-shadow:0 2px 8px rgba(124,58,237,.3);">💸 Pagar ahora</button>'
-          +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:7px 14px;font-size:13px;">✕ Rechazar</button>'
-          +'<button class="btn inf-eliminar" data-sol="'+esc(s.numero)+'" data-nombre="'+esc((b.nombre||s.solicitante||s.numero))+'" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;padding:7px 12px;font-size:12px;" title="Eliminar definitivamente esta solicitud (no genera comprobante)">🗑 Eliminar</button>';
+          +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca;padding:7px 14px;font-size:13px;">✕ Rechazar</button>'
+          +'<button class="btn inf-eliminar" data-sol="'+esc(s.numero)+'" data-nombre="'+esc((b.nombre||s.solicitante||s.numero))+'" style="background:#f3f4f6;color:var(--cx-text-mute);border:1px solid var(--cx-border);padding:7px 12px;font-size:12px;" title="Eliminar definitivamente esta solicitud (no genera comprobante)">🗑 Eliminar</button>';
     } else if(s.estado==='Pendiente'){
       // Sebastian (29-abr-2026): si la SOL ya viene con valor desde Marketing
       // (Jefferson cargo todo), boton directo "Pagar". Si valor=0 (form
@@ -6146,10 +6146,10 @@ function renderInfluencers(){
         ? '<button class="btn inf-pagar-pendiente" data-sol="'+esc(s.numero)+'" data-val="'+valSol+'" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;border:none;border-radius:8px;box-shadow:0 2px 8px rgba(124,58,237,.3);">💸 Pagar</button>'
         : '<button class="btn inf-pagar-pendiente" data-sol="'+esc(s.numero)+'" data-val="0" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;padding:8px 14px;font-size:12px;font-weight:700;border:none;border-radius:8px;box-shadow:0 2px 8px rgba(8,145,178,.28);">✏️ Definir valor &amp; pagar</button>';
       btns = btnPagar
-          +'<button class="btn inf-rechazar-pendiente" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">✕ Rechazar</button>'
-          +'<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:11px;">🗑 Eliminar</button>';
+          +'<button class="btn inf-rechazar-pendiente" data-sol="'+esc(s.numero)+'" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca;font-size:12px;">✕ Rechazar</button>'
+          +'<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#f3f4f6;color:var(--cx-text-mute);border:1px solid var(--cx-border);font-size:11px;">🗑 Eliminar</button>';
     } else if(s.estado==='Rechazada'){
-      btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:11px;padding:3px 8px;">🗑</button>';
+      btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca;font-size:11px;padding:3px 8px;">🗑</button>';
     }
 
     // 📢 Publicación del creador (Sebastián 13-jul) · fecha real + de qué trató + link al post
@@ -6163,12 +6163,12 @@ function renderInfluencers(){
     var pubRow='';
     if(_fp || _ent){
       pubRow='<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:9px 12px;margin:8px 0;font-size:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
-        +(_fp?'<span style="background:#ede9fe;color:#5b21b6;padding:3px 10px;border-radius:6px;font-weight:700;white-space:nowrap">📢 Publicó: '+fdate(_fp)+'</span>':'<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:6px;font-weight:700">⚠ Sin fecha de publicación</span>')
-        +(_entTxt?'<span style="color:#475569">📝 '+esc(_entTxt)+'</span>':'')
-        +(_okLink?'<a href="'+esc(_linkUrl)+'" target="_blank" rel="noopener" style="margin-left:auto;color:#7c3aed;font-weight:700;text-decoration:none;white-space:nowrap">🔗 Ver post</a>':'')
+        +(_fp?'<span style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:3px 10px;border-radius:6px;font-weight:700;white-space:nowrap">📢 Publicó: '+fdate(_fp)+'</span>':'<span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:3px 10px;border-radius:6px;font-weight:700">⚠ Sin fecha de publicación</span>')
+        +(_entTxt?'<span style="color:var(--cx-text-soft)">📝 '+esc(_entTxt)+'</span>':'')
+        +(_okLink?'<a href="'+esc(_linkUrl)+'" target="_blank" rel="noopener" style="margin-left:auto;color:var(--cx-primary-text);font-weight:700;text-decoration:none;white-space:nowrap">🔗 Ver post</a>':'')
       +'</div>';
     } else {
-      pubRow='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:11px;color:#92400e">⚠ Sin publicación registrada · este pago se pidió antes de exigir la fecha. Pedile a Marketing que registre cuándo y de qué publicó.</div>';
+      pubRow='<div style="background:var(--cx-warn-pale);border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:11px;color:var(--cx-warn-text)">⚠ Sin publicación registrada · este pago se pidió antes de exigir la fecha. Pedile a Marketing que registre cuándo y de qué publicó.</div>';
     }
     // Aviso anti-doble-pago · mismo beneficiario + misma fecha de publicación ya Pagada
     var dobleWarn='';
@@ -6176,15 +6176,15 @@ function renderInfluencers(){
     if(_bnK && _fp && s.estado!=='Pagada'){
       var _yaPag=_pagadasClave[_bnK+'|'+_fp];
       if(_yaPag && _yaPag.length){
-        dobleWarn='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:9px 12px;margin:8px 0;font-size:12px;color:#991b1b;font-weight:600">⚠ Ya le pagaste a este creador por contenido del '+fdate(_fp)+' ('+esc(_yaPag.join(', '))+') · verificá que no sea doble pago.</div>';
+        dobleWarn='<div style="background:var(--cx-danger-pale);border:1px solid #fca5a5;border-radius:8px;padding:9px 12px;margin:8px 0;font-size:12px;color:var(--cx-danger-text);font-weight:600">⚠ Ya le pagaste a este creador por contenido del '+fdate(_fp)+' ('+esc(_yaPag.join(', '))+') · verificá que no sea doble pago.</div>';
       }
     }
-    return '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+borderColor+';border-radius:10px;padding:0;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:hidden;">'
+    return '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-left:4px solid '+borderColor+';border-radius:10px;padding:0;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:hidden;">'
       // Header
       +'<div style="background:'+headerBg+';padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">'
         +'<div style="display:flex;align-items:center;gap:10px;">'
           +'<div style="font-family:monospace;font-size:13px;font-weight:700;color:#374151;">'+esc(s.numero)+'</div>'
-          +(s.numero_oc?'<div style="font-family:monospace;font-size:11px;color:#7c3aed;background:#ede9fe;padding:2px 8px;border-radius:4px;">'+esc(s.numero_oc)+'</div>':'')
+          +(s.numero_oc?'<div style="font-family:monospace;font-size:11px;color:var(--cx-primary-text);background:var(--cx-primary-soft);padding:2px 8px;border-radius:4px;">'+esc(s.numero_oc)+'</div>':'')
         +'</div>'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
           +'<div style="font-size:18px;font-weight:700;color:'+borderColor+';">'+fmoney(s.valor)+'</div>'
@@ -6194,11 +6194,11 @@ function renderInfluencers(){
       +'</div>'
       // Body
       +'<div style="padding:12px 16px;">'
-        +'<div style="display:flex;gap:14px;font-size:12px;color:#64748b;margin-bottom:8px;flex-wrap:wrap;align-items:center;">'
+        +'<div style="display:flex;gap:14px;font-size:12px;color:var(--cx-text-mute);margin-bottom:8px;flex-wrap:wrap;align-items:center;">'
           +'<span>👤 '+esc(s.solicitante||'-')+'</span>'
           +'<span>📅 Solicitud de pago: '+fdate(s.fecha)+'</span>'
           +(s.fecha_requerida && String(s.fecha_requerida).trim()
-              ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-weight:600;">⏰ Pago debido: '+fdate(s.fecha_requerida)+'</span>'
+              ? '<span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:2px 8px;border-radius:6px;font-weight:600;">⏰ Pago debido: '+fdate(s.fecha_requerida)+'</span>'
               : '')
           +'<span>🏢 '+esc(s.area||'Marketing/ANIMUS')+'</span>'
         +'</div>'
@@ -6224,7 +6224,7 @@ function renderInfluencers(){
       var c=buildCard(s);
       if(s.estado==='Aprobada'){
         rank++;
-        var badge='<div style="display:inline-block;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;margin-bottom:6px;">#'+rank+' en cola</div>';
+        var badge='<div style="display:inline-block;background:var(--cx-primary);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;margin-bottom:6px;">#'+rank+' en cola</div>';
         // Insertar el badge dentro del header de la card
         c=c.replace('<div style="font-family:monospace;font-size:13px;font-weight:700;color:#374151;">',
                     badge+'<div style="font-family:monospace;font-size:13px;font-weight:700;color:#374151;">');
@@ -6240,9 +6240,9 @@ function renderInfluencers(){
       // Show a collapsible paid section below
       if(pagaAll.length>0){
         gpag.innerHTML='<details style="margin-top:20px;">'
-          +'<summary style="cursor:pointer;font-size:13px;font-weight:600;color:#059669;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;list-style:none;display:flex;align-items:center;gap:8px;">'
+          +'<summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--cx-success-text);padding:10px 14px;background:var(--cx-success-pale);border:1px solid #bbf7d0;border-radius:8px;list-style:none;display:flex;align-items:center;gap:8px;">'
           +'✅ '+pagaAll.length+' pago'+(pagaAll.length>1?'s':'')+' realizados - '+fmoney(totalPaga)
-          +' <span style="font-size:11px;color:#64748b;font-weight:400;margin-left:4px;">(click para ver)</span>'
+          +' <span style="font-size:11px;color:var(--cx-text-mute);font-weight:400;margin-left:4px;">(click para ver)</span>'
           +'</summary>'
           +'<div style="margin-top:10px;">'+pagaAll.map(buildCard).join('')+'</div>'
           +'</details>';
@@ -6448,7 +6448,7 @@ function renderSolicitudes(){
   var pills='<span class="pill">'+list.length+' solicitudes</span>';
   if(pend) pills+='<span class="pill y">Pendiente: '+pend+'</span>';
   if(apro) pills+='<span class="pill g">Aprobada: '+apro+'</span>';
-  if(rech) pills+='<span class="pill" style="background:#fee2e2;color:#991b1b;">Rechazada: '+rech+'</span>';
+  if(rech) pills+='<span class="pill" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);">Rechazada: '+rech+'</span>';
   if(paga) pills+='<span class="pill" style="background:#e0f2fe;color:#075985;">Pagada: '+paga+'</span>';
   document.getElementById('pills-solic').innerHTML=pills;
 
@@ -6479,19 +6479,19 @@ function renderSolicitudes(){
     return '<div class="card" data-num="'+esc(s.numero)+'" style="border-left:3px solid '+urgC+'">'
       +'<div class="ch"><div style="min-width:0">'
         +'<div class="cnum" style="font-family:monospace;font-size:13px">'+esc(s.numero)+ocBadge+'</div>'
-        +'<div class="cprov" style="margin-top:3px">'+esc(s.solicitante||'-')+' <span style="color:#a8a29e;font-weight:500">&middot; '+esc(s.area||'-')+'</span></div>'
+        +'<div class="cprov" style="margin-top:3px">'+esc(s.solicitante||'-')+' <span style="color:var(--cx-text-faint);font-weight:500">&middot; '+esc(s.area||'-')+'</span></div>'
       +'</div>'
       +'<span style="background:'+stB+';color:'+stF+';padding:3px 11px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap">'+s.estado+'</span></div>'
       +'<div class="cmeta" style="align-items:center">'
         +'<span>'+fdate(s.fecha)+'</span>'
-        +'<span style="color:#cbd5e1">&bull;</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
-        +'<span style="color:#cbd5e1">&bull;</span><span>'+esc(s.categoria||'-')+'</span>'
+        +'<span style="color:var(--cx-border)">&bull;</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
+        +'<span style="color:var(--cx-border)">&bull;</span><span>'+esc(s.categoria||'-')+'</span>'
         +'<span style="margin-left:auto;background:'+urgC+'1a;color:'+urgC+';padding:2px 10px;border-radius:999px;font-weight:700;font-size:10px">'+esc(urg)+'</span>'
       +'</div>'
       +(s.observaciones?'<div class="cobs">'+esc((s.observaciones||'').substring(0,100))+'</div>':'')
       +'<div class="acts" style="gap:6px;margin-top:4px">'
         +'<button data-act="sdet" data-sol="'+esc(s.numero)+'" style="flex:1;background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">&#128203; Ver &amp; Gestionar</button>'
-        +'<button data-act="del-sol" data-sol="'+esc(s.numero)+'" title="Eliminar" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:7px 11px;font-size:12px;cursor:pointer">&#x1F5D1;</button>'
+        +'<button data-act="del-sol" data-sol="'+esc(s.numero)+'" title="Eliminar" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca;border-radius:8px;padding:7px 11px;font-size:12px;cursor:pointer">&#x1F5D1;</button>'
       +'</div>'
       +'</div>';
   }).join('');
@@ -6543,7 +6543,7 @@ async function renderSolicitudesAgrupadas(){
   var catMap = {'svc':'Servicios','adm':'Administrativo','inf':'Infraestructura'};
   var catDB = catMap[catUI] || '';
 
-  grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:#94a3b8;">Cargando agrupamiento...</div>';
+  grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:var(--cx-text-faint);">Cargando agrupamiento...</div>';
   try{
     // FIX 13-jul · sin &fuente=usuarios la vista agrupada listaba TAMBIÉN las SOLs
     // de planta (Materia Prima/Empaque) → violaba las 3 fuentes mutuamente excluyentes.
@@ -6551,7 +6551,7 @@ async function renderSolicitudesAgrupadas(){
     if(catDB) qs += '&categoria='+encodeURIComponent(catDB);
     var r = await fetch('/api/compras/solicitudes-agrupadas-por-proveedor'+qs);
     if(!r.ok){
-      grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:#dc2626;">Error '+r.status+' cargando agrupamiento</div>';
+      grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:var(--cx-danger-text);">Error '+r.status+' cargando agrupamiento</div>';
       return;
     }
     var d = await r.json();
@@ -6562,10 +6562,10 @@ async function renderSolicitudesAgrupadas(){
     }
     var html = '';
     // Header resumen
-    html += '<div style="background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;">'+
-      '<div><span style="font-size:24px;font-weight:800;color:#0e7490;">'+d.total_grupos+'</span> <span style="font-size:11px;color:#78716c;">proveedores</span></div>'+
-      '<div><span style="font-size:24px;font-weight:800;color:#1c1917;">'+d.total_solicitudes+'</span> <span style="font-size:11px;color:#78716c;">solicitudes pendientes</span></div>'+
-      '<div style="font-size:11px;color:#78716c;flex:1;text-align:right;">Click "Crear OC con todos" para procesar todas las MPs de un proveedor en una sola OC consolidada.</div>'+
+    html += '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;">'+
+      '<div><span style="font-size:24px;font-weight:800;color:var(--cx-info-text);">'+d.total_grupos+'</span> <span style="font-size:11px;color:var(--cx-text-mute);">proveedores</span></div>'+
+      '<div><span style="font-size:24px;font-weight:800;color:var(--cx-text);">'+d.total_solicitudes+'</span> <span style="font-size:11px;color:var(--cx-text-mute);">solicitudes pendientes</span></div>'+
+      '<div style="font-size:11px;color:var(--cx-text-mute);flex:1;text-align:right;">Click "Crear OC con todos" para procesar todas las MPs de un proveedor en una sola OC consolidada.</div>'+
     '</div>';
     // Render grupos (con proveedor)
     d.grupos.forEach(function(g, gi){
@@ -6573,17 +6573,17 @@ async function renderSolicitudesAgrupadas(){
     });
     // Render sin_proveedor (cards individuales agrupadas en un bloque)
     if((d.sin_proveedor||[]).length){
-      html += '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:12px 16px;margin-top:8px;">'+
-        '<div style="font-weight:700;color:#9a3412;font-size:14px;margin-bottom:8px;">'+
+      html += '<div style="background:var(--cx-warn-pale);border:1px solid #fdba74;border-radius:10px;padding:12px 16px;margin-top:8px;">'+
+        '<div style="font-weight:700;color:var(--cx-warn-text);font-size:14px;margin-bottom:8px;">'+
           '&#x26A0;&#xFE0F; '+d.sin_proveedor.length+' solicitudes sin proveedor sugerido o con proveedores mezclados'+
         '</div>'+
-        '<div style="font-size:11px;color:#9a3412;margin-bottom:10px;">Estas requieren gestion manual: clic en "Ver & Gestionar" para asignar proveedor.</div>'+
+        '<div style="font-size:11px;color:var(--cx-warn-text);margin-bottom:10px;">Estas requieren gestion manual: clic en "Ver & Gestionar" para asignar proveedor.</div>'+
         '<div style="display:flex;flex-wrap:wrap;gap:8px;">'+
           d.sin_proveedor.map(function(s){
             // Sprint Compras N2 · 21-may-2026 · botón Split visible al lado
-            return '<div style="display:inline-flex;gap:4px;align-items:center;background:#fff;border:1px solid #fdba74;border-radius:6px;padding:4px 8px;font-size:11px;">'+
+            return '<div style="display:inline-flex;gap:4px;align-items:center;background:var(--cx-card);border:1px solid #fdba74;border-radius:6px;padding:4px 8px;font-size:11px;">'+
               '<span data-act="sdet" data-sol="'+esc(s.numero)+'" style="cursor:pointer;font-family:monospace" title="'+esc(s.urgencia||'Normal')+'">'+esc(s.numero)+' · '+esc((s.area||'-').substring(0,20))+'</span>'+
-              '<button data-act="split-sol" data-sol="'+esc(s.numero)+'" style="background:#9a3412;color:#fff;border:none;padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700" title="Dividir esta SOL en N hijas, una por proveedor distinto">✂ Split</button>'+
+              '<button data-act="split-sol" data-sol="'+esc(s.numero)+'" style="background:var(--cx-accent-dark);color:#fff;border:none;padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700" title="Dividir esta SOL en N hijas, una por proveedor distinto">✂ Split</button>'+
             '</div>';
           }).join(' ')+
         '</div>'+
@@ -6591,7 +6591,7 @@ async function renderSolicitudesAgrupadas(){
     }
     grid.innerHTML = html;
   }catch(e){
-    grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:#dc2626;">Error red: '+esc(e.message)+'</div>';
+    grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:var(--cx-danger-text);">Error red: '+esc(e.message)+'</div>';
   }
 }
 
@@ -6599,7 +6599,7 @@ function _renderGrupoCard(g, gi){
   var urgColor = {'Critico':'#dc2626','Urgente':'#d97706','Alta':'#dc2626','Media':'#d97706','Normal':'#16a34a'}[g.urgencia_max] || '#78716c';
   var totalGr = 0;
   (g.items_consolidados||[]).forEach(function(it){ totalGr += parseFloat(it.cantidad_g||0); });
-  var html = '<div style="background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:0;margin-bottom:10px;overflow:hidden;">'+
+  var html = '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:0;margin-bottom:10px;overflow:hidden;">'+
     // Header
     '<div style="background:linear-gradient(90deg,#0e7490,#0891b2);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">'+
       '<div style="flex:1;">'+
@@ -6611,30 +6611,30 @@ function _renderGrupoCard(g, gi){
         '</div>'+
       '</div>'+
       '<div style="background:'+urgColor+';color:#fff;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;">'+esc(g.urgencia_max)+'</div>'+
-      '<button onclick="abrirCrearOCDesdeGrupo('+gi+')" style="background:#fff;color:#0e7490;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">&#x1F6D2; Crear OC con todos</button>'+
+      '<button onclick="abrirCrearOCDesdeGrupo('+gi+')" style="background:var(--cx-card);color:var(--cx-info-text);border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">&#x1F6D2; Crear OC con todos</button>'+
       '<button onclick="abrirPedirCotizacion('+gi+')" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer" title="Pedir 3 cotizaciones a los top proveedores históricos · IA elige los mejores">&#x1F4AC; Pedir cotización</button>'+
       '<button onclick="toggleGrupo('+gi+')" id="btnTg'+gi+'" style="background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:13px;font-weight:700;" title="Mostrar/ocultar items">&#x25BC;</button>'+
     '</div>'+
     // Body - items consolidados (oculto por defecto)
     '<div id="grpBody'+gi+'" style="display:none;padding:10px 16px;">'+
-      '<div style="font-size:11px;color:#78716c;font-weight:600;margin-bottom:6px;">MATERIAS PRIMAS A COMPRAR (consolidadas):</div>'+
+      '<div style="font-size:11px;color:var(--cx-text-mute);font-weight:600;margin-bottom:6px;">MATERIAS PRIMAS A COMPRAR (consolidadas):</div>'+
       '<table style="width:100%;font-size:12px;border-collapse:collapse;">'+
         '<thead><tr style="background:#f5f4f2;"><th style="text-align:left;padding:6px 8px;">Codigo</th><th style="text-align:left;padding:6px 8px;">Nombre</th><th style="text-align:right;padding:6px 8px;">Cantidad</th><th style="text-align:right;padding:6px 8px;">Valor est.</th><th style="text-align:center;padding:6px 8px;">Solicitudes</th></tr></thead>'+
         '<tbody>'+
         (g.items_consolidados||[]).map(function(it){
           var origenes = (it.solicitudes_origen||[]);
           var origStr = origenes.length<=2 ? origenes.join(', ') : origenes.length+' SOLs';
-          return '<tr style="border-top:1px solid #e7e5e4;">'+
-            '<td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#475569;">'+esc(it.codigo_mp||'-')+'</td>'+
+          return '<tr style="border-top:1px solid var(--cx-border);">'+
+            '<td style="padding:6px 8px;font-family:monospace;font-size:11px;color:var(--cx-text-soft);">'+esc(it.codigo_mp||'-')+'</td>'+
             '<td style="padding:6px 8px;">'+esc((it.nombre_mp||'').substring(0,50))+'</td>'+
             '<td style="padding:6px 8px;text-align:right;font-weight:600;">'+fmt(it.cantidad_g)+' g</td>'+
-            '<td style="padding:6px 8px;text-align:right;color:#78716c;">'+(it.valor_estimado>0?fmt(it.valor_estimado):'-')+'</td>'+
-            '<td style="padding:6px 8px;text-align:center;font-size:10px;color:#78716c;font-family:monospace;" title="'+esc((it.solicitudes_origen||[]).join(', '))+'">'+esc(origStr)+'</td>'+
+            '<td style="padding:6px 8px;text-align:right;color:var(--cx-text-mute);">'+(it.valor_estimado>0?fmt(it.valor_estimado):'-')+'</td>'+
+            '<td style="padding:6px 8px;text-align:center;font-size:10px;color:var(--cx-text-mute);font-family:monospace;" title="'+esc((it.solicitudes_origen||[]).join(', '))+'">'+esc(origStr)+'</td>'+
           '</tr>';
         }).join('')+
         '</tbody>'+
       '</table>'+
-      '<div style="font-size:11px;color:#78716c;margin-top:8px;font-style:italic;">Solicitudes incluidas: '+
+      '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:8px;font-style:italic;">Solicitudes incluidas: '+
         (g.solicitudes||[]).map(function(s){ return esc(s.numero); }).join(', ')+
       '</div>'+
     '</div>'+
@@ -6669,18 +6669,18 @@ async function abrirScorecardProveedor(nombre){
   var m = document.createElement('div');
   m.id = 'm-scorecard';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-  m.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto">'+
+  m.innerHTML = '<div style="background:var(--cx-card);border-radius:14px;padding:24px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
-      '<h3 style="margin:0;color:#7c3aed">🎯 Scorecard · '+esc(nombre)+'</h3>'+
+      '<h3 style="margin:0;color:var(--cx-primary-text)">🎯 Scorecard · '+esc(nombre)+'</h3>'+
       '<button id="sc-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div id="sc-body" style="text-align:center;color:#94a3b8;padding:30px">Calculando métricas live…</div>'+
+    '<div id="sc-body" style="text-align:center;color:var(--cx-text-faint);padding:30px">Calculando métricas live…</div>'+
     '</div>';
   document.body.appendChild(m);
   document.getElementById('sc-close').onclick = function(){ m.remove(); };
   m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
   try{
     var r = await fetch('/api/compras/proveedor-scorecard/'+encodeURIComponent(nombre));
-    if(!r.ok){ document.getElementById('sc-body').innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+r.status+'</div>'; return; }
+    if(!r.ok){ document.getElementById('sc-body').innerHTML = '<div style="color:var(--cx-danger-text);padding:20px">Error: '+r.status+'</div>'; return; }
     var d = await r.json();
     var col = d.score_color === 'verde' ? '#16a34a' : (d.score_color === 'amarillo' ? '#ca8a04' : '#dc2626');
     var html = '';
@@ -6704,20 +6704,20 @@ async function abrirScorecardProveedor(nombre){
     ];
     metricas.forEach(function(m){
       var bg = m.col ? m.col : '#475569';
-      html += '<div style="background:#f8fafc;border-left:4px solid '+bg+';padding:10px 12px;border-radius:6px">';
-      html += '<div style="font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700">'+m.l+'</div>';
-      html += '<div style="font-size:1.4em;font-weight:800;color:#0f172a;margin-top:2px">'+m.v+'<span style="font-size:.65em;color:#64748b">'+(m.suf||'')+'</span></div>';
-      if(m.nota) html += '<div style="font-size:9px;color:#94a3b8;margin-top:2px">'+m.nota+'</div>';
+      html += '<div style="background:var(--cx-bg-alt);border-left:4px solid '+bg+';padding:10px 12px;border-radius:6px">';
+      html += '<div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;font-weight:700">'+m.l+'</div>';
+      html += '<div style="font-size:1.4em;font-weight:800;color:var(--cx-text);margin-top:2px">'+m.v+'<span style="font-size:.65em;color:var(--cx-text-mute)">'+(m.suf||'')+'</span></div>';
+      if(m.nota) html += '<div style="font-size:9px;color:var(--cx-text-faint);margin-top:2px">'+m.nota+'</div>';
       html += '</div>';
     });
     html += '</div>';
     // Ponderación
-    html += '<div style="background:#f1f5f9;padding:10px 14px;border-radius:6px;font-size:11px;color:#475569">';
+    html += '<div style="background:var(--cx-border-soft);padding:10px 14px;border-radius:6px;font-size:11px;color:var(--cx-text-soft)">';
     html += '<b>Ponderación score:</b> Cumplimiento 25% · On-time 20% · Sin rechazo QC 25% · Sin discrepancia 15% · Precio estable 15%';
     html += '</div>';
     document.getElementById('sc-body').innerHTML = html;
   }catch(e){
-    document.getElementById('sc-body').innerHTML = '<div style="color:#dc2626;padding:20px">Error red: '+esc(e.message)+'</div>';
+    document.getElementById('sc-body').innerHTML = '<div style="color:var(--cx-danger-text);padding:20px">Error red: '+esc(e.message)+'</div>';
   }
 }
 
@@ -6728,30 +6728,30 @@ async function abrirProvDuplicados(){
   var m = document.createElement('div');
   m.id = 'm-prov-dup';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#dc2626">🔗 Detector de proveedores duplicados</h3><button id="dup-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div style="font-size:12px;color:#64748b;margin-bottom:14px">Agrupa proveedores con el mismo nombre normalizado (mayúsculas + espacios). El destino sugerido es el que más datos tiene (NIT, banco, contacto).</div>'+
-    '<div id="dup-body" style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>'+
+  m.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;padding:20px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:var(--cx-danger-text)">🔗 Detector de proveedores duplicados</h3><button id="dup-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:14px">Agrupa proveedores con el mismo nombre normalizado (mayúsculas + espacios). El destino sugerido es el que más datos tiene (NIT, banco, contacto).</div>'+
+    '<div id="dup-body" style="text-align:center;color:var(--cx-text-faint);padding:30px">Cargando…</div>'+
   '</div>';
   document.body.appendChild(m);
   document.getElementById('dup-close').onclick = function(){ m.remove(); };
   try{
     var r = await fetch('/api/admin/proveedores-duplicados');
     var d = await r.json();
-    if(!r.ok){ document.getElementById('dup-body').innerHTML = '<span style="color:#dc2626">Error: '+esc(d.error||r.status)+'</span>'; return; }
+    if(!r.ok){ document.getElementById('dup-body').innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+esc(d.error||r.status)+'</span>'; return; }
     if(!d.grupos || !d.grupos.length){
-      document.getElementById('dup-body').innerHTML = '<div style="padding:30px;color:#15803d;font-weight:700">✓ Sin duplicados · catálogo limpio</div>';
+      document.getElementById('dup-body').innerHTML = '<div style="padding:30px;color:var(--cx-success-text);font-weight:700">✓ Sin duplicados · catálogo limpio</div>';
       return;
     }
-    var html = '<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400e"><b>'+d.total_grupos+'</b> grupos duplicados · <b>'+d.total_huerfanos+'</b> proveedores huérfanos para fusionar</div>';
+    var html = '<div style="background:var(--cx-warn-pale);border:1px solid var(--cx-warn);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--cx-warn-text)"><b>'+d.total_grupos+'</b> grupos duplicados · <b>'+d.total_huerfanos+'</b> proveedores huérfanos para fusionar</div>';
     d.grupos.forEach(function(g, gi){
-      html += '<div style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px;padding:12px 14px;background:#fafafa">';
-      html += '<div style="font-weight:700;color:#dc2626;margin-bottom:8px">'+esc(g.key_normalizada)+' <span style="font-size:11px;color:#64748b;font-weight:400">('+g.count+' registros)</span></div>';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:5px 8px">Nombre</th><th style="text-align:left;padding:5px 8px">NIT</th><th style="text-align:left;padding:5px 8px">Banco</th><th style="text-align:left;padding:5px 8px">Contacto</th><th style="text-align:center;padding:5px 8px">Score</th><th style="text-align:center;padding:5px 8px">Acción</th></tr></thead><tbody>';
+      html += '<div style="border:1px solid var(--cx-border);border-radius:8px;margin-bottom:12px;padding:12px 14px;background:#fafafa">';
+      html += '<div style="font-weight:700;color:var(--cx-danger-text);margin-bottom:8px">'+esc(g.key_normalizada)+' <span style="font-size:11px;color:var(--cx-text-mute);font-weight:400">('+g.count+' registros)</span></div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--cx-border-soft)"><th style="text-align:left;padding:5px 8px">Nombre</th><th style="text-align:left;padding:5px 8px">NIT</th><th style="text-align:left;padding:5px 8px">Banco</th><th style="text-align:left;padding:5px 8px">Contacto</th><th style="text-align:center;padding:5px 8px">Score</th><th style="text-align:center;padding:5px 8px">Acción</th></tr></thead><tbody>';
       g.proveedores.forEach(function(p){
         var bg = p.es_destino_sugerido ? '#dcfce7' : '#fff';
-        var badge = p.es_destino_sugerido ? '<span style="background:#16a34a;color:#fff;font-size:10px;padding:2px 8px;border-radius:6px;font-weight:700">DESTINO</span>' : '';
-        html += '<tr style="background:'+bg+';border-bottom:1px solid #f1f5f9">';
+        var badge = p.es_destino_sugerido ? '<span style="background:var(--cx-success);color:#fff;font-size:10px;padding:2px 8px;border-radius:6px;font-weight:700">DESTINO</span>' : '';
+        html += '<tr style="background:'+bg+';border-bottom:1px solid var(--cx-border-soft)">';
         html += '<td style="padding:6px 8px;font-weight:600">'+esc(p.nombre)+' '+badge+'</td>';
         html += '<td style="padding:6px 8px;font-family:monospace">'+esc(p.nit||'-')+'</td>';
         html += '<td style="padding:6px 8px;font-size:11px">'+esc(p.banco||'-')+'</td>';
@@ -6759,7 +6759,7 @@ async function abrirProvDuplicados(){
         html += '<td style="padding:6px 8px;text-align:center;font-weight:700">'+p.score_completitud+'</td>';
         html += '<td style="padding:6px 8px;text-align:center">';
         if(!p.es_destino_sugerido){
-          html += '<button onclick="_provFusionar(&quot;'+esc(g.destino_sugerido).replace(/"/g,'&quot;')+'&quot;,&quot;'+esc(p.nombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#dc2626;color:#fff;border:0;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">→ Fusionar a destino</button>';
+          html += '<button onclick="_provFusionar(&quot;'+esc(g.destino_sugerido).replace(/"/g,'&quot;')+'&quot;,&quot;'+esc(p.nombre).replace(/"/g,'&quot;')+'&quot;)" style="background:var(--cx-danger);color:#fff;border:0;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">→ Fusionar a destino</button>';
         }
         html += '</td></tr>';
       });
@@ -6767,7 +6767,7 @@ async function abrirProvDuplicados(){
     });
     document.getElementById('dup-body').innerHTML = html;
   }catch(e){
-    document.getElementById('dup-body').innerHTML = '<span style="color:#dc2626">Error red: '+e.message+'</span>';
+    document.getElementById('dup-body').innerHTML = '<span style="color:var(--cx-danger-text)">Error red: '+e.message+'</span>';
   }
 }
 
@@ -6799,9 +6799,9 @@ async function abrirROIProveedores(){
   var m = document.createElement('div');
   m.id = 'm-roi-prov';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:880px;width:100%;max-height:90vh;overflow-y:auto">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0e7490">📊 ROI Proveedores · últimos 12 meses</h3><button id="roi-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div id="roi-body" style="text-align:center;color:#94a3b8;padding:20px">Cargando…</div>'+
+  m.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;padding:20px;max-width:880px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:var(--cx-info-text)">📊 ROI Proveedores · últimos 12 meses</h3><button id="roi-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div id="roi-body" style="text-align:center;color:var(--cx-text-faint);padding:20px">Cargando…</div>'+
     '</div>';
   document.body.appendChild(m);
   document.getElementById('roi-close').onclick = function(){ m.remove(); };
@@ -6809,10 +6809,10 @@ async function abrirROIProveedores(){
   try{
     var r = await fetch('/api/compras/roi-proveedores');
     var d = await r.json();
-    if(!r.ok){ document.getElementById('roi-body').innerHTML = '<div style="color:#dc2626">Error: '+(d.error||r.status)+'</div>'; return; }
+    if(!r.ok){ document.getElementById('roi-body').innerHTML = '<div style="color:var(--cx-danger-text)">Error: '+(d.error||r.status)+'</div>'; return; }
     var items = d.proveedores || [];
     if(!items.length){ document.getElementById('roi-body').innerHTML = '<div>Sin datos en 12 meses</div>'; return; }
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#0f172a;color:#fff">'+
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--cx-text);color:#fff">'+
       '<th style="padding:7px;text-align:left">Proveedor</th>'+
       '<th style="padding:7px;text-align:right">OCs 12m</th>'+
       '<th style="padding:7px;text-align:right">Monto 12m</th>'+
@@ -6823,20 +6823,20 @@ async function abrirROIProveedores(){
     '</tr></thead><tbody>';
     items.forEach(function(p){
       var colCump = p.cumplimiento_pct >= 80 ? '#16a34a' : (p.cumplimiento_pct >= 50 ? '#ca8a04' : '#dc2626');
-      html += '<tr style="border-bottom:1px solid #e2e8f0">'+
+      html += '<tr style="border-bottom:1px solid var(--cx-border)">'+
         '<td style="padding:6px;font-weight:600">'+esc(p.proveedor)+'</td>'+
         '<td style="padding:6px;text-align:right">'+p.ocs_12m+'</td>'+
         '<td style="padding:6px;text-align:right;font-weight:700">'+fmt(p.monto_12m.toFixed(0))+'</td>'+
         '<td style="padding:6px;text-align:right">'+p.pagadas+'</td>'+
         '<td style="padding:6px;text-align:right">'+p.recibidas+'</td>'+
         '<td style="padding:6px;text-align:right;color:'+colCump+';font-weight:700">'+p.cumplimiento_pct+'%</td>'+
-        '<td style="padding:6px;font-size:11px;color:#64748b">'+esc((p.ultima_compra||'').substring(0,10))+'</td>'+
+        '<td style="padding:6px;font-size:11px;color:var(--cx-text-mute)">'+esc((p.ultima_compra||'').substring(0,10))+'</td>'+
       '</tr>';
     });
     html += '</tbody></table>';
-    html += '<div style="margin-top:10px;font-size:11px;color:#64748b">Verde >=80% · Ámbar 50-79% · Rojo <50% cumplimiento (recibidas/total)</div>';
+    html += '<div style="margin-top:10px;font-size:11px;color:var(--cx-text-mute)">Verde >=80% · Ámbar 50-79% · Rojo <50% cumplimiento (recibidas/total)</div>';
     document.getElementById('roi-body').innerHTML = html;
-  }catch(e){ document.getElementById('roi-body').innerHTML = '<div style="color:#dc2626">Error red: '+e.message+'</div>'; }
+  }catch(e){ document.getElementById('roi-body').innerHTML = '<div style="color:var(--cx-danger-text)">Error red: '+e.message+'</div>'; }
 }
 
 // Gap #3 · 21-may-2026 · OCR factura proveedor con Claude Vision
@@ -6845,12 +6845,12 @@ function abrirOCRFactura(){
   var m = document.createElement('div');
   m.id = 'm-ocr-fact';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:#7c3aed">📤 Subir factura del proveedor</h3>'+
+  m.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;padding:20px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:var(--cx-primary-text)">📤 Subir factura del proveedor</h3>'+
     '<button id="ocr-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div style="background:#faf5ff;border:1px solid #7c3aed;padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#5b21b6">La IA Vision (Claude 4.6) extraerá automáticamente: proveedor · NIT · número factura · items · totales · IVA. Después sugiere match con OC pendiente.</div>'+
+    '<div style="background:#faf5ff;border:1px solid var(--cx-primary);padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--cx-primary-text)">La IA Vision (Claude 4.6) extraerá automáticamente: proveedor · NIT · número factura · items · totales · IVA. Después sugiere match con OC pendiente.</div>'+
     '<input type="file" id="ocr-file" accept="image/jpeg,image/png" style="margin-bottom:12px">'+
-    '<button id="ocr-process" style="background:#7c3aed;color:#fff;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">🔍 Procesar factura</button>'+
+    '<button id="ocr-process" style="background:var(--cx-primary);color:#fff;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">🔍 Procesar factura</button>'+
     '<div id="ocr-result" style="margin-top:16px"></div>'+
     '</div>';
   document.body.appendChild(m);
@@ -6863,7 +6863,7 @@ function abrirOCRFactura(){
     if(file.size > 5 * 1024 * 1024){ alert('Imagen muy grande · max 5MB'); return; }
     var btn = this; btn.disabled = true; btn.textContent = 'Procesando…';
     var resultDiv = document.getElementById('ocr-result');
-    resultDiv.innerHTML = '<div style="text-align:center;padding:20px;color:#7c3aed">⏳ La IA está leyendo la factura · ~15-30s...</div>';
+    resultDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--cx-primary-text)">⏳ La IA está leyendo la factura · ~15-30s...</div>';
     var reader = new FileReader();
     reader.onload = async function(e){
       var b64 = e.target.result.split(',')[1];
@@ -6874,7 +6874,7 @@ function abrirOCRFactura(){
         }));
         var d = await r.json();
         if(!r.ok){
-          resultDiv.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:12px;border-radius:6px">Error: '+esc(d.error||r.status)+'</div>';
+          resultDiv.innerHTML = '<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:12px;border-radius:6px">Error: '+esc(d.error||r.status)+'</div>';
           btn.disabled = false; btn.textContent = '🔍 Procesar factura';
           return;
         }
@@ -6887,39 +6887,39 @@ function abrirOCRFactura(){
         else if(conf >= 50){ confBg='#fef3c7'; confColor='#78350f'; confLabel='⚠ REVISAR MANUAL · datos pueden estar incompletos'; }
         else{ confBg='#fee2e2'; confColor='#991b1b'; confLabel='🚨 BAJA CONFIANZA · validar TODO antes de usar'; }
         var html = '<div style="background:'+confBg+';color:'+confColor+';padding:10px;border-radius:6px;margin-bottom:12px;font-weight:700">'+confLabel+' · confianza '+conf+'%</div>';
-        html += '<div style="background:#f8fafc;padding:12px;border-radius:6px;margin-bottom:12px"><b>Datos extraídos:</b>';
+        html += '<div style="background:var(--cx-bg-alt);padding:12px;border-radius:6px;margin-bottom:12px"><b>Datos extraídos:</b>';
         html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px;font-size:12px">';
         html += '<div><b>Proveedor:</b><br>'+esc(f.proveedor||'-')+'</div>';
         html += '<div><b>NIT:</b><br>'+esc(f.nit||'-')+'</div>';
-        html += '<div><b>N° Factura:</b><br><span style="font-family:monospace;color:#7c3aed;font-weight:700">'+esc(f.numero_factura||'-')+'</span></div>';
+        html += '<div><b>N° Factura:</b><br><span style="font-family:monospace;color:var(--cx-primary-text);font-weight:700">'+esc(f.numero_factura||'-')+'</span></div>';
         html += '<div><b>Fecha:</b><br>'+esc(f.fecha_emision||'-')+'</div>';
         html += '<div><b>Subtotal:</b><br>'+fmt((f.subtotal||0).toFixed(0))+'</div>';
         html += '<div><b>IVA:</b><br>'+fmt((f.iva||0).toFixed(0))+'</div>';
-        html += '<div style="grid-column:span 2"><b>Total:</b><br><span style="font-size:20px;font-weight:800;color:#7c3aed">'+fmt((f.total||0).toFixed(0))+'</span></div>';
+        html += '<div style="grid-column:span 2"><b>Total:</b><br><span style="font-size:20px;font-weight:800;color:var(--cx-primary-text)">'+fmt((f.total||0).toFixed(0))+'</span></div>';
         html += '</div></div>';
         if((f.items||[]).length){
-          html += '<div style="background:#fff;border:1px solid #e2e8f0;padding:10px;border-radius:6px;margin-bottom:12px"><b style="font-size:12px">Items ('+f.items.length+'):</b>';
+          html += '<div style="background:var(--cx-card);border:1px solid var(--cx-border);padding:10px;border-radius:6px;margin-bottom:12px"><b style="font-size:12px">Items ('+f.items.length+'):</b>';
           html += '<table style="width:100%;font-size:11px;margin-top:6px;border-collapse:collapse">';
-          html += '<thead><tr style="background:#f1f5f9"><th style="padding:4px 6px;text-align:left">Desc</th><th style="padding:4px 6px;text-align:right">Cant</th><th style="padding:4px 6px;text-align:right">$ unit</th><th style="padding:4px 6px;text-align:right">Sub</th></tr></thead><tbody>';
+          html += '<thead><tr style="background:var(--cx-border-soft)"><th style="padding:4px 6px;text-align:left">Desc</th><th style="padding:4px 6px;text-align:right">Cant</th><th style="padding:4px 6px;text-align:right">$ unit</th><th style="padding:4px 6px;text-align:right">Sub</th></tr></thead><tbody>';
           f.items.forEach(function(it){
             html += '<tr><td style="padding:3px 6px">'+esc(it.descripcion||'')+'</td><td style="padding:3px 6px;text-align:right">'+(it.cantidad||0)+' '+esc(it.unidad||'')+'</td><td style="padding:3px 6px;text-align:right">'+fmt((it.precio_unitario||0).toFixed(0))+'</td><td style="padding:3px 6px;text-align:right;font-weight:700">'+fmt((it.subtotal||0).toFixed(0))+'</td></tr>';
           });
           html += '</tbody></table></div>';
         }
         if(ocs.length){
-          html += '<div style="background:#fef3c7;border:1px solid #ca8a04;padding:12px;border-radius:6px"><b style="color:#78350f;font-size:13px">🔗 OCs pendientes del mismo proveedor:</b>';
+          html += '<div style="background:var(--cx-warn-pale);border:1px solid var(--cx-accent-dark);padding:12px;border-radius:6px"><b style="color:var(--cx-warn-text);font-size:13px">🔗 OCs pendientes del mismo proveedor:</b>';
           ocs.forEach(function(oc){
             var colMatch = oc.match_score === 'alto' ? '#16a34a' : (oc.match_score === 'medio' ? '#ca8a04' : '#94a3b8');
-            html += '<div style="background:#fff;border-left:3px solid '+colMatch+';padding:8px 10px;margin-top:6px;display:flex;justify-content:space-between;align-items:center"><div><b style="font-family:monospace">'+esc(oc.numero_oc)+'</b> · '+esc(oc.proveedor)+' · estado '+esc(oc.estado)+'<br><span style="font-size:10px;color:#94a3b8">OC: '+fmt(oc.valor_total.toFixed(0))+' vs Factura: '+fmt((f.total||0).toFixed(0))+' · Δ '+oc.delta_vs_factura_pct+'%</span></div><span style="background:'+colMatch+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">match '+oc.match_score+'</span></div>';
+            html += '<div style="background:var(--cx-card);border-left:3px solid '+colMatch+';padding:8px 10px;margin-top:6px;display:flex;justify-content:space-between;align-items:center"><div><b style="font-family:monospace">'+esc(oc.numero_oc)+'</b> · '+esc(oc.proveedor)+' · estado '+esc(oc.estado)+'<br><span style="font-size:10px;color:var(--cx-text-faint)">OC: '+fmt(oc.valor_total.toFixed(0))+' vs Factura: '+fmt((f.total||0).toFixed(0))+' · Δ '+oc.delta_vs_factura_pct+'%</span></div><span style="background:'+colMatch+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">match '+oc.match_score+'</span></div>';
           });
           html += '</div>';
         } else {
-          html += '<div style="background:#fef2f2;color:#991b1b;padding:10px;border-radius:6px;font-size:12px">⚠ No se encontraron OCs pendientes con el proveedor "'+esc(f.proveedor||'')+'" · revisar manualmente.</div>';
+          html += '<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:10px;border-radius:6px;font-size:12px">⚠ No se encontraron OCs pendientes con el proveedor "'+esc(f.proveedor||'')+'" · revisar manualmente.</div>';
         }
         resultDiv.innerHTML = html;
         btn.disabled = false; btn.textContent = '🔍 Procesar otra factura';
       }catch(e){
-        resultDiv.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:12px;border-radius:6px">Error red: '+esc(e.message)+'</div>';
+        resultDiv.innerHTML = '<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:12px;border-radius:6px">Error red: '+esc(e.message)+'</div>';
         btn.disabled = false; btn.textContent = '🔍 Procesar factura';
       }
     };
@@ -6958,19 +6958,19 @@ async function abrirPedirCotizacion(gi){
   var m = document.createElement('div');
   m.id = 'm-cot-preview';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:600px;width:100%;max-height:90vh;overflow-y:auto">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:#0e7490">💬 Pedir cotización · 3 proveedores</h3><button id="cot-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div style="background:#f0f9ff;border:1px solid #0891b2;padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#0c4a6e">La IA detecta los top 3 proveedores históricos que han vendido los MPs del grupo · creará una ronda y vos enviás manualmente (email/WhatsApp) y registrás las respuestas cuando vuelvan.</div>'+
-    '<div style="background:#f8fafc;padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px">'+
-      '<b style="color:#475569">Grupo: '+esc(g.proveedor)+'</b><br>'+
+  m.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;padding:20px;max-width:600px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:var(--cx-info-text)">💬 Pedir cotización · 3 proveedores</h3><button id="cot-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div style="background:#f0f9ff;border:1px solid var(--cx-info);padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--cx-info-text)">La IA detecta los top 3 proveedores históricos que han vendido los MPs del grupo · creará una ronda y vos enviás manualmente (email/WhatsApp) y registrás las respuestas cuando vuelvan.</div>'+
+    '<div style="background:var(--cx-bg-alt);padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px">'+
+      '<b style="color:var(--cx-text-soft)">Grupo: '+esc(g.proveedor)+'</b><br>'+
       g.solicitudes_count+' SOLs · '+g.items_count+' MPs · '+items.length+' productos'+
     '</div>'+
-    '<div><label style="font-size:12px;font-weight:600;color:#475569">Observaciones para la cotización (opcional)</label>'+
-    '<textarea id="cot-obs" rows="2" placeholder="Ej: necesito entrega antes del 15-jun · piden volumen X" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px;font-size:12px"></textarea></div>'+
+    '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft)">Observaciones para la cotización (opcional)</label>'+
+    '<textarea id="cot-obs" rows="2" placeholder="Ej: necesito entrega antes del 15-jun · piden volumen X" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:5px;margin-top:4px;font-size:12px"></textarea></div>'+
     '<div id="cot-preview" style="margin-top:12px"></div>'+
     '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
-      '<button id="cot-cancel" style="background:#94a3b8;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer">Cancelar</button>'+
-      '<button id="cot-crear" style="background:#0e7490;color:#fff;padding:8px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">💬 Crear ronda con top 3</button>'+
+      '<button id="cot-cancel" style="background:var(--cx-text-faint);color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer">Cancelar</button>'+
+      '<button id="cot-crear" style="background:var(--cx-info);color:#fff;padding:8px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">💬 Crear ronda con top 3</button>'+
     '</div></div>';
   document.body.appendChild(m);
   document.getElementById('cot-close').onclick = function(){ m.remove(); };
@@ -6994,13 +6994,13 @@ async function abrirPedirCotizacion(gi){
         return;
       }
       // Mostrar preview de ronda creada
-      var prevHtml = '<div style="background:#dcfce7;color:#166534;padding:12px;border-radius:6px;margin-top:10px;font-weight:700">✓ Ronda '+d.ronda_id+' creada</div>';
+      var prevHtml = '<div style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:12px;border-radius:6px;margin-top:10px;font-weight:700">✓ Ronda '+d.ronda_id+' creada</div>';
       prevHtml += '<div style="margin-top:10px;font-size:12px"><b>Proveedores a contactar:</b><br>';
       (d.cotizaciones||[]).forEach(function(c){
-        prevHtml += '<div style="background:#fff;border:1px solid #cbd5e1;padding:6px 10px;border-radius:5px;margin-top:4px;display:flex;justify-content:space-between"><span><b>'+esc(c.proveedor)+'</b></span><span style="color:#94a3b8;font-size:10px">COT-ID '+c.id+'</span></div>';
+        prevHtml += '<div style="background:var(--cx-card);border:1px solid var(--cx-border);padding:6px 10px;border-radius:5px;margin-top:4px;display:flex;justify-content:space-between"><span><b>'+esc(c.proveedor)+'</b></span><span style="color:var(--cx-text-faint);font-size:10px">COT-ID '+c.id+'</span></div>';
       });
       prevHtml += '</div>';
-      prevHtml += '<div style="margin-top:10px;background:#fef3c7;color:#78350f;padding:10px;border-radius:6px;font-size:12px"><b>📧 Siguiente paso:</b><br>Enviar a cada proveedor el detalle de items · pedir precio · plazo · cuando respondan, vas a "Cotizaciones" para registrar las respuestas y elegir ganadora.</div>';
+      prevHtml += '<div style="margin-top:10px;background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:10px;border-radius:6px;font-size:12px"><b>📧 Siguiente paso:</b><br>Enviar a cada proveedor el detalle de items · pedir precio · plazo · cuando respondan, vas a "Cotizaciones" para registrar las respuestas y elegir ganadora.</div>';
       document.getElementById('cot-preview').innerHTML = prevHtml;
       btn.style.display = 'none';
       document.getElementById('cot-cancel').textContent = 'Cerrar';
@@ -7027,7 +7027,7 @@ async function abrirCrearOCDesdeGrupo(gi){
     totalOC += val;
     var h = hist[it.codigo_mp];
     var promKg = (h && h.precio_promedio_90d > 0) ? h.precio_promedio_90d : 0;  // $/kg
-    var deltaCell = '<span style="color:#cbd5e1">-</span>';
+    var deltaCell = '<span style="color:var(--cx-border)">-</span>';
     if(promKg > 0 && puKg > 0){
       var delta = ((puKg - promKg) / promKg) * 100;   // FIX 13-jul · ambos en $/kg (antes $/g vs $/kg → delta ×1000)
       var color = delta > 15 ? '#dc2626' : (delta > 5 ? '#ca8a04' : (delta < -5 ? '#16a34a' : '#475569'));
@@ -7035,10 +7035,10 @@ async function abrirCrearOCDesdeGrupo(gi){
       deltaCell = '<span style="color:'+color+';font-weight:700">'+sign+delta.toFixed(1)+'%</span>';
     }
     // FIX 13-jul · "$ nuevo"/"$ prom 90d" en $/kg (antes mostraba el número $/kg etiquetado "/g")
-    var nuevoCell = puKg > 0 ? (fmt(puKg)+'/kg') : '<span style="color:#dc2626;font-weight:700" title="Cargá el precio de referencia de esta MP">sin precio</span>';
-    var histPrice = promKg > 0 ? (fmt(promKg)+'/kg') : '<span style="color:#cbd5e1">sin hist.</span>';
-    return '<tr style="border-bottom:1px solid #f1f5f9">'+
-      '<td style="padding:5px 8px;font-size:11px"><b>'+esc(it.nombre_mp||'')+'</b><br><span style="color:#94a3b8;font-family:monospace;font-size:10px">'+esc(it.codigo_mp||'')+'</span></td>'+
+    var nuevoCell = puKg > 0 ? (fmt(puKg)+'/kg') : '<span style="color:var(--cx-danger-text);font-weight:700" title="Cargá el precio de referencia de esta MP">sin precio</span>';
+    var histPrice = promKg > 0 ? (fmt(promKg)+'/kg') : '<span style="color:var(--cx-border)">sin hist.</span>';
+    return '<tr style="border-bottom:1px solid var(--cx-border-soft)">'+
+      '<td style="padding:5px 8px;font-size:11px"><b>'+esc(it.nombre_mp||'')+'</b><br><span style="color:var(--cx-text-faint);font-family:monospace;font-size:10px">'+esc(it.codigo_mp||'')+'</span></td>'+
       '<td style="padding:5px 8px;text-align:right;font-size:11px">'+fmt(cant)+' g</td>'+
       '<td style="padding:5px 8px;text-align:right;font-size:11px">'+nuevoCell+'</td>'+
       '<td style="padding:5px 8px;text-align:right;font-size:11px">'+histPrice+'</td>'+
@@ -7051,25 +7051,25 @@ async function abrirCrearOCDesdeGrupo(gi){
   var m = document.createElement('div');
   m.id = 'm-oc-preview';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0e7490">🛒 Confirmar OC · '+esc(g.proveedor)+'</h3>'+
+  m.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;padding:20px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:var(--cx-info-text)">🛒 Confirmar OC · '+esc(g.proveedor)+'</h3>'+
     '<button id="oc-prev-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div style="background:#f0f9ff;border:1px solid #0891b2;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#0c4a6e">'+
+    '<div style="background:#f0f9ff;border:1px solid var(--cx-info);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--cx-info-text)">'+
       '<b>'+g.solicitudes_count+' SOLs</b> · <b>'+g.items_count+' MPs</b> · vincular y aprobar'+
     '</div>'+
     '<table style="width:100%;border-collapse:collapse">'+
-      '<thead><tr style="background:#0f172a;color:#fff"><th style="padding:6px 8px;text-align:left">MP</th><th style="padding:6px 8px;text-align:right">Cant</th><th style="padding:6px 8px;text-align:right">$ nuevo</th><th style="padding:6px 8px;text-align:right">$ prom 90d</th><th style="padding:6px 8px;text-align:right">Δ%</th><th style="padding:6px 8px;text-align:right">Subtotal</th></tr></thead>'+
+      '<thead><tr style="background:var(--cx-text);color:#fff"><th style="padding:6px 8px;text-align:left">MP</th><th style="padding:6px 8px;text-align:right">Cant</th><th style="padding:6px 8px;text-align:right">$ nuevo</th><th style="padding:6px 8px;text-align:right">$ prom 90d</th><th style="padding:6px 8px;text-align:right">Δ%</th><th style="padding:6px 8px;text-align:right">Subtotal</th></tr></thead>'+
       '<tbody>'+rowsHtml+'</tbody>'+
-      '<tfoot><tr style="background:#f1f5f9;font-weight:700"><td colspan="5" style="padding:8px;text-align:right">TOTAL OC</td><td style="padding:8px;text-align:right">'+fmt(totalOC.toFixed(0))+'</td></tr></tfoot>'+
+      '<tfoot><tr style="background:var(--cx-border-soft);font-weight:700"><td colspan="5" style="padding:8px;text-align:right">TOTAL OC</td><td style="padding:8px;text-align:right">'+fmt(totalOC.toFixed(0))+'</td></tr></tfoot>'+
     '</table>'+
-    '<div style="margin-top:10px;font-size:11px;color:#64748b;display:flex;gap:14px;flex-wrap:wrap">'+
-      '<span><span style="color:#16a34a;font-weight:700">verde</span>: precio bajó 5%+</span>'+
-      '<span><span style="color:#ca8a04;font-weight:700">ámbar</span>: subió 5-15%</span>'+
-      '<span><span style="color:#dc2626;font-weight:700">rojo</span>: subió >15% (revisar)</span>'+
+    '<div style="margin-top:10px;font-size:11px;color:var(--cx-text-mute);display:flex;gap:14px;flex-wrap:wrap">'+
+      '<span><span style="color:var(--cx-success-text);font-weight:700">verde</span>: precio bajó 5%+</span>'+
+      '<span><span style="color:var(--cx-warn-text);font-weight:700">ámbar</span>: subió 5-15%</span>'+
+      '<span><span style="color:var(--cx-danger-text);font-weight:700">rojo</span>: subió >15% (revisar)</span>'+
     '</div>'+
     '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
-      '<button id="oc-prev-cancel" style="background:#94a3b8;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>'+
-      '<button id="oc-prev-confirm" style="background:#0e7490;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-weight:700;cursor:pointer">✓ Confirmar y crear OC</button>'+
+      '<button id="oc-prev-cancel" style="background:var(--cx-text-faint);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>'+
+      '<button id="oc-prev-confirm" style="background:var(--cx-info);color:#fff;border:none;padding:8px 20px;border-radius:6px;font-weight:700;cursor:pointer">✓ Confirmar y crear OC</button>'+
     '</div>'+
     '</div>';
   document.body.appendChild(m);
@@ -7127,15 +7127,15 @@ function renderCCSolicitudes(){
     var urgC=urgColor[urg]||'#78716c';
     var obs=(s.observaciones||'').substring(0,100);
     var val=s.valor>0?(' - '+fmoney(s.valor)):'';  
-    return '<div class="card" style="border-left:3px solid #f59e0b;">'
+    return '<div class="card" style="border-left:3px solid var(--cx-warn);">'
       +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
       +'<div class="cprov">'+esc(s.solicitante||'-')+' - '+esc(s.area||'-')+'</div></div>'
-      +'<span class="badge" style="background:#fef3c7;color:#92400e;">Pendiente</span></div>'
+      +'<span class="badge" style="background:var(--cx-warn-pale);color:var(--cx-warn-text);">Pendiente</span></div>'
       +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
       +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span>'
       +(s.fecha_requerida?'<span>Req: '+fdate(s.fecha_requerida)+'</span>':'')+'</div>'
       +(obs?'<div class="cobs">'+esc(obs)+'</div>':'')
-      +'<div class="acts" style="gap:6px;"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#x1F4CB; Revisar &amp; Aprobar</button><button class="btn" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 10px;font-size:11px;" data-act="del-sol" data-sol="'+esc(s.numero)+'">&#x1F5D1;</button></div>'
+      +'<div class="acts" style="gap:6px;"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#x1F4CB; Revisar &amp; Aprobar</button><button class="btn" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca;padding:4px 10px;font-size:11px;" data-act="del-sol" data-sol="'+esc(s.numero)+'">&#x1F5D1;</button></div>'
       +'</div>';
   }).join('');
 }
@@ -7144,12 +7144,12 @@ async function openSolicitudDetail(num){
   openModal('m-sol-det');
   var body=document.getElementById('sol-det-body');
   var footer=document.getElementById('sol-det-footer');
-  body.innerHTML='<div style="text-align:center;padding:40px;color:#78716c;">Cargando...</div>';
+  body.innerHTML='<div style="text-align:center;padding:40px;color:var(--cx-text-mute);">Cargando...</div>';
   footer.innerHTML='<button class="btn bo" onclick="_solDetClose()">Cerrar</button>';
   try{
     var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num));
     var d=await r.json();
-    if(d.error){ body.innerHTML='<p style="color:#dc2626;">'+esc(d.error)+'</p>'; return; }
+    if(d.error){ body.innerHTML='<p style="color:var(--cx-danger-text);">'+esc(d.error)+'</p>'; return; }
     var s=d.solicitud||{};
     var items=d.items||[];
     var oc=d.oc||null;
@@ -7157,7 +7157,7 @@ async function openSolicitudDetail(num){
     var stFg={'Pendiente':'#92400e','Aprobada':'#166534','Rechazada':'#991b1b','Pagada':'#1e40af'};
     var urgColor={'Alta':'#dc2626','Urgente':'#b91c1c','Normal':'#0891b2','Baja':'#6b7280'};
 
-    var h='<div style="padding:0;background:#fff;">';
+    var h='<div style="padding:0;background:var(--cx-card);">';
     // Header con paleta teal HHA
     h+='<div style="background:linear-gradient(135deg,#1F5F5B 0%,#10464a 100%);padding:18px 22px;color:#fff;">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">';
@@ -7190,69 +7190,69 @@ async function openSolicitudDetail(num){
       h+='<div style="display:flex;align-items:center;gap:14px;">';
       h+='<div style="font-size:34px;line-height:1;">🏢</div>';
       h+='<div>';
-      h+='<div style="font-size:10px;color:#0f766e;text-transform:uppercase;letter-spacing:1px;font-weight:700;">PROVEEDOR SUGERIDO</div>';
-      h+='<div id="prov-card-name" style="font-size:22px;font-weight:800;color:#0f766e;letter-spacing:.3px;margin-top:2px;">'+esc(provName)+'</div>';
+      h+='<div style="font-size:10px;color:var(--cx-info-text);text-transform:uppercase;letter-spacing:1px;font-weight:700;">PROVEEDOR SUGERIDO</div>';
+      h+='<div id="prov-card-name" style="font-size:22px;font-weight:800;color:var(--cx-info-text);letter-spacing:.3px;margin-top:2px;">'+esc(provName)+'</div>';
       h+='</div>';
       h+='</div>';
       // Acciones (solo si la SOL está pendiente) + Valor total
       if(s.estado === 'Pendiente'){
         h+='<div style="display:flex;gap:8px;align-items:center;">';
-        h+='<button id="btn-confirmar-prov" onclick="confirmarProveedorOC(&quot;'+ocNum+'&quot;)" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;">✓ Confirmar</button>';
-        h+='<button onclick="abrirCambiarProveedor()" style="background:#fff;color:#0f766e;border:1px solid #5eead4;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;">↻ Cambiar</button>';
+        h+='<button id="btn-confirmar-prov" onclick="confirmarProveedorOC(&quot;'+ocNum+'&quot;)" style="background:var(--cx-success);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;">✓ Confirmar</button>';
+        h+='<button onclick="abrirCambiarProveedor()" style="background:var(--cx-card);color:var(--cx-info-text);border:1px solid #5eead4;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;">↻ Cambiar</button>';
         h+='</div>';
       } else if(oc.valor_total > 0){
         h+='<div style="text-align:right;">';
-        h+='<div style="font-size:10px;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;font-weight:700;">Valor total OC</div>';
-        h+='<div style="font-size:24px;font-weight:800;color:#0f766e;">'+fmt(oc.valor_total)+'</div>';
+        h+='<div style="font-size:10px;color:var(--cx-info-text);text-transform:uppercase;letter-spacing:.6px;font-weight:700;">Valor total OC</div>';
+        h+='<div style="font-size:24px;font-weight:800;color:var(--cx-info-text);">'+fmt(oc.valor_total)+'</div>';
         h+='</div>';
       }
       h+='</div>';
       // Selector inline (oculto por defecto)
       h+='<div id="prov-cambiar-box" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #5eead4;">';
-      h+='<div style="font-size:11px;color:#0f766e;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">Cambiar proveedor</div>';
+      h+='<div style="font-size:11px;color:var(--cx-info-text);font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">Cambiar proveedor</div>';
       h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
       h+='<input id="prov-cambiar-input" list="prov-dl-detail" placeholder="Nombre del proveedor..." style="flex:1;min-width:200px;padding:8px 12px;border:1px solid #5eead4;border-radius:8px;font-size:13px;">';
       h+='<datalist id="prov-dl-detail">';
       PROVS.forEach(function(p){ h+='<option value="'+esc(p.nombre)+'">'; });
       h+='</datalist>';
-      h+='<button onclick="guardarCambioProveedor(&quot;'+ocNum+'&quot;)" style="background:#0f766e;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">Guardar</button>';
-      h+='<button onclick="document.getElementById(&quot;prov-cambiar-box&quot;).style.display=&quot;none&quot;" style="background:#fff;color:#64748b;border:1px solid #cbd5e1;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;">Cancelar</button>';
+      h+='<button onclick="guardarCambioProveedor(&quot;'+ocNum+'&quot;)" style="background:var(--cx-info);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">Guardar</button>';
+      h+='<button onclick="document.getElementById(&quot;prov-cambiar-box&quot;).style.display=&quot;none&quot;" style="background:var(--cx-card);color:var(--cx-text-mute);border:1px solid var(--cx-border);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;">Cancelar</button>';
       h+='</div>';
-      h+='<div style="font-size:11px;color:#64748b;margin-top:6px;">Si el proveedor no existe se crea automáticamente y queda en el catálogo para próximos pedidos.</div>';
+      h+='<div style="font-size:11px;color:var(--cx-text-mute);margin-top:6px;">Si el proveedor no existe se crea automáticamente y queda en el catálogo para próximos pedidos.</div>';
       h+='</div>';
       h+='</div>';
     } else if(oc){
       // OC existe pero sin proveedor asignado - selector grande para asignar
-      h+='<div id="prov-card" style="background:#fef2f2;border:1px solid #fca5a5;border-radius:12px;padding:14px 22px;margin-bottom:18px;">';
-      h+='<div style="font-size:11px;color:#991b1b;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:8px;">⚠ Sin proveedor asignado</div>';
+      h+='<div id="prov-card" style="background:var(--cx-danger-pale);border:1px solid #fca5a5;border-radius:12px;padding:14px 22px;margin-bottom:18px;">';
+      h+='<div style="font-size:11px;color:var(--cx-danger-text);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:8px;">⚠ Sin proveedor asignado</div>';
       if(s.estado==='Pendiente'){
         h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
         h+='<input id="prov-cambiar-input" list="prov-dl-detail" placeholder="Asigna un proveedor..." style="flex:1;min-width:240px;padding:8px 12px;border:1px solid #fca5a5;border-radius:8px;font-size:13px;">';
         h+='<datalist id="prov-dl-detail">';
         PROVS.forEach(function(p){ h+='<option value="'+esc(p.nombre)+'">'; });
         h+='</datalist>';
-        h+='<button onclick="guardarCambioProveedor(&quot;'+esc(oc.numero_oc)+'&quot;)" style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">Asignar y guardar</button>';
+        h+='<button onclick="guardarCambioProveedor(&quot;'+esc(oc.numero_oc)+'&quot;)" style="background:var(--cx-danger);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">Asignar y guardar</button>';
         h+='</div>';
       } else {
-        h+='<div style="font-size:13px;color:#7f1d1d;">Definir proveedor antes de avanzar la OC '+esc(oc.numero_oc)+'</div>';
+        h+='<div style="font-size:13px;color:var(--cx-danger-text);">Definir proveedor antes de avanzar la OC '+esc(oc.numero_oc)+'</div>';
       }
       h+='</div>';
     }
 
     // ── INFO COMPACTA (categoria, tipo, OC, fecha req) en 1 línea ────
-    h+='<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:12px;margin-bottom:18px;padding:8px 14px;background:#fafaf9;border-radius:6px;">';
-    h+='<span><span style="color:#78716c;">Categoría:</span> <strong>'+esc(s.categoria||'-')+'</strong></span>';
-    if(oc && oc.numero_oc) h+='<span><span style="color:#78716c;">OC:</span> <strong style="font-family:monospace;color:#0f766e;">'+esc(oc.numero_oc)+'</strong></span>';
-    if(s.aprobado_por) h+='<span><span style="color:#78716c;">Gestionado por:</span> <strong>'+esc(s.aprobado_por)+'</strong></span>';
-    if(s.fecha_requerida) h+='<span><span style="color:#78716c;">Fecha req:</span> <strong>'+esc(s.fecha_requerida)+'</strong></span>';
+    h+='<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:12px;margin-bottom:18px;padding:8px 14px;background:var(--cx-bg-alt);border-radius:6px;">';
+    h+='<span><span style="color:var(--cx-text-mute);">Categoría:</span> <strong>'+esc(s.categoria||'-')+'</strong></span>';
+    if(oc && oc.numero_oc) h+='<span><span style="color:var(--cx-text-mute);">OC:</span> <strong style="font-family:monospace;color:var(--cx-info-text);">'+esc(oc.numero_oc)+'</strong></span>';
+    if(s.aprobado_por) h+='<span><span style="color:var(--cx-text-mute);">Gestionado por:</span> <strong>'+esc(s.aprobado_por)+'</strong></span>';
+    if(s.fecha_requerida) h+='<span><span style="color:var(--cx-text-mute);">Fecha req:</span> <strong>'+esc(s.fecha_requerida)+'</strong></span>';
     h+='</div>';
     // Detalle/justificación de la solicitud (la nota que escribió el solicitante · 18-jun:
     // antes el modal no la mostraba → Catalina no veía QUÉ se pide). No se muestra si las
     // observaciones son metadatos de pago (BANCO:...) · eso va en el resumen de pago abajo.
     if(s.observaciones && s.observaciones.indexOf('BANCO:')<0){
-      h+='<div style="margin-bottom:16px;background:#f8fafc;border-left:3px solid #1F5F5B;border-radius:6px;padding:12px 14px;">';
+      h+='<div style="margin-bottom:16px;background:var(--cx-bg-alt);border-left:3px solid #1F5F5B;border-radius:6px;padding:12px 14px;">';
       h+='<div style="font-size:10px;color:#1F5F5B;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px;">&#x1F4DD; Detalle de la solicitud</div>';
-      h+='<div style="font-size:13px;color:#44403c;white-space:pre-wrap;">'+esc(s.observaciones)+'</div></div>';
+      h+='<div style="font-size:13px;color:var(--cx-text-soft);white-space:pre-wrap;">'+esc(s.observaciones)+'</div></div>';
     }
     // ── Payment summary for non-pending solicitudes ──
     if(s.estado!=='Pendiente'&&s.observaciones&&s.observaciones.indexOf('BANCO:')>=0){
@@ -7270,15 +7270,15 @@ async function openSolicitudDetail(num){
       var _ced=_xtr('CED/NIT');
       var _val=_xtr('VALOR');
       if(_ban||_cta){
-        h+='<div style="margin-top:12px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;">';
-        h+='<div style="font-weight:800;font-size:12px;color:#166534;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">&#x1F4B3; Datos de Pago</div>';
+        h+='<div style="margin-top:12px;background:var(--cx-success-pale);border:1px solid #86efac;border-radius:8px;padding:12px;">';
+        h+='<div style="font-weight:800;font-size:12px;color:var(--cx-success-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">&#x1F4B3; Datos de Pago</div>';
         h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12px;">';
-        if(_ben) h+='<div style="grid-column:span 2;"><span style="color:#166534;font-weight:600;">Beneficiario:</span> <strong>'+esc(_ben)+'</strong></div>';
-        if(_ban) h+='<div><span style="color:#166534;font-weight:600;">Banco:</span> <strong>'+esc(_ban)+'</strong></div>';
-        if(_cta) h+='<div><span style="color:#166534;font-weight:600;">Cuenta/Cel:</span> <strong style="font-family:monospace;">'+esc(_cta)+'</strong></div>';
-        if(_ced) h+='<div><span style="color:#166534;font-weight:600;">NIT/CC:</span> '+esc(_ced)+'</div>';
-        if(_val) h+='<div><span style="color:#166534;font-weight:600;">Valor:</span> <strong>$'+esc(_val)+'</strong></div>';
-        if(s.numero_oc) h+='<div style="grid-column:span 2;"><span style="color:#166534;font-weight:600;">OC:</span> <strong style="color:#2563eb;">'+esc(s.numero_oc)+'</strong></div>';
+        if(_ben) h+='<div style="grid-column:span 2;"><span style="color:var(--cx-success-text);font-weight:600;">Beneficiario:</span> <strong>'+esc(_ben)+'</strong></div>';
+        if(_ban) h+='<div><span style="color:var(--cx-success-text);font-weight:600;">Banco:</span> <strong>'+esc(_ban)+'</strong></div>';
+        if(_cta) h+='<div><span style="color:var(--cx-success-text);font-weight:600;">Cuenta/Cel:</span> <strong style="font-family:monospace;">'+esc(_cta)+'</strong></div>';
+        if(_ced) h+='<div><span style="color:var(--cx-success-text);font-weight:600;">NIT/CC:</span> '+esc(_ced)+'</div>';
+        if(_val) h+='<div><span style="color:var(--cx-success-text);font-weight:600;">Valor:</span> <strong>$'+esc(_val)+'</strong></div>';
+        if(s.numero_oc) h+='<div style="grid-column:span 2;"><span style="color:var(--cx-success-text);font-weight:600;">OC:</span> <strong style="color:var(--cx-info-text);">'+esc(s.numero_oc)+'</strong></div>';
         h+='</div></div>';
       }
     }
@@ -7287,8 +7287,8 @@ async function openSolicitudDetail(num){
       // tangible (MPs/MEE/Servicios). Influencers/CC tienen su propio flujo.
       var puedeEditarPrecios = (s.estado === 'Pendiente') &&
         ['Materia Prima','MP','MEE','Insumos','Servicio','SVC','Acondicionamiento'].indexOf(s.categoria||'') >= 0;
-      h+='<div style="font-weight:800;font-size:11px;color:#1F5F5B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📦 Items solicitados ('+items.length+')'+(puedeEditarPrecios?' <span style="color:#0f766e;font-weight:600;text-transform:none;letter-spacing:0;">- editá los precios y guardá para alimentar el histórico</span>':'')+'</div>';
-      h+='<div style="border:1px solid #e7e5e4;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);">';
+      h+='<div style="font-weight:800;font-size:11px;color:#1F5F5B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📦 Items solicitados ('+items.length+')'+(puedeEditarPrecios?' <span style="color:var(--cx-info-text);font-weight:600;text-transform:none;letter-spacing:0;">- editá los precios y guardá para alimentar el histórico</span>':'')+'</div>';
+      h+='<div style="border:1px solid var(--cx-border);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);">';
       h+='<table id="sol-items-table" style="width:100%;border-collapse:collapse;font-size:13px;">';
       h+='<thead style="background:#1F5F5B;color:#fff;">';
       h+='<tr>';
@@ -7339,7 +7339,7 @@ async function openSolicitudDetail(num){
         var valor = parseFloat(it.valor_estimado||0) || parseFloat(it.valor_estimado_calculado||0) || 0;
         if(valor > 0) totalValorEst += valor;
         var valorHtml = valor > 0 ? '<strong style="color:#1F5F5B;">'+fmt(valor)+'</strong>'
-                                  : '<span style="color:#a8a29e;font-size:11px;">-</span>';
+                                  : '<span style="color:var(--cx-text-faint);font-size:11px;">-</span>';
         // Acumular justificaciones únicas (productos que necesitan estos MPs)
         if(it.justificacion){
           justificacionesUnicas[it.justificacion] = (justificacionesUnicas[it.justificacion]||0) + 1;
@@ -7349,29 +7349,29 @@ async function openSolicitudDetail(num){
         var provActual = it.proveedor_sugerido || it.proveedor || '';
         var itemId = it.id || '';
         h+='<tr data-cod="'+esc(it.codigo_mp||'')+'" data-itemid="'+esc(itemId)+'" data-nombre="'+esc(it.nombre_mp||'')+'" style="background:'+bg+';border-bottom:1px solid #f0edec;">';
-        h+='<td style="padding:11px 14px;font-family:monospace;font-size:11px;color:#78716c;">'+esc(it.codigo_mp||'-')+'</td>';
-        h+='<td style="padding:11px 14px;font-weight:600;color:#1c1917;">'+esc(it.nombre_inci||it.nombre_mp||'-')+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="font-weight:400;color:#a8a29e;font-size:11px"> ('+esc(it.nombre_mp)+')</span>':'')+'</td>';
+        h+='<td style="padding:11px 14px;font-family:monospace;font-size:11px;color:var(--cx-text-mute);">'+esc(it.codigo_mp||'-')+'</td>';
+        h+='<td style="padding:11px 14px;font-weight:600;color:var(--cx-text);">'+esc(it.nombre_inci||it.nombre_mp||'-')+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="font-weight:400;color:var(--cx-text-faint);font-size:11px"> ('+esc(it.nombre_mp)+')</span>':'')+'</td>';
         // PROVEEDOR - input directo (con datalist de proveedores conocidos)
         if(puedeEditarPrecios){
           h+='<td style="padding:8px 10px;">';
-          h+='<input class="prov-edit" type="text" list="prov-dl-detail" value="'+esc(provActual)+'" placeholder="Proveedor..." style="width:100%;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:12px;">';
+          h+='<input class="prov-edit" type="text" list="prov-dl-detail" value="'+esc(provActual)+'" placeholder="Proveedor..." style="width:100%;padding:6px 8px;border:1px solid var(--cx-border);border-radius:6px;font-size:12px;">';
           h+='</td>';
         } else {
-          var provHtml = provActual ? esc(provActual) : '<span style="color:#cbd5e1;font-style:italic;">- sin asignar -</span>';
-          h+='<td style="padding:11px 14px;font-size:12px;color:#475569;">'+provHtml+'</td>';
+          var provHtml = provActual ? esc(provActual) : '<span style="color:var(--cx-border);font-style:italic;">- sin asignar -</span>';
+          h+='<td style="padding:11px 14px;font-size:12px;color:var(--cx-text-soft);">'+provHtml+'</td>';
         }
         h+='<td style="padding:11px 14px;text-align:right;color:'+stockColor+';font-weight:700;">'+stockLbl+'</td>';
         // A PEDIR editable
         if(puedeEditarPrecios){
           h+='<td style="padding:8px 10px;text-align:right;">';
-          h+='<input class="cant-edit" type="number" min="0" step="any" value="'+pedir+'" placeholder="g" style="width:100%;max-width:110px;text-align:right;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;font-family:monospace;font-weight:700;color:#1F5F5B;" oninput="recalcularValorEst(this)">';
+          h+='<input class="cant-edit" type="number" min="0" step="any" value="'+pedir+'" placeholder="g" style="width:100%;max-width:110px;text-align:right;padding:6px 8px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;font-family:monospace;font-weight:700;color:#1F5F5B;" oninput="recalcularValorEst(this)">';
           h+='</td>';
         } else {
           h+='<td style="padding:11px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+fmtCant(pedir, it.unidad)+'</td>';
         }
         if(puedeEditarPrecios){
           h+='<td style="padding:8px 10px;text-align:right;">';
-          h+='<input class="precio-unit" type="number" min="0" step="0.01" value="'+(precioActual||'')+'" placeholder="$/g" style="width:100%;max-width:110px;text-align:right;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;font-family:monospace;" oninput="recalcularValorEst(this)">';
+          h+='<input class="precio-unit" type="number" min="0" step="0.01" value="'+(precioActual||'')+'" placeholder="$/g" style="width:100%;max-width:110px;text-align:right;padding:6px 8px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;font-family:monospace;" oninput="recalcularValorEst(this)">';
           h+='</td>';
         }
         h+='<td class="td-valor-est" style="padding:11px 14px;text-align:right;">'+valorHtml+'</td>';
@@ -7382,12 +7382,12 @@ async function openSolicitudDetail(num){
       // Fila de total - colspan 3 para cubrir CÓDIGO + MATERIAL + PROVEEDOR
       var colspanTotal = 3;
       h+='<tr style="background:#f0fdfa;border-top:2px solid #1F5F5B;">';
-      h+='<td colspan="'+colspanTotal+'" style="padding:12px 14px;font-weight:700;color:#0f766e;text-transform:uppercase;font-size:11px;letter-spacing:.5px;">📊 Total: '+items.length+' items</td>';
-      h+='<td style="padding:12px 14px;text-align:right;color:#0f766e;font-size:11px;text-transform:uppercase;font-weight:700;">cantidad total</td>';
+      h+='<td colspan="'+colspanTotal+'" style="padding:12px 14px;font-weight:700;color:var(--cx-info-text);text-transform:uppercase;font-size:11px;letter-spacing:.5px;">📊 Total: '+items.length+' items</td>';
+      h+='<td style="padding:12px 14px;text-align:right;color:var(--cx-info-text);font-size:11px;text-transform:uppercase;font-weight:700;">cantidad total</td>';
       h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+fmtCant(totalCantPedir,'g')+'</td>';
       if(puedeEditarPrecios){
         h+='<td style="padding:8px 10px;text-align:right;">';
-        h+='<button id="btn-guardar-precios" onclick="guardarPreciosItems(&quot;'+esc((oc&&oc.numero_oc)||'')+'&quot;,&quot;'+esc(s.numero||num)+'&quot;)" style="background:#0f766e;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;width:100%;">💾 Guardar cambios</button>';
+        h+='<button id="btn-guardar-precios" onclick="guardarPreciosItems(&quot;'+esc((oc&&oc.numero_oc)||'')+'&quot;,&quot;'+esc(s.numero||num)+'&quot;)" style="background:var(--cx-info);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;width:100%;">💾 Guardar cambios</button>';
         h+='</td>';
       }
       h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;" id="sol-valor-total">'+(totalValorEst > 0 ? fmt(totalValorEst) : '-')+'</td>';
@@ -7397,14 +7397,14 @@ async function openSolicitudDetail(num){
       // ── BLOQUE OBSERVACIONES debajo del total ──────────────────────
       // Productos que necesitan estos MPs (deducidos de las justificaciones de cada item)
       var justifList = Object.keys(justificacionesUnicas);
-      h+='<div style="margin-top:18px;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:14px 18px;">';
-      h+='<div style="font-size:11px;color:#92400e;font-weight:800;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📝 Razón / Productos a fabricar</div>';
+      h+='<div style="margin-top:18px;background:var(--cx-warn-pale);border:1px solid #fcd34d;border-radius:10px;padding:14px 18px;">';
+      h+='<div style="font-size:11px;color:var(--cx-warn-text);font-weight:800;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📝 Razón / Productos a fabricar</div>';
       if(justifList.length){
-        h+='<ul style="margin:0;padding-left:20px;font-size:13px;color:#44403c;line-height:1.7;">';
+        h+='<ul style="margin:0;padding-left:20px;font-size:13px;color:var(--cx-text-soft);line-height:1.7;">';
         justifList.slice(0,10).forEach(function(j){
           h+='<li>'+esc(j)+'</li>';
         });
-        if(justifList.length > 10) h+='<li style="color:#78716c;font-style:italic;">+'+(justifList.length-10)+' más...</li>';
+        if(justifList.length > 10) h+='<li style="color:var(--cx-text-mute);font-style:italic;">+'+(justifList.length-10)+' más...</li>';
         h+='</ul>';
       }
       // Observaciones libres del solicitante (si las hay y no son auto-generadas redundantes)
@@ -7421,8 +7421,8 @@ async function openSolicitudDetail(num){
         }
       }
       if(obsLimpia){
-        h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #fcd34d;font-size:13px;color:#44403c;line-height:1.5;">';
-        h+='<strong style="color:#92400e;font-size:11px;text-transform:uppercase;letter-spacing:.4px;">Comentario adicional:</strong> '+esc(obsLimpia);
+        h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #fcd34d;font-size:13px;color:var(--cx-text-soft);line-height:1.5;">';
+        h+='<strong style="color:var(--cx-warn-text);font-size:11px;text-transform:uppercase;letter-spacing:.4px;">Comentario adicional:</strong> '+esc(obsLimpia);
         h+='</div>';
       }
       h+='</div>';
@@ -7432,7 +7432,7 @@ async function openSolicitudDetail(num){
       // El proveedor se confirma/cambia desde la card de arriba.
       // Los precios se editan inline en cada item de la tabla.
       // Esto elimina la duplicación que tenía el modal antes.
-      h+='<div style="margin-top:16px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px;">';
+      h+='<div style="margin-top:16px;background:var(--cx-warn-pale);border:1px solid #fcd34d;border-radius:8px;padding:14px;">';
       // Sebastián 18-jun: una SOL del módulo (sin OC con proveedor confirmado) no tenía dónde
       // asignar proveedor ni datos de OC → Catalina solo podía aprobar a ciegas ('Por definir',
       // $0). Ahora, si no hay proveedor confirmado arriba, mostramos los CAMPOS DE LA OC aquí
@@ -7440,19 +7440,19 @@ async function openSolicitudDetail(num){
       // completa, tipo orden de compra como todas. Si ya hay OC con proveedor, van ocultos.
       var _tieneProvOC = !!(provName && oc);
       if(!_tieneProvOC){
-        h+='<div style="font-weight:800;font-size:11px;color:#92400e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">&#x1F9FE; Datos de la orden de compra</div>';
+        h+='<div style="font-weight:800;font-size:11px;color:var(--cx-warn-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">&#x1F9FE; Datos de la orden de compra</div>';
         h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">';
-        h+='<div style="grid-column:span 2;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Proveedor</label>';
+        h+='<div style="grid-column:span 2;"><label style="font-size:11px;font-weight:700;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Proveedor</label>';
         h+='<input id="sol-prov-sel" list="prov-dl-sol" placeholder="Escribe o elige el proveedor..." style="width:100%;padding:8px 12px;border:1px solid #fcd34d;border-radius:6px;font-size:13px;">';
         h+='<datalist id="prov-dl-sol">'; PROVS.forEach(function(p){ h+='<option value="'+esc(p.nombre)+'">'; }); h+='</datalist></div>';
-        h+='<div><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Valor total estimado ($)</label>';
+        h+='<div><label style="font-size:11px;font-weight:700;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Valor total estimado ($)</label>';
         h+='<input id="sol-valor" type="number" min="0" step="1000" placeholder="0" style="width:100%;padding:8px 12px;border:1px solid #fcd34d;border-radius:6px;font-size:13px;"></div>';
-        h+='<div><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Fecha entrega estimada</label>';
+        h+='<div><label style="font-size:11px;font-weight:700;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Fecha entrega estimada</label>';
         h+='<input id="sol-fent" type="date" style="width:100%;padding:8px 12px;border:1px solid #fcd34d;border-radius:6px;font-size:13px;"></div>';
         h+='</div>';
       }
-      h+='<div class="fg" style="margin-bottom:0;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Motivo / Comentario (opcional)</label>';
-      h+='<textarea id="sol-motivo" placeholder="Comentario al aprobar o motivo del rechazo..." rows="2" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
+      h+='<div class="fg" style="margin-bottom:0;"><label style="font-size:11px;font-weight:700;color:var(--cx-text-soft);display:block;margin-bottom:4px;">Motivo / Comentario (opcional)</label>';
+      h+='<textarea id="sol-motivo" placeholder="Comentario al aprobar o motivo del rechazo..." rows="2" style="width:100%;padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
       h+='<input type="hidden" id="sol-det-num" value="'+esc(s.numero||num)+'">';
       h+='<input type="hidden" id="sol-det-cat" value="'+esc(s.categoria||'MP')+'">';
       h+='<input type="hidden" id="sol-det-area" value="'+esc(s.area||'')+'">';
@@ -7469,17 +7469,17 @@ async function openSolicitudDetail(num){
     body.innerHTML=h;
     var fbtns='<button class="btn bo" onclick="_solDetClose()">Cerrar</button>';
     if(s.estado==='Pendiente'){
-      fbtns+='<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" onclick="_solDetRech()">&#10005; Rechazar</button>';
+      fbtns+='<button class="btn" style="background:var(--cx-danger);color:#fff;font-weight:700;" onclick="_solDetRech()">&#10005; Rechazar</button>';
       if(s.categoria==='Influencer/Marketing Digital'){
-        fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:#7c3aed;">&#x1F4B8; Pagar directamente</button>';
+        fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:var(--cx-primary);">&#x1F4B8; Pagar directamente</button>';
       } else if(s.categoria==='Cuenta de Cobro'){
-        fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:#d97706;">&#x1F4B3; Aprobar Cuenta de Cobro</button>';
+        fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:var(--cx-accent-dark);">&#x1F4B3; Aprobar Cuenta de Cobro</button>';
       } else {
-        fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:#16a34a;">&#9989; Aprobar Solicitud</button>';
+        fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:var(--cx-success);">&#9989; Aprobar Solicitud</button>';
       }
     }
     footer.innerHTML=fbtns;
-  }catch(e){ body.innerHTML='<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
+  }catch(e){ body.innerHTML='<p style="color:var(--cx-danger-text);">Error: '+e.message+'</p>'; }
 }
 async function gestionarSol(decision){
   var num=document.getElementById('sol-det-num').value;
@@ -7550,12 +7550,12 @@ async function loadSolicitudesProduccion(){
   var lista = document.getElementById('solprod-lista');
   var empty = document.getElementById('solprod-empty');
   if(!lista) return;
-  lista.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:20px;font-size:12px">Cargando...</div>';
+  lista.innerHTML = '<div style="color:var(--cx-text-faint);text-align:center;padding:20px;font-size:12px">Cargando...</div>';
   empty.style.display = 'none';
   try {
     var r = await fetch('/api/compras/solicitudes-produccion?estado='+encodeURIComponent(estado));
     var d = await r.json();
-    if(!r.ok){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+(d.error||r.status)+'</div>'; return; }
+    if(!r.ok){ lista.innerHTML = '<div style="color:var(--cx-danger-text);padding:14px">Error: '+(d.error||r.status)+'</div>'; return; }
     var items = d.items || [];
     // Badge en el tab
     var badge = document.getElementById('solprod-badge');
@@ -7571,70 +7571,70 @@ async function loadSolicitudesProduccion(){
       var ruta = it.ruta_sugerida || 'oc';
       var stockTxt = (it.stock_actual||0).toLocaleString('es-CO');
       var cantTxt = Math.round(it.cantidad_unidades||0).toLocaleString('es-CO');
-      var fechaObj = it.fecha_objetivo ? '<span style="color:#dc2626;font-size:11px;font-weight:600">📅 '+it.fecha_objetivo+'</span>' : '';
-      var decoBadge = it.decoracion_tipo ? '<span style="background:#f3e8ff;color:#7c3aed;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px">'+it.decoracion_tipo+'</span>' : '';
+      var fechaObj = it.fecha_objetivo ? '<span style="color:var(--cx-danger-text);font-size:11px;font-weight:600">📅 '+it.fecha_objetivo+'</span>' : '';
+      var decoBadge = it.decoracion_tipo ? '<span style="background:#f3e8ff;color:var(--cx-primary-text);font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px">'+it.decoracion_tipo+'</span>' : '';
       var estadoBadge = '';
-      if(it.estado==='pendiente') estadoBadge = '<span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">PENDIENTE</span>';
-      else if(it.estado==='decidida') estadoBadge = '<span style="background:#dbeafe;color:#1e40af;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">DECIDIDA: '+_esc(it.decision||'')+'</span>';
-      else estadoBadge = '<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">'+_esc(it.estado||'')+'</span>';
+      if(it.estado==='pendiente') estadoBadge = '<span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">PENDIENTE</span>';
+      else if(it.estado==='decidida') estadoBadge = '<span style="background:var(--cx-info-pale);color:var(--cx-info-text);font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">DECIDIDA: '+_esc(it.decision||'')+'</span>';
+      else estadoBadge = '<span style="background:var(--cx-success-pale);color:var(--cx-success-text);font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">'+_esc(it.estado||'')+'</span>';
       var acciones = '';
       if(it.estado === 'pendiente'){
         acciones = '<button onclick="solprodDecidir('+it.id+')" style="background:'+(rutaColors[ruta]||'#1e40af')+';color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">Decidir →</button>';
       }
       var oc_o_tarea = '';
-      if(it.oc_numero) oc_o_tarea += '<div style="font-size:10px;color:#1e40af;margin-top:2px">📄 '+_esc(it.oc_numero)+'</div>';
-      if(it.tarea_operativa_id) oc_o_tarea += '<div style="font-size:10px;color:#15803d;margin-top:2px">🎯 Tarea operativa #'+it.tarea_operativa_id+'</div>';
-      return '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(rutaColors[ruta]||'#94a3b8')+';border-radius:10px;padding:14px 18px;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center">'+
+      if(it.oc_numero) oc_o_tarea += '<div style="font-size:10px;color:var(--cx-info-text);margin-top:2px">📄 '+_esc(it.oc_numero)+'</div>';
+      if(it.tarea_operativa_id) oc_o_tarea += '<div style="font-size:10px;color:var(--cx-success-text);margin-top:2px">🎯 Tarea operativa #'+it.tarea_operativa_id+'</div>';
+      return '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-left:4px solid '+(rutaColors[ruta]||'#94a3b8')+';border-radius:10px;padding:14px 18px;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center">'+
         '<div>'+
           '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
-            '<span style="font-weight:700;color:#0f172a;font-size:14px">'+_esc(it.producto_nombre||'')+'</span>'+
+            '<span style="font-weight:700;color:var(--cx-text);font-size:14px">'+_esc(it.producto_nombre||'')+'</span>'+
             decoBadge + estadoBadge +
           '</div>'+
-          '<div style="font-size:13px;color:#1e293b;margin-top:4px"><b>'+_esc(it.tipo_item||'')+'</b> · '+_esc(it.descripcion||it.mee_codigo||'')+'</div>'+
-          '<div style="font-size:11px;color:#64748b;margin-top:4px">'+
+          '<div style="font-size:13px;color:var(--cx-text);margin-top:4px"><b>'+_esc(it.tipo_item||'')+'</b> · '+_esc(it.descripcion||it.mee_codigo||'')+'</div>'+
+          '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">'+
             '🔢 <b>'+cantTxt+' und</b> · '+
             '📦 stock: <b style="color:'+(it.stock_actual>=it.cantidad_unidades?'#16a34a':'#dc2626')+'">'+stockTxt+'</b> · '+
             (fechaObj?fechaObj+' · ':'')+
             '<i>'+rutaLabels[ruta]+'</i>'+
           '</div>'+
-          (it.observaciones?'<div style="font-size:11px;color:#78716c;margin-top:4px;font-style:italic">"'+_esc(it.observaciones)+'"</div>':'')+
+          (it.observaciones?'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;font-style:italic">"'+_esc(it.observaciones)+'"</div>':'')+
           oc_o_tarea +
         '</div>'+
         '<div style="text-align:right">'+acciones+'</div>'+
       '</div>';
     }).join('');
   } catch(e){
-    lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    lista.innerHTML = '<div style="color:var(--cx-danger-text);padding:14px">Error: '+e.message+'</div>';
   }
 }
 
 async function solprodDecidir(solId){
   // Modal con opciones de decision
   var html = '<div id="solprod-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px">'+
-    '<div style="background:#fff;border-radius:14px;padding:24px;width:520px;max-width:100%">'+
+    '<div style="background:var(--cx-card);border-radius:14px;padding:24px;width:520px;max-width:100%">'+
       '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px">'+
         '<h3 style="margin:0">Decidir solicitud #'+solId+'</h3>'+
-        '<button onclick="document.getElementById(&quot;solprod-modal&quot;).remove()" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;color:#1c1917;font-weight:700">&#10005;</button>'+
+        '<button onclick="document.getElementById(&quot;solprod-modal&quot;).remove()" style="background:transparent;border:1px solid var(--cx-border);border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;color:var(--cx-text);font-weight:700">&#10005;</button>'+
       '</div>'+
-      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Ruta</label>'+
-      '<select id="sp-decision" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px">'+
+      '<label style="font-size:12px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Ruta</label>'+
+      '<select id="sp-decision" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin:6px 0 14px;font-size:13px">'+
         '<option value="inventario">📦 Sacar de inventario (genera tarea operativa)</option>'+
         '<option value="oc">🛒 Crear OC (compras nuevas)</option>'+
         '<option value="serigrafia">🎨 Mandar a serigrafía (saca envases + tarea)</option>'+
         '<option value="tampografia">🖋️ Mandar a tampografía (saca envases + tarea)</option>'+
         '<option value="etiqueta_adhesiva">🏷️ OC etiquetas adhesivas</option>'+
       '</select>'+
-      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Proveedor (si aplica)</label>'+
-      '<input id="sp-prov" type="text" placeholder="Ej. Cromaroma / nombre del serigrafista..." style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px">'+
-      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Fecha objetivo</label>'+
-      '<input id="sp-fecha" type="date" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px">'+
-      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Asignado a (CSV)</label>'+
-      '<input id="sp-asign" type="text" value="luz,operarios" placeholder="luz,miguel,luis..." style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px">'+
-      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Observaciones</label>'+
-      '<textarea id="sp-obs" rows="2" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px;font-family:inherit"></textarea>'+
+      '<label style="font-size:12px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Proveedor (si aplica)</label>'+
+      '<input id="sp-prov" type="text" placeholder="Ej. Cromaroma / nombre del serigrafista..." style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin:6px 0 14px;font-size:13px">'+
+      '<label style="font-size:12px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Fecha objetivo</label>'+
+      '<input id="sp-fecha" type="date" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin:6px 0 14px;font-size:13px">'+
+      '<label style="font-size:12px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Asignado a (CSV)</label>'+
+      '<input id="sp-asign" type="text" value="luz,operarios" placeholder="luz,miguel,luis..." style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin:6px 0 14px;font-size:13px">'+
+      '<label style="font-size:12px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Observaciones</label>'+
+      '<textarea id="sp-obs" rows="2" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin:6px 0 14px;font-size:13px;font-family:inherit"></textarea>'+
       '<div style="display:flex;gap:8px;justify-content:flex-end">'+
-        '<button onclick="document.getElementById(&quot;solprod-modal&quot;).remove()" style="background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>'+
-        '<button onclick="solprodEnviarDecision('+solId+')" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✅ Confirmar</button>'+
+        '<button onclick="document.getElementById(&quot;solprod-modal&quot;).remove()" style="background:var(--cx-card);color:var(--cx-text-soft);border:1px solid var(--cx-border);border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>'+
+        '<button onclick="solprodEnviarDecision('+solId+')" style="background:var(--cx-success);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✅ Confirmar</button>'+
       '</div>'+
     '</div></div>';
   document.body.insertAdjacentHTML('beforeend', html);
@@ -7676,11 +7676,11 @@ async function loadMisSolicitudes(){
   var estado = (document.getElementById('mis-sol-filtro')||{}).value || 'abiertas';
   var body = document.getElementById('mis-sol-body');
   if(!body) return;
-  body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:30px;font-size:12px">Cargando...</div>';
+  body.innerHTML = '<div style="color:var(--cx-text-faint);text-align:center;padding:30px;font-size:12px">Cargando...</div>';
   try {
     var r = await fetch('/api/solicitudes-compra/mis?estado='+encodeURIComponent(estado));
     var d = await r.json();
-    if(!r.ok){ body.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+(d.error||r.status)+'</div>'; return; }
+    if(!r.ok){ body.innerHTML = '<div style="color:var(--cx-danger-text);padding:14px">Error: '+(d.error||r.status)+'</div>'; return; }
     var sols = d.solicitudes || [];
     // Actualizar badge
     var badge = document.getElementById('mis-sol-badge');
@@ -7689,7 +7689,7 @@ async function loadMisSolicitudes(){
       else badge.style.display = 'none';
     }
     if(!sols.length){
-      body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;font-size:13px">No tienes solicitudes '+(estado==='abiertas'?'abiertas':estado==='cerradas'?'cerradas':'')+'.</div>';
+      body.innerHTML = '<div style="color:var(--cx-text-faint);text-align:center;padding:40px;font-size:13px">No tienes solicitudes '+(estado==='abiertas'?'abiertas':estado==='cerradas'?'cerradas':'')+'.</div>';
       return;
     }
     body.innerHTML = sols.map(function(s){
@@ -7712,31 +7712,31 @@ async function loadMisSolicitudes(){
         }).join('') +
         '</div>';
       var btnRecibir = s.puede_marcar_recibido
-        ? '<button onclick="marcarRecibidoSolicitante(\\''+_esc(s.numero)+'\\')" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">✅ Marcar Recibido</button>'
+        ? '<button onclick="marcarRecibidoSolicitante(\\''+_esc(s.numero)+'\\')" style="background:var(--cx-success);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">✅ Marcar Recibido</button>'
         : '';
       var ocLine = s.numero_oc
-        ? '<div style="font-size:11px;color:#1e40af;margin-top:2px;font-family:monospace">'+_esc(s.numero_oc)+(s.oc_proveedor?' · '+_esc(s.oc_proveedor):'')+'</div>'
+        ? '<div style="font-size:11px;color:var(--cx-info-text);margin-top:2px;font-family:monospace">'+_esc(s.numero_oc)+(s.oc_proveedor?' · '+_esc(s.oc_proveedor):'')+'</div>'
         : '';
       var fechas = [];
       if(s.fecha_pago) fechas.push('💸 pagado '+s.fecha_pago.substring(0,10));
       if(s.fecha_entrega_est) fechas.push('📅 entrega est. '+s.fecha_entrega_est);
       if(s.fecha_recepcion) fechas.push('✅ recibido '+s.fecha_recepcion.substring(0,10));
-      var fechaLine = fechas.length ? '<div style="font-size:10px;color:#64748b;margin-top:4px">'+fechas.join(' · ')+'</div>' : '';
-      return '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+s.paso_color+';border-radius:10px;padding:14px 18px;margin-bottom:10px;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center">'+
+      var fechaLine = fechas.length ? '<div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px">'+fechas.join(' · ')+'</div>' : '';
+      return '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-left:4px solid '+s.paso_color+';border-radius:10px;padding:14px 18px;margin-bottom:10px;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center">'+
         '<div>'+
           '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
-            '<span style="font-weight:700;font-family:monospace;color:#0f172a">'+_esc(s.numero)+'</span>'+
+            '<span style="font-weight:700;font-family:monospace;color:var(--cx-text)">'+_esc(s.numero)+'</span>'+
             '<span style="background:'+s.paso_color+';color:#fff;font-size:11px;font-weight:700;padding:2px 10px;border-radius:10px">'+_esc(s.paso_label)+'</span>'+
-            (s.urgencia==='Alta'||s.urgencia==='Urgente'?'<span style="background:#fee2e2;color:#dc2626;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px">'+_esc(s.urgencia)+'</span>':'')+
+            (s.urgencia==='Alta'||s.urgencia==='Urgente'?'<span style="background:var(--cx-danger-pale);color:var(--cx-danger-text);font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px">'+_esc(s.urgencia)+'</span>':'')+
           '</div>'+
-          '<div style="font-size:13px;color:#1e293b;margin-top:4px">'+_esc(s.observaciones||s.categoria||'(sin descripción)')+'</div>'+
+          '<div style="font-size:13px;color:var(--cx-text);margin-top:4px">'+_esc(s.observaciones||s.categoria||'(sin descripción)')+'</div>'+
           ocLine + fechaLine + stepper +
         '</div>'+
         '<div>'+ btnRecibir +'</div>'+
       '</div>';
     }).join('');
   } catch(e){
-    body.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    body.innerHTML = '<div style="color:var(--cx-danger-text);padding:14px">Error: '+e.message+'</div>';
   }
 }
 
@@ -7757,7 +7757,7 @@ var _consolCache = [];  // cache indexado por posición
 
 async function loadConsolidado(){
   var body = document.getElementById('consol-body');
-  body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>';
+  body.innerHTML = '<div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Cargando...</div>';
   // Sin filtro de estados (Sebastián 21-jul): todas las OCs activas son "por autorizar" = Borrador + Revisada.
   var estados = Array.from(document.querySelectorAll('.consol-est:checked')).map(function(el){return el.value;});
   if(!estados.length){ estados = ['Borrador','Revisada']; }
@@ -7810,7 +7810,7 @@ function renderConsolBody(){
   var vis = _consolCache.map(function(p, i){ return {p:p, i:i}; })
                         .filter(function(x){ return _consolMatch(x.p, q); });
   if(!vis.length){
-    body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;">Sin resultados para "'+esc(q)+'"</div>';
+    body.innerHTML = '<div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Sin resultados para "'+esc(q)+'"</div>';
     return;
   }
   var porAut = vis.filter(function(x){ return _consolStage(x.p) === 'por_autorizar'; });
@@ -7855,18 +7855,18 @@ function renderConsolCard(p, idx){
         : '-';
       var ocs = it.ocs_origen.length > 1 ? it.ocs_origen.join(', ') : (it.ocs_origen[0]||'');
       return '<tr>'
-        +'<td style="padding:5px 8px;color:#1e293b;">'+escConH(it.nombre_inci||it.nombre_mp)+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:#a8a29e;font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
+        +'<td style="padding:5px 8px;color:var(--cx-text);">'+escConH(it.nombre_inci||it.nombre_mp)+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:var(--cx-text-faint);font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
         +'<td style="padding:5px 8px;font-weight:600;">'+cant+'</td>'
-        +'<td style="padding:5px 8px;color:#64748b;">'+sub+'</td>'
-        +'<td style="padding:5px 8px;font-size:11px;color:#94a3b8;">'+ocs+'</td>'
+        +'<td style="padding:5px 8px;color:var(--cx-text-mute);">'+sub+'</td>'
+        +'<td style="padding:5px 8px;font-size:11px;color:var(--cx-text-faint);">'+ocs+'</td>'
         +'</tr>';
     }).join('');
     contenidoHtml = '<table style="width:100%;border-collapse:collapse;">'
       +'<thead><tr>'
-        +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">Producto</th>'
-        +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">Cantidad total</th>'
-        +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">Subtotal</th>'
-        +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">OCs</th>'
+        +'<th style="text-align:left;font-size:11px;color:var(--cx-text-faint);padding:4px 8px;border-bottom:1px solid var(--cx-border-soft);">Producto</th>'
+        +'<th style="text-align:left;font-size:11px;color:var(--cx-text-faint);padding:4px 8px;border-bottom:1px solid var(--cx-border-soft);">Cantidad total</th>'
+        +'<th style="text-align:left;font-size:11px;color:var(--cx-text-faint);padding:4px 8px;border-bottom:1px solid var(--cx-border-soft);">Subtotal</th>'
+        +'<th style="text-align:left;font-size:11px;color:var(--cx-text-faint);padding:4px 8px;border-bottom:1px solid var(--cx-border-soft);">OCs</th>'
       +'</tr></thead>'
       +'<tbody>'+rows+'</tbody>'
       +'</table>';
@@ -7877,19 +7877,19 @@ function renderConsolCard(p, idx){
       var desc = o.observaciones || o.categoria || '-';
       return '<tr>'
         // Bug #11 fix · 21-may-2026 · escape numero_oc + estado (consistencia XSS)
-        +'<td style="padding:5px 8px;font-weight:600;color:#0f172a;">'+escConH(o.numero_oc||'')+'</td>'
+        +'<td style="padding:5px 8px;font-weight:600;color:var(--cx-text);">'+escConH(o.numero_oc||'')+'</td>'
         +'<td style="padding:5px 8px;"><span style="color:'+col+';">'+escConH(o.estado||'')+'</span></td>'
-        +'<td style="padding:5px 8px;color:#475569;">'+escConH(desc)+'</td>'
-        +'<td style="padding:5px 8px;color:#0f172a;">$'+Number(o.valor_total).toLocaleString('es-CO',{maximumFractionDigits:0})+'</td>'
+        +'<td style="padding:5px 8px;color:var(--cx-text-soft);">'+escConH(desc)+'</td>'
+        +'<td style="padding:5px 8px;color:var(--cx-text);">$'+Number(o.valor_total).toLocaleString('es-CO',{maximumFractionDigits:0})+'</td>'
         +'</tr>';
     }).join('');
-    contenidoHtml = '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Esta OC no tiene ítems detallados. Se muestra el resumen por orden.</div>'
+    contenidoHtml = '<div style="font-size:11px;color:var(--cx-text-faint);margin-bottom:6px;">Esta OC no tiene ítems detallados. Se muestra el resumen por orden.</div>'
       +'<table style="width:100%;border-collapse:collapse;">'
         +'<thead><tr>'
-          +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">N° OC</th>'
-          +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">Estado</th>'
-          +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">Descripción / Concepto</th>'
-          +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">Valor</th>'
+          +'<th style="text-align:left;font-size:11px;color:var(--cx-text-faint);padding:4px 8px;border-bottom:1px solid var(--cx-border-soft);">N° OC</th>'
+          +'<th style="text-align:left;font-size:11px;color:var(--cx-text-faint);padding:4px 8px;border-bottom:1px solid var(--cx-border-soft);">Estado</th>'
+          +'<th style="text-align:left;font-size:11px;color:var(--cx-text-faint);padding:4px 8px;border-bottom:1px solid var(--cx-border-soft);">Descripción / Concepto</th>'
+          +'<th style="text-align:left;font-size:11px;color:var(--cx-text-faint);padding:4px 8px;border-bottom:1px solid var(--cx-border-soft);">Valor</th>'
         +'</tr></thead>'
         +'<tbody>'+rows+'</tbody>'
       +'</table>';
@@ -7897,7 +7897,7 @@ function renderConsolCard(p, idx){
 
   var ocsHtml = p.ocs.map(function(o){
     var col = estadoColors[o.estado] || '#94a3b8';
-    var ivaTag = o.con_iva ? ' <span style="color:#0891b2;font-weight:800;font-size:10px;">+IVA</span>' : '';
+    var ivaTag = o.con_iva ? ' <span style="color:var(--cx-info-text);font-weight:800;font-size:10px;">+IVA</span>' : '';
     return '<span class="consol-ocpill" style="background:'+col+'14;color:'+col+';border-color:'+col+'33;">'
       +escConH(o.numero_oc||'')+' &middot; '+escConH(o.estado||'')+ivaTag+'</span>';
   }).join('');
@@ -7916,9 +7916,9 @@ function renderConsolCard(p, idx){
       +'<span class="consol-ico">&#x1F3ED;</span>'
       +'<div style="flex:1;min-width:0;">'
         +'<div style="font-weight:800;font-size:16.5px;color:#1e1b2e;letter-spacing:-.01em;">'+escConH(p.proveedor)+'</div>'
-        +'<div style="font-size:12px;color:#6b7280;margin-top:2px;">'+metaLine+'</div>'
+        +'<div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px;">'+metaLine+'</div>'
         +(p.nit||p.contacto||p.telefono
-          ? '<div style="font-size:11px;color:#94a3b8;margin-top:3px;">'
+          ? '<div style="font-size:11px;color:var(--cx-text-faint);margin-top:3px;">'
             +(p.nit?'NIT: '+esc(p.nit)+' &nbsp;':'')
             +(p.contacto?'&#x1F464; '+escConH(p.contacto)+' &nbsp;':'')
             +(p.telefono?'&#x1F4DE; '+p.telefono:'')
@@ -7928,34 +7928,34 @@ function renderConsolCard(p, idx){
       +'</div>'
       +'<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">'
         +'<button class="btn" data-consol-idx="'+idx+'" onclick="toggleConsolEdit(parseInt(this.dataset.consolIdx))"'
-          +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">&#x270F;&#xFE0F; Editar</button>'
+          +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:var(--cx-primary);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">&#x270F;&#xFE0F; Editar</button>'
         // Autorizar (Sebastián 18-jun): faltaba aquí · una OC en Borrador/Revisada no se podía
         // recepcionar porque nadie la autorizaba desde esta vista. Visible solo a autorizadores
         // (admin/Catalina · ES_AUTORIZA). Un botón por cada OC del grupo que lo necesite.
         +(ES_AUTORIZA ? (p.ocs||[]).filter(function(o){ return o.estado==='Borrador'||o.estado==='Revisada'; }).map(function(o){
             return '<button class="btn" data-aut-oc="'+esc(o.numero_oc)+'" onclick="autorizarOC(this.dataset.autOc)"'
-              +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Autorizar para poder recepcionar">&#10003; Autorizar '+esc(o.numero_oc)+'</button>';
+              +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:var(--cx-success);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Autorizar para poder recepcionar">&#10003; Autorizar '+esc(o.numero_oc)+'</button>';
           }).join('') : '')
         // Pagar (18-jun): para OCs ya Autorizadas, desde la misma vista agrupada · ES_AUTORIZA
         +(ES_AUTORIZA ? (p.ocs||[]).filter(function(o){ return o.estado==='Autorizada'; }).map(function(o){
             return '<button class="btn" data-pago-oc="'+esc(o.numero_oc)+'" data-pago-val="'+parseFloat(o.valor_total||p.valor_total||0)+'" data-pago-prov="'+esc(p.proveedor||'')+'"'
               +' onclick="openPago(this.dataset.pagoOc, parseFloat(this.dataset.pagoVal), this.dataset.pagoProv)"'
-              +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#0f766e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Registrar pago">&#x1F4B8; Pagar '+esc(o.numero_oc)+'</button>';
+              +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:var(--cx-info);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Registrar pago">&#x1F4B8; Pagar '+esc(o.numero_oc)+'</button>';
           }).join('') : '')
         // Eliminar una OC AUTORIZADA por error (Sebastián 1-jul · Catalina) · solo autorizadores ·
         // el backend solo la borra si NO tiene pago ni recepción · revierte la SOL a Pendiente.
         +(ES_AUTORIZA ? (p.ocs||[]).filter(function(o){ return o.estado==='Autorizada'; }).map(function(o){
             return '<button class="btn" data-del-oc="'+esc(o.numero_oc)+'" onclick="eliminarOCAutorizada(this.dataset.delOc)"'
-              +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#dc2626;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Eliminar esta OC autorizada por error (solo si no tiene pago ni recepción)">&#x1F5D1; Eliminar '+esc(o.numero_oc)+'</button>';
+              +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:var(--cx-danger);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Eliminar esta OC autorizada por error (solo si no tiene pago ni recepción)">&#x1F5D1; Eliminar '+esc(o.numero_oc)+'</button>';
           }).join('') : '')
         +'<button class="btn" data-consol-idx="'+idx+'" onclick="copiarPedido(parseInt(this.dataset.consolIdx))"'
-          +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#3b82f6;border-radius:8px;">&#x1F4CB; Copiar</button>'
+          +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:var(--cx-info);border-radius:8px;">&#x1F4CB; Copiar</button>'
         +'<button class="btn bp" data-print-idx="'+idx+'" onclick="imprimirPedido(parseInt(this.dataset.printIdx))"'
           +' style="padding:8px 14px;font-size:12px;white-space:nowrap;border-radius:8px;">&#x1F5A8; Imprimir</button>'
         // Eliminar · solo si el grupo tiene OCs en Borrador/Rechazada (backend valida igual)
         +((p.ocs||[]).some(function(o){ return o.estado==='Borrador'||o.estado==='Rechazada'; })
           ? '<button class="btn" data-consol-idx="'+idx+'" onclick="eliminarOCsGrupo(parseInt(this.dataset.consolIdx))"'
-            +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#dc2626;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">&#x1F5D1; Eliminar</button>'
+            +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:var(--cx-danger);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">&#x1F5D1; Eliminar</button>'
           : '')
       +'</div>'
     +'</div>'
@@ -7973,62 +7973,62 @@ function renderConsolCardEdit(p, idx){
     var itemsRows = (o.items_raw||[]).map(function(it, ii){
       var rid = ocId+'-it-'+ii;
       return '<tr data-item-id="'+it.id+'" data-row-id="'+rid+'">'
-        +'<td style="padding:6px 8px;font-size:12px;color:#1e293b;">'+escConH(it.nombre_inci||it.nombre_mp||it.codigo_mp||'?')+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:#a8a29e;font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
+        +'<td style="padding:6px 8px;font-size:12px;color:var(--cx-text);">'+escConH(it.nombre_inci||it.nombre_mp||it.codigo_mp||'?')+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:var(--cx-text-faint);font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
         +'<td style="padding:4px 8px;"><input type="number" step="any" min="0" value="'+(it.cantidad_g||0)+'" '
           +'data-field="cantidad_g" oninput="recalcConsolOCFromEl(this)" '
-          +'style="width:90px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;text-align:right;"></td>'
+          +'style="width:90px;padding:4px 6px;border:1px solid var(--cx-border);border-radius:5px;font-size:12px;text-align:right;"></td>'
         +'<td style="padding:4px 8px;"><input type="number" step="any" min="0" value="'+(it.precio_unitario||0)+'" '
           +'data-field="precio_unitario" oninput="recalcConsolOCFromEl(this)" '
-          +'style="width:100px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;text-align:right;"></td>'
-        +'<td style="padding:6px 8px;font-size:12px;color:#475569;text-align:right;" class="row-subtotal">'
+          +'style="width:100px;padding:4px 6px;border:1px solid var(--cx-border);border-radius:5px;font-size:12px;text-align:right;"></td>'
+        +'<td style="padding:6px 8px;font-size:12px;color:var(--cx-text-soft);text-align:right;" class="row-subtotal">'
           +'$'+Number(it.subtotal||0).toLocaleString('es-CO',{maximumFractionDigits:0})+'</td>'
-        +'<td style="padding:4px 8px;text-align:right;"><button data-oc="'+escConH(o.numero_oc||'')+'" data-item="'+it.id+'" onclick="deleteConsolItem(this)" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;" title="Quitar este producto de la orden">&#x1F5D1;</button></td>'
+        +'<td style="padding:4px 8px;text-align:right;"><button data-oc="'+escConH(o.numero_oc||'')+'" data-item="'+it.id+'" onclick="deleteConsolItem(this)" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fca5a5;border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;" title="Quitar este producto de la orden">&#x1F5D1;</button></td>'
         +'</tr>';
     }).join('');
 
     return '<div data-oc-id="'+ocId+'" data-oc-num="'+o.numero_oc+'" '
-      +'style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:10px;padding:12px;margin-bottom:10px;">'
+      +'style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:10px;padding:12px;margin-bottom:10px;">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">'
-        +'<div style="font-weight:700;font-family:monospace;color:#1e293b;">'+escConH(o.numero_oc||'')+' <span style="font-size:11px;color:#64748b;font-weight:500;">('+escConH(o.estado||'')+')</span></div>'
-        +'<label style="font-size:12px;color:#0891b2;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">'
+        +'<div style="font-weight:700;font-family:monospace;color:var(--cx-text);">'+escConH(o.numero_oc||'')+' <span style="font-size:11px;color:var(--cx-text-mute);font-weight:500;">('+escConH(o.estado||'')+')</span></div>'
+        +'<label style="font-size:12px;color:var(--cx-info-text);display:inline-flex;align-items:center;gap:6px;cursor:pointer;">'
           +'<input type="checkbox" data-field="con_iva" '+(o.con_iva?'checked':'')+' '
           +'onchange="recalcConsolOCFromEl(this)"> Con IVA 19%</label>'
       +'</div>'
       +'<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
           +'<thead><tr>'
-            +'<th style="text-align:left;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Producto</th>'
-            +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Cantidad (g)</th>'
-            +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Precio unit.</th>'
-            +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Subtotal</th>'
+            +'<th style="text-align:left;font-size:10px;color:var(--cx-text-faint);padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Producto</th>'
+            +'<th style="text-align:right;font-size:10px;color:var(--cx-text-faint);padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Cantidad (g)</th>'
+            +'<th style="text-align:right;font-size:10px;color:var(--cx-text-faint);padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Precio unit.</th>'
+            +'<th style="text-align:right;font-size:10px;color:var(--cx-text-faint);padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Subtotal</th>'
             +'<th style="width:40px;"></th>'
           +'</tr></thead><tbody>'+(itemsRows||'')+'</tbody></table>'
-      +'<button onclick="addConsolItemRow(this)" style="margin-top:8px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">&#10133; Agregar producto</button>'
-      +'<div style="margin-top:10px;font-size:12px;font-weight:700;color:#0f172a;text-align:right;" class="oc-total">'
+      +'<button onclick="addConsolItemRow(this)" style="margin-top:8px;background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid #86efac;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">&#10133; Agregar producto</button>'
+      +'<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--cx-text);text-align:right;" class="oc-total">'
         +'Total OC: $'+Number(o.valor_total||0).toLocaleString('es-CO',{maximumFractionDigits:0})+'</div>'
       +'<div style="margin-top:10px;">'
-        +'<label style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;">Observaciones</label>'
+        +'<label style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px;">Observaciones</label>'
         +'<textarea data-field="observaciones" rows="2" placeholder="Notas, justificación, condiciones especiales..." '
-        +'style="width:100%;padding:6px 8px;margin-top:4px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;">'
+        +'style="width:100%;padding:6px 8px;margin-top:4px;border:1px solid var(--cx-border);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;">'
         +escConH(o.observaciones||'')+'</textarea>'
       +'</div>'
     +'</div>';
   }).join('');
 
   return '<div id="'+pid+'" data-prov-idx="'+idx+'" '
-    +'style="background:#fff;border:2px solid #7c3aed;border-radius:12px;margin-bottom:16px;overflow:hidden;">'
+    +'style="background:var(--cx-card);border:2px solid var(--cx-primary);border-radius:12px;margin-bottom:16px;overflow:hidden;">'
     +'<div style="background:#faf5ff;padding:14px 18px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #e9d5ff;">'
       +'<span style="font-size:22px;margin-top:2px;">&#x270F;&#xFE0F;</span>'
       +'<div style="flex:1;min-width:0;">'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
-          +'<input id="consol-edit-prov-'+idx+'" value="'+escConH(p.proveedor||'')+'" list="consol-prov-dl" placeholder="Proveedor" style="font-weight:800;font-size:15px;color:#5b21b6;border:1px solid #ddd6fe;border-radius:8px;padding:5px 10px;min-width:250px;background:#fff;" title="Cambiá el proveedor · si el nuevo ya tiene una orden activa, esta se fusiona automáticamente con ella">'
-          +'<span style="font-size:12px;color:#7c3aed;font-weight:500;">- Modo edición</span></div>'
-        +'<div style="font-size:11px;color:#7c3aed;margin-top:3px;">Edita proveedor, cantidades, precios, IVA y observaciones. Si cambiás a un proveedor que ya tiene orden, se juntan.</div>'
+          +'<input id="consol-edit-prov-'+idx+'" value="'+escConH(p.proveedor||'')+'" list="consol-prov-dl" placeholder="Proveedor" style="font-weight:800;font-size:15px;color:var(--cx-primary-text);border:1px solid #ddd6fe;border-radius:8px;padding:5px 10px;min-width:250px;background:var(--cx-card);" title="Cambiá el proveedor · si el nuevo ya tiene una orden activa, esta se fusiona automáticamente con ella">'
+          +'<span style="font-size:12px;color:var(--cx-primary-text);font-weight:500;">- Modo edición</span></div>'
+        +'<div style="font-size:11px;color:var(--cx-primary-text);margin-top:3px;">Edita proveedor, cantidades, precios, IVA y observaciones. Si cambiás a un proveedor que ya tiene orden, se juntan.</div>'
       +'</div>'
       +'<div style="display:flex;gap:8px;flex-shrink:0;">'
         +'<button class="btn" data-prov-idx="'+idx+'" onclick="saveConsolEdits(parseInt(this.dataset.provIdx))" '
-          +'style="padding:8px 14px;font-size:12px;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">&#x1F4BE; Guardar</button>'
+          +'style="padding:8px 14px;font-size:12px;background:var(--cx-success);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">&#x1F4BE; Guardar</button>'
         +'<button class="btn" data-prov-idx="'+idx+'" onclick="cancelConsolEdit(parseInt(this.dataset.provIdx))" '
-          +'style="padding:8px 14px;font-size:12px;background:#fff;color:#64748b;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-weight:600;">Cancelar</button>'
+          +'style="padding:8px 14px;font-size:12px;background:var(--cx-card);color:var(--cx-text-mute);border:1px solid var(--cx-border);border-radius:8px;cursor:pointer;font-weight:600;">Cancelar</button>'
       +'</div>'
     +'</div>'
     +'<div style="padding:12px 18px;">'+ocsHtml+'</div>'
@@ -8067,7 +8067,7 @@ function recalcConsolOC(ocId){
   var totEl = ocBox.querySelector('.oc-total');
   if(totEl){
     var ivaLine = conIva
-      ? ' <span style="font-size:10px;color:#0891b2;font-weight:500;">(subtotal $'+Number(subtotal).toLocaleString('es-CO',{maximumFractionDigits:0})+' + IVA)</span>'
+      ? ' <span style="font-size:10px;color:var(--cx-info-text);font-weight:500;">(subtotal $'+Number(subtotal).toLocaleString('es-CO',{maximumFractionDigits:0})+' + IVA)</span>'
       : '';
     totEl.innerHTML = 'Total OC: $'+Number(total).toLocaleString('es-CO',{maximumFractionDigits:0})+ivaLine;
   }
@@ -8091,12 +8091,12 @@ async function deleteConsolItem(btn){
   }catch(e){ btn.disabled=false; btn._busy=false; alert('Error de red: '+e.message); }
 }
 function _consolNewItemRowHTML(){
-  return '<tr data-new="1" style="background:#f0fdf4;">'
+  return '<tr data-new="1" style="background:var(--cx-success-pale);">'
     +'<td style="padding:4px 8px;"><input type="text" data-field="nombre_mp" placeholder="Producto / materia prima…" list="mp-dl" style="width:100%;padding:4px 6px;border:1px solid #86efac;border-radius:5px;font-size:12px;"></td>'
     +'<td style="padding:4px 8px;"><input type="number" step="any" min="0" value="1" data-field="cantidad_g" oninput="recalcConsolOCFromEl(this)" style="width:90px;padding:4px 6px;border:1px solid #86efac;border-radius:5px;font-size:12px;text-align:right;"></td>'
     +'<td style="padding:4px 8px;"><input type="number" step="any" min="0" value="0" data-field="precio_unitario" oninput="recalcConsolOCFromEl(this)" style="width:100px;padding:4px 6px;border:1px solid #86efac;border-radius:5px;font-size:12px;text-align:right;"></td>'
-    +'<td style="padding:6px 8px;font-size:12px;color:#475569;text-align:right;" class="row-subtotal">$0</td>'
-    +'<td style="padding:4px 8px;text-align:right;"><button onclick="removeNewRow(this)" style="background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;" title="Quitar fila">&#10005;</button></td>'
+    +'<td style="padding:6px 8px;font-size:12px;color:var(--cx-text-soft);text-align:right;" class="row-subtotal">$0</td>'
+    +'<td style="padding:4px 8px;text-align:right;"><button onclick="removeNewRow(this)" style="background:var(--cx-border-soft);color:var(--cx-text-mute);border:1px solid var(--cx-border);border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;" title="Quitar fila">&#10005;</button></td>'
   +'</tr>';
 }
 function removeNewRow(btn){
@@ -8315,7 +8315,7 @@ function _pedidoDocHtml(idx){
       var cant = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
       detalleRows += '<tr>'
         +'<td>'+escConH(it.codigo_mp||'')+'</td>'
-        +'<td>'+escConH(it.nombre_inci||it.nombre_mp)+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:#a8a29e;font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
+        +'<td>'+escConH(it.nombre_inci||it.nombre_mp)+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:var(--cx-text-faint);font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
         +'<td class="c">'+cant+'</td>'
         +'<td class="r">'+(it.precio_unitario>0?fmtCOP(it.precio_unitario):'$0,00')+'</td>'
         +'<td class="r">'+(it.subtotal_total>0?fmtCOP(it.subtotal_total):'$0,00')+'</td>'
@@ -8365,7 +8365,7 @@ function _pedidoDocHtml(idx){
 <title>Orden de Compra ${numDoc}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff;}
+body{font-family:Arial,sans-serif;font-size:11px;color:var(--cx-text);background:var(--cx-card);}
 .page{width:900px;margin:0 auto;padding:24px 28px;}
 /* Encabezado empresa */
 .hdr-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;}
@@ -8382,23 +8382,23 @@ table.main td, table.main th{border:1px solid #bbb;padding:4px 7px;vertical-alig
 /* Tabla de ítems */
 table.items{width:100%;border-collapse:collapse;margin:0;}
 table.items th{background:#3a3a3a;color:#fff;padding:5px 7px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}
-table.items td{border:1px solid #ccc;padding:4px 7px;font-size:11px;}
+table.items td{border:1px solid var(--cx-border);padding:4px 7px;font-size:11px;}
 table.items td.c{text-align:center;}
 table.items td.r{text-align:right;}
 /* Totales */
-.tot-label{font-weight:700;text-align:right;padding:4px 8px;border:1px solid #ccc;background:#f5f5f5;}
-.tot-val{font-weight:700;text-align:right;padding:4px 10px;border:1px solid #ccc;}
+.tot-label{font-weight:700;text-align:right;padding:4px 8px;border:1px solid var(--cx-border);background:#f5f5f5;}
+.tot-val{font-weight:700;text-align:right;padding:4px 10px;border:1px solid var(--cx-border);}
 .tot-bold{font-size:13px;font-weight:900;background:#1a1a1a;color:#fff;}
 /* Info pago */
 .info-row td{background:#e8f0fb;font-size:10px;padding:4px 7px;border:1px solid #bbb;}
 /* Firma */
-.firma-row td{padding:6px 8px;border:1px solid #ccc;font-size:10px;font-weight:700;}
+.firma-row td{padding:6px 8px;border:1px solid var(--cx-border);font-size:10px;font-weight:700;}
 .firma-val{height:28px;}
 /* Botones */
 .no-print{text-align:right;margin-bottom:16px;}
 .no-print button{padding:9px 22px;border:none;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;}
 .btn-print{background:#1a6bbf;color:#fff;margin-right:8px;}
-.btn-close{background:#e2e8f0;color:#333;}
+.btn-close{background:var(--cx-border);color:var(--cx-text);}
 @media print{
   .no-print{display:none!important;}
   .page{padding:12px 16px;width:100%;}
@@ -8423,7 +8423,7 @@ table.items td.r{text-align:right;}
     <td style="text-align:right;border:none;vertical-align:middle;">
       <div class="oc-title">ORDEN DE COMPRA</div>
       <div class="oc-lomdte" style="font-size:20px;font-weight:900;color:#2d7a74;">${numDoc}</div>
-      <div style="font-size:10px;color:#64748b;margin-top:4px;">Generado por Sistema HHA &bull; ${fechaStr}</div>
+      <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;">Generado por Sistema HHA &bull; ${fechaStr}</div>
     </td>
   </tr>
 </table>
@@ -8572,10 +8572,10 @@ table.items td.r{text-align:right;}
   <label><input type="radio" name="iva_opt" value="0.19" onchange="recalcIVA(this.value,${subtotal})"> 19%</label>
   <label><input type="radio" name="iva_opt" value="0.05" onchange="recalcIVA(this.value,${subtotal})"> 5%</label>
   <label style="display:flex;align-items:center;gap:4px;">
-    Otro %: <input type="number" id="iva-custom" min="0" max="100" step="1" style="width:56px;border:1px solid #ccc;border-radius:4px;padding:3px 6px;"
+    Otro %: <input type="number" id="iva-custom" min="0" max="100" step="1" style="width:56px;border:1px solid var(--cx-border);border-radius:4px;padding:3px 6px;"
       oninput="recalcIVA(document.getElementById('iva-custom').value/100,${subtotal})">
   </label>
-  <span style="font-size:11px;color:#64748b;">Ajusta y luego imprime</span>
+  <span style="font-size:11px;color:var(--cx-text-mute);">Ajusta y luego imprime</span>
 </div>
 
 </div>
@@ -8634,9 +8634,9 @@ function imprimirTodas(){
   }
   if(!pages.length){ alert('No se pudo preparar la impresión.'); return; }
   var saltos = pages.join('<div style="page-break-after:always;"></div>');
-  var barra = '<div class="no-print" style="position:sticky;top:0;background:#0f766e;padding:10px;text-align:center;z-index:99;">'
-    +'<button onclick="window.print()" style="padding:9px 22px;border:none;border-radius:5px;font-weight:700;cursor:pointer;background:#fff;color:#0f766e;margin:0 6px;">&#x1F5A8; Imprimir las '+pages.length+' &oacute;rdenes</button>'
-    +'<button onclick="window.close()" style="padding:9px 22px;border:none;border-radius:5px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#333;margin:0 6px;">Cerrar</button>'
+  var barra = '<div class="no-print" style="position:sticky;top:0;background:var(--cx-info);padding:10px;text-align:center;z-index:99;">'
+    +'<button onclick="window.print()" style="padding:9px 22px;border:none;border-radius:5px;font-weight:700;cursor:pointer;background:var(--cx-card);color:var(--cx-info-text);margin:0 6px;">&#x1F5A8; Imprimir las '+pages.length+' &oacute;rdenes</button>'
+    +'<button onclick="window.close()" style="padding:9px 22px;border:none;border-radius:5px;font-weight:700;cursor:pointer;background:var(--cx-border);color:var(--cx-text);margin:0 6px;">Cerrar</button>'
     +'</div>';
   var html = '<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">'
     +'<title>Ordenes de compra - '+pages.length+'</title><style>'+css+'</style></head><body>'
@@ -8699,7 +8699,7 @@ async function payOC(numero_oc){
       var info = document.getElementById('pago-info');
       if(info){
         info.innerHTML = '<div><strong>'+_esc(numero_oc)+'</strong> · valor total '+_money(d.valor_total_oc)+
-          ' · pagado '+_money(d.total_pagado)+' · pendiente <strong style="color:#dc2626;">'+_money(d.pendiente)+'</strong></div>';
+          ' · pagado '+_money(d.total_pagado)+' · pendiente <strong style="color:var(--cx-danger-text);">'+_money(d.pendiente)+'</strong></div>';
       }
       // Pre-llenar con el monto pendiente
       if(d.pendiente > 0) document.getElementById('pago-monto').value = d.pendiente;
@@ -8711,9 +8711,9 @@ async function payOC(numero_oc){
         if(saldo > 0 && d.pendiente > 0){
           var _apl = Math.min(saldo, d.pendiente);
           sf.style.display = 'block';
-          sf.innerHTML = '💡 <b>'+_esc(d.proveedor||'')+'</b> tiene <b style="color:#16a34a">'+_money(saldo)+'</b> a favor.'+
+          sf.innerHTML = '💡 <b>'+_esc(d.proveedor||'')+'</b> tiene <b style="color:var(--cx-success-text)">'+_money(saldo)+'</b> a favor.'+
             ' Aplicar <input id="pago-aplicar-monto" type="number" min="0" value="'+_apl+'" style="width:110px;padding:3px 6px;border:1px solid #86efac;border-radius:5px;font-size:12px"> '+
-            '<button type="button" onclick="aplicarSaldoOC()" style="padding:4px 11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">Aplicar saldo</button>';
+            '<button type="button" onclick="aplicarSaldoOC()" style="padding:4px 11px;background:var(--cx-success);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">Aplicar saldo</button>';
         } else { sf.style.display = 'none'; }
       }
 
@@ -8723,7 +8723,7 @@ async function payOC(numero_oc){
       if((d.pagos||[]).length){
         hist.style.display = 'block';
         histList.innerHTML = d.pagos.map(function(p){
-          return '<div style="padding:4px 0;border-bottom:1px solid #e5e7eb;">'+
+          return '<div style="padding:4px 0;border-bottom:1px solid var(--cx-border);">'+
             (p.fecha_pago||'').replace('T',' ').slice(0,16)+' · '+_money(p.monto)+' · '+_esc(p.medio)+
             (p.numero_factura_proveedor ? ' · fac '+_esc(p.numero_factura_proveedor) : '')+
             (p.numero_transaccion ? ' · 🏦 '+_esc(p.numero_transaccion) : '')+
@@ -8765,7 +8765,7 @@ async function openSaldoFavor(){
     var r = await fetch('/api/compras/saldos-favor');
     var d = await r.json();
     _renderSaldosFavor((d && d.saldos) || []);
-  }catch(e){ var b=document.getElementById('sf-lista'); if(b) b.innerHTML='<span style="color:#b91c1c">Error cargando</span>'; }
+  }catch(e){ var b=document.getElementById('sf-lista'); if(b) b.innerHTML='<span style="color:var(--cx-danger-text)">Error cargando</span>'; }
 }
 function _renderSaldosFavor(saldos){
   var box = document.getElementById('sf-lista');
@@ -8775,12 +8775,12 @@ function _renderSaldosFavor(saldos){
   if(!box) return;
   if(!saldos.length){ box.innerHTML = '<div style="opacity:.7;padding:8px 0;">Sin saldos a favor por ahora. Registrá un anticipo o ajuste arriba.</div>'; return; }
   box.innerHTML = saldos.map(function(s,i){
-    return '<div style="border:1px solid #e5e7eb;border-radius:8px;margin-bottom:7px;overflow:hidden;">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:#f9fafb;cursor:pointer;" onclick="_verMovimientosSaldo('+i+')">'+
-        '<span style="font-weight:700;color:#0f172a;">'+_esc(s.proveedor)+'</span>'+
-        '<span><b style="color:#16a34a;font-size:15px;">'+_money(s.saldo)+'</b> <span style="color:#94a3b8;font-size:11px;">&#9656; movimientos</span></span>'+
+    return '<div style="border:1px solid var(--cx-border);border-radius:8px;margin-bottom:7px;overflow:hidden;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--cx-bg-alt);cursor:pointer;" onclick="_verMovimientosSaldo('+i+')">'+
+        '<span style="font-weight:700;color:var(--cx-text);">'+_esc(s.proveedor)+'</span>'+
+        '<span><b style="color:var(--cx-success-text);font-size:15px;">'+_money(s.saldo)+'</b> <span style="color:var(--cx-text-faint);font-size:11px;">&#9656; movimientos</span></span>'+
       '</div>'+
-      '<div id="sfmov-'+i+'" data-prov="'+_esc(s.proveedor)+'" style="display:none;padding:7px 12px;font-size:11px;color:#64748b;background:#fff;"></div>'+
+      '<div id="sfmov-'+i+'" data-prov="'+_esc(s.proveedor)+'" style="display:none;padding:7px 12px;font-size:11px;color:var(--cx-text-mute);background:var(--cx-card);"></div>'+
     '</div>';
   }).join('');
 }
@@ -8799,11 +8799,11 @@ async function _verMovimientosSaldo(i){
       var sign = m.tipo==='credito' ? '+' : '\\u2212';
       var col = m.tipo==='credito' ? '#16a34a' : '#dc2626';
       var lbl = m.origen==='anticipo'?'anticipo':(m.origen==='sobrepago'?'sobrepago':(m.origen==='aplicar_oc'?'aplicado a OC':(m.origen==='ajuste'?'ajuste/nota crédito':(m.origen||m.tipo))));
-      return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f1f5f9;">'+
+      return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--cx-border-soft);">'+
         '<span>'+(m.fecha||'').slice(0,10)+' &middot; '+_esc(lbl)+(m.numero_oc?(' &middot; '+_esc(m.numero_oc)):'')+' &middot; <em>'+_esc(m.por||'')+'</em>'+(m.obs?(' &middot; '+_esc(m.obs)):'')+'</span>'+
         '<b style="color:'+col+';white-space:nowrap;">'+sign+_money(m.monto)+'</b></div>';
     }).join('');
-  }catch(e){ box.innerHTML='<span style="color:#b91c1c">Error cargando</span>'; }
+  }catch(e){ box.innerHTML='<span style="color:var(--cx-danger-text)">Error cargando</span>'; }
 }
 async function registrarSaldoFavor(){
   var prov = ((document.getElementById('sf-prov')||{}).value || '').trim();
@@ -8835,13 +8835,13 @@ async function cargarMailbox(){
   var diasEl = document.getElementById('mailbox-dias');
   var dias = diasEl ? parseInt(diasEl.value, 10) : 30;
   if(isNaN(dias) || dias < 1) dias = 30;
-  div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>';
+  div.innerHTML = '<div style="text-align:center;color:var(--cx-text-faint);padding:30px">Cargando…</div>';
   resumen.innerHTML = '';
   try{
     var r = await fetch('/api/compras/mailbox-facturas?dias=' + dias);
     if(r.status === 401){ window.location.href = '/login'; return; }
     if(!r.ok){
-      div.innerHTML = '<div style="color:#dc2626;padding:20px">Error HTTP ' + r.status + '</div>';
+      div.innerHTML = '<div style="color:var(--cx-danger-text);padding:20px">Error HTTP ' + r.status + '</div>';
       return;
     }
     var d = await r.json();
@@ -8859,18 +8859,18 @@ async function cargarMailbox(){
     var pend = d.n_pendientes || 0;
     resumen.innerHTML = '<span style="background:' + (pend>0?'#ede9fe':'#dcfce7') + ';color:' + (pend>0?'#5b21b6':'#15803d') + ';padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px">' +
       (pend>0 ? ('📧 ' + pend + ' factura(s) pendiente(s) de completar') : ('✓ Sin pendientes (' + n + ' procesadas)')) +
-      '</span><span style="color:#64748b">Ventana ' + dias + 'd</span>';
+      '</span><span style="color:var(--cx-text-mute)">Ventana ' + dias + 'd</span>';
     var badge = document.getElementById('mailbox-badge');
     if(badge){
       if(pend > 0){ badge.style.display = 'inline-block'; badge.textContent = pend; }
       else { badge.style.display = 'none'; }
     }
     if(n === 0){
-      div.innerHTML = '<div style="text-align:center;color:#15803d;padding:30px;background:#f0fdf4">📭 Mailbox vacío en últimos ' + dias + 'd</div>';
+      div.innerHTML = '<div style="text-align:center;color:var(--cx-success-text);padding:30px;background:var(--cx-success-pale)">📭 Mailbox vacío en últimos ' + dias + 'd</div>';
       return;
     }
     var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html += '<thead><tr style="background:#f8fafc;color:#475569;border-bottom:1px solid #e2e8f0">';
+    html += '<thead><tr style="background:var(--cx-bg-alt);color:var(--cx-text-soft);border-bottom:1px solid var(--cx-border)">';
     html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Detectado</th>';
     html += '<th style="text-align:left;padding:10px 12px;font-weight:700">OC asociada</th>';
     html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Proveedor</th>';
@@ -8881,7 +8881,7 @@ async function cargarMailbox(){
     html += '</tr></thead><tbody>';
     (d.items || []).forEach(function(it){
       var bg = it.pendiente ? '#faf5ff' : '#fff';
-      html += '<tr style="border-bottom:1px solid #f1f5f9;background:' + bg + '">';
+      html += '<tr style="border-bottom:1px solid var(--cx-border-soft);background:' + bg + '">';
       html += '<td style="padding:8px 12px">' + _esc(it.fecha) + '</td>';
       html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">' + _esc(it.numero_oc) + '</td>';
       html += '<td style="padding:8px 12px">' + _esc(it.proveedor || '-') + '</td>';
@@ -8891,21 +8891,21 @@ async function cargarMailbox(){
       var estTxt = it.pendiente ? 'PENDIENTE' : it.medio;
       html += '<td style="padding:8px 12px;text-align:center;font-weight:700;font-size:11px;color:' + estCol + '">' + _esc(estTxt) + '</td>';
       html += '<td style="padding:8px 12px;text-align:center">';
-      html += '<a href="/api/compras/mailbox-facturas/' + it.pago_id + '/comprobante" target="_blank" style="padding:4px 10px;background:#1e40af;color:#fff;text-decoration:none;border-radius:5px;font-size:11px;font-weight:700;margin-right:4px">👁 Ver</a>';
+      html += '<a href="/api/compras/mailbox-facturas/' + it.pago_id + '/comprobante" target="_blank" style="padding:4px 10px;background:var(--cx-info);color:#fff;text-decoration:none;border-radius:5px;font-size:11px;font-weight:700;margin-right:4px">👁 Ver</a>';
       // Sebastián 24-may-2026 · botón Completar · solo si pendiente · llena
       // monto + medio + factura · cambia row a pago real auditado y recalcula
       // estado OC (Pagada/Parcial según SUM)
       if(it.pendiente){
-        html += '<button onclick="_mailboxCompletar(' + it.pago_id + ',' + (it.valor_oc||0) + ',&quot;' + _esc(it.numero_oc) + '&quot;)" style="padding:4px 10px;background:#16a34a;color:#fff;border:0;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px">✅ Completar</button>';
+        html += '<button onclick="_mailboxCompletar(' + it.pago_id + ',' + (it.valor_oc||0) + ',&quot;' + _esc(it.numero_oc) + '&quot;)" style="padding:4px 10px;background:var(--cx-success);color:#fff;border:0;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px">✅ Completar</button>';
       }
-      html += '<button onclick="_mailboxDescartar(' + it.pago_id + ')" style="padding:4px 10px;background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✕ Descartar</button>';
+      html += '<button onclick="_mailboxDescartar(' + it.pago_id + ')" style="padding:4px 10px;background:var(--cx-card);color:var(--cx-danger-text);border:1px solid var(--cx-danger);border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✕ Descartar</button>';
       html += '</td></tr>';
     });
     html += '</tbody></table>';
-    html += '<div style="font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;border-top:1px solid #e2e8f0">💡 El cron <code>job_mailbox_factura_proveedor</code> revisa el inbox cada día a las 7:15 AM y crea pagos PENDIENTE. Click <strong>Ver</strong> abre la factura adjunta. <strong>Descartar</strong> elimina la entrada (no afecta la OC).</div>';
+    html += '<div style="font-size:11px;color:var(--cx-text-mute);padding:10px 12px;background:var(--cx-bg-alt);border-top:1px solid var(--cx-border)">💡 El cron <code>job_mailbox_factura_proveedor</code> revisa el inbox cada día a las 7:15 AM y crea pagos PENDIENTE. Click <strong>Ver</strong> abre la factura adjunta. <strong>Descartar</strong> elimina la entrada (no afecta la OC).</div>';
     div.innerHTML = html;
   }catch(e){
-    div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';
+    div.innerHTML = '<div style="color:var(--cx-danger-text);padding:20px">Error red: ' + e.message + '</div>';
   }
 }
 
@@ -8963,9 +8963,9 @@ function _cotOvClose(){ var o=document.getElementById('cot-new-ov'); if(o) o.rem
 function _cotProvOptions(){ return (window.PROVS||[]).map(function(p){ return '<option value="'+esc(p.nombre)+'">'; }).join(''); }
 function _cotProvRow(){
   return '<div class="cot-prow" style="display:flex;gap:8px;margin-bottom:8px">'
-    +'<input list="cot-prov-list" class="cot-prov" placeholder="Proveedor (elegí o escribí uno nuevo)" style="flex:2;padding:8px 11px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px">'
-    +'<input class="cot-cond" placeholder="Condiciones (opc)" style="flex:1;padding:8px 11px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px">'
-    +'<button onclick="this.parentNode.remove()" title="quitar" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;width:36px;cursor:pointer;font-weight:700">&times;</button>'
+    +'<input list="cot-prov-list" class="cot-prov" placeholder="Proveedor (elegí o escribí uno nuevo)" style="flex:2;padding:8px 11px;border:1px solid var(--cx-border);border-radius:8px;font-size:13px">'
+    +'<input class="cot-cond" placeholder="Condiciones (opc)" style="flex:1;padding:8px 11px;border:1px solid var(--cx-border);border-radius:8px;font-size:13px">'
+    +'<button onclick="this.parentNode.remove()" title="quitar" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca;border-radius:8px;width:36px;cursor:pointer;font-weight:700">&times;</button>'
     +'</div>';
 }
 function _cotAddProvRow(){ var box=document.getElementById('cot-prov-rows'); if(box) box.insertAdjacentHTML('beforeend', _cotProvRow()); }
@@ -8973,23 +8973,23 @@ function nuevaRondaCotizModal(prefill, codigo){
   _cotOvClose();
   var ov=document.createElement('div'); ov.id='cot-new-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow:auto';
-  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:600px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
+  ov.innerHTML='<div style="background:var(--cx-card);border-radius:16px;max-width:600px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
     +'<div style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-bottom:1px solid #ece9f6;padding:18px 22px;display:flex;justify-content:space-between;align-items:center">'
     +'<div><div style="font-size:16px;font-weight:800;color:#1e1b2e">&#128172; Nueva ronda de cotizaci&oacute;n</div><div style="font-size:11px;color:#8b8b9e;margin-top:1px">Ped&iacute; precio a varios proveedores y compar&aacute;</div></div>'
     +'<button onclick="_cotOvClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button></div>'
     +'<div style="padding:20px 22px">'
     +'<input type="hidden" id="cot-codigo" value="'+esc(codigo||'')+'">'
     +'<label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:4px">&iquest;Qu&eacute; se va a cotizar?</label>'
-    +'<textarea id="cot-desc" rows="2" placeholder="Ej: frasco ambar 30ml con gotero, o cualquier material/servicio nuevo" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>'
+    +'<textarea id="cot-desc" rows="2" placeholder="Ej: frasco ambar 30ml con gotero, o cualquier material/servicio nuevo" style="width:100%;padding:9px 11px;border:1px solid var(--cx-border);border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>'
     +'<div style="font-size:11px;color:#a1a1aa;margin:3px 0 14px">Texto libre, funciona para cosas que nunca hemos comprado. S&eacute; espec&iacute;fico (medida, calidad).</div>'
     +'<div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:14px">'
-    +'<div style="flex:0 0 150px"><label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:4px">Cantidad <span style="color:#a1a1aa;font-weight:400">(opc)</span></label><input id="cot-cant" type="number" min="0" step="any" placeholder="ej: 500" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:14px;box-sizing:border-box;font-weight:700"></div>'
+    +'<div style="flex:0 0 150px"><label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:4px">Cantidad <span style="color:#a1a1aa;font-weight:400">(opc)</span></label><input id="cot-cant" type="number" min="0" step="any" placeholder="ej: 500" style="width:100%;padding:9px 11px;border:1px solid var(--cx-border);border-radius:9px;font-size:14px;box-sizing:border-box;font-weight:700"></div>'
     +'<div style="flex:1;font-size:11px;color:#8b8b9e;padding-bottom:8px;line-height:1.4">Si la pon&eacute;s, la <b>OC ganadora sale con el &iacute;tem listo</b> (cantidad + precio unitario). Cada proveedor carga el <b>precio total</b> por esa cantidad.</div>'
     +'</div>'
     +'<label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:6px">Proveedores a cotizar (m&iacute;nimo 2)</label>'
     +'<datalist id="cot-prov-list">'+_cotProvOptions()+'</datalist>'
     +'<div id="cot-prov-rows">'+_cotProvRow()+_cotProvRow()+'</div>'
-    +'<button onclick="_cotAddProvRow()" style="background:#f5f3ff;color:#6d28d9;border:1px dashed #ddd6fe;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:14px">&#10133; Agregar proveedor</button>'
+    +'<button onclick="_cotAddProvRow()" style="background:var(--cx-primary-pale);color:var(--cx-primary-text);border:1px dashed #ddd6fe;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:14px">&#10133; Agregar proveedor</button>'
     +'<div id="cot-new-msg" style="font-size:12px;margin-bottom:8px"></div>'
     +'<button onclick="crearRondaCotiz()" style="width:100%;padding:11px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:11px;font-weight:800;font-size:14px;cursor:pointer">Crear ronda y comparar</button>'
     +'</div></div>';
@@ -9006,14 +9006,14 @@ async function cargarCandidatosCotiz(){
     var d=await r.json(); var its=d.items||[];
     if(!its.length){ box.innerHTML=''; return; }
     window._COT_CANDS=its;
-    box.innerHTML='<div style="background:#fff;border:1px solid #ece9f6;border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(15,23,42,.04)">'
+    box.innerHTML='<div style="background:var(--cx-card);border:1px solid #ece9f6;border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(15,23,42,.04)">'
       +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">'
       +'<span style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px">&#128269;</span>'
       +'<span style="font-weight:800;font-size:14px;color:#1e1b2e">Candidatos a cotizar</span>'
-      +'<span style="font-size:11px;font-weight:800;background:#fef3c7;color:#92400e;border-radius:999px;padding:3px 10px">'+its.length+' sin precio</span>'
+      +'<span style="font-size:11px;font-weight:800;background:var(--cx-warn-pale);color:var(--cx-warn-text);border-radius:999px;padding:3px 10px">'+its.length+' sin precio</span>'
       +'<input id="cot-cand-q" oninput="_renderCotCands()" placeholder="&#128269; filtrar material&hellip;" style="margin-left:auto;min-width:180px;flex:1;max-width:280px;padding:7px 12px;border:1px solid #ece9f6;border-radius:999px;font-size:12px">'
       +'</div>'
-      +'<div style="font-size:11px;color:#78716c;margin-bottom:12px">Materiales activos sin precio de referencia (nunca comprados). Click en uno para abrir su ronda de cotizaci&oacute;n.</div>'
+      +'<div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:12px">Materiales activos sin precio de referencia (nunca comprados). Click en uno para abrir su ronda de cotizaci&oacute;n.</div>'
       +'<div id="cot-cand-chips" style="display:flex;gap:7px;flex-wrap:wrap"></div></div>';
     _renderCotCands();
   }catch(e){ box.innerHTML=''; }
@@ -9030,49 +9030,49 @@ function _renderCotCands(){
   var CAP=48;
   var shown=filt.slice(0,CAP);
   var chips=shown.map(function(o){
-    return '<button onclick="_cotDesdeCandidato('+o.idx+')" style="background:#faf7ff;border:1px solid #ede9f6;color:#4c1d95;border-radius:999px;cursor:pointer;padding:6px 12px;font-size:12px;font-weight:600;transition:all .12s" onmouseover="this.style.background=\\'#f0e9ff\\'" onmouseout="this.style.background=\\'#faf7ff\\'" title="Abrir ronda de cotización para este material">&#128172; '+esc(o.it.nombre||o.it.codigo||'')+'</button>';
+    return '<button onclick="_cotDesdeCandidato('+o.idx+')" style="background:#faf7ff;border:1px solid #ede9f6;color:var(--cx-primary-text);border-radius:999px;cursor:pointer;padding:6px 12px;font-size:12px;font-weight:600;transition:all .12s" onmouseover="this.style.background=\\'#f0e9ff\\'" onmouseout="this.style.background=\\'#faf7ff\\'" title="Abrir ronda de cotización para este material">&#128172; '+esc(o.it.nombre||o.it.codigo||'')+'</button>';
   }).join('');
-  if(filt.length>CAP){ chips+='<span style="align-self:center;font-size:11px;color:#94a3b8;padding:0 6px">+'+(filt.length-CAP)+' m&aacute;s &middot; afin&aacute; el filtro</span>'; }
-  if(!filt.length){ chips='<span style="font-size:12px;color:#94a3b8;padding:4px 0">Sin candidatos que coincidan con "'+esc(q)+'".</span>'; }
+  if(filt.length>CAP){ chips+='<span style="align-self:center;font-size:11px;color:var(--cx-text-faint);padding:0 6px">+'+(filt.length-CAP)+' m&aacute;s &middot; afin&aacute; el filtro</span>'; }
+  if(!filt.length){ chips='<span style="font-size:12px;color:var(--cx-text-faint);padding:4px 0">Sin candidatos que coincidan con "'+esc(q)+'".</span>'; }
   wrap.innerHTML=chips;
 }
 async function crearRondaCotiz(){
   var desc=((document.getElementById('cot-desc')||{}).value||'').trim();
   var msg=document.getElementById('cot-new-msg');
-  if(desc.length<3){ if(msg) msg.innerHTML='<span style="color:#dc2626">Escrib&iacute; qu&eacute; se va a cotizar.</span>'; return; }
+  if(desc.length<3){ if(msg) msg.innerHTML='<span style="color:var(--cx-danger-text)">Escrib&iacute; qu&eacute; se va a cotizar.</span>'; return; }
   var provs=[];
   document.querySelectorAll('#cot-prov-rows .cot-prow').forEach(function(row){
     var n=((row.querySelector('.cot-prov')||{}).value||'').trim();
     var cc=((row.querySelector('.cot-cond')||{}).value||'').trim();
     if(n) provs.push({nombre:n, condiciones:cc});
   });
-  if(provs.length<2){ if(msg) msg.innerHTML='<span style="color:#dc2626">M&iacute;nimo 2 proveedores para comparar.</span>'; return; }
+  if(provs.length<2){ if(msg) msg.innerHTML='<span style="color:var(--cx-danger-text)">M&iacute;nimo 2 proveedores para comparar.</span>'; return; }
   var cant=parseFloat((document.getElementById('cot-cant')||{}).value||'')||0;
   var codigo=((document.getElementById('cot-codigo')||{}).value||'').trim();
   try{
     var r=await fetch('/api/compras/cotizaciones/rondas', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''}, body:JSON.stringify({descripcion:desc, proveedores:provs, cantidad_g:cant, codigo_mp:codigo})});
     var d=await r.json();
-    if(!r.ok || d.error){ if(msg) msg.innerHTML='<span style="color:#dc2626">'+esc(d.error||('Error '+r.status))+'</span>'; return; }
+    if(!r.ok || d.error){ if(msg) msg.innerHTML='<span style="color:var(--cx-danger-text)">'+esc(d.error||('Error '+r.status))+'</span>'; return; }
     _cotOvClose(); cargarCotizaciones();
     if(d.ronda_id) setTimeout(function(){ abrirCotizDrawer(d.ronda_id); }, 200);
-  }catch(e){ if(msg) msg.innerHTML='<span style="color:#dc2626">Error red: '+esc(e.message)+'</span>'; }
+  }catch(e){ if(msg) msg.innerHTML='<span style="color:var(--cx-danger-text)">Error red: '+esc(e.message)+'</span>'; }
 }
 
 async function cargarCotizaciones(){
   var div = document.getElementById('cotiz-contenido');
   var resumen = document.getElementById('cotiz-resumen');
-  div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>';
+  div.innerHTML = '<div style="text-align:center;color:var(--cx-text-faint);padding:30px">Cargando…</div>';
   cargarCandidatosCotiz();
   try{
     var r = await fetch('/api/compras/cotizaciones/rondas');
-    if(!r.ok){ div.innerHTML='<div style="color:#dc2626;padding:20px">Error '+r.status+'</div>'; return; }
+    if(!r.ok){ div.innerHTML='<div style="color:var(--cx-danger-text);padding:20px">Error '+r.status+'</div>'; return; }
     var d = await r.json();
     var rondas = d.rondas || d.items || [];
     var pend = rondas.filter(function(x){ return (x.estado||'').toLowerCase()==='abierta' || (x.estado||'').toLowerCase()==='pendiente'; }).length;
     var cerr = rondas.filter(function(x){ return (x.estado||'').toLowerCase()==='cerrada'; }).length;
-    resumen.innerHTML = '<span style="color:#78716c;font-size:12px">Rondas de cotizaci&oacute;n &middot; compar&aacute; hasta 3 proveedores y eleg&iacute; la ganadora (genera la OC).</span>';
+    resumen.innerHTML = '<span style="color:var(--cx-text-mute);font-size:12px">Rondas de cotizaci&oacute;n &middot; compar&aacute; hasta 3 proveedores y eleg&iacute; la ganadora (genera la OC).</span>';
     if(!rondas.length){
-      div.innerHTML = '<div class="cxt-wrap" style="text-align:center;color:#78716c;padding:40px"><div style="font-size:14px;font-weight:700;margin-bottom:6px;color:#292524">No hay rondas de cotizaciones a&uacute;n</div><div style="font-size:12px">Cre&aacute; una desde la pesta&ntilde;a Planta &rarr; SOL agrupada &rarr; &#128172; Cotizar</div></div>';
+      div.innerHTML = '<div class="cxt-wrap" style="text-align:center;color:var(--cx-text-mute);padding:40px"><div style="font-size:14px;font-weight:700;margin-bottom:6px;color:var(--cx-text)">No hay rondas de cotizaciones a&uacute;n</div><div style="font-size:12px">Cre&aacute; una desde la pesta&ntilde;a Planta &rarr; SOL agrupada &rarr; &#128172; Cotizar</div></div>';
       return;
     }
     var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
@@ -9087,11 +9087,11 @@ async function cargarCotizaciones(){
       var est = (r2.estado||'').toLowerCase();
       var chip = est==='cerrada' ? 'ok' : (est==='cancelada'?'no':'wait');
       html += '<tr>';
-      html += '<td class="cxt-mono" style="font-weight:700;color:#6d28d9">#'+(r2.ronda_id||r2.id)+'</td>';
-      html += '<td style="font-weight:600;color:#292524">'+_esc(r2.material_nombre||r2.descripcion||r2.material_id||'-')+'</td>';
-      html += '<td style="color:#78716c">'+_esc((r2.fecha||r2.creada_en||'').slice(0,10))+'</td>';
+      html += '<td class="cxt-mono" style="font-weight:700;color:var(--cx-primary-text)">#'+(r2.ronda_id||r2.id)+'</td>';
+      html += '<td style="font-weight:600;color:var(--cx-text)">'+_esc(r2.material_nombre||r2.descripcion||r2.material_id||'-')+'</td>';
+      html += '<td style="color:var(--cx-text-mute)">'+_esc((r2.fecha||r2.creada_en||'').slice(0,10))+'</td>';
       html += '<td style="text-align:center"><span class="cxt-chip mute">'+(r2.recibidas||r2.respuestas||0)+' / '+(r2.total_cotizaciones||r2.solicitadas||r2.total||0)+'</span></td>';
-      html += '<td class="cxt-mono" style="text-align:right;font-weight:700;color:#15803d">'+(r2.mejor_precio ? _money(r2.mejor_precio) : '-')+'</td>';
+      html += '<td class="cxt-mono" style="text-align:right;font-weight:700;color:var(--cx-success-text)">'+(r2.mejor_precio ? _money(r2.mejor_precio) : '-')+'</td>';
       html += '<td style="text-align:center"><span class="cxt-chip '+chip+'" style="text-transform:uppercase">'+_esc(r2.estado||'?')+'</span></td>';
       html += '<td style="text-align:center"><button class="cxt-btnp" onclick="abrirCotizDrawer(&#39;'+(r2.ronda_id||r2.id)+'&#39;)">&#128202; Comparar</button></td>';
       html += '</tr>';
@@ -9104,7 +9104,7 @@ async function cargarCotizaciones(){
     var b = document.getElementById('cotiz-badge');
     if(b){ if(pend>0){ b.textContent = pend; b.style.display='inline-block'; } else b.style.display='none'; }
   } catch(e){
-    div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: '+e.message+'</div>';
+    div.innerHTML = '<div style="color:var(--cx-danger-text);padding:20px">Error red: '+e.message+'</div>';
   }
 }
 async function abrirCotizDrawer(rondaId){
@@ -9113,24 +9113,24 @@ async function abrirCotizDrawer(rondaId){
   var modal = document.createElement('div');
   modal.id = 'cotiz-drawer';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-  modal.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:1000px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.25)">'+
-    '<div style="padding:18px 22px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between">'+
-      '<div><h3 style="margin:0;font-size:16px;color:#1e293b">📊 Comparar cotizaciones · Ronda #'+rondaId+'</h3><div id="cot-ronda-meta" style="font-size:12px;color:#64748b;margin-top:2px"></div></div>'+
-      '<button onclick="document.getElementById(\\'cotiz-drawer\\').remove()" style="background:#e5e7eb;color:#475569;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button>'+
+  modal.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;max-width:1000px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.25)">'+
+    '<div style="padding:18px 22px;border-bottom:1px solid var(--cx-border);display:flex;align-items:center;justify-content:space-between">'+
+      '<div><h3 style="margin:0;font-size:16px;color:var(--cx-text)">📊 Comparar cotizaciones · Ronda #'+rondaId+'</h3><div id="cot-ronda-meta" style="font-size:12px;color:var(--cx-text-mute);margin-top:2px"></div></div>'+
+      '<button onclick="document.getElementById(\\'cotiz-drawer\\').remove()" style="background:var(--cx-border);color:var(--cx-text-soft);border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button>'+
     '</div>'+
-    '<div id="cot-drawer-body" style="padding:20px"><div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div></div>'+
+    '<div id="cot-drawer-body" style="padding:20px"><div style="text-align:center;color:var(--cx-text-faint);padding:40px">Cargando…</div></div>'+
     '</div>';
   document.body.appendChild(modal);
   try{
     var r = await fetch('/api/compras/cotizaciones/rondas/'+rondaId);
     var d = await r.json();
-    if(!r.ok){ document.getElementById('cot-drawer-body').innerHTML='<div style="color:#dc2626">Error: '+(d.error||r.status)+'</div>'; return; }
+    if(!r.ok){ document.getElementById('cot-drawer-body').innerHTML='<div style="color:var(--cx-danger-text)">Error: '+(d.error||r.status)+'</div>'; return; }
     var ronda = d.ronda || {};
     var cots = d.cotizaciones || d.items || [];
     var meta = document.getElementById('cot-ronda-meta');
     if(meta) meta.textContent = (ronda.material_nombre||ronda.descripcion||'?') + (ronda.cantidad_g>0?(' · '+ronda.cantidad_g+' und/g'):'') + (ronda.creada_en?(' · creada '+(ronda.creada_en||'').slice(0,10)):'');
     if(!cots.length){
-      document.getElementById('cot-drawer-body').innerHTML = '<div style="text-align:center;color:#64748b;padding:40px">Sin cotizaciones registradas aún. Cuando los proveedores respondan, usá el botón ✏️ Registrar respuesta abajo.</div>';
+      document.getElementById('cot-drawer-body').innerHTML = '<div style="text-align:center;color:var(--cx-text-mute);padding:40px">Sin cotizaciones registradas aún. Cuando los proveedores respondan, usá el botón ✏️ Registrar respuesta abajo.</div>';
       return;
     }
     // Ordenar por valor_total ascendente (mejor primero)
@@ -9143,27 +9143,27 @@ async function abrirCotizDrawer(rondaId){
       var bg = esGanadora ? '#dcfce7' : (i===0?'#ecfeff':'#fff');
       html += '<div style="background:'+bg+';border:2px solid '+borde+';border-radius:10px;padding:14px">';
       if(esGanadora){
-        html += '<div style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:6px">🏆 GANADORA</div>';
+        html += '<div style="background:var(--cx-success);color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:6px">🏆 GANADORA</div>';
       } else if(i===0 && !cerrada){
-        html += '<div style="background:#0891b2;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:6px">💰 MEJOR PRECIO</div>';
+        html += '<div style="background:var(--cx-info);color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:6px">💰 MEJOR PRECIO</div>';
       }
-      html += '<div style="font-weight:800;font-size:14px;color:#1e293b;margin-bottom:8px">'+_esc(c.proveedor||'?')+'</div>';
+      html += '<div style="font-weight:800;font-size:14px;color:var(--cx-text);margin-bottom:8px">'+_esc(c.proveedor||'?')+'</div>';
       html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
-      html += '<tr><td style="color:#64748b;padding:3px 0">Precio total:</td><td style="text-align:right;font-weight:800;color:#1e293b">'+(c.valor_total?_money(c.valor_total):'-')+'</td></tr>';
-      if(ronda.cantidad_g>0 && c.valor_total){ html += '<tr><td style="color:#64748b;padding:3px 0">Precio unitario:</td><td style="text-align:right;font-weight:700;color:#0891b2">'+_money(c.valor_total/ronda.cantidad_g)+'</td></tr>'; }
-      html += '<tr><td style="color:#64748b;padding:3px 0">Tiempo entrega:</td><td style="text-align:right;font-weight:700">'+(c.tiempo_entrega_dias!=null?c.tiempo_entrega_dias+' días':'-')+'</td></tr>';
-      html += '<tr><td style="color:#64748b;padding:3px 0">Estado:</td><td style="text-align:right;font-weight:700;color:'+(c.valor_total?'#15803d':'#94a3b8')+'">'+(c.valor_total?'✓ Respondió':'⏳ Pendiente')+'</td></tr>';
-      html += '<tr><td style="color:#64748b;padding:3px 0">Condiciones:</td><td style="text-align:right;font-size:11px">'+_esc(c.condiciones||'-')+'</td></tr>';
+      html += '<tr><td style="color:var(--cx-text-mute);padding:3px 0">Precio total:</td><td style="text-align:right;font-weight:800;color:var(--cx-text)">'+(c.valor_total?_money(c.valor_total):'-')+'</td></tr>';
+      if(ronda.cantidad_g>0 && c.valor_total){ html += '<tr><td style="color:var(--cx-text-mute);padding:3px 0">Precio unitario:</td><td style="text-align:right;font-weight:700;color:var(--cx-info-text)">'+_money(c.valor_total/ronda.cantidad_g)+'</td></tr>'; }
+      html += '<tr><td style="color:var(--cx-text-mute);padding:3px 0">Tiempo entrega:</td><td style="text-align:right;font-weight:700">'+(c.tiempo_entrega_dias!=null?c.tiempo_entrega_dias+' días':'-')+'</td></tr>';
+      html += '<tr><td style="color:var(--cx-text-mute);padding:3px 0">Estado:</td><td style="text-align:right;font-weight:700;color:'+(c.valor_total?'#15803d':'#94a3b8')+'">'+(c.valor_total?'✓ Respondió':'⏳ Pendiente')+'</td></tr>';
+      html += '<tr><td style="color:var(--cx-text-mute);padding:3px 0">Condiciones:</td><td style="text-align:right;font-size:11px">'+_esc(c.condiciones||'-')+'</td></tr>';
       if(c.numero_oc){
-        html += '<tr><td style="color:#64748b;padding:3px 0">OC generada:</td><td style="text-align:right;font-weight:700;color:#0891b2">'+_esc(c.numero_oc)+'</td></tr>';
+        html += '<tr><td style="color:var(--cx-text-mute);padding:3px 0">OC generada:</td><td style="text-align:right;font-weight:700;color:var(--cx-info-text)">'+_esc(c.numero_oc)+'</td></tr>';
       }
       html += '</table>';
       html += '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">';
       if(!cerrada){
         if(!c.valor_total){
-          html += '<button onclick="cotRegistrarRespuesta('+c.id+')" style="background:#0891b2;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✏️ Registrar respuesta</button>';
+          html += '<button onclick="cotRegistrarRespuesta('+c.id+')" style="background:var(--cx-info);color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✏️ Registrar respuesta</button>';
         } else if(!esGanadora){
-          html += '<button onclick="cotElegirGanadora('+c.id+')" style="background:#16a34a;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🏆 Elegir ganadora</button>';
+          html += '<button onclick="cotElegirGanadora('+c.id+')" style="background:var(--cx-success);color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🏆 Elegir ganadora</button>';
         }
       }
       html += '</div>';
@@ -9173,7 +9173,7 @@ async function abrirCotizDrawer(rondaId){
     window._COT_CURRENT = {rondaId: rondaId, cots: cots};
     document.getElementById('cot-drawer-body').innerHTML = html;
   } catch(e){
-    document.getElementById('cot-drawer-body').innerHTML = '<div style="color:#dc2626">Error red: '+e.message+'</div>';
+    document.getElementById('cot-drawer-body').innerHTML = '<div style="color:var(--cx-danger-text)">Error red: '+e.message+'</div>';
   }
 }
 function _cotLookup(cotId){
@@ -9185,16 +9185,16 @@ function cotRegistrarRespuesta(cotId){
   _cotOvClose();
   var ov=document.createElement('div'); ov.id='cot-new-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow:auto';
-  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
+  ov.innerHTML='<div style="background:var(--cx-card);border-radius:16px;max-width:460px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
     +'<div style="background:linear-gradient(120deg,#ecfeff,#f5f3ff,#fff);border-bottom:1px solid #ece9f6;padding:16px 20px;display:flex;justify-content:space-between;align-items:center">'
     +'<div><div style="font-size:15px;font-weight:800;color:#1e1b2e">&#9997;&#65039; Respuesta de '+esc(info.prov||'proveedor')+'</div><div style="font-size:11px;color:#8b8b9e">'+esc((info.desc||'').slice(0,60))+'</div></div>'
     +'<button onclick="_cotOvClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button></div>'
     +'<div style="padding:18px 20px">'
     +'<label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:3px">Precio total cotizado (COP)</label>'
-    +'<input id="cotr-precio" type="number" min="0" step="0.01" placeholder="0" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:14px;box-sizing:border-box;font-weight:700">'
+    +'<input id="cotr-precio" type="number" min="0" step="0.01" placeholder="0" style="width:100%;padding:9px 11px;border:1px solid var(--cx-border);border-radius:9px;font-size:14px;box-sizing:border-box;font-weight:700">'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">'
-    +'<div><label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:3px">Entrega (d&iacute;as)</label><input id="cotr-dias" type="number" min="0" value="15" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box"></div>'
-    +'<div><label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:3px">Condiciones</label><input id="cotr-cond" placeholder="pago, MOQ (opc)" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box"></div>'
+    +'<div><label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:3px">Entrega (d&iacute;as)</label><input id="cotr-dias" type="number" min="0" value="15" style="width:100%;padding:9px 11px;border:1px solid var(--cx-border);border-radius:9px;font-size:13px;box-sizing:border-box"></div>'
+    +'<div><label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:3px">Condiciones</label><input id="cotr-cond" placeholder="pago, MOQ (opc)" style="width:100%;padding:9px 11px;border:1px solid var(--cx-border);border-radius:9px;font-size:13px;box-sizing:border-box"></div>'
     +'</div>'
     +'<div id="cotr-msg" style="font-size:12px;margin-top:10px"></div>'
     +'<button onclick="cotGuardarRespuesta('+cotId+')" style="width:100%;margin-top:12px;padding:11px;background:linear-gradient(135deg,#22d3ee,#0891b2);color:#fff;border:none;border-radius:11px;font-weight:800;font-size:14px;cursor:pointer">Guardar respuesta</button>'
@@ -9207,16 +9207,16 @@ async function cotGuardarRespuesta(cotId){
   var info=_cotLookup(cotId);
   var precio=parseFloat((document.getElementById('cotr-precio')||{}).value||'');
   var msg=document.getElementById('cotr-msg');
-  if(!precio || isNaN(precio) || precio<=0){ if(msg) msg.innerHTML='<span style="color:#dc2626">Pon&eacute; un precio v&aacute;lido.</span>'; return; }
+  if(!precio || isNaN(precio) || precio<=0){ if(msg) msg.innerHTML='<span style="color:var(--cx-danger-text)">Pon&eacute; un precio v&aacute;lido.</span>'; return; }
   var dias=parseInt((document.getElementById('cotr-dias')||{}).value||'15',10); if(isNaN(dias)) dias=15;
   var cond=((document.getElementById('cotr-cond')||{}).value||'').trim();
   try{
     var r=await fetch('/api/compras/cotizaciones/'+cotId, {method:'PATCH', headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''}, body:JSON.stringify({valor_total:precio, tiempo_entrega_dias:dias, condiciones:cond})});
     var d=await r.json();
-    if(!r.ok || d.error){ if(msg) msg.innerHTML='<span style="color:#dc2626">'+esc(d.error||('Error '+r.status))+'</span>'; return; }
+    if(!r.ok || d.error){ if(msg) msg.innerHTML='<span style="color:var(--cx-danger-text)">'+esc(d.error||('Error '+r.status))+'</span>'; return; }
     _cotOvClose(); cargarCotizaciones();
     if(info.ronda) setTimeout(function(){ abrirCotizDrawer(info.ronda); }, 200);
-  }catch(e){ if(msg) msg.innerHTML='<span style="color:#dc2626">Error red: '+esc(e.message)+'</span>'; }
+  }catch(e){ if(msg) msg.innerHTML='<span style="color:var(--cx-danger-text)">Error red: '+esc(e.message)+'</span>'; }
 }
 async function cotElegirGanadora(cotId){
   var info=_cotLookup(cotId);
@@ -9251,7 +9251,7 @@ function exportOcsConsolidado(){
 async function loadPorPagar(){
   try{
     var r = await fetch('/api/compras/por-pagar');
-    if(!r.ok){ document.getElementById('por-pagar-merc-list').innerHTML='<div style="color:#dc2626;padding:20px;">Error '+r.status+'</div>'; return; }
+    if(!r.ok){ document.getElementById('por-pagar-merc-list').innerHTML='<div style="color:var(--cx-danger-text);padding:20px;">Error '+r.status+'</div>'; return; }
     var d = await r.json();
     var desg = d.desglose || {};
     document.getElementById('por-pagar-total').textContent = _money(d.total_valor);
@@ -9269,23 +9269,23 @@ async function loadPorPagar(){
       dirEl.innerHTML = directos.map(function(o){
         var prov = (o.proveedor||'').trim();
         var esIncompleta = (!prov || prov.toLowerCase()==='por definir' || !(o.valor_total>0));
-        return '<div style="background:#fffbeb;border:2px solid '+(esIncompleta?'#dc2626':'#f59e0b')+';border-radius:10px;padding:12px;">'+
-          '<div style="font-weight:700;font-family:monospace;color:#92400e;font-size:13px;">'+_esc(o.numero_oc)+'</div>'+
+        return '<div style="background:var(--cx-warn-pale);border:2px solid '+(esIncompleta?'#dc2626':'#f59e0b')+';border-radius:10px;padding:12px;">'+
+          '<div style="font-weight:700;font-family:monospace;color:var(--cx-warn-text);font-size:13px;">'+_esc(o.numero_oc)+'</div>'+
           '<div style="font-size:13px;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:4px;">'+_esc(prov||'(sin proveedor)')+'</div>'+
-          '<div style="font-size:11px;color:#78350f;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
+          '<div style="font-size:11px;color:var(--cx-warn-text);margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
           // FIX 23-may · datos bancarios visibles para admin
           ((o.banco||o.num_cuenta||o.nit)?(
-            '<div style="background:#fff7ed;border:1px dashed #fbbf24;border-radius:6px;padding:6px 8px;margin-top:6px;font-size:11px;font-family:monospace;color:#78350f">'+
+            '<div style="background:var(--cx-warn-pale);border:1px dashed var(--cx-accent);border-radius:6px;padding:6px 8px;margin-top:6px;font-size:11px;font-family:monospace;color:var(--cx-warn-text)">'+
               (o.banco? '<div>🏦 '+_esc(o.banco)+(o.tipo_cuenta?' · '+_esc(o.tipo_cuenta):'')+'</div>':'')+
               (o.num_cuenta? '<div>💳 '+_esc(o.num_cuenta)+'</div>':'')+
               (o.nit? '<div>🆔 NIT '+_esc(o.nit)+'</div>':'')+
             '</div>'
           ):'')+
           '<div style="font-size:18px;font-weight:800;color:'+(esIncompleta?'#dc2626':'#059669')+';margin-top:8px;">'+_money(o.valor_total)+'</div>'+
-          (esIncompleta?'<div style="font-size:11px;color:#dc2626;margin-top:4px;">&#9888;&#65039; Datos incompletos. Pulsa &#x1F527; Reparar para jalar de la solicitud.</div>':'')+
+          (esIncompleta?'<div style="font-size:11px;color:var(--cx-danger-text);margin-top:4px;">&#9888;&#65039; Datos incompletos. Pulsa &#x1F527; Reparar para jalar de la solicitud.</div>':'')+
           '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+
-          (esIncompleta?'<button class="btn" style="padding:6px 10px;font-size:12px;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:6px;cursor:pointer;font-weight:700;" onclick="repararOC(\\''+_esc(o.numero_oc)+'\\')" title="Sincronizar proveedor y valor desde la solicitud asociada">&#x1F527; Reparar</button>':'<button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>')+
-          '<button class="btn" style="padding:6px 10px;font-size:12px;background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:6px;cursor:pointer;font-weight:700;" onclick="rechazarPorPagar(\\''+_esc(o.numero_oc)+'\\')" title="Devolver a la SOL de origen">&#10005; Rechazar</button></div>'+
+          (esIncompleta?'<button class="btn" style="padding:6px 10px;font-size:12px;background:var(--cx-warn-pale);color:var(--cx-warn-text);border:1px solid var(--cx-warn);border-radius:6px;cursor:pointer;font-weight:700;" onclick="repararOC(\\''+_esc(o.numero_oc)+'\\')" title="Sincronizar proveedor y valor desde la solicitud asociada">&#x1F527; Reparar</button>':'<button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:var(--cx-success);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>')+
+          '<button class="btn" style="padding:6px 10px;font-size:12px;background:var(--cx-card);color:var(--cx-danger-text);border:1px solid var(--cx-danger);border-radius:6px;cursor:pointer;font-weight:700;" onclick="rechazarPorPagar(\\''+_esc(o.numero_oc)+'\\')" title="Devolver a la SOL de origen">&#10005; Rechazar</button></div>'+
         '</div>';
       }).join('');
     } else {
@@ -9295,40 +9295,40 @@ async function loadPorPagar(){
     // Mercancía física
     var mercEl = document.getElementById('por-pagar-merc-list');
     if(!fisicas.length){
-      mercEl.innerHTML = '<div style="color:#94a3b8;padding:20px;text-align:center;">Sin mercanc&iacute;a recibida pendiente de pago.</div>';
+      mercEl.innerHTML = '<div style="color:var(--cx-text-faint);padding:20px;text-align:center;">Sin mercanc&iacute;a recibida pendiente de pago.</div>';
     } else {
       mercEl.innerHTML = fisicas.map(function(o){
         var estCol = o.estado==='Parcial' ? '#d97706' : '#16a34a';
         var prov = (o.proveedor||'').trim();
         var esIncompleta = (!prov || prov.toLowerCase()==='por definir' || !(o.valor_total>0));
-        return '<div style="background:#fff;border:1px solid '+(esIncompleta?'#dc2626':'#d1d5db')+';border-radius:10px;padding:12px;">'+
+        return '<div style="background:var(--cx-card);border:1px solid '+(esIncompleta?'#dc2626':'#d1d5db')+';border-radius:10px;padding:12px;">'+
           '<div style="display:flex;justify-content:space-between;align-items:center;">'+
             '<div style="font-weight:700;font-family:monospace;font-size:13px;">'+_esc(o.numero_oc)+'</div>'+
             '<span style="background:'+estCol+';color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">'+_esc(o.estado)+'</span>'+
           '</div>'+
           '<div style="font-size:13px;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:4px;">'+_esc(prov||'(sin proveedor)')+'</div>'+
-          '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
-          (o.items_resumen? '<div style="font-size:12px;color:#334155;margin-top:5px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:5px 8px;"><b>&#129534; Paga:</b> '+_esc(o.items_resumen)+'</div>':'')+
+          '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
+          (o.items_resumen? '<div style="font-size:12px;color:var(--cx-text-soft);margin-top:5px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:5px;padding:5px 8px;"><b>&#129534; Paga:</b> '+_esc(o.items_resumen)+'</div>':'')+
           // FIX 23-may · datos bancarios visibles para admin · evita
           // abrir ficha del proveedor antes de pagar (Sebas: "que aparezca
           // numero de cuenta proveedor")
           ((o.banco||o.num_cuenta||o.nit)?(
-            '<div style="background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:6px;padding:6px 8px;margin-top:6px;font-size:11px;font-family:monospace;color:#1e293b">'+
+            '<div style="background:var(--cx-border-soft);border:1px dashed var(--cx-border);border-radius:6px;padding:6px 8px;margin-top:6px;font-size:11px;font-family:monospace;color:var(--cx-text)">'+
               (o.banco? '<div>🏦 '+_esc(o.banco)+(o.tipo_cuenta?' · '+_esc(o.tipo_cuenta):'')+'</div>':'')+
               (o.num_cuenta? '<div>💳 '+_esc(o.num_cuenta)+'</div>':'')+
               (o.nit? '<div>🆔 NIT '+_esc(o.nit)+'</div>':'')+
             '</div>'
           ):'')+
           '<div style="font-size:18px;font-weight:800;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:8px;">'+_money(o.valor_total)+'</div>'+
-          (esIncompleta?'<div style="font-size:11px;color:#dc2626;margin-top:4px;">&#9888;&#65039; Datos incompletos. Pulsa &#x1F527; Reparar para jalar de la solicitud.</div>':'')+
+          (esIncompleta?'<div style="font-size:11px;color:var(--cx-danger-text);margin-top:4px;">&#9888;&#65039; Datos incompletos. Pulsa &#x1F527; Reparar para jalar de la solicitud.</div>':'')+
           '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+
-          (esIncompleta?'<button class="btn" style="padding:6px 10px;font-size:12px;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:6px;cursor:pointer;font-weight:700;" onclick="repararOC(\\''+_esc(o.numero_oc)+'\\')" title="Sincronizar proveedor y valor desde la solicitud asociada">&#x1F527; Reparar</button>':'<button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>')+
-          '<button class="btn" style="padding:6px 10px;font-size:12px;background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:6px;cursor:pointer;font-weight:700;" onclick="rechazarPorPagar(\\''+_esc(o.numero_oc)+'\\')" title="Devolver a la SOL de origen">&#10005; Rechazar</button></div>'+
+          (esIncompleta?'<button class="btn" style="padding:6px 10px;font-size:12px;background:var(--cx-warn-pale);color:var(--cx-warn-text);border:1px solid var(--cx-warn);border-radius:6px;cursor:pointer;font-weight:700;" onclick="repararOC(\\''+_esc(o.numero_oc)+'\\')" title="Sincronizar proveedor y valor desde la solicitud asociada">&#x1F527; Reparar</button>':'<button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:var(--cx-info);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>')+
+          '<button class="btn" style="padding:6px 10px;font-size:12px;background:var(--cx-card);color:var(--cx-danger-text);border:1px solid var(--cx-danger);border-radius:6px;cursor:pointer;font-weight:700;" onclick="rechazarPorPagar(\\''+_esc(o.numero_oc)+'\\')" title="Devolver a la SOL de origen">&#10005; Rechazar</button></div>'+
         '</div>';
       }).join('');
     }
   }catch(e){
-    document.getElementById('por-pagar-merc-list').innerHTML = '<div style="color:#dc2626;padding:20px;">Error: '+_esc(e.message)+'</div>';
+    document.getElementById('por-pagar-merc-list').innerHTML = '<div style="color:var(--cx-danger-text);padding:20px;">Error: '+_esc(e.message)+'</div>';
   }
 }
 
@@ -9388,12 +9388,12 @@ async function loadAlertasCompras(){
     var sr = d.ocs_sin_recibir || [];
     document.getElementById('alertas-sin-recibir-count').textContent = sr.length;
     document.getElementById('alertas-sin-recibir').innerHTML = sr.length === 0
-      ? '<div style="color:#94a3b8;text-align:center;padding:14px;">Sin alertas</div>'
+      ? '<div style="color:var(--cx-text-faint);text-align:center;padding:14px;">Sin alertas</div>'
       : sr.map(function(o){
-          return '<div style="border-bottom:1px solid #f1f5f9;padding:8px 0;">'+
+          return '<div style="border-bottom:1px solid var(--cx-border-soft);padding:8px 0;">'+
             '<div style="display:flex;justify-content:space-between;"><strong style="font-family:monospace;font-size:11px;">'+_esc(o.numero_oc)+'</strong>'+
-            '<span style="font-size:10px;color:#92400e;font-weight:700;">'+(o.dias_sin_recibir||'?')+' d</span></div>'+
-            '<div style="font-size:11px;color:#64748b;">'+_esc(o.proveedor)+' · '+_money(o.valor_total)+'</div>'+
+            '<span style="font-size:10px;color:var(--cx-warn-text);font-weight:700;">'+(o.dias_sin_recibir||'?')+' d</span></div>'+
+            '<div style="font-size:11px;color:var(--cx-text-mute);">'+_esc(o.proveedor)+' · '+_money(o.valor_total)+'</div>'+
           '</div>';
         }).join('');
 
@@ -9401,15 +9401,15 @@ async function loadAlertasCompras(){
     var pv = d.pagos_por_vencer || [];
     document.getElementById('alertas-pagos-vencer-count').textContent = pv.length;
     document.getElementById('alertas-pagos-vencer').innerHTML = pv.length === 0
-      ? '<div style="color:#94a3b8;text-align:center;padding:14px;">Sin alertas</div>'
+      ? '<div style="color:var(--cx-text-faint);text-align:center;padding:14px;">Sin alertas</div>'
       : pv.map(function(o){
           var dias = o.dias_restantes;
           var diasTxt = dias === null ? '?' : (dias < 0 ? Math.abs(dias)+' d en mora' : dias+' d restantes');
           var col = dias < 0 ? '#dc2626' : (dias <= 3 ? '#f59e0b' : '#3b82f6');
-          return '<div style="border-bottom:1px solid #f1f5f9;padding:8px 0;">'+
+          return '<div style="border-bottom:1px solid var(--cx-border-soft);padding:8px 0;">'+
             '<div style="display:flex;justify-content:space-between;"><strong style="font-family:monospace;font-size:11px;">'+_esc(o.numero_oc)+'</strong>'+
             '<span style="font-size:10px;color:'+col+';font-weight:700;">'+diasTxt+'</span></div>'+
-            '<div style="font-size:11px;color:#64748b;">'+_esc(o.proveedor)+' · pendiente '+_money(o.pendiente)+'</div>'+
+            '<div style="font-size:11px;color:var(--cx-text-mute);">'+_esc(o.proveedor)+' · pendiente '+_money(o.pendiente)+'</div>'+
           '</div>';
         }).join('');
 
@@ -9417,13 +9417,13 @@ async function loadAlertasCompras(){
     var sp = d.solicitudes_pendientes || [];
     document.getElementById('alertas-solic-count').textContent = sp.length;
     document.getElementById('alertas-solic').innerHTML = sp.length === 0
-      ? '<div style="color:#94a3b8;text-align:center;padding:14px;">Sin alertas</div>'
+      ? '<div style="color:var(--cx-text-faint);text-align:center;padding:14px;">Sin alertas</div>'
       : sp.map(function(s){
           var col = s.urgencia === 'Urgente' ? '#dc2626' : '#3b82f6';
-          return '<div style="border-bottom:1px solid #f1f5f9;padding:8px 0;">'+
+          return '<div style="border-bottom:1px solid var(--cx-border-soft);padding:8px 0;">'+
             '<div style="display:flex;justify-content:space-between;"><strong style="font-family:monospace;font-size:11px;">'+_esc(s.numero)+'</strong>'+
             '<span style="font-size:10px;color:'+col+';font-weight:700;">'+_esc(s.urgencia||'Normal')+'</span></div>'+
-            '<div style="font-size:11px;color:#64748b;">'+_esc(s.solicitante||'')+' · '+(s.dias_pendiente||'?')+' d · '+_esc(s.area||'')+'</div>'+
+            '<div style="font-size:11px;color:var(--cx-text-mute);">'+_esc(s.solicitante||'')+' · '+(s.dias_pendiente||'?')+' d · '+_esc(s.area||'')+'</div>'+
           '</div>';
         }).join('');
 
@@ -9431,12 +9431,12 @@ async function loadAlertasCompras(){
     var bb = d.ocs_borrador_estancadas || [];
     document.getElementById('alertas-borrador-count').textContent = bb.length;
     document.getElementById('alertas-borrador').innerHTML = bb.length === 0
-      ? '<div style="color:#94a3b8;text-align:center;padding:14px;">Sin alertas</div>'
+      ? '<div style="color:var(--cx-text-faint);text-align:center;padding:14px;">Sin alertas</div>'
       : bb.map(function(o){
-          return '<div style="border-bottom:1px solid #f1f5f9;padding:8px 0;">'+
+          return '<div style="border-bottom:1px solid var(--cx-border-soft);padding:8px 0;">'+
             '<div style="display:flex;justify-content:space-between;"><strong style="font-family:monospace;font-size:11px;">'+_esc(o.numero_oc)+'</strong>'+
             '<span style="font-size:10px;color:#71717a;font-weight:700;">'+_esc(o.creado_por||'?')+'</span></div>'+
-            '<div style="font-size:11px;color:#64748b;">'+_esc(o.proveedor)+' · '+_money(o.valor_total)+'</div>'+
+            '<div style="font-size:11px;color:var(--cx-text-mute);">'+_esc(o.proveedor)+' · '+_money(o.valor_total)+'</div>'+
           '</div>';
         }).join('');
   }catch(e){ console.error(e); }

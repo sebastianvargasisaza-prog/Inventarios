@@ -3442,14 +3442,14 @@ def produccion_rotulo_reimprimir(pid):
 <style>
 @page {{ size: A4; margin: 8mm; }}
 body {{ font-family: Arial, sans-serif; margin: 0; padding: 10px; }}
-h1 {{ margin: 0 0 14px; color: #0f766e; font-size: 18px; }}
-.rot {{ display: inline-block; width: 90mm; height: 50mm; border: 1px dashed #94a3b8; padding: 6mm; margin: 2mm; vertical-align: top; box-sizing: border-box; }}
-.rot b {{ font-size: 14px; color: #0f172a; }}
-.rot .meta {{ font-size: 10px; color: #475569; margin-top: 4px; line-height: 1.4; }}
-.rot .lote {{ font-size: 18px; font-weight: 800; color: #dc2626; margin-top: 6px; letter-spacing: 1px; }}
+h1 {{ margin: 0 0 14px; color: var(--cx-info-text, #0f766e); font-size: 18px; }}
+.rot {{ display: inline-block; width: 90mm; height: 50mm; border: 1px dashed var(--cx-text-faint, #94a3b8); padding: 6mm; margin: 2mm; vertical-align: top; box-sizing: border-box; }}
+.rot b {{ font-size: 14px; color: var(--cx-text, #0f172a); }}
+.rot .meta {{ font-size: 10px; color: var(--cx-text-soft, #475569); margin-top: 4px; line-height: 1.4; }}
+.rot .lote {{ font-size: 18px; font-weight: 800; color: var(--cx-danger-text, #dc2626); margin-top: 6px; letter-spacing: 1px; }}
 @media print {{ button {{ display: none; }} }}
 </style></head><body>
-<button onclick="window.print()" style="background:#0f766e;color:#fff;padding:10px 20px;border:none;border-radius:5px;cursor:pointer">🖨 Imprimir</button>
+<button onclick="window.print()" style="background:var(--cx-info, #0f766e);color:#fff;padding:10px 20px;border:none;border-radius:5px;cursor:pointer">🖨 Imprimir</button>
 <h1>Rótulos · {_esc(lote_ref)}</h1>"""
     for i in range(6):
         html += f"""
@@ -9182,7 +9182,7 @@ def admin_conteo_rescate():
     if not u:
         return redirect('/login?next=/admin/conteo-rescate')
     if u not in (ADMIN_USERS | CALIDAD_USERS):
-        return Response('<div style="font-family:sans-serif;padding:40px;color:#991b1b">Solo Admin o Calidad pueden ver el rescate de conteo.</div>',
+        return Response('<div style="font-family:sans-serif;padding:40px;color:var(--cx-danger-text, #991b1b)">Solo Admin o Calidad pueden ver el rescate de conteo.</div>',
                         status=403, mimetype='text/html')
     import html as _hh
     dias = request.args.get('dias', '3')
@@ -9262,12 +9262,12 @@ def admin_conteo_rescate():
         '<tr><td class="mono" style="white-space:nowrap">' + _hh.escape(str(cr[0])[:16]) + '</td>'
         '<td>' + _hh.escape(str(cr[1])) + '</td>'
         '<td>' + _hh.escape(_accion_label.get(cr[2], cr[2])) + '</td>'
-        '<td style="font-size:11px;color:#475569">' + _hh.escape(str(cr[3])[:220]) + '</td></tr>'
+        '<td style="font-size:11px;color:var(--cx-text-soft, #475569)">' + _hh.escape(str(cr[3])[:220]) + '</td></tr>'
         for cr in corr_rows)
     if not corr_filas:
         corr_filas = '<tr><td colspan="4" class="muted">· sin correcciones de Bodega MP en este período ·</td></tr>'
     corr_html = (
-        '<h2 style="color:#7c3aed;margin:22px 0 8px;font-size:18px">🛠 Correcciones en Bodega MP (últimos ' + str(dias) + ' días)</h2>'
+        '<h2 style="color:var(--cx-primary-text, #7c3aed);margin:22px 0 8px;font-size:18px">🛠 Correcciones en Bodega MP (últimos ' + str(dias) + ' días)</h2>'
         '<div class="sub" style="margin-bottom:10px">Cada corrección de lote (ubicación, fecha, código, proveedor) y cada ajuste de inventario queda auditado aquí. '
         'Esto confirma que lo editado ayer SE GUARDÓ (los endpoints actualizan todo el lote + commit).</div>'
         '<div class="conteo"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>'
@@ -9291,13 +9291,13 @@ def admin_conteo_rescate():
         '<td class="mono">' + _hh.escape(str(q[2])) + '</td>'
         '<td class="num">' + ('{:,.0f}'.format(q[3])) + '</td>'
         '<td>' + _hh.escape(str(q[4]) or '·') + '</td>'
-        '<td><span style="color:#b45309;font-weight:700">' + _hh.escape(str(q[5])) + '</span></td>'
+        '<td><span style="color:var(--cx-warn-text, #b45309);font-weight:700">' + _hh.escape(str(q[5])) + '</span></td>'
         '<td class="mono" style="font-size:11px">' + _hh.escape(str(q[6])[:16]) + '</td></tr>'
         for q in cuar_rows)
     if not cuar_filas:
         cuar_filas = '<tr><td colspan="7" class="muted">✓ No hay lotes bloqueados en cuarentena.</td></tr>'
     cuar_html = (
-        '<h2 style="color:#b45309;margin:22px 0 8px;font-size:18px">🔒 Lotes en CUARENTENA (bloqueados para producción)</h2>'
+        '<h2 style="color:var(--cx-warn-text, #b45309);margin:22px 0 8px;font-size:18px">🔒 Lotes en CUARENTENA (bloqueados para producción)</h2>'
         '<div class="sub" style="margin-bottom:10px">Estos lotes NO se pueden usar en producción hasta que <b>Calidad los libere</b> '
         '(Calidad → Cuarentena → Revisar CC). Al liberar, indica la ubicación final y salen del estante CUARENTENA.</div>'
         '<div class="conteo"><table><thead><tr><th>Código</th><th>Material</th><th>Lote</th><th class="num">Cantidad</th>'
@@ -9307,28 +9307,28 @@ def admin_conteo_rescate():
         '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
         '<title>Rescate de Conteo · EOS</title><style>'
         '*{box-sizing:border-box;font-family:"Segoe UI",Roboto,sans-serif}'
-        'body{margin:0;background:#f5f3ff;color:#0f172a;padding:20px}'
+        'body{margin:0;background:var(--cx-primary-pale, #f5f3ff);color:var(--cx-text, #0f172a);padding:20px}'
         '.wrap{max-width:1100px;margin:0 auto}'
-        'h1{color:#7c3aed;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin-bottom:18px}'
-        '.kpi{background:#fff;border-radius:12px;padding:14px 18px;margin-bottom:16px;box-shadow:0 2px 10px rgba(124,58,237,.08);font-size:14px}'
-        '.kpi b{color:#16a34a;font-size:20px}'
-        '.conteo{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:14px;box-shadow:0 2px 10px rgba(76,29,149,.07)}'
+        'h1{color:var(--cx-primary-text, #7c3aed);margin:0 0 4px}.sub{color:var(--cx-text-mute, #64748b);font-size:13px;margin-bottom:18px}'
+        '.kpi{background:var(--cx-card, #fff);border-radius:12px;padding:14px 18px;margin-bottom:16px;box-shadow:0 2px 10px rgba(124,58,237,.08);font-size:14px}'
+        '.kpi b{color:var(--cx-success-text, #16a34a);font-size:20px}'
+        '.conteo{background:var(--cx-card, #fff);border-radius:12px;padding:14px 16px;margin-bottom:14px;box-shadow:0 2px 10px rgba(76,29,149,.07)}'
         '.ch{display:flex;justify-content:space-between;font-size:14px;margin-bottom:3px}'
-        '.cm{font-size:11.5px;color:#94a3b8;margin-bottom:8px}'
+        '.cm{font-size:11.5px;color:var(--cx-text-faint, #94a3b8);margin-bottom:8px}'
         'table{width:100%;border-collapse:collapse;font-size:12px}'
-        'th{background:#f5f3ff;color:#6d28d9;text-align:left;padding:7px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.3px}'
-        'td{padding:6px 8px;border-bottom:1px solid #f1f5f9}'
-        '.mono{font-family:ui-monospace,monospace;color:#1e40af}.num{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.muted{color:#94a3b8}'
-        'a.bk{display:inline-block;background:#fff;color:#7c3aed;text-decoration:none;font-weight:700;font-size:13px;padding:8px 14px;border-radius:9px;border:1px solid #e9d5ff;margin-bottom:12px}'
+        'th{background:var(--cx-primary-pale, #f5f3ff);color:var(--cx-primary-text, #6d28d9);text-align:left;padding:7px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.3px}'
+        'td{padding:6px 8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}'
+        '.mono{font-family:ui-monospace,monospace;color:var(--cx-info-text, #1e40af)}.num{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.muted{color:var(--cx-text-faint, #94a3b8)}'
+        'a.bk{display:inline-block;background:var(--cx-card, #fff);color:var(--cx-primary-text, #7c3aed);text-decoration:none;font-weight:700;font-size:13px;padding:8px 14px;border-radius:9px;border:1px solid #e9d5ff;margin-bottom:12px}'
         '</style></head><body><div class="wrap">'
         '<a class="bk" href="/inventarios">&larr; Volver</a>'
         '<h1>🛟 Rescate de Conteo Cíclico</h1>'
         '<div class="sub">Todos los conteos de los últimos ' + str(dias) + ' días, con sus items · sin filtros de fecha/semana/estado. '
         'Esto demuestra que lo ingresado NO se perdió. (cambia ?dias=N en la URL)</div>'
-        '<div class="kpi">📦 <b>' + str(len(conteos)) + '</b> conteos · <b>' + str(tot_items) + '</b> items · <b>' + str(len(corr_rows)) + '</b> correcciones Bodega · <b style="color:#b45309">' + str(len(cuar_rows)) + '</b> lotes en cuarentena · últimos ' + str(dias) + ' días.</div>'
+        '<div class="kpi">📦 <b>' + str(len(conteos)) + '</b> conteos · <b>' + str(tot_items) + '</b> items · <b>' + str(len(corr_rows)) + '</b> correcciones Bodega · <b style="color:var(--cx-warn-text, #b45309)">' + str(len(cuar_rows)) + '</b> lotes en cuarentena · últimos ' + str(dias) + ' días.</div>'
         + cuar_html
         + corr_html
-        + '<h2 style="color:#7c3aed;margin:22px 0 8px;font-size:18px">📋 Conteos cíclicos</h2>'
+        + '<h2 style="color:var(--cx-primary-text, #7c3aed);margin:22px 0 8px;font-size:18px">📋 Conteos cíclicos</h2>'
         + cuerpo + '</div></body></html>')
     return Response(html, mimetype='text/html')
 
@@ -9680,38 +9680,38 @@ def admin_normalizar_mee_pagina():
     return """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Normalizar MEE</title>
 <style>
-  body{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:24px}
-  .card{max-width:1400px;margin:0 auto 14px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
-  h1{color:#1e293b;margin:0 0 8px;font-size:22px}
-  h2{color:#7c3aed;margin:18px 0 12px;font-size:16px;border-bottom:2px solid #7c3aed;padding-bottom:6px}
+  body{font-family:system-ui,-apple-system,Arial;background:var(--cx-bg-alt, #f8fafc);margin:0;padding:24px}
+  .card{max-width:1400px;margin:0 auto 14px;background:var(--cx-card, #fff);border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+  h1{color:var(--cx-text, #1e293b);margin:0 0 8px;font-size:22px}
+  h2{color:var(--cx-primary-text, #7c3aed);margin:18px 0 12px;font-size:16px;border-bottom:2px solid var(--cx-primary, #7c3aed);padding-bottom:6px}
   .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:14px 0}
-  .kpi{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center}
-  .kpi-val{font-size:24px;font-weight:800;color:#1e293b}
-  .kpi-lbl{font-size:11px;color:#64748b;text-transform:uppercase;margin-top:2px}
-  .kpi.warn{background:#fef3c7;border-color:#f59e0b}
-  .kpi.warn .kpi-val{color:#92400e}
-  .kpi.bad{background:#fee2e2;border-color:#dc2626}
-  .kpi.bad .kpi-val{color:#991b1b}
+  .kpi{background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:12px;text-align:center}
+  .kpi-val{font-size:24px;font-weight:800;color:var(--cx-text, #1e293b)}
+  .kpi-lbl{font-size:11px;color:var(--cx-text-mute, #64748b);text-transform:uppercase;margin-top:2px}
+  .kpi.warn{background:var(--cx-warn-pale, #fef3c7);border-color:var(--cx-warn, #f59e0b)}
+  .kpi.warn .kpi-val{color:var(--cx-warn-text, #92400e)}
+  .kpi.bad{background:var(--cx-danger-pale, #fee2e2);border-color:var(--cx-danger, #dc2626)}
+  .kpi.bad .kpi-val{color:var(--cx-danger-text, #991b1b)}
   table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
-  th{background:#f1f5f9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}
-  td{border-bottom:1px solid #f1f5f9;padding:8px}
+  th{background:var(--cx-border-soft, #f1f5f9);padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--cx-text-soft, #475569)}
+  td{border-bottom:1px solid var(--cx-border-soft, #f1f5f9);padding:8px}
   .btn{padding:8px 14px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;margin-right:6px}
-  .btn-prim{background:#7c3aed;color:#fff}
+  .btn-prim{background:var(--cx-primary, #7c3aed);color:#fff}
   .btn-warn{background:#ea580c;color:#fff}
-  .btn-danger{background:#dc2626;color:#fff}
-  .btn-link{background:transparent;color:#475569;border:1px solid #e2e8f0}
+  .btn-danger{background:var(--cx-danger, #dc2626);color:#fff}
+  .btn-link{background:transparent;color:var(--cx-text-soft, #475569);border:1px solid var(--cx-border, #e2e8f0)}
   .tab{display:none}
   .tab.active{display:block}
   .tab-btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-  .tab-btn{padding:8px 14px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
-  .tab-btn.active{background:#7c3aed;color:#fff;border-color:#7c3aed}
-  input,select{padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px}
+  .tab-btn{padding:8px 14px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);border:1px solid var(--cx-border, #e2e8f0);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
+  .tab-btn.active{background:var(--cx-primary, #7c3aed);color:#fff;border-color:var(--cx-primary, #7c3aed)}
+  input,select{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:12px}
   #msg{margin:10px 0;font-size:12px}
 </style></head><body>
 
 <div class="card">
   <h1>🧹 Normalizar maestro_mee</h1>
-  <p style="color:#475569;font-size:13px">Limpieza + estandarización de Materiales de Envase. Cada acción es auditada en audit_log.</p>
+  <p style="color:var(--cx-text-soft, #475569);font-size:13px">Limpieza + estandarización de Materiales de Envase. Cada acción es auditada en audit_log.</p>
   <button class="btn btn-prim" onclick="cargarDiag()">🔍 Diagnosticar</button>
   <a href="/admin/mee-fugas-check" class="btn btn-link" style="text-decoration:none;line-height:1.4">⚠ Mee fugas</a>
   <a href="/" class="btn btn-link" style="text-decoration:none;line-height:1.4">← Dashboard</a>
@@ -9734,23 +9734,23 @@ def admin_normalizar_mee_pagina():
 
   <div class="tab active" id="t-dup">
     <h2>🔁 Códigos duplicados (case-insensitive + trim)</h2>
-    <p style="color:#475569;font-size:12px">Items con códigos similares (e.g. 'ENV-100' vs 'env-100'). Fix manual sugerido · revisar uno por uno antes de merge.</p>
+    <p style="color:var(--cx-text-soft, #475569);font-size:12px">Items con códigos similares (e.g. 'ENV-100' vs 'env-100'). Fix manual sugerido · revisar uno por uno antes de merge.</p>
     <div id="tbl-dup"></div>
   </div>
 
   <div class="tab" id="t-desc">
     <h2>📝 Descripciones inconsistentes</h2>
-    <p style="color:#475569;font-size:12px">Espacios dobles + vacías. Fix masivo: colapsa espacios y aplica TRIM.</p>
+    <p style="color:var(--cx-text-soft, #475569);font-size:12px">Espacios dobles + vacías. Fix masivo: colapsa espacios y aplica TRIM.</p>
     <button class="btn btn-warn" onclick="normalizarDescripciones()">🔧 Normalizar descripciones (TRIM + colapsar espacios)</button>
     <div id="tbl-desc"></div>
   </div>
 
   <div class="tab" id="t-cat">
     <h2>🏷 Categorías</h2>
-    <p style="color:#475569;font-size:12px">Distribución actual de categorías. Si hay variantes ('Envase' vs 'envase' vs 'ENVASE'), unificá con el mapping.</p>
+    <p style="color:var(--cx-text-soft, #475569);font-size:12px">Distribución actual de categorías. Si hay variantes ('Envase' vs 'envase' vs 'ENVASE'), unificá con el mapping.</p>
     <div id="tbl-cat"></div>
-    <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:14px">
-      <h3 style="margin:0 0 8px;color:#1e293b;font-size:14px">Aplicar mapping de unificación</h3>
+    <div style="margin-top:18px;border-top:1px solid var(--cx-border, #e2e8f0);padding-top:14px">
+      <h3 style="margin:0 0 8px;color:var(--cx-text, #1e293b);font-size:14px">Aplicar mapping de unificación</h3>
       <div id="mapping-rows"></div>
       <button class="btn btn-link" onclick="addMappingRow()">+ Agregar regla</button>
       <button class="btn btn-warn" onclick="aplicarMapping()">🔧 Aplicar mapping</button>
@@ -9759,7 +9759,7 @@ def admin_normalizar_mee_pagina():
 
   <div class="tab" id="t-drift">
     <h2>⚖ Stock drift (cache vs movimientos_mee)</h2>
-    <p style="color:#475569;font-size:12px">stock_actual de maestro_mee desincronizado con SUM canónico de movimientos.</p>
+    <p style="color:var(--cx-text-soft, #475569);font-size:12px">stock_actual de maestro_mee desincronizado con SUM canónico de movimientos.</p>
     <div style="margin-bottom:8px"><label>Tolerancia: <input id="tol" type="number" value="1" step="0.1" min="0" style="width:80px"></label>
     <button class="btn btn-warn" onclick="reconciliarBulk()">🔧 Reconciliar todos (bulk)</button></div>
     <div id="tbl-drift"></div>
@@ -9767,7 +9767,7 @@ def admin_normalizar_mee_pagina():
 
   <div class="tab" id="t-huer">
     <h2>🍃 Items huérfanos (sin uso en sku_mee_config ni produccion_checklist)</h2>
-    <p style="color:#475569;font-size:12px">MEEs activos que ningún producto ni checklist usa.</p>
+    <p style="color:var(--cx-text-soft, #475569);font-size:12px">MEEs activos que ningún producto ni checklist usa.</p>
     <label style="display:block;margin:8px 0"><input type="checkbox" id="preservar" checked> Preservar items con stock_actual &gt; 0</label>
     <button class="btn btn-danger" onclick="archivarHuerfanos()">🗄 Archivar huérfanos (Inactivo)</button>
     <div id="tbl-huer"></div>
@@ -9818,14 +9818,14 @@ function renderKPIs(){
 function renderTabs(){
   // Duplicados
   document.getElementById('tbl-dup').innerHTML = DATA.duplicados.length===0
-    ? '<p style="color:#15803d">✓ Ningún duplicado detectado</p>'
+    ? '<p style="color:var(--cx-success-text, #15803d)">✓ Ningún duplicado detectado</p>'
     : '<table><thead><tr><th>Clave normalizada</th><th>N</th><th>Códigos reales</th></tr></thead><tbody>'
       + DATA.duplicados.map(x=>'<tr><td><code>'+x.clave+'</code></td><td>'+x.n+'</td><td style="font-size:11px">'+x.codigos+'</td></tr>').join('')
       + '</tbody></table>';
   // Descripciones
   const dDesc = (DATA.sin_descripcion.length+DATA.descripciones_dobles.length);
   if(!dDesc){
-    document.getElementById('tbl-desc').innerHTML='<p style="color:#15803d">✓ Todas las descripciones limpias</p>';
+    document.getElementById('tbl-desc').innerHTML='<p style="color:var(--cx-success-text, #15803d)">✓ Todas las descripciones limpias</p>';
   }else{
     let h='';
     if(DATA.sin_descripcion.length){
@@ -9845,13 +9845,13 @@ function renderTabs(){
     + '</tbody></table>';
   // Drift
   document.getElementById('tbl-drift').innerHTML = DATA.drift_items.length===0
-    ? '<p style="color:#15803d">✓ Sin drift detectado</p>'
+    ? '<p style="color:var(--cx-success-text, #15803d)">✓ Sin drift detectado</p>'
     : '<table><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:right">Cache</th><th style="text-align:right">Real (SUM)</th><th style="text-align:right">Delta</th></tr></thead><tbody>'
-      + DATA.drift_items.map(x=>'<tr><td><code>'+x.codigo+'</code></td><td>'+x.descripcion+'</td><td style="text-align:right">'+x.cache.toLocaleString()+'</td><td style="text-align:right">'+x.real.toLocaleString()+'</td><td style="text-align:right;font-weight:700;color:#dc2626">'+x.delta.toLocaleString()+'</td></tr>').join('')
+      + DATA.drift_items.map(x=>'<tr><td><code>'+x.codigo+'</code></td><td>'+x.descripcion+'</td><td style="text-align:right">'+x.cache.toLocaleString()+'</td><td style="text-align:right">'+x.real.toLocaleString()+'</td><td style="text-align:right;font-weight:700;color:var(--cx-danger-text, #dc2626)">'+x.delta.toLocaleString()+'</td></tr>').join('')
       + '</tbody></table>';
   // Huérfanos
   document.getElementById('tbl-huer').innerHTML = DATA.huerfanos.length===0
-    ? '<p style="color:#15803d">✓ Sin huérfanos</p>'
+    ? '<p style="color:var(--cx-success-text, #15803d)">✓ Sin huérfanos</p>'
     : '<table><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:right">Stock</th></tr></thead><tbody>'
       + DATA.huerfanos.map(x=>'<tr><td><code>'+x.codigo+'</code></td><td>'+x.descripcion+'</td><td style="text-align:right">'+x.stock.toLocaleString()+'</td></tr>').join('')
       + '</tbody></table>';
@@ -9947,14 +9947,14 @@ def planta_conteo_ciclico_pagina():
 <link rel="stylesheet" href="/static/cortex.css">
 <style>body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--cx-bg,#0f172a);color:var(--cx-text,#f1f5f9);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 .box{background:var(--cx-card,#1e293b);border:1px solid var(--cx-border,#334155);border-radius:14px;padding:30px 36px;max-width:440px;text-align:center}
-.brand{color:#a78bfa;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;margin-bottom:12px}
+.brand{color:var(--cx-primary-light, #a78bfa);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;margin-bottom:12px}
 h1{margin:0 0 12px;font-size:20px;color:#fff}
-.btn{display:inline-block;margin-top:18px;padding:10px 22px;background:#7c3aed;color:#fff;border-radius:8px;text-decoration:none;font-weight:700}</style>
+.btn{display:inline-block;margin-top:18px;padding:10px 22px;background:var(--cx-primary, #7c3aed);color:#fff;border-radius:8px;text-decoration:none;font-weight:700}</style>
 </head><body>
 <div class="box">
   <div class="brand">EOS · HHA Group</div>
   <h1>Sesión requerida</h1>
-  <p style="color:#94a3b8">Iniciá sesión para acceder al conteo cíclico.</p>
+  <p style="color:var(--cx-text-faint, #94a3b8)">Iniciá sesión para acceder al conteo cíclico.</p>
   <a class="btn" href="/">Ir al login</a>
 </div></body></html>""", 401)
     return """<!DOCTYPE html>
@@ -9963,39 +9963,39 @@ h1{margin:0 0 12px;font-size:20px;color:#fff}
 <title>Conteo Cíclico · Bodega</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:system-ui,-apple-system,Arial;background:#f1f5f9;margin:0;padding:0;font-size:15px}
-  .top{position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 16px;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+  body{font-family:system-ui,-apple-system,Arial;background:var(--cx-border-soft, #f1f5f9);margin:0;padding:0;font-size:15px}
+  .top{position:sticky;top:0;background:var(--cx-info, #0f766e);color:#fff;padding:12px 16px;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.15)}
   .top h1{margin:0;font-size:17px;font-weight:700}
   .top .sub{font-size:11px;opacity:.9;margin-top:2px}
   .container{padding:14px;max-width:900px;margin:0 auto}
-  .card{background:#fff;border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .card{background:var(--cx-card, #fff);border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
   .btn{display:inline-block;padding:14px 24px;border-radius:10px;border:none;font-size:15px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;width:100%}
-  .btn-prim{background:#0f766e;color:#fff}
+  .btn-prim{background:var(--cx-info, #0f766e);color:#fff}
   .btn-warn{background:#ea580c;color:#fff}
-  .btn-danger{background:#dc2626;color:#fff}
-  .btn-sec{background:#e2e8f0;color:#475569}
-  label{display:block;font-size:11px;color:#64748b;margin-bottom:4px;font-weight:700;text-transform:uppercase}
-  select,input{width:100%;padding:14px 12px;font-size:16px;border:2px solid #cbd5e1;border-radius:8px;font-family:inherit}
+  .btn-danger{background:var(--cx-danger, #dc2626);color:#fff}
+  .btn-sec{background:var(--cx-border, #e2e8f0);color:var(--cx-text-soft, #475569)}
+  label{display:block;font-size:11px;color:var(--cx-text-mute, #64748b);margin-bottom:4px;font-weight:700;text-transform:uppercase}
+  select,input{width:100%;padding:14px 12px;font-size:16px;border:2px solid var(--cx-border, #cbd5e1);border-radius:8px;font-family:inherit}
   input[type=number]{font-family:ui-monospace,monospace;text-align:right;font-size:18px;font-weight:700}
-  .mp-row{padding:12px;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;background:#fff;transition:background .2s}
-  .mp-row.dirty{background:#fef9c3;border-color:#ca8a04}
-  .mp-row.saved{background:#dcfce7;border-color:#16a34a}
-  .mp-row.diff-big{background:#fee2e2;border-color:#dc2626}
+  .mp-row{padding:12px;border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;margin-bottom:10px;background:var(--cx-card, #fff);transition:background .2s}
+  .mp-row.dirty{background:#fef9c3;border-color:var(--cx-accent-dark, #ca8a04)}
+  .mp-row.saved{background:var(--cx-success-pale, #dcfce7);border-color:var(--cx-success, #16a34a)}
+  .mp-row.diff-big{background:var(--cx-danger-pale, #fee2e2);border-color:var(--cx-danger, #dc2626)}
   .mp-info{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:6px}
-  .mp-cod{font-family:ui-monospace,monospace;font-weight:800;color:#1e293b;font-size:13px}
-  .mp-nom{font-size:14px;color:#1e293b;font-weight:600;margin-top:2px}
-  .mp-meta{font-size:11px;color:#64748b;font-family:ui-monospace,monospace}
+  .mp-cod{font-family:ui-monospace,monospace;font-weight:800;color:var(--cx-text, #1e293b);font-size:13px}
+  .mp-nom{font-size:14px;color:var(--cx-text, #1e293b);font-weight:600;margin-top:2px}
+  .mp-meta{font-size:11px;color:var(--cx-text-mute, #64748b);font-family:ui-monospace,monospace}
   .mp-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .stock-box{background:#f8fafc;padding:10px;border-radius:8px;text-align:center}
-  .stock-box .val{font-size:22px;font-weight:800;color:#1e293b;font-family:ui-monospace,monospace}
-  .stock-box .lbl{font-size:10px;color:#64748b;text-transform:uppercase;margin-top:2px}
+  .stock-box{background:var(--cx-bg-alt, #f8fafc);padding:10px;border-radius:8px;text-align:center}
+  .stock-box .val{font-size:22px;font-weight:800;color:var(--cx-text, #1e293b);font-family:ui-monospace,monospace}
+  .stock-box .lbl{font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase;margin-top:2px}
   .diff{font-weight:800;font-family:ui-monospace,monospace}
-  .diff.pos{color:#15803d} .diff.neg{color:#991b1b}
-  .progress{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:2px solid #e2e8f0;padding:12px 16px;z-index:90;display:flex;gap:8px}
-  .progress .info{flex:1;font-size:12px;color:#475569}
-  .progress strong{color:#0f766e;font-size:16px}
-  .toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#15803d;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;z-index:200;display:none}
-  .toast.err{background:#dc2626}
+  .diff.pos{color:var(--cx-success-text, #15803d)} .diff.neg{color:var(--cx-danger-text, #991b1b)}
+  .progress{position:fixed;bottom:0;left:0;right:0;background:var(--cx-card, #fff);border-top:2px solid var(--cx-border, #e2e8f0);padding:12px 16px;z-index:90;display:flex;gap:8px}
+  .progress .info{flex:1;font-size:12px;color:var(--cx-text-soft, #475569)}
+  .progress strong{color:var(--cx-info-text, #0f766e);font-size:16px}
+  .toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:var(--cx-success, #15803d);color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;z-index:200;display:none}
+  .toast.err{background:var(--cx-danger, #dc2626)}
   @media(max-width:480px){.mp-grid{grid-template-columns:1fr}}
 </style></head>
 <body>
@@ -10020,16 +10020,16 @@ h1{margin:0 0 12px;font-size:20px;color:#fff}
 </div>
 
 <div class="container" id="vista-conteo" style="display:none;padding-bottom:80px">
-  <div class="card" style="background:#fef3c7;border-left:5px solid #ca8a04">
+  <div class="card" style="background:var(--cx-warn-pale, #fef3c7);border-left:5px solid var(--cx-accent-dark, #ca8a04)">
     <strong>Conteo #<span id="cnt-num"></span></strong> · Estantería <strong id="cnt-est"></strong><br>
-    <span style="font-size:11px;color:#64748b">Stock sistema = lo que dice el kardex · Stock físico = lo que CONTAS en bodega · diferencia automática</span>
+    <span style="font-size:11px;color:var(--cx-text-mute, #64748b)">Stock sistema = lo que dice el kardex · Stock físico = lo que CONTAS en bodega · diferencia automática</span>
   </div>
   <input type="text" id="filtro" placeholder="🔍 Filtrar por código o nombre…" oninput="filtrar()" style="margin-bottom:10px">
   <div id="lista-mps"></div>
 </div>
 
 <div class="progress" id="progress" style="display:none">
-  <div class="info"><strong id="prog-cont">0</strong> de <strong id="prog-total">0</strong> contados · <strong id="prog-diff" style="color:#dc2626">0</strong> con diferencia</div>
+  <div class="info"><strong id="prog-cont">0</strong> de <strong id="prog-total">0</strong> contados · <strong id="prog-diff" style="color:var(--cx-danger-text, #dc2626)">0</strong> con diferencia</div>
   <button class="btn btn-prim" style="padding:10px 16px;width:auto" onclick="guardarTodo()">💾 Guardar</button>
   <button class="btn btn-danger" style="padding:10px 16px;width:auto" onclick="cerrarConteo()">✓ Cerrar</button>
 </div>
@@ -10122,7 +10122,7 @@ function renderItems(){
     const cls = (fis==null||fis==='')?'':((pctDiff>5)?'mp-row diff-big':'mp-row saved');
     if(fis!=null && fis!=='') contados++;
     if(diff!=null && Math.abs(diff)>0.1) diffs++;
-    const diffHtml = diff===null?'<span style="color:#94a3b8">·</span>':
+    const diffHtml = diff===null?'<span style="color:var(--cx-text-faint, #94a3b8)">·</span>':
       ('<span class="diff '+(diff>=0?'pos':'neg')+'">'+(diff>=0?'+':'')+diff.toFixed(1)+(pctDiff>5?' ⚠ '+pctDiff.toFixed(1)+'%':'')+'</span>');
     cont.insertAdjacentHTML('beforeend',
       '<div class="'+(cls||'mp-row')+'" data-idx="'+idx+'">'
@@ -10676,15 +10676,15 @@ def generar_rotulos(producto_nombre, cantidad_str):
          '*{margin:0;padding:0;box-sizing:border-box}'
          "body{font-family:'Inter',system-ui,Arial,sans-serif;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}"
          '.ph{background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}'
-         '.pbtn{background:#fff;color:#4c1d95;border:none;padding:9px 20px;border-radius:9px;cursor:pointer;font-weight:700;font-family:inherit;}'
+         '.pbtn{background:var(--cx-card, #fff);color:var(--cx-primary-text, #4c1d95);border:none;padding:9px 20px;border-radius:9px;cursor:pointer;font-weight:700;font-family:inherit;}'
          '.wrap{display:flex;flex-wrap:wrap;gap:16px;padding:20px;justify-content:center;align-items:flex-start;}'
-         '.sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:560px;page-break-inside:avoid;}'
+         '.sheet{background:var(--cx-card, #fff);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:560px;page-break-inside:avoid;}'
          '.accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet));}'
          '.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px 16px 8px;}'
          '.brand{display:flex;align-items:center;gap:10px;min-width:0;}'
-         '.mark{width:66px;height:66px;border-radius:13px;flex:none;object-fit:contain;background:#fff;border:1px solid var(--line);padding:4px;}'
+         '.mark{width:66px;height:66px;border-radius:13px;flex:none;object-fit:contain;background:var(--cx-card, #fff);border:1px solid var(--line);padding:4px;}'
          '.co{font-size:14px;font-weight:800;letter-spacing:-.2px;line-height:1.2;}'
-         '.ctrl{font-size:9px;color:var(--soft);text-align:right;line-height:1.6;background:var(--pale);border:1px solid #ede9fe;border-radius:9px;padding:7px 10px;flex:none;white-space:nowrap;}.ctrl b{color:var(--violet-d);font-weight:700;}'
+         '.ctrl{font-size:9px;color:var(--soft);text-align:right;line-height:1.6;background:var(--pale);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:9px;padding:7px 10px;flex:none;white-space:nowrap;}.ctrl b{color:var(--violet-d);font-weight:700;}'
          '.title{text-align:center;padding:2px 16px 12px;}'
          '.title h1{margin:0;font-size:14px;font-weight:800;letter-spacing:-.2px;text-transform:uppercase;}.title .k{font-size:10px;color:var(--mute);margin-top:3px;font-weight:600;letter-spacing:.3px;}'
          'table{width:100%;border-collapse:collapse;}'
@@ -10692,8 +10692,8 @@ def generar_rotulos(producto_nombre, cantidad_str):
          'td.k{width:1%;color:var(--mute);font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;background:#fafafa;white-space:nowrap;}'
          'td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere;}'
          '.num{font-variant-numeric:tabular-nums;font-weight:600;}.cod{color:#a1a1aa;font-size:.85em;}.inci{font-size:11px;color:var(--soft);white-space:normal;}'
-         '.venc{color:#c0392b;font-weight:600;}'
-         '.peso{background:#fff7ed;color:#c2410c;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}'
+         '.venc{color:var(--cx-danger-text, #c0392b);font-weight:600;}'
+         '.peso{background:var(--cx-warn-pale, #fff7ed);color:#c2410c;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}'
          '.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:22px;}'
          '.bcq{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;border-top:1px solid var(--line);}'
          '.bcwrap{flex:1;min-width:0;text-align:center;overflow:hidden;}.bcwrap svg{max-width:100%;height:auto;}.bcv{font-size:8px;color:#a1a1aa;font-variant-numeric:tabular-nums;margin-top:2px;}'
@@ -10703,8 +10703,8 @@ def generar_rotulos(producto_nombre, cantidad_str):
          '.firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;}'
          '.firma .v{font-size:12px;font-weight:600;margin-top:14px;border-top:1px solid var(--ink);padding-top:4px;}.firma .f{font-size:8.5px;color:var(--mute);margin-top:2px;}'
          # Impresión térmica · COMPACTA para caber en UNA etiqueta (default 100×100mm) · afinado 9-jul
-         f'@media print{{html,body{{background:#fff;}}.ph{{display:none;}}.wrap{{display:block;padding:0;gap:0;}}'
-         f'.sheet{{width:{_lw-3}mm;max-width:{_lw-3}mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;}}'
+         f'@media print{{html,body{{background:var(--cx-card, #fff);}}.ph{{display:none;}}.wrap{{display:block;padding:0;gap:0;}}'
+         f'.sheet{{width:{_lw-3}mm;max-width:{_lw-3}mm;border-radius:0;box-shadow:none;border:1px solid var(--cx-border, #ccc);margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;}}'
          f'.sheet:last-child{{page-break-after:auto;}}.accent{{height:3px;}}'
          'td{padding:1.6px 8px;font-size:7.5pt;line-height:1.12;}td.k{font-size:6pt;}'
          'td:not(.k){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'  # PRINT: valores en 1 linea (1 hoja); en pantalla envuelven
@@ -10721,10 +10721,10 @@ def generar_rotulos(producto_nombre, cantidad_str):
         '<a href="' + _base_path + '?w=' + str(w) + '&h=' + str(h) + '" style="'
         'display:inline-block;padding:4px 9px;margin-left:5px;border-radius:6px;font-size:8pt;'
         'text-decoration:none;font-weight:600;' +
-        ('background:#fff;color:#4c1d95;' if (w == _lw and h == _lh) else 'background:#6d28d9;color:#fff;') +
+        ('background:var(--cx-card, #fff);color:var(--cx-primary-text, #4c1d95);' if (w == _lw and h == _lh) else 'background:var(--cx-primary, #6d28d9);color:#fff;') +
         '">' + lbl + ' · ' + str(w) + '×' + str(h) + 'mm</a>'
         for w, h, lbl in _sizes)
-    return (css + '<div class="ph"><div style="display:flex;align-items:center;gap:12px;"><img src="' + _logo_src + '" alt="" onerror="this.remove()" style="height:34px;width:auto;background:#fff;border-radius:6px;padding:2px 5px;"><div><h2 style="margin:0;">Rotulos - ' + prod + ' - ' + str(cantidad_kg) + ' kg</h2>'
+    return (css + '<div class="ph"><div style="display:flex;align-items:center;gap:12px;"><img src="' + _logo_src + '" alt="" onerror="this.remove()" style="height:34px;width:auto;background:var(--cx-card, #fff);border-radius:6px;padding:2px 5px;"><div><h2 style="margin:0;">Rotulos - ' + prod + ' - ' + str(cantidad_kg) + ' kg</h2>'
             '<div style="font-size:8pt;opacity:0.8;">' + op_num + ' | ' + str(len(items)) + ' MPs | ' + hoy +
             ' | etiqueta ' + str(_lw) + '×' + str(_lh) + 'mm</div></div></div>'
             '<div style="display:flex;align-items:center;gap:4px;"><span style="font-size:8pt;opacity:.8;">Tamaño:</span>' +
@@ -10778,21 +10778,21 @@ def scan_rotulo(codigo, lote):
     ubic = ('Est. ' + est + pos).strip() if (est or pos) else '·'
     def _row(k, v, big=False):
         return ('<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 2px;'
-                'border-bottom:1px solid #eee;"><span style="color:#6b7280;font-size:13px;">' + _hh.escape(k) +
+                'border-bottom:1px solid var(--cx-border-soft, #eee);"><span style="color:var(--cx-text-mute, #6b7280);font-size:13px;">' + _hh.escape(k) +
                 '</span><span style="font-weight:700;text-align:right;font-size:' + ('18px' if big else '14px') +
                 ';color:#111;">' + v + '</span></div>')
     movrows = ''
     for m in movs:
         _t = str(m[1] or ''); _cant = float(m[2] or 0)
         _sg = '#16a34a' if _t.lower().startswith('entrada') or 'Ajuste +' in _t else '#dc2626'
-        movrows += ('<tr><td style="padding:5px 6px;color:#6b7280;font-size:12px;">' + _hh.escape(str(m[0])[:10]) +
+        movrows += ('<tr><td style="padding:5px 6px;color:var(--cx-text-mute, #6b7280);font-size:12px;">' + _hh.escape(str(m[0])[:10]) +
                     '</td><td style="padding:5px 6px;font-size:12px;">' + _hh.escape(_t) +
                     '</td><td style="padding:5px 6px;text-align:right;font-weight:700;color:' + _sg +
                     ';font-size:12px;">' + '{:,.1f} g'.format(_cant) + '</td></tr>')
     if not movrows:
         movrows = '<tr><td colspan="3" style="padding:8px;color:#9ca3af;font-size:12px;">Sin movimientos para este lote.</td></tr>'
     aviso = ('' if existe else
-             '<div style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;padding:10px 12px;'
+             '<div style="background:var(--cx-danger-pale, #fef2f2);border:1px solid #fca5a5;color:var(--cx-danger-text, #b91c1c);padding:10px 12px;'
              'border-radius:10px;margin:10px 0;font-size:13px;font-weight:600;">⚠ No se encontraron movimientos '
              'para el lote <b>' + _hh.escape(lot) + '</b> del código <b>' + _hh.escape(cod) + '</b>. '
              'Verificá el rótulo o que el lote esté cargado en bodega.</div>')
@@ -10802,8 +10802,8 @@ def scan_rotulo(codigo, lote):
         '<title>' + _hh.escape(nombre) + ' · ' + _hh.escape(lot) + '</title>'
         '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:-apple-system,Arial,sans-serif;'
         'background:#f3f4f6;color:#111;padding:14px;max-width:520px;margin:0 auto;}'
-        '.card{background:#fff;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden;margin-bottom:14px;}'
-        '.hd{background:#4c1d95;color:#fff;padding:16px 18px;}.hd h1{font-size:20px;line-height:1.2;}'
+        '.card{background:var(--cx-card, #fff);border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden;margin-bottom:14px;}'
+        '.hd{background:var(--cx-primary-dark, #4c1d95);color:#fff;padding:16px 18px;}.hd h1{font-size:20px;line-height:1.2;}'
         '.hd .sub{opacity:.85;font-size:13px;margin-top:3px;}.bd{padding:6px 18px 14px;}'
         '.chip{display:inline-block;padding:5px 12px;border-radius:999px;color:#fff;font-weight:700;font-size:13px;margin-top:8px;}'
         '</style></head><body>'
@@ -10818,7 +10818,7 @@ def scan_rotulo(codigo, lote):
         (_row('Nombre INCI', _hh.escape(inci)) if inci else '') +
         _row('Último movimiento', _hh.escape(ult) or '·') +
         '</div></div>'
-        '<div class="card"><div class="hd" style="background:#6d28d9;padding:12px 18px;">'
+        '<div class="card"><div class="hd" style="background:var(--cx-primary, #6d28d9);padding:12px 18px;">'
         '<h1 style="font-size:16px;">Últimos movimientos</h1></div>'
         '<div class="bd" style="padding:8px 12px 12px;"><table style="width:100%;border-collapse:collapse;">' +
         movrows + '</table></div></div>'
@@ -10848,16 +10848,16 @@ def _rotulo_recep_css(lw, lh):
       "*{margin:0;padding:0;box-sizing:border-box}"
       "body{font-family:'Inter',system-ui,Arial,sans-serif;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}"
       ".ph{background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}"
-      ".pbtn{background:#fff;color:#4c1d95;border:none;padding:9px 20px;border-radius:9px;cursor:pointer;font-weight:700;font-family:inherit}"
+      ".pbtn{background:var(--cx-card, #fff);color:var(--cx-primary-text, #4c1d95);border:none;padding:9px 20px;border-radius:9px;cursor:pointer;font-weight:700;font-family:inherit}"
       ".wrap{display:flex;flex-wrap:wrap;gap:16px;padding:20px;justify-content:center;align-items:flex-start}"
-      ".sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:560px;page-break-inside:avoid}"
+      ".sheet{background:var(--cx-card, #fff);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:560px;page-break-inside:avoid}"
       ".accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}"
       # ENCABEZADO tipo membrete (Sebastián 19-jul · no apilado · producto = protagonista):
       # marca a la izquierda, tipo de rótulo + formato/fecha a la derecha, divisor, y el nombre del
       # material GRANDE con el INCI de subtítulo (hero).
       ".top{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 18px 10px}"
       ".brandrow{display:inline-flex;align-items:center;gap:12px}"
-      ".mark{width:50px;height:50px;border-radius:14px;flex:none;object-fit:contain;background:#fff;border:1px solid var(--line);padding:5px}"
+      ".mark{width:50px;height:50px;border-radius:14px;flex:none;object-fit:contain;background:var(--cx-card, #fff);border:1px solid var(--line);padding:5px}"
       ".co{display:flex;flex-direction:column;align-items:flex-start;font-weight:800;line-height:1;font-size:17px;letter-spacing:1.5px;color:var(--ink)}"
       ".cosub{font-size:9px;font-weight:600;letter-spacing:3px;color:var(--mute);text-transform:uppercase;margin-top:3px}"
       ".ctrl{text-align:right;font-size:9px;color:var(--mute);line-height:1.55;flex:none;white-space:nowrap}.ctrl b{color:var(--violet-d);font-weight:700}"
@@ -10866,19 +10866,19 @@ def _rotulo_recep_css(lw, lh):
       ".hero .name{font-size:26px;font-weight:800;letter-spacing:-.5px;line-height:1.08;color:var(--ink)}"
       ".inci{font-size:12px;color:var(--mute);font-weight:700;letter-spacing:.8px;margin-top:5px;text-transform:uppercase}"
       ".tipo{display:inline-block;font-size:10.5px;font-weight:700;margin-right:14px;white-space:nowrap;color:var(--mute)}.tipo.on{color:var(--violet-d)}"
-      ".rectag{display:inline-block;margin-left:8px;background:var(--pale);color:var(--violet-d);border:1px solid #ede9fe;border-radius:999px;padding:1px 9px;font-size:9px;font-weight:800;text-transform:none;letter-spacing:0;vertical-align:middle}"
-      ".lote{margin:0 16px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;text-align:center;padding:8px}"
-      ".lote .ll{font-size:9px;font-weight:700;color:#9a3412;text-transform:uppercase;letter-spacing:.4px}.lote .lv{font-size:20px;font-weight:800;color:#c2410c;letter-spacing:1px}.lote svg{max-width:100%;height:auto;margin-top:4px}"
+      ".rectag{display:inline-block;margin-left:8px;background:var(--pale);color:var(--violet-d);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:999px;padding:1px 9px;font-size:9px;font-weight:800;text-transform:none;letter-spacing:0;vertical-align:middle}"
+      ".lote{margin:0 16px 10px;background:var(--cx-warn-pale, #fff7ed);border:1px solid #fed7aa;border-radius:10px;text-align:center;padding:8px}"
+      ".lote .ll{font-size:9px;font-weight:700;color:var(--cx-warn-text, #9a3412);text-transform:uppercase;letter-spacing:.4px}.lote .lv{font-size:20px;font-weight:800;color:#c2410c;letter-spacing:1px}.lote svg{max-width:100%;height:auto;margin-top:4px}"
       "table{width:100%;border-collapse:collapse}"
       "td{padding:6px 12px;vertical-align:middle;font-size:12px}"  # sin lineas horizontales entre filas (mas limpio · Sebastian 18-jul)
       "tr:nth-of-type(even) td:not(.k){background:#fbfbfc}"  # zebra tenue separa filas sin lineas
       "td.k{width:1%;color:var(--mute);font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;background:#fafafa;white-space:nowrap}"
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"
-      ".num{font-variant-numeric:tabular-nums;font-weight:600}.cant{color:#15803d;font-weight:800}.cantsub{color:var(--mute);font-weight:600;font-size:10px}.venc{color:#c0392b;font-weight:600}.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:20px}.ck{text-align:center;font-weight:700}"
+      ".num{font-variant-numeric:tabular-nums;font-weight:600}.cant{color:var(--cx-success-text, #15803d);font-weight:800}.cantsub{color:var(--mute);font-weight:600;font-size:10px}.venc{color:var(--cx-danger-text, #c0392b);font-weight:600}.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:20px}.ck{text-align:center;font-weight:700}"
       ".qc{display:flex;gap:13px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);font-size:11px;font-weight:700;flex-wrap:wrap}.qc b{color:var(--mute);text-transform:uppercase;font-size:9.5px;font-weight:700}"
       ".qcbox{padding:8px 16px;border-top:1px solid var(--line)}"
       ".qcl{font-size:9.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px}.qcl span{color:#a1a1aa;font-weight:600;text-transform:none;letter-spacing:0}"
-      ".qcarea{border:1.5px dashed #c4b5fd;border-radius:8px;height:92px;background:repeating-linear-gradient(-45deg,#fff,#fff 8px,#faf5ff 8px,#faf5ff 9px)}"
+      ".qcarea{border:1.5px dashed var(--cx-primary-light, #c4b5fd);border-radius:8px;height:92px;background:repeating-linear-gradient(-45deg,#fff,#fff 8px,#faf5ff 8px,#faf5ff 9px)}"
       ".obs{height:26px}"
       ".firmas{display:flex;border-top:1px solid var(--line)}.firma{flex:1;padding:9px 14px 11px}.firma+.firma{border-left:1px solid var(--line)}"
       ".firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}.firma .sig{height:1px;background:var(--ink);margin:22px 0 5px}.firma .f{font-size:9px;color:var(--mute)}"
@@ -10886,7 +10886,7 @@ def _rotulo_recep_css(lw, lh):
       # sin cortarse ni a la derecha ni abajo. Los valores ENVUELVEN (no nowrap → no fuerzan la tabla
       # más ancha que la hoja · la fila Tipo de insumo cortaba "Material de Empaque"). Compactado
       # vertical fuerte para que las firmas queden en la misma página (Sebastián 18-jul).
-      "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px}"
+      "@media print{html,body{background:var(--cx-card, #fff)}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px}"
       ".sheet{width:" + w4 + "mm;max-width:" + w4 + "mm;border-radius:0;box-shadow:none;border:1px solid #bbb;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;overflow:hidden}.sheet:last-child{page-break-after:auto}"
       "td{padding:0.5px 9px;font-size:6.5pt;line-height:1.05}td.k{font-size:5.6pt}"
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"  # PRINT: los valores ENVUELVEN (no cortan a la derecha)
@@ -10895,7 +10895,7 @@ def _rotulo_recep_css(lw, lh):
       ".lote{margin:0 12px 2px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:4mm;height:auto}"
       ".qc{padding:2px 12px;font-size:6.5pt;gap:9px}.firma{padding:3px 11px 4px}.firma .l{font-size:6pt}.firma .sig{margin:5px 0 1px}.firma .f{font-size:5.6pt}"
       # el area del sticker en alto generoso fijo para llenar el espacio de abajo (Sebastian 18-jul)
-      ".qcbox{padding:2px 12px 3px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:13mm;border-color:#999}.obs{height:4mm}.fill{height:5mm}"
+      ".qcbox{padding:2px 12px 3px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:13mm;border-color:var(--cx-text-faint, #999)}.obs{height:4mm}.fill{height:5mm}"
       "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:2mm}}"
       "</style>")
 
@@ -11554,12 +11554,12 @@ def liberar_cuarentena_page():
     """Liberar toda la cuarentena en bloque (admin · 1 confirmación · sin firma por lote)."""
     if session.get('compras_user', '') not in ADMIN_USERS:
         return redirect('/login?next=/admin/liberar-cuarentena')
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Liberar cuarentena</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:22px}.card{max-width:900px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:11px;text-transform:uppercase}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Liberar cuarentena</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:22px}.card{max-width:900px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--cx-border-soft, #eee)}th{color:var(--cx-primary-text, #6d28d9);font-size:11px;text-transform:uppercase}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#2563eb,#60a5fa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128275;</div><div><h2 style="margin:0;font-size:19px">Liberar cuarentena en bloque</h2><div class="cx-text-mute" style="font-size:13px">Pasa TODOS los lotes en cuarentena a VIGENTE con <b>una sola confirmacion</b> (admin, auditado, sin firma por lote). Es un override del flujo formal de Calidad. La ubicacion la pone el jefe despues.</div></div></div>
   <div id="sum" style="margin-top:12px;font-size:14px"></div>
   <div id="out"></div>
-  <div style="margin-top:14px;display:flex;gap:10px"><button id="lib" class="cx-btn" style="background:#2563eb;color:#fff;display:none" onclick="liberar()">Liberar seleccionados a VIGENTE</button><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
+  <div style="margin-top:14px;display:flex;gap:10px"><button id="lib" class="cx-btn" style="background:var(--cx-info, #2563eb);color:#fff;display:none" onclick="liberar()">Liberar seleccionados a VIGENTE</button><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
   <div id="msg" style="margin-top:10px;font-size:14px"></div>
 </div>
 <script>
@@ -11571,12 +11571,12 @@ async function cargar(){
     var d=await (await fetch('/api/admin/cuarentena-lista',{credentials:'same-origin'})).json();
     if(!d.ok){document.getElementById('sum').textContent='Error';return;}
     var ls=d.lotes||[];
-    var aviso=(d.no_mp_excluidos>0)?(' · <span style="color:#b45309">'+d.no_mp_excluidos+' NO-MP excluidos (EPP/otros · no se tocan)</span>'):'';
+    var aviso=(d.no_mp_excluidos>0)?(' · <span style="color:var(--cx-warn-text, #b45309)">'+d.no_mp_excluidos+' NO-MP excluidos (EPP/otros · no se tocan)</span>'):'';
     document.getElementById('sum').innerHTML='<b>'+ls.length+'</b> lote(s) de MP en cuarentena · <b>'+num(d.total_g)+' g</b>'+aviso;
     var h='<table><thead><tr><th><input type="checkbox" checked onclick="toggleAll(this)"></th><th>Cod</th><th>Material</th><th>Lote</th><th style="text-align:right">Cantidad g</th></tr></thead><tbody>';
     ls.forEach(function(l){h+='<tr><td><input type="checkbox" class="cbq" checked data-cod="'+esc(l.cod)+'" data-lote="'+esc(l.lote)+'"></td><td style="font-family:monospace">'+esc(l.cod)+'</td><td>'+esc(l.nombre)+'</td><td style="font-family:monospace">'+esc(l.lote)+'</td><td style="text-align:right">'+num(l.neto_g)+'</td></tr>';});
     h+='</tbody></table>';
-    document.getElementById('out').innerHTML= ls.length? h : '<div style="color:#16a34a;margin-top:10px">No hay MP en cuarentena.</div>';
+    document.getElementById('out').innerHTML= ls.length? h : '<div style="color:var(--cx-success-text, #16a34a);margin-top:10px">No hay MP en cuarentena.</div>';
     document.getElementById('lib').style.display= ls.length? 'inline-block':'none';
   }catch(e){document.getElementById('sum').textContent='Error de red';}
 }
@@ -11590,10 +11590,10 @@ async function liberar(){
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/admin/liberar-cuarentena-bloque',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({seleccion:sel})});
     var d=await r.json();
-    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
-    document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+d.liberados+' lote(s) liberados a VIGENTE.</span>';
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">'+esc(d.error||r.status)+'</span>';return;}
+    document.getElementById('msg').innerHTML='<span style="color:var(--cx-success-text, #16a34a);font-weight:700">&#10003; '+d.liberados+' lote(s) liberados a VIGENTE.</span>';
     cargar();
-  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>';}
 }
 cargar();
 </script></body></html>'''
@@ -11735,14 +11735,14 @@ def reset_inventario_page():
         '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         '<title>Reset inventario a cero</title>'
-        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}'
+        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b)}'
         '.wrap{max-width:720px;margin:0 auto;padding:24px}h1{font-size:21px;margin:0 0 6px}'
-        '.warn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:14px 18px;margin:14px 0;font-size:14px}'
-        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;margin:14px 0}'
+        '.warn{background:var(--cx-danger-pale, #fef2f2);border:1px solid #fecaca;color:var(--cx-danger-text, #991b1b);border-radius:10px;padding:14px 18px;margin:14px 0;font-size:14px}'
+        '.card{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;padding:16px 18px;margin:14px 0}'
         '.k{font-size:26px;font-weight:800}label{display:block;margin:10px 0;font-size:14px}'
-        'input[type=text]{padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:15px;width:160px}'
+        'input[type=text]{padding:9px 12px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:15px;width:160px}'
         'button{border:none;border-radius:9px;padding:11px 20px;font-weight:800;font-size:15px;cursor:pointer}'
-        '.go{background:#b91c1c;color:#fff}.go:disabled{opacity:.4;cursor:not-allowed}'
+        '.go{background:var(--cx-danger, #b91c1c);color:#fff}.go:disabled{opacity:.4;cursor:not-allowed}'
         'a.back{color:#0d9488;text-decoration:none;font-size:13px}</style></head><body><div class="wrap">'
         '<a class="back" href="/inventarios">← Volver a Inventarios</a>'
         '<h1>🧹 Reset de inventario a CERO</h1>'
@@ -11759,15 +11759,15 @@ def reset_inventario_page():
         'function _csrf(){return document.cookie.split(";").find(function(c){return c.trim().indexOf("csrf_token=")===0})?.split("=")[1]||"";}'
         'async function cargar(){'
         'try{var r=await fetch("/api/inventario/reset-inventario-cero");var d=await r.json();'
-        'document.getElementById("preview").innerHTML="<div class=k>"+d.movimientos_mp+"</div>movimientos de MP a borrar · "+d.mps_con_saldo+" MP con saldo<br>"+d.movimientos_mee+" movimientos de envases · "+d.conteos+" conteos<br><span style=color:#166534>✓ catálogo intacto: "+d.catalogo_mps_intacto+" MP (códigos/INCI/nombres se conservan)</span>";'
+        'document.getElementById("preview").innerHTML="<div class=k>"+d.movimientos_mp+"</div>movimientos de MP a borrar · "+d.mps_con_saldo+" MP con saldo<br>"+d.movimientos_mee+" movimientos de envases · "+d.conteos+" conteos<br><span style=color:var(--cx-success-text, #166534)>✓ catálogo intacto: "+d.catalogo_mps_intacto+" MP (códigos/INCI/nombres se conservan)</span>";'
         '}catch(e){document.getElementById("preview").textContent="No se pudo cargar preview: "+e;}}'
         'async function ejecutar(){'
         'if(!confirm("¿Seguro? Esto pone TODO el stock en cero (con respaldo). Conserva el catálogo.")) return;'
         'var b=document.getElementById("go");b.disabled=true;b.textContent="Ejecutando…";'
         'try{var r=await fetch("/api/inventario/reset-inventario-cero",{method:"POST",headers:{"Content-Type":"application/json","X-CSRFToken":_csrf()},body:JSON.stringify({confirmar:"CERO",incluir_mee:document.getElementById("mee").checked,limpiar_conteos:document.getElementById("conteos").checked})});'
         'var d=await r.json();'
-        'if(!r.ok||!d.ok){document.getElementById("msg").innerHTML="<span style=color:#991b1b>Error: "+(d.error||r.status)+"</span>";b.disabled=false;b.textContent="🧹 Poner inventario en CERO";return;}'
-        'document.getElementById("msg").innerHTML="<span style=color:#166534;font-weight:700>✅ Listo. Stock en cero. MP borradas: "+d.mp_borrados+" · envases: "+d.mee_borrados+" · conteos: "+d.conteos_borrados+" · catálogo conservado: "+d.catalogo_conservado+". Respaldo: "+(d.backups||[]).join(", ")+"</span><br>Ya podés cargar el conteo nuevo desde Inventarios › Ingreso MP.";'
+        'if(!r.ok||!d.ok){document.getElementById("msg").innerHTML="<span style=color:var(--cx-danger-text, #991b1b)>Error: "+(d.error||r.status)+"</span>";b.disabled=false;b.textContent="🧹 Poner inventario en CERO";return;}'
+        'document.getElementById("msg").innerHTML="<span style=color:var(--cx-success-text, #166534);font-weight:700>✅ Listo. Stock en cero. MP borradas: "+d.mp_borrados+" · envases: "+d.mee_borrados+" · conteos: "+d.conteos_borrados+" · catálogo conservado: "+d.catalogo_conservado+". Respaldo: "+(d.backups||[]).join(", ")+"</span><br>Ya podés cargar el conteo nuevo desde Inventarios › Ingreso MP.";'
         'b.textContent="✓ Hecho";cargar();'
         '}catch(e){document.getElementById("msg").textContent="Error: "+e;b.disabled=false;b.textContent="🧹 Poner inventario en CERO";}}'
         'cargar();'
@@ -12071,19 +12071,19 @@ def importar_conteo_page():
         '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         '<title>Importar conteo físico</title>'
-        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}'
+        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b)}'
         '.wrap{max-width:1150px;margin:0 auto;padding:22px}h1{font-size:21px;margin:0 0 4px}'
-        '.sub{color:#64748b;font-size:13px;margin-bottom:14px}'
+        '.sub{color:var(--cx-text-mute, #64748b);font-size:13px;margin-bottom:14px}'
         '.cards{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}'
-        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px;min-width:90px}'
-        '.card b{font-size:20px;display:block}.card span{font-size:11px;color:#64748b}'
-        'table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:12.5px;box-shadow:0 1px 3px rgba(0,0,0,.06)}'
+        '.card{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;padding:10px 14px;min-width:90px}'
+        '.card b{font-size:20px;display:block}.card span{font-size:11px;color:var(--cx-text-mute, #64748b)}'
+        'table{width:100%;border-collapse:collapse;background:var(--cx-card, #fff);border-radius:10px;overflow:hidden;font-size:12.5px;box-shadow:0 1px 3px rgba(0,0,0,.06)}'
         'th{background:#0d9488;color:#fff;text-align:left;padding:7px 8px;font-size:11px;position:sticky;top:0}'
-        'td{padding:6px 8px;border-bottom:1px solid #f1f5f9}'
+        'td{padding:6px 8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}'
         'button{border:none;border-radius:9px;padding:10px 18px;font-weight:800;font-size:14px;cursor:pointer}'
         '.go{background:#0d9488;color:#fff}.go:disabled{opacity:.4;cursor:not-allowed}'
         'a.back{color:#0d9488;text-decoration:none;font-size:13px}'
-        '.bad{background:#fef2f2}.warn{background:#fffbeb}</style></head><body><div class="wrap">'
+        '.bad{background:var(--cx-danger-pale, #fef2f2)}.warn{background:var(--cx-warn-pale, #fffbeb)}</style></head><body><div class="wrap">'
         '<a class="back" href="/inventarios">← Volver a Inventarios</a>'
         '<h1>📥 Importar conteo físico</h1>'
         '<div class="sub">Subí el Excel del conteo (INCI · Lote · Cantidad · Vencimiento…). Cruza cada INCI contra el catálogo de la app. '
@@ -12108,15 +12108,15 @@ def importar_conteo_page():
         'FILAS=d.filas; var rs=d.resumen;'
         'var mapean=rs.ok+rs.corregido+rs.por_nombre;'
         'document.getElementById("resumen").innerHTML="<div class=card style=\\"min-width:auto;width:100%\\">"'
-        '+"📄 <b>TU EXCEL: "+rs.total+" filas.</b> &nbsp;&nbsp; ✅ <b style=color:#166534>"+mapean+" MAPEAN</b> (existen en la app · <b>"+rs.cargables+"</b> con stock, listas para cargar) &nbsp;·&nbsp; ⚠ <b style=color:#991b1b>"+rs.sin_match+" NO MAPEAN</b> (se muestran abajo · revisar) &nbsp;·&nbsp; <span style=color:#94a3b8>"+rs.en_cero+" en 0, ocultas</span></div>";'
+        '+"📄 <b>TU EXCEL: "+rs.total+" filas.</b> &nbsp;&nbsp; ✅ <b style=color:var(--cx-success-text, #166534)>"+mapean+" MAPEAN</b> (existen en la app · <b>"+rs.cargables+"</b> con stock, listas para cargar) &nbsp;·&nbsp; ⚠ <b style=color:var(--cx-danger-text, #991b1b)>"+rs.sin_match+" NO MAPEAN</b> (se muestran abajo · revisar) &nbsp;·&nbsp; <span style=color:var(--cx-text-faint, #94a3b8)>"+rs.en_cero+" en 0, ocultas</span></div>";'
         'var ests=Array.from(new Set(d.filas.filter(function(x){return x.cargable&&x.estanteria;}).map(function(x){return x.estanteria;}))).sort();'
         'document.getElementById("acciones").innerHTML="<div style=\\"display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0\\">"'
         '+"<button class=go id=btn-cargar onclick=cargar()>📥 Cargar marcadas</button>"'
-        '+"<button onclick=\\"marcarTodo(true)\\" style=\\"background:#e2e8f0;color:#1e293b\\">Marcar todas</button>"'
-        '+"<button onclick=\\"marcarTodo(false)\\" style=\\"background:#e2e8f0;color:#1e293b\\">Desmarcar</button>"'
+        '+"<button onclick=\\"marcarTodo(true)\\" style=\\"background:var(--cx-border, #e2e8f0);color:var(--cx-text, #1e293b)\\">Marcar todas</button>"'
+        '+"<button onclick=\\"marcarTodo(false)\\" style=\\"background:var(--cx-border, #e2e8f0);color:var(--cx-text, #1e293b)\\">Desmarcar</button>"'
         '+"<span style=font-size:13px>Solo estantería: <select id=fest onchange=\\"filtrarEst(this.value)\\"><option value=__all>todas</option>"+ests.map(function(e){return \"<option>\"+e+\"</option>\";}).join(\"\")+"</select></span>"'
-        '+"<span style=font-size:13px>Ver: <button data-cat=nomapean onclick=verCat(this.dataset.cat) style=\\"background:#fee2e2;color:#991b1b\\">⚠ NO mapean</button> <button data-cat=mapean onclick=verCat(this.dataset.cat) style=\\"background:#dcfce7;color:#166534\\">✅ mapean (con stock)</button> <button data-cat=todas onclick=verCat(this.dataset.cat) style=\\"background:#e2e8f0;color:#1e293b\\">todas</button></span>"'
-        '+"<span style=\\"font-size:12px;color:#64748b\\">Por defecto ves solo las que NO mapean (revisar). Las que mapean ya están marcadas: dale Cargar marcadas, o filtrá por estantería para ir de a poco.</span></div>";'
+        '+"<span style=font-size:13px>Ver: <button data-cat=nomapean onclick=verCat(this.dataset.cat) style=\\"background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)\\">⚠ NO mapean</button> <button data-cat=mapean onclick=verCat(this.dataset.cat) style=\\"background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534)\\">✅ mapean (con stock)</button> <button data-cat=todas onclick=verCat(this.dataset.cat) style=\\"background:var(--cx-border, #e2e8f0);color:var(--cx-text, #1e293b)\\">todas</button></span>"'
+        '+"<span style=\\"font-size:12px;color:var(--cx-text-mute, #64748b)\\">Por defecto ves solo las que NO mapean (revisar). Las que mapean ya están marcadas: dale Cargar marcadas, o filtrá por estantería para ir de a poco.</span></div>";'
         'var h="<table><thead><tr><th>✓</th><th>Excel código</th><th>INCI (Excel)</th><th>→ Código real</th><th>INCI en la app</th><th>Match</th><th>Est</th><th>Lote</th><th>Cant (g)</th><th>Venc</th></tr></thead><tbody>";'
         'd.filas.forEach(function(x,i){'
         'var prob=(x.match==="sin_match"||x.inci_coincide===false);'
@@ -12124,7 +12124,7 @@ def importar_conteo_page():
         'var cls=x.match==="sin_match"?"bad":((x.match==="por_inci"||x.match==="por_comercial"||x.inci_coincide===false)?"warn":"");'
         'var ck=(x.cargable && x.inci_coincide!==false)?" checked":"";'
         'var chk=x.cargable?("<input type=checkbox class=sel data-i="+i+" data-est=\\""+(x.estanteria||"")+"\\""+ck+" onchange=actBtn()>"):"";'
-        'var im=x.inci_coincide===false?" <span style=\\"color:#9a3412;font-weight:700\\">⚠ distinto</span>":(x.inci_coincide===true?" <span style=color:#166534>✓</span>":"");'
+        'var im=x.inci_coincide===false?" <span style=\\"color:var(--cx-warn-text, #9a3412);font-weight:700\\">⚠ distinto</span>":(x.inci_coincide===true?" <span style=color:var(--cx-success-text, #166534)>✓</span>":"");'
         'h+="<tr class="+cls+" data-cat="+cat+"><td>"+chk+"</td><td>"+(x.codigo||"·")+"</td><td>"+(x.inci||"")+"</td><td><b>"+(x.codigo_real||"·")+"</b></td><td>"+(x.inci_app||"")+im+"</td><td>"+badge(x.match)+"</td><td>"+(x.estanteria||"")+"</td><td>"+(x.lote||"")+"</td><td style=text-align:right>"+x.cantidad+"</td><td>"+(x.vencimiento||"")+"</td></tr>";});'
         'h+="</tbody></table>"; document.getElementById("tabla").innerHTML=h; actBtn(); verCat("nomapean");'
         'b.disabled=false; b.textContent="Analizar mapeo";'
@@ -12138,8 +12138,8 @@ def importar_conteo_page():
         'if(!sel.length){alert("No hay filas marcadas para cargar.");return;}'
         'if(!confirm("Cargar "+sel.length+" fila(s) MARCADAS al inventario? (no duplica si ya estaban)")) return;'
         'try{var r=await fetch("/api/inventario/importar-conteo/cargar",{method:"POST",headers:{"Content-Type":"application/json","X-CSRFToken":_csrf()},body:JSON.stringify({filas:sel})});'
-        'var d=await r.json(); if(!r.ok||!d.ok){document.getElementById("msg").innerHTML="<span style=color:#991b1b>Error: "+(d.error||r.status)+"</span>";return;}'
-        'document.getElementById("msg").innerHTML="<span style=color:#166534;font-weight:700>✅ Cargadas "+d.cargados+" · ya estaban (saltadas) "+d.saltados_duplicado+"</span> · Podés marcar otro estante y seguir.";'
+        'var d=await r.json(); if(!r.ok||!d.ok){document.getElementById("msg").innerHTML="<span style=color:var(--cx-danger-text, #991b1b)>Error: "+(d.error||r.status)+"</span>";return;}'
+        'document.getElementById("msg").innerHTML="<span style=color:var(--cx-success-text, #166534);font-weight:700>✅ Cargadas "+d.cargados+" · ya estaban (saltadas) "+d.saltados_duplicado+"</span> · Podés marcar otro estante y seguir.";'
         '}catch(e){document.getElementById("msg").textContent="Error: "+e;}}'
         '</script></div></body></html>')
     return Response(html, mimetype="text/html")
@@ -12231,12 +12231,12 @@ def precios_sospechosos_page():
         _cj = _hh.escape(cod)
         if flag == 'alto':
             _sug = round(precio / 1000.0, 2)
-            accion = ('<button class="cx-btn cx-btn-sm" style="background:#7c3aed;color:#fff;margin-right:6px" '
+            accion = ('<button class="cx-btn cx-btn-sm" style="background:var(--cx-primary, #7c3aed);color:#fff;margin-right:6px" '
                       'onclick="fixPrecio(\'' + _cj + '\',' + str(_sug) + ')">÷1000 &rarr; ' + _cop(_sug) + '</button>')
-            badge = '<span style="color:#b91c1c;font-weight:700">' + _cop(precio) + '</span>'
+            badge = '<span style="color:var(--cx-danger-text, #b91c1c);font-weight:700">' + _cop(precio) + '</span>'
         else:
             accion = ''
-            badge = '<span style="color:#b45309;font-weight:700">sin precio</span>'
+            badge = '<span style="color:var(--cx-warn-text, #b45309);font-weight:700">sin precio</span>'
         filas += ('<tr><td><b>' + _cj + '</b></td><td>' + _hh.escape(str(nom)) + '</td><td>' + _hh.escape(str(prov)) +
                   '</td><td style="text-align:right">' + badge + '</td><td style="text-align:right">' +
                   f"{stock:,.0f}".replace(',', '.') + ' g</td><td style="white-space:nowrap">' + accion +
@@ -12244,8 +12244,8 @@ def precios_sospechosos_page():
                   '<button class="cx-btn cx-btn-sm cx-btn-success" onclick="fixPrecio(\'' + _cj +
                   '\',parseFloat((document.getElementById(\'p-' + _cj + '\')||{}).value)||0)">Guardar</button></td></tr>')
     if not sosp:
-        filas = '<tr><td colspan="6" style="text-align:center;color:#16a34a;padding:22px;font-weight:600">&#10003; Ningún precio sospechoso. Todo en rango.</td></tr>'
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Precios sospechosos</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1000px;margin:0 auto}</style></head><body>
+        filas = '<tr><td colspan="6" style="text-align:center;color:var(--cx-success-text, #16a34a);padding:22px;font-weight:600">&#10003; Ningún precio sospechoso. Todo en rango.</td></tr>'
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Precios sospechosos</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:24px}.card{max-width:1000px;margin:0 auto}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128176;</div><div><h2 style="margin:0;font-size:19px">Precios sospechosos</h2><div class="cx-text-mute" style="font-size:13px">MP con precio/kg &gt; ''' + _cop(_umbral) + ''' (probable ceros de m&aacute;s) o sin precio (con stock). Corregilos ac&aacute;: &divide;1000 para los inflados, o pon&eacute; el valor real. Impacta valor de inventario y sugerencias de compra.</div></div></div>
   <div class="cx-table-wrap" style="margin-top:14px"><table class="cx-table"><thead><tr><th>C&oacute;digo</th><th>Nombre (INCI)</th><th>Proveedor</th><th style="text-align:right">Precio/kg actual</th><th style="text-align:right">Stock</th><th>Corregir</th></tr></thead><tbody>__FILAS__</tbody></table></div>
@@ -12677,14 +12677,14 @@ def corregir_colisiones_page():
     _pares = ''.join(
         '<tr><td class="mono">%s</td><td class="mono">%s</td></tr>' % (k, v) for k, v in _RETRO_CORR_MAP.items())
     _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Corregir colisiones · Consumo</title>
-<style>body{font-family:Arial,sans-serif;background:#fef2f2;padding:20px;color:#1e293b}.card{max-width:960px;margin:0 auto;background:#fff;border:1px solid #fecaca;border-radius:12px;padding:18px 22px}
-h1{color:#b91c1c;font-size:21px;margin:0 0 6px}.muted{color:#64748b;font-size:13px}
-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#b91c1c;font-size:10.5px;text-transform:uppercase}
+<style>body{font-family:Arial,sans-serif;background:var(--cx-danger-pale, #fef2f2);padding:20px;color:var(--cx-text, #1e293b)}.card{max-width:960px;margin:0 auto;background:var(--cx-card, #fff);border:1px solid #fecaca;border-radius:12px;padding:18px 22px}
+h1{color:var(--cx-danger-text, #b91c1c);font-size:21px;margin:0 0 6px}.muted{color:var(--cx-text-mute, #64748b);font-size:13px}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--cx-border-soft, #eee)}th{color:var(--cx-danger-text, #b91c1c);font-size:10.5px;text-transform:uppercase}
 .mono{font-family:ui-monospace,Consolas,monospace}
-button{background:#b91c1c;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-right:8px}
-button.prev{background:#475569}button:disabled{opacity:.5;cursor:default}
+button{background:var(--cx-danger, #b91c1c);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-right:8px}
+button.prev{background:var(--cx-text-soft, #475569)}button:disabled{opacity:.5;cursor:default}
 input[type=file]{margin:12px 0}
-.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.ok{background:#dcfce7;color:#166534}.bad{background:#fee2e2;color:#991b1b}.done{background:#e0e7ff;color:#3730a3}
+.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.ok{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534)}.bad{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)}.done{background:#e0e7ff;color:#3730a3}
 #out{margin-top:14px}.warn{background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:12.5px;margin:10px 0}</style></head><body>
 <div class="card">
 <a href="/admin/descuento-retroactivo">&larr; Descuento retroactivo</a>
@@ -12739,14 +12739,14 @@ def descuento_retroactivo_page():
     """Revisión + descuento retroactivo del consumo de producciones no registradas en EOS."""
     if session.get('compras_user', '') not in ADMIN_USERS:
         return redirect('/login?next=/admin/descuento-retroactivo')
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Descuento retroactivo</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:20px}.card{max-width:1180px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:10.5px;text-transform:uppercase;position:sticky;top:0;background:#faf5ff}.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.st-OK{background:#dcfce7;color:#166534}.st-CUARENTENA{background:#dbeafe;color:#1e40af}.st-INSUF{background:#fef3c7;color:#92400e}.st-SIN_STOCK{background:#fee2e2;color:#991b1b}.st-MP_NO_EXISTE{background:#fee2e2;color:#991b1b}.st-INACTIVA{background:#fee2e2;color:#991b1b}.st-YA_APLICADA{background:#e0e7ff;color:#3730a3}.sum{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.sc{background:#fff;border:1px solid #ede9fe;border-radius:10px;padding:9px 14px;font-size:13px}.sc b{font-size:18px;display:block}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Descuento retroactivo</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:20px}.card{max-width:1180px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--cx-border-soft, #eee)}th{color:var(--cx-primary-text, #6d28d9);font-size:10.5px;text-transform:uppercase;position:sticky;top:0;background:#faf5ff}.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.st-OK{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534)}.st-CUARENTENA{background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af)}.st-INSUF{background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #92400e)}.st-SIN_STOCK{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)}.st-MP_NO_EXISTE{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)}.st-INACTIVA{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)}.st-YA_APLICADA{background:#e0e7ff;color:#3730a3}.sum{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.sc{background:var(--cx-card, #fff);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:10px;padding:9px 14px;font-size:13px}.sc b{font-size:18px;display:block}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128203;</div><div><h2 style="margin:0;font-size:19px">Descuento retroactivo de consumo</h2><div class="cx-text-mute" style="font-size:13px">Producciones que NO descontaron MP en EOS. Sub&iacute; el Excel (Producto / Cod.Material / N&deg; Lote / Cant. / N&deg; Lote Bulk). <b>Primero REVISA</b> (no toca nada): te dice qu&eacute; cuadra, qu&eacute; est&aacute; en cuarentena, qu&eacute; no existe. Descontar es un paso aparte.</div></div></div>
   <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
     <input type="file" id="arch" accept=".xlsx" style="font-size:13px">
-    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="revisar()">Revisar</button>
+    <button class="cx-btn" style="background:var(--cx-primary, #7c3aed);color:#fff" onclick="revisar()">Revisar</button>
     <select id="filtro" onchange="pinta()" style="padding:7px;border:1px solid #e4e4e7;border-radius:8px;font-size:13px"><option value="">Todos</option><option value="OK">Solo descontables (OK)</option><option value="REV">Solo a revisar</option></select>
-    <button class="cx-btn" style="background:#e8f5f5;color:#6d28d9;border:1px solid #b8dada" onclick="copiarRev()">&#128203; Copiar los que hay que revisar</button>
+    <button class="cx-btn" style="background:#e8f5f5;color:var(--cx-primary-text, #6d28d9);border:1px solid #b8dada" onclick="copiarRev()">&#128203; Copiar los que hay que revisar</button>
     <span id="msg" style="font-size:13px"></span>
   </div>
   <div id="sum" class="sum"></div>
@@ -12767,26 +12767,26 @@ async function revisar(){
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/admin/descuento-retro/preview',{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':t.csrf_token||''},body:fd});
     var d=await r.json();
-    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">'+esc(d.error||r.status)+'</span>';return;}
     _ROWS=d.rows||[]; document.getElementById('msg').textContent='';
     var s=d.resumen||{}; var ps=s.por_status||{};
     var cardsdef=[['OK','Descontables','#166534'],['YA_APLICADA','Ya aplicadas','#3730a3'],['CUARENTENA','En cuarentena','#1e40af'],['INSUF','Stock insuficiente','#92400e'],['SIN_STOCK','Sin stock','#991b1b'],['MP_NO_EXISTE','MP no existe','#991b1b'],['INACTIVA','Inactivas','#991b1b']];
-    var sc='<div class="sc" style="border-color:#c4b5fd"><b>'+num(s.total_filas)+'</b> filas · '+num(s.descontable_g+s.revisar_g)+' g</div>';
+    var sc='<div class="sc" style="border-color:var(--cx-primary-light, #c4b5fd)"><b>'+num(s.total_filas)+'</b> filas · '+num(s.descontable_g+s.revisar_g)+' g</div>';
     cardsdef.forEach(function(k){ if(ps[k[0]]) sc+='<div class="sc"><b style="color:'+k[2]+'">'+num(ps[k[0]])+'</b>'+k[1]+'</div>'; });
-    sc+='<div class="sc" style="border-color:#bbf7d0"><b style="color:#166534">'+num(s.descontable_g)+' g</b>descontable</div><div class="sc" style="border-color:#fde68a"><b style="color:#92400e">'+num(s.revisar_g)+' g</b>a revisar</div>';
+    sc+='<div class="sc" style="border-color:#bbf7d0"><b style="color:var(--cx-success-text, #166534)">'+num(s.descontable_g)+' g</b>descontable</div><div class="sc" style="border-color:#fde68a"><b style="color:var(--cx-warn-text, #92400e)">'+num(s.revisar_g)+' g</b>a revisar</div>';
     document.getElementById('sum').innerHTML=sc;
     pinta();
     var nOK=(ps.OK||0);
-    document.getElementById('acc').innerHTML = nOK? ('<div style="padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;font-size:13px"><b>Descontar</b> · esto registra las Salidas por FEFO SOLO de las '+nOK+' filas OK ('+num(s.descontable_g)+' g). Las demás quedan para revisión (mandalas al jefe de producción). Auditado y reversible.<br><button class="cx-btn cx-btn-success" style="margin-top:9px" onclick="aplicar()">Descontar las '+nOK+' filas OK</button></div>') : '';
-  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+    document.getElementById('acc').innerHTML = nOK? ('<div style="padding:12px 14px;background:var(--cx-warn-pale, #fffbeb);border:1px solid #fde68a;border-radius:10px;font-size:13px"><b>Descontar</b> · esto registra las Salidas por FEFO SOLO de las '+nOK+' filas OK ('+num(s.descontable_g)+' g). Las demás quedan para revisión (mandalas al jefe de producción). Auditado y reversible.<br><button class="cx-btn cx-btn-success" style="margin-top:9px" onclick="aplicar()">Descontar las '+nOK+' filas OK</button></div>') : '';
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>';}
 }
 function pinta(){
   var fil=document.getElementById('filtro').value;
   var rows=_ROWS.filter(function(r){ if(fil==='OK')return r.status==='OK'; if(fil==='REV')return r.status!=='OK'&&r.status!=='YA_APLICADA'; return true; });
   var h='<table><thead><tr><th>Producción</th><th>Cód</th><th>Material</th><th>Lote (Excel)</th><th>Lote EOS</th><th style="text-align:right">Consumo g</th><th style="text-align:right">Usable g</th><th style="text-align:right">Cuar. g</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>';
   rows.forEach(function(r){
-    var lm=r.lote_match?esc(r.lote_match)+(r.lote_estado&&r.lote_estado!=='VIGENTE'?(' <span style="color:#b45309">('+esc(r.lote_estado)+')</span>'):''):'<span style="color:#cbd5e1">·</span>';
-    h+='<tr><td style="font-size:11px;color:#666">'+esc((r.prod||'').slice(0,26))+'</td><td style="font-family:monospace">'+esc(r.cod)+'</td><td>'+esc((r.nombre||r.desc||'').slice(0,24))+'</td><td style="font-family:monospace;font-size:11px">'+esc(r.lote_excel||'·')+'</td><td style="font-family:monospace;font-size:11px">'+lm+'</td><td style="text-align:right;font-weight:700">'+num(r.cant)+'</td><td style="text-align:right">'+num(r.usable)+'</td><td style="text-align:right;color:'+(r.retenido?'#1e40af':'#ccc')+'">'+num(r.retenido)+'</td><td><span class="chip st-'+esc(r.status)+'">'+esc(r.status)+'</span></td><td style="font-size:11.5px;color:#555">'+esc(r.detalle||'')+'</td></tr>';
+    var lm=r.lote_match?esc(r.lote_match)+(r.lote_estado&&r.lote_estado!=='VIGENTE'?(' <span style="color:var(--cx-warn-text, #b45309)">('+esc(r.lote_estado)+')</span>'):''):'<span style="color:var(--cx-border, #cbd5e1)">·</span>';
+    h+='<tr><td style="font-size:11px;color:var(--cx-text-mute, #666)">'+esc((r.prod||'').slice(0,26))+'</td><td style="font-family:monospace">'+esc(r.cod)+'</td><td>'+esc((r.nombre||r.desc||'').slice(0,24))+'</td><td style="font-family:monospace;font-size:11px">'+esc(r.lote_excel||'·')+'</td><td style="font-family:monospace;font-size:11px">'+lm+'</td><td style="text-align:right;font-weight:700">'+num(r.cant)+'</td><td style="text-align:right">'+num(r.usable)+'</td><td style="text-align:right;color:'+(r.retenido?'#1e40af':'#ccc')+'">'+num(r.retenido)+'</td><td><span class="chip st-'+esc(r.status)+'">'+esc(r.status)+'</span></td><td style="font-size:11.5px;color:var(--cx-text-soft, #555)">'+esc(r.detalle||'')+'</td></tr>';
   });
   h+='</tbody></table>';
   document.getElementById('out').innerHTML=h;
@@ -12796,10 +12796,10 @@ function copiarRev(){
   if(!rev.length){alert('No hay filas a revisar');return;}
   var t='Produccion\\tCod\\tMaterial\\tLote(Excel)\\tLoteEOS\\tConsumo_g\\tUsable_g\\tCuarentena_g\\tEstado\\tDetalle\\n';
   rev.forEach(function(r){t+=[(r.prod||''),(r.cod||''),(r.nombre||r.desc||''),(r.lote_excel||''),(r.lote_match||''),r.cant,r.usable,r.retenido,r.status,(r.detalle||'')].join('\\t')+'\\n';});
-  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){document.getElementById('msg').innerHTML='<span style="color:#16a34a">Copiado '+rev.length+' filas a revisar · pegáselas a Claude</span>';},function(){_fallbackCopy(t,rev.length);});}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){document.getElementById('msg').innerHTML='<span style="color:var(--cx-success-text, #16a34a)">Copiado '+rev.length+' filas a revisar · pegáselas a Claude</span>';},function(){_fallbackCopy(t,rev.length);});}
   else _fallbackCopy(t,rev.length);
 }
-function _fallbackCopy(t,n){var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');document.getElementById('msg').innerHTML='<span style="color:#16a34a">Copiado '+n+' filas</span>';}catch(e){alert('Copia manual (abajo)');}document.body.removeChild(ta);}
+function _fallbackCopy(t,n){var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');document.getElementById('msg').innerHTML='<span style="color:var(--cx-success-text, #16a34a)">Copiado '+n+' filas</span>';}catch(e){alert('Copia manual (abajo)');}document.body.removeChild(ta);}
 async function aplicar(){
   if(window._retroBusy)return;
   var oks=_ROWS.filter(function(r){return r.status==='OK';});
@@ -12812,14 +12812,14 @@ async function aplicar(){
     var r=await fetch('/api/admin/descuento-retro/apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({filas:oks})});
     var d=await r.json();
     window._retroBusy=false;
-    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">'+esc(d.error||r.status)+'</span>';return;}
     document.getElementById('msg').innerHTML='';
     var errhtml='';
     if((d.errores||[]).length){
-      errhtml='<div style="margin-top:10px;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;color:#7f1d1d;font-size:13px"><b>'+d.errores.length+' fila(s) con error</b> (no se descontaron · revisar):<table style="margin-top:6px"><thead><tr><th>Cód</th><th>Producción</th><th>Motivo</th></tr></thead><tbody>'+d.errores.map(function(e){return '<tr><td style="font-family:monospace">'+esc(e.cod)+'</td><td style="font-size:11px">'+esc(e.produccion||'')+'</td><td style="font-size:11.5px">'+esc(e.error||'')+'</td></tr>';}).join('')+'</tbody></table></div>';
+      errhtml='<div style="margin-top:10px;padding:12px 14px;background:var(--cx-danger-pale, #fef2f2);border:1px solid #fecaca;border-radius:10px;color:var(--cx-danger-text, #7f1d1d);font-size:13px"><b>'+d.errores.length+' fila(s) con error</b> (no se descontaron · revisar):<table style="margin-top:6px"><thead><tr><th>Cód</th><th>Producción</th><th>Motivo</th></tr></thead><tbody>'+d.errores.map(function(e){return '<tr><td style="font-family:monospace">'+esc(e.cod)+'</td><td style="font-size:11px">'+esc(e.produccion||'')+'</td><td style="font-size:11.5px">'+esc(e.error||'')+'</td></tr>';}).join('')+'</tbody></table></div>';
     }
-    document.getElementById('acc').innerHTML='<div style="padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;color:#166534;font-size:14px">&#10003; Descontadas <b>'+d.n_aplicadas+'</b> filas · <b>'+num(d.total_descontado_g)+' g</b>.'+((d.saltadas||[]).length?(' · '+d.saltadas.length+' ya estaban aplicadas (saltadas)'):'')+((d.errores||[]).length?(' · '+d.errores.length+' con error (abajo)'):'')+'</div>'+errhtml;
-  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+    document.getElementById('acc').innerHTML='<div style="padding:14px;background:var(--cx-success-pale, #f0fdf4);border:1px solid #bbf7d0;border-radius:10px;color:var(--cx-success-text, #166534);font-size:14px">&#10003; Descontadas <b>'+d.n_aplicadas+'</b> filas · <b>'+num(d.total_descontado_g)+' g</b>.'+((d.saltadas||[]).length?(' · '+d.saltadas.length+' ya estaban aplicadas (saltadas)'):'')+((d.errores||[]).length?(' · '+d.errores.length+' con error (abajo)'):'')+'</div>'+errhtml;
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>';}
 }
 </script></body></html>'''
     return _tpl
@@ -12832,7 +12832,7 @@ def mp_bridges_page():
     LÍQUIDO MP00110 → una producción de polvo descuenta líquido). Sebastián 10-jul."""
     if session.get('compras_user', '') not in ADMIN_USERS:
         return redirect('/login?next=/admin/mp-bridges')
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Puentes MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:22px}.card{max-width:1040px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:11px;text-transform:uppercase}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:8px 11px;font-size:13px;width:240px}.inp:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}.bd{background:#dc2626;color:#fff;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}.bd:hover{filter:brightness(1.08)}.rp{background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}.rp:hover{filter:brightness(1.08)}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Puentes MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:22px}.card{max-width:1040px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--cx-border-soft, #eee)}th{color:var(--cx-primary-text, #6d28d9);font-size:11px;text-transform:uppercase}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:8px 11px;font-size:13px;width:240px}.inp:focus{outline:none;border-color:var(--cx-primary-light, #a78bfa);box-shadow:0 0 0 3px rgba(167,139,250,.18)}.bd{background:var(--cx-danger, #dc2626);color:#fff;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}.bd:hover{filter:brightness(1.08)}.rp{background:var(--cx-primary, #7c3aed);color:#fff;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}.rp:hover{filter:brightness(1.08)}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128279;</div><div><h2 style="margin:0;font-size:19px">Puentes MP (bridge)</h2><div class="cx-text-mute" style="font-size:13px">Un puente hace que un c&oacute;digo de f&oacute;rmula descuente del stock de OTRO c&oacute;digo. Si dos c&oacute;digos son materiales DISTINTOS (ej. Panthenol polvo vs l&iacute;quido), su puente est&aacute; MAL &rarr; <b>desactivalo</b> para que cada uno use su propio inventario. Reversible.</div></div></div>
   <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><input id="q" class="inp" placeholder="Buscar (ej. PANTHENOL, MP00236)" oninput="pinta()"><span id="msg" style="font-size:13px"></span></div>
@@ -12846,7 +12846,7 @@ async function cargar(){
   try{
     var r=await fetch('/api/programacion/mp-bridge',{credentials:'same-origin'});
     _B=(await r.json())||[]; pinta();
-  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>';}
 }
 function pinta(){
   var q=(document.getElementById('q').value||'').trim().toUpperCase();
@@ -12854,10 +12854,10 @@ function pinta(){
   if(q)act=act.filter(function(b){return (JSON.stringify(b)||'').toUpperCase().indexOf(q)>=0;});
   var h='<table><thead><tr><th>Código fórmula</th><th>Nombre</th><th>&rarr; usa stock de</th><th>Nombre bodega</th><th>Acción</th></tr></thead><tbody>';
   act.forEach(function(b){
-    h+='<tr><td style="font-family:monospace;font-weight:700">'+esc(b.formula_material_id)+'</td><td>'+esc((b.formula_material_nombre||'').slice(0,28))+'</td><td style="font-family:monospace;font-weight:700;color:#7c3aed">'+esc(b.bodega_material_id)+'</td><td>'+esc((b.bodega_material_nombre||b.bodega_inci||'').slice(0,28))+'</td><td style="white-space:nowrap"><button class="bd" onclick="desactivar('+b.id+',&quot;'+esc(b.formula_material_id)+'&rarr;'+esc(b.bodega_material_id)+'&quot;)">Desactivar</button> <input id="rp'+b.id+'" placeholder="nuevo cód" style="width:88px;border:1px solid #e4e4e7;border-radius:6px;padding:4px 6px;font-family:monospace;font-size:12px"> <button class="rp" onclick="reapuntar(&quot;'+esc(b.formula_material_id)+'&quot;,&quot;'+esc((b.formula_material_nombre||'').replace(/"/g,''))+'&quot;,'+b.id+')">Re-apuntar</button></td></tr>';
+    h+='<tr><td style="font-family:monospace;font-weight:700">'+esc(b.formula_material_id)+'</td><td>'+esc((b.formula_material_nombre||'').slice(0,28))+'</td><td style="font-family:monospace;font-weight:700;color:var(--cx-primary-text, #7c3aed)">'+esc(b.bodega_material_id)+'</td><td>'+esc((b.bodega_material_nombre||b.bodega_inci||'').slice(0,28))+'</td><td style="white-space:nowrap"><button class="bd" onclick="desactivar('+b.id+',&quot;'+esc(b.formula_material_id)+'&rarr;'+esc(b.bodega_material_id)+'&quot;)">Desactivar</button> <input id="rp'+b.id+'" placeholder="nuevo cód" style="width:88px;border:1px solid #e4e4e7;border-radius:6px;padding:4px 6px;font-family:monospace;font-size:12px"> <button class="rp" onclick="reapuntar(&quot;'+esc(b.formula_material_id)+'&quot;,&quot;'+esc((b.formula_material_nombre||'').replace(/"/g,''))+'&quot;,'+b.id+')">Re-apuntar</button></td></tr>';
   });
   h+='</tbody></table>';
-  document.getElementById('out').innerHTML= act.length? h : '<div style="color:#888;margin-top:10px">Sin puentes activos'+(q?' para "'+esc(q)+'"':'')+'.</div>';
+  document.getElementById('out').innerHTML= act.length? h : '<div style="color:var(--cx-text-mute, #888);margin-top:10px">Sin puentes activos'+(q?' para "'+esc(q)+'"':'')+'.</div>';
 }
 async function desactivar(id,txt){
   if(!confirm('Desactivar el puente '+txt+'? A partir de ahora ese código de fórmula descuenta su PROPIO stock (no el del otro). Reversible.'))return;
@@ -12865,10 +12865,10 @@ async function desactivar(id,txt){
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/programacion/mp-bridge/'+id,{method:'DELETE',credentials:'same-origin',headers:{'X-CSRF-Token':t.csrf_token||''}});
     var d=await r.json();
-    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+esc(d.error||r.status)+'</span>';return;}
-    document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; Puente desactivado</span>';
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error: '+esc(d.error||r.status)+'</span>';return;}
+    document.getElementById('msg').innerHTML='<span style="color:var(--cx-success-text, #16a34a);font-weight:700">&#10003; Puente desactivado</span>';
     cargar();
-  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>';}
 }
 async function reapuntar(fid,fnom,id){
   var nb=((document.getElementById('rp'+id)||{}).value||'').trim().toUpperCase();
@@ -12878,10 +12878,10 @@ async function reapuntar(fid,fnom,id){
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/admin/mp-bridge-reapuntar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({formula_material_id:fid,formula_nombre:fnom,nuevo_bodega:nb})});
     var d=await r.json();
-    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+esc(d.error||r.status)+'</span>';return;}
-    document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+esc(fid)+' ahora apunta a '+esc(nb)+'</span>';
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error: '+esc(d.error||r.status)+'</span>';return;}
+    document.getElementById('msg').innerHTML='<span style="color:var(--cx-success-text, #16a34a);font-weight:700">&#10003; '+esc(fid)+' ahora apunta a '+esc(nb)+'</span>';
     cargar();
-  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>';}
 }
 cargar();
 </script></body></html>'''
@@ -13037,12 +13037,12 @@ def mp_diag_page():
     """Página: diagnóstico '¿por qué (no) sale en Bodega?' + botón Reactivar si está inactiva."""
     if session.get('compras_user', '') not in ADMIN_USERS:
         return redirect('/login?next=/admin/mp-diag')
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diagnostico MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:820px;margin:0 auto}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:9px 11px;font-size:14px;font-family:monospace;width:170px}.inp:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee;font-size:13px}th{color:#6d28d9;font-size:11px;text-transform:uppercase}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diagnostico MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:24px}.card{max-width:820px;margin:0 auto}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:9px 11px;font-size:14px;font-family:monospace;width:170px}.inp:focus{outline:none;border-color:var(--cx-primary-light, #a78bfa);box-shadow:0 0 0 3px rgba(167,139,250,.18)}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--cx-border-soft, #eee);font-size:13px}th{color:var(--cx-primary-text, #6d28d9);font-size:11px;text-transform:uppercase}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128269;</div><div><h2 style="margin:0;font-size:19px">Diagnostico de MP en Bodega</h2><div class="cx-text-mute" style="font-size:13px">Por que una materia prima (no) aparece en Stock por Lote: existe / tipo / activo / stock usable vs retenido (cuarentena) / lotes.</div></div></div>
   <div style="display:flex;gap:10px;align-items:flex-end;margin-top:16px">
-    <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">Codigo MP</label><input id="cod" class="inp" placeholder="MP00293"></div>
-    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="diag()">Diagnosticar</button>
+    <div><label style="font-size:12px;color:var(--cx-text-soft, #555);display:block;margin-bottom:4px">Codigo MP</label><input id="cod" class="inp" placeholder="MP00293"></div>
+    <button class="cx-btn" style="background:var(--cx-primary, #7c3aed);color:#fff" onclick="diag()">Diagnosticar</button>
   </div>
   <div id="out" style="margin-top:18px"></div>
   <div style="margin-top:16px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver a Inventario</button></div>
@@ -13054,34 +13054,34 @@ function num(n){return Number(n||0).toLocaleString('es-CO');}
 async function diag(){
   var cod=(document.getElementById('cod').value||'').trim().toUpperCase();
   if(!cod){alert('Poné un código');return;}
-  document.getElementById('out').innerHTML='<div style="color:#7c3aed">Cargando…</div>';
+  document.getElementById('out').innerHTML='<div style="color:var(--cx-primary-text, #7c3aed)">Cargando…</div>';
   try{
     var r=await fetch('/api/admin/mp-diag?codigo='+encodeURIComponent(cod),{credentials:'same-origin'});
     var d=await r.json();
-    if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<div style="color:#dc2626">'+esc(d.error||r.status)+'</div>';return;}
+    if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<div style="color:var(--cx-danger-text, #dc2626)">'+esc(d.error||r.status)+'</div>';return;}
     _C=d.codigo;
-    if(!d.existe){document.getElementById('out').innerHTML='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;color:#7f1d1d"><b>'+esc(d.codigo)+'</b> no existe en el maestro de MP.</div>';return;}
-    var rows='';(d.lotes||[]).forEach(function(l){rows+='<tr><td style="font-family:monospace">'+esc(l.lote||'(sin lote)')+'</td><td>'+esc(l.estado)+'</td><td style="text-align:right;color:#166534">'+num(l.entrada_g)+'</td><td style="text-align:right;color:#b91c1c">'+num(l.salida_g)+'</td><td style="text-align:right;font-weight:700">'+num(l.neto_g)+' g</td><td>'+(l.usable?'<span style="color:#16a34a">usable</span>':'<span style="color:#b45309">retenido</span>')+'</td></tr>';});
-    if(!rows)rows='<tr><td colspan="6" style="color:#888">Sin lotes con stock.</td></tr>';
-    var badgeAct=d.activo?'<span style="background:#dcfce7;color:#166534;border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">ACTIVA</span>':'<span style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">INACTIVA</span>';
-    var h='<div style="background:#fff;border:1px solid #ede9fe;border-radius:12px;padding:16px">'
+    if(!d.existe){document.getElementById('out').innerHTML='<div style="background:var(--cx-danger-pale, #fef2f2);border:1px solid #fecaca;border-radius:10px;padding:14px;color:var(--cx-danger-text, #7f1d1d)"><b>'+esc(d.codigo)+'</b> no existe en el maestro de MP.</div>';return;}
+    var rows='';(d.lotes||[]).forEach(function(l){rows+='<tr><td style="font-family:monospace">'+esc(l.lote||'(sin lote)')+'</td><td>'+esc(l.estado)+'</td><td style="text-align:right;color:var(--cx-success-text, #166534)">'+num(l.entrada_g)+'</td><td style="text-align:right;color:var(--cx-danger-text, #b91c1c)">'+num(l.salida_g)+'</td><td style="text-align:right;font-weight:700">'+num(l.neto_g)+' g</td><td>'+(l.usable?'<span style="color:var(--cx-success-text, #16a34a)">usable</span>':'<span style="color:var(--cx-warn-text, #b45309)">retenido</span>')+'</td></tr>';});
+    if(!rows)rows='<tr><td colspan="6" style="color:var(--cx-text-mute, #888)">Sin lotes con stock.</td></tr>';
+    var badgeAct=d.activo?'<span style="background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">ACTIVA</span>':'<span style="background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">INACTIVA</span>';
+    var h='<div style="background:var(--cx-card, #fff);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:12px;padding:16px">'
       +'<div style="font-size:16px"><b>'+esc(d.codigo)+'</b> &middot; '+esc(d.nombre_inci||d.nombre_comercial||'(sin nombre)')+' '+badgeAct+'</div>'
-      +'<div style="color:#555;font-size:13px;margin-top:4px">tipo_material: <b>'+esc(d.tipo_material)+'</b> &middot; stock usable: <b>'+num(d.stock_usable_g)+' g</b> &middot; retenido: <b>'+num(d.stock_retenido_g)+' g</b></div>'
-      +'<div style="color:#555;font-size:13px;margin-top:2px">movimientos en kardex: <b>'+num(d.mov_total)+'</b> &middot; neto crudo (todos los estados): <b>'+num(d.mov_neto_raw_g)+' g</b></div>'
-      +'<div style="margin-top:10px;padding:11px 13px;background:'+(d.aparece_en_bodega_default?'#f0fdf4;border:1px solid #bbf7d0;color:#166534':'#fffbeb;border:1px solid #fde68a;color:#92400e')+';border-radius:9px;font-size:13.5px"><b>'+esc(d.razon)+'</b></div>';
+      +'<div style="color:var(--cx-text-soft, #555);font-size:13px;margin-top:4px">tipo_material: <b>'+esc(d.tipo_material)+'</b> &middot; stock usable: <b>'+num(d.stock_usable_g)+' g</b> &middot; retenido: <b>'+num(d.stock_retenido_g)+' g</b></div>'
+      +'<div style="color:var(--cx-text-soft, #555);font-size:13px;margin-top:2px">movimientos en kardex: <b>'+num(d.mov_total)+'</b> &middot; neto crudo (todos los estados): <b>'+num(d.mov_neto_raw_g)+' g</b></div>'
+      +'<div style="margin-top:10px;padding:11px 13px;background:'+(d.aparece_en_bodega_default?'#f0fdf4;border:1px solid #bbf7d0;color:var(--cx-success-text, #166534)':'#fffbeb;border:1px solid #fde68a;color:var(--cx-warn-text, #92400e)')+';border-radius:9px;font-size:13.5px"><b>'+esc(d.razon)+'</b></div>';
     if((d.historial||[]).length){
-      h+='<div style="margin-top:12px;font-size:12px;color:#6d28d9;font-weight:700;text-transform:uppercase;letter-spacing:.4px">Historial de normalización</div>';
+      h+='<div style="margin-top:12px;font-size:12px;color:var(--cx-primary-text, #6d28d9);font-weight:700;text-transform:uppercase;letter-spacing:.4px">Historial de normalización</div>';
       (d.historial||[]).forEach(function(x){
         var st=(x.despues&&(x.despues.stock_g!=null))?(' &middot; stock registrado: <b>'+num(x.despues.stock_g)+' g</b>'):'';
         var de=(x.antes&&x.antes.codigo_mp)?(esc(x.antes.codigo_mp)+' &rarr; '+esc(d.codigo)):'';
-        h+='<div style="font-size:12.5px;color:#444;margin-top:3px">&bull; '+esc(x.fecha).slice(0,16)+' &middot; <b>'+esc(x.accion)+'</b> '+de+st+'</div>';
+        h+='<div style="font-size:12.5px;color:var(--cx-text-soft, #444);margin-top:3px">&bull; '+esc(x.fecha).slice(0,16)+' &middot; <b>'+esc(x.accion)+'</b> '+de+st+'</div>';
       });
     }
     h+='<table><thead><tr><th>Lote</th><th>Estado</th><th style="text-align:right">Entró</th><th style="text-align:right">Salió</th><th style="text-align:right">Queda</th><th>Uso</th></tr></thead><tbody>'+rows+'</tbody></table>';
     if(!d.activo)h+='<button class="cx-btn cx-btn-success" style="margin-top:12px" onclick="reactivar()">&#9851;&#65039; Reactivar '+esc(d.codigo)+' (activo=1)</button>';
     h+='</div>';
     document.getElementById('out').innerHTML=h;
-  }catch(e){document.getElementById('out').innerHTML='<div style="color:#dc2626">Error de red</div>';}
+  }catch(e){document.getElementById('out').innerHTML='<div style="color:var(--cx-danger-text, #dc2626)">Error de red</div>';}
 }
 async function reactivar(){
   if(!_C)return;
@@ -13421,14 +13421,14 @@ def renombrar_codigo_mp_page():
     """Normalizar el código de una MP (EOS ↔ MyBatch): preview de referencias + aplicar."""
     if session.get('compras_user', '') not in ADMIN_USERS:
         return redirect('/login?next=/admin/renombrar-codigo-mp')
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Renombrar codigo MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:920px;margin:0 auto}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:9px 11px;font-size:14px;font-family:monospace;width:150px}.inp:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid #eee;font-size:13px}th{color:#6d28d9;font-size:11px;text-transform:uppercase;letter-spacing:.4px}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Renombrar codigo MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:24px}.card{max-width:920px;margin:0 auto}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:9px 11px;font-size:14px;font-family:monospace;width:150px}.inp:focus{outline:none;border-color:var(--cx-primary-light, #a78bfa);box-shadow:0 0 0 3px rgba(167,139,250,.18)}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--cx-border-soft, #eee);font-size:13px}th{color:var(--cx-primary-text, #6d28d9);font-size:11px;text-transform:uppercase;letter-spacing:.4px}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128257;</div><div><h2 style="margin:0;font-size:19px">Renombrar codigo de MP</h2><div class="cx-text-mute" style="font-size:13px">Normaliza el codigo de una materia prima (EOS &harr; MyBatch). Re-llava <b>todas</b> las referencias: maestro, stock (kardex), formulas, bridge e historico. Si el destino <b>ya existe</b>, ofrece <b>FUSIONAR</b> (mover stock + desactivar el origen). Reversible por audit.</div></div></div>
   <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-top:16px">
-    <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">Codigo ACTUAL (EOS)</label><input id="viejo" class="inp" placeholder="MP00199"></div>
-    <div style="font-size:22px;color:#a78bfa;padding-bottom:6px">&rarr;</div>
-    <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">Codigo NUEVO (MyBatch)</label><input id="nuevo" class="inp" placeholder="MP00293"></div>
-    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="preview()">Ver que cambiaria</button>
+    <div><label style="font-size:12px;color:var(--cx-text-soft, #555);display:block;margin-bottom:4px">Codigo ACTUAL (EOS)</label><input id="viejo" class="inp" placeholder="MP00199"></div>
+    <div style="font-size:22px;color:var(--cx-primary-light, #a78bfa);padding-bottom:6px">&rarr;</div>
+    <div><label style="font-size:12px;color:var(--cx-text-soft, #555);display:block;margin-bottom:4px">Codigo NUEVO (MyBatch)</label><input id="nuevo" class="inp" placeholder="MP00293"></div>
+    <button class="cx-btn" style="background:var(--cx-primary, #7c3aed);color:#fff" onclick="preview()">Ver que cambiaria</button>
   </div>
   <div id="out" style="margin-top:18px"></div>
   <div style="margin-top:16px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver a Inventario</button></div>
@@ -13441,36 +13441,36 @@ async function preview(){
   var v=(document.getElementById('viejo').value||'').trim().toUpperCase();
   var n=(document.getElementById('nuevo').value||'').trim().toUpperCase();
   if(!v||!n){alert('Poné los dos códigos');return;}
-  document.getElementById('out').innerHTML='<div style="color:#7c3aed">Cargando…</div>';
+  document.getElementById('out').innerHTML='<div style="color:var(--cx-primary-text, #7c3aed)">Cargando…</div>';
   try{
     var r=await fetch('/api/admin/renombrar-mp-preview?viejo='+encodeURIComponent(v)+'&nuevo='+encodeURIComponent(n),{credentials:'same-origin'});
     var d=await r.json();
-    if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<div style="color:#dc2626;font-weight:600">'+esc(d.error||r.status)+'</div>';return;}
+    if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<div style="color:var(--cx-danger-text, #dc2626);font-weight:600">'+esc(d.error||r.status)+'</div>';return;}
     _V=d.viejo;_N=d.nuevo;_FUS=!!d.fusion;
     var rows='';
-    (d.refs||[]).forEach(function(x){rows+='<tr><td style="font-family:monospace">'+esc(x.tabla)+'</td><td style="font-family:monospace;color:#888">'+esc(x.col)+'</td><td style="text-align:right;font-weight:700">'+num(x.n)+'</td></tr>';});
-    if(!rows)rows='<tr><td colspan="3" style="color:#888">Sin referencias en tablas de datos (solo el maestro).</td></tr>';
+    (d.refs||[]).forEach(function(x){rows+='<tr><td style="font-family:monospace">'+esc(x.tabla)+'</td><td style="font-family:monospace;color:var(--cx-text-mute, #888)">'+esc(x.col)+'</td><td style="text-align:right;font-weight:700">'+num(x.n)+'</td></tr>';});
+    if(!rows)rows='<tr><td colspan="3" style="color:var(--cx-text-mute, #888)">Sin referencias en tablas de datos (solo el maestro).</td></tr>';
     var srcNom=esc(d.nombre_inci||d.nombre_comercial||'(sin nombre)')+(d.nombre_comercial&&d.nombre_inci?(' &middot; '+esc(d.nombre_comercial)):'');
-    var h='<div style="background:#fff;border:1px solid #ede9fe;border-radius:12px;padding:14px 16px">'
-      +'<div style="font-size:15px"><b>'+esc(d.viejo)+'</b> &rarr; <b style="color:#7c3aed">'+esc(d.nuevo)+'</b>'+(_FUS?' <span style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700">FUSIÓN</span>':'')+'</div>'
-      +'<div style="color:#555;font-size:13px;margin-top:3px">'+srcNom+' &middot; stock <b>'+num(d.stock_g)+' g</b>'+(d.activo?'':' &middot; <span style="color:#b45309">INACTIVA</span>')+'</div>';
+    var h='<div style="background:var(--cx-card, #fff);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:12px;padding:14px 16px">'
+      +'<div style="font-size:15px"><b>'+esc(d.viejo)+'</b> &rarr; <b style="color:var(--cx-primary-text, #7c3aed)">'+esc(d.nuevo)+'</b>'+(_FUS?' <span style="background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #92400e);border:1px solid var(--cx-warn, #f59e0b);border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700">FUSIÓN</span>':'')+'</div>'
+      +'<div style="color:var(--cx-text-soft, #555);font-size:13px;margin-top:3px">'+srcNom+' &middot; stock <b>'+num(d.stock_g)+' g</b>'+(d.activo?'':' &middot; <span style="color:var(--cx-warn-text, #b45309)">INACTIVA</span>')+'</div>';
     if(_FUS){
       var dstNom=esc(d.destino_nombre_inci||d.destino_nombre_comercial||'(sin nombre)')+(d.destino_nombre_comercial&&d.destino_nombre_inci?(' &middot; '+esc(d.destino_nombre_comercial)):'');
-      h+='<div style="margin-top:12px;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">'
-        +'<div style="font-weight:700;color:#92400e;font-size:13px;margin-bottom:6px">&#9888; El destino '+esc(d.nuevo)+' YA existe · esto es una FUSIÓN, confirmá que son la MISMA materia prima:</div>'
+      h+='<div style="margin-top:12px;padding:12px 14px;background:var(--cx-warn-pale, #fffbeb);border:1px solid #fde68a;border-radius:10px">'
+        +'<div style="font-weight:700;color:var(--cx-warn-text, #92400e);font-size:13px;margin-bottom:6px">&#9888; El destino '+esc(d.nuevo)+' YA existe · esto es una FUSIÓN, confirmá que son la MISMA materia prima:</div>'
         +'<div style="font-size:13px"><b>'+esc(d.viejo)+'</b> (origen): '+srcNom+' &middot; '+num(d.stock_g)+' g</div>'
         +'<div style="font-size:13px"><b>'+esc(d.nuevo)+'</b> (destino): '+dstNom+' &middot; '+num(d.destino_stock_g)+' g</div>'
-        +'<div style="font-size:12px;color:#92400e;margin-top:6px">El stock del origen se MUEVE al destino (queda '+num((d.stock_g||0)+(d.destino_stock_g||0))+' g) y '+esc(d.viejo)+' se desactiva. Reversible por audit.</div>'
+        +'<div style="font-size:12px;color:var(--cx-warn-text, #92400e);margin-top:6px">El stock del origen se MUEVE al destino (queda '+num((d.stock_g||0)+(d.destino_stock_g||0))+' g) y '+esc(d.viejo)+' se desactiva. Reversible por audit.</div>'
         +'</div>';
     }
     h+='<table><thead><tr><th>Tabla</th><th>Columna</th><th style="text-align:right">Filas del origen</th></tr></thead><tbody>'+rows+'</tbody></table>';
-    if(!_FUS)h+='<div style="margin-top:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12.5px;color:#7f1d1d">&#9888; Se re-llava TODO a <b>'+esc(d.nuevo)+'</b> (el stock se conserva, es la misma MP). Reversible por audit_log.</div>';
+    if(!_FUS)h+='<div style="margin-top:12px;padding:10px 12px;background:var(--cx-danger-pale, #fef2f2);border:1px solid #fecaca;border-radius:8px;font-size:12.5px;color:var(--cx-danger-text, #7f1d1d)">&#9888; Se re-llava TODO a <b>'+esc(d.nuevo)+'</b> (el stock se conserva, es la misma MP). Reversible por audit_log.</div>';
     h+=(_FUS
-        ?'<button class="cx-btn" style="margin-top:12px;background:#d97706;color:#fff" onclick="aplicar()">Fusionar '+esc(d.viejo)+' dentro de '+esc(d.nuevo)+'</button>'
+        ?'<button class="cx-btn" style="margin-top:12px;background:var(--cx-accent-dark, #d97706);color:#fff" onclick="aplicar()">Fusionar '+esc(d.viejo)+' dentro de '+esc(d.nuevo)+'</button>'
         :'<button class="cx-btn cx-btn-success" style="margin-top:12px" onclick="aplicar()">Aplicar renombrado ('+esc(d.viejo)+' &rarr; '+esc(d.nuevo)+')</button>')
       +'</div>';
     document.getElementById('out').innerHTML=h;
-  }catch(e){document.getElementById('out').innerHTML='<div style="color:#dc2626">Error de red</div>';}
+  }catch(e){document.getElementById('out').innerHTML='<div style="color:var(--cx-danger-text, #dc2626)">Error de red</div>';}
 }
 async function aplicar(){
   if(!_V||!_N)return;
@@ -13486,8 +13486,8 @@ async function aplicar(){
     var msg=_FUS
       ?('&#10003; Fusionado: '+esc(_V)+' &rarr; '+esc(_N)+'. Stock del destino: '+num(d.stock_destino_final_g)+' g. '+tot+' referencias movidas.')
       :('&#10003; Listo: '+esc(_V)+' &rarr; '+esc(_N)+'. '+tot+' referencias re-llaveadas.');
-    if((d.errores||[]).length)msg+='<div style="color:#b45309;margin-top:6px">'+d.errores.length+' tabla(s) no se pudieron actualizar (historico inmutable): '+esc(d.errores.map(function(e){return e.tabla;}).join(', '))+'</div>';
-    document.getElementById('out').innerHTML='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px;font-size:15px;color:#166534">'+msg+'</div>';
+    if((d.errores||[]).length)msg+='<div style="color:var(--cx-warn-text, #b45309);margin-top:6px">'+d.errores.length+' tabla(s) no se pudieron actualizar (historico inmutable): '+esc(d.errores.map(function(e){return e.tabla;}).join(', '))+'</div>';
+    document.getElementById('out').innerHTML='<div style="background:var(--cx-success-pale, #f0fdf4);border:1px solid #bbf7d0;border-radius:12px;padding:16px;font-size:15px;color:var(--cx-success-text, #166534)">'+msg+'</div>';
   }catch(e){alert('Error de red');}
 }
 </script></body></html>'''
@@ -13641,12 +13641,12 @@ def normalizar_codigos_page():
     # código MyBatch (existe inactivo · la fusión lo reactiva). Ethylhexylglycerin: MyBatch tenía
     # 2 códigos (MP00301/MP00303 = mismo material · confirmado Alejandro) → todo a MP00301.
     _preset = ("MPAEAT01 -> MP00085\nMP00186 -> MP00304\nMPEHGL01 -> MP00301\nMP00303 -> MP00301")
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Normalizar codigos</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:22px}.card{max-width:960px;margin:0 auto}textarea{width:100%;height:150px;font-family:monospace;font-size:13px;border:1px solid #e4e4e7;border-radius:8px;padding:10px}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:11px;text-transform:uppercase}.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.e-RENOMBRAR{background:#dcfce7;color:#166534}.e-FUSION{background:#fef3c7;color:#92400e}.e-ERROR{background:#fee2e2;color:#991b1b}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Normalizar codigos</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:22px}.card{max-width:960px;margin:0 auto}textarea{width:100%;height:150px;font-family:monospace;font-size:13px;border:1px solid #e4e4e7;border-radius:8px;padding:10px}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--cx-border-soft, #eee)}th{color:var(--cx-primary-text, #6d28d9);font-size:11px;text-transform:uppercase}.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.e-RENOMBRAR{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534)}.e-FUSION{background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #92400e)}.e-ERROR{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128260;</div><div><h2 style="margin:0;font-size:19px">Normalizar codigos EOS &rarr; MyBatch (en lote)</h2><div class="cx-text-mute" style="font-size:13px">Una linea por par: <b>ORIGEN_EOS -&gt; DESTINO_MYBATCH</b>. Si el destino no existe, <b>renombra</b> (conserva nombre y stock); si existe, <b>fusiona</b>. Primero REVISA, despues aplica (TODO o NADA, reversible por audit).</div></div></div>
   <textarea id="txt">__PRESET__</textarea>
   <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="revisar()">Revisar</button>
+    <button class="cx-btn" style="background:var(--cx-primary, #7c3aed);color:#fff" onclick="revisar()">Revisar</button>
     <button id="apbtn" class="cx-btn cx-btn-success" style="display:none" onclick="aplicar()">Aplicar normalizacion</button>
     <span id="msg" style="font-size:13px"></span>
   </div>
@@ -13662,18 +13662,18 @@ async function revisar(){
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/admin/normalizar-lote/preview',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({texto:document.getElementById('txt').value})});
     var d=await r.json();
-    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">'+esc(d.error||r.status)+'</span>';return;}
     document.getElementById('msg').textContent='';
     var h='<table><thead><tr><th>Origen EOS</th><th>Material</th><th>Proveedor</th><th style="text-align:right">Stock g</th><th>Destino MyBatch</th><th>Accion</th><th>Detalle</th></tr></thead><tbody>';
     var okc=0;
     (d.pares||[]).forEach(function(p){
       if(p.estado!=='ERROR')okc++;
-      h+='<tr><td style="font-family:monospace">'+esc(p.origen)+'</td><td>'+esc((p.nombre||'').slice(0,26))+'</td><td>'+esc((p.proveedor||'').slice(0,16))+'</td><td style="text-align:right">'+num(p.stock_g)+'</td><td style="font-family:monospace;font-weight:700">'+esc(p.destino)+'</td><td><span class="chip e-'+esc(p.estado)+'">'+esc(p.estado)+'</span></td><td style="font-size:12px;color:#555">'+esc(p.detalle||'')+'</td></tr>';
+      h+='<tr><td style="font-family:monospace">'+esc(p.origen)+'</td><td>'+esc((p.nombre||'').slice(0,26))+'</td><td>'+esc((p.proveedor||'').slice(0,16))+'</td><td style="text-align:right">'+num(p.stock_g)+'</td><td style="font-family:monospace;font-weight:700">'+esc(p.destino)+'</td><td><span class="chip e-'+esc(p.estado)+'">'+esc(p.estado)+'</span></td><td style="font-size:12px;color:var(--cx-text-soft, #555)">'+esc(p.detalle||'')+'</td></tr>';
     });
     h+='</tbody></table>';
     document.getElementById('out').innerHTML=h;
     document.getElementById('apbtn').style.display=okc?'inline-block':'none';
-  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>';}
 }
 async function aplicar(){
   if(!confirm('Aplicar la normalizacion? Renombra/fusiona los codigos (TODO o NADA, reversible).'))return;
@@ -13682,11 +13682,11 @@ async function aplicar(){
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/admin/normalizar-lote/apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({texto:document.getElementById('txt').value})});
     var d=await r.json();
-    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">'+esc(d.error||r.status)+'</span>';return;}
     var li=(d.hechos||[]).map(function(x){return x.viejo+' &rarr; '+x.nuevo+' ('+x.modo+', '+num(x.stock_g)+' g)';}).join('<br>');
-    document.getElementById('out').innerHTML='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;color:#166534;margin-top:12px">&#10003; Normalizados <b>'+d.n+'</b> codigos:<br>'+li+'</div>';
+    document.getElementById('out').innerHTML='<div style="background:var(--cx-success-pale, #f0fdf4);border:1px solid #bbf7d0;border-radius:10px;padding:14px;color:var(--cx-success-text, #166534);margin-top:12px">&#10003; Normalizados <b>'+d.n+'</b> codigos:<br>'+li+'</div>';
     document.getElementById('apbtn').style.display='none'; document.getElementById('msg').textContent='';
-  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>';}
 }
 </script></body></html>'''
     return _tpl.replace('__PRESET__', _preset)
@@ -13719,16 +13719,16 @@ def envases_recatalogo_page():
         filas += ('<tr><td><b>' + _hh.escape(cod) + '</b></td><td>' + _hh.escape(cat) + '</td><td>' +
                   _hh.escape(it.get('descripcion', '')) + '</td><td>' + _hh.escape(it.get('presentacion', '')) +
                   '</td><td style="text-align:right;font-weight:700">' + str(it.get('saldo', 0)) + '</td></tr>')
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Re-catalogo envases</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1050px;margin:0 auto}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Re-catalogo envases</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:24px}.card{max-width:1050px;margin:0 auto}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128230;</div><div><h2 style="margin:0;font-size:19px">Re-catalogo de envases</h2><div class="cx-text-mute" style="font-size:13px">Crea los <b>__TOT__ codigos nuevos</b> (MEE-ENV-###) con su stock contado y <b>desactiva los __VIEJOS__ viejos</b>.</div></div></div>
-  <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:13px;color:#7f1d1d">
+  <div style="background:var(--cx-danger-pale, #fef2f2);border:1px solid #fecaca;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:13px;color:var(--cx-danger-text, #7f1d1d)">
     &#9888; <b>Ojo:</b> al desactivar los viejos, el mapeo <b>producto &rarr; envase</b> hay que <b>re-hacerlo</b> despues en <b>/admin/productos-envases</b> (te la armo). La desactivacion es <b>reversible</b> (no borra, queda estado=Inactivo). El stock de los nuevos se carga como conteo inicial (auditado).
   </div>
   <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th>Codigo</th><th>Categoria</th><th>Descripcion</th><th>Pres.</th><th style="text-align:right">Stock contado</th></tr></thead><tbody>__FILAS__</tbody></table></div>
   <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <button id="go" class="cx-btn cx-btn-success" onclick="aplicar()">Aplicar re-catalogo</button>
-    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="location.href='/admin/productos-envases'">Ir a mapear producto&rarr;envase</button>
+    <button class="cx-btn" style="background:var(--cx-primary, #7c3aed);color:#fff" onclick="location.href='/admin/productos-envases'">Ir a mapear producto&rarr;envase</button>
     <button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button>
     <span id="msg" style="font-size:14px"></span>
   </div>
@@ -13741,9 +13741,9 @@ async function aplicar(){
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/admin/envases-recatalogo-apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:'{}'});
     var d=await r.json();
-    if(r.ok&&d.ok){ document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+d.creados+' nuevos, '+d.actualizados+' actualizados, '+d.desactivados+' viejos desactivados. Ahora mapea producto->envase.</span>'; b.textContent='Listo'; }
-    else { document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; b.textContent='Reintentar'; }
-  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>'; b.disabled=false; b.textContent='Reintentar'; }
+    if(r.ok&&d.ok){ document.getElementById('msg').innerHTML='<span style="color:var(--cx-success-text, #16a34a);font-weight:700">&#10003; '+d.creados+' nuevos, '+d.actualizados+' actualizados, '+d.desactivados+' viejos desactivados. Ahora mapea producto->envase.</span>'; b.textContent='Listo'; }
+    else { document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; b.textContent='Reintentar'; }
+  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>'; b.disabled=false; b.textContent='Reintentar'; }
 }
 </script></body></html>'''
     return _tpl.replace('__FILAS__', filas).replace('__TOT__', str(len(nuevos))).replace('__VIEJOS__', str(n_viejos))
@@ -13856,7 +13856,7 @@ def envases_10ml_sueros_page():
     filas = ''
     for label, prods in _sueros_10ml_targets(c):
         if not prods:
-            filas += ('<tr><td><b>' + _hh.escape(label) + '</b></td><td colspan="2" style="color:#b45309">'
+            filas += ('<tr><td><b>' + _hh.escape(label) + '</b></td><td colspan="2" style="color:var(--cx-warn-text, #b45309)">'
                       '&#9888; no encontr&eacute; un producto activo que matchee (revis&aacute; el nombre)</td></tr>')
             continue
         for prod in prods:
@@ -13865,13 +13865,13 @@ def envases_10ml_sueros_page():
             except Exception:
                 ex = None
             if ex and (ex[0] or '').strip():
-                estado = '<span style="color:#16a34a">ya tiene envase 10ml: <b>' + _hh.escape(ex[0]) + '</b> (se salta)</span>'
+                estado = '<span style="color:var(--cx-success-text, #16a34a)">ya tiene envase 10ml: <b>' + _hh.escape(ex[0]) + '</b> (se salta)</span>'
             else:
-                estado = '<span style="color:#7c3aed">crear&aacute; envase 10ml (MEE-ENV-### auto) + mapear V10</span>'
+                estado = '<span style="color:var(--cx-primary-text, #7c3aed)">crear&aacute; envase 10ml (MEE-ENV-### auto) + mapear V10</span>'
             filas += ('<tr><td>' + _hh.escape(label) + '</td><td><b>' + _hh.escape(prod) + '</b></td><td>' + estado + '</td></tr>')
     if not filas:
         filas = '<tr><td colspan="3" style="text-align:center;color:#71717a;padding:20px">Sin objetivos.</td></tr>'
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Envases 10ml sueros</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:900px;margin:0 auto}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Envases 10ml sueros</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:24px}.card{max-width:900px;margin:0 auto}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#129514;</div><div><h2 style="margin:0;font-size:19px">Envases 10ml &middot; sueros</h2><div class="cx-text-mute" style="font-size:13px">Crea el envase de <b>10ml</b> (c&oacute;digo autom&aacute;tico) de Niacinamida, Hialur&oacute;nico (AH) y TRX, y lo <b>mapea</b> a su presentaci&oacute;n de 10ml. Idempotente (si ya existe, lo salta). Reversible.</div></div></div>
   <div class="cx-table-wrap" style="margin-top:12px"><table class="cx-table"><thead><tr><th>Suero</th><th>Producto (real)</th><th>Acci&oacute;n</th></tr></thead><tbody>__FILAS__</tbody></table></div>
@@ -13890,9 +13890,9 @@ async function aplicar(){
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/admin/crear-envases-10ml-sueros',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:'{}'});
     var d=await r.json();
-    if(r.ok&&d.ok){ var det=(d.detalle||[]).map(function(x){return x.producto+': '+x.resultado;}).join(' | '); document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+d.creados+' creados, '+d.saltados+' ya estaban. '+det+'</span>'; b.textContent='Listo'; }
-    else { document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; b.textContent='Reintentar'; }
-  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>'; b.disabled=false; b.textContent='Reintentar'; }
+    if(r.ok&&d.ok){ var det=(d.detalle||[]).map(function(x){return x.producto+': '+x.resultado;}).join(' | '); document.getElementById('msg').innerHTML='<span style="color:var(--cx-success-text, #16a34a);font-weight:700">&#10003; '+d.creados+' creados, '+d.saltados+' ya estaban. '+det+'</span>'; b.textContent='Listo'; }
+    else { document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; b.textContent='Reintentar'; }
+  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error de red</span>'; b.disabled=false; b.textContent='Reintentar'; }
 }
 </script></body></html>'''
     return _tpl.replace('__FILAS__', filas)
@@ -14018,21 +14018,21 @@ def productos_envases_page():
                     n_falta += 1
                 filas += ('<tr><td><b>' + _hh.escape(str(prod)) + '</b></td><td>' + _preslbl + '</td><td>'
                           '<select class="cx-input" style="min-width:300px" data-prod="' + _pj + '" data-pres="' + _cj +
-                          '" onchange="setEnv(this)">' + _opts(env) + '</select> <span class="okmark" style="color:#16a34a;font-weight:700;font-size:13px"></span></td></tr>')
+                          '" onchange="setEnv(this)">' + _opts(env) + '</select> <span class="okmark" style="color:var(--cx-success-text, #16a34a);font-weight:700;font-size:13px"></span></td></tr>')
         else:
             n_falta += 1
             # producto sin presentación → fila para CREAR (ml + envase)
-            filas += ('<tr style="background:#fffbeb"><td><b>' + _hh.escape(str(prod)) + '</b></td>'
-                      '<td><input class="cx-input volin" type="number" min="1" step="1" placeholder="ml" style="width:80px"> ml <span style="color:#b45309;font-size:12px">(nueva)</span></td><td>'
+            filas += ('<tr style="background:var(--cx-warn-pale, #fffbeb)"><td><b>' + _hh.escape(str(prod)) + '</b></td>'
+                      '<td><input class="cx-input volin" type="number" min="1" step="1" placeholder="ml" style="width:80px"> ml <span style="color:var(--cx-warn-text, #b45309);font-size:12px">(nueva)</span></td><td>'
                       '<select class="cx-input" style="min-width:300px" data-prod="' + _pj + '" data-new="1" '
-                      'onchange="crearEnv(this)">' + _opts('') + '</select> <span class="okmark" style="color:#16a34a;font-weight:700;font-size:13px"></span></td></tr>')
+                      'onchange="crearEnv(this)">' + _opts('') + '</select> <span class="okmark" style="color:var(--cx-success-text, #16a34a);font-weight:700;font-size:13px"></span></td></tr>')
     if not prods:
         filas = '<tr><td colspan="3" style="text-align:center;color:#71717a;padding:20px">No hay productos activos.</td></tr>'
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Producto - Envase</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1000px;margin:0 auto}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Producto - Envase</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:var(--cx-primary-pale, #f5f3ff);padding:24px}.card{max-width:1000px;margin:0 auto}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128295;</div><div><h2 style="margin:0;font-size:19px">Mapear producto &rarr; envase</h2><div class="cx-text-mute" style="font-size:13px">Cada <b>producto activo</b> con su envase (de los nuevos). Fila <b>amarilla</b> = a&uacute;n sin envase: pon&eacute; los <b>ml</b> y eleg&iacute; el envase &rarr; se crea la presentaci&oacute;n. <b>No hay bot&oacute;n Guardar: cada cambio se guarda solo</b> (te aparece un &#10003; verde).</div></div></div>
   __BANNER__
-  <div style="margin:10px 0;font-size:13px"><span style="color:#16a34a;font-weight:700">__NMAP__ mapeadas</span> &middot; <span style="color:#b45309;font-weight:700">__NFALTA__ por asignar</span></div>
+  <div style="margin:10px 0;font-size:13px"><span style="color:var(--cx-success-text, #16a34a);font-weight:700">__NMAP__ mapeadas</span> &middot; <span style="color:var(--cx-warn-text, #b45309);font-weight:700">__NFALTA__ por asignar</span></div>
   <div class="cx-table-wrap" style="margin-top:8px"><table class="cx-table"><thead><tr><th>Producto</th><th>Presentaci&oacute;n</th><th>Envase</th></tr></thead><tbody>__FILAS__</tbody></table></div>
   <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
 </div>
@@ -14066,7 +14066,7 @@ async function crearEnv(sel){
 }
 </script></body></html>'''
     if not envs:
-        _banner = ('<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:14px;color:#7f1d1d">'
+        _banner = ('<div style="background:var(--cx-danger-pale, #fef2f2);border:1px solid #fecaca;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:14px;color:var(--cx-danger-text, #7f1d1d)">'
                    '&#9888; <b>No hay envases activos todav&iacute;a.</b> Los men&uacute;s salen vac&iacute;os porque falta <b>aplicar el re-cat&aacute;logo</b> (crea los 76 c&oacute;digos nuevos). '
                    'And&aacute; ah&iacute;, dale <b>Aplicar re-cat&aacute;logo</b>, y volv&eacute; a esta pantalla.<br>'
                    '<button class="cx-btn cx-btn-success" style="margin-top:10px" onclick="location.href=\'/admin/envases-recatalogo\'">&#128230; Ir a aplicar el re-cat&aacute;logo</button></div>')

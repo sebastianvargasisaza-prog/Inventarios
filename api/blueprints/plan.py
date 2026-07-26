@@ -647,17 +647,17 @@ _DIAG_FAMILIA_HTML = """<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Diagnóstico familia de producto · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1200px;margin:0 auto}
-.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#0f766e;font-size:21px} h3{color:#0f766e;margin:0 0 8px}
-input{padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;min-width:240px}
-button{background:#0f766e;color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-info-text, #0f766e);font-size:21px} h3{color:var(--cx-info-text, #0f766e);margin:0 0 8px}
+input{padding:9px 12px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px;min-width:240px}
+button{background:var(--cx-info, #0f766e);color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer}
 table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
-th{text-align:left;padding:7px 8px;background:#f1f5f9;color:#475569;font-weight:700}
-td{padding:6px 8px;border-bottom:1px solid #f1f5f9}
-.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
-.muted{color:#64748b;font-size:12px}
+th{text-align:left;padding:7px 8px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-weight:700}
+td{padding:6px 8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:var(--cx-info-text, #1e40af)}
+.muted{color:var(--cx-text-mute, #64748b);font-size:12px}
 .tag{padding:1px 7px;border-radius:5px;font-weight:700;font-size:11px}
 </style></head><body>
 <div class="wrap">
@@ -668,14 +668,14 @@ td{padding:6px 8px;border-bottom:1px solid #f1f5f9}
   <div style="margin-top:12px"><input id="q" value="LIP SERUM" placeholder="ej. LIP SERUM, GLOSS, SUERO..."> <button onclick="ir()">Buscar</button></div>
 </div>
 <div class="card" style="border:1px solid #fca5a5">
-  <h3 style="color:#b91c1c">🔗 Consolidar (unificar fórmulas del mismo producto)</h3>
+  <h3 style="color:var(--cx-danger-text, #b91c1c)">🔗 Consolidar (unificar fórmulas del mismo producto)</h3>
   <div class="muted">Mueve presentaciones (tonos) + lotes PENDIENTES + (opcional) receta del temporal al definitivo y <b>desactiva</b> el temporal. Los lotes ya producidos quedan como historia. <b>Vista previa antes de aplicar.</b></div>
   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px">
     <span>Desactivar (temporal):</span><input id="cs-source" placeholder="LIP SERUM (PIB CHINO)" style="min-width:260px">
     <span>→ Mantener (definitivo):</span><input id="cs-target" placeholder="LIP SERUM VOLUMINIZADOR PEPTIDOS" style="min-width:300px">
     <label style="font-size:12px"><input type="checkbox" id="cs-receta"> copiar receta si el definitivo no tiene</label>
     <button onclick="consPreview()">👁 Vista previa</button>
-    <button onclick="consAplicar()" style="background:#b91c1c">Aplicar</button>
+    <button onclick="consAplicar()" style="background:var(--cx-danger, #b91c1c)">Aplicar</button>
   </div>
   <div id="cons-out" style="margin-top:10px"></div>
 </div>
@@ -691,12 +691,12 @@ async function ir(){
   try{
     var r=await fetch('/api/admin/diag-familia-producto?q='+encodeURIComponent(q),{cache:'no-store'});
     var d=await r.json();
-    if(!r.ok||!d.ok){ out.innerHTML='<div class="card" style="color:#dc2626">Error: '+esc((d&&d.error)||r.status)+'</div>'; return; }
+    if(!r.ok||!d.ok){ out.innerHTML='<div class="card" style="color:var(--cx-danger-text, #dc2626)">Error: '+esc((d&&d.error)||r.status)+'</div>'; return; }
     var h='';
     // Fórmulas
     h+='<div class="card"><h3>📋 Fórmulas ('+d.n_formulas+')</h3>';
     h+='<table><tr><th>Producto (formula_headers)</th><th>Canónico</th><th>Variante</th><th>Activo</th><th>Lote kg</th><th>codigo_pt</th></tr>';
-    d.formulas.forEach(function(f){ h+='<tr><td class="mono">'+esc(f.producto_nombre)+'</td><td>'+esc(f.producto_canonico||'—')+'</td><td>'+esc(f.variante_label||'—')+'</td><td>'+(f.activo?'sí':'<span style="color:#b91c1c">no</span>')+'</td><td>'+f.lote_size_kg+'</td><td>'+esc(f.codigo_pt||'')+'</td></tr>'; });
+    d.formulas.forEach(function(f){ h+='<tr><td class="mono">'+esc(f.producto_nombre)+'</td><td>'+esc(f.producto_canonico||'—')+'</td><td>'+esc(f.variante_label||'—')+'</td><td>'+(f.activo?'sí':'<span style="color:var(--cx-danger-text, #b91c1c)">no</span>')+'</td><td>'+f.lote_size_kg+'</td><td>'+esc(f.codigo_pt||'')+'</td></tr>'; });
     if(!d.formulas.length) h+='<tr><td colspan="6" class="muted">sin fórmulas</td></tr>';
     h+='</table></div>';
     // SKUs
@@ -721,7 +721,7 @@ async function ir(){
       var diagColor = (s.shopify_uds_disponible>0 && s.resolved_uds<s.shopify_uds_disponible) ? '#b45309'
                     : (s.resolved_uds<=0 ? '#b91c1c' : '#475569');
       h+='<tr><td class="mono">'+esc(s.sku)+'</td>'
-        +'<td>'+(s.mapeado?'sí':'<span style="color:#b91c1c">NO</span>')+'</td>'
+        +'<td>'+(s.mapeado?'sí':'<span style="color:var(--cx-danger-text, #b91c1c)">NO</span>')+'</td>'
         +'<td style="font-weight:700;color:'+resColor+'">'+s.resolved_uds+'</td>'
         +'<td>'+esc(s.fuente||'—')+'</td>'
         +'<td>'+s.cc_uds_disponible+'</td>'
@@ -732,24 +732,24 @@ async function ir(){
     if(!sps.length) h+='<tr><td colspan="8" class="muted">sin SKUs con stock para revisar</td></tr>';
     h+='</table></div>';
     out.innerHTML=h;
-  }catch(e){ out.innerHTML='<div class="card" style="color:#dc2626">Error red: '+esc(e.message)+'</div>'; }
+  }catch(e){ out.innerHTML='<div class="card" style="color:var(--cx-danger-text, #dc2626)">Error red: '+esc(e.message)+'</div>'; }
 }
 async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
 function _renderRep(d){
-  var h='<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;font-size:12px">';
-  if(d.mensaje) h+='<div style="color:#15803d;font-weight:700;margin-bottom:6px">✓ '+esc(d.mensaje)+'</div>';
-  if(d.error) h+='<div style="color:#b91c1c;font-weight:700;margin-bottom:6px">✕ '+esc(d.error)+'</div>';
+  var h='<div style="background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:10px;font-size:12px">';
+  if(d.mensaje) h+='<div style="color:var(--cx-success-text, #15803d);font-weight:700;margin-bottom:6px">✓ '+esc(d.mensaje)+'</div>';
+  if(d.error) h+='<div style="color:var(--cx-danger-text, #b91c1c);font-weight:700;margin-bottom:6px">✕ '+esc(d.error)+'</div>';
   h+='Presentaciones a mover: <b>'+((d.presentaciones_a_mover||[]).length)+'</b>'+(((d.presentaciones_en_conflicto||[]).length)?' · ⚠ en conflicto: '+d.presentaciones_en_conflicto.join(', '):'')+'<br>';
   h+='Lotes pendientes a mover: <b>'+(d.lotes_pendientes_a_mover||0)+'</b> · históricos que se quedan: '+(d.lotes_historicos_se_quedan||0)+'<br>';
   h+='Receta · temporal: '+(d.receta_source_items||0)+' items · <b>definitivo: '+(d.receta_target_items||0)+' items</b><br>';
-  if(d.advertencia) h+='<div style="color:#b45309;margin-top:4px">⚠ '+esc(d.advertencia)+'</div>';
+  if(d.advertencia) h+='<div style="color:var(--cx-warn-text, #b45309);margin-top:4px">⚠ '+esc(d.advertencia)+'</div>';
   h+='</div>';
   return h;
 }
 async function _consCall(aplicar){
   var s=document.getElementById('cs-source').value.trim(), t=document.getElementById('cs-target').value.trim();
   var rec=document.getElementById('cs-receta').checked, o=document.getElementById('cons-out');
-  if(!s||!t){ o.innerHTML='<span style="color:#dc2626">Completá ambos nombres</span>'; return; }
+  if(!s||!t){ o.innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Completá ambos nombres</span>'; return; }
   if(aplicar && !confirm('¿Aplicar la consolidación?\\n\\nDesactiva "'+s+'" y mueve presentaciones + lotes pendientes a "'+t+'".\\nNo se deshace fácil.')) return;
   o.innerHTML='Procesando…';
   try{
@@ -757,7 +757,7 @@ async function _consCall(aplicar){
     var d=await r.json();
     o.innerHTML=_renderRep(d);
     if(d.aplicado){ setTimeout(ir,700); }
-  }catch(e){ o.innerHTML='<span style="color:#dc2626">Error red: '+esc(e.message)+'</span>'; }
+  }catch(e){ o.innerHTML='<span style="color:var(--cx-danger-text, #dc2626)">Error red: '+esc(e.message)+'</span>'; }
 }
 function consPreview(){ _consCall(false); }
 function consAplicar(){ _consCall(true); }
@@ -6881,11 +6881,11 @@ def admin_reconciliar_formulas_page():
         from flask import redirect
         return redirect("/login?next=/admin/reconciliar-formulas")
     return """<!doctype html><html lang=es><head><meta charset=utf-8><title>Reconciliar fórmulas vs maestro</title>
-<style>body{font-family:system-ui;background:#f8fafc;color:#1e293b;margin:0;padding:20px}.w{max-width:1000px;margin:0 auto}
-h1{color:#7c3aed;font-size:20px}.card{background:#fff;border-radius:10px;padding:14px;margin:10px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-.go{background:#7c3aed;color:#fff;border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}
-.ex{color:#b91c1c;font-weight:700}.wr{color:#b45309}.fa{color:#64748b}table{width:100%;border-collapse:collapse;font-size:12px}
-td,th{padding:3px 6px;text-align:left;border-top:1px solid #f1f5f9}code{font-family:ui-monospace}</style></head><body><div class=w>
+<style>body{font-family:system-ui;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}.w{max-width:1000px;margin:0 auto}
+h1{color:var(--cx-primary-text, #7c3aed);font-size:20px}.card{background:var(--cx-card, #fff);border-radius:10px;padding:14px;margin:10px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.go{background:var(--cx-primary, #7c3aed);color:#fff;border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}
+.ex{color:var(--cx-danger-text, #b91c1c);font-weight:700}.wr{color:var(--cx-warn-text, #b45309)}.fa{color:var(--cx-text-mute, #64748b)}table{width:100%;border-collapse:collapse;font-size:12px}
+td,th{padding:3px 6px;text-align:left;border-top:1px solid var(--cx-border-soft, #f1f5f9)}code{font-family:ui-monospace}</style></head><body><div class=w>
 <h1>🧪 Reconciliar fórmulas vs Excel maestro</h1>
 <div class=card>Sube el Excel maestro (FORMULAS_MAESTRO). Compara cada fórmula activa de producción contra él:
 <b class=ex>de más en prod</b> (inflan compra/descuento), <b class=wr>% distinto</b>, <b class=fa>faltantes</b>. Solo lectura.
@@ -6980,7 +6980,7 @@ function render(d){
       return esc(m.material_nombre)+' (falta '+fmt(m.faltante_g)+' g)';}).join('<br>');
     // si es factible solo con compras, mostrar QUE MP esta en camino (no alcanza fisico)
     if(p.solo_con_compras && (p.mps_en_camino||[]).length){
-      falta='<span style="color:#b45309">&#128666; HOY no alcanza · espera: '+
+      falta='<span style="color:var(--cx-warn-text, #b45309)">&#128666; HOY no alcanza · espera: '+
         (p.mps_en_camino||[]).map(function(m){
           return esc(m.material_nombre)+' (faltan '+fmt(m.faltante_g)+' g)';}).join(', ')+'</span>';
     }
@@ -7167,25 +7167,25 @@ _VERIFICAR_CODIGOS_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Verificar códigos MP del Excel · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1100px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#0f766e;font-size:22px}
-.muted{color:#64748b;font-size:13px}
-button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-info-text, #0f766e);font-size:22px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:13px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
 button:hover{opacity:.9}
-.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;text-align:center;min-width:140px}
-.kpi-lbl{font-size:11px;color:#64748b}
+.kpi{display:inline-block;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:10px 18px;margin-right:10px;text-align:center;min-width:140px}
+.kpi-lbl{font-size:11px;color:var(--cx-text-mute, #64748b)}
 .kpi-val{font-size:24px;font-weight:800}
-.ok{color:#16a34a}
+.ok{color:var(--cx-success-text, #16a34a)}
 .warn{color:#ea580c}
-.crit{color:#dc2626}
-.bad{color:#94a3b8}
+.crit{color:var(--cx-danger-text, #dc2626)}
+.bad{color:var(--cx-text-faint, #94a3b8)}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
-td{padding:7px 8px;border-bottom:1px solid #f1f5f9}
-.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
-a{color:#0f766e}
+th{text-align:left;padding:8px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-weight:700}
+td{padding:7px 8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:var(--cx-info-text, #1e40af)}
+a{color:var(--cx-info-text, #0f766e)}
 </style></head><body>
 <div class="wrap">
 <a href="/modulos">&larr; Volver al panel</a>
@@ -7242,13 +7242,13 @@ function render(d) {
 
   // 🔴 Mismatches · CRÍTICO · el código existe pero el nombre BD ≠ Excel
   if (d.total_mismatches > 0) {
-    out += '<div class="card" style="border:2px solid #dc2626"><h3 style="margin:0 0 8px;color:#dc2626">🟠 MISMATCHES · ' + d.total_mismatches + ' códigos con nombre BD distinto al Excel</h3>';
+    out += '<div class="card" style="border:2px solid var(--cx-danger, #dc2626)"><h3 style="margin:0 0 8px;color:var(--cx-danger-text, #dc2626)">🟠 MISMATCHES · ' + d.total_mismatches + ' códigos con nombre BD distinto al Excel</h3>';
     out += '<div class="muted" style="margin-bottom:10px">El código existe pero la MP en BD parece ser DISTINTA a la del Excel. Importar fórmulas con estos códigos crearía formulas que referencian MPs equivocadas. Revisar uno a uno antes de proceder.</div>';
     out += '<table><thead><tr><th>Código</th><th>Excel · INCI</th><th>Excel · Comercial</th><th>BD · INCI</th><th>BD · Comercial</th></tr></thead><tbody>';
     d.mismatches.forEach(m => {
       var exInci = (m.info_excel && m.info_excel.inci) || '<span class="bad">—</span>';
       var exCom = (m.info_excel && m.info_excel.comercial) || '<span class="bad">—</span>';
-      out += '<tr><td class="mono">' + escapeHtml(m.codigo) + '</td><td>' + escapeHtml(exInci) + '</td><td>' + escapeHtml(exCom) + '</td><td style="background:#fff7ed">' + escapeHtml(m.nombre_inci_bd || '—') + '</td><td style="background:#fff7ed">' + escapeHtml(m.nombre_comercial_bd || '—') + '</td></tr>';
+      out += '<tr><td class="mono">' + escapeHtml(m.codigo) + '</td><td>' + escapeHtml(exInci) + '</td><td>' + escapeHtml(exCom) + '</td><td style="background:var(--cx-warn-pale, #fff7ed)">' + escapeHtml(m.nombre_inci_bd || '—') + '</td><td style="background:var(--cx-warn-pale, #fff7ed)">' + escapeHtml(m.nombre_comercial_bd || '—') + '</td></tr>';
     });
     out += '</tbody></table></div>';
   }
@@ -7266,7 +7266,7 @@ function render(d) {
   }
 
   if (d.total_faltantes > 0) {
-    out += '<div class="card"><h3 style="margin:0 0 8px;color:#dc2626">🔴 FALTANTES · ' + d.total_faltantes + ' MPs no existen en BD</h3>';
+    out += '<div class="card"><h3 style="margin:0 0 8px;color:var(--cx-danger-text, #dc2626)">🔴 FALTANTES · ' + d.total_faltantes + ' MPs no existen en BD</h3>';
     out += '<table><thead><tr><th>Código</th><th>Nombre INCI (Excel)</th><th>Nombre Comercial (Excel)</th></tr></thead><tbody>';
     d.faltantes.forEach(f => {
       var inci = (f.info_excel && f.info_excel.inci) || '<span class="bad">—</span>';
@@ -7288,9 +7288,9 @@ function render(d) {
   // Listo si TODO OK
   var totalProblems = d.total_mismatches + d.total_existentes_sin_info_bd + d.total_inactivos + d.total_faltantes;
   if (totalProblems === 0) {
-    out += '<div class="card"><h3 style="margin:0;color:#16a34a">✅ Perfecto · ' + d.total_existentes_ok + '/146 codigos OK · listos para importar fórmulas.</h3></div>';
+    out += '<div class="card"><h3 style="margin:0;color:var(--cx-success-text, #16a34a)">✅ Perfecto · ' + d.total_existentes_ok + '/146 codigos OK · listos para importar fórmulas.</h3></div>';
   } else if (d.total_existentes_ok > 0) {
-    out += '<details class="card"><summary style="cursor:pointer;color:#16a34a;font-weight:700">✅ Match OK (' + d.total_existentes_ok + ') · click para expandir</summary>';
+    out += '<details class="card"><summary style="cursor:pointer;color:var(--cx-success-text, #16a34a);font-weight:700">✅ Match OK (' + d.total_existentes_ok + ') · click para expandir</summary>';
     out += '<table style="margin-top:10px"><thead><tr><th>Código</th><th>Nombre Comercial BD</th><th>Nombre INCI BD</th></tr></thead><tbody>';
     d.existentes.forEach(e => {
       out += '<tr><td class="mono">' + escapeHtml(e.codigo) + '</td><td>' + escapeHtml(e.nombre_comercial_bd) + '</td><td>' + escapeHtml(e.nombre_inci_bd) + '</td></tr>';
@@ -7651,34 +7651,34 @@ _COMPARAR_CALENDAR_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Comparar Calendar vs Necesidades · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1400px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#0f766e;font-size:22px}
-.muted{color:#64748b;font-size:13px}
-button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
-select{padding:9px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px}
-.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;margin-bottom:8px;text-align:center;min-width:130px;vertical-align:top}
-.kpi-lbl{font-size:11px;color:#64748b}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-info-text, #0f766e);font-size:22px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:13px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+select{padding:9px 14px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:13px}
+.kpi{display:inline-block;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:10px 18px;margin-right:10px;margin-bottom:8px;text-align:center;min-width:130px;vertical-align:top}
+.kpi-lbl{font-size:11px;color:var(--cx-text-mute, #64748b)}
 .kpi-val{font-size:22px;font-weight:800}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700;cursor:pointer}
-td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
-.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
-.cat-MATCH_OK{background:#dcfce7;color:#166534;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.cat-URGENTE_SIN_AGENDAR{background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.cat-AGENDADO_SIN_URGENCIA{background:#fef3c7;color:#854d0e;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.cat-SUB_PRODUCCION{background:#fed7aa;color:#9a3412;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.cat-SOBRE_PRODUCCION{background:#e9d5ff;color:#581c87;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.cat-SIN_VENTAS{background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.cat-AGENDADO_SIN_VENTAS{background:#fecaca;color:#7f1d1d;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.cat-TIMING_TARDE{background:#fecaca;color:#7f1d1d;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.tim-OK{color:#166534;font-weight:700}
-.tim-TARDE{color:#dc2626;font-weight:700}
-.tim-TEMPRANO{color:#7c3aed;font-weight:700}
+th{text-align:left;padding:8px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-weight:700;cursor:pointer}
+td{padding:7px 8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);vertical-align:top}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:var(--cx-info-text, #1e40af)}
+.cat-MATCH_OK{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-URGENTE_SIN_AGENDAR{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-AGENDADO_SIN_URGENCIA{background:var(--cx-warn-pale, #fef3c7);color:#854d0e;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-SUB_PRODUCCION{background:var(--cx-warn-pale, #fed7aa);color:var(--cx-warn-text, #9a3412);padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-SOBRE_PRODUCCION{background:var(--cx-primary-soft, #e9d5ff);color:#581c87;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-SIN_VENTAS{background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-mute, #64748b);padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-AGENDADO_SIN_VENTAS{background:var(--cx-danger-pale, #fecaca);color:var(--cx-danger-text, #7f1d1d);padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-TIMING_TARDE{background:var(--cx-danger-pale, #fecaca);color:var(--cx-danger-text, #7f1d1d);padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.tim-OK{color:var(--cx-success-text, #166534);font-weight:700}
+.tim-TARDE{color:var(--cx-danger-text, #dc2626);font-weight:700}
+.tim-TEMPRANO{color:var(--cx-primary-text, #7c3aed);font-weight:700}
 .diff-pos{color:#581c87;font-weight:700}
-.diff-neg{color:#dc2626;font-weight:700}
-.diff-ok{color:#166534}
+.diff-neg{color:var(--cx-danger-text, #dc2626);font-weight:700}
+.diff-ok{color:var(--cx-success-text, #166534)}
 </style></head><body>
 <div class="wrap">
 <a href="/modulos">&larr; Volver al panel</a>
@@ -7738,11 +7738,11 @@ function render(d) {
   var veredicto = '';
   var totalProblemas = (cats.URGENTE_SIN_AGENDAR||0) + (cats.TIMING_TARDE||0) + (cats.AGENDADO_SIN_URGENCIA||0) + (cats.SUB_PRODUCCION||0) + (cats.SOBRE_PRODUCCION||0) + (cats.AGENDADO_SIN_VENTAS||0);
   if (totalProblemas === 0) {
-    veredicto = '<div class="card" style="border:2px solid #16a34a;background:#f0fdf4"><h2 style="margin:0;color:#166534">✅ Calendar está alineado con necesidades · podrías migrar a Plan sin pérdida</h2></div>';
+    veredicto = '<div class="card" style="border:2px solid var(--cx-success, #16a34a);background:var(--cx-success-pale, #f0fdf4)"><h2 style="margin:0;color:var(--cx-success-text, #166534)">✅ Calendar está alineado con necesidades · podrías migrar a Plan sin pérdida</h2></div>';
   } else if (totalProblemas > d.total_productos / 2) {
-    veredicto = '<div class="card" style="border:2px solid #dc2626;background:#fef2f2"><h2 style="margin:0 0 6px;color:#991b1b">⚠ Calendar tiene desviación significativa (' + totalProblemas + ' de ' + d.total_productos + ')</h2><div class="muted">Antes de migrar · revisar uno a uno · varios casos no reflejan necesidad real.</div></div>';
+    veredicto = '<div class="card" style="border:2px solid var(--cx-danger, #dc2626);background:var(--cx-danger-pale, #fef2f2)"><h2 style="margin:0 0 6px;color:var(--cx-danger-text, #991b1b)">⚠ Calendar tiene desviación significativa (' + totalProblemas + ' de ' + d.total_productos + ')</h2><div class="muted">Antes de migrar · revisar uno a uno · varios casos no reflejan necesidad real.</div></div>';
   } else {
-    veredicto = '<div class="card" style="border:2px solid #ca8a04;background:#fefce8"><h2 style="margin:0 0 6px;color:#854d0e">🟠 Calendar mayormente bien, pero ' + totalProblemas + ' casos requieren revisión</h2><div class="muted">Lista abajo · cada uno con su categoría · podés migrar después de ajustar.</div></div>';
+    veredicto = '<div class="card" style="border:2px solid var(--cx-accent-dark, #ca8a04);background:#fefce8"><h2 style="margin:0 0 6px;color:#854d0e">🟠 Calendar mayormente bien, pero ' + totalProblemas + ' casos requieren revisión</h2><div class="muted">Lista abajo · cada uno con su categoría · podés migrar después de ajustar.</div></div>';
   }
 
   // Tabla agrupada por categoría · ordenadas por urgencia
@@ -7774,25 +7774,25 @@ function render(d) {
       var timCls = p.timing_status === 'ALINEADO' ? 'tim-OK' : (p.timing_status === 'TARDE' ? 'tim-TARDE' : (p.timing_status === 'TEMPRANO' ? 'tim-TEMPRANO' : ''));
       var timTxt = p.diff_dias_timing != null ? (p.diff_dias_timing > 0 ? '+' + p.diff_dias_timing + 'd tarde' : (p.diff_dias_timing < 0 ? p.diff_dias_timing + 'd temprano' : 'mismo día')) : '—';
       var todasFechas = (p.fechas_calendar||[]).slice(1).map(f => f.fecha + ' (' + f.kg + 'kg)').join(' · ') || '—';
-      var pipeline = (p.pipeline_kg||0) > 0 ? ' <span style="color:#0891b2;font-weight:700" title="ya producido últ 7d · aún no en Shopify">+' + p.pipeline_kg + ' pipe</span>' : '';
+      var pipeline = (p.pipeline_kg||0) > 0 ? ' <span style="color:var(--cx-info-text, #0891b2);font-weight:700" title="ya producido últ 7d · aún no en Shopify">+' + p.pipeline_kg + ' pipe</span>' : '';
       var realesTxt = '—';
       if ((p.producciones_reales_30d||[]).length) {
         realesTxt = p.producciones_reales_30d.map(r => r.fin_real_at + ' (' + r.kg_real + 'kg' + (r.numero_op ? ' · ' + r.numero_op : '') + ')').join('<br>');
       }
       tbl += '<tr>';
       tbl += '<td class="mono">' + escapeHtml(p.codigo_pt||'') + '</td>';
-      tbl += '<td><strong>' + escapeHtml(p.producto_nombre) + '</strong><br><span style="color:#64748b;font-size:10px">' + p.stock_uds + ' uds</span></td>';
+      tbl += '<td><strong>' + escapeHtml(p.producto_nombre) + '</strong><br><span style="color:var(--cx-text-mute, #64748b);font-size:10px">' + p.stock_uds + ' uds</span></td>';
       tbl += '<td style="text-align:right"><strong>' + (p.stock_kg_gondola||0) + '</strong>' + pipeline + '</td>';
       tbl += '<td style="text-align:right">' + (p.velocidad_kg_dia||0).toFixed(2) + '</td>';
       tbl += '<td style="text-align:center">' + (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—') + '</td>';
-      tbl += '<td style="text-align:center;color:#dc2626;font-weight:600">' + (p.fecha_agotamiento || '—') + '</td>';
-      tbl += '<td style="text-align:center;color:#166534;font-weight:700">' + (p.fecha_producir_sugerida || '—') + '</td>';
-      tbl += '<td style="font-size:10px;color:#0891b2">' + realesTxt + '</td>';
+      tbl += '<td style="text-align:center;color:var(--cx-danger-text, #dc2626);font-weight:600">' + (p.fecha_agotamiento || '—') + '</td>';
+      tbl += '<td style="text-align:center;color:var(--cx-success-text, #166534);font-weight:700">' + (p.fecha_producir_sugerida || '—') + '</td>';
+      tbl += '<td style="font-size:10px;color:var(--cx-info-text, #0891b2)">' + realesTxt + '</td>';
       tbl += '<td style="text-align:center">' + (p.primer_lote_calendar_fecha || '—') + '</td>';
       tbl += '<td style="text-align:center" class="' + timCls + '">' + timTxt + '</td>';
-      tbl += '<td style="text-align:right;color:#64748b;font-size:11px">' + (p.lote_bulk_kg ? p.lote_bulk_kg + 'kg' : '—') + '</td>';
+      tbl += '<td style="text-align:right;color:var(--cx-text-mute, #64748b);font-size:11px">' + (p.lote_bulk_kg ? p.lote_bulk_kg + 'kg' : '—') + '</td>';
       tbl += '<td style="text-align:right" class="' + diffCls + '">' + (p.kg_necesario_horizonte||0) + ' / ' + (p.kg_calendar_horizonte||0) + 'kg</td>';
-      tbl += '<td style="font-size:10px;color:#64748b">' + escapeHtml(todasFechas) + '</td>';
+      tbl += '<td style="font-size:10px;color:var(--cx-text-mute, #64748b)">' + escapeHtml(todasFechas) + '</td>';
       tbl += '</tr>';
     });
     tbl += '</tbody></table></div>';
@@ -7800,7 +7800,7 @@ function render(d) {
 
   // Huérfanos en Calendar
   if (d.huerfanos_calendar && d.huerfanos_calendar.length) {
-    tbl += '<div class="card"><h3 style="margin:0 0 8px;color:#dc2626">🚧 Productos en Calendar que NO están en Animus DTC · ' + d.huerfanos_calendar.length + '</h3>';
+    tbl += '<div class="card"><h3 style="margin:0 0 8px;color:var(--cx-danger-text, #dc2626)">🚧 Productos en Calendar que NO están en Animus DTC · ' + d.huerfanos_calendar.length + '</h3>';
     tbl += '<div class="muted" style="margin-bottom:8px">Probablemente: maquila B2B, productos descontinuados, errores de tipeo. Revisar manualmente.</div>';
     tbl += '<table><thead><tr><th>Producto</th><th>Lotes</th><th>kg total</th></tr></thead><tbody>';
     d.huerfanos_calendar.forEach(h => {
@@ -7928,24 +7928,24 @@ _BUSCADOR_MPS_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Buscar MPs · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1300px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#0f766e;font-size:22px}
-.muted{color:#64748b;font-size:13px}
-input[type=text]{padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;width:300px}
-button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
-.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;text-align:center;min-width:140px}
-.kpi-lbl{font-size:11px;color:#64748b}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-info-text, #0f766e);font-size:22px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:13px}
+input[type=text]{padding:10px 14px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px;width:300px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+.kpi{display:inline-block;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:10px 18px;margin-right:10px;text-align:center;min-width:140px}
+.kpi-lbl{font-size:11px;color:var(--cx-text-mute, #64748b)}
 .kpi-val{font-size:24px;font-weight:800}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
-td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
-.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
-.ok{color:#16a34a}
-.crit{color:#dc2626}
-.inactivo{background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
-.suger{display:inline-block;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-size:11px;margin-right:4px;cursor:pointer;text-decoration:none}
+th{text-align:left;padding:8px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-weight:700}
+td{padding:7px 8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);vertical-align:top}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:var(--cx-info-text, #1e40af)}
+.ok{color:var(--cx-success-text, #16a34a)}
+.crit{color:var(--cx-danger-text, #dc2626)}
+.inactivo{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.suger{display:inline-block;background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af);padding:2px 8px;border-radius:4px;font-size:11px;margin-right:4px;cursor:pointer;text-decoration:none}
 </style></head><body>
 <div class="wrap">
 <a href="/modulos">&larr; Volver al panel</a>
@@ -8002,12 +8002,12 @@ function render(d) {
     if ((it.usado_en || []).length > 3) usos += ' +' + (it.usado_en.length - 3);
     out += '<tr><td class="mono">' + escapeHtml(it.codigo) + '</td>'
        + '<td>' + escapeHtml(it.nombre_comercial) + '</td>'
-       + '<td style="font-size:11px;color:#64748b">' + escapeHtml(it.nombre_inci) + '</td>'
+       + '<td style="font-size:11px;color:var(--cx-text-mute, #64748b)">' + escapeHtml(it.nombre_inci) + '</td>'
        + '<td style="font-size:11px">' + escapeHtml(it.proveedor) + '</td>'
        + '<td style="text-align:right" class="' + stockClass + '">' + Number(it.stock_actual).toLocaleString() + ' g</td>'
        + '<td style="text-align:right">' + Number(it.stock_minimo).toLocaleString() + ' g</td>'
        + '<td>' + estado + '</td>'
-       + '<td style="font-size:11px;color:#475569">' + usos + '</td></tr>';
+       + '<td style="font-size:11px;color:var(--cx-text-soft, #475569)">' + usos + '</td></tr>';
   });
   out += '</tbody></table></div>';
   document.getElementById('resultados').innerHTML = out;
@@ -8165,23 +8165,23 @@ _DETECTOR_RENOMBRE_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Detector MPs renombre · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1300px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#dc2626;font-size:22px}
-.muted{color:#64748b;font-size:13px}
-button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
-.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;text-align:center;min-width:140px}
-.kpi-lbl{font-size:11px;color:#64748b}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-danger-text, #dc2626);font-size:22px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:13px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+.kpi{display:inline-block;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:10px 18px;margin-right:10px;text-align:center;min-width:140px}
+.kpi-lbl{font-size:11px;color:var(--cx-text-mute, #64748b)}
 .kpi-val{font-size:24px;font-weight:800}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
-td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
-.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
-.crit{color:#dc2626}
-.bad{color:#94a3b8}
-.sim-alta{background:#dcfce7;color:#166534;padding:2px 6px;border-radius:4px;font-weight:700}
-.sim-media{background:#fef3c7;color:#854d0e;padding:2px 6px;border-radius:4px;font-weight:700}
+th{text-align:left;padding:8px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-weight:700}
+td{padding:7px 8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);vertical-align:top}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:var(--cx-info-text, #1e40af)}
+.crit{color:var(--cx-danger-text, #dc2626)}
+.bad{color:var(--cx-text-faint, #94a3b8)}
+.sim-alta{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);padding:2px 6px;border-radius:4px;font-weight:700}
+.sim-media{background:var(--cx-warn-pale, #fef3c7);color:#854d0e;padding:2px 6px;border-radius:4px;font-weight:700}
 </style></head><body>
 <div class="wrap">
 <a href="/modulos">&larr; Volver al panel</a>
@@ -8215,19 +8215,19 @@ function render(d) {
   document.getElementById('kpis').innerHTML = k;
 
   if (!d.sospechosos.length) {
-    document.getElementById('resultados').innerHTML = '<div class="card"><h3 style="margin:0;color:#16a34a">✅ Sin sospechosos · todas las MPs sin stock no tienen candidatas con stock similar</h3></div>';
+    document.getElementById('resultados').innerHTML = '<div class="card"><h3 style="margin:0;color:var(--cx-success-text, #16a34a)">✅ Sin sospechosos · todas las MPs sin stock no tienen candidatas con stock similar</h3></div>';
     return;
   }
-  var out = '<div class="card"><h3 style="margin:0 0 8px;color:#dc2626">🔍 ' + d.sospechosos.length + ' MPs sospechosas · posibles renombres</h3>';
+  var out = '<div class="card"><h3 style="margin:0 0 8px;color:var(--cx-danger-text, #dc2626)">🔍 ' + d.sospechosos.length + ' MPs sospechosas · posibles renombres</h3>';
   out += '<div class="muted" style="margin-bottom:12px">Cada fila muestra una MP de la fórmula con stock=0 + candidatas en BD con stock>0 y nombre similar. Revisar manualmente y consolidar.</div>';
   out += '<table><thead><tr><th>Código fórmula</th><th>Nombre fórmula</th><th>Productos</th><th>Candidatas (código · nombre · stock · similitud)</th></tr></thead><tbody>';
   d.sospechosos.forEach(s => {
     var cands = '';
     s.candidatas_renombre.forEach(c => {
       var sim = c.similitud >= 80 ? 'sim-alta' : 'sim-media';
-      cands += '<div style="margin-bottom:4px"><span class="mono">' + escapeHtml(c.codigo) + '</span> · <strong>' + escapeHtml(c.nombre_comercial || c.nombre_inci) + '</strong> · <span style="background:#dbeafe;padding:2px 6px;border-radius:4px">' + c.stock_g + 'g</span> · <span class="' + sim + '">' + c.similitud + '%</span></div>';
+      cands += '<div style="margin-bottom:4px"><span class="mono">' + escapeHtml(c.codigo) + '</span> · <strong>' + escapeHtml(c.nombre_comercial || c.nombre_inci) + '</strong> · <span style="background:var(--cx-info-pale, #dbeafe);padding:2px 6px;border-radius:4px">' + c.stock_g + 'g</span> · <span class="' + sim + '">' + c.similitud + '%</span></div>';
     });
-    out += '<tr><td class="mono">' + escapeHtml(s.codigo_formula) + '</td><td>' + escapeHtml(s.nombre_formula) + '</td><td style="font-size:11px;color:#475569">' + (s.usado_en_productos || []).map(escapeHtml).join(', ') + '</td><td>' + cands + '</td></tr>';
+    out += '<tr><td class="mono">' + escapeHtml(s.codigo_formula) + '</td><td>' + escapeHtml(s.nombre_formula) + '</td><td style="font-size:11px;color:var(--cx-text-soft, #475569)">' + (s.usado_en_productos || []).map(escapeHtml).join(', ') + '</td><td>' + cands + '</td></tr>';
   });
   out += '</tbody></table></div>';
   document.getElementById('resultados').innerHTML = out;
@@ -8642,25 +8642,25 @@ def calendario_simple_page():
     h = """<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>Calendario simple · EOS</title>
 <style>
-body{font-family:-apple-system,sans-serif;background:#f8fafc;margin:0;padding:18px;color:#1e293b}
+body{font-family:-apple-system,sans-serif;background:var(--cx-bg-alt, #f8fafc);margin:0;padding:18px;color:var(--cx-text, #1e293b)}
 .wrap{max-width:1500px;margin:0 auto}
-h1{color:#0f766e;margin:0}
-.bar{display:flex;justify-content:space-between;align-items:center;background:white;padding:14px;border-radius:10px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-.bar a, .bar .lbl{font-size:14px;font-weight:700;color:#475569;text-decoration:none;padding:8px 14px;background:#f1f5f9;border-radius:6px}
-.bar a:hover{background:#e2e8f0}
-.lbl{font-size:18px !important;color:#0f766e !important;background:transparent !important}
-.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;background:white;padding:8px;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-.head{background:#f1f5f9;padding:8px;text-align:center;font-weight:800;color:#475569;font-size:12px;border-radius:5px}
-.day{background:white;border:1px solid #e2e8f0;border-radius:6px;padding:6px;min-height:110px;font-size:11px}
-.day.fest{background:#fef2f2;border-color:#fca5a5}
-.day.fdesem{background:#f8fafc;opacity:.6}
-.day.hoy{border:2px solid #0f766e;background:#f0fdfa}
+h1{color:var(--cx-info-text, #0f766e);margin:0}
+.bar{display:flex;justify-content:space-between;align-items:center;background:var(--cx-card, #fff);padding:14px;border-radius:10px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+.bar a, .bar .lbl{font-size:14px;font-weight:700;color:var(--cx-text-soft, #475569);text-decoration:none;padding:8px 14px;background:var(--cx-border-soft, #f1f5f9);border-radius:6px}
+.bar a:hover{background:var(--cx-border, #e2e8f0)}
+.lbl{font-size:18px !important;color:var(--cx-info-text, #0f766e) !important;background:transparent !important}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;background:var(--cx-card, #fff);padding:8px;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+.head{background:var(--cx-border-soft, #f1f5f9);padding:8px;text-align:center;font-weight:800;color:var(--cx-text-soft, #475569);font-size:12px;border-radius:5px}
+.day{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:6px;padding:6px;min-height:110px;font-size:11px}
+.day.fest{background:var(--cx-danger-pale, #fef2f2);border-color:#fca5a5}
+.day.fdesem{background:var(--cx-bg-alt, #f8fafc);opacity:.6}
+.day.hoy{border:2px solid var(--cx-info, #0f766e);background:#f0fdfa}
 .day.otro{opacity:.35}
-.dnum{font-weight:800;color:#1e293b;margin-bottom:4px;display:flex;justify-content:space-between}
-.fmark{background:#fecaca;color:#7f1d1d;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:700}
+.dnum{font-weight:800;color:var(--cx-text, #1e293b);margin-bottom:4px;display:flex;justify-content:space-between}
+.fmark{background:var(--cx-danger-pale, #fecaca);color:var(--cx-danger-text, #7f1d1d);padding:1px 4px;border-radius:3px;font-size:9px;font-weight:700}
 .lote{background:#e0e7ff;color:#3730a3;padding:3px 5px;border-radius:4px;margin-bottom:3px;border-left:3px solid #6366f1;font-weight:600;line-height:1.2}
 </style></head><body><div class="wrap">
-<a href="/modulos" style="color:#0f766e;font-weight:700">&larr; Volver</a>
+<a href="/modulos" style="color:var(--cx-info-text, #0f766e);font-weight:700">&larr; Volver</a>
 <h1>📅 Calendario simple · vista directa desde BD</h1>
 """
     h += f'<div class="bar">'
@@ -8752,27 +8752,27 @@ def plan_simple_page():
     html_str = """<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>Plan simple · EOS</title>
 <style>
-body{font-family:-apple-system,sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1100px;margin:0 auto}
-h1{color:#0f766e;margin:0 0 6px}
-.mes{background:white;border-radius:10px;padding:14px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-.mes h2{margin:0 0 10px;color:#475569;font-size:16px;padding-bottom:6px;border-bottom:2px solid #e2e8f0}
+h1{color:var(--cx-info-text, #0f766e);margin:0 0 6px}
+.mes{background:var(--cx-card, #fff);border-radius:10px;padding:14px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+.mes h2{margin:0 0 10px;color:var(--cx-text-soft, #475569);font-size:16px;padding-bottom:6px;border-bottom:2px solid var(--cx-border, #e2e8f0)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:6px 8px;text-align:left}
-tr{border-bottom:1px solid #f1f5f9}
-.kg{text-align:right;font-weight:700;color:#0f766e;font-variant-numeric:tabular-nums}
+tr{border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}
+.kg{text-align:right;font-weight:700;color:var(--cx-info-text, #0f766e);font-variant-numeric:tabular-nums}
 .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700}
 .tag-eos_canonico{background:#e0e7ff;color:#3730a3}
-.tag-eos_plan{background:#dcfce7;color:#166534}
+.tag-eos_plan{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534)}
 .tag-calendar{background:#fef9c3;color:#854d0e}
-.dia{color:#64748b;font-size:11px}
-.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;margin-right:8px;text-align:center;min-width:90px}
-.kpi-val{font-size:22px;font-weight:800;color:#0f766e}
-.kpi-lbl{font-size:10px;color:#64748b;text-transform:uppercase}
+.dia{color:var(--cx-text-mute, #64748b);font-size:11px}
+.kpi{display:inline-block;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:8px 14px;margin-right:8px;text-align:center;min-width:90px}
+.kpi-val{font-size:22px;font-weight:800;color:var(--cx-info-text, #0f766e)}
+.kpi-lbl{font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase}
 </style></head><body><div class="wrap">
-<a href="/modulos" style="color:#0f766e;font-weight:700">&larr; Volver</a>
+<a href="/modulos" style="color:var(--cx-info-text, #0f766e);font-weight:700">&larr; Volver</a>
 <h1>📋 Plan simple · vista directa BD</h1>
-<div style="color:#64748b;font-size:12px;margin-bottom:14px">Server-side · sin JavaScript · si acá los ves todos pero en el calendario no, el bug es del JS visual.</div>
+<div style="color:var(--cx-text-mute, #64748b);font-size:12px;margin-bottom:14px">Server-side · sin JavaScript · si acá los ves todos pero en el calendario no, el bug es del JS visual.</div>
 """
     total_lotes = sum(len(v) for v in por_mes.values())
     total_kg = sum(it["kg"] for v in por_mes.values() for it in v)
@@ -10629,40 +10629,40 @@ def admin_sub_skus_pagina():
     return """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Sub-SKUs</title>
 <style>
-  body{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:24px}
-  .card{max-width:1400px;margin:0 auto 14px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
-  h1{color:#1e293b;margin:0 0 8px;font-size:22px}
+  body{font-family:system-ui,-apple-system,Arial;background:var(--cx-bg-alt, #f8fafc);margin:0;padding:24px}
+  .card{max-width:1400px;margin:0 auto 14px;background:var(--cx-card, #fff);border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+  h1{color:var(--cx-text, #1e293b);margin:0 0 8px;font-size:22px}
   .filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-  .filtros input,.filtros select{padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
-  .producto-grp{border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;background:#fff}
-  .prod-head{padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer}
-  .prod-head:hover{background:#f1f5f9}
-  .prod-titulo{font-weight:700;color:#1e293b;font-size:14px}
-  .prod-meta{font-size:11px;color:#64748b}
+  .filtros input,.filtros select{padding:8px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:13px}
+  .producto-grp{border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;margin-bottom:10px;background:var(--cx-card, #fff)}
+  .prod-head{padding:12px 16px;background:var(--cx-bg-alt, #f8fafc);border-bottom:1px solid var(--cx-border, #e2e8f0);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer}
+  .prod-head:hover{background:var(--cx-border-soft, #f1f5f9)}
+  .prod-titulo{font-weight:700;color:var(--cx-text, #1e293b);font-size:14px}
+  .prod-meta{font-size:11px;color:var(--cx-text-mute, #64748b)}
   .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px}
   .b-regalo{background:#fce7f3;color:#9f1239}
-  .b-tonos{background:#dbeafe;color:#1e40af}
-  .b-multi{background:#fef3c7;color:#92400e}
+  .b-tonos{background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af)}
+  .b-multi{background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #92400e)}
   .skus-tbl{padding:8px 16px;display:none}
   .skus-tbl.open{display:block}
   table{width:100%;border-collapse:collapse;font-size:12px}
-  th{background:#f1f5f9;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;color:#475569}
-  td{border-bottom:1px solid #f1f5f9;padding:6px 8px}
-  input.inp-sku{width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:transparent}
-  input.inp-sku:hover{background:#fffbeb}
-  input.inp-sku:focus{background:#fff;border-color:#7c3aed;outline:none}
+  th{background:var(--cx-border-soft, #f1f5f9);padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--cx-text-soft, #475569)}
+  td{border-bottom:1px solid var(--cx-border-soft, #f1f5f9);padding:6px 8px}
+  input.inp-sku{width:100%;padding:4px 6px;border:1px solid var(--cx-border, #cbd5e1);border-radius:4px;font-size:11px;background:transparent}
+  input.inp-sku:hover{background:var(--cx-warn-pale, #fffbeb)}
+  input.inp-sku:focus{background:var(--cx-card, #fff);border-color:var(--cx-primary, #7c3aed);outline:none}
   .chk{transform:scale(1.3);cursor:pointer}
   #msg{margin:8px 0;font-size:12px;font-weight:700}
   .btn{padding:6px 12px;border-radius:5px;border:none;font-size:11px;font-weight:700;cursor:pointer}
-  .btn-prim{background:#7c3aed;color:#fff}
-  .btn-link{background:transparent;color:#475569;border:1px solid #e2e8f0}
+  .btn-prim{background:var(--cx-primary, #7c3aed);color:#fff}
+  .btn-link{background:transparent;color:var(--cx-text-soft, #475569);border:1px solid var(--cx-border, #e2e8f0)}
 </style></head><body>
 
 <div class="card">
   <h1>🎨 Sub-SKUs · gestión visual de tonos y regalos</h1>
-  <p style="color:#475569;font-size:13px">Editá inline cada sub-SKU. <strong>Regalo</strong>: no cuenta para velocidad de ventas. <strong>Tono</strong>: etiqueta visible (ROSA, DURAZNO, etc.). <strong>ml</strong>: volumen real por unidad (afecta el cálculo de envases en Abastecimiento).</p>
-  <div style="background:#ecfdf5;border:1px solid #86efac;color:#065f46;padding:8px 12px;border-radius:6px;font-size:12px;margin-top:8px">
-    💾 <strong>Guardado automático</strong>: cada cambio se persiste al hacer click fuera del campo (no hay botón "Guardar"). El input se pone <span style="background:#bbf7d0;padding:1px 6px;border-radius:3px">verde ✓</span> 1 seg cuando se confirma.
+  <p style="color:var(--cx-text-soft, #475569);font-size:13px">Editá inline cada sub-SKU. <strong>Regalo</strong>: no cuenta para velocidad de ventas. <strong>Tono</strong>: etiqueta visible (ROSA, DURAZNO, etc.). <strong>ml</strong>: volumen real por unidad (afecta el cálculo de envases en Abastecimiento).</p>
+  <div style="background:#ecfdf5;border:1px solid #86efac;color:var(--cx-success-text, #065f46);padding:8px 12px;border-radius:6px;font-size:12px;margin-top:8px">
+    💾 <strong>Guardado automático</strong>: cada cambio se persiste al hacer click fuera del campo (no hay botón "Guardar"). El input se pone <span style="background:var(--cx-success-pale, #bbf7d0);padding:1px 6px;border-radius:3px">verde ✓</span> 1 seg cuando se confirma.
   </div>
   <div id="stats" style="margin-top:10px;font-size:12px"></div>
   <div class="filtros">
@@ -10682,7 +10682,7 @@ def admin_sub_skus_pagina():
 </div>
 
 <div class="card">
-  <div id="lista"><p style="color:#94a3b8;text-align:center;padding:20px">Cargando…</p></div>
+  <div id="lista"><p style="color:var(--cx-text-faint, #94a3b8);text-align:center;padding:20px">Cargando…</p></div>
 </div>
 
 <script>
@@ -10740,11 +10740,11 @@ function render(){
   const statsEl=document.getElementById('stats');
   if(statsEl){
     statsEl.innerHTML=
-      '<span style="background:'+(pctMl>=95?'#dcfce7':pctMl>=50?'#fef3c7':'#fee2e2')+';color:#0f172a;padding:4px 10px;border-radius:6px;font-weight:700">📏 '+conMl+' / '+totalSku+' con tamaño ('+pctMl+'%)</span> '+
-      '<span style="background:'+(pctTono>=95?'#dcfce7':pctTono>=50?'#fef3c7':'#fee2e2')+';color:#0f172a;padding:4px 10px;border-radius:6px;font-weight:700;margin-left:8px">🎨 '+conTono+' / '+totalSku+' con tono ('+pctTono+'%)</span>';
+      '<span style="background:'+(pctMl>=95?'#dcfce7':pctMl>=50?'#fef3c7':'#fee2e2')+';color:var(--cx-text, #0f172a);padding:4px 10px;border-radius:6px;font-weight:700">📏 '+conMl+' / '+totalSku+' con tamaño ('+pctMl+'%)</span> '+
+      '<span style="background:'+(pctTono>=95?'#dcfce7':pctTono>=50?'#fef3c7':'#fee2e2')+';color:var(--cx-text, #0f172a);padding:4px 10px;border-radius:6px;font-weight:700;margin-left:8px">🎨 '+conTono+' / '+totalSku+' con tono ('+pctTono+'%)</span>';
   }
   const cont=document.getElementById('lista');
-  if(!prods.length){cont.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">Sin resultados</p>';return}
+  if(!prods.length){cont.innerHTML='<p style="color:var(--cx-text-faint, #94a3b8);text-align:center;padding:20px">Sin resultados</p>';return}
   cont.innerHTML=prods.map((p,idx)=>renderProducto(p,idx)).join('');
 }
 
@@ -10757,7 +10757,7 @@ function renderProducto(p, idx){
   html+='<div class="prod-head" onclick="toggle('+idx+')">';
   html+='<div><div class="prod-titulo">'+esc(p.producto_nombre)+badges.join('')+'</div>';
   html+='<div class="prod-meta">'+p.n_skus+' SKUs · '+(p.ml_promedio?p.ml_promedio.toFixed(1)+'ml prom · ':'')+p.n_activos_no_regalo+' activos no-regalo</div></div>';
-  html+='<span style="color:#7c3aed;font-size:12px;font-weight:700" id="toggle-'+idx+'">▶ Expandir</span>';
+  html+='<span style="color:var(--cx-primary-text, #7c3aed);font-size:12px;font-weight:700" id="toggle-'+idx+'">▶ Expandir</span>';
   html+='</div>';
   html+='<div class="skus-tbl" id="skus-'+idx+'">';
   html+='<table><thead><tr><th>SKU</th><th style="text-align:center">Activo</th><th style="text-align:center">Regalo</th><th>Tono / etiqueta</th><th style="text-align:right">ml/u</th></tr></thead><tbody>';
@@ -10841,8 +10841,8 @@ async function patchSku(sku, patch, inputEl){
       const statsEl=document.getElementById('stats');
       if(statsEl){
         statsEl.innerHTML=
-          '<span style="background:'+(pctMl>=95?'#dcfce7':pctMl>=50?'#fef3c7':'#fee2e2')+';color:#0f172a;padding:4px 10px;border-radius:6px;font-weight:700">📏 '+conMl+' / '+totalSku+' con tamaño ('+pctMl+'%)</span> '+
-          '<span style="background:'+(pctTono>=95?'#dcfce7':pctTono>=50?'#fef3c7':'#fee2e2')+';color:#0f172a;padding:4px 10px;border-radius:6px;font-weight:700;margin-left:8px">🎨 '+conTono+' / '+totalSku+' con tono ('+pctTono+'%)</span>';
+          '<span style="background:'+(pctMl>=95?'#dcfce7':pctMl>=50?'#fef3c7':'#fee2e2')+';color:var(--cx-text, #0f172a);padding:4px 10px;border-radius:6px;font-weight:700">📏 '+conMl+' / '+totalSku+' con tamaño ('+pctMl+'%)</span> '+
+          '<span style="background:'+(pctTono>=95?'#dcfce7':pctTono>=50?'#fef3c7':'#fee2e2')+';color:var(--cx-text, #0f172a);padding:4px 10px;border-radius:6px;font-weight:700;margin-left:8px">🎨 '+conTono+' / '+totalSku+' con tono ('+pctTono+'%)</span>';
       }
     }catch(_){}
   }catch(e){
@@ -10980,36 +10980,36 @@ def admin_clientes_b2b_pagina():
     return """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Clientes B2B</title>
 <style>
-  body{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:24px}
-  .card{max-width:1400px;margin:0 auto 14px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
-  h1{color:#1e293b;margin:0 0 8px;font-size:22px}
-  h2{color:#0f766e;margin:18px 0 12px;font-size:15px}
+  body{font-family:system-ui,-apple-system,Arial;background:var(--cx-bg-alt, #f8fafc);margin:0;padding:24px}
+  .card{max-width:1400px;margin:0 auto 14px;background:var(--cx-card, #fff);border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+  h1{color:var(--cx-text, #1e293b);margin:0 0 8px;font-size:22px}
+  h2{color:var(--cx-info-text, #0f766e);margin:18px 0 12px;font-size:15px}
   table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
-  th{background:#f1f5f9;padding:10px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}
-  td{border-bottom:1px solid #f1f5f9;padding:10px}
+  th{background:var(--cx-border-soft, #f1f5f9);padding:10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--cx-text-soft, #475569)}
+  td{border-bottom:1px solid var(--cx-border-soft, #f1f5f9);padding:10px}
   tr.row-cli{cursor:pointer}
-  tr.row-cli:hover{background:#f0fdf4}
+  tr.row-cli:hover{background:var(--cx-success-pale, #f0fdf4)}
   .btn{padding:8px 16px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;margin-right:6px}
-  .btn-prim{background:#7c3aed;color:#fff}
-  .btn-sec{background:#0891b2;color:#fff}
-  .btn-warn{background:#f59e0b;color:#fff}
-  .btn-link{background:transparent;color:#475569;border:1px solid #e2e8f0}
+  .btn-prim{background:var(--cx-primary, #7c3aed);color:#fff}
+  .btn-sec{background:var(--cx-info, #0891b2);color:#fff}
+  .btn-warn{background:var(--cx-warn, #f59e0b);color:#fff}
+  .btn-link{background:transparent;color:var(--cx-text-soft, #475569);border:1px solid var(--cx-border, #e2e8f0)}
   .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700}
-  .b-MAQUILA{background:#fef3c7;color:#92400e}
-  .b-B2B{background:#dbeafe;color:#1e40af}
+  .b-MAQUILA{background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #92400e)}
+  .b-B2B{background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af)}
   .b-INFLUENCER{background:#fce7f3;color:#9f1239}
-  .b-OTRO{background:#f1f5f9;color:#475569}
+  .b-OTRO{background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569)}
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
-  .modal{background:#fff;border-radius:14px;padding:24px;max-width:720px;width:100%;max-height:90vh;overflow:auto}
-  label{display:block;font-size:11px;color:#475569;margin-bottom:3px;margin-top:8px;font-weight:600}
-  input, select, textarea{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box}
-  .info{background:#dbeafe;border-left:4px solid #1e40af;padding:12px 16px;border-radius:6px;color:#1e3a8a;font-size:12px;margin:12px 0}
+  .modal{background:var(--cx-card, #fff);border-radius:14px;padding:24px;max-width:720px;width:100%;max-height:90vh;overflow:auto}
+  label{display:block;font-size:11px;color:var(--cx-text-soft, #475569);margin-bottom:3px;margin-top:8px;font-weight:600}
+  input, select, textarea{width:100%;padding:8px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box}
+  .info{background:var(--cx-info-pale, #dbeafe);border-left:4px solid var(--cx-info, #1e40af);padding:12px 16px;border-radius:6px;color:#1e3a8a;font-size:12px;margin:12px 0}
   .actions-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
 </style></head><body>
 
 <div class="card">
   <h1>👥 Clientes B2B · módulo admin</h1>
-  <p style="color:#475569;font-size:13px">Gestión unificada de clientes B2B + maquila + influencer. Cada cliente puede tener pedidos que entran al calendario de producción y suman al consumo.</p>
+  <p style="color:var(--cx-text-soft, #475569);font-size:13px">Gestión unificada de clientes B2B + maquila + influencer. Cada cliente puede tener pedidos que entran al calendario de producción y suman al consumo.</p>
   <div class="actions-row">
     <button class="btn btn-prim" onclick="abrirModalCliente()">+ Nuevo cliente</button>
     <button class="btn btn-sec" onclick="migrarMaquila()" title="Trae clientes que están en clientes_maquila (legacy) al maestro B2B">📦 Migrar desde Maquila</button>
@@ -11031,7 +11031,7 @@ def admin_clientes_b2b_pagina():
       <th>Último pedido</th>
       <th></th>
     </tr></thead>
-    <tbody><tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px">Cargando…</td></tr></tbody>
+    <tbody><tr><td colspan="7" style="text-align:center;color:var(--cx-text-faint, #94a3b8);padding:20px">Cargando…</td></tr></tbody>
   </table>
 </div>
 
@@ -11082,11 +11082,11 @@ def admin_clientes_b2b_pagina():
     <textarea id="c-notas" rows="2"></textarea>
     <!-- Sebastián 25-may-2026 PM · checkbox flujo unificado -->
     <div style="margin-top:14px;padding:12px 14px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:#0f766e;font-weight:600;margin:0">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--cx-info-text, #0f766e);font-weight:600;margin:0">
         <input type="checkbox" id="c-portal" style="width:auto;margin:0;cursor:pointer">
         🤝 Generar acceso al portal del cliente
       </label>
-      <div style="font-size:11px;color:#475569;margin-top:6px;margin-left:24px">
+      <div style="font-size:11px;color:var(--cx-text-soft, #475569);margin-top:6px;margin-left:24px">
         Crea credencial con password random · te muestro mensaje listo para mandar al cliente por WhatsApp/email.
       </div>
     </div>
@@ -11100,18 +11100,18 @@ def admin_clientes_b2b_pagina():
 <!-- Modal Credencial generada · Sebastián 25-may-2026 PM -->
 <div id="modal-cred" class="modal-bg" onclick="if(event.target===this)cerrarModalCred()">
   <div class="modal" style="max-width:540px">
-    <h2 style="color:#0f766e">✓ Cliente creado · acceso portal generado</h2>
-    <div style="background:#ecfeff;border:2px solid #0891b2;border-radius:10px;padding:14px;margin:14px 0">
-      <div style="font-size:11px;color:#475569;text-transform:uppercase;font-weight:700;letter-spacing:.5px">Email</div>
-      <div id="cred-email-v" style="font-family:monospace;font-size:15px;font-weight:700;color:#0f172a;background:#fff;padding:6px 10px;border-radius:5px;border:1px solid #cbd5e1;margin-top:4px;cursor:pointer;user-select:all" onclick="copiarTxt(this)"></div>
-      <div style="font-size:11px;color:#475569;text-transform:uppercase;font-weight:700;letter-spacing:.5px;margin-top:10px">Contraseña (mostrada UNA vez)</div>
-      <div id="cred-pass-v" style="font-family:monospace;font-size:15px;font-weight:700;color:#0f172a;background:#fff;padding:6px 10px;border-radius:5px;border:1px solid #cbd5e1;margin-top:4px;cursor:pointer;user-select:all" onclick="copiarTxt(this)"></div>
+    <h2 style="color:var(--cx-info-text, #0f766e)">✓ Cliente creado · acceso portal generado</h2>
+    <div style="background:#ecfeff;border:2px solid var(--cx-info, #0891b2);border-radius:10px;padding:14px;margin:14px 0">
+      <div style="font-size:11px;color:var(--cx-text-soft, #475569);text-transform:uppercase;font-weight:700;letter-spacing:.5px">Email</div>
+      <div id="cred-email-v" style="font-family:monospace;font-size:15px;font-weight:700;color:var(--cx-text, #0f172a);background:var(--cx-card, #fff);padding:6px 10px;border-radius:5px;border:1px solid var(--cx-border, #cbd5e1);margin-top:4px;cursor:pointer;user-select:all" onclick="copiarTxt(this)"></div>
+      <div style="font-size:11px;color:var(--cx-text-soft, #475569);text-transform:uppercase;font-weight:700;letter-spacing:.5px;margin-top:10px">Contraseña (mostrada UNA vez)</div>
+      <div id="cred-pass-v" style="font-family:monospace;font-size:15px;font-weight:700;color:var(--cx-text, #0f172a);background:var(--cx-card, #fff);padding:6px 10px;border-radius:5px;border:1px solid var(--cx-border, #cbd5e1);margin-top:4px;cursor:pointer;user-select:all" onclick="copiarTxt(this)"></div>
     </div>
-    <div style="background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:5px;font-size:11px;color:#92400e;margin-bottom:10px">
+    <div style="background:var(--cx-warn-pale, #fef3c7);border-left:3px solid var(--cx-warn, #f59e0b);padding:10px 12px;border-radius:5px;font-size:11px;color:var(--cx-warn-text, #92400e);margin-bottom:10px">
       ⚠ Copiá la contraseña ahora · al cerrar este modal no se vuelve a mostrar.
     </div>
     <label style="margin-top:8px">📝 Mensaje listo para enviar</label>
-    <textarea id="cred-mensaje-v" rows="8" readonly style="font-family:monospace;font-size:12px;cursor:pointer;background:#f8fafc" onclick="this.select();copiarTxt(this)"></textarea>
+    <textarea id="cred-mensaje-v" rows="8" readonly style="font-family:monospace;font-size:12px;cursor:pointer;background:var(--cx-bg-alt, #f8fafc)" onclick="this.select();copiarTxt(this)"></textarea>
     <div class="actions-row" style="flex-wrap:wrap;gap:8px">
       <button class="btn btn-prim" onclick="abrirWhatsApp()" style="background:#25d366">📱 Abrir WhatsApp</button>
       <button class="btn" onclick="abrirGmail()" style="background:#ea4335;color:#fff">📧 Abrir Gmail</button>
@@ -11154,7 +11154,7 @@ async function cargarClientes() {
   CLIENTES = d.clientes || d.items || [];
   const tbody = document.querySelector('#tbl-clientes tbody');
   if (!CLIENTES.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px">Sin clientes · click "+ Nuevo cliente" o "📦 Migrar desde Maquila"</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--cx-text-faint, #94a3b8);padding:20px">Sin clientes · click "+ Nuevo cliente" o "📦 Migrar desde Maquila"</td></tr>';
     return;
   }
   tbody.innerHTML = '';
@@ -11166,9 +11166,9 @@ async function cargarClientes() {
     const contacto = [c.email, c.telefono].filter(x => x).join(' · ') || '—';
     const pendientes = c.pedidos_pendientes || 0;
     const total = c.pedidos_total || 0;
-    tr.innerHTML = '<td><strong>' + esc(c.cliente_nombre) + '</strong><br><span style="font-size:10px;color:#94a3b8;font-family:monospace">' + esc(c.cliente_id) + '</span></td>' +
+    tr.innerHTML = '<td><strong>' + esc(c.cliente_nombre) + '</strong><br><span style="font-size:10px;color:var(--cx-text-faint, #94a3b8);font-family:monospace">' + esc(c.cliente_id) + '</span></td>' +
       '<td>' + badge + '</td>' +
-      '<td style="font-size:11px;color:#64748b">' + esc(contacto) + '</td>' +
+      '<td style="font-size:11px;color:var(--cx-text-mute, #64748b)">' + esc(contacto) + '</td>' +
       '<td style="text-align:right;font-weight:700;color:' + (pendientes > 0 ? '#7c3aed' : '#94a3b8') + '">' + pendientes + '</td>' +
       '<td style="text-align:right">' + total + '</td>' +
       '<td>' + ult + '</td>' +
@@ -11204,12 +11204,12 @@ async function verDetalle(cliente_id) {
   const tbody = document.querySelector('#tbl-pedidos tbody');
   const items = d.items || [];
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:14px">Sin pedidos · click "+ Nuevo pedido"</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--cx-text-faint, #94a3b8);padding:14px">Sin pedidos · click "+ Nuevo pedido"</td></tr>';
     return;
   }
   tbody.innerHTML = items.map(p => {
     const lote = p.lote_consolidado;
-    const loteHtml = lote ? ('Lote #' + lote.lote_id + '<br><span style="font-size:10px;color:#64748b">' + lote.fecha_lote + ' · ' + lote.modo + '</span>') : '<span style="color:#94a3b8">no integrado</span>';
+    const loteHtml = lote ? ('Lote #' + lote.lote_id + '<br><span style="font-size:10px;color:var(--cx-text-mute, #64748b)">' + lote.fecha_lote + ' · ' + lote.modo + '</span>') : '<span style="color:var(--cx-text-faint, #94a3b8)">no integrado</span>';
     return '<tr>' +
       '<td>' + p.id + '</td>' +
       '<td><strong>' + esc(p.producto_nombre) + '</strong></td>' +
@@ -11504,11 +11504,11 @@ def admin_fusionar_formulas_nf():
                                 'old_marcada_inactiva': pareja['old_existe'],
                                 'lote_size_aplicado': pareja['nf_lote'] if pareja['nf_lote'] >= 1 else pareja['old_lote']})
             conn.commit()
-            return f"<html><body style='font-family:system-ui;padding:30px;background:#f8fafc'><h1 style='color:#15803d'>✓ Fusionado: {base}</h1><p>La fórmula NUEVA ahora se llama <code>{base}</code> y se usa cuando una producción matchee. La vieja quedó como <code>{base} [ANTIGUA]</code> con activo=0 (preserva histórico).</p><a href='/admin/fusionar-formulas-nf' style='background:#7c3aed;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:700'>← Ver más parejas</a></body></html>"
+            return f"<html><body style='font-family:system-ui;padding:30px;background:var(--cx-bg-alt, #f8fafc)'><h1 style='color:var(--cx-success-text, #15803d)'>✓ Fusionado: {base}</h1><p>La fórmula NUEVA ahora se llama <code>{base}</code> y se usa cuando una producción matchee. La vieja quedó como <code>{base} [ANTIGUA]</code> con activo=0 (preserva histórico).</p><a href='/admin/fusionar-formulas-nf' style='background:var(--cx-primary, #7c3aed);color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:700'>← Ver más parejas</a></body></html>"
         except Exception as e:
             try: conn.rollback()
             except Exception: pass
-            return f"<html><body style='font-family:system-ui;padding:30px'><h1 style='color:#dc2626'>Error</h1><pre>{str(e)[:500]}</pre></body></html>", 500
+            return f"<html><body style='font-family:system-ui;padding:30px'><h1 style='color:var(--cx-danger-text, #dc2626)'>Error</h1><pre>{str(e)[:500]}</pre></body></html>", 500
 
     # Render preview
     rows = ''
@@ -11516,12 +11516,12 @@ def admin_fusionar_formulas_nf():
         nf_warn = '⚠' if p['nf_lote'] < 1 else '✓'
         old_warn = '⚠' if p['old_existe'] and p['old_lote'] < 1 else ('—' if not p['old_existe'] else '✓')
         bg = '#fef3c7' if p['nf_lote'] < 1 else '#f8fafc'
-        boton = f'<form method="POST" style="margin:0" onsubmit="return confirm(\'¿Fusionar {p["nf"]} → {p["base"]}?\\n\\nVieja se marca [ANTIGUA] inactiva. NF se renombra al nombre base.\');"><input type="hidden" name="accion" value="fusionar"><input type="hidden" name="nf_target" value="{p["nf"]}"><button type="submit" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-weight:700;cursor:pointer">🔄 Fusionar</button></form>'
+        boton = f'<form method="POST" style="margin:0" onsubmit="return confirm(\'¿Fusionar {p["nf"]} → {p["base"]}?\\n\\nVieja se marca [ANTIGUA] inactiva. NF se renombra al nombre base.\');"><input type="hidden" name="accion" value="fusionar"><input type="hidden" name="nf_target" value="{p["nf"]}"><button type="submit" style="background:var(--cx-primary, #7c3aed);color:#fff;border:none;padding:6px 12px;border-radius:5px;font-weight:700;cursor:pointer">🔄 Fusionar</button></form>'
         rows += f'<tr style="background:{bg}">'\
                 f'<td style="padding:10px">{p["nf"]}</td>'\
                 f'<td style="padding:10px;text-align:right">{nf_warn} {p["nf_lote"]:.2f} kg</td>'\
                 f'<td style="padding:10px;text-align:right">{p["cnt_nf"]}</td>'\
-                f'<td style="padding:10px"><strong style="color:#0f766e">{p["base"]}</strong></td>'\
+                f'<td style="padding:10px"><strong style="color:var(--cx-info-text, #0f766e)">{p["base"]}</strong></td>'\
                 f'<td style="padding:10px;text-align:right">{old_warn} {("%.2f kg" % p["old_lote"]) if p["old_existe"] else "—"}</td>'\
                 f'<td style="padding:10px;text-align:right">{p["cnt_old"]}</td>'\
                 f'<td style="padding:10px;text-align:center">{boton}</td>'\
@@ -11530,18 +11530,18 @@ def admin_fusionar_formulas_nf():
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Fusionar fórmulas NF</title>
 <style>
-  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:30px}}
-  .card{{max-width:1300px;margin:0 auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}}
-  h1{{color:#1e293b;margin:0 0 10px}}
+  body{{font-family:system-ui,-apple-system,Arial;background:var(--cx-bg-alt, #f8fafc);margin:0;padding:30px}}
+  .card{{max-width:1300px;margin:0 auto;background:var(--cx-card, #fff);border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}}
+  h1{{color:var(--cx-text, #1e293b);margin:0 0 10px}}
   table{{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}}
-  th{{background:#f1f5f9;padding:10px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}}
-  td{{border-bottom:1px solid #e2e8f0}}
-  .info{{background:#dbeafe;border-left:5px solid #1e40af;padding:14px 18px;border-radius:8px;color:#1e3a8a;font-size:13px;margin:14px 0}}
+  th{{background:var(--cx-border-soft, #f1f5f9);padding:10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--cx-text-soft, #475569)}}
+  td{{border-bottom:1px solid var(--cx-border, #e2e8f0)}}
+  .info{{background:var(--cx-info-pale, #dbeafe);border-left:5px solid var(--cx-info, #1e40af);padding:14px 18px;border-radius:8px;color:#1e3a8a;font-size:13px;margin:14px 0}}
 </style></head><body>
 
 <div class="card">
   <h1>🔄 Fusionar fórmulas NF (Nueva Fórmula)</h1>
-  <p style="color:#475569">Sebastián: 'NF significa nueva formula · le pertenece al producto que ya está'. Esta herramienta toma cada pareja (producto, producto NF) y reemplaza la fórmula vieja con la NF.</p>
+  <p style="color:var(--cx-text-soft, #475569)">Sebastián: 'NF significa nueva formula · le pertenece al producto que ya está'. Esta herramienta toma cada pareja (producto, producto NF) y reemplaza la fórmula vieja con la NF.</p>
 
   <div class="info">
     <strong>Qué hace el botón Fusionar:</strong><br>
@@ -11562,10 +11562,10 @@ def admin_fusionar_formulas_nf():
       <th style="text-align:right">Lotes</th>
       <th></th>
     </tr></thead>
-    <tbody>{rows or '<tr><td colspan=7 style="padding:20px;text-align:center;color:#94a3b8">Ninguna fórmula NF detectada</td></tr>'}</tbody>
+    <tbody>{rows or '<tr><td colspan=7 style="padding:20px;text-align:center;color:var(--cx-text-faint, #94a3b8)">Ninguna fórmula NF detectada</td></tr>'}</tbody>
   </table>
 
-  <p style="margin-top:18px"><a href="/admin/diag-formulas-sospechosas" style="color:#7c3aed">← Diag fórmulas</a> · <a href="/" style="color:#475569">Dashboard</a></p>
+  <p style="margin-top:18px"><a href="/admin/diag-formulas-sospechosas" style="color:var(--cx-primary-text, #7c3aed)">← Diag fórmulas</a> · <a href="/" style="color:var(--cx-text-soft, #475569)">Dashboard</a></p>
 </div></body></html>"""
 
 
@@ -11642,39 +11642,39 @@ def admin_diag_formulas_sospechosas():
     # Render
     headers_rows = ''
     for r in headers_mal[:60]:
-        headers_rows += f'<tr style="background:#fee2e2"><td style="padding:6px 10px">{r[0]}</td><td style="padding:6px 10px;text-align:right;font-family:monospace;color:#991b1b;font-weight:700">{r[1]:.3f} kg</td></tr>'
+        headers_rows += f'<tr style="background:var(--cx-danger-pale, #fee2e2)"><td style="padding:6px 10px">{r[0]}</td><td style="padding:6px 10px;text-align:right;font-family:monospace;color:var(--cx-danger-text, #991b1b);font-weight:700">{r[1]:.3f} kg</td></tr>'
 
     items_zero_rows = ''
     for r in items_zero[:80]:
-        items_zero_rows += f'<tr style="background:#fef3c7"><td style="padding:5px 10px">{r[0]}</td><td style="padding:5px 10px;font-family:monospace">{r[1]}</td><td style="padding:5px 10px">{r[2][:40]}</td><td style="padding:5px 10px;text-align:right;color:#92400e">0%</td><td style="padding:5px 10px;text-align:right;color:#92400e">0 g</td><td style="padding:5px 10px;text-align:right">{r[5]:.1f} kg</td></tr>'
+        items_zero_rows += f'<tr style="background:var(--cx-warn-pale, #fef3c7)"><td style="padding:5px 10px">{r[0]}</td><td style="padding:5px 10px;font-family:monospace">{r[1]}</td><td style="padding:5px 10px">{r[2][:40]}</td><td style="padding:5px 10px;text-align:right;color:var(--cx-warn-text, #92400e)">0%</td><td style="padding:5px 10px;text-align:right;color:var(--cx-warn-text, #92400e)">0 g</td><td style="padding:5px 10px;text-align:right">{r[5]:.1f} kg</td></tr>'
     if len(items_zero) > 80:
-        items_zero_rows += f'<tr><td colspan="6" style="padding:8px;text-align:center;color:#94a3b8">… y {len(items_zero) - 80} items más</td></tr>'
+        items_zero_rows += f'<tr><td colspan="6" style="padding:8px;text-align:center;color:var(--cx-text-faint, #94a3b8)">… y {len(items_zero) - 80} items más</td></tr>'
 
     diverge_rows = ''
     for d in items_diverge[:80]:
         color = '#dc2626' if d['ratio'] < 0.5 else '#ea580c'
         bg = '#fee2e2' if d['ratio'] < 0.5 else '#fff7ed'
-        diverge_rows += f'<tr style="background:{bg}"><td style="padding:5px 10px">{d["producto"]}</td><td style="padding:5px 10px;font-family:monospace">{d["mid"]}</td><td style="padding:5px 10px">{d["mnom"][:35]}</td><td style="padding:5px 10px;text-align:right">{d["pct"]:.3f}%</td><td style="padding:5px 10px;text-align:right">{d["lk"]:.1f}kg</td><td style="padding:5px 10px;text-align:right;color:#1e293b">{d["g"]:.2f} g</td><td style="padding:5px 10px;text-align:right;color:#0f766e">{d["esperado"]:.2f} g</td><td style="padding:5px 10px;text-align:right;font-weight:700;color:{color}">{d["ratio"]:.2f}×</td></tr>'
+        diverge_rows += f'<tr style="background:{bg}"><td style="padding:5px 10px">{d["producto"]}</td><td style="padding:5px 10px;font-family:monospace">{d["mid"]}</td><td style="padding:5px 10px">{d["mnom"][:35]}</td><td style="padding:5px 10px;text-align:right">{d["pct"]:.3f}%</td><td style="padding:5px 10px;text-align:right">{d["lk"]:.1f}kg</td><td style="padding:5px 10px;text-align:right;color:var(--cx-text, #1e293b)">{d["g"]:.2f} g</td><td style="padding:5px 10px;text-align:right;color:var(--cx-info-text, #0f766e)">{d["esperado"]:.2f} g</td><td style="padding:5px 10px;text-align:right;font-weight:700;color:{color}">{d["ratio"]:.2f}×</td></tr>'
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Diag fórmulas sospechosas</title>
 <style>
-  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:30px}}
-  .card{{max-width:1400px;margin:0 auto 14px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}}
-  h1{{color:#1e293b;margin:0 0 8px;font-size:22px}}
-  h2{{color:#dc2626;margin:18px 0 12px;font-size:16px;border-bottom:2px solid #fbbf24;padding-bottom:6px}}
-  .kpi{{display:inline-block;padding:14px 22px;background:#fee2e2;border:1px solid #dc2626;border-radius:8px;margin:4px;text-align:center;min-width:160px}}
-  .kpi-val{{font-size:24px;font-weight:800;color:#991b1b}}
-  .kpi-lbl{{font-size:10px;color:#64748b;text-transform:uppercase}}
+  body{{font-family:system-ui,-apple-system,Arial;background:var(--cx-bg-alt, #f8fafc);margin:0;padding:30px}}
+  .card{{max-width:1400px;margin:0 auto 14px;background:var(--cx-card, #fff);border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}}
+  h1{{color:var(--cx-text, #1e293b);margin:0 0 8px;font-size:22px}}
+  h2{{color:var(--cx-danger-text, #dc2626);margin:18px 0 12px;font-size:16px;border-bottom:2px solid var(--cx-accent, #fbbf24);padding-bottom:6px}}
+  .kpi{{display:inline-block;padding:14px 22px;background:var(--cx-danger-pale, #fee2e2);border:1px solid var(--cx-danger, #dc2626);border-radius:8px;margin:4px;text-align:center;min-width:160px}}
+  .kpi-val{{font-size:24px;font-weight:800;color:var(--cx-danger-text, #991b1b)}}
+  .kpi-lbl{{font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase}}
   table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}}
-  th{{background:#f1f5f9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}}
-  td{{border-bottom:1px solid #f1f5f9}}
-  a{{color:#7c3aed;font-weight:700;text-decoration:none;display:inline-block;padding:8px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;margin:6px 6px 0 0}}
+  th{{background:var(--cx-border-soft, #f1f5f9);padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--cx-text-soft, #475569)}}
+  td{{border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}}
+  a{{color:var(--cx-primary-text, #7c3aed);font-weight:700;text-decoration:none;display:inline-block;padding:8px 14px;background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:6px;margin:6px 6px 0 0}}
 </style></head><body>
 
 <div class="card">
   <h1>🐛 Diagnóstico de fórmulas sospechosas</h1>
-  <p style="color:#475569;font-size:13px">Sebastián: 'la lógica está bien pero no muestra la realidad'. Esta página detecta dónde están los datos mal cargados que hacen que el consumo proyectado salga subestimado.</p>
+  <p style="color:var(--cx-text-soft, #475569);font-size:13px">Sebastián: 'la lógica está bien pero no muestra la realidad'. Esta página detecta dónde están los datos mal cargados que hacen que el consumo proyectado salga subestimado.</p>
   <div>
     <a href="/admin/diag-flujo-abast">← Diag flujo</a>
     <a href="/admin/llenar-calendario">📅 Llenar calendario</a>
@@ -11689,7 +11689,7 @@ def admin_diag_formulas_sospechosas():
   <div class="kpi"><div class="kpi-val">{len(headers_mal)}</div><div class="kpi-lbl">Fórmulas con lote_size mal</div></div>
   <table>
     <thead><tr><th>Producto</th><th style="text-align:right">lote_size_kg</th></tr></thead>
-    <tbody>{headers_rows or '<tr><td colspan=2 style="padding:14px;text-align:center;color:#15803d">✓ Ningún lote_size sospechoso</td></tr>'}</tbody>
+    <tbody>{headers_rows or '<tr><td colspan=2 style="padding:14px;text-align:center;color:var(--cx-success-text, #15803d)">✓ Ningún lote_size sospechoso</td></tr>'}</tbody>
   </table>
 </div>
 
@@ -11699,20 +11699,20 @@ def admin_diag_formulas_sospechosas():
   <div class="kpi"><div class="kpi-val">{len(items_zero)}</div><div class="kpi-lbl">Items en cero</div></div>
   <table>
     <thead><tr><th>Producto</th><th>MP</th><th>Nombre MP</th><th style="text-align:right">%</th><th style="text-align:right">g/lote</th><th style="text-align:right">lote_size</th></tr></thead>
-    <tbody>{items_zero_rows or '<tr><td colspan=6 style="padding:14px;text-align:center;color:#15803d">✓ Ningún item en cero</td></tr>'}</tbody>
+    <tbody>{items_zero_rows or '<tr><td colspan=6 style="padding:14px;text-align:center;color:var(--cx-success-text, #15803d)">✓ Ningún item en cero</td></tr>'}</tbody>
   </table>
 </div>
 
 <div class="card">
   <h2>🟠 3. Items con divergencia % vs g/lote (subestimados o sobreestimados)</h2>
   <p>Comparamos el valor declarado `cantidad_g_por_lote` contra el calculado (`% × lote_size × 1000`). Si el ratio difiere significativamente, hay typo en el seed (e.g., 0.6 cuando debería ser 6.0 · 10× subestimado).</p>
-  <p style="color:#475569;font-size:11px">⚠ El cálculo usa <strong>cantidad_g_por_lote primero</strong> si > 0. Si ese valor está mal, el consumo proyectado queda mal.</p>
+  <p style="color:var(--cx-text-soft, #475569);font-size:11px">⚠ El cálculo usa <strong>cantidad_g_por_lote primero</strong> si > 0. Si ese valor está mal, el consumo proyectado queda mal.</p>
   <div class="kpi"><div class="kpi-val">{len(items_diverge)}</div><div class="kpi-lbl">Items divergentes &gt;2× o &lt;0.5×</div></div>
   <table>
     <thead><tr><th>Producto</th><th>MP</th><th>Nombre</th><th style="text-align:right">%</th><th style="text-align:right">lote_kg</th><th style="text-align:right">g/lote BD</th><th style="text-align:right">g/lote calc</th><th style="text-align:right">Ratio</th></tr></thead>
-    <tbody>{diverge_rows or '<tr><td colspan=8 style="padding:14px;text-align:center;color:#15803d">✓ Todos los items son consistentes</td></tr>'}</tbody>
+    <tbody>{diverge_rows or '<tr><td colspan=8 style="padding:14px;text-align:center;color:var(--cx-success-text, #15803d)">✓ Todos los items son consistentes</td></tr>'}</tbody>
   </table>
-  <p style="color:#475569;font-size:11px;margin-top:10px">📌 Si ratio &lt; 0.5× (rojo): cantidad_g_por_lote subestima · el sistema mostrará consumo bajo.<br>📌 Si ratio &gt; 2× (naranja): cantidad_g_por_lote sobreestima · el sistema mostrará consumo alto.</p>
+  <p style="color:var(--cx-text-soft, #475569);font-size:11px;margin-top:10px">📌 Si ratio &lt; 0.5× (rojo): cantidad_g_por_lote subestima · el sistema mostrará consumo bajo.<br>📌 Si ratio &gt; 2× (naranja): cantidad_g_por_lote sobreestima · el sistema mostrará consumo alto.</p>
 </div>
 
 </body></html>"""
@@ -11846,48 +11846,48 @@ def admin_diag_flujo_abast():
     for p in prods[:20]:
         paso1_rows += f'<tr><td style="padding:4px 8px;font-family:monospace">{p[0]}</td><td style="padding:4px 8px">{p[1]}</td><td style="padding:4px 8px">{(p[2] or "")[:10]}</td><td style="padding:4px 8px;text-align:right">{p[3]:.1f} kg</td><td style="padding:4px 8px">{p[6]}</td></tr>'
     if n_prods > 20:
-        paso1_rows += f'<tr><td colspan="5" style="padding:6px;text-align:center;color:#94a3b8">… y {n_prods - 20} producciones más</td></tr>'
+        paso1_rows += f'<tr><td colspan="5" style="padding:6px;text-align:center;color:var(--cx-text-faint, #94a3b8)">… y {n_prods - 20} producciones más</td></tr>'
 
     paso2_huerf_rows = ''
     huerfanos_unicos = sorted({l['producto'] for l in lotes_sin_formula})
     for p in huerfanos_unicos[:30]:
         n_l = sum(1 for l in lotes_sin_formula if l['producto'] == p)
-        paso2_huerf_rows += f'<tr style="background:#fee2e2"><td style="padding:6px 10px;color:#991b1b">⚠ {p}</td><td style="padding:6px 10px;text-align:right;font-weight:700">{n_l}</td></tr>'
+        paso2_huerf_rows += f'<tr style="background:var(--cx-danger-pale, #fee2e2)"><td style="padding:6px 10px;color:var(--cx-danger-text, #991b1b)">⚠ {p}</td><td style="padding:6px 10px;text-align:right;font-weight:700">{n_l}</td></tr>'
     if len(huerfanos_unicos) > 30:
-        paso2_huerf_rows += f'<tr><td colspan="2" style="padding:6px;text-align:center;color:#94a3b8">… y {len(huerfanos_unicos) - 30} productos más</td></tr>'
+        paso2_huerf_rows += f'<tr><td colspan="2" style="padding:6px;text-align:center;color:var(--cx-text-faint, #94a3b8)">… y {len(huerfanos_unicos) - 30} productos más</td></tr>'
 
     paso3_rows = ''
     for mid, d in mps_sorted[:30]:
         lotes_str = ' · '.join(f"{l['producto'][:30]} ({l['fecha'][-5:]}, {l['gramos']:.1f}g)" for l in d['lotes'][:3])
         if d['n_lotes'] > 3:
             lotes_str += f' … +{d["n_lotes"]-3} más'
-        paso3_rows += f'<tr><td style="padding:6px 10px;font-family:monospace;font-weight:700">{mid}</td><td style="padding:6px 10px">{d["nombre"][:40]}</td><td style="padding:6px 10px;text-align:right;font-weight:700">{d["total_g"]:.1f} g</td><td style="padding:6px 10px;text-align:right">{d["n_lotes"]}</td><td style="padding:4px 8px;font-size:10px;color:#64748b">{lotes_str}</td></tr>'
+        paso3_rows += f'<tr><td style="padding:6px 10px;font-family:monospace;font-weight:700">{mid}</td><td style="padding:6px 10px">{d["nombre"][:40]}</td><td style="padding:6px 10px;text-align:right;font-weight:700">{d["total_g"]:.1f} g</td><td style="padding:6px 10px;text-align:right">{d["n_lotes"]}</td><td style="padding:4px 8px;font-size:10px;color:var(--cx-text-mute, #64748b)">{lotes_str}</td></tr>'
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Diag flujo Abastecimiento</title>
 <style>
-  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:30px}}
-  .card{{max-width:1300px;margin:0 auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08);margin-bottom:14px}}
-  h1{{color:#1e293b;margin:0 0 8px;font-size:22px}}
-  h2{{color:#0f766e;margin:18px 0 12px;font-size:16px;border-bottom:2px solid #0f766e;padding-bottom:6px}}
-  .kpi{{display:inline-block;padding:14px 22px;background:#f0fdf4;border:1px solid #16a34a;border-radius:8px;margin:4px;text-align:center;min-width:160px}}
-  .kpi-val{{font-size:24px;font-weight:800;color:#15803d}}
-  .kpi-lbl{{font-size:10px;color:#64748b;text-transform:uppercase}}
-  .kpi-warn{{background:#fef3c7;border-color:#f59e0b}}
-  .kpi-warn .kpi-val{{color:#92400e}}
-  .kpi-error{{background:#fee2e2;border-color:#dc2626}}
-  .kpi-error .kpi-val{{color:#991b1b}}
+  body{{font-family:system-ui,-apple-system,Arial;background:var(--cx-bg-alt, #f8fafc);margin:0;padding:30px}}
+  .card{{max-width:1300px;margin:0 auto;background:var(--cx-card, #fff);border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08);margin-bottom:14px}}
+  h1{{color:var(--cx-text, #1e293b);margin:0 0 8px;font-size:22px}}
+  h2{{color:var(--cx-info-text, #0f766e);margin:18px 0 12px;font-size:16px;border-bottom:2px solid var(--cx-info, #0f766e);padding-bottom:6px}}
+  .kpi{{display:inline-block;padding:14px 22px;background:var(--cx-success-pale, #f0fdf4);border:1px solid var(--cx-success, #16a34a);border-radius:8px;margin:4px;text-align:center;min-width:160px}}
+  .kpi-val{{font-size:24px;font-weight:800;color:var(--cx-success-text, #15803d)}}
+  .kpi-lbl{{font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase}}
+  .kpi-warn{{background:var(--cx-warn-pale, #fef3c7);border-color:var(--cx-warn, #f59e0b)}}
+  .kpi-warn .kpi-val{{color:var(--cx-warn-text, #92400e)}}
+  .kpi-error{{background:var(--cx-danger-pale, #fee2e2);border-color:var(--cx-danger, #dc2626)}}
+  .kpi-error .kpi-val{{color:var(--cx-danger-text, #991b1b)}}
   table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}}
-  th{{background:#f1f5f9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}}
-  td{{border-bottom:1px solid #f1f5f9}}
-  a{{color:#7c3aed;font-weight:700;text-decoration:none;display:inline-block;padding:8px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;margin:6px 6px 0 0}}
-  .alert{{background:#fef3c7;border-left:5px solid #f59e0b;padding:14px 18px;border-radius:8px;margin:12px 0;color:#92400e}}
-  .alert-bad{{background:#fee2e2;border-left-color:#dc2626;color:#991b1b}}
+  th{{background:var(--cx-border-soft, #f1f5f9);padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--cx-text-soft, #475569)}}
+  td{{border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}}
+  a{{color:var(--cx-primary-text, #7c3aed);font-weight:700;text-decoration:none;display:inline-block;padding:8px 14px;background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:6px;margin:6px 6px 0 0}}
+  .alert{{background:var(--cx-warn-pale, #fef3c7);border-left:5px solid var(--cx-warn, #f59e0b);padding:14px 18px;border-radius:8px;margin:12px 0;color:var(--cx-warn-text, #92400e)}}
+  .alert-bad{{background:var(--cx-danger-pale, #fee2e2);border-left-color:var(--cx-danger, #dc2626);color:var(--cx-danger-text, #991b1b)}}
 </style></head><body>
 
 <div class="card">
   <h1>🔍 Auditoría del flujo de Abastecimiento</h1>
-  <p style="color:#475569;font-size:13px">Verificación paso a paso desde el calendario hasta la suma final por MP. Si los números no cuadran, acá vas a ver dónde se pierde la información.</p>
+  <p style="color:var(--cx-text-soft, #475569);font-size:13px">Verificación paso a paso desde el calendario hasta la suma final por MP. Si los números no cuadran, acá vas a ver dónde se pierde la información.</p>
   <div>
     <a href="/admin/llenar-calendario">📅 Llenar calendario</a>
     <a href="/admin/limpiar-sols-ocs">🧹 Limpiar SOLs/OCs</a>
@@ -11903,7 +11903,7 @@ def admin_diag_flujo_abast():
   </div>
   <table>
     <thead><tr><th>ID</th><th>Producto</th><th>Fecha</th><th>Cant kg</th><th>Origen</th></tr></thead>
-    <tbody>{paso1_rows or '<tr><td colspan=5 style=padding:14px;text-align:center;color:#94a3b8>Sin lotes futuros</td></tr>'}</tbody>
+    <tbody>{paso1_rows or '<tr><td colspan=5 style=padding:14px;text-align:center;color:var(--cx-text-faint, #94a3b8)>Sin lotes futuros</td></tr>'}</tbody>
   </table>
 </div>
 
@@ -11914,12 +11914,12 @@ def admin_diag_flujo_abast():
     <div class="kpi"><div class="kpi-val">{n_match}</div><div class="kpi-lbl">Con fórmula ({pct_match:.0f}%)</div></div>
     <div class="kpi {('kpi-error' if n_huerf > 0 else '')}"><div class="kpi-val">{n_huerf}</div><div class="kpi-lbl">SIN fórmula (huérfanos)</div></div>
   </div>
-  {'<div class="alert alert-bad">⚠ <strong>' + str(n_huerf) + ' lotes no tienen fórmula que matchee.</strong> El cálculo SUBESTIMA · cada lote huérfano contribuye 0g a Abastecimiento. Revisá los nombres en la tabla y compará contra formula_headers.</div>' if n_huerf > 0 else '<div style="background:#f0fdf4;border-left:5px solid #16a34a;padding:14px 18px;border-radius:8px;color:#15803d;margin-top:12px">✓ Todos los lotes matchean con una fórmula.</div>'}
+  {'<div class="alert alert-bad">⚠ <strong>' + str(n_huerf) + ' lotes no tienen fórmula que matchee.</strong> El cálculo SUBESTIMA · cada lote huérfano contribuye 0g a Abastecimiento. Revisá los nombres en la tabla y compará contra formula_headers.</div>' if n_huerf > 0 else '<div style="background:var(--cx-success-pale, #f0fdf4);border-left:5px solid var(--cx-success, #16a34a);padding:14px 18px;border-radius:8px;color:var(--cx-success-text, #15803d);margin-top:12px">✓ Todos los lotes matchean con una fórmula.</div>'}
 
-  <h3 style="margin-top:16px;color:#991b1b;font-size:13px">Productos huérfanos (sin match)</h3>
+  <h3 style="margin-top:16px;color:var(--cx-danger-text, #991b1b);font-size:13px">Productos huérfanos (sin match)</h3>
   <table>
     <thead><tr><th>Producto en producción_programada</th><th style="text-align:right">N lotes</th></tr></thead>
-    <tbody>{paso2_huerf_rows or '<tr><td colspan=2 style="padding:14px;text-align:center;color:#15803d">Ninguno · todos matchean</td></tr>'}</tbody>
+    <tbody>{paso2_huerf_rows or '<tr><td colspan=2 style="padding:14px;text-align:center;color:var(--cx-success-text, #15803d)">Ninguno · todos matchean</td></tr>'}</tbody>
   </table>
 </div>
 
@@ -11931,7 +11931,7 @@ def admin_diag_flujo_abast():
   </div>
   <table>
     <thead><tr><th>Código MP</th><th>Nombre</th><th style="text-align:right">Total 365d</th><th style="text-align:right">N lotes</th><th>Sample (primeros 3 lotes)</th></tr></thead>
-    <tbody>{paso3_rows or '<tr><td colspan=5 style="padding:14px;text-align:center;color:#94a3b8">Sin MPs consumidas</td></tr>'}</tbody>
+    <tbody>{paso3_rows or '<tr><td colspan=5 style="padding:14px;text-align:center;color:var(--cx-text-faint, #94a3b8)">Sin MPs consumidas</td></tr>'}</tbody>
   </table>
 </div>
 
@@ -12050,11 +12050,11 @@ def admin_limpiar_sols_ocs():
                                 'ocs_items': ocs_items_borrados})
             conn.commit()
             return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Limpieza completada</title>
-<style>body{{font-family:system-ui;background:#f8fafc;padding:40px}}
-.card{{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
-h1{{color:#15803d}} .kpi{{display:inline-block;background:#f0fdf4;border:1px solid #16a34a;padding:14px 22px;border-radius:8px;margin:6px;text-align:center}}
-.kpi-val{{font-size:32px;font-weight:800;color:#15803d}} .kpi-lbl{{font-size:11px;color:#64748b;text-transform:uppercase}}
-a{{display:inline-block;background:#0f766e;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;margin-top:14px;font-weight:700}}</style></head><body>
+<style>body{{font-family:system-ui;background:var(--cx-bg-alt, #f8fafc);padding:40px}}
+.card{{max-width:720px;margin:0 auto;background:var(--cx-card, #fff);border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
+h1{{color:var(--cx-success-text, #15803d)}} .kpi{{display:inline-block;background:var(--cx-success-pale, #f0fdf4);border:1px solid var(--cx-success, #16a34a);padding:14px 22px;border-radius:8px;margin:6px;text-align:center}}
+.kpi-val{{font-size:32px;font-weight:800;color:var(--cx-success-text, #15803d)}} .kpi-lbl{{font-size:11px;color:var(--cx-text-mute, #64748b);text-transform:uppercase}}
+a{{display:inline-block;background:var(--cx-info, #0f766e);color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;margin-top:14px;font-weight:700}}</style></head><body>
 <div class="card">
 <h1>✓ Limpieza completada · modo {modo}</h1>
 <div class="kpi"><div class="kpi-val">{sols_canceladas}</div><div class="kpi-lbl">SOLs canceladas</div></div>
@@ -12063,12 +12063,12 @@ a{{display:inline-block;background:#0f766e;color:#fff;padding:10px 18px;border-r
 <div class="kpi"><div class="kpi-val">{ocs_items_borrados}</div><div class="kpi-lbl">Items OC borrados</div></div>
 <p>La columna 'En cola' de Abastecimiento debería bajar a 0 o reflejar solo lo real ahora.</p>
 <a href="/admin/limpiar-sols-ocs">↻ Volver a limpiar</a>
-<a href="/" style="background:#475569;margin-left:8px">← Dashboard</a>
+<a href="/" style="background:var(--cx-text-soft, #475569);margin-left:8px">← Dashboard</a>
 </div></body></html>"""
         except Exception as e:
             try: conn.rollback()
             except Exception: pass
-            return f"<html><body style='font-family:system-ui;padding:40px'><h1 style='color:#dc2626'>Error</h1><pre style='background:#fee2e2;padding:14px'>{str(e)[:500]}</pre><a href='/admin/limpiar-sols-ocs'>Reintentar</a></body></html>", 500
+            return f"<html><body style='font-family:system-ui;padding:40px'><h1 style='color:var(--cx-danger-text, #dc2626)'>Error</h1><pre style='background:var(--cx-danger-pale, #fee2e2);padding:14px'>{str(e)[:500]}</pre><a href='/admin/limpiar-sols-ocs'>Reintentar</a></body></html>", 500
 
     # GET · preview
     counts = {}
@@ -12090,19 +12090,19 @@ a{{display:inline-block;background:#0f766e;color:#fff;padding:10px 18px;border-r
     for k, v in sorted(counts.items()):
         rows_html += f'<tr><td style="padding:6px 12px">{k}</td><td style="padding:6px 12px;text-align:right;font-weight:700">{v}</td></tr>'
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Limpiar SOLs/OCs</title>
-<style>body{{font-family:system-ui;background:#f8fafc;padding:40px}}
-.card{{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
-h1{{color:#1e293b;margin:0 0 14px}}
+<style>body{{font-family:system-ui;background:var(--cx-bg-alt, #f8fafc);padding:40px}}
+.card{{max-width:720px;margin:0 auto;background:var(--cx-card, #fff);border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
+h1{{color:var(--cx-text, #1e293b);margin:0 0 14px}}
 table{{width:100%;border-collapse:collapse;font-size:13px;margin:14px 0}}
-th{{background:#f1f5f9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}}
-tr{{border-bottom:1px solid #f1f5f9}}
+th{{background:var(--cx-border-soft, #f1f5f9);padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--cx-text-soft, #475569)}}
+tr{{border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}}
 .btn{{padding:14px 22px;border-radius:8px;border:none;font-size:14px;font-weight:800;cursor:pointer;margin-right:8px;margin-top:14px}}
-.btn-safe{{background:#ea580c;color:#fff}} .btn-all{{background:#dc2626;color:#fff}}
-.meta{{font-size:11px;color:#64748b;margin-top:14px}}</style></head><body>
+.btn-safe{{background:#ea580c;color:#fff}} .btn-all{{background:var(--cx-danger, #dc2626);color:#fff}}
+.meta{{font-size:11px;color:var(--cx-text-mute, #64748b);margin-top:14px}}</style></head><body>
 <div class="card">
 <h1>🧹 Limpiar SOLs / OCs fantasma</h1>
 <p>Estado actual en BD:</p>
-<table><thead><tr><th>Categoría</th><th style="text-align:right">Cantidad</th></tr></thead><tbody>{rows_html or '<tr><td colspan=2 style="padding:14px;text-align:center;color:#94a3b8">Sin registros</td></tr>'}</tbody></table>
+<table><thead><tr><th>Categoría</th><th style="text-align:right">Cantidad</th></tr></thead><tbody>{rows_html or '<tr><td colspan=2 style="padding:14px;text-align:center;color:var(--cx-text-faint, #94a3b8)">Sin registros</td></tr>'}</tbody></table>
 
 <form method="POST" style="display:inline" onsubmit="return confirm('¿Cancelar SOLs/OCs sin recepción?\\n\\nMODO SEGURO: solo Pendiente/Aprobada/Borrador/Revisada · no toca lo recibido.');">
   <input type="hidden" name="modo" value="safe">
@@ -12114,7 +12114,7 @@ tr{{border-bottom:1px solid #f1f5f9}}
 </form>
 
 <p class="meta">Modo SEGURO cancela SOLs en estado Pendiente/Aprobada (sin OC) y OCs en Borrador/Revisada. Modo BORRAR TODAS también cancela Autorizadas y Parciales. Las Recibidas y Cerradas (histórico) NUNCA se tocan. Operación auditada en audit_log.</p>
-<p><a href="/" style="color:#475569">← Volver al dashboard</a></p>
+<p><a href="/" style="color:var(--cx-text-soft, #475569)">← Volver al dashboard</a></p>
 </div></body></html>"""
 
 
@@ -12182,9 +12182,9 @@ def admin_llenar_calendario_pagina():
                 color = '#15803d' if razon.startswith('✓') else '#ea580c'
                 razones_html += (
                     f'<div style="display:flex;justify-content:space-between;'
-                    f'padding:8px 12px;border-bottom:1px solid #f1f5f9">'
+                    f'padding:8px 12px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)">'
                     f'<span style="color:{color};font-size:12px">{razon}</span>'
-                    f'<strong style="color:#1e293b">{cnt}</strong></div>'
+                    f'<strong style="color:var(--cx-text, #1e293b)">{cnt}</strong></div>'
                 )
 
             # Sample de creados (top 10) y saltados con razón principal
@@ -12194,10 +12194,10 @@ def admin_llenar_calendario_pagina():
                     f'<tr><td style="padding:4px 8px">{c.get("producto","")}</td>'
                     f'<td style="padding:4px 8px;font-family:monospace">{c.get("fecha","")}</td>'
                     f'<td style="padding:4px 8px;text-align:right">{c.get("cantidad_kg","")}kg</td>'
-                    f'<td style="padding:4px 8px;font-size:11px;color:#64748b">{c.get("urgencia","")}</td></tr>'
+                    f'<td style="padding:4px 8px;font-size:11px;color:var(--cx-text-mute, #64748b)">{c.get("urgencia","")}</td></tr>'
                 )
             if not creados_sample:
-                creados_sample = '<tr><td colspan="4" style="padding:14px;color:#94a3b8;text-align:center">Ninguna Sugerida creada · revisá las razones abajo</td></tr>'
+                creados_sample = '<tr><td colspan="4" style="padding:14px;color:var(--cx-text-faint, #94a3b8);text-align:center">Ninguna Sugerida creada · revisá las razones abajo</td></tr>'
 
             # Sample de productos sin velocidad (los más problemáticos)
             sin_vel_sample = []
@@ -12209,7 +12209,7 @@ def admin_llenar_calendario_pagina():
                 sin_vel_html = (
                     f'<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:700;color:#ea580c">'
                     f'⚠ {len(sin_vel_sample)} productos SIN velocidad de venta (click para ver)</summary>'
-                    f'<div style="background:#fef3c7;padding:10px;border-radius:6px;margin-top:6px;font-size:11px;max-height:200px;overflow:auto">'
+                    f'<div style="background:var(--cx-warn-pale, #fef3c7);padding:10px;border-radius:6px;margin-top:6px;font-size:11px;max-height:200px;overflow:auto">'
                     + ' · '.join(sin_vel_sample[:50])
                     + ('' if len(sin_vel_sample) <= 50 else f' · y {len(sin_vel_sample)-50} más')
                     + '</div></details>'
@@ -12218,9 +12218,9 @@ def admin_llenar_calendario_pagina():
             diagnostico = ''
             if n_creados == 0:
                 diagnostico = (
-                    '<div style="background:#fef3c7;border-left:5px solid #f59e0b;padding:14px 18px;'
+                    '<div style="background:var(--cx-warn-pale, #fef3c7);border-left:5px solid var(--cx-warn, #f59e0b);padding:14px 18px;'
                     'border-radius:8px;margin:14px 0">'
-                    '<strong style="color:#92400e">Diagnóstico:</strong> el algoritmo NO creó Sugeridas. '
+                    '<strong style="color:var(--cx-warn-text, #92400e)">Diagnóstico:</strong> el algoritmo NO creó Sugeridas. '
                     'Esto ocurre cuando todos los productos ya tienen lotes programados ±7d (correcto · '
                     'no duplica) O cuando los productos no tienen velocidad de venta en Shopify. '
                     'Revisá la tabla de razones abajo.</div>'
@@ -12229,44 +12229,44 @@ def admin_llenar_calendario_pagina():
             return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Calendario · resultado</title>
 <style>
-  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:40px}}
-  .card{{max-width:920px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
-  h1{{color:#1e293b;margin:0 0 14px}}
-  .kpi{{display:inline-block;background:#f0fdf4;border:1px solid #16a34a;padding:14px 22px;border-radius:8px;margin:6px;text-align:center;min-width:140px}}
-  .kpi-val{{font-size:32px;font-weight:800;color:#15803d}}
-  .kpi-lbl{{font-size:11px;color:#64748b;text-transform:uppercase}}
+  body{{font-family:system-ui,-apple-system,Arial;background:var(--cx-bg-alt, #f8fafc);margin:0;padding:40px}}
+  .card{{max-width:920px;margin:0 auto;background:var(--cx-card, #fff);border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
+  h1{{color:var(--cx-text, #1e293b);margin:0 0 14px}}
+  .kpi{{display:inline-block;background:var(--cx-success-pale, #f0fdf4);border:1px solid var(--cx-success, #16a34a);padding:14px 22px;border-radius:8px;margin:6px;text-align:center;min-width:140px}}
+  .kpi-val{{font-size:32px;font-weight:800;color:var(--cx-success-text, #15803d)}}
+  .kpi-lbl{{font-size:11px;color:var(--cx-text-mute, #64748b);text-transform:uppercase}}
   table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}}
-  th{{text-align:left;padding:6px 8px;background:#f1f5f9;color:#475569;font-size:11px;text-transform:uppercase}}
-  td{{border-bottom:1px solid #f1f5f9}}
-  a{{display:inline-block;background:#0f766e;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;margin-top:14px;font-weight:700}}
+  th{{text-align:left;padding:6px 8px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-size:11px;text-transform:uppercase}}
+  td{{border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}}
+  a{{display:inline-block;background:var(--cx-info, #0f766e);color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;margin-top:14px;font-weight:700}}
 </style></head><body>
 <div class="card">
   <h1>{'✓' if n_creados > 0 else '⚠'} Resultado · horizonte {dh} días</h1>
   <div>
     <div class="kpi"><div class="kpi-val">{n_creados}</div><div class="kpi-lbl">Sugeridas creadas</div></div>
-    <div class="kpi" style="background:#fef3c7;border-color:#f59e0b"><div class="kpi-val" style="color:#92400e">{n_saltados}</div><div class="kpi-lbl">Saltadas</div></div>
+    <div class="kpi" style="background:var(--cx-warn-pale, #fef3c7);border-color:var(--cx-warn, #f59e0b)"><div class="kpi-val" style="color:var(--cx-warn-text, #92400e)">{n_saltados}</div><div class="kpi-lbl">Saltadas</div></div>
   </div>
   {diagnostico}
 
-  <h3 style="color:#1e293b;font-size:14px;margin-top:22px">Razones (agrupadas)</h3>
-  <div style="border:1px solid #e2e8f0;border-radius:6px">{razones_html}</div>
+  <h3 style="color:var(--cx-text, #1e293b);font-size:14px;margin-top:22px">Razones (agrupadas)</h3>
+  <div style="border:1px solid var(--cx-border, #e2e8f0);border-radius:6px">{razones_html}</div>
 
   {sin_vel_html}
 
-  <h3 style="color:#1e293b;font-size:14px;margin-top:22px">Primeras 15 Sugeridas creadas</h3>
+  <h3 style="color:var(--cx-text, #1e293b);font-size:14px;margin-top:22px">Primeras 15 Sugeridas creadas</h3>
   <table><thead><tr><th>Producto</th><th>Fecha</th><th>Cant kg</th><th>Urgencia</th></tr></thead>
   <tbody>{creados_sample}</tbody></table>
 
   <p style="margin-top:20px">Recargá <strong>Abastecimiento</strong> para ver el efecto.</p>
   <a href="/admin/llenar-calendario">↻ Volver a llenar</a>
-  <a href="/" style="background:#475569;margin-left:8px">← Volver al dashboard</a>
+  <a href="/" style="background:var(--cx-text-soft, #475569);margin-left:8px">← Volver al dashboard</a>
 </div></body></html>"""
         except Exception as e:
             try: conn.rollback()
             except Exception: pass
             return f"""<!DOCTYPE html><html><body style="font-family:system-ui;padding:40px">
-<h1 style="color:#dc2626">Error al llenar el calendario</h1>
-<pre style="background:#fee2e2;padding:14px;border-radius:6px">{str(e)[:500]}</pre>
+<h1 style="color:var(--cx-danger-text, #dc2626)">Error al llenar el calendario</h1>
+<pre style="background:var(--cx-danger-pale, #fee2e2);padding:14px;border-radius:6px">{str(e)[:500]}</pre>
 <a href="/admin/llenar-calendario">↻ Reintentar</a>
 </body></html>""", 500
 
@@ -12304,15 +12304,15 @@ def admin_llenar_calendario_pagina():
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Llenar calendario</title>
 <style>
-  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:40px}}
-  .card{{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
-  h1{{color:#1e293b;margin:0 0 14px;font-size:22px}}
-  .estado{{background:#f1f5f9;border-left:5px solid {color_estado};padding:16px 22px;border-radius:8px;margin:18px 0}}
-  .kpi{{display:inline-block;padding:8px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;margin:4px}}
-  .kpi b{{color:#1e293b;font-size:18px;display:block}}
-  .btn{{background:#7c3aed;color:#fff;border:none;padding:14px 30px;border-radius:8px;font-size:16px;font-weight:800;cursor:pointer;margin-top:14px}}
-  .btn:hover{{background:#6d28d9}}
-  .meta{{font-size:11px;color:#64748b;margin-top:12px}}
+  body{{font-family:system-ui,-apple-system,Arial;background:var(--cx-bg-alt, #f8fafc);margin:0;padding:40px}}
+  .card{{max-width:720px;margin:0 auto;background:var(--cx-card, #fff);border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
+  h1{{color:var(--cx-text, #1e293b);margin:0 0 14px;font-size:22px}}
+  .estado{{background:var(--cx-border-soft, #f1f5f9);border-left:5px solid {color_estado};padding:16px 22px;border-radius:8px;margin:18px 0}}
+  .kpi{{display:inline-block;padding:8px 14px;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:6px;margin:4px}}
+  .kpi b{{color:var(--cx-text, #1e293b);font-size:18px;display:block}}
+  .btn{{background:var(--cx-primary, #7c3aed);color:#fff;border:none;padding:14px 30px;border-radius:8px;font-size:16px;font-weight:800;cursor:pointer;margin-top:14px}}
+  .btn:hover{{background:var(--cx-primary, #6d28d9)}}
+  .meta{{font-size:11px;color:var(--cx-text-mute, #64748b);margin-top:12px}}
 </style></head><body>
 <div class="card">
   <h1>📅 Llenar calendario · Sugeridas a 365 días</h1>
@@ -12326,8 +12326,8 @@ def admin_llenar_calendario_pagina():
   </div>
 
   <form method="POST" onsubmit="return confirm('¿Llenar calendario? · Esto puede crear muchas Sugeridas si el calendario está corto.');">
-    <label style="font-size:13px;color:#475569">Días horizonte:
-      <select name="dias_horizonte" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;margin-left:8px">
+    <label style="font-size:13px;color:var(--cx-text-soft, #475569)">Días horizonte:
+      <select name="dias_horizonte" style="padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;margin-left:8px">
         <option value="365" selected>365 (1 año · recomendado)</option>
         <option value="180">180 (6 meses)</option>
         <option value="120">120 (4 meses)</option>
@@ -14884,34 +14884,34 @@ _ESTACIONALIDAD_HTML = r"""<!DOCTYPE html>
 <style>
   *{box-sizing:border-box} body{margin:0;font-family:Inter,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f5fb;color:#1e1b2e}
   .wrap{max-width:1120px;margin:0 auto;padding:22px 18px 60px}
-  .h1{font-size:22px;font-weight:800;color:#5b21b6;margin:0 0 4px}
-  .sub{font-size:13px;color:#64748b;margin:0 0 16px}
-  .banner{background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:12px;padding:12px 14px;font-size:12.5px;color:#5b21b6;margin-bottom:16px;line-height:1.55}
+  .h1{font-size:22px;font-weight:800;color:var(--cx-primary-text, #5b21b6);margin:0 0 4px}
+  .sub{font-size:13px;color:var(--cx-text-mute, #64748b);margin:0 0 16px}
+  .banner{background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:12px;padding:12px 14px;font-size:12.5px;color:var(--cx-primary-text, #5b21b6);margin-bottom:16px;line-height:1.55}
   .ctrl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
-  .ctrl label{font-size:12px;color:#475569;font-weight:600}
-  .ctrl select,.ctrl input{padding:6px 8px;border:1px solid #c4b5fd;border-radius:7px;font-size:13px;font-weight:600}
+  .ctrl label{font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600}
+  .ctrl select,.ctrl input{padding:6px 8px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:7px;font-size:13px;font-weight:600}
   .btn{background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer}
-  .card{background:#fff;border:1px solid #ece9f5;border-radius:14px;padding:14px 16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(16,15,45,.05)}
+  .card{background:var(--cx-card, #fff);border:1px solid #ece9f5;border-radius:14px;padding:14px 16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(16,15,45,.05)}
   .card.glob{border:2px solid #ddd6fe;background:linear-gradient(180deg,#fdfcff,#faf9ff)}
   .prow{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
   .pname{font-size:14px;font-weight:800;color:#312e46}
-  .puds{font-size:11px;color:#94a3b8;font-weight:600}
-  .pico{background:#fef3c7;color:#92400e;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:800;white-space:nowrap}
-  .pico.hot{background:#fee2e2;color:#991b1b}
+  .puds{font-size:11px;color:var(--cx-text-faint, #94a3b8);font-weight:600}
+  .pico{background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #92400e);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:800;white-space:nowrap}
+  .pico.hot{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)}
   .tagg{background:#eef2ff;color:#4338ca;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700}
   .grow{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:800;white-space:nowrap}
-  .grow.up{background:#dcfce7;color:#15803d} .grow.down{background:#fee2e2;color:#b91c1c}
-  .grow.flat{background:#f1f5f9;color:#475569} .grow.gray{background:#f1f5f9;color:#94a3b8;font-weight:600}
+  .grow.up{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #15803d)} .grow.down{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #b91c1c)}
+  .grow.flat{background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569)} .grow.gray{background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-faint, #94a3b8);font-weight:600}
   .grow small{font-weight:600;opacity:.7}
   .bars{display:flex;gap:5px;align-items:flex-end;height:104px;margin-top:12px}
   .bcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
-  .bar{width:100%;max-width:34px;border-radius:5px 5px 0 0;background:#c4b5fd;position:relative;transition:height .2s}
+  .bar{width:100%;max-width:34px;border-radius:5px 5px 0 0;background:var(--cx-primary-light, #c4b5fd);position:relative;transition:height .2s}
   .bar.pk{background:linear-gradient(180deg,#f59e0b,#d97706)}
   .bar.pkhot{background:linear-gradient(180deg,#ef4444,#b91c1c)}
-  .bidx{font-size:9px;font-weight:800;color:#5b21b6;margin-bottom:2px;height:12px}
-  .bmes{font-size:9.5px;color:#94a3b8;margin-top:4px;font-weight:600}
-  .buds{font-size:9px;color:#cbd5e1}
-  .empty{text-align:center;color:#94a3b8;padding:40px}
+  .bidx{font-size:9px;font-weight:800;color:var(--cx-primary-text, #5b21b6);margin-bottom:2px;height:12px}
+  .bmes{font-size:9.5px;color:var(--cx-text-faint, #94a3b8);margin-top:4px;font-weight:600}
+  .buds{font-size:9px;color:var(--cx-border, #cbd5e1)}
+  .empty{text-align:center;color:var(--cx-text-faint, #94a3b8);padding:40px}
 </style></head>
 <body><div class="wrap">
   <div class="h1">&#128200; Estacionalidad de ventas &middot; por mes</div>
@@ -14921,7 +14921,7 @@ _ESTACIONALIDAD_HTML = r"""<!DOCTYPE html>
     <label>Hist&oacute;rico <select id="meses"><option value="12">1 a&ntilde;o</option><option value="24" selected>2 a&ntilde;os</option><option value="36">3 a&ntilde;os</option></select></label>
     <label>Marcar pico &ge; <input id="umbral" type="number" min="1.05" max="5" step="0.1" value="1.3" style="width:60px"> &times; el promedio</label>
     <button class="btn" onclick="cargar()">Recargar</button>
-    <span id="meta" style="font-size:11px;color:#94a3b8"></span>
+    <span id="meta" style="font-size:11px;color:var(--cx-text-faint, #94a3b8)"></span>
   </div>
   <div id="cont"><div class="empty">Cargando ventas&hellip;</div></div>
 </div>
@@ -15331,23 +15331,23 @@ def plan_revisar_page():
         bg = '#fff7ed' if not p['ok'] else '#ffffff'
         nombre = _html.escape(p['producto'])
         ur = p['ultima_real']
-        ur_txt = (ur['fecha'] + ' · ' + format(ur['kg'], 'g') + ' kg') if ur else '<span style="color:#dc2626">nunca</span>'
+        ur_txt = (ur['fecha'] + ' · ' + format(ur['kg'], 'g') + ' kg') if ur else '<span style="color:var(--cx-danger-text, #dc2626)">nunca</span>'
         if p['pipeline_g'] > 0:
             ur_txt += ' <span style="font-size:10px;color:#0d9488">(+pipeline ' + format(p['pipeline_g'], ',') + ' g)</span>'
-        cob = (str(int(p['cobertura_dias'])) + 'd → ' + (p['alcanza_hasta'] or '')) if p['cobertura_dias'] is not None else '<span style="color:#94a3b8">sin venta</span>'
+        cob = (str(int(p['cobertura_dias'])) + 'd → ' + (p['alcanza_hasta'] or '')) if p['cobertura_dias'] is not None else '<span style="color:var(--cx-text-faint, #94a3b8)">sin venta</span>'
         prox = p['proximos']
         if prox:
             prox_txt = ' · '.join([(x['fecha'] + ' (' + format(x['kg'], 'g') + 'kg' + ('·Fijo' if x['origen'] in ('eos_plan', 'eos_b2b') else '') + ')') for x in prox[:4]])
             if p['n_proyectados'] > 4:
                 prox_txt += ' … +' + str(p['n_proyectados'] - 4)
         else:
-            prox_txt = '<span style="color:#dc2626;font-weight:700">— sin lotes planeados —</span>'
-        razones = (' '.join(['<span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">' + _html.escape(r) + '</span>' for r in p['razones']])) if p['razones'] else '<span style="color:#166534;font-weight:700">✓ ok</span>'
+            prox_txt = '<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">— sin lotes planeados —</span>'
+        razones = (' '.join(['<span style="background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">' + _html.escape(r) + '</span>' for r in p['razones']])) if p['razones'] else '<span style="color:var(--cx-success-text, #166534);font-weight:700">✓ ok</span>'
         filas.append(
             '<tr style="background:' + bg + '">'
-            + '<td style="font-weight:600">' + nombre + '<br><span style="font-size:11px;color:#94a3b8">' + str(p['lote_kg']) + ' kg/lote · ' + str(p['n_proyectados']) + ' lotes plan</span></td>'
+            + '<td style="font-weight:600">' + nombre + '<br><span style="font-size:11px;color:var(--cx-text-faint, #94a3b8)">' + str(p['lote_kg']) + ' kg/lote · ' + str(p['n_proyectados']) + ' lotes plan</span></td>'
             + '<td style="font-size:12px">' + ur_txt + '</td>'
-            + '<td style="font-size:12px;text-align:right">' + format(p['demanda_g_dia'], ',.0f') + ' g/d<br><span style="color:#94a3b8">' + cob + '</span></td>'
+            + '<td style="font-size:12px;text-align:right">' + format(p['demanda_g_dia'], ',.0f') + ' g/d<br><span style="color:var(--cx-text-faint, #94a3b8)">' + cob + '</span></td>'
             + '<td style="font-size:11px">' + prox_txt + '</td>'
             + '<td>' + razones + '</td>'
             + '</tr>')
@@ -15355,14 +15355,14 @@ def plan_revisar_page():
         '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         '<title>Revisar plan 2 años</title>'
-        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}'
+        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b)}'
         '.wrap{max-width:1250px;margin:0 auto;padding:20px}h1{font-size:20px;margin:0 0 4px}'
-        '.sub{color:#64748b;font-size:13px;margin-bottom:16px}.cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}'
-        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:110px}'
-        '.card b{font-size:22px;display:block}.card span{font-size:12px;color:#64748b}'
-        'table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}'
+        '.sub{color:var(--cx-text-mute, #64748b);font-size:13px;margin-bottom:16px}.cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}'
+        '.card{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;padding:12px 16px;min-width:110px}'
+        '.card b{font-size:22px;display:block}.card span{font-size:12px;color:var(--cx-text-mute, #64748b)}'
+        'table{width:100%;border-collapse:collapse;background:var(--cx-card, #fff);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}'
         'th{background:#0d9488;color:#fff;text-align:left;padding:9px 10px;font-size:12px}'
-        'td{padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:13px;vertical-align:top}'
+        'td{padding:8px 10px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);font-size:13px;vertical-align:top}'
         'a.back{color:#0d9488;text-decoration:none;font-size:13px}</style></head><body><div class="wrap">'
         '<a class="back" href="/admin/plan-calendario">← Volver al calendario</a> &nbsp; '
         '<a class="back" href="/admin/verificar-volumenes">📏 Volúmenes</a>'
@@ -15372,9 +15372,9 @@ def plan_revisar_page():
         'En naranja lo que hay que revisar. Si cambiaste volúmenes, dale "🔄 Actualizar plan ahora" en el calendario para regenerar.</div>'
         '<div class="cards">'
         + '<div class="card"><b>' + str(resumen['total']) + '</b><span>productos</span></div>'
-        + '<div class="card" style="border-color:#86efac"><b style="color:#166534">' + str(resumen['ok']) + '</b><span>ok</span></div>'
+        + '<div class="card" style="border-color:#86efac"><b style="color:var(--cx-success-text, #166534)">' + str(resumen['ok']) + '</b><span>ok</span></div>'
         + '<div class="card" style="border-color:#fde047"><b style="color:#854d0e">' + str(resumen['revisar']) + '</b><span>a revisar</span></div>'
-        + '<div class="card" style="border-color:#fecaca"><b style="color:#991b1b">' + str(resumen['vende_sin_plan']) + '</b><span>vende sin plan</span></div>'
+        + '<div class="card" style="border-color:#fecaca"><b style="color:var(--cx-danger-text, #991b1b)">' + str(resumen['vende_sin_plan']) + '</b><span>vende sin plan</span></div>'
         + '<div class="card"><b>' + str(resumen['sin_venta']) + '</b><span>sin venta</span></div>'
         + '</div>'
         '<table><thead><tr><th>Producto</th><th>Última producción real</th><th>Shopify necesita</th>'
@@ -15538,17 +15538,17 @@ def plan_verificar_volumenes_page():
     resumen, productos = _verificar_volumenes_data(get_db())
 
     _badge = {
-        'volumen_directo': '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ volumen fijado</span>',
-        'presentacion': '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ envase real</span>',
+        'volumen_directo': '<span style="background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ volumen fijado</span>',
+        'presentacion': '<span style="background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ envase real</span>',
         'categoria':    '<span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">≈ por categoría</span>',
         'nombre':       '<span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">≈ por nombre</span>',
-        'default':      '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">⚠ adivinado 30</span>',
+        'default':      '<span style="background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">⚠ adivinado 30</span>',
     }
     def _vol_badge(fuente):
         if fuente == 'sku':
-            return '<span style="background:#dcfce7;color:#166534;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">✓ fijado</span>'
+            return '<span style="background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">✓ fijado</span>'
         if fuente == 'presentacion':
-            return '<span style="background:#dcfce7;color:#166534;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">✓ presentación</span>'
+            return '<span style="background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">✓ presentación</span>'
         return '<span style="background:#fef9c3;color:#854d0e;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">≈ adivinado</span>'
 
     secciones = []
@@ -15559,51 +15559,51 @@ def plan_verificar_volumenes_page():
         alcanza = (p['alcanza_hasta'] + ' · ' + str(int(p['cobertura_dias'])) + 'd') if p['alcanza_hasta'] else '—'
         flags = []
         if not p['tiene_formula']:
-            flags.append('<span style="color:#dc2626;font-weight:700">⚠ sin fórmula/lote</span>')
+            flags.append('<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ sin fórmula/lote</span>')
         if not p['tiene_venta']:
-            flags.append('<span style="color:#b45309">sin venta Shopify</span>')
+            flags.append('<span style="color:var(--cx-warn-text, #b45309)">sin venta Shopify</span>')
         if not p['skus']:
-            flags.append('<span style="color:#dc2626;font-weight:700">sin SKUs mapeados</span>')
+            flags.append('<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">sin SKUs mapeados</span>')
         flags_html = ('<div style="font-size:11px;margin-top:4px">' + ' · '.join(flags) + '</div>') if flags else ''
         sku_rows = ''
         for s in p['skus']:
             sku_attr = _html.escape(str(s['sku']), quote=True)
             tono = (' · ' + _html.escape(str(s['tono']))) if s['tono'] else ''
-            tend = ' <span style="color:#16a34a">↑x' + format(s['tendencia'], '.1f') + '</span>' if s['tendencia'] > 1.05 else ''
+            tend = ' <span style="color:var(--cx-success-text, #16a34a)">↑x' + format(s['tendencia'], '.1f') + '</span>' if s['tendencia'] > 1.05 else ''
             sku_rows += (
-                '<tr style="border-top:1px solid #f1f5f9">'
+                '<tr style="border-top:1px solid var(--cx-border-soft, #f1f5f9)">'
                 + '<td style="font-size:12px">' + _html.escape(str(s['sku'])) + tono + '</td>'
                 + '<td style="font-size:12px;text-align:right">' + format(s['velocidad'], '.1f') + '/d' + tend + '</td>'
                 + '<td style="font-size:12px;text-align:right">' + format(s['unidades'], ',') + ' u</td>'
                 + '<td style="text-align:right;white-space:nowrap">'
                 + '<input type="number" step="0.1" min="0" value="' + format(s['volumen'], 'g') + '" id="vol_' + str(sidx) + '" data-sku="' + sku_attr + '" '
-                + 'style="width:64px;text-align:right;padding:3px 5px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"> ml'
+                + 'style="width:64px;text-align:right;padding:3px 5px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:13px"> ml'
                 + ' <button onclick="guardarVol(' + str(sidx) + ')" style="border:none;background:#0d9488;color:#fff;border-radius:6px;padding:3px 8px;cursor:pointer;font-weight:700">✓</button></td>'
                 + '<td>' + _vol_badge(s['fuente_vol']) + '</td>'
                 + '</tr>')
             sidx += 1
         if not p['skus']:
-            sku_rows = '<tr><td colspan="5" style="font-size:12px;color:#dc2626;padding:6px 0">Sin SKUs en el mapa · no se puede calcular volumen.</td></tr>'
+            sku_rows = '<tr><td colspan="5" style="font-size:12px;color:var(--cx-danger-text, #dc2626);padding:6px 0">Sin SKUs en el mapa · no se puede calcular volumen.</td></tr>'
         secciones.append(
-            '<div style="background:' + bg + ';border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:10px">'
+            '<div style="background:' + bg + ';border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;padding:12px 14px;margin-bottom:10px">'
             + '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline">'
-            + '<div><b style="font-size:15px">' + nombre + '</b> <span style="color:#94a3b8;font-size:11px">' + _html.escape(p['categoria']) + '</span></div>'
-            + '<div style="font-size:12px;color:#475569">lote <b>' + str(p['lote_size_kg']) + ' kg</b> · demanda <b>' + format(p['demanda_g_dia'], ',.0f') + ' g/d</b> · stock <b>' + format(p['stock_efectivo_g'], ',') + ' g</b> · alcanza hasta <b>' + alcanza + '</b></div>'
+            + '<div><b style="font-size:15px">' + nombre + '</b> <span style="color:var(--cx-text-faint, #94a3b8);font-size:11px">' + _html.escape(p['categoria']) + '</span></div>'
+            + '<div style="font-size:12px;color:var(--cx-text-soft, #475569)">lote <b>' + str(p['lote_size_kg']) + ' kg</b> · demanda <b>' + format(p['demanda_g_dia'], ',.0f') + ' g/d</b> · stock <b>' + format(p['stock_efectivo_g'], ',') + ' g</b> · alcanza hasta <b>' + alcanza + '</b></div>'
             + '</div>' + flags_html
             + '<table style="width:100%;margin-top:8px;border-collapse:collapse">'
-            + '<tr style="color:#64748b;font-size:11px;text-align:left"><th style="padding:4px 0">Tamaño / SKU</th><th style="text-align:right">Venta</th><th style="text-align:right">Disponible</th><th style="text-align:right">Volumen</th><th>Fuente</th></tr>'
+            + '<tr style="color:var(--cx-text-mute, #64748b);font-size:11px;text-align:left"><th style="padding:4px 0">Tamaño / SKU</th><th style="text-align:right">Venta</th><th style="text-align:right">Disponible</th><th style="text-align:right">Volumen</th><th>Fuente</th></tr>'
             + sku_rows + '</table></div>')
 
     html_doc = (
         '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         '<title>Verificar volúmenes · Planeación</title>'
-        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}'
+        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b)}'
         '.wrap{max-width:1100px;margin:0 auto;padding:20px}'
-        'h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin-bottom:16px}'
+        'h1{font-size:20px;margin:0 0 4px}.sub{color:var(--cx-text-mute, #64748b);font-size:13px;margin-bottom:16px}'
         '.cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}'
-        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:110px}'
-        '.card b{font-size:22px;display:block}.card span{font-size:12px;color:#64748b}'
+        '.card{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;padding:12px 16px;min-width:110px}'
+        '.card b{font-size:22px;display:block}.card span{font-size:12px;color:var(--cx-text-mute, #64748b)}'
         'th{font-weight:600}'
         'a.back{color:#0d9488;text-decoration:none;font-size:13px}</style></head><body><div class="wrap">'
         '<a class="back" href="/admin/plan-calendario">← Volver al calendario</a>'
@@ -15611,15 +15611,15 @@ def plan_verificar_volumenes_page():
         '<div class="sub">Un producto puede venderse en varios tamaños (ej. 30 ml + 10 ml). La planeación es en <b>gramos</b>: '
         'demanda/día = Σ (ventas × volumen de cada tamaño); el bulk se fabrica junto. Escribí el <b>volumen (ml) de cada tamaño/SKU</b> '
         'y al final dale <b>💾 Guardar todos</b> (o el ✓ de cada fila). Los ámbar (≈ adivinado) usan un valor supuesto hasta que les cargues el ml real.</div>'
-        '<div style="position:sticky;top:0;background:#f8fafc;padding:8px 0;z-index:5;margin-bottom:8px">'
+        '<div style="position:sticky;top:0;background:var(--cx-bg-alt, #f8fafc);padding:8px 0;z-index:5;margin-bottom:8px">'
         '<button onclick="guardarTodo()" id="btn-guardar-todo" style="background:#0d9488;color:#fff;border:none;'
         'padding:11px 22px;border-radius:9px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 2px 6px rgba(13,148,136,.3)">'
         '💾 Guardar todos los volúmenes</button></div>'
         '<div class="cards">'
         + '<div class="card"><b>' + str(resumen['total']) + '</b><span>productos · ' + str(resumen['total_skus']) + ' tamaños</span></div>'
-        + '<div class="card" style="border-color:#86efac"><b style="color:#166534">' + str(resumen['volumen_completo']) + '</b><span>volumen completo</span></div>'
+        + '<div class="card" style="border-color:#86efac"><b style="color:var(--cx-success-text, #166534)">' + str(resumen['volumen_completo']) + '</b><span>volumen completo</span></div>'
         + '<div class="card" style="border-color:#fde047"><b style="color:#854d0e">' + str(resumen['volumen_adivinado']) + '</b><span>con volumen adivinado</span></div>'
-        + '<div class="card" style="border-color:#fecaca"><b style="color:#991b1b">' + str(resumen['sin_formula']) + '</b><span>sin fórmula/lote</span></div>'
+        + '<div class="card" style="border-color:#fecaca"><b style="color:var(--cx-danger-text, #991b1b)">' + str(resumen['sin_formula']) + '</b><span>sin fórmula/lote</span></div>'
         + '<div class="card"><b>' + str(resumen['sin_venta']) + '</b><span>sin venta Shopify</span></div>'
         + '</div>'
         + ''.join(secciones)
@@ -16879,35 +16879,35 @@ _CONFIG_CANONICOS_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>Configurar canónicos · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:16px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:16px}
 .wrap{max-width:1600px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#0f766e;font-size:22px}
-.muted{color:#64748b;font-size:12px}
-button{background:#0f766e;color:white;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-info-text, #0f766e);font-size:22px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:12px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer}
 button.big{font-size:15px;padding:12px 28px}
-button.secondary{background:#475569}
+button.secondary{background:var(--cx-text-soft, #475569)}
 table{width:100%;border-collapse:collapse;font-size:11px}
-th{text-align:left;padding:8px 6px;background:#f1f5f9;color:#475569;font-weight:700;position:sticky;top:0;border-bottom:2px solid #cbd5e1}
-td{padding:6px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+th{text-align:left;padding:8px 6px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-weight:700;position:sticky;top:0;border-bottom:2px solid var(--cx-border, #cbd5e1)}
+td{padding:6px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);vertical-align:top}
 tr:hover{background:#fafbff}
 tr.modified{background:#fef9c3}
-input.cell{width:100%;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:ui-monospace,monospace}
-input.cell:focus{outline:none;border-color:#0f766e;background:#f0fdfa}
-input.cell.dirty{background:#fef3c7;border-color:#ca8a04}
-.urg-CRITICO{background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
-.urg-URGENTE{background:#fed7aa;color:#9a3412;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
-.urg-VIGILAR{background:#fef3c7;color:#854d0e;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
-.urg-OK{background:#dcfce7;color:#166534;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
-.urg-SIN_VENTAS{background:#f1f5f9;color:#64748b;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
-.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;margin-right:8px;text-align:center;min-width:90px}
+input.cell{width:100%;padding:5px 7px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:12px;font-family:ui-monospace,monospace}
+input.cell:focus{outline:none;border-color:var(--cx-info, #0f766e);background:#f0fdfa}
+input.cell.dirty{background:var(--cx-warn-pale, #fef3c7);border-color:var(--cx-accent-dark, #ca8a04)}
+.urg-CRITICO{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.urg-URGENTE{background:var(--cx-warn-pale, #fed7aa);color:var(--cx-warn-text, #9a3412);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.urg-VIGILAR{background:var(--cx-warn-pale, #fef3c7);color:#854d0e;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.urg-OK{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.urg-SIN_VENTAS{background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-mute, #64748b);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.kpi{display:inline-block;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:8px 14px;margin-right:8px;text-align:center;min-width:90px}
 .kpi-val{font-size:18px;font-weight:800}
-.kpi-lbl{font-size:9px;color:#64748b;text-transform:uppercase}
-.actions-bar{position:sticky;top:0;background:white;padding:10px 0;border-bottom:1px solid #e2e8f0;z-index:10;display:flex;gap:10px;justify-content:space-between;align-items:center}
-.btn-sug{background:#0891b2;color:white;border:none;padding:2px 6px;border-radius:3px;font-size:10px;cursor:pointer;margin-left:4px}
+.kpi-lbl{font-size:9px;color:var(--cx-text-mute, #64748b);text-transform:uppercase}
+.actions-bar{position:sticky;top:0;background:var(--cx-card, #fff);padding:10px 0;border-bottom:1px solid var(--cx-border, #e2e8f0);z-index:10;display:flex;gap:10px;justify-content:space-between;align-items:center}
+.btn-sug{background:var(--cx-info, #0891b2);color:white;border:none;padding:2px 6px;border-radius:3px;font-size:10px;cursor:pointer;margin-left:4px}
 </style></head><body>
 <div class="wrap">
-<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+<a href="/modulos" style="color:var(--cx-info-text, #0f766e);font-weight:700;font-size:13px">&larr; Volver</a>
 
 <div class="card">
   <h1>⚙ Configurar canónicos · todos los productos</h1>
@@ -16920,12 +16920,12 @@ input.cell.dirty{background:#fef3c7;border-color:#ca8a04}
     <div>
       <button onclick="cargar()" class="secondary">↻ Recargar</button>
       <button onclick="aplicarSugeridos()" class="secondary">💡 Aplicar TODOS los sugeridos</button>
-      <button onclick="limpiarDuplicados()" style="background:#dc2626;color:white;font-size:12px;padding:9px 18px;border:none;border-radius:7px;font-weight:700;cursor:pointer">🧹 Limpiar duplicados</button>
+      <button onclick="limpiarDuplicados()" style="background:var(--cx-danger, #dc2626);color:white;font-size:12px;padding:9px 18px;border:none;border-radius:7px;font-weight:700;cursor:pointer">🧹 Limpiar duplicados</button>
     </div>
     <div>
-      <span id="modif-count" style="margin-right:10px;color:#ca8a04;font-weight:700"></span>
+      <span id="modif-count" style="margin-right:10px;color:var(--cx-warn-text, #ca8a04);font-weight:700"></span>
       <button onclick="guardar()" class="big" id="btn-guardar" disabled>💾 Guardar cambios</button>
-      <button onclick="regenerarCanonicos()" style="background:#16a34a;color:white;font-size:15px;padding:12px 28px;border:none;border-radius:7px;font-weight:700;cursor:pointer;margin-left:10px">🔄 Regenerar simple</button>
+      <button onclick="regenerarCanonicos()" style="background:var(--cx-success, #16a34a);color:white;font-size:15px;padding:12px 28px;border:none;border-radius:7px;font-weight:700;cursor:pointer;margin-left:10px">🔄 Regenerar simple</button>
       <button onclick="planPerfecto()" style="background:linear-gradient(135deg,#0f766e,#0891b2);color:white;font-size:15px;padding:12px 28px;border:none;border-radius:7px;font-weight:700;cursor:pointer;margin-left:10px;box-shadow:0 3px 10px rgba(8,145,178,.35)">🎯 Generar Plan PERFECTO</button>
     </div>
   </div>
@@ -16936,10 +16936,10 @@ input.cell.dirty{background:#fef3c7;border-color:#ca8a04}
         <th>Producto</th>
         <th>Urgencia</th>
         <th>Histórico<br>kg/lote</th>
-        <th style="background:#dcfce7">kg/lote<br>REAL</th>
-        <th style="background:#dcfce7">ml<br>presentación</th>
+        <th style="background:var(--cx-success-pale, #dcfce7)">kg/lote<br>REAL</th>
+        <th style="background:var(--cx-success-pale, #dcfce7)">ml<br>presentación</th>
         <th>Sugerida<br>freq d</th>
-        <th style="background:#dcfce7">Frecuencia<br>días</th>
+        <th style="background:var(--cx-success-pale, #dcfce7)">Frecuencia<br>días</th>
         <th>Shopify<br>kg/mes</th>
         <th>B2B<br>kg/mes</th>
         <th>Total<br>kg/mes</th>
@@ -16962,7 +16962,7 @@ function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function getCSRF(){return document.cookie.split(';').find(c=>c.trim().startsWith('csrf_token='))?.split('=')[1] || '';}
 
 async function cargar(){
-  document.getElementById('tbody').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:30px;color:#64748b">Cargando…</td></tr>';
+  document.getElementById('tbody').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:30px;color:var(--cx-text-mute, #64748b)">Cargando…</td></tr>';
   try {
     const r = await fetch('/api/plan/configurar-canonicos');
     const d = await r.json();
@@ -16983,10 +16983,10 @@ function render(){
   let kpis = '';
   kpis += '<span class="kpi"><div class="kpi-lbl">Total productos</div><div class="kpi-val">' + items.length + '</div></span>';
   const conConfig = items.filter(it => it.kg_lote_actual > 0).length;
-  kpis += '<span class="kpi"><div class="kpi-lbl">✅ Configurados</div><div class="kpi-val" style="color:#16a34a">' + conConfig + '</div></span>';
-  kpis += '<span class="kpi"><div class="kpi-lbl">⚠ Por configurar</div><div class="kpi-val" style="color:#ca8a04">' + (items.length - conConfig) + '</div></span>';
+  kpis += '<span class="kpi"><div class="kpi-lbl">✅ Configurados</div><div class="kpi-val" style="color:var(--cx-success-text, #16a34a)">' + conConfig + '</div></span>';
+  kpis += '<span class="kpi"><div class="kpi-lbl">⚠ Por configurar</div><div class="kpi-val" style="color:var(--cx-warn-text, #ca8a04)">' + (items.length - conConfig) + '</div></span>';
   const conB2B = items.filter(it => it.b2b_n_pedidos > 0).length;
-  kpis += '<span class="kpi"><div class="kpi-lbl">🤝 Con B2B</div><div class="kpi-val" style="color:#7c3aed">' + conB2B + '</div></span>';
+  kpis += '<span class="kpi"><div class="kpi-lbl">🤝 Con B2B</div><div class="kpi-val" style="color:var(--cx-primary-text, #7c3aed)">' + conB2B + '</div></span>';
   document.getElementById('kpis').innerHTML = kpis;
 
   // Tabla
@@ -17001,11 +17001,11 @@ function render(){
     html += '<td style="text-align:right">' + (it.histor_kg_prom || '—') + (it.histor_n > 0 ? '<br><span class="muted" style="font-size:9px">' + it.histor_n + ' lotes</span>' : '') + '</td>';
     html += '<td><input class="cell" type="number" step="0.1" min="0" value="' + (it.kg_lote_actual || it.histor_kg_prom || it.lote_excel_kg || 0) + '" data-field="kg" oninput="onChange(this)"></td>';
     html += '<td><input class="cell" type="number" min="1" value="' + it.ml_actual + '" data-field="ml" oninput="onChange(this)"></td>';
-    html += '<td style="text-align:right;color:#0891b2;font-weight:700">' + (it.frecuencia_sugerida || '—') + (it.frecuencia_sugerida ? ' <button class="btn-sug" onclick="aplicarSug(this)">💡</button>' : '') + '</td>';
+    html += '<td style="text-align:right;color:var(--cx-info-text, #0891b2);font-weight:700">' + (it.frecuencia_sugerida || '—') + (it.frecuencia_sugerida ? ' <button class="btn-sug" onclick="aplicarSug(this)">💡</button>' : '') + '</td>';
     html += '<td><input class="cell" type="number" min="0" value="' + (it.frecuencia_actual || '') + '" data-field="freq" oninput="onChange(this)" placeholder="días"></td>';
     html += '<td style="text-align:right">' + it.kg_mes_shopify + '</td>';
     html += '<td style="text-align:right;color:' + (it.b2b_n_pedidos > 0 ? '#7c3aed' : '#94a3b8') + '">' + it.kg_mes_b2b + (it.b2b_n_pedidos > 0 ? '<br><span class="muted" style="font-size:9px">' + it.b2b_n_pedidos + ' ped</span>' : '') + '</td>';
-    html += '<td style="text-align:right;font-weight:700;color:#16a34a">' + it.kg_mes_total + '</td>';
+    html += '<td style="text-align:right;font-weight:700;color:var(--cx-success-text, #16a34a)">' + it.kg_mes_total + '</td>';
     html += '<td style="text-align:right">' + (it.stock_kg || 0) + '</td>';
     html += '<td style="text-align:right">' + (it.dias_cobertura !== null ? it.dias_cobertura + 'd' : '—') + '</td>';
     html += '<td><input class="cell" type="text" value="' + esc(it.notas || '') + '" data-field="notas" oninput="onChange(this)" placeholder="opcional" style="min-width:120px"></td>';
@@ -17188,27 +17188,27 @@ _CALC_FRECUENCIAS_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>Cálculo de frecuencias · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1400px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:20px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#0f766e;font-size:22px}
-h2{margin:0 0 10px;color:#1e293b;font-size:16px}
-.muted{color:#64748b;font-size:12px}
-button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
-.prod-card{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:10px}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:20px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-info-text, #0f766e);font-size:22px}
+h2{margin:0 0 10px;color:var(--cx-text, #1e293b);font-size:16px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:12px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+.prod-card{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;padding:14px;margin-bottom:10px}
 .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:10px 0}
-.metric{background:#f8fafc;border-radius:6px;padding:10px;border-left:3px solid #cbd5e1}
-.metric.shopify{border-left-color:#0891b2}
-.metric.b2b{border-left-color:#7c3aed}
-.metric.total{border-left-color:#16a34a;background:#f0fdf4}
-.metric.freq{border-left-color:#ca8a04;background:#fefce8}
-.metric-lbl{font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700}
-.metric-val{font-size:18px;font-weight:800;color:#1e293b;margin-top:2px}
-.metric-sub{font-size:10px;color:#64748b;margin-top:2px}
-textarea{width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace;min-height:80px}
+.metric{background:var(--cx-bg-alt, #f8fafc);border-radius:6px;padding:10px;border-left:3px solid var(--cx-border, #cbd5e1)}
+.metric.shopify{border-left-color:var(--cx-info, #0891b2)}
+.metric.b2b{border-left-color:var(--cx-primary, #7c3aed)}
+.metric.total{border-left-color:var(--cx-success, #16a34a);background:var(--cx-success-pale, #f0fdf4)}
+.metric.freq{border-left-color:var(--cx-accent-dark, #ca8a04);background:#fefce8}
+.metric-lbl{font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase;font-weight:700}
+.metric-val{font-size:18px;font-weight:800;color:var(--cx-text, #1e293b);margin-top:2px}
+.metric-sub{font-size:10px;color:var(--cx-text-mute, #64748b);margin-top:2px}
+textarea{width:100%;padding:8px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:12px;font-family:ui-monospace,monospace;min-height:80px}
 </style></head><body>
 <div class="wrap">
-<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+<a href="/modulos" style="color:var(--cx-info-text, #0f766e);font-weight:700;font-size:13px">&larr; Volver</a>
 
 <div class="card">
   <h1>📐 Cálculo de frecuencias con datos reales</h1>
@@ -17255,7 +17255,7 @@ function render(d){
 
     // Histórico
     if (h.n_producciones > 0) {
-      html += '<div style="background:#f1f5f9;border-radius:6px;padding:10px;margin-top:6px;font-size:11px"><strong>📜 Histórico últ 180d:</strong> ' + h.n_producciones + ' producciones';
+      html += '<div style="background:var(--cx-border-soft, #f1f5f9);border-radius:6px;padding:10px;margin-top:6px;font-size:11px"><strong>📜 Histórico últ 180d:</strong> ' + h.n_producciones + ' producciones';
       if (h.frecuencia_observada_dias) html += ' · frecuencia observada: cada ' + h.frecuencia_observada_dias + ' días';
       html += '<br>Producciones: ' + h.producciones.map(p => p.fecha + ' (' + p.kg + 'kg)').join(', ');
       html += '</div>';
@@ -17273,7 +17273,7 @@ function render(d){
     }
 
     // Stock + cobertura
-    html += '<div style="margin-top:6px;font-size:11px;color:#475569">Stock actual: <strong>' + it.stock_actual_kg + ' kg</strong> · Cobertura: <strong>' + (it.dias_cobertura_actual || '—') + ' días</strong></div>';
+    html += '<div style="margin-top:6px;font-size:11px;color:var(--cx-text-soft, #475569)">Stock actual: <strong>' + it.stock_actual_kg + ' kg</strong> · Cobertura: <strong>' + (it.dias_cobertura_actual || '—') + ' días</strong></div>';
 
     html += '</div>';
   });
@@ -17493,39 +17493,39 @@ _DASHBOARD_PLAN_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>Dashboard ejecutivo · Plan EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:18px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:18px}
 .wrap{max-width:1500px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 4px;color:#0f766e;font-size:22px}
-h2{margin:0 0 10px;color:#475569;font-size:15px}
-.muted{color:#64748b;font-size:12px}
-button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 4px;color:var(--cx-info-text, #0f766e);font-size:22px}
+h2{margin:0 0 10px;color:var(--cx-text-soft, #475569);font-size:15px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:12px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:10px}
-.kpi{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;text-align:center}
-.kpi.urgent{border-color:#dc2626;background:#fef2f2}
-.kpi.warn{border-color:#ca8a04;background:#fefce8}
-.kpi.good{border-color:#16a34a;background:#f0fdf4}
-.kpi-lbl{font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700}
+.kpi{background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;padding:14px;text-align:center}
+.kpi.urgent{border-color:var(--cx-danger, #dc2626);background:var(--cx-danger-pale, #fef2f2)}
+.kpi.warn{border-color:var(--cx-accent-dark, #ca8a04);background:#fefce8}
+.kpi.good{border-color:var(--cx-success, #16a34a);background:var(--cx-success-pale, #f0fdf4)}
+.kpi-lbl{font-size:11px;color:var(--cx-text-mute, #64748b);text-transform:uppercase;font-weight:700}
 .kpi-val{font-size:26px;font-weight:800;margin-top:4px}
-.semana-card{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:8px}
-.semana-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid #f1f5f9;margin-bottom:8px}
-.lote-row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px dashed #f1f5f9}
+.semana-card{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;padding:12px;margin-bottom:8px}
+.semana-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);margin-bottom:8px}
+.lote-row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px dashed var(--cx-border-soft, #f1f5f9)}
 .lote-row:last-child{border:none}
 .tag{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700}
 .tag-canonico{background:#e0e7ff;color:#3730a3}
-.tag-eos_plan{background:#dcfce7;color:#166534}
+.tag-eos_plan{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534)}
 .tag-calendar{background:#fef9c3;color:#854d0e}
-.tag-manual{background:#fef3c7;color:#854d0e}
-.tag-eos_retroactivo{background:#f1f5f9;color:#475569}
-.urgencia-CRITICO{background:#fee2e2;color:#991b1b}
-.urgencia-URGENTE{background:#fed7aa;color:#9a3412}
-.alerta-row{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;margin-bottom:4px;background:#f8fafc;border-left:3px solid #dc2626}
-.alerta-row.con-plan{border-left-color:#16a34a;background:#f0fdf4}
+.tag-manual{background:var(--cx-warn-pale, #fef3c7);color:#854d0e}
+.tag-eos_retroactivo{background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569)}
+.urgencia-CRITICO{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)}
+.urgencia-URGENTE{background:var(--cx-warn-pale, #fed7aa);color:var(--cx-warn-text, #9a3412)}
+.alerta-row{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;margin-bottom:4px;background:var(--cx-bg-alt, #f8fafc);border-left:3px solid var(--cx-danger, #dc2626)}
+.alerta-row.con-plan{border-left-color:var(--cx-success, #16a34a);background:var(--cx-success-pale, #f0fdf4)}
 .cols-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:900px){.cols-2{grid-template-columns:1fr}}
 </style></head><body>
 <div class="wrap">
-<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+<a href="/modulos" style="color:var(--cx-info-text, #0f766e);font-weight:700;font-size:13px">&larr; Volver</a>
 
 <div class="card">
   <h1>📊 Dashboard ejecutivo · Plan EOS</h1>
@@ -17536,14 +17536,14 @@ button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius
 
 <div id="alertas-ventas-wrap"></div>
 
-<div class="card" style="background:linear-gradient(135deg,#fef3c7,#fef9c3);border:2px solid #ca8a04">
+<div class="card" style="background:linear-gradient(135deg,#fef3c7,#fef9c3);border:2px solid var(--cx-accent-dark, #ca8a04)">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
     <div>
       <h2 style="margin:0;color:#854d0e">🤖 Autoplan con IA · Claude Sonnet 4.6</h2>
       <div class="muted">Cruza ventas Shopify + fórmulas Excel + Calendar + tu feedback histórico</div>
     </div>
     <div>
-      <a href="/admin/plan-calendario" target="_blank" style="background:#ca8a04;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px">▶ Ir al Calendario IA</a>
+      <a href="/admin/plan-calendario" target="_blank" style="background:var(--cx-accent-dark, #ca8a04);color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px">▶ Ir al Calendario IA</a>
     </div>
   </div>
   <div id="ia-stats" style="margin-top:10px"></div>
@@ -17583,11 +17583,11 @@ async function cargar(){
 function render(d){
   const k = d.kpis;
   let html = '';
-  html += '<div class="kpi"><div class="kpi-lbl">Próximas 4 sem</div><div class="kpi-val" style="color:#0f766e">' + k.lotes_proximas_4_sem + '</div><div class="muted">' + k.kg_proximas_4_sem + ' kg</div></div>';
-  html += '<div class="kpi"><div class="kpi-lbl">Próximos 12 m</div><div class="kpi-val" style="color:#0891b2">' + k.lotes_proximos_12_meses + '</div><div class="muted">' + k.kg_proximos_12_meses + ' kg</div></div>';
-  html += '<div class="kpi good"><div class="kpi-lbl">🔁 Canónicos</div><div class="kpi-val" style="color:#16a34a">' + k.canonicos_activos + '</div></div>';
-  html += '<div class="kpi warn"><div class="kpi-lbl">📆 Calendar legacy</div><div class="kpi-val" style="color:#ca8a04">' + k.calendar_legacy_pendientes + '</div></div>';
-  html += '<div class="kpi warn"><div class="kpi-lbl">⏸ Pausados</div><div class="kpi-val" style="color:#ca8a04">' + k.pausados + '</div></div>';
+  html += '<div class="kpi"><div class="kpi-lbl">Próximas 4 sem</div><div class="kpi-val" style="color:var(--cx-info-text, #0f766e)">' + k.lotes_proximas_4_sem + '</div><div class="muted">' + k.kg_proximas_4_sem + ' kg</div></div>';
+  html += '<div class="kpi"><div class="kpi-lbl">Próximos 12 m</div><div class="kpi-val" style="color:var(--cx-info-text, #0891b2)">' + k.lotes_proximos_12_meses + '</div><div class="muted">' + k.kg_proximos_12_meses + ' kg</div></div>';
+  html += '<div class="kpi good"><div class="kpi-lbl">🔁 Canónicos</div><div class="kpi-val" style="color:var(--cx-success-text, #16a34a)">' + k.canonicos_activos + '</div></div>';
+  html += '<div class="kpi warn"><div class="kpi-lbl">📆 Calendar legacy</div><div class="kpi-val" style="color:var(--cx-warn-text, #ca8a04)">' + k.calendar_legacy_pendientes + '</div></div>';
+  html += '<div class="kpi warn"><div class="kpi-lbl">⏸ Pausados</div><div class="kpi-val" style="color:var(--cx-warn-text, #ca8a04)">' + k.pausados + '</div></div>';
   const urg = k.criticos > 0;
   html += '<div class="kpi ' + (urg ? 'urgent' : 'good') + '"><div class="kpi-lbl">🚨 Críticos</div><div class="kpi-val" style="color:' + (urg ? '#dc2626' : '#16a34a') + '">' + k.criticos + '</div></div>';
   const ventasAlerts = k.alertas_ventas_aumento || 0;
@@ -17597,12 +17597,12 @@ function render(d){
   // Alertas ventas que aumentaron
   const ventasArr = d.alertas_ventas_aumento || [];
   if (ventasArr.length) {
-    let hv = '<div class="card" style="background:linear-gradient(135deg,#fef2f2,#fefce8);border:2px solid #ea580c"><h2 style="margin:0 0 6px;color:#9a3412">📈 Ventas en aumento · ' + ventasArr.length + ' producto(s) · adelantar producción</h2>';
+    let hv = '<div class="card" style="background:linear-gradient(135deg,#fef2f2,#fefce8);border:2px solid #ea580c"><h2 style="margin:0 0 6px;color:var(--cx-warn-text, #9a3412)">📈 Ventas en aumento · ' + ventasArr.length + ' producto(s) · adelantar producción</h2>';
     hv += '<div class="muted">Velocidad últ 14d supera baseline 60d en ≥30%. Si la cobertura ajustada cae <25d, hay riesgo de stockout antes del próximo canónico.</div>';
     ventasArr.forEach(a => {
       const sev = a.severidad;
       const col = sev === 'CRITICO' ? '#dc2626' : (sev === 'URGENTE' ? '#ea580c' : (sev === 'BOOM' ? '#7c3aed' : '#ca8a04'));
-      hv += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;margin-top:6px;background:white;border-left:4px solid ' + col + '">';
+      hv += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;margin-top:6px;background:var(--cx-card, #fff);border-left:4px solid ' + col + '">';
       hv += '<div><strong>' + esc(a.producto) + '</strong> <span style="background:' + col + ';color:white;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">' + sev + '</span></div>';
       hv += '<div style="font-size:12px;text-align:right"><span style="color:' + col + ';font-weight:800">+' + a.delta_pct + '%</span> ventas<br><span class="muted">cobertura ajustada: ' + (a.cob_ajustada_dias || '—') + 'd</span></div>';
       hv += '</div>';
@@ -17639,7 +17639,7 @@ function render(d){
     ha += '<div style="font-size:11px;color:' + (a.tiene_lote_agendado ? '#16a34a' : '#dc2626') + ';font-weight:700">' + planTxt + '</div>';
     ha += '</div>';
   });
-  if (!d.alertas_criticos.length) ha = '<div class="muted" style="text-align:center;padding:20px;color:#16a34a">✅ Sin críticos</div>';
+  if (!d.alertas_criticos.length) ha = '<div class="muted" style="text-align:center;padding:20px;color:var(--cx-success-text, #16a34a)">✅ Sin críticos</div>';
   document.getElementById('alertas').innerHTML = ha;
 
   // Producciones reales
@@ -17654,14 +17654,14 @@ function render(d){
   const s = d.ia_stats || {};
   const totalAcciones = (s.aceptadas || 0) + (s.movidas || 0) + (s.canceladas || 0) + (s.ignoradas || 0);
   let hs2 = '<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px">';
-  hs2 += '<span style="background:#dcfce7;color:#166534;padding:4px 10px;border-radius:6px"><strong>' + (s.aceptadas || 0) + '</strong> aceptadas</span>';
-  hs2 += '<span style="background:#fef3c7;color:#854d0e;padding:4px 10px;border-radius:6px"><strong>' + (s.movidas || 0) + '</strong> movidas</span>';
-  hs2 += '<span style="background:#fee2e2;color:#991b1b;padding:4px 10px;border-radius:6px"><strong>' + (s.canceladas || 0) + '</strong> canceladas</span>';
-  hs2 += '<span style="background:#f1f5f9;color:#475569;padding:4px 10px;border-radius:6px"><strong>' + (s.ignoradas || 0) + '</strong> ignoradas</span>';
-  hs2 += '<span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:6px"><strong>' + (s.pendientes || 0) + '</strong> pendientes</span>';
+  hs2 += '<span style="background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);padding:4px 10px;border-radius:6px"><strong>' + (s.aceptadas || 0) + '</strong> aceptadas</span>';
+  hs2 += '<span style="background:var(--cx-warn-pale, #fef3c7);color:#854d0e;padding:4px 10px;border-radius:6px"><strong>' + (s.movidas || 0) + '</strong> movidas</span>';
+  hs2 += '<span style="background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);padding:4px 10px;border-radius:6px"><strong>' + (s.canceladas || 0) + '</strong> canceladas</span>';
+  hs2 += '<span style="background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);padding:4px 10px;border-radius:6px"><strong>' + (s.ignoradas || 0) + '</strong> ignoradas</span>';
+  hs2 += '<span style="background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af);padding:4px 10px;border-radius:6px"><strong>' + (s.pendientes || 0) + '</strong> pendientes</span>';
   if (totalAcciones > 0) {
     const aceptPct = Math.round(((s.aceptadas || 0) / totalAcciones) * 100);
-    hs2 += '<span style="margin-left:8px;color:#475569;font-style:italic">IA aprendizaje: ' + aceptPct + '% de sugerencias aceptadas</span>';
+    hs2 += '<span style="margin-left:8px;color:var(--cx-text-soft, #475569);font-style:italic">IA aprendizaje: ' + aceptPct + '% de sugerencias aceptadas</span>';
   }
   hs2 += '</div>';
   document.getElementById('ia-stats').innerHTML = hs2;
@@ -17834,22 +17834,22 @@ _VALIDAR_FORMULAS_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>Validar fórmulas · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1500px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#0f766e;font-size:22px}
-.muted{color:#64748b;font-size:12px}
-button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-info-text, #0f766e);font-size:22px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:12px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:10px 8px;background:#f1f5f9;color:#475569;font-weight:700;position:sticky;top:0}
-td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
-.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:8px;margin-bottom:8px;text-align:center;min-width:120px;vertical-align:top}
-.kpi-lbl{font-size:10px;color:#64748b;text-transform:uppercase}
+th{text-align:left;padding:10px 8px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-weight:700;position:sticky;top:0}
+td{padding:8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);vertical-align:top}
+.kpi{display:inline-block;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:10px 18px;margin-right:8px;margin-bottom:8px;text-align:center;min-width:120px;vertical-align:top}
+.kpi-lbl{font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase}
 .kpi-val{font-size:22px;font-weight:800}
-.score-OK{background:#dcfce7;color:#166534;padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.score-WARNING{background:#fef3c7;color:#854d0e;padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.score-ERROR{background:#fee2e2;color:#991b1b;padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
-.score-INACTIVO{background:#f1f5f9;color:#64748b;padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.score-OK{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.score-WARNING{background:var(--cx-warn-pale, #fef3c7);color:#854d0e;padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.score-ERROR{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.score-INACTIVO{background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-mute, #64748b);padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
 .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;margin-right:3px}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .mono{font-family:ui-monospace,monospace}
@@ -17857,7 +17857,7 @@ td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 .filter input{margin-right:4px;vertical-align:middle}
 </style></head><body>
 <div class="wrap">
-<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+<a href="/modulos" style="color:var(--cx-info-text, #0f766e);font-weight:700;font-size:13px">&larr; Volver</a>
 
 <div class="card">
   <h1>🧪 Auditoría de fórmulas · nueva lógica (% sobre 100%)</h1>
@@ -17903,10 +17903,10 @@ function render(){
   const r = DATA.resumen_por_score || {};
   let k = '';
   k += '<span class="kpi"><div class="kpi-lbl">Total fórmulas</div><div class="kpi-val">' + DATA.total_formulas + '</div></span>';
-  k += '<span class="kpi"><div class="kpi-lbl">✅ OK</div><div class="kpi-val" style="color:#16a34a">' + (r.OK || 0) + '</div></span>';
-  k += '<span class="kpi"><div class="kpi-lbl">⚠ Warning</div><div class="kpi-val" style="color:#ca8a04">' + (r.WARNING || 0) + '</div></span>';
-  k += '<span class="kpi"><div class="kpi-lbl">❌ Error</div><div class="kpi-val" style="color:#dc2626">' + (r.ERROR || 0) + '</div></span>';
-  k += '<span class="kpi"><div class="kpi-lbl">⚪ Inactivo</div><div class="kpi-val" style="color:#64748b">' + (r.INACTIVO || 0) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">✅ OK</div><div class="kpi-val" style="color:var(--cx-success-text, #16a34a)">' + (r.OK || 0) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">⚠ Warning</div><div class="kpi-val" style="color:var(--cx-warn-text, #ca8a04)">' + (r.WARNING || 0) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">❌ Error</div><div class="kpi-val" style="color:var(--cx-danger-text, #dc2626)">' + (r.ERROR || 0) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">⚪ Inactivo</div><div class="kpi-val" style="color:var(--cx-text-mute, #64748b)">' + (r.INACTIVO || 0) + '</div></span>';
   document.getElementById('kpis').innerHTML = k;
 
   // Filtros
@@ -17939,10 +17939,10 @@ function render(){
     html += '<td><span class="score-' + it.score + '">' + it.score + '</span></td>';
     html += '<td class="num">' + it.lote_size_kg_excel.toFixed(2) + '</td>';
     html += '<td class="num">' + (it.lote_real_kg_promedio || '—') + '</td>';
-    html += '<td class="num">' + it.n_items + (it.n_vacios > 0 ? ' <span style="color:#dc2626">(' + it.n_vacios + ' vacíos)</span>' : '') + '</td>';
+    html += '<td class="num">' + it.n_items + (it.n_vacios > 0 ? ' <span style="color:var(--cx-danger-text, #dc2626)">(' + it.n_vacios + ' vacíos)</span>' : '') + '</td>';
     html += '<td class="num">' + it.suma_kg_items.toFixed(2) + ' kg</td>';
     html += '<td class="num" style="color:' + covColor + ';font-weight:700">' + cobertura + '%</td>';
-    html += '<td style="font-size:11px;color:#7f1d1d">' + (it.problemas || []).map(p => escapeHtml(p)).join('<br>') + '</td>';
+    html += '<td style="font-size:11px;color:var(--cx-danger-text, #7f1d1d)">' + (it.problemas || []).map(p => escapeHtml(p)).join('<br>') + '</td>';
     html += '</tr>';
   });
 
@@ -18143,34 +18143,34 @@ _GASTO_MPS_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>Gasto anual MPs · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1200px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:20px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#0f766e;font-size:22px}
-.muted{color:#64748b;font-size:13px}
-button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:20px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-info-text, #0f766e);font-size:22px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:13px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
 button:hover{background:#0d635c}
-textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:ui-monospace,monospace;min-height:100px;resize:vertical}
-select{padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
+textarea{width:100%;padding:10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:13px;font-family:ui-monospace,monospace;min-height:100px;resize:vertical}
+select{padding:7px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:13px}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:10px 8px;background:#f1f5f9;color:#475569;font-weight:700}
-td{padding:8px;border-bottom:1px solid #f1f5f9}
-.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;margin-bottom:8px;text-align:center;min-width:130px;vertical-align:top}
-.kpi-lbl{font-size:11px;color:#64748b}
+th{text-align:left;padding:10px 8px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-weight:700}
+td{padding:8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}
+.kpi{display:inline-block;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:10px 18px;margin-right:10px;margin-bottom:8px;text-align:center;min-width:130px;vertical-align:top}
+.kpi-lbl{font-size:11px;color:var(--cx-text-mute, #64748b)}
 .kpi-val{font-size:22px;font-weight:800}
 .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700}
-.tag-warn{background:#fef3c7;color:#854d0e}
-.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.tag-warn{background:var(--cx-warn-pale, #fef3c7);color:#854d0e}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:var(--cx-info-text, #1e40af)}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 </style></head><body>
 <div class="wrap">
-<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+<a href="/modulos" style="color:var(--cx-info-text, #0f766e);font-weight:700;font-size:13px">&larr; Volver</a>
 
 <div class="card">
   <h1>📦 Necesidad anual de materias primas</h1>
   <div class="muted">Calcula cuánto se va a NECESITAR de cada MP en 12 meses · cruza fórmulas activas con velocidad de ventas Shopify. Para Alejandro · 14-may-2026.</div>
   <div style="margin-top:14px">
-    <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">Materias primas (una por línea · busca por nombre):</label>
+    <label style="display:block;font-size:12px;color:var(--cx-text-soft, #475569);margin-bottom:4px">Materias primas (una por línea · busca por nombre):</label>
     <textarea id="queries" placeholder="Cetiol AB
 Phenyl trimeticone
 PEG-12 dimethicone
@@ -18180,7 +18180,7 @@ PEG-12 dimethicone
 CAPB</textarea>
   </div>
   <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <label style="font-size:12px;color:#475569">Ventana:
+    <label style="font-size:12px;color:var(--cx-text-soft, #475569)">Ventana:
       <select id="dias">
         <option value="90">3 meses</option>
         <option value="180">6 meses</option>
@@ -18231,15 +18231,15 @@ function render(d, queries){
   let k = '';
   k += '<span class="kpi"><div class="kpi-lbl">Buscadas</div><div class="kpi-val">' + queries.length + '</div></span>';
   k += '<span class="kpi"><div class="kpi-lbl">Encontradas</div><div class="kpi-val">' + d.n_mps_encontradas + '</div></span>';
-  k += '<span class="kpi"><div class="kpi-lbl">📊 Consumo histórico</div><div class="kpi-val" style="color:#0891b2">' + fmtKg(d.total_kg_consumido_anual_historico) + '</div></span>';
-  k += '<span class="kpi"><div class="kpi-lbl">📅 Calendar 12m</div><div class="kpi-val" style="color:#7c3aed">' + fmtKg(d.total_kg_necesidad_calendar_12m) + '</div></span>';
-  k += '<span class="kpi" style="border-color:#16a34a;background:#f0fdf4"><div class="kpi-lbl">🛒 COMPRAR 12m</div><div class="kpi-val" style="color:#16a34a">' + fmtKg(d.total_kg_a_comprar_12m) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">📊 Consumo histórico</div><div class="kpi-val" style="color:var(--cx-info-text, #0891b2)">' + fmtKg(d.total_kg_consumido_anual_historico) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">📅 Calendar 12m</div><div class="kpi-val" style="color:var(--cx-primary-text, #7c3aed)">' + fmtKg(d.total_kg_necesidad_calendar_12m) + '</div></span>';
+  k += '<span class="kpi" style="border-color:var(--cx-success, #16a34a);background:var(--cx-success-pale, #f0fdf4)"><div class="kpi-lbl">🛒 COMPRAR 12m</div><div class="kpi-val" style="color:var(--cx-success-text, #16a34a)">' + fmtKg(d.total_kg_a_comprar_12m) + '</div></span>';
   document.getElementById('kpis').innerHTML = k;
 
   let html = '<div class="card">';
 
   if (d.no_encontrados && d.no_encontrados.length){
-    html += '<div style="background:#fef3c7;border:1px solid #fde68a;color:#854d0e;padding:10px;border-radius:8px;margin-bottom:12px">';
+    html += '<div style="background:var(--cx-warn-pale, #fef3c7);border:1px solid #fde68a;color:#854d0e;padding:10px;border-radius:8px;margin-bottom:12px">';
     html += '⚠ <strong>NO encontradas en maestro_mps:</strong> ' + d.no_encontrados.map(q => '<code>' + escapeHtml(q) + '</code>').join(', ');
     html += '<br><span style="font-size:11px">Probá variaciones de nombre · busca en <a href="/admin/mps-buscar" target="_blank">/admin/mps-buscar</a></span></div>';
   }
@@ -18261,7 +18261,7 @@ function render(d, queries){
   html += '<th class="num">Stock<br>actual</th>';
   html += '<th class="num">📊 Consumo<br>histórico 12m</th>';
   html += '<th class="num">📅 Necesidad<br>Calendar 12m</th>';
-  html += '<th class="num" style="background:#dcfce7">🛒 Comprar<br>12m</th>';
+  html += '<th class="num" style="background:var(--cx-success-pale, #dcfce7)">🛒 Comprar<br>12m</th>';
   html += '<th>Productos que la usan (Calendar vs Ventas)</th>';
   html += '</tr></thead><tbody>';
 
@@ -18277,19 +18277,19 @@ function render(d, queries){
 
     html += '<tr>';
     html += '<td class="mono">' + escapeHtml(it.codigo_mp) + '</td>';
-    html += '<td><strong>' + escapeHtml(it.nombre_comercial) + '</strong>' + badges + '<br><span style="color:#94a3b8;font-size:10px">' + escapeHtml(it.nombre_inci) + '</span><br><span style="color:#475569;font-size:10px">' + escapeHtml(it.proveedor || '—') + ' · match: ' + escapeHtml(it.matched_query) + '</span></td>';
-    html += '<td class="num" style="color:#475569">' + fmtKg(it.stock_actual_kg) + '</td>';
-    html += '<td class="num" style="color:#0891b2">' + fmtKg(it.kg_consumido_anual_historico) + '<br><span style="font-size:10px;color:#94a3b8">' + (it.n_movimientos || 0) + ' mov</span></td>';
-    html += '<td class="num" style="color:#7c3aed">' + fmtKg(it.kg_necesidad_calendar_12m) + '<br><span style="font-size:10px;color:#94a3b8">ventas: ' + fmtKg(it.kg_necesidad_ventas_12m) + '</span></td>';
-    html += '<td class="num" style="background:#dcfce7;color:#16a34a;font-size:18px;font-weight:800">' + fmtKg(aComprar) + '</td>';
+    html += '<td><strong>' + escapeHtml(it.nombre_comercial) + '</strong>' + badges + '<br><span style="color:var(--cx-text-faint, #94a3b8);font-size:10px">' + escapeHtml(it.nombre_inci) + '</span><br><span style="color:var(--cx-text-soft, #475569);font-size:10px">' + escapeHtml(it.proveedor || '—') + ' · match: ' + escapeHtml(it.matched_query) + '</span></td>';
+    html += '<td class="num" style="color:var(--cx-text-soft, #475569)">' + fmtKg(it.stock_actual_kg) + '</td>';
+    html += '<td class="num" style="color:var(--cx-info-text, #0891b2)">' + fmtKg(it.kg_consumido_anual_historico) + '<br><span style="font-size:10px;color:var(--cx-text-faint, #94a3b8)">' + (it.n_movimientos || 0) + ' mov</span></td>';
+    html += '<td class="num" style="color:var(--cx-primary-text, #7c3aed)">' + fmtKg(it.kg_necesidad_calendar_12m) + '<br><span style="font-size:10px;color:var(--cx-text-faint, #94a3b8)">ventas: ' + fmtKg(it.kg_necesidad_ventas_12m) + '</span></td>';
+    html += '<td class="num" style="background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #16a34a);font-size:18px;font-weight:800">' + fmtKg(aComprar) + '</td>';
     html += '<td style="font-size:11px">';
     if (productosActivos.length){
-      html += '<details><summary style="cursor:pointer;color:#0f766e;font-weight:700">▾ Ver ' + productosActivos.length + '</summary>';
+      html += '<details><summary style="cursor:pointer;color:var(--cx-info-text, #0f766e);font-weight:700">▾ Ver ' + productosActivos.length + '</summary>';
       html += '<table style="margin-top:5px;font-size:10px"><thead><tr><th>Producto</th><th class="num">g/lote</th><th class="num">📅 Lotes<br>Calendar</th><th class="num">📅 kg MP<br>Calendar</th><th class="num">🛍 Lotes<br>Ventas est</th><th class="num">Fuente</th></tr></thead><tbody>';
       productosActivos.forEach(p => {
         const fuenteTag = p.fuente_calculo === 'calendar' ?
           '<span style="background:#e0e7ff;color:#3730a3;padding:1px 4px;border-radius:3px">Calendar</span>' :
-          '<span style="background:#fef3c7;color:#854d0e;padding:1px 4px;border-radius:3px">Ventas</span>';
+          '<span style="background:var(--cx-warn-pale, #fef3c7);color:#854d0e;padding:1px 4px;border-radius:3px">Ventas</span>';
         html += '<tr><td>' + escapeHtml(p.producto) + '</td>';
         html += '<td class="num">' + (p.gramos_mp_por_lote || 0) + 'g</td>';
         html += '<td class="num">' + (p.calendar_n_lotes || 0) + '</td>';
@@ -19030,82 +19030,82 @@ _PLAN_CALENDARIO_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>📅 Calendario EOS · Plan autónomo</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:18px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:18px}
 .wrap{max-width:min(1780px,97vw);margin:0 auto}
-.card{background:white;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 2px 8px rgba(15,23,42,.05)}
-h1{margin:0 0 4px;color:#0f172a;font-size:22px;font-weight:800;letter-spacing:-.01em}
+.card{background:var(--cx-card, #fff);border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 2px 8px rgba(15,23,42,.05)}
+h1{margin:0 0 4px;color:var(--cx-text, #0f172a);font-size:22px;font-weight:800;letter-spacing:-.01em}
 summary::-webkit-details-marker{display:none}
 summary{list-style:none;outline:none}
-.acc-sum{cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;font-weight:700;font-size:12.5px;padding:8px 15px;border-radius:9px;user-select:none;transition:all .15s;box-shadow:0 1px 2px rgba(0,0,0,.06)}
-.acc-sum:hover{background:#e2e8f0;color:#334155}
-.navq{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;height:36px;min-width:36px;padding:0 13px;border-radius:9px;font-size:15px;font-weight:800;cursor:pointer;transition:all .15s}
-.navq:hover{background:#e2e8f0;color:#1e293b}
-.muted{color:#64748b;font-size:12px}
-button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;margin:2px}
+.acc-sum{cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:var(--cx-border-soft, #f1f5f9);border:1px solid var(--cx-border, #e2e8f0);color:var(--cx-text-soft, #475569);font-weight:700;font-size:12.5px;padding:8px 15px;border-radius:9px;user-select:none;transition:all .15s;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.acc-sum:hover{background:var(--cx-border, #e2e8f0);color:var(--cx-text-soft, #334155)}
+.navq{background:var(--cx-border-soft, #f1f5f9);border:1px solid var(--cx-border, #e2e8f0);color:var(--cx-text-soft, #475569);height:36px;min-width:36px;padding:0 13px;border-radius:9px;font-size:15px;font-weight:800;cursor:pointer;transition:all .15s}
+.navq:hover{background:var(--cx-border, #e2e8f0);color:var(--cx-text, #1e293b)}
+.muted{color:var(--cx-text-mute, #64748b);font-size:12px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;margin:2px}
 button:hover{background:#0d635c}
-button.secondary{background:#475569}
-button.warn{background:#ca8a04}
-button.success{background:#16a34a}
-button.danger{background:#dc2626}
-button:disabled{background:#94a3b8;cursor:not-allowed}
-select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px}
-.horiz-btn{padding:10px 16px;border:2px solid #e2e8f0;background:white;color:#475569;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin:2px}
-.horiz-btn.active{border-color:#0f766e;background:#0f766e;color:white}
-.horiz-btn:hover{border-color:#0f766e}
+button.secondary{background:var(--cx-text-soft, #475569)}
+button.warn{background:var(--cx-accent-dark, #ca8a04)}
+button.success{background:var(--cx-success, #16a34a)}
+button.danger{background:var(--cx-danger, #dc2626)}
+button:disabled{background:var(--cx-text-faint, #94a3b8);cursor:not-allowed}
+select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:12px}
+.horiz-btn{padding:10px 16px;border:2px solid var(--cx-border, #e2e8f0);background:var(--cx-card, #fff);color:var(--cx-text-soft, #475569);border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin:2px}
+.horiz-btn.active{border-color:var(--cx-info, #0f766e);background:var(--cx-info, #0f766e);color:white}
+.horiz-btn:hover{border-color:var(--cx-info, #0f766e)}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:8px}
 @media(max-width:640px){.cal-grid{grid-template-columns:repeat(7,minmax(118px,1fr));overflow-x:auto;-webkit-overflow-scrolling:touch}}
 @media(max-width:768px){table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}input,select,textarea{font-size:16px}}
-.cal-head{background:#f1f5f9;padding:8px;text-align:center;font-weight:800;color:#475569;font-size:12px;border-radius:6px}
-.cal-day{background:white;border:1px solid #e2e8f0;border-radius:8px;padding:6px;min-height:110px;position:relative;font-size:11px}
-.cal-day.festivo{background:#fef2f2;border-color:#fca5a5}
-.cal-day.weekend{background:#f8fafc;opacity:.7}
-.cal-day.hoy{border:2px solid #0f766e;background:#f0fdfa}
+.cal-head{background:var(--cx-border-soft, #f1f5f9);padding:8px;text-align:center;font-weight:800;color:var(--cx-text-soft, #475569);font-size:12px;border-radius:6px}
+.cal-day{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:6px;min-height:110px;position:relative;font-size:11px}
+.cal-day.festivo{background:var(--cx-danger-pale, #fef2f2);border-color:#fca5a5}
+.cal-day.weekend{background:var(--cx-bg-alt, #f8fafc);opacity:.7}
+.cal-day.hoy{border:2px solid var(--cx-info, #0f766e);background:#f0fdfa}
 .cal-day.suggest{background:linear-gradient(135deg,#f0fdfa,#ecfeff)}
-.day-num{font-weight:800;color:#1e293b;font-size:13px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
-.day-num .festivo-tag{font-size:9px;background:#fecaca;color:#7f1d1d;padding:1px 5px;border-radius:3px;font-weight:700}
-.lote{background:#dbeafe;color:#1e40af;padding:3px 5px;border-radius:4px;margin-bottom:3px;font-size:10px;font-weight:600;cursor:pointer;border-left:3px solid #1e40af;display:flex;justify-content:space-between;align-items:center;gap:3px}
+.day-num{font-weight:800;color:var(--cx-text, #1e293b);font-size:13px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+.day-num .festivo-tag{font-size:9px;background:var(--cx-danger-pale, #fecaca);color:var(--cx-danger-text, #7f1d1d);padding:1px 5px;border-radius:3px;font-weight:700}
+.lote{background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af);padding:3px 5px;border-radius:4px;margin-bottom:3px;font-size:10px;font-weight:600;cursor:pointer;border-left:3px solid var(--cx-info, #1e40af);display:flex;justify-content:space-between;align-items:center;gap:3px}
 .lote:hover{background:#bfdbfe}
-.lote.calendar{background:#fef9c3;border-left-color:#ca8a04;color:#854d0e}
-.lote.eos_plan{background:#dcfce7;border-left-color:#16a34a;color:#166534}
+.lote.calendar{background:#fef9c3;border-left-color:var(--cx-accent-dark, #ca8a04);color:#854d0e}
+.lote.eos_plan{background:var(--cx-success-pale, #dcfce7);border-left-color:var(--cx-success, #16a34a);color:var(--cx-success-text, #166534)}
 .lote.eos_canonico{background:#e0e7ff;border-left-color:#6366f1;color:#3730a3}
 .lote.eos_b2b{background:#fce7f3;border-left-color:#db2777;color:#9d174d}
-.lote.esperando_recurso{background:#fde68a;border-left-color:#d97706;color:#78350f;opacity:.85}
-.lote.sugerido{background:#fef3c7;border-left-color:#f59e0b;color:#92400e;border-style:dashed;border-width:1px}
+.lote.esperando_recurso{background:var(--cx-warn-pale, #fde68a);border-left-color:var(--cx-accent-dark, #d97706);color:var(--cx-warn-text, #78350f);opacity:.85}
+.lote.sugerido{background:var(--cx-warn-pale, #fef3c7);border-left-color:var(--cx-warn, #f59e0b);color:var(--cx-warn-text, #92400e);border-style:dashed;border-width:1px}
 .lote.grande{font-weight:800;border-left-width:4px}
 .lote[draggable=true]{cursor:grab}
 .lote[draggable=true]:active{cursor:grabbing}
-.cal-day.drop-target{background:#dcfce7 !important;border:2px dashed #16a34a !important}
-.cal-day.drop-invalid{background:#fee2e2 !important;border:2px dashed #dc2626 !important}
+.cal-day.drop-target{background:var(--cx-success-pale, #dcfce7) !important;border:2px dashed var(--cx-success, #16a34a) !important}
+.cal-day.drop-invalid{background:var(--cx-danger-pale, #fee2e2) !important;border:2px dashed var(--cx-danger, #dc2626) !important}
 .modal-back{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:2147483000;justify-content:center;align-items:center;padding:20px;overflow-y:auto}
 .modal-back.show{display:flex}
-.modal-box{background:#fff;border-radius:18px;max-width:min(860px,96vw);width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+.modal-box{background:var(--cx-card, #fff);border-radius:18px;max-width:min(860px,96vw);width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 24px 70px rgba(0,0,0,.45)}
 .modal-head{background:linear-gradient(135deg,#4c1d95,#7c3aed);padding:17px 24px;border-radius:18px 18px 0 0;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;z-index:5}
 .modal-body{padding:18px 22px}
 .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
-.metric-card{background:#fff;border:1px solid #eef0f4;border-radius:12px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-.metric-lbl{font-size:9.5px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
-.metric-val{font-size:17px;font-weight:800;color:#1e293b;font-variant-numeric:tabular-nums;line-height:1.15}
-.metric-sub{font-size:11px;color:#94a3b8;margin-top:3px}
+.metric-card{background:var(--cx-card, #fff);border:1px solid #eef0f4;border-radius:12px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.metric-lbl{font-size:9.5px;color:var(--cx-text-mute, #64748b);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.metric-val{font-size:17px;font-weight:800;color:var(--cx-text, #1e293b);font-variant-numeric:tabular-nums;line-height:1.15}
+.metric-sub{font-size:11px;color:var(--cx-text-faint, #94a3b8);margin-top:3px}
 .banner-inline{padding:10px 14px;border-radius:8px;margin:10px 0;font-size:12px;border-left:4px solid}
-.banner-inline.ok{background:#dcfce7;border-color:#16a34a;color:#166534}
-.banner-inline.warn{background:#fef3c7;border-color:#ca8a04;color:#854d0e}
-.banner-inline.danger{background:#fee2e2;border-color:#dc2626;color:#991b1b}
-.banner-inline.info{background:#dbeafe;border-color:#1e40af;color:#1e40af}
+.banner-inline.ok{background:var(--cx-success-pale, #dcfce7);border-color:var(--cx-success, #16a34a);color:var(--cx-success-text, #166534)}
+.banner-inline.warn{background:var(--cx-warn-pale, #fef3c7);border-color:var(--cx-accent-dark, #ca8a04);color:#854d0e}
+.banner-inline.danger{background:var(--cx-danger-pale, #fee2e2);border-color:var(--cx-danger, #dc2626);color:var(--cx-danger-text, #991b1b)}
+.banner-inline.info{background:var(--cx-info-pale, #dbeafe);border-color:var(--cx-info, #1e40af);color:var(--cx-info-text, #1e40af)}
 .lote-action{background:transparent;border:none;padding:0;color:inherit;cursor:pointer;font-size:10px;opacity:.6}
 .lote-action:hover{opacity:1}
-.kpi{display:inline-block;background:white;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;margin-right:8px;margin-bottom:6px;text-align:center;min-width:100px;vertical-align:top}
-.kpi-lbl{font-size:10px;color:#64748b;text-transform:uppercase}
+.kpi{display:inline-block;background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:8px 14px;margin-right:8px;margin-bottom:6px;text-align:center;min-width:100px;vertical-align:top}
+.kpi-lbl{font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase}
 .kpi-val{font-size:20px;font-weight:800}
 .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;margin-top:8px}
 .legend span{display:inline-flex;align-items:center;gap:4px}
 .legend-dot{width:10px;height:10px;border-radius:2px;display:inline-block}
 .banner{padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:12px}
-.banner.success{background:#dcfce7;color:#166534;border:1px solid #86efac}
-.banner.warn{background:#fef3c7;color:#854d0e;border:1px solid #fde68a}
-.banner.info{background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe}
+.banner.success{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #166534);border:1px solid #86efac}
+.banner.warn{background:var(--cx-warn-pale, #fef3c7);color:#854d0e;border:1px solid #fde68a}
+.banner.info{background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af);border:1px solid #bfdbfe}
 .actions-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-top:10px}
-.suggest-list{max-height:280px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px}
-.suggest-row{padding:6px 10px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;font-size:11px}
+.suggest-list{max-height:280px;overflow-y:auto;border:1px solid var(--cx-border, #e2e8f0);border-radius:8px}
+.suggest-row{padding:6px 10px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);display:flex;justify-content:space-between;align-items:center;font-size:11px}
 .suggest-row:hover{background:#f0fdfa}
 .suggest-row .info{flex:1}
 .suggest-row .actions{display:flex;gap:3px}
@@ -19116,8 +19116,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 <div class="card">
   <h1 style="display:flex;align-items:center;gap:12px;margin:0;flex-wrap:wrap">
     <span style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border-radius:13px;font-size:22px;box-shadow:0 5px 14px rgba(124,58,237,.32)">📅</span>
-    <span style="font-size:25px;font-weight:800;color:#0f172a;letter-spacing:-.02em">Calendario EOS</span>
-    <span style="font-size:11.5px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;padding:4px 12px;border-radius:999px">Plan autónomo</span>
+    <span style="font-size:25px;font-weight:800;color:var(--cx-text, #0f172a);letter-spacing:-.02em">Calendario EOS</span>
+    <span style="font-size:11.5px;font-weight:700;color:var(--cx-primary-text, #7c3aed);background:var(--cx-primary-pale, #f5f3ff);border:1px solid #ddd6fe;padding:4px 12px;border-radius:999px">Plan autónomo</span>
   </h1>
   <div class="muted">Calendario propio · reemplaza Google Calendar · genera autoplan según ventas Shopify + lote_size del Excel + reglas operativas (festivos · lun-vie · max 2/día · grandes solos · Vit C/Triactive lun-mié)</div>
   <div class="actions-bar" style="margin-top:10px">
@@ -19130,7 +19130,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <button class="horiz-btn active" data-h="365" onclick="setHoriz(365)">365 días</button>
     </div>
     <div>
-      <label style="margin-right:10px;font-size:12px;color:#475569;cursor:pointer">
+      <label style="margin-right:10px;font-size:12px;color:var(--cx-text-soft, #475569);cursor:pointer">
         <input type="checkbox" id="filtro-solo-ia" onchange="render()" style="vertical-align:middle">
         Solo sugerencias IA
       </label>
@@ -19149,7 +19149,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
     <div style="display:flex;align-items:center;gap:8px">
       <button onclick="cambiarMes(-1)" class="navq" title="Mes anterior">&lsaquo;</button>
-      <strong id="mesActual" style="font-size:17px;font-weight:800;color:#0f172a;min-width:132px;text-align:center">—</strong>
+      <strong id="mesActual" style="font-size:17px;font-weight:800;color:var(--cx-text, #0f172a);min-width:132px;text-align:center">—</strong>
       <button onclick="cambiarMes(1)" class="navq" title="Mes siguiente">&rsaquo;</button>
       <button onclick="irHoy()" class="navq" style="font-size:12.5px;font-weight:700" title="Ir al mes actual">Hoy</button>
     </div>
@@ -19157,38 +19157,38 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <summary class="acc-sum">&#9881; Acciones del plan &#9662;</summary>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:9px">
       <button onclick="abrirNuevaProduccion('')" class="success" id="btn-nueva-prod"
-        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#7c3aed;font-weight:700;box-shadow:0 1px 3px rgba(124,58,237,.25)" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:var(--cx-primary, #7c3aed);font-weight:700;box-shadow:0 1px 3px rgba(124,58,237,.25)" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
       <button onclick="generarPlanDesdeHoy()" class="success" id="btn-plan-hoy"
-        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#7c3aed;font-weight:700;box-shadow:0 1px 3px rgba(124,58,237,.25)" title="LIMPIA el calendario y coloca TODAS las producciones desde HOY, cada producto según su cadencia real (cuánto dura un lote según la venta), por 2 años. Luego mové a fechas pasadas las que ya produjiste y la cadena se recalcula sola.">📋 Generar plan (2 años desde hoy)</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:var(--cx-primary, #7c3aed);font-weight:700;box-shadow:0 1px 3px rgba(124,58,237,.25)" title="LIMPIA el calendario y coloca TODAS las producciones desde HOY, cada producto según su cadencia real (cuánto dura un lote según la venta), por 2 años. Luego mové a fechas pasadas las que ya produjiste y la cadena se recalcula sola.">📋 Generar plan (2 años desde hoy)</button>
       <button onclick="proyectar2AniosSinMover()" class="success" id="btn-proy-2a"
-        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#475569;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="Extiende el plan 2 años hacia adelante RESPETANDO lo que ya tenés: NO mueve ni borra tus lotes Fijos ni lo ya producido; solo regenera la proyección automática alrededor de ellos (a partir de lo que hay hoy en el calendario).">🔮 Proyectar 2 años (sin mover lo actual)</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:var(--cx-text-soft, #475569);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="Extiende el plan 2 años hacia adelante RESPETANDO lo que ya tenés: NO mueve ni borra tus lotes Fijos ni lo ya producido; solo regenera la proyección automática alrededor de ellos (a partir de lo que hay hoy en el calendario).">🔮 Proyectar 2 años (sin mover lo actual)</button>
       <button onclick="reprogramarDesdeMes()" class="success" id="btn-reprog-mes"
-        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#475569;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="FIJA el mes actual tal cual está y RECALCULA todo del mes siguiente en adelante por 2 años con la cadencia óptima. Cancela el plan viejo de ago+ pero PRESERVA los pedidos B2B de clientes y lo ya producido. Úsalo cuando sientas el plan 'descuadrado' hacia adelante.">📅 Fijar mes + recalcular 2 años</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:var(--cx-text-soft, #475569);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="FIJA el mes actual tal cual está y RECALCULA todo del mes siguiente en adelante por 2 años con la cadencia óptima. Cancela el plan viejo de ago+ pero PRESERVA los pedidos B2B de clientes y lo ya producido. Úsalo cuando sientas el plan 'descuadrado' hacia adelante.">📅 Fijar mes + recalcular 2 años</button>
       <button onclick="limpiarFuturoAuto()" class="success" id="btn-limpiar-auto"
-        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#dc2626;font-weight:700;box-shadow:0 1px 3px rgba(220,38,38,.25)" title="Deja el FUTURO limpio: cancela TODAS las producciones AZULES (auto/canónicas) de mañana en adelante para reconstruir solo con las cadenas nuevas. CONSERVA lo verde (Fijo · tus cadenas), los pedidos B2B y lo ya producido. Hasta hoy = base; de mañana en adelante todo nuevo.">🧹 Limpiar auto futuro (azules)</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:var(--cx-danger, #dc2626);font-weight:700;box-shadow:0 1px 3px rgba(220,38,38,.25)" title="Deja el FUTURO limpio: cancela TODAS las producciones AZULES (auto/canónicas) de mañana en adelante para reconstruir solo con las cadenas nuevas. CONSERVA lo verde (Fijo · tus cadenas), los pedidos B2B y lo ya producido. Hasta hoy = base; de mañana en adelante todo nuevo.">🧹 Limpiar auto futuro (azules)</button>
       <button onclick="verificarPlanCompleto()" class="success" id="btn-verificar-plan"
-        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#475569;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="Revisa TODAS las cadenas de una: marca qué productos están OK y cuáles necesitan atención (sin cadena, incompleta, con hueco, o con azules encima). Así revisás solo lo que tiene algo, no uno por uno.">🔎 Verificar plan (todos)</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:var(--cx-text-soft, #475569);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="Revisa TODAS las cadenas de una: marca qué productos están OK y cuáles necesitan atención (sin cadena, incompleta, con hueco, o con azules encima). Así revisás solo lo que tiene algo, no uno por uno.">🔎 Verificar plan (todos)</button>
       <button onclick="verSinDescontar()" class="success" id="btn-sin-descontar"
-        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#d97706;font-weight:700;box-shadow:0 1px 3px rgba(217,119,6,.25)" title="Producciones que YA pasaron pero no tienen el descuento de MP registrado (el jefe a veces se olvida). Solo informativo · las de junio (pre-inventario) van marcadas para NO descontar.">⚠️ Sin descontar</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:var(--cx-accent-dark, #d97706);font-weight:700;box-shadow:0 1px 3px rgba(217,119,6,.25)" title="Producciones que YA pasaron pero no tienen el descuento de MP registrado (el jefe a veces se olvida). Solo informativo · las de junio (pre-inventario) van marcadas para NO descontar.">⚠️ Sin descontar</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
       </div>
     </details>
   </div>
   <div id="sugerencias-adelanto" style="margin-top:10px"></div>
   <!-- Resumen del mes (antes era un panel de debug · limpiado 15-jun) -->
-  <div id="cal-diag" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px 12px;margin:8px 0;font-size:12px;color:#475569"></div>
+  <div id="cal-diag" style="background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:7px 12px;margin:8px 0;font-size:12px;color:var(--cx-text-soft, #475569)"></div>
   <div id="cal-grid-wrap"></div>
 </div>
 
 <!-- Lista TODOS los lotes · fallback siempre visible si grid falla -->
 <div class="card">
-  <h2 style="margin:0 0 8px;color:#475569;font-size:15px">📋 Todos los lotes agendados (fallback · siempre visible)</h2>
-  <div style="color:#64748b;font-size:11px;margin-bottom:8px">Si el calendario visual aparece vacío, abajo ves lista textual de los mismos lotes desde el backend.</div>
+  <h2 style="margin:0 0 8px;color:var(--cx-text-soft, #475569);font-size:15px">📋 Todos los lotes agendados (fallback · siempre visible)</h2>
+  <div style="color:var(--cx-text-mute, #64748b);font-size:11px;margin-bottom:8px">Si el calendario visual aparece vacío, abajo ves lista textual de los mismos lotes desde el backend.</div>
   <div id="lista-completa"></div>
 </div>
 
 <div class="card">
-  <h2 id="lista-titulo" style="margin:0 0 8px;color:#475569;font-size:15px">📋 Lista del autoplan</h2>
+  <h2 id="lista-titulo" style="margin:0 0 8px;color:var(--cx-text-soft, #475569);font-size:15px">📋 Lista del autoplan</h2>
   <div id="sugerencias-lista"></div>
 </div>
 
@@ -19217,55 +19217,55 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <button onclick="cerrarNuevaProduccion()" style="background:transparent;border:none;color:white;font-size:22px;cursor:pointer;line-height:1">✕</button>
     </div>
     <div class="modal-body">
-      <p style="margin:0 0 12px;font-size:12.5px;color:#64748b">Programa cualquier producto en el calendario — incluso pilotos o productos de otros clientes que no están en Necesidades. Queda <strong>Fijo</strong> (los automáticos no lo tocan).</p>
-      <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Producto *</label>
+      <p style="margin:0 0 12px;font-size:12.5px;color:var(--cx-text-mute, #64748b)">Programa cualquier producto en el calendario — incluso pilotos o productos de otros clientes que no están en Necesidades. Queda <strong>Fijo</strong> (los automáticos no lo tocan).</p>
+      <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Producto *</label>
       <input id="np-producto" list="np-productos-list" placeholder="Ej: CREMA FACIAL UREA 10" autocomplete="off" onchange="_npResumen()" oninput="_npResumenDebounced()"
-        style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;margin-bottom:11px">
+        style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px;margin-bottom:11px">
       <datalist id="np-productos-list"></datalist>
       <!-- Resumen del producto (Sebastián 11-jul · como en Necesidades) -->
-      <div id="np-resumen" style="display:none;margin:-4px 0 12px;padding:9px 11px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;line-height:1.65;color:#334155"></div>
+      <div id="np-resumen" style="display:none;margin:-4px 0 12px;padding:9px 11px;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;font-size:12px;line-height:1.65;color:var(--cx-text-soft, #334155)"></div>
       <!-- Programar la CADENA (canónico manual · recalcula desde la fecha de arriba) -->
       <details id="np-cad-det" style="margin-bottom:12px;border:1px solid #ddd6fe;border-radius:8px;overflow:hidden">
-        <summary style="cursor:pointer;font-size:12px;font-weight:800;color:#5b21b6;padding:9px 11px;background:linear-gradient(135deg,#f5f3ff,#faf5ff)">🔁 Programar la CADENA · cada X · por 1-3 años (recalcula desde esta fecha)</summary>
+        <summary style="cursor:pointer;font-size:12px;font-weight:800;color:var(--cx-primary-text, #5b21b6);padding:9px 11px;background:linear-gradient(135deg,#f5f3ff,#faf5ff)">🔁 Programar la CADENA · cada X · por 1-3 años (recalcula desde esta fecha)</summary>
         <div style="padding:11px">
           <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:9px">
-            <span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="np-cad-meses" type="number" min="0.5" max="12" step="0.5" value="2" oninput="_npCadFromMeses()" style="width:44px;padding:4px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:700"> meses <span style="color:#94a3b8">o</span> <input id="np-cad-dias" type="number" min="15" max="400" value="61" oninput="_npCadFromDias()" style="width:48px;padding:4px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:700"> días</span>
-            <span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="np-cad-kg" type="number" min="0.1" step="0.1" placeholder="kg" oninput="_npCadPreview()" style="width:62px;padding:4px;border:1px solid #7c3aed;border-radius:5px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>
-            <span style="font-size:12px;color:#5b21b6;font-weight:700">· <select id="np-cad-anios" onchange="_npCadPreview()" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></span>
-            <span style="font-size:12px;color:#5b21b6;font-weight:700">· mix <select id="np-cad-mix" title="auto = venta de toda la ventana · crece = venta reciente (colores/lanzamientos) · fijo = congela el mix" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"><option value="auto">auto</option><option value="crece">crece</option><option value="fijo">fijo</option></select></span>
+            <span style="font-size:12px;color:var(--cx-primary-text, #5b21b6);font-weight:700">Cada <input id="np-cad-meses" type="number" min="0.5" max="12" step="0.5" value="2" oninput="_npCadFromMeses()" style="width:44px;padding:4px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:5px;text-align:center;font-weight:700"> meses <span style="color:var(--cx-text-faint, #94a3b8)">o</span> <input id="np-cad-dias" type="number" min="15" max="400" value="61" oninput="_npCadFromDias()" style="width:48px;padding:4px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:5px;text-align:center;font-weight:700"> días</span>
+            <span style="font-size:12px;color:var(--cx-primary-text, #5b21b6);font-weight:700">· <input id="np-cad-kg" type="number" min="0.1" step="0.1" placeholder="kg" oninput="_npCadPreview()" style="width:62px;padding:4px;border:1px solid var(--cx-primary, #7c3aed);border-radius:5px;text-align:center;font-weight:800;color:var(--cx-primary-text, #5b21b6)"> kg/lote</span>
+            <span style="font-size:12px;color:var(--cx-primary-text, #5b21b6);font-weight:700">· <select id="np-cad-anios" onchange="_npCadPreview()" style="padding:4px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:5px;font-weight:700"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></span>
+            <span style="font-size:12px;color:var(--cx-primary-text, #5b21b6);font-weight:700">· mix <select id="np-cad-mix" title="auto = venta de toda la ventana · crece = venta reciente (colores/lanzamientos) · fijo = congela el mix" style="padding:4px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:5px;font-weight:700"><option value="auto">auto</option><option value="crece">crece</option><option value="fijo">fijo</option></select></span>
           </div>
           <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:9px">
-            <span style="font-size:12px;color:#5b21b6;font-weight:700">🎯 1ª nueva <input id="np-primera-fecha" type="date" oninput="_npCadPreview()" title="opcional · si querés fijar el mes de la 1ª producción nueva · vacío = cuando se agote lo fabricado" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"></span>
-            <button type="button" onclick="var e=document.getElementById('np-primera-fecha');if(e){e.value='';_npCadPreview()}" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:5px;padding:4px 8px;font-size:11px;color:#475569;cursor:pointer">auto</button>
-            <span style="font-size:10px;color:#94a3b8">opcional · vacío = arranca cuando se agote lo fabricado</span>
+            <span style="font-size:12px;color:var(--cx-primary-text, #5b21b6);font-weight:700">🎯 1ª nueva <input id="np-primera-fecha" type="date" oninput="_npCadPreview()" title="opcional · si querés fijar el mes de la 1ª producción nueva · vacío = cuando se agote lo fabricado" style="padding:4px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:5px;font-weight:700"></span>
+            <button type="button" onclick="var e=document.getElementById('np-primera-fecha');if(e){e.value='';_npCadPreview()}" style="background:var(--cx-border-soft, #f1f5f9);border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;padding:4px 8px;font-size:11px;color:var(--cx-text-soft, #475569);cursor:pointer">auto</button>
+            <span style="font-size:10px;color:var(--cx-text-faint, #94a3b8)">opcional · vacío = arranca cuando se agote lo fabricado</span>
           </div>
-          <div id="np-cad-preview" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:9px"></div>
+          <div id="np-cad-preview" style="font-size:11px;color:var(--cx-primary-text, #5b21b6);background:var(--cx-card, #fff);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:9px"></div>
           <button onclick="_npCrearCadena()" id="np-cad-btn" style="background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:7px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer">📅 Crear cadena desde esta fecha</button>
-          <div style="font-size:10px;color:#94a3b8;margin-top:5px">Usa la FECHA de arriba como origen · un lote cada X en día hábil (máx 2/día · ≥100kg solo) · reemplaza las futuras de este producto (conserva B2B y lo ya producido).</div>
+          <div style="font-size:10px;color:var(--cx-text-faint, #94a3b8);margin-top:5px">Usa la FECHA de arriba como origen · un lote cada X en día hábil (máx 2/día · ≥100kg solo) · reemplaza las futuras de este producto (conserva B2B y lo ya producido).</div>
         </div>
       </details>
       <div style="display:flex;gap:10px;margin-bottom:11px">
         <div style="flex:1">
-          <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Fecha *</label>
-          <input id="np-fecha" type="date" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px">
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Fecha *</label>
+          <input id="np-fecha" type="date" style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px">
         </div>
         <div style="flex:1">
-          <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px"># Lotes</label>
-          <input id="np-lotes" type="number" min="1" step="1" value="1" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px">
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px"># Lotes</label>
+          <input id="np-lotes" type="number" min="1" step="1" value="1" style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px">
         </div>
       </div>
       <div style="display:flex;gap:10px;margin-bottom:11px">
         <div style="flex:1">
-          <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Cantidad (kg)</label>
-          <input id="np-kg" type="number" min="0" step="0.01" placeholder="opcional" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px">
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Cantidad (kg)</label>
+          <input id="np-kg" type="number" min="0" step="0.01" placeholder="opcional" style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px">
         </div>
         <div style="flex:1">
-          <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Cliente</label>
-          <input id="np-cliente" placeholder="opcional" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px">
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Cliente</label>
+          <input id="np-cliente" placeholder="opcional" style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px">
         </div>
       </div>
-      <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Observaciones</label>
-      <input id="np-obs" placeholder="opcional (ej: piloto, lote especial)" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;margin-bottom:14px">
+      <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Observaciones</label>
+      <input id="np-obs" placeholder="opcional (ej: piloto, lote especial)" style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px;margin-bottom:14px">
       <div id="np-msg" style="font-size:12.5px;margin-bottom:10px"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button onclick="cerrarNuevaProduccion()" class="secondary" style="padding:9px 16px">Cancelar</button>
@@ -19639,9 +19639,9 @@ async function cargar(){
     // (antes solo alert · el grid quedaba en "Cargando…" para siempre).
     const _w = document.getElementById('cal-grid-wrap');
     if (_w){
-      _w.innerHTML = '<div style="padding:30px;text-align:center;color:#dc2626">' +
+      _w.innerHTML = '<div style="padding:30px;text-align:center;color:var(--cx-danger-text, #dc2626)">' +
         '<div style="font-weight:700;margin-bottom:8px">⚠ No se pudo cargar el calendario</div>' +
-        '<div style="font-size:12px;color:#64748b;margin-bottom:12px">' + escapeHtml(e.message) + '</div>' +
+        '<div style="font-size:12px;color:var(--cx-text-mute, #64748b);margin-bottom:12px">' + escapeHtml(e.message) + '</div>' +
         '<button onclick="cargar()" class="secondary">↻ Reintentar</button></div>';
     }
   }
@@ -19710,7 +19710,7 @@ function render(){
         const mes = f.slice(0,7);
         (porMes[mes] = porMes[mes] || []).push(a);
       });
-      let html = '<div style="font-size:11px;color:#64748b;margin-bottom:6px">Total: <strong>'+ag.length+' lotes · '+(new Set(ag.map(x=>x.producto))).size+' productos únicos</strong></div>';
+      let html = '<div style="font-size:11px;color:var(--cx-text-mute, #64748b);margin-bottom:6px">Total: <strong>'+ag.length+' lotes · '+(new Set(ag.map(x=>x.producto))).size+' productos únicos</strong></div>';
       // Sebastián 15-may-2026: "que aparezca todo". Tabla resumen de
       // TODOS los productos del plan · próximo lote + cuántos lotes ·
       // siempre visible, sin clics. Es la vista "ver todo".
@@ -19719,48 +19719,48 @@ function render(){
         const p = a.producto || '—';
         (porProd[p] = porProd[p] || []).push((a.fecha_programada||'').slice(0,10));
       });
-      html += '<div style="font-weight:700;color:#0f766e;margin:8px 0 4px">📦 Los ' +
+      html += '<div style="font-weight:700;color:var(--cx-info-text, #0f766e);margin:8px 0 4px">📦 Los ' +
         Object.keys(porProd).length + ' productos del plan</div>';
       html += '<table style="width:100%;font-size:11px;margin-bottom:10px">' +
-        '<tr style="color:#64748b;text-align:left"><th>Producto</th><th>Próximo lote</th><th>Lotes/año</th></tr>';
+        '<tr style="color:var(--cx-text-mute, #64748b);text-align:left"><th>Producto</th><th>Próximo lote</th><th>Lotes/año</th></tr>';
       // Sebastián 16-may-2026: "próximo lote" = primera fecha de HOY en
       // adelante (antes mostraba fechas pasadas como si fueran próximas).
       const _hoyP = fechaLocalStr(new Date());
       Object.keys(porProd).sort().forEach(p => {
         const fechas = porProd[p].filter(Boolean).sort();
         const prox = fechas.find(f => f >= _hoyP) || fechas[fechas.length - 1] || '—';
-        html += '<tr style="border-top:1px solid #f1f5f9"><td>' + escapeHtml(p) +
+        html += '<tr style="border-top:1px solid var(--cx-border-soft, #f1f5f9)"><td>' + escapeHtml(p) +
           '</td><td>' + escapeHtml(prox) +
           '</td><td style="text-align:right">' + porProd[p].length + '</td></tr>';
       });
       html += '</table>';
       // Detalle por mes · abierto por defecto
       Object.keys(porMes).sort().forEach(mes => {
-        html += '<details style="margin:4px 0;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px"><summary style="cursor:pointer;font-weight:700;color:#0f766e">'+mes+' · '+porMes[mes].length+' lotes</summary>';
-        html += '<table style="width:100%;font-size:11px;margin-top:6px"><tr style="color:#64748b;text-align:left"><th>Fecha</th><th>Producto</th><th>kg</th><th>Origen</th></tr>';
+        html += '<details style="margin:4px 0;border:1px solid var(--cx-border, #e2e8f0);border-radius:6px;padding:6px 10px"><summary style="cursor:pointer;font-weight:700;color:var(--cx-info-text, #0f766e)">'+mes+' · '+porMes[mes].length+' lotes</summary>';
+        html += '<table style="width:100%;font-size:11px;margin-top:6px"><tr style="color:var(--cx-text-mute, #64748b);text-align:left"><th>Fecha</th><th>Producto</th><th>kg</th><th>Origen</th></tr>';
         porMes[mes].sort((a,b)=>(a.fecha_programada||'').localeCompare(b.fecha_programada||'')).forEach(l => {
-          html += '<tr style="border-top:1px solid #f1f5f9"><td>'+escapeHtml((l.fecha_programada||'').slice(0,10))+'</td><td>'+escapeHtml(l.producto||'')+'</td><td style="text-align:right">'+(l.kg||0)+'</td><td>'+escapeHtml(l.origen||'')+'</td></tr>';
+          html += '<tr style="border-top:1px solid var(--cx-border-soft, #f1f5f9)"><td>'+escapeHtml((l.fecha_programada||'').slice(0,10))+'</td><td>'+escapeHtml(l.producto||'')+'</td><td style="text-align:right">'+(l.kg||0)+'</td><td>'+escapeHtml(l.origen||'')+'</td></tr>';
         });
         html += '</table></details>';
       });
       document.getElementById('lista-completa').innerHTML = html;
     }
   } catch(e){
-    document.getElementById('lista-completa').innerHTML = '<div style="color:#dc2626;padding:10px">Error rellenando lista fallback: ' + e.message + '</div>';
+    document.getElementById('lista-completa').innerHTML = '<div style="color:var(--cx-danger-text, #dc2626);padding:10px">Error rellenando lista fallback: ' + e.message + '</div>';
   }
 
   // KPIs
   const k = PLAN_DATA.plan;
   let html = '';
-  html += '<span class="kpi"><div class="kpi-lbl">📅 Sugeridas</div><div class="kpi-val" style="color:#16a34a">' + (k.total_producciones || 0) + '</div></span>';
-  html += '<span class="kpi"><div class="kpi-lbl">🗑 Cancelables</div><div class="kpi-val" style="color:#dc2626">' + ((k.cancelables_calendar || []).length) + '</div></span>';
-  html += '<span class="kpi"><div class="kpi-lbl">⚠ Sin fórmula</div><div class="kpi-val" style="color:#ca8a04">' + ((k.sin_formula || []).length) + '</div></span>';
-  html += '<span class="kpi"><div class="kpi-lbl">📅 Ya agendadas</div><div class="kpi-val" style="color:#475569">' + (PLAN_DATA.agendadas.length || 0) + '</div></span>';
+  html += '<span class="kpi"><div class="kpi-lbl">📅 Sugeridas</div><div class="kpi-val" style="color:var(--cx-success-text, #16a34a)">' + (k.total_producciones || 0) + '</div></span>';
+  html += '<span class="kpi"><div class="kpi-lbl">🗑 Cancelables</div><div class="kpi-val" style="color:var(--cx-danger-text, #dc2626)">' + ((k.cancelables_calendar || []).length) + '</div></span>';
+  html += '<span class="kpi"><div class="kpi-lbl">⚠ Sin fórmula</div><div class="kpi-val" style="color:var(--cx-warn-text, #ca8a04)">' + ((k.sin_formula || []).length) + '</div></span>';
+  html += '<span class="kpi"><div class="kpi-lbl">📅 Ya agendadas</div><div class="kpi-val" style="color:var(--cx-text-soft, #475569)">' + (PLAN_DATA.agendadas.length || 0) + '</div></span>';
   // KPI productos únicos detectados (diag visual del bug)
   try {
     const _ps = new Set();
     (PLAN_DATA.agendadas || []).forEach(a => _ps.add(a.producto));
-    html += '<span class="kpi"><div class="kpi-lbl">🎯 Productos únicos</div><div class="kpi-val" style="color:#0f766e">' + _ps.size + '</div></span>';
+    html += '<span class="kpi"><div class="kpi-lbl">🎯 Productos únicos</div><div class="kpi-val" style="color:var(--cx-info-text, #0f766e)">' + _ps.size + '</div></span>';
   } catch(e){}
   document.getElementById('kpis').innerHTML = html;
 
@@ -19846,7 +19846,7 @@ function render(){
       grid += '<div class="' + cls + '" data-date="' + fStr + '" data-weekend="' + (isWeekend ? '1':'0') + '" data-festivo="' + (isFestivo ? '1':'0') + '" style="' + _cellStyle + '">';
       grid += '<div class="day-num"><span>' + fecha.getDate() + '</span>';
       if (isFestivo) grid += '<span class="festivo-tag">FEST</span>';
-      if (_sobrecarga) grid += '<span title="Día sobrecargado: ' + _pend.length + ' lote(s) pendientes' + (_hayGrande ? ' · incluye un lote grande que debería ir solo' : ' · máx 2/día') + '" style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px">⚠ ' + _pend.length + '</span>';
+      if (_sobrecarga) grid += '<span title="Día sobrecargado: ' + _pend.length + ' lote(s) pendientes' + (_hayGrande ? ' · incluye un lote grande que debería ir solo' : ' · máx 2/día') + '" style="background:var(--cx-danger, #dc2626);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px">⚠ ' + _pend.length + '</span>';
       grid += '<button class="addprod-btn" title="Programar una producción este día (cualquier producto · pilotos/otros clientes incluidos)" onclick="event.stopPropagation();abrirNuevaProduccion(&quot;' + fStr + '&quot;)" style="float:right;border:none;background:#0d9488;color:#fff;width:19px;height:19px;line-height:17px;border-radius:50%;font-size:14px;font-weight:700;cursor:pointer;padding:0;opacity:.85">+</button>';
       grid += '</div>';
 
@@ -19936,7 +19936,7 @@ function render(){
         escapeHtml(_listaMeses) + '</span>';
     }
     if (ag.length === 0){
-      diagMsg = '<span style="color:#dc2626;font-weight:700">⚠ Backend devolvió 0 lotes</span> · el plan está vacío · apretá "🤖 Generar plan IA"';
+      diagMsg = '<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ Backend devolvió 0 lotes</span> · el plan está vacío · apretá "🤖 Generar plan IA"';
     }
     document.getElementById('cal-diag').innerHTML = diagMsg;
     console.log('[CAL.render] mes=' + mesMostrado + ' pintados=' + _pintados.length + ' productos_pintados=[' + [..._prodPintados].join('|') + '] fechas_con_lote=' + _fechasConLotes.length);
@@ -19973,14 +19973,14 @@ async function cargarAlertasVentas(){
     const top = (d.huerfanos_top || []).slice(0,6)
       .map(h => escapeHtml(h.sku) + ' (' + Math.round(h.uds_60d) + ')').join(' · ');
     wrap.innerHTML =
-      '<div style="background:#fffbeb;border:2px solid #f59e0b;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+      '<div style="background:var(--cx-warn-pale, #fffbeb);border:2px solid var(--cx-warn, #f59e0b);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
       + '<div style="font-size:1.4em">⚠️</div>'
-      + '<div style="flex:1;min-width:240px;font-size:13px;color:#92400e">'
+      + '<div style="flex:1;min-width:240px;font-size:13px;color:var(--cx-warn-text, #92400e)">'
       + '<b>' + Math.round(uds).toLocaleString('es-CO') + ' uds vendidas en 60d SIN mapear a producto</b> (' + n + ' SKUs). '
       + 'Estas ventas NO cuentan en la velocidad → las necesidades de esos productos salen subestimadas.'
       + (top ? '<div style="font-size:11px;margin-top:4px;opacity:.85">Top: ' + top + '</div>' : '')
       + '</div>'
-      + '<a href="/herramientas#skus-huerfanos" style="background:#f59e0b;color:#fff;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700">Mapear SKUs</a>'
+      + '<a href="/herramientas#skus-huerfanos" style="background:var(--cx-warn, #f59e0b);color:#fff;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700">Mapear SKUs</a>'
       + '</div>';
   }catch(e){ wrap.innerHTML=''; }
 }
@@ -20007,12 +20007,12 @@ async function cargarAlertasIA(){
     // Desplegable (Sebastián 15-jun): colapsado por defecto · header con conteos ·
     // se expande al clic. Evita ocupar toda la pantalla con 20+ alertas.
     const _abierto = (window._alertasIAabierto === true);
-    let html = '<div onclick="toggleAlertasIA()" style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #f59e0b;border-radius:12px;padding:12px 16px;color:#0f172a;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06)" title="Click para desplegar/colapsar">';
-    html += '<div><span id="alertas-ia-chev" style="margin-right:6px;color:#94a3b8">' + (_abierto ? '▾' : '▸') + '</span><span style="font-size:14px;font-weight:800">🚦 Alertas del Plan</span> <span style="font-size:11px;color:#64748b;margin-left:8px">' +
+    let html = '<div onclick="toggleAlertasIA()" style="background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-left:4px solid var(--cx-warn, #f59e0b);border-radius:12px;padding:12px 16px;color:var(--cx-text, #0f172a);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06)" title="Click para desplegar/colapsar">';
+    html += '<div><span id="alertas-ia-chev" style="margin-right:6px;color:var(--cx-text-faint, #94a3b8)">' + (_abierto ? '▾' : '▸') + '</span><span style="font-size:14px;font-weight:800">🚦 Alertas del Plan</span> <span style="font-size:11px;color:var(--cx-text-mute, #64748b);margin-left:8px">' +
       (totals.critica || 0) + ' crítica(s) · ' +
       (totals.advertencia || 0) + ' advertencia(s) · ' +
       (totals.info || 0) + ' info</span></div>';
-    html += '<button onclick="event.stopPropagation();cargarAlertasIA()" style="background:#f8fafc;border:1px solid #cbd5e1;color:#475569;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">↻ Refrescar</button>';
+    html += '<button onclick="event.stopPropagation();cargarAlertasIA()" style="background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #cbd5e1);color:var(--cx-text-soft, #475569);padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">↻ Refrescar</button>';
     html += '</div>';
     html += '<div id="alertas-ia-body" style="display:' + (_abierto ? 'block' : 'none') + '">';
     al.forEach((a, idx) => {
@@ -20057,10 +20057,10 @@ function _alertaAccionBtn(a, idx){
                     '&quot;,' + (p.kg_sugerido || 0) +
                     ',&quot;' + escapeHtml(p.fecha_sugerida || '') + '&quot;)';
     return '<button onclick="' + onClick +
-           '" style="background:#0f766e;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">⚡ Programar</button>';
+           '" style="background:var(--cx-info, #0f766e);color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">⚡ Programar</button>';
   }
   if (a.accion === 'ver_abastecimiento'){
-    return '<button onclick="window.parent && window.parent.switchProgTab ? window.parent.switchProgTab(&quot;abastecimiento&quot;) : window.open(&quot;/dashboard&quot;,&quot;_top&quot;)" style="background:#7c3aed;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">📦 Abastecimiento</button>';
+    return '<button onclick="window.parent && window.parent.switchProgTab ? window.parent.switchProgTab(&quot;abastecimiento&quot;) : window.open(&quot;/dashboard&quot;,&quot;_top&quot;)" style="background:var(--cx-primary, #7c3aed);color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">📦 Abastecimiento</button>';
   }
   return '';
 }
@@ -20102,10 +20102,10 @@ function renderListaSugerencias(){
   items.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
   items.forEach((it, i) => {
     const motivoColor = it.motivo === 'urgente' ? '#dc2626' : (it.motivo === 'adelanto' ? '#ca8a04' : '#475569');
-    const iaTag = it.from_ia ? ' <span style="background:#fef3c7;color:#854d0e;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">🤖 IA' + (it.confianza ? ' ' + Math.round(it.confianza * 100) + '%' : '') + '</span>' : '';
+    const iaTag = it.from_ia ? ' <span style="background:var(--cx-warn-pale, #fef3c7);color:#854d0e;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">🤖 IA' + (it.confianza ? ' ' + Math.round(it.confianza * 100) + '%' : '') + '</span>' : '';
     const razonTip = it.razonamiento_ia ? ' title="' + escapeHtml(it.razonamiento_ia) + '"' : '';
     html += '<div class="suggest-row"' + razonTip + '>';
-    html += '<div class="info"><strong>' + escapeHtml(it.fecha) + '</strong> · ' + escapeHtml(it.producto) + ' · ' + it.kg + 'kg <span style="color:' + motivoColor + ';font-weight:700">[' + (it.motivo || '?') + ']</span> · cob ' + (it.cob_dias_actual || 0) + 'd' + iaTag + (it.razonamiento_ia ? '<div style="font-size:10px;color:#64748b;margin-top:2px">💭 ' + escapeHtml(it.razonamiento_ia.slice(0, 120)) + '</div>' : '') + '</div>';
+    html += '<div class="info"><strong>' + escapeHtml(it.fecha) + '</strong> · ' + escapeHtml(it.producto) + ' · ' + it.kg + 'kg <span style="color:' + motivoColor + ';font-weight:700">[' + (it.motivo || '?') + ']</span> · cob ' + (it.cob_dias_actual || 0) + 'd' + iaTag + (it.razonamiento_ia ? '<div style="font-size:10px;color:var(--cx-text-mute, #64748b);margin-top:2px">💭 ' + escapeHtml(it.razonamiento_ia.slice(0, 120)) + '</div>' : '') + '</div>';
     html += '<div class="actions">';
     html += '<button onclick="moverSugerencia(' + i + ')" class="secondary" style="padding:3px 8px;font-size:10px">📅</button>';
     html += '<button onclick="ignorarSugerencia(' + i + ')" class="danger" style="padding:3px 8px;font-size:10px">✕</button>';
@@ -20261,12 +20261,12 @@ async function abrirSugerenciaModal(producto, fecha, kg, motivo){
   }
 
   // Acciones específicas para sugerencia
-  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0">';
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--cx-border, #e2e8f0)">';
   html += '<button onclick="agendarSugerencia(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;,' + kg + ')" class="success">✅ Agendar ahora</button>';
   html += '<button onclick="modificarSugerencia(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="secondary">📅 Cambiar fecha</button>';
   html += '<button onclick="modificarSugerenciaKg(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;,' + kg + ')" class="secondary">⚖ Cambiar kg</button>';
   html += '<button onclick="ignorarSugerenciaModal(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="danger">✕ Ignorar</button>';
-  html += '<div style="flex-basis:100%;font-size:11px;color:#64748b;margin-top:6px">💡 También podés arrastrar al calendario para cambiar la fecha</div>';
+  html += '<div style="flex-basis:100%;font-size:11px;color:var(--cx-text-mute, #64748b);margin-top:6px">💡 También podés arrastrar al calendario para cambiar la fecha</div>';
   html += '</div>';
 
   document.getElementById('lote-body').innerHTML = html;
@@ -20634,9 +20634,9 @@ async function _cargarComposicionMee(loteId, _try){
       return;
     }
     const fuenteTxt = {
-      'shopify_90d': '<span style="color:#15803d;font-weight:700">📊 ratio Shopify 90d</span>',
-      'uniforme': '<span style="color:#a16207;font-weight:700">⚖ ratio uniforme (sin ventas históricas)</span>',
-      'unica': '<span style="color:#6b7280;font-weight:700">1 sola variante</span>',
+      'shopify_90d': '<span style="color:var(--cx-success-text, #15803d);font-weight:700">📊 ratio Shopify 90d</span>',
+      'uniforme': '<span style="color:var(--cx-warn-text, #a16207);font-weight:700">⚖ ratio uniforme (sin ventas históricas)</span>',
+      'unica': '<span style="color:var(--cx-text-mute, #6b7280);font-weight:700">1 sola variante</span>',
     }[d.fuente_ratio] || d.fuente_ratio;
     let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-weight:800;font-size:13px">📐 Composición de envases · ' + d.cantidad_kg + 'kg bulk</span><span style="font-size:10px">' + fuenteTxt + '</span></div>';
     h += '<div style="display:grid;grid-template-columns:1fr;gap:6px">';
@@ -20645,20 +20645,20 @@ async function _cargarComposicionMee(loteId, _try){
       const ratioBg = esFija ? '#7c3aed' : (v.ratio_pct >= 50 ? '#0d9488' : (v.ratio_pct >= 25 ? '#0891b2' : '#64748b'));
       const chipTxt = esFija ? ('🔢 ' + v.ratio_pct + '%') : (v.ratio_pct + '%');
       const chipTitle = esFija ? ('FIJA ' + (v.cantidad_fija_uds || 0) + ' uds por lote') : 'porcentaje del bulk';
-      h += '<div style="display:grid;grid-template-columns:96px 60px 1fr 96px 66px;gap:6px;align-items:center;background:#fff;border:1px solid #ccfbf1;border-radius:6px;padding:6px 10px;font-size:12px">';
+      h += '<div style="display:grid;grid-template-columns:96px 60px 1fr 96px 66px;gap:6px;align-items:center;background:var(--cx-card, #fff);border:1px solid #ccfbf1;border-radius:6px;padding:6px 10px;font-size:12px">';
       h += '<div><span title="' + chipTitle + '" style="background:' + ratioBg + ';color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px">' + chipTxt + '</span></div>';
-      h += '<div style="font-weight:700;color:#0f766e">' + escapeHtml(v.etiqueta || '') + '</div>';
-      h += '<div style="font-family:monospace;font-size:11px;color:#334155">' + escapeHtml(v.envase_codigo || '(sin envase)') + (v.envase_descripcion && v.envase_descripcion !== v.envase_codigo ? ' · <span style="color:#64748b">' + escapeHtml(v.envase_descripcion) + '</span>' : '') + '</div>';
-      const fijaTag = esFija ? (v.fija_es_override ? ' <span style="font-size:9px;color:#b45309;font-weight:700" title="override solo para este lote">FIJA·LOTE</span>' : ' <span style="font-size:9px;color:#7c3aed;font-weight:700" title="cantidad fija (default del producto)">FIJA</span>') : '';
-      h += '<div style="text-align:right;font-weight:800;color:#0e7490">' + (v.unidades_estimadas || 0).toLocaleString('es-CO') + ' uds' + fijaTag + '</div>';
+      h += '<div style="font-weight:700;color:var(--cx-info-text, #0f766e)">' + escapeHtml(v.etiqueta || '') + '</div>';
+      h += '<div style="font-family:monospace;font-size:11px;color:var(--cx-text-soft, #334155)">' + escapeHtml(v.envase_codigo || '(sin envase)') + (v.envase_descripcion && v.envase_descripcion !== v.envase_codigo ? ' · <span style="color:var(--cx-text-mute, #64748b)">' + escapeHtml(v.envase_descripcion) + '</span>' : '') + '</div>';
+      const fijaTag = esFija ? (v.fija_es_override ? ' <span style="font-size:9px;color:var(--cx-warn-text, #b45309);font-weight:700" title="override solo para este lote">FIJA·LOTE</span>' : ' <span style="font-size:9px;color:var(--cx-primary-text, #7c3aed);font-weight:700" title="cantidad fija (default del producto)">FIJA</span>') : '';
+      h += '<div style="text-align:right;font-weight:800;color:var(--cx-info-text, #0e7490)">' + (v.unidades_estimadas || 0).toLocaleString('es-CO') + ' uds' + fijaTag + '</div>';
       const _produ = encodeURIComponent(d.producto || '');
       const _pcodOk = v.presentacion_codigo && v.presentacion_codigo !== '-';
       h += '<div style="display:flex;gap:3px;justify-content:flex-end">';
       // ✏ editar uds/mes de referencia (ratio · afecta TODOS los lotes futuros)
-      h += '<button onclick="_editarUdsMesPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.unidades_estimadas || 0) + ')" title="Editar uds/mes de referencia (RATIO · % del bulk)" style="background:#a78bfa;color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">✏</button>';
+      h += '<button onclick="_editarUdsMesPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.unidades_estimadas || 0) + ')" title="Editar uds/mes de referencia (RATIO · % del bulk)" style="background:var(--cx-primary-light, #a78bfa);color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">✏</button>';
       // 🔢 cantidad FIJA por lote (ej. 10ml regalo = 1200 uds siempre)
       if(_pcodOk){
-        h += '<button onclick="_fijarUdsPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.cantidad_fija_uds || 0) + ',' + (v.cantidad_fija_default || 0) + ',' + (v.fija_es_override ? 'true' : 'false') + ')" title="Cantidad fija · podés aplicarla a TODAS las futuras o solo a este lote" style="background:#0f766e;color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">🔢</button>';
+        h += '<button onclick="_fijarUdsPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.cantidad_fija_uds || 0) + ',' + (v.cantidad_fija_default || 0) + ',' + (v.fija_es_override ? 'true' : 'false') + ')" title="Cantidad fija · podés aplicarla a TODAS las futuras o solo a este lote" style="background:var(--cx-info, #0f766e);color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">🔢</button>';
       }
       h += '</div>';
       h += '</div>';
@@ -20675,11 +20675,11 @@ async function _cargarComposicionMee(loteId, _try){
     h += '</div>';
     // Total
     const totalUds = d.variantes.reduce((acc, v) => acc + (v.unidades_estimadas || 0), 0);
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><span style="font-size:10px;color:#64748b">💡 Este cálculo es <b>estimado para planificación</b> · el descuento real ocurre en Fabricación al envasar.</span><span style="font-size:11px;color:#0f766e;font-weight:700">Total: ' + totalUds.toLocaleString('es-CO') + ' uds</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><span style="font-size:10px;color:var(--cx-text-mute, #64748b)">💡 Este cálculo es <b>estimado para planificación</b> · el descuento real ocurre en Fabricación al envasar.</span><span style="font-size:11px;color:var(--cx-info-text, #0f766e);font-weight:700">Total: ' + totalUds.toLocaleString('es-CO') + ' uds</span></div>';
     window._COMP_MEE_CACHE[loteId] = h;
     box.innerHTML = h;
   } catch(e){
-    box.innerHTML = '<span style="color:#dc2626">⚠ Error cargando composición: ' + escapeHtml(e.message || '') + '</span>';
+    box.innerHTML = '<span style="color:var(--cx-danger-text, #dc2626)">⚠ Error cargando composición: ' + escapeHtml(e.message || '') + '</span>';
   }
 }
 
@@ -20727,7 +20727,7 @@ function _presSkuSelect(id, cur){
   // SKU para que el reparto use ventas reales por presentación (no uniforme). Sebastián 2-jul.
   cur = (cur || '').toUpperCase();
   var skus = (window._PRES_SKUS && window._PRES_SKUS[id]) || [];
-  var h = '<select class="pres-sku" title="SKU de Shopify de esta presentación · al elegirlo, el reparto de envases usa las VENTAS REALES de ese SKU (deja de ser uniforme)" style="min-width:150px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:#fff">';
+  var h = '<select class="pres-sku" title="SKU de Shopify de esta presentación · al elegirlo, el reparto de envases usa las VENTAS REALES de ese SKU (deja de ser uniforme)" style="min-width:150px;padding:4px 6px;border:1px solid var(--cx-border, #cbd5e1);border-radius:4px;font-size:11px;background:var(--cx-card, #fff)">';
   h += '<option value="">' + (skus.length ? '&#8212; SKU / ventas &#8212;' : '&#8212; sin SKUs mapeados &#8212;') + '</option>';
   var found = false;
   for(var i=0;i<skus.length;i++){
@@ -20745,11 +20745,11 @@ function _presRowHtml(p, id){
   // (eso ya sale en "Desglose por referencia" más abajo). sku_shopify y uds-fijas se PRESERVAN
   // en inputs ocultos → guardar NO los borra, pero no ensucian la UI.
   return '<div class="pres-row" data-pid="' + (p.id || '') + '" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:6px;background:#f0fdff;border:1px solid #cffafe;padding:7px 9px;border-radius:6px">'
-    + '<input class="pres-ml" type="number" min="1" step="1" value="' + (p.volumen_ml || '') + '" placeholder="ml" title="Volumen en ml del envase" style="width:60px;padding:5px 6px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-align:center"><span style="font-size:11px;color:#0e7490;font-weight:600">ml</span>'
-    + '<select class="pres-env" style="flex:1;min-width:230px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;background:#fff">' + _opcionesEnvaseInline(p.envase_codigo || '') + '</select>'
+    + '<input class="pres-ml" type="number" min="1" step="1" value="' + (p.volumen_ml || '') + '" placeholder="ml" title="Volumen en ml del envase" style="width:60px;padding:5px 6px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:12px;text-align:center"><span style="font-size:11px;color:var(--cx-info-text, #0e7490);font-weight:600">ml</span>'
+    + '<select class="pres-env" style="flex:1;min-width:230px;padding:5px 8px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:12px;background:var(--cx-card, #fff)">' + _opcionesEnvaseInline(p.envase_codigo || '') + '</select>'
     + '<input class="pres-sku" type="hidden" value="' + String(p.sku_shopify || '').replace(/"/g,'&quot;') + '">'
     + '<input class="pres-fija" type="hidden" value="' + (p.cantidad_fija_uds || '') + '">'
-    + '<button onclick="_removePresRow(this)" title="Quitar este envase" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border:none;border-radius:5px;cursor:pointer">&#10005;</button>'
+    + '<button onclick="_removePresRow(this)" title="Quitar este envase" style="padding:5px 10px;font-size:12px;background:var(--cx-danger, #ef4444);color:#fff;border:none;border-radius:5px;cursor:pointer">&#10005;</button>'
     + '</div>';
 }
 function _removePresRow(btn){
@@ -20774,7 +20774,7 @@ async function _cargarPresentaciones(id, _try){
     window._PRES_SKUS[id] = (d && d.skus) || [];   // SKUs reales (para preservar/reparto) · ya no se muestran acá
     if(!pres.length){ list.innerHTML = '<div style="opacity:.7">Sin envases definidos &middot; agreg&aacute; uno.</div>'; return; }
     list.innerHTML = pres.map(function(p){ return _presRowHtml(p, id); }).join('');
-  }catch(e){ list.innerHTML = '<div style="color:#b91c1c">Error cargando envases</div>'; }
+  }catch(e){ list.innerHTML = '<div style="color:var(--cx-danger-text, #b91c1c)">Error cargando envases</div>'; }
 }
 function addPresentacionRow(id){
   const list = document.getElementById('pres-list-' + id);
@@ -21008,22 +21008,22 @@ async function guardarPlanEnvasado(loteId, pblId){
 async function cargarSugerenciasAdelanto(manual){
   const cont = document.getElementById('sugerencias-adelanto');
   if(!cont) return;
-  if(manual){ cont.innerHTML = '<div style="font-size:12px;color:#64748b;padding:6px">⏳ Calculando sugerencias de adelanto (revisa la venta de Shopify de cada producto)…</div>'; }
+  if(manual){ cont.innerHTML = '<div style="font-size:12px;color:var(--cx-text-mute, #64748b);padding:6px">⏳ Calculando sugerencias de adelanto (revisa la venta de Shopify de cada producto)…</div>'; }
   try{
     const r = await fetch('/api/plan/sugerencias-adelanto');
     const d = await r.json().catch(()=>({}));
     const sug = (d && d.sugerencias) || [];
-    if(!sug.length){ cont.innerHTML = manual ? '<div style="font-size:12px;color:#166534;padding:6px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px">✓ Nada por adelantar ahora · todo va a tiempo.</div>' : ''; return; }
-    let h = '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:12px 16px">'
-      + '<div style="font-weight:800;color:#92400e;margin-bottom:8px">⚡ Sugerencias de adelanto · la venta subió</div>';
+    if(!sug.length){ cont.innerHTML = manual ? '<div style="font-size:12px;color:var(--cx-success-text, #166534);padding:6px;background:var(--cx-success-pale, #f0fdf4);border:1px solid #86efac;border-radius:8px">✓ Nada por adelantar ahora · todo va a tiempo.</div>' : ''; return; }
+    let h = '<div style="background:var(--cx-warn-pale, #fffbeb);border:1px solid #fcd34d;border-radius:10px;padding:12px 16px">'
+      + '<div style="font-weight:800;color:var(--cx-warn-text, #92400e);margin-bottom:8px">⚡ Sugerencias de adelanto · la venta subió</div>';
     sug.forEach(function(s){
-      const mp = (s.mp_ok === true) ? '<span style="color:#166534;font-weight:700">✅ hay materia prima</span>'
-        : (s.mp_ok === false ? '<span style="color:#b91c1c;font-weight:700">⚠ falta MP</span>'
-        : '<span style="color:#64748b">MP sin fórmula</span>');
+      const mp = (s.mp_ok === true) ? '<span style="color:var(--cx-success-text, #166534);font-weight:700">✅ hay materia prima</span>'
+        : (s.mp_ok === false ? '<span style="color:var(--cx-danger-text, #b91c1c);font-weight:700">⚠ falta MP</span>'
+        : '<span style="color:var(--cx-text-mute, #64748b)">MP sin fórmula</span>');
       h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;'
         + 'padding:8px 0;border-top:1px solid #fde68a">'
         + '<div style="font-size:13px"><b>' + escapeHtml(s.producto) + '</b> · adelantar del <b>' + s.fecha_actual
-        + '</b> al <b style="color:#b45309">' + s.fecha_sugerida + '</b> (' + s.dias_adelanto + 'd antes) · '
+        + '</b> al <b style="color:var(--cx-warn-text, #b45309)">' + s.fecha_sugerida + '</b> (' + s.dias_adelanto + 'd antes) · '
         + 'cobertura ' + s.cobertura_dias + 'd · ' + mp + '</div>'
         + '<button onclick="aceptarAdelanto(&quot;' + escapeHtml(s.producto) + '&quot;)" '
         + 'style="background:#0d9488;color:#fff;border:none;padding:7px 16px;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap">Aceptar y recalcular</button>'
@@ -21112,25 +21112,25 @@ async function verificarPlanCompleto(){
     var LBL = {sin_cadena:'🔴 SIN CADENA (falta programar)', incompleta:'🟠 INCOMPLETA (pocos lotes)', hueco_grande:'🟡 HUECO grande entre lotes', azules_encima:'🔵 azules encima (limpiar)', ok:'🟢 OK'};
     var COL = {sin_cadena:'#dc2626', incompleta:'#d97706', hueco_grande:'#ca8a04', azules_encima:'#2563eb', ok:'#16a34a'};
     var wrap = document.getElementById('verif-plan-panel');
-    if(!wrap){ wrap = document.createElement('div'); wrap.id='verif-plan-panel'; wrap.style.cssText='position:fixed;top:60px;right:20px;bottom:20px;width:420px;max-width:92vw;z-index:99999;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.28);overflow:auto;padding:14px'; document.body.appendChild(wrap); }
+    if(!wrap){ wrap = document.createElement('div'); wrap.id='verif-plan-panel'; wrap.style.cssText='position:fixed;top:60px;right:20px;bottom:20px;width:420px;max-width:92vw;z-index:99999;background:var(--cx-card, #fff);border:1px solid var(--cx-border, #cbd5e1);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.28);overflow:auto;padding:14px'; document.body.appendChild(wrap); }
     var rs = d.resumen || {};
-    var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:15px">🔎 Verificación del plan · ' + (d.total_productos||0) + ' productos</strong><button onclick="var w=document.getElementById(\'verif-plan-panel\'); if(w) w.remove();" style="background:#e2e8f0;border:none;border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700">✕</button></div>';
-    html += '<div style="font-size:12px;color:#475569;margin-bottom:10px">';
+    var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:15px">🔎 Verificación del plan · ' + (d.total_productos||0) + ' productos</strong><button onclick="var w=document.getElementById(\'verif-plan-panel\'); if(w) w.remove();" style="background:var(--cx-border, #e2e8f0);border:none;border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700">✕</button></div>';
+    html += '<div style="font-size:12px;color:var(--cx-text-soft, #475569);margin-bottom:10px">';
     ['sin_cadena','incompleta','hueco_grande','azules_encima','ok'].forEach(function(k){ if(rs[k]) html += '<span style="color:'+COL[k]+';font-weight:700;margin-right:10px">'+ (rs[k]) + ' ' + LBL[k].replace(/^..\s/,'') + '</span>'; });
     html += '</div>';
     (d.productos||[]).forEach(function(p){
       if(p.estado === 'ok') return;  // solo mostramos lo que necesita atención
-      html += '<div style="border-left:3px solid '+COL[p.estado]+';background:#f8fafc;border-radius:6px;padding:7px 10px;margin-bottom:6px;font-size:12px">'
+      html += '<div style="border-left:3px solid '+COL[p.estado]+';background:var(--cx-bg-alt, #f8fafc);border-radius:6px;padding:7px 10px;margin-bottom:6px;font-size:12px">'
         + '<div style="font-weight:700;color:'+COL[p.estado]+'">' + LBL[p.estado] + '</div>'
-        + '<div style="color:#0f172a;font-weight:600">' + p.producto + '</div>'
-        + '<div style="color:#64748b">' + p.lotes_cadena + ' lotes cadena · ' + (p.primer? ('desde ' + p.primer + ' a ' + p.ultimo) : 'sin lotes futuros') + (p.hueco_max_dias>150? (' · hueco máx ' + p.hueco_max_dias + 'd') : '') + (p.azules_futuros? (' · ' + p.azules_futuros + ' azules') : '') + '</div></div>';
+        + '<div style="color:var(--cx-text, #0f172a);font-weight:600">' + p.producto + '</div>'
+        + '<div style="color:var(--cx-text-mute, #64748b)">' + p.lotes_cadena + ' lotes cadena · ' + (p.primer? ('desde ' + p.primer + ' a ' + p.ultimo) : 'sin lotes futuros') + (p.hueco_max_dias>150? (' · hueco máx ' + p.hueco_max_dias + 'd') : '') + (p.azules_futuros? (' · ' + p.azules_futuros + ' azules') : '') + '</div></div>';
     });
     var _okN = rs.ok || 0;
     var _faltan = (d.productos||[]).filter(function(p){ return p.estado==='sin_cadena' || p.estado==='incompleta'; }).length;
-    if(_okN === (d.total_productos||0)){ html += '<div style="color:#16a34a;font-weight:700;padding:12px;text-align:center">✅ Todas las cadenas están perfectas.</div>'; }
+    if(_okN === (d.total_productos||0)){ html += '<div style="color:var(--cx-success-text, #16a34a);font-weight:700;padding:12px;text-align:center">✅ Todas las cadenas están perfectas.</div>'; }
     else {
-      if(_faltan > 0){ html = '<button onclick="programarCadenasFaltantes()" id="btn-prog-faltan" style="width:100%;background:#7c3aed;color:#fff;border:none;padding:10px;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:10px">⚡ Programar las ' + _faltan + ' cadenas que faltan</button>' + html; }
-      html += '<div style="color:#64748b;font-size:11px;margin-top:8px">✅ ' + _okN + ' productos OK (no se listan). Los 🔴/🟠 se arreglan con el botón morado de arriba (o abrí cada uno para ajustar kg). 🔵 → "Limpiar auto futuro".</div>';
+      if(_faltan > 0){ html = '<button onclick="programarCadenasFaltantes()" id="btn-prog-faltan" style="width:100%;background:var(--cx-primary, #7c3aed);color:#fff;border:none;padding:10px;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:10px">⚡ Programar las ' + _faltan + ' cadenas que faltan</button>' + html; }
+      html += '<div style="color:var(--cx-text-mute, #64748b);font-size:11px;margin-top:8px">✅ ' + _okN + ' productos OK (no se listan). Los 🔴/🟠 se arreglan con el botón morado de arriba (o abrí cada uno para ajustar kg). 🔵 → "Limpiar auto futuro".</div>';
     }
     wrap.innerHTML = html;
   }catch(e){ alert('Error: ' + e); }
@@ -21198,29 +21198,29 @@ async function verSinDescontar(){
     var d = await r.json().catch(function(){ return {}; });
     if(!r.ok || !d.ok){ alert('No se pudo: ' + (d.error || r.status)); return; }
     var wrap = document.getElementById('sindesc-panel');
-    if(!wrap){ wrap = document.createElement('div'); wrap.id = 'sindesc-panel'; wrap.style.cssText = 'position:fixed;top:60px;right:20px;bottom:20px;width:440px;max-width:92vw;z-index:99999;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.28);overflow:auto;padding:14px'; document.body.appendChild(wrap); }
+    if(!wrap){ wrap = document.createElement('div'); wrap.id = 'sindesc-panel'; wrap.style.cssText = 'position:fixed;top:60px;right:20px;bottom:20px;width:440px;max-width:92vw;z-index:99999;background:var(--cx-card, #fff);border:1px solid var(--cx-border, #cbd5e1);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.28);overflow:auto;padding:14px'; document.body.appendChild(wrap); }
     var prods = d.producciones || [];
-    var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:15px">⚠️ Producciones sin descontar · ' + d.total + '</strong><button onclick="var w=document.getElementById(\'sindesc-panel\'); if(w) w.remove();" style="background:#e2e8f0;border:none;border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700">✕</button></div>';
-    if(!prods.length){ html += '<div style="color:#16a34a;font-weight:700;padding:12px;text-align:center">✅ No hay producciones pasadas sin descontar.</div>'; wrap.innerHTML = html; if(btn){ btn.disabled = false; btn.innerHTML = '⚠️ Sin descontar'; } return; }
-    html += '<div style="font-size:11px;color:#475569;margin-bottom:10px">Lotes con fecha ya pasada, sin el descuento de MP registrado. <b>Solo informativo</b> · para descontar de verdad se hace desde Fabricación.</div>';
+    var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:15px">⚠️ Producciones sin descontar · ' + d.total + '</strong><button onclick="var w=document.getElementById(\'sindesc-panel\'); if(w) w.remove();" style="background:var(--cx-border, #e2e8f0);border:none;border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700">✕</button></div>';
+    if(!prods.length){ html += '<div style="color:var(--cx-success-text, #16a34a);font-weight:700;padding:12px;text-align:center">✅ No hay producciones pasadas sin descontar.</div>'; wrap.innerHTML = html; if(btn){ btn.disabled = false; btn.innerHTML = '⚠️ Sin descontar'; } return; }
+    html += '<div style="font-size:11px;color:var(--cx-text-soft, #475569);margin-bottom:10px">Lotes con fecha ya pasada, sin el descuento de MP registrado. <b>Solo informativo</b> · para descontar de verdad se hace desde Fabricación.</div>';
     var zombies = prods.filter(function(p){ return p.probable_zombie; });
     var junio = prods.filter(function(p){ return p.pre_inventario && !p.probable_zombie; });
     var revisar = prods.filter(function(p){ return !p.pre_inventario && !p.probable_zombie; });
     var fila = function(p, col){
-      return '<div style="border-left:3px solid ' + col + ';background:#f8fafc;border-radius:6px;padding:6px 9px;margin-bottom:5px;font-size:12px">'
-        + '<div style="font-weight:700;color:#0f172a">' + p.producto + '</div>'
-        + '<div style="color:#64748b">' + p.fecha + ' · ' + p.kg + ' kg' + (p.kg_otro > 0 ? (' (' + p.kg_otro + ' otro cliente)') : '') + ' · ' + p.origen + ' · ' + p.estado + ' · atrasado ' + p.dias_atraso + 'd</div></div>';
+      return '<div style="border-left:3px solid ' + col + ';background:var(--cx-bg-alt, #f8fafc);border-radius:6px;padding:6px 9px;margin-bottom:5px;font-size:12px">'
+        + '<div style="font-weight:700;color:var(--cx-text, #0f172a)">' + p.producto + '</div>'
+        + '<div style="color:var(--cx-text-mute, #64748b)">' + p.fecha + ' · ' + p.kg + ' kg' + (p.kg_otro > 0 ? (' (' + p.kg_otro + ' otro cliente)') : '') + ' · ' + p.origen + ' · ' + p.estado + ' · atrasado ' + p.dias_atraso + 'd</div></div>';
     };
     if(zombies.length){
-      html += '<div style="font-weight:800;color:#dc2626;margin:8px 0 5px">🔴 PROBABLE ZOMBIE · ' + zombies.length + ' (>45d atrás o pausado · casi seguro NO se produjo → CANCELAR para limpiar el calendario)</div>';
+      html += '<div style="font-weight:800;color:var(--cx-danger-text, #dc2626);margin:8px 0 5px">🔴 PROBABLE ZOMBIE · ' + zombies.length + ' (>45d atrás o pausado · casi seguro NO se produjo → CANCELAR para limpiar el calendario)</div>';
       zombies.forEach(function(p){ html += fila(p, '#dc2626'); });
     }
     if(revisar.length){
-      html += '<div style="font-weight:800;color:#b45309;margin:8px 0 5px">🟠 REVISAR · ' + revisar.length + ' (julio en adelante · ¿el jefe las descontó?)</div>';
+      html += '<div style="font-weight:800;color:var(--cx-warn-text, #b45309);margin:8px 0 5px">🟠 REVISAR · ' + revisar.length + ' (julio en adelante · ¿el jefe las descontó?)</div>';
       revisar.forEach(function(p){ html += fila(p, '#d97706'); });
     }
     if(junio.length){
-      html += '<div style="font-weight:800;color:#16a34a;margin:12px 0 5px">🟢 JUNIO · ' + junio.length + ' · NO descontar (pre-inventario · ya está en el conteo físico)</div>';
+      html += '<div style="font-weight:800;color:var(--cx-success-text, #16a34a);margin:12px 0 5px">🟢 JUNIO · ' + junio.length + ' · NO descontar (pre-inventario · ya está en el conteo físico)</div>';
       junio.forEach(function(p){ html += fila(p, '#16a34a'); });
     }
     wrap.innerHTML = html;
@@ -21379,7 +21379,7 @@ async function guardarNuevaProduccion(){
   const obs      = (document.getElementById('np-obs').value || '').trim();
   const msg = document.getElementById('np-msg');
   if (!producto || !fecha){
-    msg.innerHTML = '<span style="color:#dc2626;font-weight:700">⚠ Producto y fecha son obligatorios.</span>';
+    msg.innerHTML = '<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ Producto y fecha son obligatorios.</span>';
     return;
   }
   const btn = document.getElementById('np-guardar');
@@ -21403,21 +21403,21 @@ async function guardarNuevaProduccion(){
       if (confirm('⚠ ' + (d.error || 'Día no hábil') + '. ¿Programarlo igual en esa fecha?')){
         [r, d] = await _enviar(true);
       } else {
-        msg.innerHTML = '<span style="color:#b45309;font-weight:700">Elegí un día hábil (lunes a viernes, no festivo).</span>';
+        msg.innerHTML = '<span style="color:var(--cx-warn-text, #b45309);font-weight:700">Elegí un día hábil (lunes a viernes, no festivo).</span>';
         btn.disabled = false; btn.textContent = 'Programar';
         return;
       }
     }
     if (!r.ok || !d.ok){
-      msg.innerHTML = '<span style="color:#dc2626;font-weight:700">⚠ ' + escapeHtml(d.error || ('Error ' + r.status)) + '</span>';
+      msg.innerHTML = '<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ ' + escapeHtml(d.error || ('Error ' + r.status)) + '</span>';
       btn.disabled = false; btn.textContent = 'Programar';
       return;
     }
-    msg.innerHTML = '<span style="color:#16a34a;font-weight:700">✅ Programado.</span>';
+    msg.innerHTML = '<span style="color:var(--cx-success-text, #16a34a);font-weight:700">✅ Programado.</span>';
     cerrarNuevaProduccion();
     if (typeof cargar === 'function') cargar();
   } catch(e){
-    msg.innerHTML = '<span style="color:#dc2626;font-weight:700">⚠ ' + escapeHtml(String(e)) + '</span>';
+    msg.innerHTML = '<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ ' + escapeHtml(String(e)) + '</span>';
     btn.disabled = false; btn.textContent = 'Programar';
   }
 }
@@ -21468,7 +21468,7 @@ async function _npResumen(){
   window._NP_P = p || null;
   if(!p){
     el.style.display='block';
-    el.innerHTML = '<span style="color:#94a3b8">Sin datos de Necesidades (piloto / otro cliente) · lo podés programar igual como lote único.</span>';
+    el.innerHTML = '<span style="color:var(--cx-text-faint, #94a3b8)">Sin datos de Necesidades (piloto / otro cliente) · lo podés programar igual como lote único.</span>';
     _npCadPreview();
     return;
   }
@@ -21498,8 +21498,8 @@ async function _npResumen(){
   } else {
     h += '⚪ Sin cadena programada aún<br>';
   }
-  if (p.mps_status === 'OK') h += '🧪 Materias primas: <b style="color:#16a34a">✓ hay</b> para 1 lote';
-  else if (p.mps_status === 'FALTAN_MPS') h += '🧪 Materias primas: <b style="color:#dc2626">⚠ faltan ' + (p.mps_n_faltantes||0) + '</b> · comprá antes de producir';
+  if (p.mps_status === 'OK') h += '🧪 Materias primas: <b style="color:var(--cx-success-text, #16a34a)">✓ hay</b> para 1 lote';
+  else if (p.mps_status === 'FALTAN_MPS') h += '🧪 Materias primas: <b style="color:var(--cx-danger-text, #dc2626)">⚠ faltan ' + (p.mps_n_faltantes||0) + '</b> · comprá antes de producir';
   else h += '🧪 Sin fórmula registrada';
   el.style.display = 'block';
   el.innerHTML = h;
@@ -21555,19 +21555,19 @@ function _npCadCalc(){
 function _npCadPreview(){
   const el = document.getElementById('np-cad-preview'); if(!el) return;
   const cc = _npCadCalc();
-  if(!(cc.kg>0) || !(cc.interval>=15) || !cc.partida){ el.innerHTML='<span style="color:#94a3b8">Completá kg/lote y la cadencia.</span>'; return; }
+  if(!(cc.kg>0) || !(cc.interval>=15) || !cc.partida){ el.innerHTML='<span style="color:var(--cx-text-faint, #94a3b8)">Completá kg/lote y la cadencia.</span>'; return; }
   const p = window._NP_P;
   let ref = '';
   if (p && (p.velocidad_uds_dia||0) > 0.001 && (p.ml_unidad||0) > 0){
     const cubre = cc.interval + 20;
     const kgRef = (p.velocidad_uds_dia) * cubre * p.ml_unidad / 1000;
     const dif = cc.kg - kgRef;
-    const tag = (kgRef>0 && Math.abs(dif) >= kgRef*0.1) ? (dif>0 ? ' · deja <b style="color:#0891b2">+'+dif.toFixed(0)+' kg</b> de colchón' : ' · queda <b style="color:#dc2626">'+dif.toFixed(0)+' kg</b> CORTO') : ' · calza justo';
+    const tag = (kgRef>0 && Math.abs(dif) >= kgRef*0.1) ? (dif>0 ? ' · deja <b style="color:var(--cx-info-text, #0891b2)">+'+dif.toFixed(0)+' kg</b> de colchón' : ' · queda <b style="color:var(--cx-danger-text, #dc2626)">'+dif.toFixed(0)+' kg</b> CORTO') : ' · calza justo';
     ref = '📊 Vende ~<b>'+Math.round(p.velocidad_uds_dia*30.44)+' uds/mes</b> · producís 20d antes → cubrir <b>'+cc.interval+'+20='+cubre+' días</b> → ~<b>'+kgRef.toFixed(0)+' kg</b>'+tag+'<br>';
   }
   let _first = '';
   try{ const _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
-  const _firstTxt = cc.dhpManual ? 'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = '+(_first||'—')
+  const _firstTxt = cc.dhpManual ? 'la 1ª nueva <b style="color:var(--cx-primary-text, #7c3aed)">fijada por vos</b> = '+(_first||'—')
     : (cc.dhpCap ? 'la 1ª nueva <b>una cadencia después</b> del origen (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+')'
                  : 'la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+')');
   el.innerHTML = ref + '📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.interval+' días</b> · '+_firstTxt+' · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> desde <b>'+cc.partida+'</b>';
@@ -21576,7 +21576,7 @@ async function _npCrearCadena(){
   const producto = (document.getElementById('np-producto').value || '').trim();
   const cc = _npCadCalc();
   const msg = document.getElementById('np-msg');
-  if(!producto || !cc.partida || !(cc.kg>0) || !(cc.interval>=15)){ msg.innerHTML='<span style="color:#dc2626;font-weight:700">⚠ Elegí producto, fecha (origen) y completá cadencia + kg.</span>'; return; }
+  if(!producto || !cc.partida || !(cc.kg>0) || !(cc.interval>=15)){ msg.innerHTML='<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ Elegí producto, fecha (origen) y completá cadencia + kg.</span>'; return; }
   if(!confirm('Crear la cadena de "'+producto+'" desde '+cc.partida+':\n\n• Un lote de '+cc.kg.toFixed(1)+' kg cada '+cc.interval+' días · ~'+cc.nLotes+' lotes en '+cc.anios+' año(s).\n\nReemplaza las futuras de este producto (conserva B2B y lo ya producido). ¿Continuar?')) return;
   const btn = document.getElementById('np-cad-btn'); btn.disabled=true; btn.textContent='Creando…';
   try{
@@ -21585,8 +21585,8 @@ async function _npCrearCadena(){
       headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF(),'X-CSRFToken':getCSRF()},
       body: JSON.stringify({producto:producto, ancla_fecha:cc.partida, kg_origen:kgOrigen, kg_por_lote:cc.kg, interval_dias:cc.interval, dias_hasta_primera:cc.dhp, anios:cc.anios, crear_origen:true})});
     const d = await r.json().catch(function(){return {};});
-    if(!r.ok || !d.ok){ msg.innerHTML='<span style="color:#dc2626;font-weight:700">⚠ '+escapeHtml(d.error||('Error '+r.status))+'</span>'; btn.disabled=false; btn.textContent='📅 Crear cadena desde esta fecha'; return; }
-    msg.innerHTML='<span style="color:#16a34a;font-weight:700">✅ Cadena creada · '+(d.creados||0)+' lotes'+(d.origen_creado?' + fuente':'')+'.</span>';
+    if(!r.ok || !d.ok){ msg.innerHTML='<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ '+escapeHtml(d.error||('Error '+r.status))+'</span>'; btn.disabled=false; btn.textContent='📅 Crear cadena desde esta fecha'; return; }
+    msg.innerHTML='<span style="color:var(--cx-success-text, #16a34a);font-weight:700">✅ Cadena creada · '+(d.creados||0)+' lotes'+(d.origen_creado?' + fuente':'')+'.</span>';
     // Programación v4 · guardar la DECISIÓN (kg/ritmo/horizonte/mix) → el panel /planta/programar
     // la recuerda = "un solo módulo": decidís acá o allá, es lo mismo. Fire-and-forget.
     try{
@@ -21600,7 +21600,7 @@ async function _npCrearCadena(){
     }catch(e){}
     cerrarNuevaProduccion();
     if (typeof cargar === 'function') cargar();
-  }catch(e){ msg.innerHTML='<span style="color:#dc2626;font-weight:700">⚠ '+escapeHtml(String(e))+'</span>'; btn.disabled=false; btn.textContent='📅 Crear cadena desde esta fecha'; }
+  }catch(e){ msg.innerHTML='<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ '+escapeHtml(String(e))+'</span>'; btn.disabled=false; btn.textContent='📅 Crear cadena desde esta fecha'; }
 }
 async function abrirLoteModal(id, producto, fecha, kg){
   window._LOTE_MODAL_ACTUAL = {id: id, producto: producto, fecha: fecha, kg: kg};
@@ -21763,11 +21763,11 @@ async function abrirLoteModal(id, producto, fecha, kg){
   if (info.imagen_url){
     html += '<img src="/api/imagen-producto/' + encodeURIComponent(producto) + '?t=' + Date.now() + '" style="max-height:130px;max-width:100%;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.12)" alt="" onerror="this.style.display=&#39;none&#39;"><br>';
   } else {
-    html += '<div style="max-width:150px;margin:0 auto 4px;height:110px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:28px;color:#475569">&#128230;<span style="font-size:9px;font-weight:700;margin-top:2px">sin foto</span></div>';
+    html += '<div style="max-width:150px;margin:0 auto 4px;height:110px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:28px;color:var(--cx-text-soft, #475569)">&#128230;<span style="font-size:9px;font-weight:700;margin-top:2px">sin foto</span></div>';
   }
   html += '<div style="margin-top:6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">';
-  html += '<button onclick="_calTraerFotoShopify(this)" data-prod="' + escapeHtml(producto) + '" title="Traer la foto linda del producto desde Shopify (igual que en Necesidades)" style="padding:4px 10px;font-size:11px;background:#5b21b6;color:#fff;border:none;border-radius:5px;cursor:pointer">&#128717; Traer foto de Shopify</button>';
-  html += '<button onclick="corregirFotoProducto(this)" data-prod="' + escapeHtml(producto) + '" style="padding:4px 10px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer">' + (info.imagen_url ? '&#128247; Corregir foto' : '&#128247; Subir foto') + '</button>';
+  html += '<button onclick="_calTraerFotoShopify(this)" data-prod="' + escapeHtml(producto) + '" title="Traer la foto linda del producto desde Shopify (igual que en Necesidades)" style="padding:4px 10px;font-size:11px;background:var(--cx-primary-dark, #5b21b6);color:#fff;border:none;border-radius:5px;cursor:pointer">&#128717; Traer foto de Shopify</button>';
+  html += '<button onclick="corregirFotoProducto(this)" data-prod="' + escapeHtml(producto) + '" style="padding:4px 10px;font-size:11px;background:var(--cx-info, #0891b2);color:#fff;border:none;border-radius:5px;cursor:pointer">' + (info.imagen_url ? '&#128247; Corregir foto' : '&#128247; Subir foto') + '</button>';
   html += '</div></div>';
 
   // Sebastián 25-may-2026 PM · selector envase override del lote.
@@ -21779,16 +21779,16 @@ async function abrirLoteModal(id, producto, fecha, kg){
     html += '<div style="background:#ecfeff;border:1px solid #67e8f9;border-radius:8px;padding:10px 14px;margin-bottom:12px">';
     // Sebastián 2-jul · el override de SOLO este lote va COLAPSADO (menos carga visual) ·
     // lo principal son las Presentaciones (abajo · aplican a TODOS los lotes y auto-calculan).
-    html += '<details style="margin-bottom:4px"><summary style="cursor:pointer;font-size:11px;color:#0e7490;font-weight:700">&#9656; Envase de SOLO este lote (avanzado)' + (envActual ? ' &middot; ' + escapeHtml(envActual) : '') + '</summary>';
+    html += '<details style="margin-bottom:4px"><summary style="cursor:pointer;font-size:11px;color:var(--cx-info-text, #0e7490);font-weight:700">&#9656; Envase de SOLO este lote (avanzado)' + (envActual ? ' &middot; ' + escapeHtml(envActual) : '') + '</summary>';
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">';
-    html += '<span style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px">📦 Envase del lote</span>';
-    html += '<select id="env-ovr-' + id + '" data-actual="' + escapeHtml(envActual) + '" style="flex:1;min-width:240px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:inherit;background:#fff">';
+    html += '<span style="font-size:11px;font-weight:800;color:var(--cx-info-text, #0e7490);text-transform:uppercase;letter-spacing:.5px">📦 Envase del lote</span>';
+    html += '<select id="env-ovr-' + id + '" data-actual="' + escapeHtml(envActual) + '" style="flex:1;min-width:240px;padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:12px;font-family:inherit;background:var(--cx-card, #fff)">';
     html += _opcionesEnvaseInline(envActual);
     html += '</select>';
-    html += '<button onclick="guardarEnvaseOverride(' + id + ')" style="padding:6px 14px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>';
-    html += '<span id="env-ovr-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">✓</span>';
+    html += '<button onclick="guardarEnvaseOverride(' + id + ')" style="padding:6px 14px;font-size:11px;background:var(--cx-info, #0891b2);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>';
+    html += '<span id="env-ovr-ok-' + id + '" style="color:var(--cx-success-text, #15803d);font-size:11px;display:none">✓</span>';
     html += '</div>';
-    html += '<div style="font-size:11px;color:#0e7490;margin-top:6px">' +
+    html += '<div style="font-size:11px;color:var(--cx-info-text, #0e7490);margin-top:6px">' +
        (envActual ? '✓ Override <strong>' + escapeHtml(envActual) + '</strong> · MEE calcula con este envase' :
                      '⚙ Sin override · MEE usa el envase default del producto · elegí uno de la lista para forzar otro') + '</div>';
     // Cargar opciones (cache global · una sola llamada)
@@ -21797,12 +21797,12 @@ async function abrirLoteModal(id, producto, fecha, kg){
     // Solo se muestran si hay override seteado (sino no tiene sentido propagar nada)
     if (envActual){
       html += '<details style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:8px">';
-      html += '<summary style="cursor:pointer;font-size:11px;color:#0e7490;font-weight:700">▸ Propagación opcional (avanzado)</summary>';
+      html += '<summary style="cursor:pointer;font-size:11px;color:var(--cx-info-text, #0e7490);font-weight:700">▸ Propagación opcional (avanzado)</summary>';
       html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
-      html += '<button onclick="envaseAplicarDefault(' + id + ')" style="padding:6px 12px;font-size:11px;background:#f59e0b;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700" title="Cambia el envase default del producto en sku_mee_config · futuros lotes nuevos lo usan automático">⚓ Aplicar como default del producto</button>';
+      html += '<button onclick="envaseAplicarDefault(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-warn, #f59e0b);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700" title="Cambia el envase default del producto en sku_mee_config · futuros lotes nuevos lo usan automático">⚓ Aplicar como default del producto</button>';
       html += '<button onclick="envasePropagarFuturos(' + id + ')" style="padding:6px 12px;font-size:11px;background:#6366f1;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700" title="Setea este envase como override en TODOS los lotes futuros del producto que aún no iniciaron · no toca el default global">↪ Propagar a lotes futuros</button>';
       html += '</div>';
-      html += '<div style="font-size:10px;color:#64748b;margin-top:6px;line-height:1.4">';
+      html += '<div style="font-size:10px;color:var(--cx-text-mute, #64748b);margin-top:6px;line-height:1.4">';
       html += '<strong>⚓ Default</strong>: cambia sku_mee_config global · permanente hasta que lo cambies de nuevo<br>';
       html += '<strong>↪ Propagar</strong>: sobreescribe override en cada lote futuro · no toca config global · útil cuando es cambio temporal';
       html += '</div></details>';
@@ -21811,14 +21811,14 @@ async function abrirLoteModal(id, producto, fecha, kg){
     // Sebastián 2-jul · PRESENTACIONES del producto (multi-envase) DENTRO del área azul de
     // envase · UNA sola área. Persisten en producto_presentaciones (aplican a TODOS los lotes).
     html += '<div id="pres-box-' + id + '" data-prod="' + escapeHtml(producto) + '" style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:10px">';
-    html += '<div style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Envase(s) del producto <span style="font-weight:600;text-transform:none;color:#155e75">· agreg&aacute; otro solo si tiene 2+ tama&ntilde;os · se guarda para siempre</span></div>';
-    html += '<div id="pres-list-' + id + '" style="font-size:12px;color:#0f766e">cargando&#8230;</div>';
+    html += '<div style="font-size:11px;font-weight:800;color:var(--cx-info-text, #0e7490);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Envase(s) del producto <span style="font-weight:600;text-transform:none;color:#155e75">· agreg&aacute; otro solo si tiene 2+ tama&ntilde;os · se guarda para siempre</span></div>';
+    html += '<div id="pres-list-' + id + '" style="font-size:12px;color:var(--cx-info-text, #0f766e)">cargando&#8230;</div>';
     html += '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">';
-    html += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar envase</button>';
-    html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar</button>';
-    html += '<span id="pres-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">&#10003; guardado</span>';
+    html += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-info, #0891b2);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar envase</button>';
+    html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-success, #16a34a);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar</button>';
+    html += '<span id="pres-ok-' + id + '" style="color:var(--cx-success-text, #15803d);font-size:11px;display:none">&#10003; guardado</span>';
     html += '</div>';
-    html += '<div style="font-size:10px;color:#0e7490;margin-top:6px;line-height:1.5">Cada fila = <b>un envase + su volumen (ml)</b>. Con eso Abastecimiento calcula solo cu&aacute;ntos envases pedir (kg &rarr; ml &rarr; unidades). Si tiene un solo tama&ntilde;o, dej&aacute; 1 fila. <span style="color:#94a3b8">Lo que vende cada referencia sale en &laquo;Desglose por referencia&raquo; m&aacute;s abajo.</span></div>';
+    html += '<div style="font-size:10px;color:var(--cx-info-text, #0e7490);margin-top:6px;line-height:1.5">Cada fila = <b>un envase + su volumen (ml)</b>. Con eso Abastecimiento calcula solo cu&aacute;ntos envases pedir (kg &rarr; ml &rarr; unidades). Si tiene un solo tama&ntilde;o, dej&aacute; 1 fila. <span style="color:var(--cx-text-faint, #94a3b8)">Lo que vende cada referencia sale en &laquo;Desglose por referencia&raquo; m&aacute;s abajo.</span></div>';
     html += '</div>';
     setTimeout(function(){ _cargarPresentaciones(id); }, 60);
     html += '</div>';
@@ -21848,26 +21848,26 @@ async function abrirLoteModal(id, producto, fecha, kg){
     } catch(_eC){}
     const _envTxt = (cli) => !cli ? '' : (cli.envases||[]).filter(e=>e.uds>0).map(e =>
       '<b>' + (e.uds).toLocaleString('es-CO') + '</b>×' + escapeHtml(e.etiqueta)
-      + (e.envase ? ' <span style="font-family:monospace;color:#0e7490;font-size:10px" title="frasco a usar">' + escapeHtml(e.envase) + '</span>' : '')
-      + (e.es_fija ? ' <span style="color:#7c3aed;font-size:10px">(fijo/regalo)</span>' : '')
+      + (e.envase ? ' <span style="font-family:monospace;color:var(--cx-info-text, #0e7490);font-size:10px" title="frasco a usar">' + escapeHtml(e.envase) + '</span>' : '')
+      + (e.es_fija ? ' <span style="color:var(--cx-primary-text, #7c3aed);font-size:10px">(fijo/regalo)</span>' : '')
     ).join(' &nbsp;·&nbsp; ');
     if (_desg.length > 0 || (_loteFull && _loteFull.kg_b2b_total > 0)){
       const kgB2B = (_loteFull && _loteFull.kg_b2b_total) || 0;
       const kgDTC = (_loteFull && _loteFull.kg_dtc) || 0;
       const inconsist = !!(_loteFull && _loteFull.split_inconsistente);
-      let dHtml = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:12px">';
-      dHtml += '<div style="font-size:12px;font-weight:800;color:#0f766e;margin-bottom:8px">📦 Plan de envasado · ' + kg + 'kg total</div>';
+      let dHtml = '<div style="background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;padding:12px 14px;margin-bottom:12px">';
+      dHtml += '<div style="font-size:12px;font-weight:800;color:var(--cx-info-text, #0f766e);margin-bottom:8px">📦 Plan de envasado · ' + kg + 'kg total</div>';
       if (inconsist){
-        dHtml += '<div style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:5px;font-size:11px;margin-bottom:8px">⚠ <strong>Datos inconsistentes</strong> · suma B2B (' + kgB2B + 'kg) > total lote (' + kg + 'kg).</div>';
+        dHtml += '<div style="background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);padding:6px 10px;border-radius:5px;font-size:11px;margin-bottom:8px">⚠ <strong>Datos inconsistentes</strong> · suma B2B (' + kgB2B + 'kg) > total lote (' + kg + 'kg).</div>';
       }
       dHtml += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
-      dHtml += '<thead><tr style="background:#fff;color:#475569;font-size:10px;text-transform:uppercase">'
+      dHtml += '<thead><tr style="background:var(--cx-card, #fff);color:var(--cx-text-soft, #475569);font-size:10px;text-transform:uppercase">'
         + '<th style="text-align:left;padding:6px 8px">Cliente</th>'
         + '<th style="padding:6px 8px">kg</th>'
         + '<th style="padding:6px 8px">Envase</th>'
         + '<th style="padding:6px 8px">Uds calc</th>'
-        + '<th style="padding:6px 8px;background:#fef3c7">Uds a envasar ✏</th>'
-        + '<th style="padding:6px 8px;background:#fef3c7">Observaciones ✏</th>'
+        + '<th style="padding:6px 8px;background:var(--cx-warn-pale, #fef3c7)">Uds a envasar ✏</th>'
+        + '<th style="padding:6px 8px;background:var(--cx-warn-pale, #fef3c7)">Observaciones ✏</th>'
         + '</tr></thead><tbody>';
       // Fila DTC · Sebastián 2-jul: MISMAS columnas que las filas B2B (antes colspan=4 no
       // cuadraba con Animus). Envase / Uds calc / Uds a envasar / Observaciones alineadas.
@@ -21875,16 +21875,16 @@ async function abrirLoteModal(id, producto, fecha, kg){
         const _dtcCli = _planCli.find(x => x.es_dtc);
         const _dtcEnvs = ((_dtcCli && _dtcCli.envases) || []).filter(e => e.uds > 0);
         const _dtcEnvCell = _dtcEnvs.length
-          ? _dtcEnvs.map(e => (e.envase ? '<span style="font-family:monospace">' + escapeHtml(e.envase) + '</span>' : '') + (e.etiqueta ? ' <span style="color:#94a3b8;font-size:10px">· ' + escapeHtml(e.etiqueta) + '</span>' : '') + (e.es_fija ? ' <span style="color:#7c3aed;font-size:10px">(fijo/regalo)</span>' : '')).join('<br>')
-          : '<em style="color:#94a3b8">DTC automático</em>';
+          ? _dtcEnvs.map(e => (e.envase ? '<span style="font-family:monospace">' + escapeHtml(e.envase) + '</span>' : '') + (e.etiqueta ? ' <span style="color:var(--cx-text-faint, #94a3b8);font-size:10px">· ' + escapeHtml(e.etiqueta) + '</span>' : '') + (e.es_fija ? ' <span style="color:var(--cx-primary-text, #7c3aed);font-size:10px">(fijo/regalo)</span>' : '')).join('<br>')
+          : '<em style="color:var(--cx-text-faint, #94a3b8)">DTC automático</em>';
         const _dtcUds = _dtcEnvs.reduce((s, e) => s + (e.uds || 0), 0);
-        dHtml += '<tr style="border-top:1px solid #e2e8f0;background:#eff6ff">'
-          + '<td style="padding:6px 8px;font-weight:700;color:#1e40af">🛍️ Animus DTC</td>'
-          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + kgDTC + ' kg<br><span style="font-size:10px;font-weight:600;color:#64748b">' + (kg > 0 ? Math.round(kgDTC / kg * 100) : 0) + '%</span></td>'
-          + '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#1e293b">' + _dtcEnvCell + '</td>'
-          + '<td style="padding:6px 8px;text-align:center;color:#475569">' + (_dtcUds ? _dtcUds.toLocaleString('es-CO') + ' uds' : '—') + '</td>'
-          + '<td style="padding:6px 8px;text-align:center;color:#94a3b8;font-size:10px">auto · no editable</td>'
-          + '<td style="padding:6px 8px;text-align:center;color:#cbd5e1">—</td>'
+        dHtml += '<tr style="border-top:1px solid var(--cx-border, #e2e8f0);background:var(--cx-info-pale, #eff6ff)">'
+          + '<td style="padding:6px 8px;font-weight:700;color:var(--cx-info-text, #1e40af)">🛍️ Animus DTC</td>'
+          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + kgDTC + ' kg<br><span style="font-size:10px;font-weight:600;color:var(--cx-text-mute, #64748b)">' + (kg > 0 ? Math.round(kgDTC / kg * 100) : 0) + '%</span></td>'
+          + '<td style="padding:6px 8px;text-align:center;font-size:11px;color:var(--cx-text, #1e293b)">' + _dtcEnvCell + '</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:var(--cx-text-soft, #475569)">' + (_dtcUds ? _dtcUds.toLocaleString('es-CO') + ' uds' : '—') + '</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:var(--cx-text-faint, #94a3b8);font-size:10px">auto · no editable</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:var(--cx-border, #cbd5e1)">—</td>'
           + '</tr>';
       }
       // Filas B2B (editables)
@@ -21897,8 +21897,8 @@ async function abrirLoteModal(id, producto, fecha, kg){
         const _e0 = _cliPlan && _cliPlan.envases && _cliPlan.envases[0];
         const _fr = ((_e0 && _e0.envase) || d.envase || '').toString().trim();
         const envaseCell = _fr
-          ? '<span style="font-family:monospace">' + escapeHtml(_fr) + '</span>' + ((_e0 && _e0.etiqueta) ? ' <span style="color:#94a3b8;font-size:10px">· ' + escapeHtml(_e0.etiqueta) + '</span>' : '')
-          : '<span style="color:#b45309;font-weight:700" title="elegí el envase en la tabla de Necesidades del cliente (columna Envase)">&#9888; sin envase</span>';
+          ? '<span style="font-family:monospace">' + escapeHtml(_fr) + '</span>' + ((_e0 && _e0.etiqueta) ? ' <span style="color:var(--cx-text-faint, #94a3b8);font-size:10px">· ' + escapeHtml(_e0.etiqueta) + '</span>' : '')
+          : '<span style="color:var(--cx-warn-text, #b45309);font-weight:700" title="elegí el envase en la tabla de Necesidades del cliente (columna Envase)">&#9888; sin envase</span>';
         const udsCalc = d.unidades_calculadas || 0;
         // FIX 30-may-2026 · Sebastián (caso Kelly BHA): el campo arrancaba en 0
         // cuando no se había llenado → una orden quedaba en 0 y NO se envasaba.
@@ -21912,48 +21912,48 @@ async function abrirLoteModal(id, producto, fecha, kg){
         const notaId = 'env-nota-' + pblId;
         const guardId = 'env-save-' + pblId;
         const okId = 'env-ok-' + pblId;
-        dHtml += '<tr style="border-top:1px solid #e2e8f0;background:#fce7f3">'
+        dHtml += '<tr style="border-top:1px solid var(--cx-border, #e2e8f0);background:#fce7f3">'
           + '<td style="padding:6px 8px;font-weight:700;color:#9d174d" title="pedido B2B #' + (d.pedido_id||'') + '">📦 ' + escapeHtml(cli) + '</td>'
-          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + d.kg + ' kg<br><span style="font-size:10px;font-weight:600;color:#64748b">' + (kg > 0 ? Math.round(d.kg / kg * 100) : 0) + '%</span></td>'
+          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + d.kg + ' kg<br><span style="font-size:10px;font-weight:600;color:var(--cx-text-mute, #64748b)">' + (kg > 0 ? Math.round(d.kg / kg * 100) : 0) + '%</span></td>'
           + '<td style="padding:6px 8px;text-align:center;font-size:10px">' + envaseCell + '</td>'
-          + '<td style="padding:6px 8px;text-align:center;color:#64748b" title="' + d.kg + 'kg × 1000 ÷ ' + (d.ml||0) + 'ml">' + udsCalc + ' uds</td>'
-          + '<td style="padding:6px 8px;text-align:center"><input id="' + inputId + '" type="number" min="0" max="10000000" value="' + planUds + '" placeholder="' + udsCalc + '" style="width:90px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:center"></td>'
-          + '<td style="padding:6px 8px"><input id="' + notaId + '" type="text" maxlength="500" value="' + planNotas + '" placeholder="etiqueta, color, arte..." style="width:100%;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"></td>'
+          + '<td style="padding:6px 8px;text-align:center;color:var(--cx-text-mute, #64748b)" title="' + d.kg + 'kg × 1000 ÷ ' + (d.ml||0) + 'ml">' + udsCalc + ' uds</td>'
+          + '<td style="padding:6px 8px;text-align:center"><input id="' + inputId + '" type="number" min="0" max="10000000" value="' + planUds + '" placeholder="' + udsCalc + '" style="width:90px;padding:4px 6px;border:1px solid var(--cx-border, #cbd5e1);border-radius:4px;font-size:12px;text-align:center"></td>'
+          + '<td style="padding:6px 8px"><input id="' + notaId + '" type="text" maxlength="500" value="' + planNotas + '" placeholder="etiqueta, color, arte..." style="width:100%;padding:4px 8px;border:1px solid var(--cx-border, #cbd5e1);border-radius:4px;font-size:11px"></td>'
           + '</tr>';
         dHtml += '<tr style="background:#fce7f3"><td colspan="6" style="padding:0 8px 8px;text-align:right">'
-          + '<span id="' + okId + '" style="color:#15803d;font-size:11px;margin-right:8px;display:none">✓ guardado</span>'
-          + '<button id="' + guardId + '" onclick="guardarPlanEnvasado(' + id + ',' + pblId + ')" style="padding:4px 12px;font-size:11px;background:#0f766e;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>'
+          + '<span id="' + okId + '" style="color:var(--cx-success-text, #15803d);font-size:11px;margin-right:8px;display:none">✓ guardado</span>'
+          + '<button id="' + guardId + '" onclick="guardarPlanEnvasado(' + id + ',' + pblId + ')" style="padding:4px 12px;font-size:11px;background:var(--cx-info, #0f766e);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>'
           + '</td></tr>';
       });
       dHtml += '</tbody></table></div>';
       _planEnvHtml = dHtml;
     } else {
       // Lote sin atribución B2B explícita · asumido todo DTC
-      _planEnvHtml = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:11px;color:#64748b">📦 Lote sin desglose B2B · asumido <strong>' + kg + 'kg DTC</strong></div>';
+      _planEnvHtml = '<div style="background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:11px;color:var(--cx-text-mute, #64748b)">📦 Lote sin desglose B2B · asumido <strong>' + kg + 'kg DTC</strong></div>';
     }
   } catch(_e_desg){ /* sin lote en PLAN_DATA · no mostrar */ }
 
   // Sección 1: Datos de venta y stock · LIDERA el modal (Sebastián 13-jul · como en
   // Necesidades: primero los números claros del producto; el detalle de envasado va abajo).
-  html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin:4px 0 8px">📊 Estado del producto</div>';
+  html += '<div style="font-size:13px;font-weight:800;color:var(--cx-primary-text, #5b21b6);margin:4px 0 8px">📊 Estado del producto</div>';
   html += '<div class="metric-grid">';
   html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + ml + ' ml</div></div>';
   // Sebastián 20-jul · "Kg a producir" NO va en Estado (es estado = volumen/venta/lo que hay/alcanza) ·
   // se movió a la sección 🏭 Producción de abajo.
   // Sebastián 17-jul · ventas CONSOLIDADAS en una tarjeta limpia: vende/mes (uds) + ml + kg/mes sugeridos.
-  html += '<div class="metric-card"><div class="metric-lbl">Vende / mes</div><div class="metric-val">' + velMes + ' <span style="font-size:12px;font-weight:600;color:#64748b">uds</span></div><div class="metric-sub">' + ml + ' ml &middot; <b>' + (velKgDia * 30).toFixed(1) + ' kg/mes</b> sugeridos &middot; ' + velUds.toFixed(1) + ' uds/d&iacute;a</div></div>';
+  html += '<div class="metric-card"><div class="metric-lbl">Vende / mes</div><div class="metric-val">' + velMes + ' <span style="font-size:12px;font-weight:600;color:var(--cx-text-mute, #64748b)">uds</span></div><div class="metric-sub">' + ml + ' ml &middot; <b>' + (velKgDia * 30).toFixed(1) + ' kg/mes</b> sugeridos &middot; ' + velUds.toFixed(1) + ' uds/d&iacute;a</div></div>';
   // FIX 30-may-2026 · "237 uds / 72.1 kg" era incoherente · 237 uds × 30ml = 7.1kg,
   // no 72.1 (eso era góndola + lote programado). Mostrar el FÍSICO de góndola, que
   // sí cuadra con las uds. La cobertura (que sí cuenta lo programado) va en su tarjeta.
   const _stockKgFisico = (info.stock_kg_gondola != null) ? info.stock_kg_gondola : stockKg;
   // CUÁNTO HAY (físico en góndola)
-  html += '<div class="metric-card"><div class="metric-lbl">Cuánto hay</div><div class="metric-val">' + stockUds.toLocaleString('es-CO') + ' <span style="font-size:12px;font-weight:600;color:#64748b">uds</span></div><div class="metric-sub">' + _stockKgFisico.toFixed(1) + ' kg físico en góndola</div></div>';
+  html += '<div class="metric-card"><div class="metric-lbl">Cuánto hay</div><div class="metric-val">' + stockUds.toLocaleString('es-CO') + ' <span style="font-size:12px;font-weight:600;color:var(--cx-text-mute, #64748b)">uds</span></div><div class="metric-sub">' + _stockKgFisico.toFixed(1) + ' kg físico en góndola</div></div>';
   // PARA CUÁNTO ALCANZA (físico · con las ventas actuales) · color de urgencia · cobertura-con-plan como nota
   html += '<div class="metric-card" style="border-color:' + _cobCol + '33;background:linear-gradient(180deg,#fff,' + _cobCol + '0d)">'
     + '<div class="metric-lbl">Alcanza (con lo que hay)</div>'
     + '<div class="metric-val" style="color:' + _cobCol + '">' + (diasFisico != null ? diasFisico + 'd' : '—') + '</div>'
     + '<div class="metric-sub" style="color:' + _cobCol + '">' + (info.urgencia || '') + ' &middot; al ritmo actual (' + velUds.toFixed(1) + ' uds/d&iacute;a)</div>'
-    + (diasCob != null ? '<div class="metric-sub" style="margin-top:2px;color:#94a3b8">con lo ya programado: ~' + diasCob + 'd</div>' : '')
+    + (diasCob != null ? '<div class="metric-sub" style="margin-top:2px;color:var(--cx-text-faint, #94a3b8)">con lo ya programado: ~' + diasCob + 'd</div>' : '')
     + '</div>';
   html += '</div>';
 
@@ -21964,24 +21964,24 @@ async function abrirLoteModal(id, producto, fecha, kg){
   var _kgOtroActual = (_lfOtro && _lfOtro.kg_otro_cliente) ? _lfOtro.kg_otro_cliente : 0;
   var _otrosHtml = '';
   _otrosHtml += '<div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e9d5ff">';
-  _otrosHtml += '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:8px">🤝 Otros clientes <span style="font-weight:600;color:#b45309;font-size:11px">· pedidos B2B (portal / Programar) que suman a este lote</span></div>';
-  _otrosHtml += '<div id="otros-b2b-' + id + '" style="font-size:12px;color:#92400e">cargando&#8230;</div>';
+  _otrosHtml += '<div style="font-size:12px;font-weight:800;color:var(--cx-warn-text, #92400e);margin-bottom:8px">🤝 Otros clientes <span style="font-weight:600;color:var(--cx-warn-text, #b45309);font-size:11px">· pedidos B2B (portal / Programar) que suman a este lote</span></div>';
+  _otrosHtml += '<div id="otros-b2b-' + id + '" style="font-size:12px;color:var(--cx-warn-text, #92400e)">cargando&#8230;</div>';
   _otrosHtml += '<div style="margin-top:9px">';
-  _otrosHtml += '<button onclick="_toggleAddCliente(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:800">&#10133; Agregar otro cliente</button>';
-  _otrosHtml += '<div id="add-cli-' + id + '" style="display:none;margin-top:8px;background:#fff;border:1px solid #86efac;border-radius:8px;padding:10px 11px">';
+  _otrosHtml += '<button onclick="_toggleAddCliente(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-success, #16a34a);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:800">&#10133; Agregar otro cliente</button>';
+  _otrosHtml += '<div id="add-cli-' + id + '" style="display:none;margin-top:8px;background:var(--cx-card, #fff);border:1px solid #86efac;border-radius:8px;padding:10px 11px">';
   _otrosHtml += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
-  _otrosHtml += '<input id="addcli-nombre-' + id + '" list="addcli-clientes-dl" placeholder="Cliente (elegí o escribí uno nuevo)" autocomplete="off" style="flex:1;min-width:150px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px"><datalist id="addcli-clientes-dl"></datalist>';
-  _otrosHtml += '<select id="addcli-env-' + id + '" style="min-width:170px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;background:#fff">' + _opcionesEnvaseInline('') + '</select>';
-  _otrosHtml += '<input id="addcli-kg-' + id + '" type="number" min="0.1" step="0.1" placeholder="kg" style="width:70px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-align:center"> <span style="font-size:11px;color:#166534;font-weight:700">kg</span>';
-  _otrosHtml += '<button onclick="_guardarOtroCliente(' + id + ')" style="padding:5px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:800">&#128190; Sumar</button>';
+  _otrosHtml += '<input id="addcli-nombre-' + id + '" list="addcli-clientes-dl" placeholder="Cliente (elegí o escribí uno nuevo)" autocomplete="off" style="flex:1;min-width:150px;padding:5px 7px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:12px"><datalist id="addcli-clientes-dl"></datalist>';
+  _otrosHtml += '<select id="addcli-env-' + id + '" style="min-width:170px;padding:5px 7px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:11px;background:var(--cx-card, #fff)">' + _opcionesEnvaseInline('') + '</select>';
+  _otrosHtml += '<input id="addcli-kg-' + id + '" type="number" min="0.1" step="0.1" placeholder="kg" style="width:70px;padding:5px 7px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:12px;text-align:center"> <span style="font-size:11px;color:var(--cx-success-text, #166534);font-weight:700">kg</span>';
+  _otrosHtml += '<button onclick="_guardarOtroCliente(' + id + ')" style="padding:5px 12px;font-size:11px;background:var(--cx-success, #16a34a);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:800">&#128190; Sumar</button>';
   _otrosHtml += '</div>';
-  _otrosHtml += '<div style="font-size:10px;color:#166534;margin-top:5px">Se agrega ENCIMA del lote &Aacute;nimus &middot; sube el kg a fabricar y la compra de MP para cubrirlo.</div>';
+  _otrosHtml += '<div style="font-size:10px;color:var(--cx-success-text, #166534);margin-top:5px">Se agrega ENCIMA del lote &Aacute;nimus &middot; sube el kg a fabricar y la compra de MP para cubrirlo.</div>';
   _otrosHtml += '</div></div>';
   _otrosHtml += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px dashed #fcd34d;margin-top:10px;padding-top:9px">';
-  _otrosHtml += '<span style="font-size:11px;color:#92400e;font-weight:700" title="kg de ESTE lote que van para otro cliente sin pedido B2B formal · resta de la cobertura de Ánimus">Reserva manual (resta cobertura):</span>';
-  _otrosHtml += '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" oninput="try{_updateCadenciaPreview()}catch(e){}" style="width:64px;font-size:14px;font-weight:800;padding:4px 6px;border:1px solid #fcd34d;border-radius:5px"> <span style="font-size:11px;color:#92400e">kg</span>';
-  _otrosHtml += '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 10px;font-size:11px;margin:0;background:#d97706">💾 Este lote</button>';
-  _otrosHtml += '<button onclick="aplicarKgOtroClienteCadena(this)" data-prod="' + escapeHtml(producto) + '" title="Aplica este kg (fijo por lote) a TODOS los lotes futuros del producto · la porción Ánimus baja y la cadencia recalcula más seguido" style="padding:5px 10px;font-size:11px;background:#fff;color:#b45309;border:1px solid #fcd34d;border-radius:6px;cursor:pointer;font-weight:800">&#128203; A toda la cadena</button>';
+  _otrosHtml += '<span style="font-size:11px;color:var(--cx-warn-text, #92400e);font-weight:700" title="kg de ESTE lote que van para otro cliente sin pedido B2B formal · resta de la cobertura de Ánimus">Reserva manual (resta cobertura):</span>';
+  _otrosHtml += '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" oninput="try{_updateCadenciaPreview()}catch(e){}" style="width:64px;font-size:14px;font-weight:800;padding:4px 6px;border:1px solid #fcd34d;border-radius:5px"> <span style="font-size:11px;color:var(--cx-warn-text, #92400e)">kg</span>';
+  _otrosHtml += '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 10px;font-size:11px;margin:0;background:var(--cx-accent-dark, #d97706)">💾 Este lote</button>';
+  _otrosHtml += '<button onclick="aplicarKgOtroClienteCadena(this)" data-prod="' + escapeHtml(producto) + '" title="Aplica este kg (fijo por lote) a TODOS los lotes futuros del producto · la porción Ánimus baja y la cadencia recalcula más seguido" style="padding:5px 10px;font-size:11px;background:var(--cx-card, #fff);color:var(--cx-warn-text, #b45309);border:1px solid #fcd34d;border-radius:6px;cursor:pointer;font-weight:800">&#128203; A toda la cadena</button>';
   _otrosHtml += '</div></div>';
 
   // 📊 Desglose EDITABLE por referencia · movido ABAJO (al bloque "Lo que se va a producir")
@@ -22034,20 +22034,20 @@ async function abrirLoteModal(id, producto, fecha, kg){
       if (!_esCadena && Math.abs(dd) > 7){
         const verbo = dd > 0 ? 'Adelantar' : 'Atrasar';
         accionBtn = '<button onclick="aplicarRecomendacionProxima(' + prox.id + ',&quot;' + proximaSugerida + '&quot;,' + id + ',&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;,' + kg + ')" '
-          + 'style="margin-left:8px;background:#16a34a;color:#fff;border:none;padding:3px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" '
+          + 'style="margin-left:8px;background:var(--cx-success, #16a34a);color:#fff;border:none;padding:3px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" '
           + 'title="Mueve la próxima producción a la fecha sugerida">✅ ' + verbo + ' a ' + proximaSugerida + '</button>';
       }
       html += '<div class="banner-inline" style="border-color:' + col + ';color:' + col + '">'
             + '✓ La próxima YA está programada el <strong>' + pf + '</strong> · ' + txt + '. '
             + accionBtn
             + '<button onclick="abrirLoteModal(' + prox.id + ',&quot;' + escapeHtml(producto) + '&quot;,&quot;' + pf + '&quot;,' + (prox.kg || 0) + ')" '
-            + 'style="margin-left:6px;background:#fff;border:1px solid ' + col + ';color:' + col + ';padding:2px 9px;border-radius:5px;font-size:11px;cursor:pointer">abrir</button>'
+            + 'style="margin-left:6px;background:var(--cx-card, #fff);border:1px solid ' + col + ';color:' + col + ';padding:2px 9px;border-radius:5px;font-size:11px;cursor:pointer">abrir</button>'
             + '</div>';
     } else {
-      html += '<div class="banner-inline" style="border-color:#b45309;color:#b45309">'
+      html += '<div class="banner-inline" style="border-color:var(--cx-accent-dark, #b45309);color:var(--cx-warn-text, #b45309)">'
             + '⚠ No hay una próxima producción programada para este producto. '
             + '<button onclick="programarProxima(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + proximaSugerida + '&quot;,' + kg + ')" '
-            + 'style="margin-left:6px;background:#16a34a;color:#fff;border:none;padding:3px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">📅 Programar el ' + proximaSugerida + ' (' + kg + 'kg)</button>'
+            + 'style="margin-left:6px;background:var(--cx-success, #16a34a);color:#fff;border:none;padding:3px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">📅 Programar el ' + proximaSugerida + ' (' + kg + 'kg)</button>'
             + '</div>';
     }
   }
@@ -22061,58 +22061,58 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // se movió acá desde Estado (Estado = solo volumen/venta/lo que hay/alcanza).
   window._loteVelKgDia = velKgDia;
   window._calCadInfo = {velKgDia: velKgDia, velUdsDia: velUds, ml: (info.ml_unidad || 0)};   // editor de cadencia · ml crudo (|| 0) igual que Necesidades (no default 30)
-  html += '<div style="font-size:14px;font-weight:800;color:#5b21b6;margin:18px 0 10px;padding-top:12px;border-top:2px solid #ede9fe">🏭 Producción <span style="font-size:11px;font-weight:600;color:#94a3b8">· todo lo de producir en un solo lugar</span></div>';
+  html += '<div style="font-size:14px;font-weight:800;color:var(--cx-primary-text, #5b21b6);margin:18px 0 10px;padding-top:12px;border-top:2px solid var(--cx-primary-soft, #ede9fe)">🏭 Producción <span style="font-size:11px;font-weight:600;color:var(--cx-text-faint, #94a3b8)">· todo lo de producir en un solo lugar</span></div>';
   // Sebastián 20-jul · ENGLOBAR TODO en un contenedor: kilos + alcance + agregar cliente + desglose + cadencia.
   html += '<div style="border:1.5px solid #e9d5ff;border-radius:14px;background:linear-gradient(180deg,#fdfcff,#faf7ff);padding:16px;margin-bottom:14px">';
   html += '<div style="padding-bottom:6px">'
     + '<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">'
-    + '<div><div style="font-size:11px;font-weight:800;color:#6d28d9;text-transform:uppercase;letter-spacing:.4px">Kilos a producir</div>'
+    + '<div><div style="font-size:11px;font-weight:800;color:var(--cx-primary-text, #6d28d9);text-transform:uppercase;letter-spacing:.4px">Kilos a producir</div>'
     + '<div style="display:flex;gap:7px;align-items:center;margin-top:5px">'
     + '<input id="edit-kg-lote" type="number" min="1" max="1000" step="1" value="' + kg + '" '
     + 'oninput="var u=document.getElementById(&quot;edit-kg-uds&quot;);if(u)u.textContent=Math.round((parseFloat(this.value)||0)*1000/' + ml + ')+&quot; uds aprox&quot;;try{_prodKgAlcance()}catch(e){}" '
-    + 'style="width:92px;font-size:22px;font-weight:800;padding:6px 9px;border:1.5px solid #c4b5fd;border-radius:9px;color:#5b21b6">'
-    + '<span style="font-size:14px;color:#64748b;font-weight:700">kg</span>'
-    + '<button onclick="guardarKgLote(' + id + ')" style="padding:8px 14px;font-size:12px;margin:0;background:#16a34a">💾 Guardar</button>'
+    + 'style="width:92px;font-size:22px;font-weight:800;padding:6px 9px;border:1.5px solid var(--cx-primary-light, #c4b5fd);border-radius:9px;color:var(--cx-primary-text, #5b21b6)">'
+    + '<span style="font-size:14px;color:var(--cx-text-mute, #64748b);font-weight:700">kg</span>'
+    + '<button onclick="guardarKgLote(' + id + ')" style="padding:8px 14px;font-size:12px;margin:0;background:var(--cx-success, #16a34a)">💾 Guardar</button>'
     + '</div><div class="metric-sub" id="edit-kg-uds" style="margin-top:4px">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>'
     + '</div>'
-    + '<div id="prod-alcance" style="margin-top:11px;font-size:12px;color:#5b21b6;line-height:1.5"></div>'
+    + '<div id="prod-alcance" style="margin-top:11px;font-size:12px;color:var(--cx-primary-text, #5b21b6);line-height:1.5"></div>'
     + '</div>';
   // 🔁 EDITOR DE CADENCIA estilo Necesidades (Sebastián 20-jul · img 129 · "más simple y bonito").
   // Fecha origen + 1ª producción nueva + Cadencia (meses/días · kg/lote · Horizonte) + razonamiento +
   // "Crear cadena en el calendario". Reusa el MISMO motor /api/plan/programar-cadencia-producto que Necesidades.
   var _cadExist = _calCadenaExistente(producto);
   html += '<div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e9d5ff">';
-  if(_cadExist){ html += '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#166534;line-height:1.5">✅ <b>Ya tenés cadena:</b> ' + _cadExist.n + ' lotes de <b>' + _cadExist.kg.toFixed(1) + ' kg</b> cada <b>' + _cadExist.meses + ' mes' + (_cadExist.meses===1?'':'es') + '</b>. Reprogramá abajo para cambiarla.</div>'; }
+  if(_cadExist){ html += '<div style="background:var(--cx-success-pale, #dcfce7);border:1px solid #86efac;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:var(--cx-success-text, #166534);line-height:1.5">✅ <b>Ya tenés cadena:</b> ' + _cadExist.n + ' lotes de <b>' + _cadExist.kg.toFixed(1) + ' kg</b> cada <b>' + _cadExist.meses + ' mes' + (_cadExist.meses===1?'':'es') + '</b>. Reprogramá abajo para cambiarla.</div>'; }
   // 📈 Venta esperada/mes (Sebastián 20-jul · mig 365): override cuando Shopify reciente engaña (bache/estacionalidad).
   var _vespActual = (info && info.venta_esperada_mes) ? info.venta_esperada_mes : '';
-  html += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:9px 11px;margin-bottom:11px">';
+  html += '<div style="background:var(--cx-info-pale, #eff6ff);border:1px solid #bfdbfe;border-radius:8px;padding:9px 11px;margin-bottom:11px">';
   html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
-  html += '<span style="font-size:11px;font-weight:800;color:#1e40af">📈 Venta esperada/mes</span>';
-  html += '<input id="cal-venta-esp" type="number" min="0" step="1" placeholder="' + velMes + ' (Shopify)" value="' + _vespActual + '" title="Si la venta reciente de Shopify NO refleja la venta normal (bache o estacionalidad), poné acá la venta que conocés. Manda sobre Shopify para velocidad, cadencia, colchón y compra de MP/envases." style="width:84px;padding:4px 6px;border:1px solid #93c5fd;border-radius:5px;font-size:13px;font-weight:700;text-align:center;color:#1e40af">';
-  html += '<span style="font-size:11px;color:#64748b">uds/mes</span>';
-  html += '<button onclick="_calGuardarVentaEsp(&quot;' + escapeHtml(producto) + '&quot;,' + id + ')" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">💾 Fijar</button>';
+  html += '<span style="font-size:11px;font-weight:800;color:var(--cx-info-text, #1e40af)">📈 Venta esperada/mes</span>';
+  html += '<input id="cal-venta-esp" type="number" min="0" step="1" placeholder="' + velMes + ' (Shopify)" value="' + _vespActual + '" title="Si la venta reciente de Shopify NO refleja la venta normal (bache o estacionalidad), poné acá la venta que conocés. Manda sobre Shopify para velocidad, cadencia, colchón y compra de MP/envases." style="width:84px;padding:4px 6px;border:1px solid #93c5fd;border-radius:5px;font-size:13px;font-weight:700;text-align:center;color:var(--cx-info-text, #1e40af)">';
+  html += '<span style="font-size:11px;color:var(--cx-text-mute, #64748b)">uds/mes</span>';
+  html += '<button onclick="_calGuardarVentaEsp(&quot;' + escapeHtml(producto) + '&quot;,' + id + ')" style="background:var(--cx-info, #2563eb);color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">💾 Fijar</button>';
   html += '</div>';
   html += '<div style="font-size:10px;color:' + (_vespActual?'#1e40af':'#94a3b8') + ';margin-top:5px">' + (_vespActual ? ('✓ Fijada en ' + _vespActual + '/mes · el plan usa esta (no Shopify). Vaciá y Fijar para volver a Shopify.') : ('Shopify cuenta ~' + velMes + '/mes. Si la venta normal es otra, fijala acá y el plan entero se dimensiona a ese número.')) + '</div>';
   html += '</div>';
-  html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">📍 Fecha canónica / fecha de origen <span style="font-weight:600;color:#94a3b8">(punto de partida)</span></div>';
+  html += '<div style="font-size:11px;color:var(--cx-primary-text, #6d28d9);font-weight:800;margin-bottom:4px">📍 Fecha canónica / fecha de origen <span style="font-weight:600;color:var(--cx-text-faint, #94a3b8)">(punto de partida)</span></div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
-  html += '<label style="font-size:11px;color:#475569">Fecha <input id="cal-cm-fecha" type="date" value="' + fecha + '" style="padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px"></label>';
-  html += '<label style="font-size:11px;color:#475569">Kg producidos <input id="cal-cm-kg-part" type="number" min="0.1" step="0.1" value="' + kg + '" style="width:66px;padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px;text-align:center"></label>';
+  html += '<label style="font-size:11px;color:var(--cx-text-soft, #475569)">Fecha <input id="cal-cm-fecha" type="date" value="' + fecha + '" style="padding:4px 6px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:5px;font-size:12px"></label>';
+  html += '<label style="font-size:11px;color:var(--cx-text-soft, #475569)">Kg producidos <input id="cal-cm-kg-part" type="number" min="0.1" step="0.1" value="' + kg + '" style="width:66px;padding:4px 6px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:5px;font-size:12px;text-align:center"></label>';
   html += '</div>';
-  html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">🎯 1ª producción nueva <span style="font-weight:600;color:#94a3b8">(opcional · vacío = cuando se agote lo fabricado)</span></div>';
+  html += '<div style="font-size:11px;color:var(--cx-primary-text, #6d28d9);font-weight:800;margin-bottom:4px">🎯 1ª producción nueva <span style="font-weight:600;color:var(--cx-text-faint, #94a3b8)">(opcional · vacío = cuando se agote lo fabricado)</span></div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
-  html += '<label style="font-size:11px;color:#475569">Empezar el <input id="cal-cm-primera" type="date" oninput="_calCmPreview()" style="padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px"></label>';
-  html += '<button type="button" onclick="var e=document.getElementById(&quot;cal-cm-primera&quot;);if(e){e.value=&quot;&quot;;_calCmPreview()}" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:5px;padding:4px 8px;font-size:11px;color:#475569;cursor:pointer">auto</button>';
+  html += '<label style="font-size:11px;color:var(--cx-text-soft, #475569)">Empezar el <input id="cal-cm-primera" type="date" oninput="_calCmPreview()" style="padding:4px 6px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:5px;font-size:12px"></label>';
+  html += '<button type="button" onclick="var e=document.getElementById(&quot;cal-cm-primera&quot;);if(e){e.value=&quot;&quot;;_calCmPreview()}" style="background:var(--cx-border-soft, #f1f5f9);border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;padding:4px 8px;font-size:11px;color:var(--cx-text-soft, #475569);cursor:pointer">auto</button>';
   html += '</div>';
-  html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">🔁 Cadencia</div>';
+  html += '<div style="font-size:11px;color:var(--cx-primary-text, #6d28d9);font-weight:800;margin-bottom:4px">🔁 Cadencia</div>';
   html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
-  html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="cal-cm-meses" type="number" min="0.5" max="12" step="0.5" value="2" oninput="_calCmSyncMeses()" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses <span style="color:#94a3b8;font-weight:600">o</span> <input id="cal-cm-dias" type="number" min="15" max="400" value="61" oninput="_calCmSyncDias()" title="cadencia exacta en días (ej. 45)" style="width:48px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> días</span>';
-  html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="cal-cm-kglote" type="number" min="0.1" step="0.1" value="' + kg + '" oninput="_calCmPreview()" style="width:62px;padding:3px 4px;border:1px solid #7c3aed;border-radius:4px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>';
-  html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· Horizonte <select id="cal-cm-anios" onchange="_calCmPreview()" style="padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;font-weight:700"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></span>';
+  html += '<span style="font-size:12px;color:var(--cx-primary-text, #5b21b6);font-weight:700">Cada <input id="cal-cm-meses" type="number" min="0.5" max="12" step="0.5" value="2" oninput="_calCmSyncMeses()" style="width:44px;padding:3px 4px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:4px;text-align:center;font-weight:700"> meses <span style="color:var(--cx-text-faint, #94a3b8);font-weight:600">o</span> <input id="cal-cm-dias" type="number" min="15" max="400" value="61" oninput="_calCmSyncDias()" title="cadencia exacta en días (ej. 45)" style="width:48px;padding:3px 4px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:4px;text-align:center;font-weight:700"> días</span>';
+  html += '<span style="font-size:12px;color:var(--cx-primary-text, #5b21b6);font-weight:700">· <input id="cal-cm-kglote" type="number" min="0.1" step="0.1" value="' + kg + '" oninput="_calCmPreview()" style="width:62px;padding:3px 4px;border:1px solid var(--cx-primary, #7c3aed);border-radius:4px;text-align:center;font-weight:800;color:var(--cx-primary-text, #5b21b6)"> kg/lote</span>';
+  html += '<span style="font-size:12px;color:var(--cx-primary-text, #5b21b6);font-weight:700">· Horizonte <select id="cal-cm-anios" onchange="_calCmPreview()" style="padding:3px 4px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:4px;font-weight:700"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></span>';
   html += '</div>';
-  html += '<div id="cal-cm-preview" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:8px"></div>';
+  html += '<div id="cal-cm-preview" style="font-size:11px;color:var(--cx-primary-text, #5b21b6);background:var(--cx-card, #fff);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:8px"></div>';
   html += '<button onclick="_calCrearCadena(' + id + ',&quot;' + escapeHtml(producto) + '&quot;)" style="background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Crear cadena en el calendario</button>';
-  html += '<div style="font-size:10px;color:#94a3b8;margin-top:6px">Crea un lote cada X desde la partida, por el horizonte elegido, en día hábil (sin festivos). Reemplaza las futuras de este producto · conserva pedidos B2B y lo ya producido.</div>';
+  html += '<div style="font-size:10px;color:var(--cx-text-faint, #94a3b8);margin-top:6px">Crea un lote cada X desde la partida, por el horizonte elegido, en día hábil (sin festivos). Reemplaza las futuras de este producto · conserva pedidos B2B y lo ya producido.</div>';
   html += '</div>';
   // Agregar cliente (kilos + envase) · dentro de Producción (Sebastián 20-jul)
   html += _otrosHtml;
@@ -22167,7 +22167,7 @@ function _renderLotesAgendadosCal(producto, info, ml){
   var salud = _saludCadenaCal(lotes, velUds, stockUds, ml);
   var arr = lotes.slice().sort(function(a,b){ return (''+(a.fecha_programada||'')).localeCompare(''+(b.fecha_programada||'')); });
   var MES=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-  var h = '<div style="font-size:13px;font-weight:800;color:#6d28d9;margin:18px 0 8px;padding-bottom:4px;border-bottom:2px solid #6d28d9">📋 Lotes ya agendados &middot; '+arr.length+'</div>';
+  var h = '<div style="font-size:13px;font-weight:800;color:var(--cx-primary-text, #6d28d9);margin:18px 0 8px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary, #6d28d9)">📋 Lotes ya agendados &middot; '+arr.length+'</div>';
   h += '<div style="display:flex;flex-direction:column;gap:8px">';
   arr.forEach(function(lt){
     var f=(''+(lt.fecha_programada||'')).slice(0,10), dd=f.slice(8,10), mm=parseInt(f.slice(5,7),10), yy=f.slice(2,4);
@@ -22181,10 +22181,10 @@ function _renderLotesAgendadosCal(producto, info, ml){
       else {sc='#0891b2';sl='🔵 sobra-stock · '+cc+'d';ti='Cuando este lote entra ya tenés '+cc+' días de stock (más de lo que dura UN lote ≈'+dl+'d) → la cadena SOBRE-PRODUCE · espaciá la cadencia arriba.';}
       saludBadge='<span title="'+ti+'" style="background:'+sc+'1a;color:'+sc+';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:800;border:1px solid '+sc+'40">'+sl+'</span>';
     }
-    h += '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:8px;padding:8px 12px">'
-      + '<div style="text-align:center;min-width:44px;line-height:1.1"><div style="font-size:17px;font-weight:800;color:#1e293b">'+dd+'</div><div style="font-size:10px;color:#94a3b8">'+mesAbr+' '+yy+'</div></div>'
-      + '<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:13px;font-weight:700;color:#334155">'+(lt.kg||0)+' kg</span>'+(est?('<span style="font-size:10px;color:#94a3b8">'+est+'</span>'):'')+saludBadge+'</div></div>'
-      + '<button onclick="abrirLoteModal('+lt.id+',&quot;'+escapeHtml(producto)+'&quot;,&quot;'+f+'&quot;,'+(lt.kg||0)+')" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">abrir</button>'
+    h += '<div style="display:flex;align-items:center;gap:12px;background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-left:4px solid var(--cx-primary, #7c3aed);border-radius:8px;padding:8px 12px">'
+      + '<div style="text-align:center;min-width:44px;line-height:1.1"><div style="font-size:17px;font-weight:800;color:var(--cx-text, #1e293b)">'+dd+'</div><div style="font-size:10px;color:var(--cx-text-faint, #94a3b8)">'+mesAbr+' '+yy+'</div></div>'
+      + '<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:13px;font-weight:700;color:var(--cx-text-soft, #334155)">'+(lt.kg||0)+' kg</span>'+(est?('<span style="font-size:10px;color:var(--cx-text-faint, #94a3b8)">'+est+'</span>'):'')+saludBadge+'</div></div>'
+      + '<button onclick="abrirLoteModal('+lt.id+',&quot;'+escapeHtml(producto)+'&quot;,&quot;'+f+'&quot;,'+(lt.kg||0)+')" style="background:var(--cx-primary, #6d28d9);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">abrir</button>'
       + '</div>';
   });
   h += '</div>';
@@ -22243,19 +22243,19 @@ function _calCmPreview(){
   var el=document.getElementById('cal-cm-preview'); if(!el) return;
   var info=window._calCadInfo||{};
   var cc=_calCmCalc();
-  if(!cc){ el.innerHTML='<span style="color:#94a3b8">Completá la partida, cada cuántos meses y los kg/lote.</span>'; return; }
+  if(!cc){ el.innerHTML='<span style="color:var(--cx-text-faint, #94a3b8)">Completá la partida, cada cuántos meses y los kg/lote.</span>'; return; }
   var _ref='';
   var _udsDia=info.velUdsDia||0, _ml=info.ml||0;
   if(_udsDia>0.001&&_ml>0){
     var _cubreDias=cc.intervalDias+20;
     var _kgRef=_udsDia*_cubreDias*_ml/1000;
     var _dif=cc.kg-_kgRef;
-    var _tag=(_kgRef>0&&Math.abs(_dif)>=_kgRef*0.1)?(_dif>0?' · tu lote deja <b style="color:#0891b2">+'+_dif.toFixed(0)+' kg</b> de colchón':' · tu lote queda <b style="color:#dc2626">'+_dif.toFixed(0)+' kg</b> CORTO'):' · tu lote calza justo ✓';
+    var _tag=(_kgRef>0&&Math.abs(_dif)>=_kgRef*0.1)?(_dif>0?' · tu lote deja <b style="color:var(--cx-info-text, #0891b2)">+'+_dif.toFixed(0)+' kg</b> de colchón':' · tu lote queda <b style="color:var(--cx-danger-text, #dc2626)">'+_dif.toFixed(0)+' kg</b> CORTO'):' · tu lote calza justo ✓';
     _ref='📊 Vende ~<b>'+Math.round(_udsDia*30.44)+' uds/mes</b> de <b>'+(Math.round(_ml*10)/10)+' ml</b><br>🎯 Producís <b>20d antes</b> de agotarte → cada lote debe cubrir <b>'+cc.intervalDias+' + 20 = '+_cubreDias+' días</b> → ~<b>'+_kgRef.toFixed(0)+' kg</b>'+_tag+'<br>';
-  } else { _ref='<span style="color:#94a3b8">📊 Sin ventas/ml para la referencia · poné el kg a criterio.</span><br>'; }
+  } else { _ref='<span style="color:var(--cx-text-faint, #94a3b8)">📊 Sin ventas/ml para la referencia · poné el kg a criterio.</span><br>'; }
   var _first='';
   try{ var _d=new Date(cc.partida+'T12:00:00'); _d.setDate(_d.getDate()+cc.dhp); _first=_d.toISOString().slice(0,10); }catch(e){}
-  var _firstTxt=cc.dhpManual?'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = <b>'+(_first||'-')+'</b>':(cc.dhpCap?'la 1ª nueva <b>una cadencia después</b> del origen (~<b>'+cc.dhp+'d</b>) = <b>'+(_first||'-')+'</b>':'la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b>) = <b>'+(_first||'-')+'</b>');
+  var _firstTxt=cc.dhpManual?'la 1ª nueva <b style="color:var(--cx-primary-text, #7c3aed)">fijada por vos</b> = <b>'+(_first||'-')+'</b>':(cc.dhpCap?'la 1ª nueva <b>una cadencia después</b> del origen (~<b>'+cc.dhp+'d</b>) = <b>'+(_first||'-')+'</b>':'la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b>) = <b>'+(_first||'-')+'</b>');
   el.innerHTML=_ref+'📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.meses+' mes'+(cc.meses===1?'':'es')+'</b> (~'+cc.intervalDias+' días)<br>🗓️ Partida <b>'+cc.partida+'</b> · '+_firstTxt+', luego cada '+cc.intervalDias+'d · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> · total <b>'+(cc.kg*cc.nLotes).toFixed(0)+' kg</b>';
 }
 async function _calCrearCadena(id, producto){
@@ -22338,31 +22338,31 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard
       var _tl = (it.tono_label && it.tono_label !== it.sku) ? it.tono_label : '';
       var _sw = _tl ? ('<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+_tonoColorCal(_tl)+';margin-right:5px;vertical-align:middle"></span>') : '';
       var lbl = _sw + (_tl ? (escapeHtml(it.sku)+' &middot; '+escapeHtml(_tl)) : escapeHtml(it.sku||''));
-      return '<tr style="border-top:1px solid #e2e8f0">'
+      return '<tr style="border-top:1px solid var(--cx-border, #e2e8f0)">'
         + '<td style="padding:4px 8px;font-family:monospace;font-weight:700">'+lbl+'</td>'
-        + '<td style="padding:4px 8px;text-align:center;color:#64748b">'+ml+' ml</td>'
-        + '<td style="padding:4px 8px;text-align:right;color:#64748b;font-size:11px" title="'+(it.uds_ventana||0)+' uds vendidas en '+venWin+'d">'+Math.round((it.uds_ventana||0)/venWin*30).toLocaleString('es-CO')+'</td>'
-        + '<td style="padding:4px 8px;text-align:right"><input type="number" min="0" class="dsk-uds" data-sku="'+escapeHtml(it.sku||'')+'" data-pct="'+(it.porcentaje||0)+'" data-ml="'+ml+'" data-vende-mes="'+Math.round((it.uds_ventana||0)/venWin*30)+'" value="'+pre+'" oninput="_recalcKgDesglose(true)" style="width:82px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;text-align:right;font-weight:700"></td>'
+        + '<td style="padding:4px 8px;text-align:center;color:var(--cx-text-mute, #64748b)">'+ml+' ml</td>'
+        + '<td style="padding:4px 8px;text-align:right;color:var(--cx-text-mute, #64748b);font-size:11px" title="'+(it.uds_ventana||0)+' uds vendidas en '+venWin+'d">'+Math.round((it.uds_ventana||0)/venWin*30).toLocaleString('es-CO')+'</td>'
+        + '<td style="padding:4px 8px;text-align:right"><input type="number" min="0" class="dsk-uds" data-sku="'+escapeHtml(it.sku||'')+'" data-pct="'+(it.porcentaje||0)+'" data-ml="'+ml+'" data-vende-mes="'+Math.round((it.uds_ventana||0)/venWin*30)+'" value="'+pre+'" oninput="_recalcKgDesglose(true)" style="width:82px;padding:3px 5px;border:1px solid var(--cx-border, #cbd5e1);border-radius:4px;text-align:right;font-weight:700"></td>'
         + '</tr>';
     }).join('');
     var tendTxt = ((d.tendencia||0) > 0.02) ? (' · 📈 +'+Math.round(d.tendencia*100)+'% en ascenso') : '';
     host.innerHTML = '<div style="padding:12px 0 0;margin:4px 0 0;border-top:1px dashed #e9d5ff">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">'
-      + '<span style="font-size:12px;font-weight:700;color:#5b21b6">📊 Desglose por referencia'+tendTxt+'</span>'
+      + '<span style="font-size:12px;font-weight:700;color:var(--cx-primary-text, #5b21b6)">📊 Desglose por referencia'+tendTxt+'</span>'
       + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-      + '<span style="font-size:11px;color:#5b21b6;font-weight:700">Producir para <input id="dsk-meses" type="number" min="1" max="24" step="1" value="'+_mesesDefault+'" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>'
-      + '<button onclick="calcMeses()" title="Calcula cuántas producir de cada SKU para cubrir X meses de venta (con la tendencia de ascenso)" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓️ Calcular X meses</button>'
-      + '<button onclick="autoCalcDesglose()" title="Alternativa: calcula por el kg que ya tiene el lote (no por meses)" style="background:#e9d5ff;color:#5b21b6;border:none;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer">🧮 por kg</button>'
+      + '<span style="font-size:11px;color:var(--cx-primary-text, #5b21b6);font-weight:700">Producir para <input id="dsk-meses" type="number" min="1" max="24" step="1" value="'+_mesesDefault+'" style="width:44px;padding:3px 4px;border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:4px;text-align:center;font-weight:700"> meses</span>'
+      + '<button onclick="calcMeses()" title="Calcula cuántas producir de cada SKU para cubrir X meses de venta (con la tendencia de ascenso)" style="background:var(--cx-primary, #7c3aed);color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓️ Calcular X meses</button>'
+      + '<button onclick="autoCalcDesglose()" title="Alternativa: calcula por el kg que ya tiene el lote (no por meses)" style="background:var(--cx-primary-soft, #e9d5ff);color:var(--cx-primary-text, #5b21b6);border:none;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer">🧮 por kg</button>'
       + '</div>'
       + '</div>'
-      + '<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="color:#64748b">'
+      + '<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="color:var(--cx-text-mute, #64748b)">'
       + '<th style="text-align:left;padding:4px 8px">SKU / referencia</th><th style="padding:4px 8px">ml</th>'
       + '<th style="text-align:right;padding:4px 8px" title="unidades que vende por mes (de las ventas de '+venWin+'d)">vende/mes</th>'
       + '<th style="text-align:right;padding:4px 8px">a producir</th></tr></thead><tbody>'
       + rows + '</tbody></table>'
-      + '<div style="text-align:right;margin-top:8px;border-top:1px dashed #c4b5fd;padding-top:6px">'
-      + '<span id="dsk-total" style="font-size:13px;font-weight:800;color:#5b21b6"></span>'
-      + '<div style="font-size:10px;color:#94a3b8">"a producir" = cuántas sacar de cada referencia · la suma calcula los kg → 💾 Guardar</div>'
+      + '<div style="text-align:right;margin-top:8px;border-top:1px dashed var(--cx-primary-light, #c4b5fd);padding-top:6px">'
+      + '<span id="dsk-total" style="font-size:13px;font-weight:800;color:var(--cx-primary-text, #5b21b6)"></span>'
+      + '<div style="font-size:10px;color:var(--cx-text-faint, #94a3b8)">"a producir" = cuántas sacar de cada referencia · la suma calcula los kg → 💾 Guardar</div>'
       // Sebastián 20-jul · los controles de CADENCIA se movieron al editor estilo Necesidades de ARRIBA
       // (Fecha origen + 1ª nueva + Cadencia + Crear cadena) · acá queda solo el desglose por referencia.
       + '</div>'
@@ -22465,12 +22465,12 @@ function _calAnios(){
 async function _calCargarListoProducir(producto){
   var box = document.getElementById('lote-ready-mp');
   if(!box || !producto) return;
-  box.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:6px 10px">🧪 Verificando materias primas…</div>';
+  box.innerHTML = '<div style="font-size:11px;color:var(--cx-text-faint, #94a3b8);padding:6px 10px">🧪 Verificando materias primas…</div>';
   try{
     var r = await fetch('/api/planta/listo-producir/' + encodeURIComponent(producto) + '?lotes=1', {credentials:'same-origin'});
     if(!r.ok){
       box.innerHTML = (r.status === 404)
-        ? '<div style="font-size:11px;color:#94a3b8;padding:6px 10px;background:#f8fafc;border-radius:6px">📋 Sin fórmula registrada · no se puede verificar materias primas</div>'
+        ? '<div style="font-size:11px;color:var(--cx-text-faint, #94a3b8);padding:6px 10px;background:var(--cx-bg-alt, #f8fafc);border-radius:6px">📋 Sin fórmula registrada · no se puede verificar materias primas</div>'
         : '';
       return;
     }
@@ -22481,7 +22481,7 @@ async function _calCargarListoProducir(producto){
     var label = rs.deficit > 0 ? '❌ Faltan materias primas' : (rs.justo > 0 ? '⚠ Materias primas justas para 1 lote' : '🧪 Materias primas OK · ' + (rs.total||0) + ' items · listo para producir');
     var h = '<div style="background:' + bg + ';border:1px solid ' + col + '33;border-left:3px solid ' + col + ';border-radius:8px;padding:8px 12px;font-size:12px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="color:' + col + '">' + label + '</b>'
-      + '<span style="font-size:10px;color:#64748b;white-space:nowrap">' + (rs.ok||0) + ' OK · ' + (rs.justo||0) + ' justo · ' + (rs.deficit||0) + ' déficit</span></div>';
+      + '<span style="font-size:10px;color:var(--cx-text-mute, #64748b);white-space:nowrap">' + (rs.ok||0) + ' OK · ' + (rs.justo||0) + ' justo · ' + (rs.deficit||0) + ' déficit</span></div>';
     var probl = (d.items||[]).filter(function(x){ return x.status !== 'ok'; }).sort(function(a,b){ return (a.status==='deficit'?0:1)-(b.status==='deficit'?0:1); });
     if(probl.length){
       var f = function(g){ return Math.round(g).toLocaleString('es-CO'); };
@@ -22490,7 +22490,7 @@ async function _calCargarListoProducir(producto){
             var ic = it.status==='deficit'?'❌':'⚠', c2 = it.status==='deficit'?'#dc2626':'#d97706';
             return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span>' + ic + ' ' + escapeHtml(it.nombre||'') + '</span><span style="color:' + c2 + ';font-family:ui-monospace">' + f(it.disponible_g) + '/' + f(it.requerido_g) + 'g' + (it.faltante_g>0?(' (falta ' + f(it.faltante_g) + ')'):'') + '</span></div>';
           }).join('')
-        + (probl.length>6 ? ('<div style="font-size:10px;color:#94a3b8;text-align:center">+ ' + (probl.length-6) + ' más</div>') : '')
+        + (probl.length>6 ? ('<div style="font-size:10px;color:var(--cx-text-faint, #94a3b8);text-align:center">+ ' + (probl.length-6) + ' más</div>') : '')
         + '</div>';
     }
     box.innerHTML = h + '</div>';
@@ -22500,13 +22500,13 @@ async function _calCargarListoProducir(producto){
 async function _calCargarListoEnvases(loteId){
   var box = document.getElementById('lote-ready-env');
   if(!box || !loteId) return;
-  box.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:6px 10px">📦 Verificando envases…</div>';
+  box.innerHTML = '<div style="font-size:11px;color:var(--cx-text-faint, #94a3b8);padding:6px 10px">📦 Verificando envases…</div>';
   try{
     var r = await fetch('/api/programacion/programar/' + loteId + '/listo-envases', {credentials:'same-origin'});
     if(!r.ok){ box.innerHTML = ''; return; }
     var d = await r.json();
     if(d.sin_variantes){
-      box.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:6px 10px;background:#f8fafc;border-radius:6px">📦 Sin presentaciones configuradas · no se puede verificar envases (cargalas en Presentaciones)</div>';
+      box.innerHTML = '<div style="font-size:11px;color:var(--cx-text-faint, #94a3b8);padding:6px 10px;background:var(--cx-bg-alt, #f8fafc);border-radius:6px">📦 Sin presentaciones configuradas · no se puede verificar envases (cargalas en Presentaciones)</div>';
       return;
     }
     var rs = d.resumen || {};
@@ -22515,7 +22515,7 @@ async function _calCargarListoEnvases(loteId){
     var label = rs.deficit > 0 ? '❌ Faltan envases' : (rs.justo > 0 ? '⚠ Envases justos' : '📦 Envases OK · ' + (rs.total||0) + ' · listo para envasar');
     var h = '<div style="background:' + bg + ';border:1px solid ' + col + '33;border-left:3px solid ' + col + ';border-radius:8px;padding:8px 12px;font-size:12px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="color:' + col + '">' + label + '</b>'
-      + '<span style="font-size:10px;color:#64748b;white-space:nowrap">' + (rs.ok||0) + ' OK · ' + (rs.justo||0) + ' justo · ' + (rs.deficit||0) + ' déficit</span></div>';
+      + '<span style="font-size:10px;color:var(--cx-text-mute, #64748b);white-space:nowrap">' + (rs.ok||0) + ' OK · ' + (rs.justo||0) + ' justo · ' + (rs.deficit||0) + ' déficit</span></div>';
     var probl = (d.items||[]).filter(function(x){ return x.status !== 'ok'; });
     if(probl.length){
       var f = function(u){ return Math.round(u).toLocaleString('es-CO'); };
@@ -22524,7 +22524,7 @@ async function _calCargarListoEnvases(loteId){
             var ic = it.status==='deficit'?'❌':'⚠', c2 = it.status==='deficit'?'#dc2626':'#d97706';
             return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span>' + ic + ' ' + escapeHtml(it.nombre||it.codigo||'') + '</span><span style="color:' + c2 + ';font-family:ui-monospace">' + f(it.disponible) + '/' + f(it.requerido) + ' u' + (it.faltante>0?(' (falta ' + f(it.faltante) + ')'):'') + '</span></div>';
           }).join('')
-        + (probl.length>6 ? ('<div style="font-size:10px;color:#94a3b8;text-align:center">+ ' + (probl.length-6) + ' más</div>') : '')
+        + (probl.length>6 ? ('<div style="font-size:10px;color:var(--cx-text-faint, #94a3b8);text-align:center">+ ' + (probl.length-6) + ' más</div>') : '')
         + '</div>';
     }
     box.innerHTML = h + '</div>';
@@ -22538,12 +22538,12 @@ async function _calCargarOtrosClientes(id){
   if(!box || !id) return;
   try{
     var r = await fetch('/api/admin/b2b/lote/' + id + '/desglose', {credentials:'same-origin'});
-    if(!r.ok){ box.innerHTML = '<span style="color:#b45309;font-size:11px">Sin pedidos de otros clientes en este lote.</span>'; return; }
+    if(!r.ok){ box.innerHTML = '<span style="color:var(--cx-warn-text, #b45309);font-size:11px">Sin pedidos de otros clientes en este lote.</span>'; return; }
     var d = await r.json();
     var ap = (d.aportes_b2b) || [];
     var kgDtc = d.kg_dtc || 0, kgTot = d.kg_total || 0;
     if(!ap.length){
-      box.innerHTML = '<span style="color:#b45309;font-size:11px">Sin pedidos de otros clientes · si un cliente pide (portal o Programar) aparece ac&aacute; autom&aacute;tico y suma al kg del lote.</span>';
+      box.innerHTML = '<span style="color:var(--cx-warn-text, #b45309);font-size:11px">Sin pedidos de otros clientes · si un cliente pide (portal o Programar) aparece ac&aacute; autom&aacute;tico y suma al kg del lote.</span>';
       return;
     }
     var f = function(n){ return Math.round(n).toLocaleString('es-CO'); };
@@ -22553,16 +22553,16 @@ async function _calCargarOtrosClientes(id){
       var env = a.envase_descripcion || a.envase_codigo || '';
       return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #fde68a">'
         + '<span><b style="color:#7c2d12">' + escapeHtml(a.cliente_nombre || 'Cliente') + '</b>'
-        + (a.unidades_aporte ? (' <span style="color:#92400e">&middot; ' + f(a.unidades_aporte) + ' uds</span>') : '')
-        + (env ? (' <span style="color:#a16207;font-size:10px">&middot; ' + escapeHtml(env) + '</span>') : '')
+        + (a.unidades_aporte ? (' <span style="color:var(--cx-warn-text, #92400e)">&middot; ' + f(a.unidades_aporte) + ' uds</span>') : '')
+        + (env ? (' <span style="color:var(--cx-warn-text, #a16207);font-size:10px">&middot; ' + escapeHtml(env) + '</span>') : '')
         + (a.estado_pedido ? (' <span style="font-size:10px;color:' + ecol + '">&middot; ' + escapeHtml(a.estado_pedido) + '</span>') : '')
         + '</span>'
-        + '<span style="font-weight:800;color:#b45309;white-space:nowrap">' + (a.kg_aporte || 0).toFixed(1) + ' kg</span></div>';
+        + '<span style="font-weight:800;color:var(--cx-warn-text, #b45309);white-space:nowrap">' + (a.kg_aporte || 0).toFixed(1) + ' kg</span></div>';
     }).join('');
-    box.innerHTML = '<div style="background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">'
+    box.innerHTML = '<div style="background:var(--cx-card, #fff);border:1px solid #fde68a;border-radius:8px;padding:8px 10px">'
       + rows
       + '<div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:2px solid #fcd34d;font-size:11px">'
-      + '<span style="color:#166534;font-weight:700">&Aacute;nimus (DTC): ' + kgDtc.toFixed(1) + ' kg</span>'
+      + '<span style="color:var(--cx-success-text, #166534);font-weight:700">&Aacute;nimus (DTC): ' + kgDtc.toFixed(1) + ' kg</span>'
       + '<span style="color:#7c2d12;font-weight:800">TOTAL a fabricar: ' + kgTot.toFixed(1) + ' kg</span></div>'
       + '</div>';
   }catch(e){ box.innerHTML = ''; }
@@ -22611,7 +22611,7 @@ function _prodKgAlcance(){
   var kgEl = document.getElementById('edit-kg-lote');
   var kg = kgEl ? (parseFloat(kgEl.value) || 0) : 0;
   var vel = window._loteVelKgDia || 0;   // kg/día Animus
-  if(!(kg > 0) || !(vel > 0.0001)){ el.innerHTML = '<span style="color:#94a3b8">Poné los kilos para ver cuánto alcanzan.</span>'; return; }
+  if(!(kg > 0) || !(vel > 0.0001)){ el.innerHTML = '<span style="color:var(--cx-text-faint, #94a3b8)">Poné los kilos para ver cuánto alcanzan.</span>'; return; }
   var dias = Math.round(kg / vel);
   var meses = (dias / 30.44);
   var mesesTxt = meses >= 1 ? (' (~<b>' + (Math.round(meses * 10) / 10) + ' meses</b>)') : '';
@@ -22626,12 +22626,12 @@ function _updateCadenciaPreview(){
   var cad = window._LOTE_CADENCIA || {};
   var cc = _calcCadencia();
   if(!cc || !(cad.velKgDia > 0)){
-    el.innerHTML = '<span style="color:#94a3b8">Definí "Producir para X meses" arriba para ver la cadencia.</span>';
+    el.innerHTML = '<span style="color:var(--cx-text-faint, #94a3b8)">Definí "Producir para X meses" arriba para ver la cadencia.</span>';
     return;
   }
   var otrosTot = (cc.kgOtro || 0) + (cc.kgB2B || 0);
   if(cc.allOtros || !(cc.kg > 0.01)){
-    el.innerHTML = '<span style="color:#b45309">⚠ Todo el lote (' + cc.kgTotal.toFixed(1) + ' kg) va para otros clientes → no hay porción Animus. Bajá "Para otro cliente" o subí el kg a producir.</span>';
+    el.innerHTML = '<span style="color:var(--cx-warn-text, #b45309)">⚠ Todo el lote (' + cc.kgTotal.toFixed(1) + ' kg) va para otros clientes → no hay porción Animus. Bajá "Para otro cliente" o subí el kg a producir.</span>';
     return;
   }
   var velMes = cad.velKgDia * 30;
@@ -22642,10 +22642,10 @@ function _updateCadenciaPreview(){
   try{ var da = new Date((m.fecha || '') + 'T12:00:00'); da.setDate(da.getDate() + cc.intervalDias); agota = fechaLocalStr(da); }catch(e){}
   var _anios = _calAnios();
   var nLotes = Math.max(1, Math.round(_anios * 365 / cc.intervalDias));
-  var _cadLbl = (cc.base === 'manual') ? ' <span style="color:#7c3aed">(manual)</span>' : ' <span style="color:#94a3b8">(auto por cobertura)</span>';
+  var _cadLbl = (cc.base === 'manual') ? ' <span style="color:var(--cx-primary-text, #7c3aed)">(manual)</span>' : ' <span style="color:var(--cx-text-faint, #94a3b8)">(auto por cobertura)</span>';
   // Si hay porción para otros, mostrar el split (total = Animus + otros)
   var splitTxt = otrosTot > 0.01
-    ? '<b>' + cc.kgTotal.toFixed(1) + ' kg</b> (<b style="color:#0e7490">' + cc.kg.toFixed(1) + ' Animus</b> + ' + otrosTot.toFixed(1) + ' otros)'
+    ? '<b>' + cc.kgTotal.toFixed(1) + ' kg</b> (<b style="color:var(--cx-info-text, #0e7490)">' + cc.kg.toFixed(1) + ' Animus</b> + ' + otrosTot.toFixed(1) + ' otros)'
     : '<b>' + cc.kg.toFixed(1) + ' kg</b>';
   el.innerHTML = '📦 Producción base <b>' + (m.fecha || '') + '</b> · ' + splitTxt + ' · vende <b>' + velMes.toFixed(1) + ' kg/mes</b><br>'
     + '🎯 Producís <b>20d antes</b> de agotarte · la porción <b>Animus</b> alcanza <b>~' + cc.intervalDias + ' días</b>' + (agota ? (' → hasta <b>~' + agota + '</b>') : '') + '<br>'
@@ -22816,12 +22816,12 @@ async function guardarKgLote(id){
 }
 
 function _renderAccionesLote(id, producto, fecha){
-  let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0">';
+  let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--cx-border, #e2e8f0)">';
   html += '<button onclick="loteAccion(' + id + ',&quot;M&quot;,&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="secondary">📅 Mover fecha</button>';
   html += '<button onclick="loteAccion(' + id + ',&quot;P&quot;,&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="warn">⏸ Pausar</button>';
   html += '<button onclick="loteAccion(' + id + ',&quot;R&quot;,&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="success">▶ Reactivar</button>';
   html += '<button onclick="loteAccion(' + id + ',&quot;C&quot;,&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="danger">✕ Cancelar</button>';
-  html += '<div style="flex-basis:100%;font-size:11px;color:#64748b;margin-top:6px">💡 También podés arrastrar el lote a otro día del calendario para moverlo</div>';
+  html += '<div style="flex-basis:100%;font-size:11px;color:var(--cx-text-mute, #64748b);margin-top:6px">💡 También podés arrastrar el lote a otro día del calendario para moverlo</div>';
   html += '</div>';
   return html;
 }
@@ -22939,7 +22939,7 @@ function _patchLoteLocal(id, campos){
 function _toastCal(msg){
   try{
     var t = document.getElementById('cal-toast');
-    if(!t){ t = document.createElement('div'); t.id='cal-toast'; t.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#16a34a;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.25)'; document.body.appendChild(t); }
+    if(!t){ t = document.createElement('div'); t.id='cal-toast'; t.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:var(--cx-success, #16a34a);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.25)'; document.body.appendChild(t); }
     t.textContent = msg; t.style.display='block';
     clearTimeout(window._calToastT); window._calToastT = setTimeout(function(){ if(t) t.style.display='none'; }, 2000);
   }catch(e){}
@@ -23264,7 +23264,7 @@ async function autoplanIA(){
       }
       if (rawIA){
         html += '<br><br><details><summary style="cursor:pointer;font-weight:700">🔍 Ver respuesta cruda de la IA (diagnóstico)</summary>';
-        html += '<pre style="background:#fff;padding:10px;border-radius:6px;font-size:10px;overflow:auto;max-height:300px;white-space:pre-wrap">' + escapeHtml(rawIA) + '</pre>';
+        html += '<pre style="background:var(--cx-card, #fff);padding:10px;border-radius:6px;font-size:10px;overflow:auto;max-height:300px;white-space:pre-wrap">' + escapeHtml(rawIA) + '</pre>';
         html += '</details>';
       }
       html += '<br>Tokens: ' + (d.tokens_usados || 0) +
@@ -23299,14 +23299,14 @@ async function autoplanIA(){
     // Sebastián 14-may-2026: mostrar botón "Aplicar plan IA anual"
     // cuando hay sugerencias IA cargadas
     document.getElementById('btn-ia-anual').style.display = 'inline-block';
-    const cacheTag = d.cache_hit ? ' <span style="background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px;font-size:10px">cache 24h</span>' : '';
+    const cacheTag = d.cache_hit ? ' <span style="background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af);padding:1px 5px;border-radius:3px;font-size:10px">cache 24h</span>' : '';
     // Confianza promedio para mostrar
     const confs = sugerencias.map(s => s.confianza || 0).filter(c => c > 0);
     const confProm = confs.length ? Math.round(100 * confs.reduce((a,b)=>a+b,0) / confs.length) : 0;
     document.getElementById('ia-comentario').innerHTML =
       '<div class="banner success">🤖 <strong>IA (' + escapeHtml(d.modelo_ia || '') + ') · ' + n + ' sugerencias · confianza promedio ' + confProm + '%</strong>' + cacheTag + '<br>' +
       escapeHtml(d.comentario_general || '') +
-      '<br><span style="font-size:11px;color:#475569">Aprendí de ' + (d.n_historial_aprendido || 0) + ' decisiones previas · ' + (d.tokens_usados || 0) + ' tokens</span></div>';
+      '<br><span style="font-size:11px;color:var(--cx-text-soft, #475569)">Aprendí de ' + (d.n_historial_aprendido || 0) + ' decisiones previas · ' + (d.tokens_usados || 0) + ' tokens</span></div>';
     render();
   } catch(e){
     document.getElementById('ia-comentario').innerHTML = '<div class="banner danger">❌ Error de red: ' + escapeHtml(e.message) + '</div>';
@@ -24234,43 +24234,43 @@ _PLAN_SUGERIDO_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>Plan sugerido · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:1400px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 6px;color:#0f766e;font-size:22px}
-h2{margin:0 0 12px;color:#1e293b;font-size:18px}
-h3{margin:14px 0 8px;color:#475569;font-size:14px}
-.muted{color:#64748b;font-size:13px}
-button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin:4px}
+.card{background:var(--cx-card, #fff);border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:var(--cx-info-text, #0f766e);font-size:22px}
+h2{margin:0 0 12px;color:var(--cx-text, #1e293b);font-size:18px}
+h3{margin:14px 0 8px;color:var(--cx-text-soft, #475569);font-size:14px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:13px}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin:4px}
 button:hover{background:#0d635c}
-button.danger{background:#dc2626}
-button.danger:hover{background:#b91c1c}
-button.warn{background:#ca8a04}
-button.warn:hover{background:#a16207}
-button:disabled{background:#94a3b8;cursor:not-allowed}
-input[type="number"],input[type="date"],input[type="text"]{padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
-textarea{padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;font-family:ui-monospace,SFMono-Regular,monospace;width:100%;min-height:140px;resize:vertical}
+button.danger{background:var(--cx-danger, #dc2626)}
+button.danger:hover{background:var(--cx-danger, #b91c1c)}
+button.warn{background:var(--cx-accent-dark, #ca8a04)}
+button.warn:hover{background:var(--cx-accent-dark, #a16207)}
+button:disabled{background:var(--cx-text-faint, #94a3b8);cursor:not-allowed}
+input[type="number"],input[type="date"],input[type="text"]{padding:7px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:13px}
+textarea{padding:10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:12px;font-family:ui-monospace,SFMono-Regular,monospace;width:100%;min-height:140px;resize:vertical}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
-td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+th{text-align:left;padding:8px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);font-weight:700}
+td{padding:7px 8px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);vertical-align:top}
 .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700}
-.tag-urgente{background:#fee2e2;color:#991b1b}
-.tag-adelanto{background:#fef3c7;color:#854d0e}
-.tag-buffer{background:#dbeafe;color:#1e40af}
-.tag-grande{background:#fecaca;color:#7f1d1d}
-.tag-complejo{background:#e9d5ff;color:#581c87}
-.tag-sin-formula{background:#f1f5f9;color:#64748b}
-.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
-.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;margin-bottom:8px;text-align:center;min-width:130px;vertical-align:top}
-.kpi-lbl{font-size:11px;color:#64748b}
+.tag-urgente{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b)}
+.tag-adelanto{background:var(--cx-warn-pale, #fef3c7);color:#854d0e}
+.tag-buffer{background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af)}
+.tag-grande{background:var(--cx-danger-pale, #fecaca);color:var(--cx-danger-text, #7f1d1d)}
+.tag-complejo{background:var(--cx-primary-soft, #e9d5ff);color:#581c87}
+.tag-sin-formula{background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-mute, #64748b)}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:var(--cx-info-text, #1e40af)}
+.kpi{display:inline-block;background:var(--cx-bg-alt, #f8fafc);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:10px 18px;margin-right:10px;margin-bottom:8px;text-align:center;min-width:130px;vertical-align:top}
+.kpi-lbl{font-size:11px;color:var(--cx-text-mute, #64748b)}
 .kpi-val{font-size:22px;font-weight:800}
-.section{border-left:4px solid #0f766e;padding:12px 16px;background:#f0fdfa;border-radius:6px;margin-bottom:14px}
-.section.danger{border-color:#dc2626;background:#fef2f2}
-.section.warn{border-color:#ca8a04;background:#fefce8}
-.section.muted{border-color:#94a3b8;background:#f8fafc}
+.section{border-left:4px solid var(--cx-info, #0f766e);padding:12px 16px;background:#f0fdfa;border-radius:6px;margin-bottom:14px}
+.section.danger{border-color:var(--cx-danger, #dc2626);background:var(--cx-danger-pale, #fef2f2)}
+.section.warn{border-color:var(--cx-accent-dark, #ca8a04);background:#fefce8}
+.section.muted{border-color:var(--cx-text-faint, #94a3b8);background:var(--cx-bg-alt, #f8fafc)}
 .bigbtn{font-size:15px;padding:14px 28px;width:auto}
-.resultado{font-size:12px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px;margin-top:10px}
-.resultado.error{background:#fef2f2;border-color:#fca5a5}
+.resultado{font-size:12px;background:var(--cx-success-pale, #f0fdf4);border:1px solid #86efac;border-radius:6px;padding:10px;margin-top:10px}
+.resultado.error{background:var(--cx-danger-pale, #fef2f2);border-color:#fca5a5}
 input[type="checkbox"]{transform:scale(1.2);margin-right:6px}
 </style></head><body>
 <div class="wrap">
@@ -24293,8 +24293,8 @@ input[type="checkbox"]{transform:scale(1.2);margin-right:6px}
 <div id="kpis"></div>
 <div id="contenido"></div>
 
-<div class="card" style="background:#fff7ed;border:2px solid #f97316">
-  <h2 style="color:#9a3412">📥 Back-fill producciones reales pasadas</h2>
+<div class="card" style="background:var(--cx-warn-pale, #fff7ed);border:2px solid #f97316">
+  <h2 style="color:var(--cx-warn-text, #9a3412)">📥 Back-fill producciones reales pasadas</h2>
   <div class="muted">Pegá las producciones completadas que NO están en el sistema con <code>fin_real_at</code>. Formato por línea: <code>NOMBRE_PRODUCTO | kg | YYYY-MM-DD</code></div>
   <textarea id="backfill_txt" placeholder="SUERO HIDRATANTE AH 1.5% | 90 | 2026-04-30
 LIMPIADOR ILUMINADOR ACIDO KOJICO | 40 | 2026-04-15
@@ -24302,8 +24302,8 @@ LIMPIADOR FACIAL BHA 2% | 150 | 2026-04-28"></textarea>
   <div style="margin-top:10px" class="muted">El sistema mapeará el nombre al canónico del Excel · si no existe, lo reporta como error.</div>
 </div>
 
-<div class="card" style="background:#f0fdf4;border:2px solid #16a34a">
-  <h2 style="color:#166534">🚀 Aplicar acciones seleccionadas</h2>
+<div class="card" style="background:var(--cx-success-pale, #f0fdf4);border:2px solid var(--cx-success, #16a34a)">
+  <h2 style="color:var(--cx-success-text, #166534)">🚀 Aplicar acciones seleccionadas</h2>
   <div class="muted">Esta acción es <strong>idempotente</strong>: cada acción se intenta independientemente · errores no detienen el batch. Audit_log registra todo.</div>
   <div style="margin-top:14px">
     <button class="bigbtn" onclick="aplicarTodo()">✅ Aplicar TODO (programar + cancelar + back-fill)</button>
@@ -24385,7 +24385,7 @@ function render(d){
 
   // 2) Cancelables
   if ((d.cancelables_calendar||[]).length){
-    html += '<div class="card" style="background:#fef2f2;border:1px solid #fca5a5"><h2 style="color:#991b1b">🗑 Cancelables Calendar legacy · ' + d.cancelables_calendar.length + '</h2>';
+    html += '<div class="card" style="background:var(--cx-danger-pale, #fef2f2);border:1px solid #fca5a5"><h2 style="color:var(--cx-danger-text, #991b1b)">🗑 Cancelables Calendar legacy · ' + d.cancelables_calendar.length + '</h2>';
     html += '<div class="muted" style="margin-bottom:10px">Lotes ya cubiertos por producciones recientes o reemplazados en el plan EOS.</div>';
     html += '<table><thead><tr><th><input type="checkbox" id="chk_all_cancel" onchange="toggleAllCancel(this.checked)"></th><th>ID</th><th>Producto</th><th>Fecha</th><th>kg</th><th>Razón</th></tr></thead><tbody>';
     d.cancelables_calendar.forEach(cn => {
@@ -24485,12 +24485,12 @@ async function ejecutar(payload){
       return;
     }
     var html = '<div class="resultado">';
-    html += '<h3 style="margin:0 0 8px;color:#166534">✅ Aplicación completa</h3>';
+    html += '<h3 style="margin:0 0 8px;color:var(--cx-success-text, #166534)">✅ Aplicación completa</h3>';
     html += '<div>📅 <strong>' + d.programadas + '</strong> producciones programadas</div>';
     html += '<div>🗑 <strong>' + d.canceladas + '</strong> Calendar canceladas</div>';
     html += '<div>📥 <strong>' + d.backfills_creados + '</strong> back-fills registrados</div>';
     if (d.total_errores > 0){
-      html += '<div style="margin-top:10px;color:#991b1b"><strong>⚠ ' + d.total_errores + ' errores:</strong><ul>';
+      html += '<div style="margin-top:10px;color:var(--cx-danger-text, #991b1b)"><strong>⚠ ' + d.total_errores + ' errores:</strong><ul>';
       d.errores.forEach(e => {
         html += '<li>' + escapeHtml(e.accion) + ' #' + e.indice + ': ' + escapeHtml(e.error) + '</li>';
       });

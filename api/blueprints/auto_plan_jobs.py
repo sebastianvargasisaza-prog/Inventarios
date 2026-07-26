@@ -122,32 +122,32 @@ def _html_resumen_ceo(plan_aplicado, plan):
     for a in alertas[:6]:
         color = '#dc2626' if a.get('severidad') == 'critica' else '#d97706'
         alertas_html += f"""
-        <tr><td style="padding:6px 10px;border-left:3px solid {color};background:#fef2f2;font-size:12px">
+        <tr><td style="padding:6px 10px;border-left:3px solid {color};background:var(--cx-danger-pale, #fef2f2);font-size:12px">
           <b style="color:{color}">{a.get('titulo','')}</b>
         </td></tr>"""
     if not alertas_html:
-        alertas_html = '<tr><td style="color:#15803d;padding:8px 10px;font-size:12px">✓ Sin alertas críticas hoy</td></tr>'
+        alertas_html = '<tr><td style="color:var(--cx-success-text, #15803d);padding:8px 10px;font-size:12px">✓ Sin alertas críticas hoy</td></tr>'
 
     prod_html = ''
     for p in plan.get('producciones_propuestas', [])[:8]:
         prod_html += f"""
-        <tr><td style="padding:5px 10px;font-size:12px;border-bottom:1px solid #e5e7eb">
+        <tr><td style="padding:5px 10px;font-size:12px;border-bottom:1px solid var(--cx-border, #e5e7eb)">
           <b>{p['producto']}</b> · {p['fecha_programada']}<br>
-          <span style="color:#6b7280;font-size:11px">{p['kg_con_merma']:.0f}kg · {p['razon']}</span>
+          <span style="color:var(--cx-text-mute, #6b7280);font-size:11px">{p['kg_con_merma']:.0f}kg · {p['razon']}</span>
         </td></tr>"""
 
     return f"""<!DOCTYPE html>
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f3f4f6;padding:20px;color:#1f2937">
-  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+  <div style="max-width:600px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
     <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:24px">
       <h1 style="margin:0;font-size:22px">🏭 Auto-Plan EOS · {fecha}</h1>
       <p style="margin:6px 0 0;color:#cffafe;font-size:13px">Resumen ejecutivo · Espagiria Laboratorios</p>
     </div>
     <div style="padding:20px">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:20px">
-        <div style="background:#f0fdf4;border-radius:8px;padding:12px;text-align:center"><div style="font-size:24px;font-weight:800;color:#15803d">{n_prod}</div><div style="font-size:10px;color:#166534;text-transform:uppercase">Producciones</div></div>
-        <div style="background:#fef3c7;border-radius:8px;padding:12px;text-align:center"><div style="font-size:24px;font-weight:800;color:#92400e">{n_comp}</div><div style="font-size:10px;color:#92400e;text-transform:uppercase">SOLs auto</div></div>
-        <div style="background:{'#fef2f2' if n_crit else '#f0fdf4'};border-radius:8px;padding:12px;text-align:center"><div style="font-size:24px;font-weight:800;color:{'#dc2626' if n_crit else '#15803d'}">{n_crit}</div><div style="font-size:10px;color:#7f1d1d;text-transform:uppercase">Alertas crít.</div></div>
+        <div style="background:var(--cx-success-pale, #f0fdf4);border-radius:8px;padding:12px;text-align:center"><div style="font-size:24px;font-weight:800;color:var(--cx-success-text, #15803d)">{n_prod}</div><div style="font-size:10px;color:var(--cx-success-text, #166534);text-transform:uppercase">Producciones</div></div>
+        <div style="background:var(--cx-warn-pale, #fef3c7);border-radius:8px;padding:12px;text-align:center"><div style="font-size:24px;font-weight:800;color:var(--cx-warn-text, #92400e)">{n_comp}</div><div style="font-size:10px;color:var(--cx-warn-text, #92400e);text-transform:uppercase">SOLs auto</div></div>
+        <div style="background:{'#fef2f2' if n_crit else '#f0fdf4'};border-radius:8px;padding:12px;text-align:center"><div style="font-size:24px;font-weight:800;color:{'#dc2626' if n_crit else '#15803d'}">{n_crit}</div><div style="font-size:10px;color:var(--cx-danger-text, #7f1d1d);text-transform:uppercase">Alertas crít.</div></div>
       </div>
 
       <h3 style="color:#1f2937;margin:0 0 8px;font-size:14px">⚠ Alertas críticas</h3>
@@ -157,7 +157,7 @@ def _html_resumen_ceo(plan_aplicado, plan):
       <table style="width:100%;border-collapse:collapse">{prod_html}</table>
 
       <p style="margin:20px 0 0;font-size:11px;color:#9ca3af;text-align:center">
-        Generado por Auto-Plan EOS · <a href="https://inventarios-0905.onrender.com/inventarios" style="color:#0891b2">Ver en planta</a>
+        Generado por Auto-Plan EOS · <a href="https://inventarios-0905.onrender.com/inventarios" style="color:var(--cx-info-text, #0891b2)">Ver en planta</a>
       </p>
     </div>
   </div>
@@ -184,9 +184,9 @@ def _html_compras_catalina(plan_aplicado, plan):
         urg_txt = cp['urgencia'].upper()
         kg_pedir = cp['cantidad_a_pedir_g'] / 1000.0
         rows += f"""
-        <tr style="border-bottom:1px solid #e5e7eb">
-          <td style="padding:8px 10px;font-size:12px"><b>{cp['material_nombre']}</b><br><span style="color:#6b7280;font-size:10px">{cp['origen']} · lead {cp['lead_time_dias']}d</span></td>
-          <td style="padding:8px 10px;font-size:12px;text-align:right;font-family:monospace"><b>{kg_pedir:.2f}kg</b><br><span style="color:#dc2626;font-size:10px">déficit {cp['deficit_g']:.0f}g</span></td>
+        <tr style="border-bottom:1px solid var(--cx-border, #e5e7eb)">
+          <td style="padding:8px 10px;font-size:12px"><b>{cp['material_nombre']}</b><br><span style="color:var(--cx-text-mute, #6b7280);font-size:10px">{cp['origen']} · lead {cp['lead_time_dias']}d</span></td>
+          <td style="padding:8px 10px;font-size:12px;text-align:right;font-family:monospace"><b>{kg_pedir:.2f}kg</b><br><span style="color:var(--cx-danger-text, #dc2626);font-size:10px">déficit {cp['deficit_g']:.0f}g</span></td>
           <td style="padding:8px 10px;text-align:center"><span style="background:{urg_color};color:#fff;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700">{urg_txt}</span></td>
         </tr>"""
 
@@ -195,23 +195,23 @@ def _html_compras_catalina(plan_aplicado, plan):
 
     return f"""<!DOCTYPE html>
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f3f4f6;padding:20px;color:#1f2937">
-  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden">
+  <div style="max-width:600px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden">
     <div style="background:linear-gradient(135deg,#1a4a7a,#0891b2);color:#fff;padding:24px">
       <h1 style="margin:0;font-size:22px">🛒 Compras Auto · {fecha}</h1>
       <p style="margin:6px 0 0;color:#cffafe;font-size:13px">Catalina, hay {len(sols)} solicitudes nuevas para aprobar</p>
     </div>
     <div style="padding:20px">
       <table style="width:100%;border-collapse:collapse">
-        <thead style="background:#f9fafb">
-          <tr><th style="padding:10px;text-align:left;font-size:11px;color:#475569;text-transform:uppercase">Material</th>
-              <th style="padding:10px;text-align:right;font-size:11px;color:#475569;text-transform:uppercase">Cantidad</th>
-              <th style="padding:10px;text-align:center;font-size:11px;color:#475569;text-transform:uppercase">Urgencia</th></tr>
+        <thead style="background:var(--cx-bg-alt, #f9fafb)">
+          <tr><th style="padding:10px;text-align:left;font-size:11px;color:var(--cx-text-soft, #475569);text-transform:uppercase">Material</th>
+              <th style="padding:10px;text-align:right;font-size:11px;color:var(--cx-text-soft, #475569);text-transform:uppercase">Cantidad</th>
+              <th style="padding:10px;text-align:center;font-size:11px;color:var(--cx-text-soft, #475569);text-transform:uppercase">Urgencia</th></tr>
         </thead>
         <tbody>{rows}</tbody>
       </table>
 
       <p style="margin:20px 0 0;font-size:11px;color:#9ca3af;text-align:center">
-        Auto-Plan EOS · <a href="https://inventarios-0905.onrender.com/compras" style="color:#0891b2">Ver SOLs en /compras</a>
+        Auto-Plan EOS · <a href="https://inventarios-0905.onrender.com/compras" style="color:var(--cx-info-text, #0891b2)">Ver SOLs en /compras</a>
       </p>
     </div>
   </div>
@@ -224,16 +224,16 @@ def _html_agenda_operario(operario, agenda_dia):
     lineas = ''
     for t in agenda_dia:
         lineas += f"""
-        <tr><td style="padding:10px 12px;font-size:13px;border-bottom:1px solid #e5e7eb">
+        <tr><td style="padding:10px 12px;font-size:13px;border-bottom:1px solid var(--cx-border, #e5e7eb)">
           <b>{t.get('hora','')}</b> · {t.get('titulo','')}<br>
-          <span style="color:#6b7280;font-size:11px">{t.get('descripcion','')}</span>
+          <span style="color:var(--cx-text-mute, #6b7280);font-size:11px">{t.get('descripcion','')}</span>
         </td></tr>"""
     if not lineas:
         lineas = '<tr><td style="text-align:center;padding:20px;color:#9ca3af">Sin tareas programadas hoy</td></tr>'
 
     return f"""<!DOCTYPE html>
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f3f4f6;padding:20px">
-  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden">
+  <div style="max-width:600px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden">
     <div style="background:linear-gradient(135deg,#7c3aed,#0891b2);color:#fff;padding:24px">
       <h1 style="margin:0;font-size:20px">👋 Buenos días {operario}</h1>
       <p style="margin:6px 0 0;color:#cffafe;font-size:13px">{fecha} · Tu agenda</p>
@@ -241,7 +241,7 @@ def _html_agenda_operario(operario, agenda_dia):
     <div style="padding:20px">
       <table style="width:100%;border-collapse:collapse">{lineas}</table>
       <p style="margin:20px 0 0;font-size:11px;color:#9ca3af;text-align:center">
-        Auto-Plan EOS · <a href="https://inventarios-0905.onrender.com/inventarios" style="color:#0891b2">Ver en EOS</a>
+        Auto-Plan EOS · <a href="https://inventarios-0905.onrender.com/inventarios" style="color:var(--cx-info-text, #0891b2)">Ver en EOS</a>
       </p>
     </div>
   </div>
@@ -1580,18 +1580,18 @@ def job_lunes_7am_workflow(app):
             destinatarios = [r[0] for r in rows if r[0]]
             if destinatarios:
                 html = f'''<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;background:#f3f4f6;padding:20px">
-                <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+                <div style="max-width:640px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
                   <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:20px">
                     <h2 style="margin:0;font-size:20px">📅 Plan Semanal Listo · {lunes_semana.strftime("%d-%b")} a {viernes_semana.strftime("%d-%b")}</h2>
                     <p style="margin:4px 0 0;opacity:.9;font-size:13px">Lunes 7am · IA programó y bloqueó la semana</p>
                   </div>
-                  <div style="padding:20px;font-size:13px;color:#0f172a">
-                    <div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:6px;margin-bottom:14px;color:#065f46">
+                  <div style="padding:20px;font-size:13px;color:var(--cx-text, #0f172a)">
+                    <div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:6px;margin-bottom:14px;color:var(--cx-success-text, #065f46)">
                       ✅ Workflow lunes 7am ejecutado · {bloqueadas} producciones bloqueadas
                     </div>
                     <h3 style="margin:14px 0 8px">Pasos ejecutados:</h3>
                     <ul style="margin:0;padding:0 0 0 20px">{''.join(f'<li>{p}</li>' for p in resumen["pasos"])}</ul>
-                    <p style="font-size:11px;color:#64748b;margin-top:14px">El equipo de planta solo entra a la app y ejecuta lo asignado · sin clicks de configuración</p>
+                    <p style="font-size:11px;color:var(--cx-text-mute, #64748b);margin-top:14px">El equipo de planta solo entra a la app y ejecuta lo asignado · sin clicks de configuración</p>
                   </div>
                 </div></body></html>'''
                 import threading, sys, os as _os
@@ -2245,21 +2245,21 @@ def job_animus_conteo_diario(app):
                 if sn.email_remitente and sn.contraseña:
                     asunto = f'📊 Conteo del día · {len(asignados)} SKUs · Animus'
                     body = (
-                        '<h2 style="color:#0c4a6e;font-family:Segoe UI,sans-serif;">'
+                        '<h2 style="color:var(--cx-info-text, #0c4a6e);font-family:Segoe UI,sans-serif;">'
                         '📊 Tu conteo de hoy en Animus</h2>'
                         '<p>Hola Daniela 👋</p>'
                         '<p>Hoy tienes que contar fisicamente <b>'
                         + str(len(asignados)) + ' SKUs</b>:</p>'
-                        '<ul style="font-family:monospace;background:#f1f5f9;padding:12px 24px;border-radius:8px;">'
+                        '<ul style="font-family:monospace;background:var(--cx-border-soft, #f1f5f9);padding:12px 24px;border-radius:8px;">'
                         + ''.join('<li><b>' + s + '</b></li>' for s in asignados)
                         + '</ul>'
                         '<p>Entra a <a href="https://eossuite.com/animus" '
-                        'style="color:#10b981;font-weight:700;">eossuite.com/animus</a> '
+                        'style="color:var(--cx-success-text, #10b981);font-weight:700;">eossuite.com/animus</a> '
                         '→ pestaña <b>Inventario Físico</b> → seccion <b>Conteos pendientes</b>.</p>'
-                        '<p style="color:#64748b;font-size:13px;">Para cada SKU veras el desglose '
+                        '<p style="color:var(--cx-text-mute, #64748b);font-size:13px;">Para cada SKU veras el desglose '
                         '(baseline + entradas - ventas Shopify - salidas) y podras anotar la cantidad '
                         'fisica. Si hay diferencia, te pedira motivo.</p>'
-                        '<hr><p style="color:#94a3b8;font-size:11px;">Sistema EOS · cron-animus '
+                        '<hr><p style="color:var(--cx-text-faint, #94a3b8);font-size:11px;">Sistema EOS · cron-animus '
                         '· generado ' + datetime.now().strftime('%Y-%m-%d %H:%M') + '</p>'
                     )
                     sn._enviar_email(asunto, body, destinatarios=[email_dest])
@@ -2695,22 +2695,22 @@ def _build_weekly_executive_html(snapshot, kpis):
             bullets.append(f"{k}: <b>{v}</b>")
         bullets_html = ' · '.join(bullets[:4]) or '(sin datos)'
         accion_rows.append(f"""
-        <tr><td style="padding:10px 14px;border-left:4px solid {color};background:#fef2f2;font-size:13px">
+        <tr><td style="padding:10px 14px;border-left:4px solid {color};background:var(--cx-danger-pale, #fef2f2);font-size:13px">
           <b style="color:{color}">{label}</b><br>
-          <span style="color:#475569;font-size:12px">{bullets_html}</span>
+          <span style="color:var(--cx-text-soft, #475569);font-size:12px">{bullets_html}</span>
           {f'<div style="margin-top:6px;color:{color};font-size:12px">→ {hint}</div>' if hint else ''}
         </td></tr>""")
     accion_html = ''.join(accion_rows) or (
-        '<tr><td style="padding:14px;color:#15803d;font-size:13px">✓ Sin acciones críticas pendientes</td></tr>'
+        '<tr><td style="padding:14px;color:var(--cx-success-text, #15803d);font-size:13px">✓ Sin acciones críticas pendientes</td></tr>'
     )
 
     # ── KPIs ejecutivos ──
     kpi_html = ''
     for k, v in kpis.items():
         kpi_html += f"""
-        <td style="padding:14px;text-align:center;border-right:1px solid #e5e7eb">
-          <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">{k}</div>
-          <div style="font-size:22px;font-weight:700;color:#0f172a;margin-top:4px">{v}</div>
+        <td style="padding:14px;text-align:center;border-right:1px solid var(--cx-border, #e5e7eb)">
+          <div style="font-size:11px;color:var(--cx-text-mute, #64748b);text-transform:uppercase;letter-spacing:.5px">{k}</div>
+          <div style="font-size:22px;font-weight:700;color:var(--cx-text, #0f172a);margin-top:4px">{v}</div>
         </td>"""
 
     # ── Salas planta ──
@@ -2724,14 +2724,14 @@ def _build_weekly_executive_html(snapshot, kpis):
 
     return f"""<!DOCTYPE html>
 <html><body style="font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:#f3f4f6;padding:20px;color:#1f2937;margin:0">
-  <div style="max-width:680px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+  <div style="max-width:680px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
 
     <!-- Header -->
     <div style="background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;padding:24px 28px">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
           <h1 style="margin:0;font-size:20px;font-weight:700">📊 Executive Brief · {fecha_str}</h1>
-          <div style="margin-top:4px;font-size:12px;color:#94a3b8">HHA Group · semana entrante</div>
+          <div style="margin-top:4px;font-size:12px;color:var(--cx-text-faint, #94a3b8)">HHA Group · semana entrante</div>
         </div>
         <div style="background:{overall_color};color:#fff;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:700">
           {overall_icon} {overall.upper()}
@@ -2741,14 +2741,14 @@ def _build_weekly_executive_html(snapshot, kpis):
 
     <!-- KPIs ejecutivos -->
     <div style="padding:0">
-      <table style="width:100%;border-collapse:collapse;border-bottom:1px solid #e5e7eb">
+      <table style="width:100%;border-collapse:collapse;border-bottom:1px solid var(--cx-border, #e5e7eb)">
         <tr>{kpi_html}</tr>
       </table>
     </div>
 
     <!-- Acciones críticas -->
     <div style="padding:20px 28px">
-      <h2 style="margin:0 0 14px 0;font-size:15px;color:#0f172a;border-bottom:2px solid #0f172a;padding-bottom:6px">
+      <h2 style="margin:0 0 14px 0;font-size:15px;color:var(--cx-text, #0f172a);border-bottom:2px solid var(--cx-text, #0f172a);padding-bottom:6px">
         🎯 Tu atención esta semana
       </h2>
       <table style="width:100%;border-collapse:collapse">
@@ -2757,17 +2757,17 @@ def _build_weekly_executive_html(snapshot, kpis):
     </div>
 
     <!-- Salas planta -->
-    <div style="padding:14px 28px;background:#f8fafc;border-top:1px solid #e5e7eb">
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+    <div style="padding:14px 28px;background:var(--cx-bg-alt, #f8fafc);border-top:1px solid var(--cx-border, #e5e7eb)">
+      <div style="font-size:11px;color:var(--cx-text-mute, #64748b);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
         🏭 Estado planta (ahora)
       </div>
       <div>{salas_html or '(sin datos)'}</div>
     </div>
 
     <!-- Footer -->
-    <div style="padding:16px 28px;background:#0f172a;color:#94a3b8;font-size:11px;text-align:center">
+    <div style="padding:16px 28px;background:var(--cx-text, #0f172a);color:var(--cx-text-faint, #94a3b8);font-size:11px;text-align:center">
       Cockpit completo: <a href="https://app.eossuite.com/admin/system-health" style="color:#7ACFCC;text-decoration:none">app.eossuite.com/admin/system-health</a><br>
-      <span style="color:#64748b">Generado por cron · weekly_executive · cada lunes 7:30am COT</span>
+      <span style="color:var(--cx-text-mute, #64748b)">Generado por cron · weekly_executive · cada lunes 7:30am COT</span>
     </div>
   </div>
 </body></html>"""
@@ -3026,11 +3026,11 @@ def _build_monthly_financial_html(pnl, tops, operativos, caja_actual):
     # MoM badge
     mom = pnl.get('mom_pct')
     if mom is None:
-        mom_html = '<span style="color:#94a3b8">—</span>'
+        mom_html = '<span style="color:var(--cx-text-faint, #94a3b8)">—</span>'
     elif mom >= 0:
-        mom_html = f'<span style="color:#15803d;font-weight:700">▲ {mom:+.1f}%</span>'
+        mom_html = f'<span style="color:var(--cx-success-text, #15803d);font-weight:700">▲ {mom:+.1f}%</span>'
     else:
-        mom_html = f'<span style="color:#dc2626;font-weight:700">▼ {mom:.1f}%</span>'
+        mom_html = f'<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">▼ {mom:.1f}%</span>'
 
     # Margen color
     margen_color = '#15803d' if pnl['margen'] >= 0 else '#dc2626'
@@ -3041,40 +3041,40 @@ def _build_monthly_financial_html(pnl, tops, operativos, caja_actual):
         pct = (cat['monto'] / pnl['egresos_total'] * 100) if pnl['egresos_total'] > 0 else 0
         cat_rows += f"""
         <tr>
-          <td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #e5e7eb">{cat['categoria']}</td>
-          <td style="padding:8px 12px;font-size:12px;text-align:right;border-bottom:1px solid #e5e7eb">${cat['monto']/1_000_000:.1f}M</td>
-          <td style="padding:8px 12px;font-size:11px;color:#64748b;text-align:right;border-bottom:1px solid #e5e7eb">{pct:.0f}%</td>
+          <td style="padding:8px 12px;font-size:12px;border-bottom:1px solid var(--cx-border, #e5e7eb)">{cat['categoria']}</td>
+          <td style="padding:8px 12px;font-size:12px;text-align:right;border-bottom:1px solid var(--cx-border, #e5e7eb)">${cat['monto']/1_000_000:.1f}M</td>
+          <td style="padding:8px 12px;font-size:11px;color:var(--cx-text-mute, #64748b);text-align:right;border-bottom:1px solid var(--cx-border, #e5e7eb)">{pct:.0f}%</td>
         </tr>"""
     if not cat_rows:
-        cat_rows = '<tr><td colspan="3" style="padding:14px;color:#94a3b8;font-size:12px;text-align:center">Sin egresos en el período</td></tr>'
+        cat_rows = '<tr><td colspan="3" style="padding:14px;color:var(--cx-text-faint, #94a3b8);font-size:12px;text-align:center">Sin egresos en el período</td></tr>'
 
     # Top clientes
     cli_rows = ''
     for c in tops.get('clientes', []):
         cli_rows += f"""
         <tr>
-          <td style="padding:6px 12px;font-size:12px;border-bottom:1px solid #f1f5f9">{c['nombre'][:35]}</td>
-          <td style="padding:6px 12px;font-size:11px;color:#64748b;text-align:right;border-bottom:1px solid #f1f5f9">{c['pedidos']} ped.</td>
-          <td style="padding:6px 12px;font-size:12px;text-align:right;border-bottom:1px solid #f1f5f9"><b>${c['total']/1_000_000:.1f}M</b></td>
+          <td style="padding:6px 12px;font-size:12px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)">{c['nombre'][:35]}</td>
+          <td style="padding:6px 12px;font-size:11px;color:var(--cx-text-mute, #64748b);text-align:right;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)">{c['pedidos']} ped.</td>
+          <td style="padding:6px 12px;font-size:12px;text-align:right;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)"><b>${c['total']/1_000_000:.1f}M</b></td>
         </tr>"""
     if not cli_rows:
-        cli_rows = '<tr><td colspan="3" style="padding:12px;color:#94a3b8;font-size:11px;text-align:center">Sin pedidos</td></tr>'
+        cli_rows = '<tr><td colspan="3" style="padding:12px;color:var(--cx-text-faint, #94a3b8);font-size:11px;text-align:center">Sin pedidos</td></tr>'
 
     # Top proveedores
     prov_rows = ''
     for p in tops.get('proveedores', []):
         prov_rows += f"""
         <tr>
-          <td style="padding:6px 12px;font-size:12px;border-bottom:1px solid #f1f5f9">{p['nombre'][:35]}</td>
-          <td style="padding:6px 12px;font-size:11px;color:#64748b;text-align:right;border-bottom:1px solid #f1f5f9">{p['ocs']} OCs</td>
-          <td style="padding:6px 12px;font-size:12px;text-align:right;border-bottom:1px solid #f1f5f9"><b>${p['total']/1_000_000:.1f}M</b></td>
+          <td style="padding:6px 12px;font-size:12px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)">{p['nombre'][:35]}</td>
+          <td style="padding:6px 12px;font-size:11px;color:var(--cx-text-mute, #64748b);text-align:right;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)">{p['ocs']} OCs</td>
+          <td style="padding:6px 12px;font-size:12px;text-align:right;border-bottom:1px solid var(--cx-border-soft, #f1f5f9)"><b>${p['total']/1_000_000:.1f}M</b></td>
         </tr>"""
     if not prov_rows:
-        prov_rows = '<tr><td colspan="3" style="padding:12px;color:#94a3b8;font-size:11px;text-align:center">Sin OCs</td></tr>'
+        prov_rows = '<tr><td colspan="3" style="padding:12px;color:var(--cx-text-faint, #94a3b8);font-size:11px;text-align:center">Sin OCs</td></tr>'
 
     return f"""<!DOCTYPE html>
 <html><body style="font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:#f3f4f6;padding:20px;color:#1f2937;margin:0">
-  <div style="max-width:680px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+  <div style="max-width:680px;margin:0 auto;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
 
     <!-- Header -->
     <div style="background:linear-gradient(135deg,#0f766e,#134e4a);color:#fff;padding:24px 28px">
@@ -3084,22 +3084,22 @@ def _build_monthly_financial_html(pnl, tops, operativos, caja_actual):
 
     <!-- P&L grid -->
     <div style="padding:0">
-      <table style="width:100%;border-collapse:collapse;border-bottom:1px solid #e5e7eb">
+      <table style="width:100%;border-collapse:collapse;border-bottom:1px solid var(--cx-border, #e5e7eb)">
         <tr>
-          <td style="padding:18px;text-align:center;border-right:1px solid #e5e7eb;background:#f0fdf4">
-            <div style="font-size:11px;color:#166534;text-transform:uppercase;letter-spacing:.5px">Ingresos</div>
-            <div style="font-size:24px;font-weight:700;color:#15803d;margin-top:4px">${pnl['ingresos_total']/1_000_000:.1f}M</div>
+          <td style="padding:18px;text-align:center;border-right:1px solid var(--cx-border, #e5e7eb);background:var(--cx-success-pale, #f0fdf4)">
+            <div style="font-size:11px;color:var(--cx-success-text, #166534);text-transform:uppercase;letter-spacing:.5px">Ingresos</div>
+            <div style="font-size:24px;font-weight:700;color:var(--cx-success-text, #15803d);margin-top:4px">${pnl['ingresos_total']/1_000_000:.1f}M</div>
             <div style="font-size:11px;margin-top:4px">vs mes ant: {mom_html}</div>
           </td>
-          <td style="padding:18px;text-align:center;border-right:1px solid #e5e7eb;background:#fef2f2">
-            <div style="font-size:11px;color:#991b1b;text-transform:uppercase;letter-spacing:.5px">Egresos</div>
-            <div style="font-size:24px;font-weight:700;color:#dc2626;margin-top:4px">${pnl['egresos_total']/1_000_000:.1f}M</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:4px">salida total</div>
+          <td style="padding:18px;text-align:center;border-right:1px solid var(--cx-border, #e5e7eb);background:var(--cx-danger-pale, #fef2f2)">
+            <div style="font-size:11px;color:var(--cx-danger-text, #991b1b);text-transform:uppercase;letter-spacing:.5px">Egresos</div>
+            <div style="font-size:24px;font-weight:700;color:var(--cx-danger-text, #dc2626);margin-top:4px">${pnl['egresos_total']/1_000_000:.1f}M</div>
+            <div style="font-size:11px;color:var(--cx-text-faint, #94a3b8);margin-top:4px">salida total</div>
           </td>
           <td style="padding:18px;text-align:center">
-            <div style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:.5px">Margen</div>
+            <div style="font-size:11px;color:var(--cx-text-soft, #475569);text-transform:uppercase;letter-spacing:.5px">Margen</div>
             <div style="font-size:24px;font-weight:700;color:{margen_color};margin-top:4px">${pnl['margen']/1_000_000:.1f}M</div>
-            <div style="font-size:11px;color:#64748b;margin-top:4px">{pnl['margen_pct']:.1f}%</div>
+            <div style="font-size:11px;color:var(--cx-text-mute, #64748b);margin-top:4px">{pnl['margen_pct']:.1f}%</div>
           </td>
         </tr>
       </table>
@@ -3107,15 +3107,15 @@ def _build_monthly_financial_html(pnl, tops, operativos, caja_actual):
 
     <!-- Egresos por categoría -->
     <div style="padding:20px 28px">
-      <h2 style="margin:0 0 12px 0;font-size:14px;color:#0f172a;border-bottom:2px solid #0f172a;padding-bottom:6px">
+      <h2 style="margin:0 0 12px 0;font-size:14px;color:var(--cx-text, #0f172a);border-bottom:2px solid var(--cx-text, #0f172a);padding-bottom:6px">
         💸 Egresos por categoría
       </h2>
       <table style="width:100%;border-collapse:collapse">
         <thead>
-          <tr style="background:#f8fafc">
-            <th style="padding:8px 12px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase">Categoría</th>
-            <th style="padding:8px 12px;text-align:right;font-size:10px;color:#64748b;text-transform:uppercase">Monto</th>
-            <th style="padding:8px 12px;text-align:right;font-size:10px;color:#64748b;text-transform:uppercase">%</th>
+          <tr style="background:var(--cx-bg-alt, #f8fafc)">
+            <th style="padding:8px 12px;text-align:left;font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase">Categoría</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase">Monto</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;color:var(--cx-text-mute, #64748b);text-transform:uppercase">%</th>
           </tr>
         </thead>
         <tbody>{cat_rows}</tbody>
@@ -3124,7 +3124,7 @@ def _build_monthly_financial_html(pnl, tops, operativos, caja_actual):
 
     <!-- Top clientes -->
     <div style="padding:0 28px 20px 28px">
-      <h2 style="margin:0 0 12px 0;font-size:14px;color:#0f172a;border-bottom:2px solid #0f172a;padding-bottom:6px">
+      <h2 style="margin:0 0 12px 0;font-size:14px;color:var(--cx-text, #0f172a);border-bottom:2px solid var(--cx-text, #0f172a);padding-bottom:6px">
         🏆 Top 5 clientes del mes
       </h2>
       <table style="width:100%;border-collapse:collapse">
@@ -3134,7 +3134,7 @@ def _build_monthly_financial_html(pnl, tops, operativos, caja_actual):
 
     <!-- Top proveedores -->
     <div style="padding:0 28px 20px 28px">
-      <h2 style="margin:0 0 12px 0;font-size:14px;color:#0f172a;border-bottom:2px solid #0f172a;padding-bottom:6px">
+      <h2 style="margin:0 0 12px 0;font-size:14px;color:var(--cx-text, #0f172a);border-bottom:2px solid var(--cx-text, #0f172a);padding-bottom:6px">
         🚚 Top 5 proveedores del mes
       </h2>
       <table style="width:100%;border-collapse:collapse">
@@ -3143,23 +3143,23 @@ def _build_monthly_financial_html(pnl, tops, operativos, caja_actual):
     </div>
 
     <!-- Operativos -->
-    <div style="padding:14px 28px;background:#f8fafc;border-top:1px solid #e5e7eb">
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+    <div style="padding:14px 28px;background:var(--cx-bg-alt, #f8fafc);border-top:1px solid var(--cx-border, #e5e7eb)">
+      <div style="font-size:11px;color:var(--cx-text-mute, #64748b);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
         ⚙️ Operativos del mes
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:18px;font-size:12px">
         <span>🏭 Producciones: <b>{operativos['producciones_completadas']}</b></span>
         <span>✅ Lotes liberados: <b>{operativos['lotes_liberados']}</b></span>
-        <span>❌ Lotes rechazados: <b style="color:#dc2626">{operativos['lotes_rechazados']}</b></span>
+        <span>❌ Lotes rechazados: <b style="color:var(--cx-danger-text, #dc2626)">{operativos['lotes_rechazados']}</b></span>
         <span>🧾 Facturas: <b>{operativos['facturas_emitidas']}</b></span>
       </div>
       {f'<div style="margin-top:10px;font-size:12px">💰 Caja actual: <b>${caja_actual/1_000_000:.1f}M</b></div>' if caja_actual else ''}
     </div>
 
     <!-- Footer -->
-    <div style="padding:16px 28px;background:#0f172a;color:#94a3b8;font-size:11px;text-align:center">
+    <div style="padding:16px 28px;background:var(--cx-text, #0f172a);color:var(--cx-text-faint, #94a3b8);font-size:11px;text-align:center">
       Detalle completo: <a href="https://app.eossuite.com/financiero" style="color:#7ACFCC;text-decoration:none">app.eossuite.com/financiero</a><br>
-      <span style="color:#64748b">Generado por cron · monthly_financial · cada día 1 a las 8am COT</span>
+      <span style="color:var(--cx-text-mute, #64748b)">Generado por cron · monthly_financial · cada día 1 a las 8am COT</span>
     </div>
   </div>
 </body></html>"""
@@ -3555,7 +3555,7 @@ def _enviar_mail_watcher(payload):
         <ul>{items_html}</ul>
         <p>Acción sugerida: revisar <a href="https://app.eossuite.com/admin">/admin</a>
         para ver el estado completo.</p>
-        <p style="color:#666;font-size:11px">
+        <p style="color:var(--cx-text-mute, #666);font-size:11px">
           Total checks: {payload.get('total_checks')} ·
           Críticos: {payload.get('critical_count')} ·
           Warnings: {payload.get('warn_count')} ·

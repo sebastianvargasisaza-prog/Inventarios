@@ -22,6 +22,38 @@ neutrales + violeta como acento de acciones/estado, ámbar como acento secundari
 - **Semánticos**: success/warn/danger/info + variantes `-pale`. Estado regulado
   (liberado/cuarentena/OOS) nunca depende solo del color → icono/etiqueta también.
 
+### RELLENO vs TEXTO · la regla que más se incumple (26-jul-2026)
+
+Un color de relleno y **el mismo color como texto necesitan tokens DISTINTOS**, porque al
+invertir el tema tiran en direcciones opuestas: el relleno se queda oscuro para que el texto
+blanco encima se lea, y el texto tiene que aclararse para leerse sobre el fondo oscuro. Con un
+solo token, el violeta como texto daba **2,06:1** sobre la tarjeta oscura (ilegible).
+
+| en `background:` / `border:` | en `color:` |
+|---|---|
+| `--cx-primary` | `--cx-primary-text` |
+| `--cx-success` | `--cx-success-text` |
+| `--cx-danger` | `--cx-danger-text` |
+| `--cx-info` | `--cx-info-text` |
+| `--cx-warn` | `--cx-warn-text` (el ámbar puro sobre blanco es 2,15:1) |
+
+Los 5 pares están medidos: pasan AA (4,5:1) en tema claro **y** en oscuro.
+
+**`color:#fff` se queda literal.** El texto blanco sobre un relleno de color no depende del tema;
+mandarlo a `--cx-card` lo vuelve oscuro sobre oscuro en el tema oscuro. `--cx-card` es una
+SUPERFICIE: va en `background`, nunca en `color`.
+
+**Dónde `var()` NO funciona** (ahí el literal es correcto): atributos SVG (`fill=`/`stroke=`),
+`<meta name="theme-color">`, comparaciones en JS y colores de canvas/Chart.js.
+
+**En `api/blueprints/` se escribe con respaldo**: `color:var(--cx-text-mute, #64748b)`. Ahí viven
+los rótulos y los imprimibles regulados, y algunos no enlazan `cortex.css` — el respaldo garantiza
+que un documento impreso nunca pierda color.
+
+**Esto lo vigila un test**, no la buena memoria: `tests/test_deuda_diseno_no_crece.py` cuenta los
+colores hardcodeados y falla si suben (la regla estaba escrita desde hace meses y se incumplió
+8.077 veces). Si migrás y el número baja, **bajá el techo** en el test para fijar la mejora.
+
 ## Typography
 
 - Familia única: **Inter** (`--cx-font`) + JetBrains Mono para datos crudos/código.

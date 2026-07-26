@@ -15,46 +15,46 @@ HTML = r"""<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1c1917;font-size:14px}
+body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);font-size:14px}
 .topbar{background:linear-gradient(90deg,#1a4a7a,#6d28d9);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:14px}
 .topbar h1{font-size:18px;font-weight:700;flex:1}
-.topbar a{color:#cbd5e1;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,0.1)}
+.topbar a{color:var(--cx-border);text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,0.1)}
 .topbar a:hover{background:rgba(255,255,255,0.2);color:#fff}
-.tabs{background:#fff;border-bottom:2px solid #e2e8f0;display:flex;gap:0}
-.tabbtn{padding:12px 22px;font-size:13px;font-weight:600;color:#64748b;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
-.tabbtn:hover{background:#f8fafc;color:#1a4a7a}
-.tabbtn.on{color:#1a4a7a;border-bottom-color:#6d28d9;font-weight:700}
+.tabs{background:var(--cx-card);border-bottom:2px solid var(--cx-border);display:flex;gap:0}
+.tabbtn{padding:12px 22px;font-size:13px;font-weight:600;color:var(--cx-text-mute);background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
+.tabbtn:hover{background:var(--cx-bg-alt);color:var(--cx-primary-text)}
+.tabbtn.on{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);font-weight:700}
 .pane{display:none;padding:22px 24px;max-width:1200px;margin:0 auto}
 .pane.on{display:block}
-.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:14px}
-.card h3{font-size:15px;color:#1a4a7a;margin-bottom:10px}
+.card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:16px;margin-bottom:14px}
+.card h3{font-size:15px;color:var(--cx-primary-text);margin-bottom:10px}
 .btn{padding:8px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer}
-.btn-primary{background:#6d28d9;color:#fff}.btn-primary:hover{background:#115e59}
-.btn-secondary{background:#e2e8f0;color:#475569}.btn-secondary:hover{background:#cbd5e1}
-.btn-danger{background:#dc2626;color:#fff}
-.btn-warn{background:#d97706;color:#fff}
-.btn-success{background:#16a34a;color:#fff}
+.btn-primary{background:var(--cx-primary);color:#fff}.btn-primary:hover{background:#115e59}
+.btn-secondary{background:var(--cx-border);color:var(--cx-text-soft)}.btn-secondary:hover{background:var(--cx-border)}
+.btn-danger{background:var(--cx-danger);color:#fff}
+.btn-warn{background:var(--cx-accent-dark);color:#fff}
+.btn-success{background:var(--cx-success);color:#fff}
 .btn-sm{padding:5px 10px;font-size:12px}
-input,select,textarea{padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;width:100%}
-input:focus,select:focus,textarea:focus{border-color:#6d28d9;outline:none}
+input,select,textarea{padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;font-family:inherit;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--cx-primary);outline:none}
 .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .row > * {flex:1;min-width:180px}
-label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4px}
+label{font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px}
 .badge{padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;text-transform:uppercase}
-.b-pendiente{background:#fef3c7;color:#92400e}
-.b-aprobada{background:#d1fae5;color:#065f46}
-.b-rechazada{background:#fee2e2;color:#991b1b}
+.b-pendiente{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.b-aprobada{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.b-rechazada{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
 .b-vista{background:#e0e7ff;color:#3730a3}
-.b-en_curso{background:#dbeafe;color:#1e40af}
-.b-completada{background:#d1fae5;color:#065f46}
-.b-reprobada{background:#fee2e2;color:#991b1b}
-.b-vencida{background:#fee2e2;color:#991b1b}
-.empty{text-align:center;color:#94a3b8;padding:30px;font-style:italic}
+.b-en_curso{background:var(--cx-info-pale);color:var(--cx-info-text)}
+.b-completada{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.b-reprobada{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
+.b-vencida{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
+.empty{text-align:center;color:var(--cx-text-faint);padding:30px;font-style:italic}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media (max-width:768px){.grid-2{grid-template-columns:1fr}}
-.q-block{background:#f8fafc;border-left:3px solid #6d28d9;padding:10px 14px;margin-bottom:10px;border-radius:0 6px 6px 0}
-.q-block .q{font-weight:600;color:#1a4a7a;margin-bottom:6px}
-.q-block .ctx{font-size:11px;color:#64748b;font-style:italic;margin-bottom:6px}
+.q-block{background:var(--cx-bg-alt);border-left:3px solid var(--cx-primary);padding:10px 14px;margin-bottom:10px;border-radius:0 6px 6px 0}
+.q-block .q{font-weight:600;color:var(--cx-primary-text);margin-bottom:6px}
+.q-block .ctx{font-size:11px;color:var(--cx-text-mute);font-style:italic;margin-bottom:6px}
 .q-block textarea{min-height:60px;font-size:13px}
 .score-card{background:linear-gradient(135deg,#6d28d9,#16a34a);color:#fff;padding:18px;border-radius:10px;text-align:center;margin-bottom:14px}
 .score-card.fail{background:linear-gradient(135deg,#dc2626,#92400e)}
@@ -78,7 +78,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
 <div id="pane-mis-notif" class="pane on">
   <div class="card">
     <h3>📨 Crear nueva notificación</h3>
-    <p style="color:#64748b;font-size:12px;margin-bottom:12px">Reporta a tus jefes: estado de salud, permisos, citas médicas, enfermedades, licencias.</p>
+    <p style="color:var(--cx-text-mute);font-size:12px;margin-bottom:12px">Reporta a tus jefes: estado de salud, permisos, citas médicas, enfermedades, licencias.</p>
     <div class="row">
       <div>
         <label>Tipo</label>
@@ -117,21 +117,21 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
     <button class="btn btn-primary" onclick="crearNotificacion()">Enviar al jefe</button>
   </div>
 
-  <h3 style="font-size:15px;color:#1a4a7a;margin-bottom:10px">📜 Mi historial</h3>
+  <h3 style="font-size:15px;color:var(--cx-primary-text);margin-bottom:10px">📜 Mi historial</h3>
   <div id="lista-mis-notif"></div>
 </div>
 
 <!-- PANE: Mis Capacitaciones -->
 <div id="pane-mis-cap" class="pane">
-  <h3 style="font-size:15px;color:#1a4a7a;margin-bottom:10px">🎓 Mis capacitaciones asignadas</h3>
-  <p style="color:#64748b;font-size:12px;margin-bottom:14px">Tu jefe te asigna material (videos, PDFs, NotebookLM). Revisa, haz el autoexamen y obtén tu nota. Las completadas suman a tu historial RH.</p>
+  <h3 style="font-size:15px;color:var(--cx-primary-text);margin-bottom:10px">🎓 Mis capacitaciones asignadas</h3>
+  <p style="color:var(--cx-text-mute);font-size:12px;margin-bottom:14px">Tu jefe te asigna material (videos, PDFs, NotebookLM). Revisa, haz el autoexamen y obtén tu nota. Las completadas suman a tu historial RH.</p>
   <div id="lista-mis-cap"></div>
 </div>
 
 <!-- PANE: Empleado destacado trimestral -->
 <div id="pane-trimestral" class="pane">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-    <h3 style="font-size:15px;color:#1a4a7a">🏆 Ranking trimestral con métricas objetivas</h3>
+    <h3 style="font-size:15px;color:var(--cx-primary-text)">🏆 Ranking trimestral con métricas objetivas</h3>
     <div style="display:flex;gap:8px;align-items:center">
       <select id="tri-year" onchange="cargarTrimestral()" style="width:auto"></select>
       <select id="tri-quarter" onchange="cargarTrimestral()" style="width:auto">
@@ -142,7 +142,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
       </select>
     </div>
   </div>
-  <p style="color:#64748b;font-size:12px;margin-bottom:14px">
+  <p style="color:var(--cx-text-mute);font-size:12px;margin-bottom:14px">
     Score = capacitaciones aprobadas × 25 + nota_prom × 0.4 + tareas × 5 +
     producciones × 4 − desviaciones_pendientes × 10. Sebastian (30-abr-2026):
     "trimestral, no mensual - mensual se vuelve costumbre".
@@ -154,11 +154,11 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
 <div id="pane-bandeja" class="pane">
   <div class="grid-2">
     <div>
-      <h3 style="font-size:15px;color:#1a4a7a;margin-bottom:10px">📩 Notificaciones pendientes (todo el equipo)</h3>
+      <h3 style="font-size:15px;color:var(--cx-primary-text);margin-bottom:10px">📩 Notificaciones pendientes (todo el equipo)</h3>
       <div id="bandeja-notif"></div>
     </div>
     <div>
-      <h3 style="font-size:15px;color:#1a4a7a;margin-bottom:10px">🎓 Asignar nueva capacitación</h3>
+      <h3 style="font-size:15px;color:var(--cx-primary-text);margin-bottom:10px">🎓 Asignar nueva capacitación</h3>
       <div class="card">
         <div class="row">
           <div>
@@ -205,7 +205,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
         </div>
         <button class="btn btn-primary" onclick="asignarCapacitacion()" style="margin-top:8px">Asignar</button>
       </div>
-      <h3 style="font-size:15px;color:#1a4a7a;margin:18px 0 10px">📊 Historial de capacitaciones del equipo</h3>
+      <h3 style="font-size:15px;color:var(--cx-primary-text);margin:18px 0 10px">📊 Historial de capacitaciones del equipo</h3>
       <div id="bandeja-capacitaciones"></div>
     </div>
   </div>
@@ -213,12 +213,12 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
 
 <!-- MODAL: Examen autoevaluacion Claude -->
 <div id="modal-examen" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.7);z-index:9999;align-items:center;justify-content:center;padding:20px">
-  <div style="background:#fff;border-radius:14px;padding:22px 26px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto">
+  <div style="background:var(--cx-card);border-radius:14px;padding:22px 26px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <h3 style="color:#1a4a7a;font-size:17px">🧠 Autoexamen con Claude</h3>
+      <h3 style="color:var(--cx-primary-text);font-size:17px">🧠 Autoexamen con Claude</h3>
       <button onclick="cerrarExamen()" class="btn btn-secondary btn-sm">×</button>
     </div>
-    <div id="exam-info" style="background:#f0f9ff;border-left:3px solid #0ea5e9;padding:10px 14px;margin-bottom:14px;border-radius:0 6px 6px 0;font-size:13px"></div>
+    <div id="exam-info" style="background:#f0f9ff;border-left:3px solid var(--cx-info);padding:10px 14px;margin-bottom:14px;border-radius:0 6px 6px 0;font-size:13px"></div>
     <div id="exam-body"></div>
     <div id="exam-result" style="display:none;margin-top:16px"></div>
   </div>
@@ -288,8 +288,8 @@ async function cargarTrimestral(){
         '</div>' +
       '</div>';
     }
-    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05)">' +
-      '<thead><tr style="background:#1a4a7a;color:#fff">' +
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;background:var(--cx-card);border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05)">' +
+      '<thead><tr style="background:var(--cx-primary);color:#fff">' +
       '<th style="padding:10px;text-align:left">#</th>' +
       '<th style="padding:10px;text-align:left">Operario</th>' +
       '<th style="padding:10px;text-align:center">Capac.</th>' +
@@ -301,11 +301,11 @@ async function cargarTrimestral(){
       '</tr></thead><tbody>';
     rk.forEach(function(p,i){
       var rowBg = i===0 ? '#fef3c7' : i===1 ? '#f1f5f9' : i===2 ? '#fed7aa' : '#fff';
-      html += '<tr style="background:'+rowBg+';border-bottom:1px solid #e2e8f0">' +
-        '<td style="padding:8px;font-weight:700;color:#6d28d9">'+(i+1)+(i===0?' 🥇':i===1?' 🥈':i===2?' 🥉':'')+'</td>' +
+      html += '<tr style="background:'+rowBg+';border-bottom:1px solid var(--cx-border)">' +
+        '<td style="padding:8px;font-weight:700;color:var(--cx-primary-text)">'+(i+1)+(i===0?' 🥇':i===1?' 🥈':i===2?' 🥉':'')+'</td>' +
         '<td style="padding:8px;font-weight:600">'+_esc(p.nombre_completo)+'</td>' +
         '<td style="padding:8px;text-align:center">'+p.capacitaciones_aprobadas+'</td>' +
-        '<td style="padding:8px;text-align:center;color:#6d28d9">'+p.nota_promedio+'</td>' +
+        '<td style="padding:8px;text-align:center;color:var(--cx-primary-text)">'+p.nota_promedio+'</td>' +
         '<td style="padding:8px;text-align:center">'+p.tareas_completadas+'</td>' +
         '<td style="padding:8px;text-align:center">'+p.producciones+'</td>' +
         '<td style="padding:8px;text-align:center;color:'+(p.desviaciones_pendientes>0?'#dc2626':'#94a3b8')+'">'+p.desviaciones_pendientes+'</td>' +
@@ -354,16 +354,16 @@ async function cargarMisNotif(){
       return;
     }
     box.innerHTML = d.notificaciones.map(function(n){
-      var coment = n.comentario_jefe ? '<div style="margin-top:8px;background:#f0fdf4;border-left:3px solid #16a34a;padding:8px 12px;font-size:12px;border-radius:0 6px 6px 0"><b>Comentario jefe:</b> '+_esc(n.comentario_jefe)+'</div>' : '';
+      var coment = n.comentario_jefe ? '<div style="margin-top:8px;background:var(--cx-success-pale);border-left:3px solid var(--cx-success);padding:8px 12px;font-size:12px;border-radius:0 6px 6px 0"><b>Comentario jefe:</b> '+_esc(n.comentario_jefe)+'</div>' : '';
       var fechas = '';
       if(n.fecha_inicio || n.fecha_fin){
-        fechas = '<span style="color:#64748b;font-size:11px"> · '+(_esc(n.fecha_inicio||'')+(n.fecha_fin?' → '+_esc(n.fecha_fin):''))+'</span>';
+        fechas = '<span style="color:var(--cx-text-mute);font-size:11px"> · '+(_esc(n.fecha_inicio||'')+(n.fecha_fin?' → '+_esc(n.fecha_fin):''))+'</span>';
       }
       return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">' +
         '<div><b>'+_esc(n.asunto)+'</b> <span class="badge b-'+n.estado+'">'+_esc(n.estado)+'</span>' + fechas + '</div>' +
-        '<span style="color:#94a3b8;font-size:11px">'+_esc((n.creado_en||'').slice(0,16))+'</span>' +
+        '<span style="color:var(--cx-text-faint);font-size:11px">'+_esc((n.creado_en||'').slice(0,16))+'</span>' +
         '</div>' +
-        '<div style="font-size:11px;color:#64748b;margin-top:4px">'+_esc(n.tipo)+'</div>' +
+        '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">'+_esc(n.tipo)+'</div>' +
         (n.descripcion?'<div style="margin-top:8px;font-size:13px">'+_esc(n.descripcion)+'</div>':'') +
         coment +
         '</div>';
@@ -395,22 +395,22 @@ function _capCardHTML(c){
   var tipoIcon = {video:'▶',notebooklm:'🧠',pdf:'📄',articulo:'📰',otro:'📦'}[c.material_tipo]||'📦';
   var verBoton = (c.material_url
     ? '<a href="'+_esc(c.material_url)+'" target="_blank" class="btn btn-secondary btn-sm">'+tipoIcon+' Ver material</a>'
-    : '<span style="color:#94a3b8;font-size:12px">Sin URL</span>');
+    : '<span style="color:var(--cx-text-faint);font-size:12px">Sin URL</span>');
   var examBoton = (c.estado==='pendiente' || c.estado==='en_curso' || c.estado==='reprobada')
     ? '<button class="btn btn-primary btn-sm" onclick="iniciarExamen('+c.id+')">🧠 Hacer autoexamen</button>'
     : '';
   var nota = (c.nota_obtenida!=null)
     ? '<span style="margin-left:8px;font-weight:700;color:'+(c.nota_obtenida>=c.nota_minima?'#16a34a':'#dc2626')+'">'+c.nota_obtenida+'/100</span>'
     : '';
-  var asignador = c.asignado_por ? '<span style="font-size:11px;color:#94a3b8">por '+_esc(c.asignado_por)+'</span>' : '';
-  var flim = c.fecha_limite ? '<span style="font-size:11px;color:#dc2626;margin-left:8px">📅 Hasta '+_esc(c.fecha_limite)+'</span>' : '';
+  var asignador = c.asignado_por ? '<span style="font-size:11px;color:var(--cx-text-faint)">por '+_esc(c.asignado_por)+'</span>' : '';
+  var flim = c.fecha_limite ? '<span style="font-size:11px;color:var(--cx-danger-text);margin-left:8px">📅 Hasta '+_esc(c.fecha_limite)+'</span>' : '';
   return '<div class="card">' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">' +
       '<div><b>'+_esc(c.titulo)+'</b> <span class="badge b-'+c.estado+'">'+_esc(c.estado)+'</span>'+nota+flim+'</div>' +
       asignador +
     '</div>' +
-    (c.descripcion?'<div style="font-size:13px;color:#475569;margin-top:6px">'+_esc(c.descripcion)+'</div>':'') +
-    (c.material_notas?'<div style="font-size:11px;color:#64748b;margin-top:6px;font-style:italic">📝 '+_esc(c.material_notas)+'</div>':'') +
+    (c.descripcion?'<div style="font-size:13px;color:var(--cx-text-soft);margin-top:6px">'+_esc(c.descripcion)+'</div>':'') +
+    (c.material_notas?'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:6px;font-style:italic">📝 '+_esc(c.material_notas)+'</div>':'') +
     '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'+verBoton+' '+examBoton+'</div>' +
     '</div>';
 }
@@ -420,7 +420,7 @@ async function iniciarExamen(capId){
   modal.style.display = 'flex';
   document.getElementById('exam-result').style.display = 'none';
   document.getElementById('exam-info').textContent = 'Generando preguntas con Claude... un momento.';
-  document.getElementById('exam-body').innerHTML = '<div style="text-align:center;color:#64748b;padding:30px">⏳ Pensando...</div>';
+  document.getElementById('exam-body').innerHTML = '<div style="text-align:center;color:var(--cx-text-mute);padding:30px">⏳ Pensando...</div>';
   try{
     var r = await fetch('/api/bienestar/capacitaciones/'+capId+'/iniciar-examen', _fetchOpts('POST'));
     var d = await r.json();
@@ -444,7 +444,7 @@ async function enviarRespuestas(intentoId, n){
     respuestas.push((document.getElementById('resp-'+i).value||'').trim());
   }
   if(respuestas.every(function(r){return !r;})){ _toast('Responde al menos una', 0); return; }
-  document.getElementById('exam-body').innerHTML += '<div style="margin-top:14px;color:#64748b;text-align:center">⏳ Claude está calificando...</div>';
+  document.getElementById('exam-body').innerHTML += '<div style="margin-top:14px;color:var(--cx-text-mute);text-align:center">⏳ Claude está calificando...</div>';
   try{
     var r = await fetch('/api/bienestar/intentos/'+intentoId+'/calificar', _fetchOpts('POST', {respuestas: respuestas}));
     var d = await r.json();
@@ -460,7 +460,7 @@ async function enviarRespuestas(intentoId, n){
       '<div class="num">'+d.nota+'</div>' +
       '<div style="font-size:12px">de 100 (mínimo: '+d.nota_minima+')</div>' +
       '</div>' +
-      (d.evaluacion.resumen?'<div style="background:#f8fafc;padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:13px"><b>📝 Resumen:</b> '+_esc(d.evaluacion.resumen)+'</div>':'') +
+      (d.evaluacion.resumen?'<div style="background:var(--cx-bg-alt);padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:13px"><b>📝 Resumen:</b> '+_esc(d.evaluacion.resumen)+'</div>':'') +
       '<div><b>Feedback por pregunta:</b></div>' + fbHTML +
       (aprobado?'':'<button class="btn btn-warn" onclick="iniciarExamen('+intentoId+')" style="margin-top:10px">Reintentar</button>');
     resBox.style.display = 'block';
@@ -494,11 +494,11 @@ async function cargarBandeja(){
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">' +
             '<div><b>'+_esc(n.empleado_nombre||n.empleado_username)+'</b> · '+_esc(n.tipo)+
               ' <span class="badge b-'+n.estado+'">'+_esc(n.estado)+'</span></div>' +
-            '<span style="color:#94a3b8;font-size:11px">'+_esc((n.creado_en||'').slice(0,16))+'</span>' +
+            '<span style="color:var(--cx-text-faint);font-size:11px">'+_esc((n.creado_en||'').slice(0,16))+'</span>' +
           '</div>' +
           '<div style="margin-top:6px;font-weight:600">'+_esc(n.asunto)+'</div>' +
-          (n.descripcion?'<div style="font-size:13px;color:#475569;margin-top:4px">'+_esc(n.descripcion)+'</div>':'') +
-          (n.adjunto_url?'<a href="'+_esc(n.adjunto_url)+'" target="_blank" style="font-size:12px;color:#6d28d9">📎 Ver adjunto</a>':'') +
+          (n.descripcion?'<div style="font-size:13px;color:var(--cx-text-soft);margin-top:4px">'+_esc(n.descripcion)+'</div>':'') +
+          (n.adjunto_url?'<a href="'+_esc(n.adjunto_url)+'" target="_blank" style="font-size:12px;color:var(--cx-primary-text)">📎 Ver adjunto</a>':'') +
           btns +
           '</div>';
       }).join('');
@@ -515,11 +515,11 @@ async function cargarBandeja(){
       box2.innerHTML = d2.capacitaciones.map(function(c){
         return '<div class="card" style="padding:10px 14px">' +
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">' +
-            '<div><b>'+_esc(c.titulo)+'</b> · <span style="color:#64748b">'+_esc(c.asignado_a)+'</span> ' +
+            '<div><b>'+_esc(c.titulo)+'</b> · <span style="color:var(--cx-text-mute)">'+_esc(c.asignado_a)+'</span> ' +
               '<span class="badge b-'+c.estado+'">'+_esc(c.estado)+'</span>' +
               (c.nota_obtenida!=null?' <b style="margin-left:6px;color:'+(c.nota_obtenida>=c.nota_minima?'#16a34a':'#dc2626')+'">'+c.nota_obtenida+'/100</b>':'') +
             '</div>' +
-            '<span style="color:#94a3b8;font-size:11px">'+_esc((c.fecha_asignacion||'').slice(0,10))+'</span>' +
+            '<span style="color:var(--cx-text-faint);font-size:11px">'+_esc((c.fecha_asignacion||'').slice(0,10))+'</span>' +
           '</div>' +
           '</div>';
       }).join('');

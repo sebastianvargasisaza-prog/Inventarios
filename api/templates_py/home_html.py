@@ -20,32 +20,32 @@ HOME_HTML = """<!DOCTYPE html>
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=eos11">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-height:100vh;}
-.hdr{background:#1C1917;color:#fff;padding:18px 28px;display:flex;align-items:center;gap:16px;}
+body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);min-height:100vh;}
+.hdr{background:var(--cx-text);color:#fff;padding:18px 28px;display:flex;align-items:center;gap:16px;}
 .hdr-logo{font-size:22px;font-weight:900;}
-.hdr-sub{font-size:12px;color:#a8a29e;margin-top:2px;}
-.hdr-right{margin-left:auto;font-size:12px;color:#78716c;}
+.hdr-sub{font-size:12px;color:var(--cx-text-faint);margin-top:2px;}
+.hdr-right{margin-left:auto;font-size:12px;color:var(--cx-text-mute);}
 .wrap{max-width:960px;margin:40px auto;padding:0 20px;}
 .greeting{font-size:24px;font-weight:800;margin-bottom:6px;}
-.greeting-sub{font-size:14px;color:#78716c;margin-bottom:32px;}
-.sect{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#a8a29e;margin-bottom:12px;}
+.greeting-sub{font-size:14px;color:var(--cx-text-mute);margin-bottom:32px;}
+.sect{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--cx-text-faint);margin-bottom:12px;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:14px;margin-bottom:32px;}
-.card{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:20px 16px;display:flex;flex-direction:column;align-items:center;gap:7px;text-decoration:none;color:#1C1917;transition:.15s;}
-.card:hover{border-color:#a8a29e;box-shadow:0 4px 16px rgba(0,0,0,.08);transform:translateY(-2px);}
+.card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:20px 16px;display:flex;flex-direction:column;align-items:center;gap:7px;text-decoration:none;color:var(--cx-text);transition:.15s;}
+.card:hover{border-color:var(--cx-text-faint);box-shadow:0 4px 16px rgba(0,0,0,.08);transform:translateY(-2px);}
 .card-icon{font-size:28px;}
 .card-name{font-size:13px;font-weight:700;text-align:center;}
-.card-desc{font-size:11px;color:#78716c;text-align:center;}
-.card.ceo{border-color:#292524;background:#1C1917;color:#fff;}
-.card.ceo .card-desc{color:#a8a29e;}
-.card.ceo:hover{background:#292524;}
-.note{text-align:center;font-size:12px;color:#a8a29e;margin-top:8px;}
-.note a{color:#292524;font-weight:600;text-decoration:none;}
+.card-desc{font-size:11px;color:var(--cx-text-mute);text-align:center;}
+.card.ceo{border-color:var(--cx-text);background:var(--cx-text);color:#fff;}
+.card.ceo .card-desc{color:var(--cx-text-faint);}
+.card.ceo:hover{background:var(--cx-text);}
+.note{text-align:center;font-size:12px;color:var(--cx-text-faint);margin-top:8px;}
+.note a{color:var(--cx-text);font-weight:600;text-decoration:none;}
 </style>
 </head>
 <body>
 <div class="hdr">
   <div style="display:flex;align-items:center;gap:16px;">
-    <span style="width:54px;height:54px;border-radius:12px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;color:#6d28d9;" aria-label="EOS">
+    <span style="width:54px;height:54px;border-radius:12px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;color:var(--cx-primary-text);" aria-label="EOS">
       <svg viewBox="0 0 32 32" width="46" height="46" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg">
         <circle cx="16" cy="12" r="3" fill="#6d28d9"/>
         <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
@@ -55,14 +55,14 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
     <div>
       <div class="hdr-logo" style="display:flex;align-items:baseline;gap:10px;">
         <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">EOS</span>
-        <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;border:1px solid #6d28d9;padding:2px 7px;border-radius:4px;">v1.0</span>
+        <span style="font-size:10px;color:var(--cx-primary-light);font-weight:700;letter-spacing:1.2px;text-transform:uppercase;border:1px solid var(--cx-primary);padding:2px 7px;border-radius:4px;">v1.0</span>
       </div>
       <div class="hdr-sub">by <strong style="color:#fff">HHA Group</strong> &middot; Espagiria &middot; ANIMUS Lab</div>
     </div>
   </div>
   <div class="hdr-right">
-    <div style="font-style:italic;color:#cbd5e1;">Todo el holding, al frente</div>
-    <div style="font-size:10px;color:#78716c;margin-top:2px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por HHA Group</div>
+    <div style="font-style:italic;color:var(--cx-border);">Todo el holding, al frente</div>
+    <div style="font-size:10px;color:var(--cx-text-mute);margin-top:2px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por HHA Group</div>
   </div>
 </div>
 <div class="wrap">
@@ -93,11 +93,11 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
   </div>
   <div class="note">Los modulos oscuros requieren <a href="/login">iniciar sesion como CEO</a></div>
 </div>
-<footer style="padding:24px 20px;border-top:1px solid #e7e5e4;margin-top:40px;text-align:center;font-size:11px;color:#a8a29e;background:#fafaf9;">
-  <div style="font-weight:700;color:#6d28d9;letter-spacing:0.3px;font-size:13px;">EOS</div>
+<footer style="padding:24px 20px;border-top:1px solid var(--cx-border);margin-top:40px;text-align:center;font-size:11px;color:var(--cx-text-faint);background:var(--cx-bg-alt);">
+  <div style="font-weight:700;color:var(--cx-primary-text);letter-spacing:0.3px;font-size:13px;">EOS</div>
   <div style="margin-top:4px;font-style:italic;">Todo el holding, al frente</div>
-  <div style="margin-top:10px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por <strong style="color:#1c1917">HHA Group</strong></div>
-  <div style="margin-top:6px;color:#d6d3d1;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
+  <div style="margin-top:10px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por <strong style="color:var(--cx-text)">HHA Group</strong></div>
+  <div style="margin-top:6px;color:var(--cx-border);">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
 </footer>
 </body>
 </html>"""

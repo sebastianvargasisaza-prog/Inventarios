@@ -9,10 +9,10 @@ CONTABILIDAD_HTML = """<!DOCTYPE html>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',sans-serif;background:#0d0d0d;color:#e8e8e8;min-height:100vh}
 .login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh}
-.login-box{background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:40px;width:360px}
+.login-box{background:#1a1a1a;border:1px solid var(--cx-text);border-radius:12px;padding:40px;width:360px}
 .login-box h2{text-align:center;margin-bottom:24px;font-size:20px;color:#fff}
-.login-box input{width:100%;padding:10px 14px;margin-bottom:14px;background:#111;border:1px solid #444;border-radius:8px;color:#fff;font-size:14px}
-.login-box button{width:100%;padding:12px;background:#fff;color:#000;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
+.login-box input{width:100%;padding:10px 14px;margin-bottom:14px;background:#111;border:1px solid var(--cx-text-soft);border-radius:8px;color:#fff;font-size:14px}
+.login-box button{width:100%;padding:12px;background:var(--cx-card);color:var(--cx-text);border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
 .login-box button:hover{background:#e0e0e0}
 .err{color:#ff6b6b;font-size:13px;text-align:center;margin-top:10px}
 /* Layout */
@@ -20,14 +20,14 @@ body{font-family:'Segoe UI',sans-serif;background:#0d0d0d;color:#e8e8e8;min-heig
 .topbar{background:#111;border-bottom:1px solid #2a2a2a;padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:52px}
 .topbar-left{display:flex;align-items:center;gap:16px}
 .topbar-title{font-weight:700;font-size:15px;color:#fff}
-.topbar-user{font-size:12px;color:#888}
-.btn-logout{background:none;border:1px solid #444;color:#888;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px}
-.btn-logout:hover{color:#fff;border-color:#666}
+.topbar-user{font-size:12px;color:var(--cx-text-mute)}
+.btn-logout{background:none;border:1px solid var(--cx-text-soft);color:var(--cx-text-mute);padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px}
+.btn-logout:hover{color:#fff;border-color:var(--cx-text-mute)}
 /* Tabs */
 .tabs{display:flex;gap:2px;padding:0 24px;background:#111;border-bottom:1px solid #222;overflow-x:auto}
-.tab{padding:12px 20px;cursor:pointer;font-size:13px;color:#888;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
-.tab:hover{color:#ccc}
-.tab.active{color:#fff;border-bottom-color:#fff;font-weight:600}
+.tab{padding:12px 20px;cursor:pointer;font-size:13px;color:var(--cx-text-mute);border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
+.tab:hover{color:var(--cx-border)}
+.tab.active{color:#fff;border-bottom-color:var(--cx-card);font-weight:600}
 .content{flex:1;padding:24px;overflow-y:auto}
 .panel{display:none}.panel.active{display:block}
 /* KPI Cards */
@@ -35,54 +35,54 @@ body{font-family:'Segoe UI',sans-serif;background:#0d0d0d;color:#e8e8e8;min-heig
 .kpi{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:18px}
 .kpi-label{font-size:11px;color:#777;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
 .kpi-value{font-size:22px;font-weight:700;color:#fff}
-.kpi-value.warn{color:#f59e0b}
-.kpi-value.danger{color:#ef4444}
+.kpi-value.warn{color:var(--cx-warn-text)}
+.kpi-value.danger{color:var(--cx-danger-text)}
 .kpi-value.ok{color:#22c55e}
 /* Toolbar */
 .toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
-.toolbar input,.toolbar select{background:#1a1a1a;border:1px solid #333;color:#e8e8e8;padding:8px 12px;border-radius:8px;font-size:13px}
+.toolbar input,.toolbar select{background:#1a1a1a;border:1px solid var(--cx-text);color:#e8e8e8;padding:8px 12px;border-radius:8px;font-size:13px}
 .btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s}
-.btn-primary{background:#fff;color:#000}.btn-primary:hover{background:#e0e0e0}
-.btn-secondary{background:#2a2a2a;color:#e8e8e8;border:1px solid #444}.btn-secondary:hover{background:#333}
-.btn-success{background:#166534;color:#fff}.btn-success:hover{background:#14532d}
-.btn-danger{background:#7f1d1d;color:#fff}.btn-danger:hover{background:#6b1919}
+.btn-primary{background:var(--cx-card);color:var(--cx-text)}.btn-primary:hover{background:#e0e0e0}
+.btn-secondary{background:#2a2a2a;color:#e8e8e8;border:1px solid var(--cx-text-soft)}.btn-secondary:hover{background:var(--cx-text)}
+.btn-success{background:var(--cx-success);color:#fff}.btn-success:hover{background:#14532d}
+.btn-danger{background:var(--cx-danger);color:#fff}.btn-danger:hover{background:#6b1919}
 .btn-sm{padding:5px 10px;font-size:12px}
 /* Table */
 .tbl-wrap{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{background:#111;padding:10px 14px;text-align:left;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.4px}
+th{background:#111;padding:10px 14px;text-align:left;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px}
 td{padding:10px 14px;border-top:1px solid #222}
 tr:hover td{background:#202020}
 /* Badge */
 .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
 .badge-green{background:#14532d;color:#86efac}
-.badge-yellow{background:#78350f;color:#fde68a}
-.badge-red{background:#7f1d1d;color:#fca5a5}
+.badge-yellow{background:var(--cx-accent-dark);color:#fde68a}
+.badge-red{background:var(--cx-danger);color:#fca5a5}
 .badge-gray{background:#27272a;color:#a1a1aa}
 /* Modal */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
 .modal-bg.open{display:flex}
-.modal{background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:28px;width:520px;max-height:80vh;overflow-y:auto}
+.modal{background:#1a1a1a;border:1px solid var(--cx-text);border-radius:12px;padding:28px;width:520px;max-height:80vh;overflow-y:auto}
 .modal h3{font-size:16px;margin-bottom:18px}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .form-group{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
-.form-group label{font-size:12px;color:#888}
-.form-group input,.form-group select,.form-group textarea{background:#111;border:1px solid #333;color:#e8e8e8;padding:8px 10px;border-radius:6px;font-size:13px;width:100%}
+.form-group label{font-size:12px;color:var(--cx-text-mute)}
+.form-group input,.form-group select,.form-group textarea{background:#111;border:1px solid var(--cx-text);color:#e8e8e8;padding:8px 10px;border-radius:6px;font-size:13px;width:100%}
 .form-group textarea{min-height:60px;resize:vertical}
 .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
 /* Items tabla en modal */
 .items-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}
-.items-table th{background:#111;padding:6px 8px;text-align:left;color:#888}
+.items-table th{background:#111;padding:6px 8px;text-align:left;color:var(--cx-text-mute)}
 .items-table td{padding:6px 8px;border-top:1px solid #222}
-.items-table input{width:100%;background:#0d0d0d;border:1px solid #333;color:#e8e8e8;padding:3px 6px;border-radius:4px}
-.add-item-btn{font-size:12px;color:#666;cursor:pointer;background:none;border:1px dashed #444;padding:6px;border-radius:6px;width:100%;margin-top:4px}
-.add-item-btn:hover{color:#ccc;border-color:#666}
+.items-table input{width:100%;background:#0d0d0d;border:1px solid var(--cx-text);color:#e8e8e8;padding:3px 6px;border-radius:4px}
+.add-item-btn{font-size:12px;color:var(--cx-text-mute);cursor:pointer;background:none;border:1px dashed var(--cx-text-soft);padding:6px;border-radius:6px;width:100%;margin-top:4px}
+.add-item-btn:hover{color:var(--cx-border);border-color:var(--cx-text-mute)}
 /* Tesoreria / Nomina summary */
 .summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
 .summary-card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;padding:16px}
 .summary-card h4{font-size:12px;color:#777;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
 .summary-card .big{font-size:20px;font-weight:700}
-.toast{position:fixed;bottom:24px;right:24px;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:14px 20px;font-size:13px;z-index:9999;transition:opacity .3s;opacity:0;pointer-events:none}
+.toast{position:fixed;bottom:24px;right:24px;background:#1a1a1a;border:1px solid var(--cx-text);border-radius:8px;padding:14px 20px;font-size:13px;z-index:9999;transition:opacity .3s;opacity:0;pointer-events:none}
 .toast.show{opacity:1}
 /* Mobile responsive · 27-may-2026 */
 @media (max-width: 768px) {
@@ -111,13 +111,13 @@ tr:hover td{background:#202020}
 <!-- APP -->
 <div id="app-screen" class="app" style="display:none">
   <header class="cx-mod-header cx-fade-in">
-    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
     <div>
       <div class="cx-mod-header__title">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/></svg>
         Contabilidad
       </div>
-      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; facturación · cartera · tesorería · nómina &middot; <span id="topbar-user" style="color:#a8a29e"></span></div>
+      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; facturación · cartera · tesorería · nómina &middot; <span id="topbar-user" style="color:var(--cx-text-faint)"></span></div>
     </div>
     <div class="cx-mod-header__nav">
       <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">Módulos</a>
@@ -172,7 +172,7 @@ tr:hover td{background:#202020}
             <th>Numero</th><th>Fecha</th><th>Cliente</th><th>Empresa</th>
             <th>Total</th><th>Pagado</th><th>Saldo</th><th>Estado</th><th>Acciones</th>
           </tr></thead>
-          <tbody id="tbody-facturas"><tr><td colspan="9" style="text-align:center;color:#555;padding:24px">Cargando...</td></tr></tbody>
+          <tbody id="tbody-facturas"><tr><td colspan="9" style="text-align:center;color:var(--cx-text-soft);padding:24px">Cargando...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -180,7 +180,7 @@ tr:hover td{background:#202020}
     <!-- TAB: Cartera -->
     <div id="panel-cartera" class="panel">
       <div class="toolbar">
-        <span style="color:#888;font-size:13px">Facturas pendientes de pago</span>
+        <span style="color:var(--cx-text-mute);font-size:13px">Facturas pendientes de pago</span>
       </div>
       <div class="tbl-wrap">
         <table>
@@ -188,7 +188,7 @@ tr:hover td{background:#202020}
             <th>Numero</th><th>Fecha Emision</th><th>Vencimiento</th><th>Cliente</th>
             <th>Total</th><th>Saldo</th><th>Dias Vencido</th><th>Acciones</th>
           </tr></thead>
-          <tbody id="tbody-cartera"><tr><td colspan="8" style="text-align:center;color:#555;padding:24px">Cargando...</td></tr></tbody>
+          <tbody id="tbody-cartera"><tr><td colspan="8" style="text-align:center;color:var(--cx-text-soft);padding:24px">Cargando...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -208,14 +208,14 @@ tr:hover td{background:#202020}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div>
-          <div style="font-size:12px;color:#888;margin-bottom:8px;text-transform:uppercase">Ingresos</div>
+          <div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:8px;text-transform:uppercase">Ingresos</div>
           <div class="tbl-wrap"><table>
             <thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th></tr></thead>
             <tbody id="tbody-ingresos"></tbody>
           </table></div>
         </div>
         <div>
-          <div style="font-size:12px;color:#888;margin-bottom:8px;text-transform:uppercase">Egresos</div>
+          <div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:8px;text-transform:uppercase">Egresos</div>
           <div class="tbl-wrap"><table>
             <thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th><th>Comprobante</th></tr></thead>
             <tbody id="tbody-egresos"></tbody>
@@ -270,11 +270,11 @@ tr:hover td{background:#202020}
             <option value="Espagiria">Espagiria</option>
           </select>
         </div>
-        <div style="background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;color:#888">
+        <div style="background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;color:var(--cx-text-mute)">
           Genera un Excel con 3 hojas:<br>
-          <strong style="color:#ccc">Libro de Ventas</strong> - una fila por factura<br>
-          <strong style="color:#ccc">Detalle Items</strong> - una fila por producto<br>
-          <strong style="color:#ccc">Pagos Recibidos</strong> - abonos registrados
+          <strong style="color:var(--cx-border)">Libro de Ventas</strong> - una fila por factura<br>
+          <strong style="color:var(--cx-border)">Detalle Items</strong> - una fila por producto<br>
+          <strong style="color:var(--cx-border)">Pagos Recibidos</strong> - abonos registrados
         </div>
         <button class="btn btn-primary" style="width:100%;padding:14px" onclick="exportSiigo()">
           Descargar Excel para Siigo
@@ -329,7 +329,7 @@ tr:hover td{background:#202020}
       <label>Notas</label>
       <textarea id="n-notas" placeholder="Condiciones de pago, referencia, etc."></textarea>
     </div>
-    <div style="font-size:12px;color:#888;margin-bottom:8px">
+    <div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:8px">
       Items (dejar vacio si el pedido ya los tiene)
     </div>
     <table class="items-table" id="items-table">
@@ -507,7 +507,7 @@ async function loadFacturas(){
   if(h) url+=`&hasta=${h}`;
   const rows = await fetch(url).then(r=>r.json());
   const tb = document.getElementById('tbody-facturas');
-  if(!rows.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#555;padding:24px">Sin facturas</td></tr>';return;}
+  if(!rows.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--cx-text-soft);padding:24px">Sin facturas</td></tr>';return;}
   // FIX 27-may (P0/P1 XSS) · esc en todos los strings de DB + data-attributes
   // en lugar de onclick con interpolación (cliente_nombre con comillas rompía
   // el HTML y permitía inyección JS).
@@ -533,13 +533,13 @@ async function loadCartera(){
   const rows = await fetch('/api/contabilidad/facturas?estado=Emitida').then(r=>r.json());
   const hoy = new Date();
   const tb = document.getElementById('tbody-cartera');
-  if(!rows.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#555;padding:24px">Sin cartera pendiente</td></tr>';return;}
+  if(!rows.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--cx-text-soft);padding:24px">Sin cartera pendiente</td></tr>';return;}
   tb.innerHTML = rows.map(f=>{
     let diasV='';
     let vBadge='';
     if(f.fecha_vencimiento){
       const diff = Math.floor((hoy - new Date(f.fecha_vencimiento+'T00:00:00'))/864e5);
-      if(diff>0){diasV=`<span style="color:#ef4444;font-weight:700">${diff}d</span>`;vBadge='badge-red';}
+      if(diff>0){diasV=`<span style="color:var(--cx-danger-text);font-weight:700">${diff}d</span>`;vBadge='badge-red';}
       else{diasV=`<span style="color:#22c55e">Al dia</span>`;vBadge='badge-green';}
     }
     return `<tr>
@@ -583,8 +583,8 @@ async function loadTesoreria(){
       <td>${ce}</td>
     </tr>`;
   };
-  document.getElementById('tbody-ingresos').innerHTML = data.ingresos.map(r=>mkRowIng(r,'Ingreso')).join('')||'<tr><td colspan="3" style="color:#555;text-align:center">Sin datos</td></tr>';
-  document.getElementById('tbody-egresos').innerHTML = data.egresos.map(mkRowEgr).join('')||'<tr><td colspan="4" style="color:#555;text-align:center">Sin datos</td></tr>';
+  document.getElementById('tbody-ingresos').innerHTML = data.ingresos.map(r=>mkRowIng(r,'Ingreso')).join('')||'<tr><td colspan="3" style="color:var(--cx-text-soft);text-align:center">Sin datos</td></tr>';
+  document.getElementById('tbody-egresos').innerHTML = data.egresos.map(mkRowEgr).join('')||'<tr><td colspan="4" style="color:var(--cx-text-soft);text-align:center">Sin datos</td></tr>';
 }
 
 async function loadNominaPeriodos(){
@@ -617,14 +617,14 @@ function renderNomina(d){
   tb.innerHTML = rows.length ? rows.map(r=>`
     <tr>
       <td>${r.nombre_completo||''}</td>
-      <td style="color:#888">${r.cargo||''}</td>
-      <td style="color:#888">${r.area||''}</td>
+      <td style="color:var(--cx-text-mute)">${r.cargo||''}</td>
+      <td style="color:var(--cx-text-mute)">${r.area||''}</td>
       <td>${r.periodo||''}</td>
       <td>${COP(r.salario_base)}</td>
       <td>${COP(r.valor_horas_extras||0)}</td>
       <td><strong>${COP(r.salario_neto)}</strong></td>
       <td><span class="badge ${r.estado==='Pagada'?'badge-green':'badge-yellow'}">${r.estado||'Generada'}</span></td>
-    </tr>`).join('') : '<tr><td colspan="8" style="text-align:center;color:#555;padding:24px">Sin registros de nomina</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--cx-text-soft);padding:24px">Sin registros de nomina</td></tr>';
 }
 
 // ── Nueva Factura ────────────────────────────────────────────────────────────
@@ -645,7 +645,7 @@ function addItemRow(){
     <td><input type="text" placeholder="Descripcion"></td>
     <td><input type="number" placeholder="0" style="width:60px"></td>
     <td><input type="number" placeholder="0"></td>
-    <td><button onclick="this.closest('tr').remove()" style="background:none;border:none;color:#888;cursor:pointer;font-size:16px">x</button></td>`;
+    <td><button onclick="this.closest('tr').remove()" style="background:none;border:none;color:var(--cx-text-mute);cursor:pointer;font-size:16px">x</button></td>`;
   document.getElementById('items-body').appendChild(tr);
 }
 

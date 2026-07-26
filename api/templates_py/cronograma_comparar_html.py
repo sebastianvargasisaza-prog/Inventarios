@@ -19,8 +19,8 @@ CRONOGRAMA_COMPARAR_HTML = r'''<!DOCTYPE html>
     background: #f5f5f5; color: #1f2937; padding: 20px;
   }
   .container { max-width: 1400px; margin: 0 auto; }
-  h1 { font-size: 24px; margin: 0 0 4px 0; color: #0f172a; }
-  .subtitle { font-size: 13px; color: #64748b; }
+  h1 { font-size: 24px; margin: 0 0 4px 0; color: var(--cx-text); }
+  .subtitle { font-size: 13px; color: var(--cx-text-mute); }
   .nav { font-size: 12px; margin: 8px 0 18px 0; }
   .nav a { color: #2B7A78; text-decoration: none; margin-right: 14px; }
 
@@ -29,39 +29,39 @@ CRONOGRAMA_COMPARAR_HTML = r'''<!DOCTYPE html>
     gap: 12px; margin-bottom: 20px;
   }
   .pill {
-    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+    background: var(--cx-card); border: 1px solid var(--cx-border); border-radius: 10px;
     padding: 14px 16px; text-align: center;
   }
   .pill .num { font-size: 28px; font-weight: 800; line-height: 1; }
-  .pill .lbl { font-size: 11px; color: #64748b; text-transform: uppercase;
+  .pill .lbl { font-size: 11px; color: var(--cx-text-mute); text-transform: uppercase;
                 letter-spacing: 0.4px; margin-top: 6px; }
-  .pill.ok      { border-left: 4px solid #16a34a; }
-  .pill.ok .num { color: #16a34a; }
-  .pill.warn    { border-left: 4px solid #f59e0b; }
-  .pill.warn .num { color: #d97706; }
-  .pill.err     { border-left: 4px solid #dc2626; }
-  .pill.err .num { color: #dc2626; }
-  .pill.info    { border-left: 4px solid #3b82f6; }
-  .pill.info .num { color: #2563eb; }
+  .pill.ok      { border-left: 4px solid var(--cx-success); }
+  .pill.ok .num { color: var(--cx-success-text); }
+  .pill.warn    { border-left: 4px solid var(--cx-warn); }
+  .pill.warn .num { color: var(--cx-warn-text); }
+  .pill.err     { border-left: 4px solid var(--cx-danger); }
+  .pill.err .num { color: var(--cx-danger-text); }
+  .pill.info    { border-left: 4px solid var(--cx-info); }
+  .pill.info .num { color: var(--cx-info-text); }
 
   .seccion {
-    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+    background: var(--cx-card); border: 1px solid var(--cx-border); border-radius: 10px;
     margin-bottom: 18px; overflow: hidden;
   }
   .seccion-header {
     padding: 14px 18px; font-weight: 700; font-size: 15px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--cx-border);
   }
-  .seccion.ok .seccion-header { background: #f0fdf4; color: #166534;
+  .seccion.ok .seccion-header { background: var(--cx-success-pale); color: var(--cx-success-text);
     border-bottom-color: #bbf7d0; }
-  .seccion.err .seccion-header { background: #fef2f2; color: #991b1b;
+  .seccion.err .seccion-header { background: var(--cx-danger-pale); color: var(--cx-danger-text);
     border-bottom-color: #fecaca; }
-  .seccion.warn .seccion-header { background: #fffbeb; color: #92400e;
+  .seccion.warn .seccion-header { background: var(--cx-warn-pale); color: var(--cx-warn-text);
     border-bottom-color: #fde68a; }
   .seccion-body { padding: 0; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #f1f5f9; }
-  th { background: #f9fafb; font-weight: 600; color: #475569;
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--cx-border-soft); }
+  th { background: var(--cx-bg-alt); font-weight: 600; color: var(--cx-text-soft);
        font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
   tr:last-child td { border-bottom: none; }
   tr:hover { background: #fafbfc; }
@@ -69,20 +69,20 @@ CRONOGRAMA_COMPARAR_HTML = r'''<!DOCTYPE html>
     display: inline-block; padding: 2px 8px; border-radius: 4px;
     font-size: 11px; font-weight: 600;
   }
-  .badge.urg { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
-  .badge.area { background: #dbeafe; color: #1e40af; }
-  .badge.area-mismatch { background: #fef3c7; color: #92400e; }
+  .badge.urg { background: var(--cx-danger-pale); color: var(--cx-danger-text); border: 1px solid #fca5a5; }
+  .badge.area { background: var(--cx-info-pale); color: var(--cx-info-text); }
+  .badge.area-mismatch { background: var(--cx-warn-pale); color: var(--cx-warn-text); }
   .empty {
-    padding: 30px; text-align: center; color: #94a3b8; font-style: italic;
+    padding: 30px; text-align: center; color: var(--cx-text-faint); font-style: italic;
   }
   .spinner {
     display: inline-block; width: 14px; height: 14px;
-    border: 2px solid #cbd5e1; border-top-color: #2563eb;
+    border: 2px solid var(--cx-border); border-top-color: var(--cx-info);
     border-radius: 50%; animation: spin 0.8s linear infinite;
     margin-right: 8px; vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .hint-otra-fecha { color: #d97706; font-size: 11px; margin-top: 2px; }
+  .hint-otra-fecha { color: var(--cx-warn-text); font-size: 11px; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -155,7 +155,7 @@ function buildMatches(items) {
       ? '<span class="badge area">' + _esc(fmtArea(it.area_calendar)) + '</span>'
       : '<span class="badge area-mismatch">⚠ ' + _esc(fmtArea(it.area_calendar)) + '</span>';
     html += '<tr>';
-    html += '<td><b>' + _esc(fmtFecha(it.fecha)) + '</b><br><small style="color:#94a3b8">' + _esc(it.fecha) + '</small></td>';
+    html += '<td><b>' + _esc(fmtFecha(it.fecha)) + '</b><br><small style="color:var(--cx-text-faint)">' + _esc(it.fecha) + '</small></td>';
     html += '<td>' + _esc(it.producto_alejandro);
     if (it.urgente_alejandro) html += ' <span class="badge urg">⚡ URGENTE</span>';
     html += '</td>';
@@ -181,10 +181,10 @@ function buildFaltaEnCalendar(items) {
     if (it.match_otra_fecha) {
       detalle = '<span class="hint-otra-fecha">⚠ Calendar sí lo tiene pero el ' + _esc(fmtFecha(it.match_otra_fecha)) + ' (cambio de fecha?) - "' + _esc(it.producto_calendar_otra_fecha || '') + '"</span>';
     } else {
-      detalle = '<span style="color:#64748b">No existe en Calendar · cargar</span>';
+      detalle = '<span style="color:var(--cx-text-mute)">No existe en Calendar · cargar</span>';
     }
     html += '<tr>';
-    html += '<td><b>' + _esc(fmtFecha(it.fecha)) + '</b><br><small style="color:#94a3b8">' + _esc(it.fecha) + '</small></td>';
+    html += '<td><b>' + _esc(fmtFecha(it.fecha)) + '</b><br><small style="color:var(--cx-text-faint)">' + _esc(it.fecha) + '</small></td>';
     html += '<td>' + _esc(it.producto);
     if (it.urgente) html += ' <span class="badge urg">⚡ URGENTE</span>';
     html += '</td>';
@@ -205,11 +205,11 @@ function buildExtraEnCalendar(items) {
   html += '</tr></thead><tbody>';
   items.forEach(function(it) {
     html += '<tr>';
-    html += '<td><b>' + _esc(fmtFecha(it.fecha)) + '</b><br><small style="color:#94a3b8">' + _esc(it.fecha) + '</small></td>';
+    html += '<td><b>' + _esc(fmtFecha(it.fecha)) + '</b><br><small style="color:var(--cx-text-faint)">' + _esc(it.fecha) + '</small></td>';
     html += '<td>' + _esc(it.producto || '-') + '</td>';
     html += '<td>' + _esc(fmtArea(it.area)) + '</td>';
     html += '<td><span class="badge area">' + _esc(it.estado) + '</span></td>';
-    html += '<td style="color:#64748b;font-size:11px">' + _esc((it.observaciones || '').slice(0, 80)) + '</td>';
+    html += '<td style="color:var(--cx-text-mute);font-size:11px">' + _esc((it.observaciones || '').slice(0, 80)) + '</td>';
     html += '</tr>';
   });
   html += '</tbody></table>';
@@ -222,7 +222,7 @@ async function cargar() {
   try {
     var r = await fetch('/api/planta/cronograma-comparar-alejandro');
     if (!r.ok) {
-      content.innerHTML = '<div class="empty" style="color:#dc2626">Error ' + r.status + '</div>';
+      content.innerHTML = '<div class="empty" style="color:var(--cx-danger-text)">Error ' + r.status + '</div>';
       return;
     }
     var d = await r.json();
@@ -242,7 +242,7 @@ async function cargar() {
     html += '</div>';
     content.innerHTML = html;
   } catch(e) {
-    content.innerHTML = '<div class="empty" style="color:#dc2626">Error red: ' + _esc(e.message) + '</div>';
+    content.innerHTML = '<div class="empty" style="color:var(--cx-danger-text)">Error red: ' + _esc(e.message) + '</div>';
   }
 }
 

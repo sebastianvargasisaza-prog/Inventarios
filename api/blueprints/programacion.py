@@ -2281,22 +2281,22 @@ _PANEL_PROGRAMAR_HTML = r"""<!doctype html><html lang="es"><head><meta charset="
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:24px;}
 .wrap{max-width:1600px;margin:0 auto;}
 h1{font-size:22px;margin:0 0 12px;letter-spacing:-.02em;}
-select,input{font-family:inherit;font-size:14px;border:1px solid #d6d3d1;border-radius:10px;padding:9px 12px;background:#fff;}
+select,input{font-family:inherit;font-size:14px;border:1px solid var(--cx-border, #d6d3d1);border-radius:10px;padding:9px 12px;background:var(--cx-card, #fff);}
 .sel-prod{min-width:340px;font-weight:600;}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
-.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px;}
+.card{background:var(--cx-card, #fff);border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px;}
 .card.full{grid-column:1 / -1;}
 .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--v);margin:0 0 12px;}
 .big{font-size:26px;font-weight:800;letter-spacing:-.02em;}
 .mut{color:var(--mut);font-size:13px;}
 .badge{display:inline-block;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;}
-.b-ok{background:#dcfce7;color:#15803d;}.b-amb{background:#fef3c7;color:#b45309;}.b-mut{background:#f1f5f9;color:#475569;}
+.b-ok{background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #15803d);}.b-amb{background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #b45309);}.b-mut{background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);}
 table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;}
 th{text-align:left;color:var(--mut);text-transform:uppercase;font-size:10px;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--line);}
 td{padding:6px 8px;border-bottom:1px solid var(--line);}
 .opts{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px;}
 .opt{border:1.5px solid var(--line);border-radius:12px;padding:12px 16px;cursor:pointer;min-width:150px;transition:.12s;}
-.opt:hover{border-color:#c4b5fd;}
+.opt:hover{border-color:var(--cx-primary-light, #c4b5fd);}
 .opt.sel{border-color:var(--v);background:#faf5ff;box-shadow:0 2px 8px rgba(109,40,217,.12);}
 .opt .t{font-weight:700;font-size:13px;}.opt .k{font-size:20px;font-weight:800;color:var(--v);margin-top:2px;}.opt .s{font-size:11px;color:var(--mut);}
 .field{margin:12px 0;}
@@ -3502,27 +3502,27 @@ def prog_presentaciones_page():
     html = r'''<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Presentaciones · Envases</title>
 <style>
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f7fb;margin:0;color:#1e293b}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f7fb;margin:0;color:var(--cx-text, #1e293b)}
 .wrap{max-width:920px;margin:0 auto;padding:22px 16px 70px}
 a.back{color:#6366f1;text-decoration:none;font-size:13px;font-weight:600}
 h1{font-size:20px;margin:6px 0 4px}
-.sub{color:#64748b;font-size:13px;margin:0 0 16px;line-height:1.5}
-.srch{width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;margin:0 0 14px;box-sizing:border-box}
-.card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin:0 0 12px;overflow:hidden}
-.ch{padding:10px 14px;font-weight:700;font-size:14px;background:#f8fafc;border-bottom:1px solid #eef2f7;display:flex;align-items:center;gap:8px}
-.addb{margin-left:auto;background:#dcfce7;color:#15803d;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
-.ch .n{color:#94a3b8;font-weight:600;font-size:12px;margin-left:6px}
+.sub{color:var(--cx-text-mute, #64748b);font-size:13px;margin:0 0 16px;line-height:1.5}
+.srch{width:100%;padding:9px 12px;border:1px solid var(--cx-border, #cbd5e1);border-radius:10px;font-size:14px;margin:0 0 14px;box-sizing:border-box}
+.card{background:var(--cx-card, #fff);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin:0 0 12px;overflow:hidden}
+.ch{padding:10px 14px;font-weight:700;font-size:14px;background:var(--cx-bg-alt, #f8fafc);border-bottom:1px solid #eef2f7;display:flex;align-items:center;gap:8px}
+.addb{margin-left:auto;background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #15803d);border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.ch .n{color:var(--cx-text-faint, #94a3b8);font-weight:600;font-size:12px;margin-left:6px}
 table{width:100%;border-collapse:collapse}
-th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;text-align:left;padding:6px 10px;font-weight:700}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--cx-text-faint, #94a3b8);text-align:left;padding:6px 10px;font-weight:700}
 td{padding:6px 10px;border-top:1px solid #f4f6fa;font-size:13px;vertical-align:middle}
-input.i{padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;box-sizing:border-box}
+input.i{padding:6px 8px;border:1px solid var(--cx-border, #cbd5e1);border-radius:7px;font-size:13px;box-sizing:border-box}
 input.vol{width:64px;text-align:right}
 .env{min-width:230px;max-width:320px}
-select.env{padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;background:#fff}
+select.env{padding:6px 8px;border:1px solid var(--cx-border, #cbd5e1);border-radius:7px;font-size:13px;background:var(--cx-card, #fff)}
 input.fija{width:80px;text-align:right}
-.envd{color:#94a3b8;font-size:11px;display:block;margin-top:2px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.del{background:#fee2e2;color:#b91c1c;border:none;border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer;font-weight:600}
-.st{font-size:11px;color:#0891b2;margin-left:6px}
+.envd{color:var(--cx-text-faint, #94a3b8);font-size:11px;display:block;margin-top:2px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.del{background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #b91c1c);border:none;border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer;font-weight:600}
+.st{font-size:11px;color:var(--cx-info-text, #0891b2);margin-left:6px}
 .dup{background:#fef9c3}
 .pill{background:#eef2ff;color:#4338ca;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;margin-left:6px}
 </style></head><body><div class="wrap">
@@ -3642,21 +3642,21 @@ def prog_por_entrar_page():
     html = r'''<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Por entrar · Espagiria</title>
 <style>
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f7fb;margin:0;color:#1e293b}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f7fb;margin:0;color:var(--cx-text, #1e293b)}
 .wrap{max-width:760px;margin:0 auto;padding:22px 16px 60px}
 h1{font-size:20px;margin:0 0 4px}
-.sub{color:#64748b;font-size:13px;margin:0 0 18px;line-height:1.5}
+.sub{color:var(--cx-text-mute, #64748b);font-size:13px;margin:0 0 18px;line-height:1.5}
 .bar{display:flex;gap:10px;align-items:center;margin:0 0 14px;flex-wrap:wrap}
 .pill{background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;border-radius:999px;padding:5px 12px;font-size:13px;font-weight:700}
-input.q{width:110px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;text-align:right}
-input.q:focus{outline:none;border-color:#0891b2;box-shadow:0 0 0 3px rgba(8,145,178,.12)}
-.srch{width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;margin:0 0 12px;box-sizing:border-box}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-th{background:#f8fafc;color:#64748b;text-transform:uppercase;letter-spacing:.04em;font-size:11px;text-align:left;padding:10px 14px}
-td{padding:9px 14px;border-top:1px solid #f1f5f9;font-size:14px}
+input.q{width:110px;padding:7px 9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px;text-align:right}
+input.q:focus{outline:none;border-color:var(--cx-info, #0891b2);box-shadow:0 0 0 3px rgba(8,145,178,.12)}
+.srch{width:100%;padding:9px 12px;border:1px solid var(--cx-border, #cbd5e1);border-radius:10px;font-size:14px;margin:0 0 12px;box-sizing:border-box}
+table{width:100%;border-collapse:collapse;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+th{background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text-mute, #64748b);text-transform:uppercase;letter-spacing:.04em;font-size:11px;text-align:left;padding:10px 14px}
+td{padding:9px 14px;border-top:1px solid var(--cx-border-soft, #f1f5f9);font-size:14px}
 tr.hasq{background:#ecfeff}
-.st{font-size:12px;color:#0891b2;min-width:70px;display:inline-block}
-.hint{color:#94a3b8;font-size:12px;margin-top:14px}
+.st{font-size:12px;color:var(--cx-info-text, #0891b2);min-width:70px;display:inline-block}
+.hint{color:var(--cx-text-faint, #94a3b8);font-size:12px;margin-top:14px}
 a.back{color:#6366f1;text-decoration:none;font-size:13px;font-weight:600}
 </style></head><body><div class="wrap">
 <a class="back" href="/inventarios">&larr; Volver a Planta</a>
@@ -5456,30 +5456,30 @@ def page_blush_tonos():
     rows = []
     for t in d['tonos']:
         cob = '—' if t['dias_cobertura'] is None else (str(t['dias_cobertura']) + ' d')
-        bg = ' style="background:#fef2f2"' if t['stock'] <= 0 else ''
+        bg = ' style="background:var(--cx-danger-pale, #fef2f2)"' if t['stock'] <= 0 else ''
         rows.append(
-            '<tr' + bg + '><td><b>' + t['tono'] + '</b><br><small style="color:#78716c">'
+            '<tr' + bg + '><td><b>' + t['tono'] + '</b><br><small style="color:var(--cx-text-mute, #78716c)">'
             + t['sku'] + '</small></td>'
             '<td class="num">' + str(t['ventas_180d']) + '</td>'
             '<td class="num">' + str(t['ventas_mes']) + '</td>'
             '<td class="num">' + str(t['stock']) + '</td>'
             '<td class="num">' + cob + '</td>'
-            '<td class="num" style="font-weight:700;color:#7c3aed">' + str(t['sugerencia_uds']) + '</td></tr>'
+            '<td class="num" style="font-weight:700;color:var(--cx-primary-text, #7c3aed)">' + str(t['sugerencia_uds']) + '</td></tr>'
         )
     html = (
         '<!doctype html><html lang="es"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>Blush Balm · por tono</title><style>'
-        'body{font-family:-apple-system,Segoe UI,Arial;margin:0;background:#faf9fb;color:#1c1917}'
+        'body{font-family:-apple-system,Segoe UI,Arial;margin:0;background:#faf9fb;color:var(--cx-text, #1c1917)}'
         '.wrap{max-width:880px;margin:0 auto;padding:24px}'
-        'h1{font-size:20px;margin:0 0 4px}.sub{color:#78716c;font-size:13px;margin:0 0 18px}'
-        'table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;'
+        'h1{font-size:20px;margin:0 0 4px}.sub{color:var(--cx-text-mute, #78716c);font-size:13px;margin:0 0 18px}'
+        'table{width:100%;border-collapse:collapse;background:var(--cx-card, #fff);border-radius:12px;overflow:hidden;'
         'box-shadow:0 1px 3px rgba(0,0,0,.08)}'
         'th,td{padding:11px 14px;border-bottom:1px solid #f1f0f2;text-align:left;font-size:14px}'
-        'th{background:#f5f3f7;color:#57534e;font-size:12px;text-transform:uppercase;letter-spacing:.03em}'
+        'th{background:#f5f3f7;color:var(--cx-text-soft, #57534e);font-size:12px;text-transform:uppercase;letter-spacing:.03em}'
         '.num{text-align:right;font-variant-numeric:tabular-nums}'
         'tfoot td{font-weight:700;background:#faf9fb}'
-        '.tag{display:inline-block;background:#ede9fe;color:#6d28d9;border-radius:6px;padding:2px 8px;font-size:12px}'
+        '.tag{display:inline-block;background:var(--cx-primary-soft, #ede9fe);color:var(--cx-primary-text, #6d28d9);border-radius:6px;padding:2px 8px;font-size:12px}'
         '</style></head><body><div class="wrap">'
         '<h1>🎨 Blush Balm · necesidad por tono</h1>'
         '<p class="sub">Bulk base compartido · se pigmenta por tono al envasar. '
@@ -5492,7 +5492,7 @@ def page_blush_tonos():
         '<tfoot><tr><td>TOTAL (bulk)</td>'
         '<td class="num">' + str(d['total_ventas_180d']) + '</td><td></td>'
         '<td class="num">' + str(d['total_stock']) + '</td><td></td>'
-        '<td class="num" style="color:#7c3aed">' + str(d['total_bulk_sugerido_uds']) + '</td></tr></tfoot>'
+        '<td class="num" style="color:var(--cx-primary-text, #7c3aed)">' + str(d['total_bulk_sugerido_uds']) + '</td></tr></tfoot>'
         '</table>'
         '<p class="sub" style="margin-top:14px">El <b>TOTAL sugerido</b> es el tamaño del '
         '<span class="tag">bulk a fabricar</span>; el desglose por fila es el '
@@ -6458,8 +6458,8 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
         _sel = '<span style="font-size:12px;color:#71717a;margin-right:6px">Tamaño:</span>' + ''.join(
             ('<a href="' + base_path + '?w=' + str(w) + '&h=' + str(h) + '" style="display:inline-block;'
              'padding:6px 12px;margin:0 3px;border-radius:8px;font-size:12px;text-decoration:none;font-weight:600;' +
-             ('background:#ede9fe;color:#4c1d95;border:1px solid #c4b5fd;' if (w == lw and h == lh)
-              else 'background:#6d28d9;color:#fff;') + '">' + lbl + ' · ' + str(w) + '×' + str(h) + '</a>')
+             ('background:var(--cx-primary-soft, #ede9fe);color:var(--cx-primary-text, #4c1d95);border:1px solid var(--cx-primary-light, #c4b5fd);' if (w == lw and h == lh)
+              else 'background:var(--cx-primary, #6d28d9);color:#fff;') + '">' + lbl + ' · ' + str(w) + '×' + str(h) + '</a>')
             for w, h, lbl in _sizes)
     return f'''<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -6470,15 +6470,15 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
   :root{{--ink:#18181b;--soft:#3f3f46;--mute:#71717a;--line:#e4e4e7;--violet:#6d28d9;--violet-d:#4c1d95;--pale:#f5f3ff}}
   *{{box-sizing:border-box}}
   body{{font-family:'Inter',system-ui,Arial,sans-serif;margin:0;padding:28px;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}}
-  .sheet{{max-width:760px;margin:0 auto 22px;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 12px 28px rgba(24,24,27,.08)}}
+  .sheet{{max-width:760px;margin:0 auto 22px;background:var(--cx-card, #fff);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 12px 28px rgba(24,24,27,.08)}}
   .sheet + .sheet{{page-break-before:always}}
   .accent{{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}}
   .top{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:20px 26px 14px}}
   .brand{{display:flex;align-items:center;gap:12px}}
-  .mark{{width:68px;height:68px;border-radius:14px;flex-shrink:0;object-fit:contain;background:#fff;border:1px solid var(--line);padding:5px}}
+  .mark{{width:68px;height:68px;border-radius:14px;flex-shrink:0;object-fit:contain;background:var(--cx-card, #fff);border:1px solid var(--line);padding:5px}}
   .brand .co{{font-size:16px;font-weight:800;letter-spacing:-.3px;line-height:1.1}}
   .brand .sub{{font-size:11.5px;color:var(--mute);margin-top:2px;font-weight:500}}
-  .ctrl{{font-size:11px;color:var(--soft);text-align:right;line-height:1.7;background:var(--pale);border:1px solid #ede9fe;border-radius:10px;padding:9px 14px}}
+  .ctrl{{font-size:11px;color:var(--soft);text-align:right;line-height:1.7;background:var(--pale);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:10px;padding:9px 14px}}
   .ctrl b{{color:var(--violet-d);font-weight:700}}
   .title{{text-align:center;padding:6px 26px 16px}}
   .title h1{{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px;color:var(--ink);text-transform:uppercase}}
@@ -6497,18 +6497,18 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
   .firma+.firma{{border-left:1px solid var(--line)}}
   .firma .l{{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}}
   .firma .who{{font-size:15px;font-weight:700;color:var(--ink);margin-top:12px}}
-  .firma .sig-ok{{display:inline-block;margin-top:6px;font-size:10.5px;font-weight:700;color:#15803d;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:2px 9px}}
+  .firma .sig-ok{{display:inline-block;margin-top:6px;font-size:10.5px;font-weight:700;color:var(--cx-success-text, #15803d);background:var(--cx-success-pale, #f0fdf4);border:1px solid #bbf7d0;border-radius:6px;padding:2px 9px}}
   .firma .sig-line{{height:1px;background:var(--ink);margin:30px 0 6px}}
   .firma .f{{font-size:11.5px;color:var(--mute);margin-top:4px;font-variant-numeric:tabular-nums}}
   .printbar{{text-align:center;margin-top:18px}}
   .printbtn{{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}}
   .ph{{position:sticky;top:0;z-index:30;background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}}
   .ph .pt{{font-weight:800;font-size:15px;line-height:1.2}} .ph .ps{{font-size:11px;opacity:.85}}
-  .ph .printbtn{{background:#fff;color:#4c1d95;box-shadow:none}}
+  .ph .printbtn{{background:var(--cx-card, #fff);color:var(--cx-primary-text, #4c1d95);box-shadow:none}}
   @media(max-width:560px){{ .top{{flex-direction:column;gap:10px}} .ctrl{{text-align:left}} .firmas{{flex-direction:column}} .firma+.firma{{border-left:0;border-top:1px solid var(--line)}} }}
   @media print{{
-    body{{padding:0;background:#fff;font-size:7pt}}
-    .sheet{{box-shadow:none;border:1px solid #ddd;border-radius:0;margin:0 auto;max-width:{lw-3}mm;width:{lw-3}mm;page-break-inside:avoid}}
+    body{{padding:0;background:var(--cx-card, #fff);font-size:7pt}}
+    .sheet{{box-shadow:none;border:1px solid var(--cx-border, #ddd);border-radius:0;margin:0 auto;max-width:{lw-3}mm;width:{lw-3}mm;page-break-inside:avoid}}
     .sheet + .sheet{{page-break-before:always}}
     .printbar{{display:none}} .ph{{display:none}}
     /* Compactar para caber TODO en 1 página 100×100mm (Sebastián 20-jul) sin recortar */
@@ -6561,7 +6561,7 @@ def planta_rotulo_limpieza_pdf(area_id):
         return Response('<h1>Área no encontrada</h1>', mimetype='text/html', status=404)
     sheets = _rotulos_de_area(c, area_id, base['area_codigo'])
     body = ('\n'.join(sheets) if sheets
-            else '<div style="text-align:center;color:#888;padding:40px">Sin equipos en esta sala.</div>')
+            else '<div style="text-align:center;color:var(--cx-text-mute, #888);padding:40px">Sin equipos en esta sala.</div>')
     _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)
     return Response(_rotulo_f02_doc(body, f"Rótulos de Limpieza F02 · {base['area_nombre']}",
                                     lw=_lw, lh=_lh, base_path='/planta/rotulo-limpieza/%d/pdf' % area_id),
@@ -6639,24 +6639,24 @@ def planta_rotulo_limpieza_registro_pdf(reg_id):
     css = ("<style>@page{size:letter;margin:15mm}*{box-sizing:border-box}"
            "body{font-family:'Inter','Segoe UI',Arial,sans-serif;color:#1e1b2e;font-size:12px;margin:0;padding:16px;background:#f4f4f7;"
            "-webkit-print-color-adjust:exact;print-color-adjust:exact}"
-           ".sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e4e4e7;border-radius:14px;overflow:hidden;box-shadow:0 12px 28px rgba(24,24,27,.08)}"
+           ".sheet{max-width:760px;margin:0 auto;background:var(--cx-card, #fff);border:1px solid #e4e4e7;border-radius:14px;overflow:hidden;box-shadow:0 12px 28px rgba(24,24,27,.08)}"
            ".accent{height:5px;background:linear-gradient(90deg,#a78bfa,#6d28d9)}"
            ".hd{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:18px 24px 8px}"
-           ".co{font-size:16px;font-weight:800;letter-spacing:-.3px}.sub{font-size:11px;color:#78716c;margin-top:2px}"
-           ".cod{text-align:right;font-size:11px;color:#6d28d9;font-weight:700}.cod small{display:block;color:#a1a1b0;font-weight:500;margin-top:2px}"
+           ".co{font-size:16px;font-weight:800;letter-spacing:-.3px}.sub{font-size:11px;color:var(--cx-text-mute, #78716c);margin-top:2px}"
+           ".cod{text-align:right;font-size:11px;color:var(--cx-primary-text, #6d28d9);font-weight:700}.cod small{display:block;color:#a1a1b0;font-weight:500;margin-top:2px}"
            ".ti{text-align:center;font-size:17px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;padding:4px 24px 12px}"
            ".grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;padding:0 24px}"
            ".f{border-bottom:1px solid #f1f0f7;padding:7px 0;display:flex;gap:8px;align-items:baseline}.grid .f,.sheet>.f{margin:0 24px}"
            ".f .k{color:#8b8b9e;min-width:120px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600}"
            ".f .v{font-weight:600;color:#1e1b2e}"
-           ".eq{display:inline-block;background:#ede9fe;color:#4c1d95;border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:11px;font-weight:700}"
+           ".eq{display:inline-block;background:var(--cx-primary-soft, #ede9fe);color:var(--cx-primary-text, #4c1d95);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:11px;font-weight:700}"
            ".mut{color:#a1a1b0}"
-           ".res{margin:14px 24px;padding:10px 16px;border-radius:11px;font-size:13px;font-weight:800;color:#b45309;background:#fffbeb;border:1.5px solid #fde68a}"
-           ".res.ok{color:#15803d;background:#f0fdf4;border-color:#bbf7d0}"
+           ".res{margin:14px 24px;padding:10px 16px;border-radius:11px;font-size:13px;font-weight:800;color:var(--cx-warn-text, #b45309);background:var(--cx-warn-pale, #fffbeb);border:1.5px solid #fde68a}"
+           ".res.ok{color:var(--cx-success-text, #15803d);background:var(--cx-success-pale, #f0fdf4);border-color:#bbf7d0}"
            ".firmas{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin:26px 24px 22px}"
            ".firma{border-top:1.5px solid #1e1b2e;padding-top:6px;font-size:10px;color:#78788a}.firma b{display:block;color:#1e1b2e;font-size:12.5px}"
            ".firma small{color:#a1a1b0}"
-           "@media print{body{padding:0;background:#fff}.sheet{border:none;box-shadow:none}}</style>")
+           "@media print{body{padding:0;background:var(--cx-card, #fff)}.sheet{border:none;box-shadow:none}}</style>")
     return Response("<!doctype html><meta charset='utf-8'><title>Rótulo de limpieza F02 · " + _e(d['lote_elab'] or d['area_cod']) + "</title>" + css + body,
                     mimetype='text/html')
 
@@ -6766,9 +6766,9 @@ def planta_trail_explosion_page():
     from .inventario import gate_ver_formulas as _gvf
     if _gvf():
         from flask import Response as _R
-        return _R('<h2 style="font-family:Inter,system-ui,sans-serif;padding:40px;color:#4c1d95">'
+        return _R('<h2 style="font-family:Inter,system-ui,sans-serif;padding:40px;color:var(--cx-primary-text, #4c1d95)">'
                   'La receta es un dato regulado INVIMA<br>'
-                  '<span style="font-size:14px;font-weight:400;color:#78716c">La ven Dirección '
+                  '<span style="font-size:14px;font-weight:400;color:var(--cx-text-mute, #78716c)">La ven Dirección '
                   'Técnica, Control de Calidad, Aseguramiento y Dirección.</span></h2>',
                   status=403, mimetype='text/html')
     from flask import Response
@@ -6790,8 +6790,8 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
 #msg{font-size:12.5px;font-weight:700}
 .sum{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;border:1px solid var(--cx-hairline);color:var(--cx-text-soft)}
-.pill.v{color:var(--cx-primary);background:var(--cx-primary-soft);border-color:rgba(109,40,217,.25)}
-.pill.d{color:#b45309;background:rgba(180,83,9,.10);border-color:rgba(180,83,9,.3)}
+.pill.v{color:var(--cx-primary-text);background:var(--cx-primary-soft);border-color:rgba(109,40,217,.25)}
+.pill.d{color:var(--cx-warn-text, #b45309);background:rgba(180,83,9,.10);border-color:rgba(180,83,9,.3)}
 .tblwrap{overflow-x:auto}
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;margin-top:6px}
 th,td{padding:9px 11px;text-align:left;border-bottom:1px solid var(--cx-hairline);white-space:nowrap}
@@ -6799,15 +6799,15 @@ th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--cx-t
 td.num{text-align:right;font-variant-numeric:tabular-nums}
 tr:hover td{background:var(--cx-bg-alt)}
 .cod{font-family:ui-monospace,monospace;font-size:11.5px}
-.def{color:#b45309;font-weight:800}.ok{color:#15803d;font-weight:700}
+.def{color:var(--cx-warn-text, #b45309);font-weight:800}.ok{color:var(--cx-success-text, #15803d);font-weight:700}
 .tag{display:inline-block;font-size:9.5px;font-weight:800;border-radius:6px;padding:1px 6px;margin-left:5px}
-.tag.p{background:rgba(2,132,199,.14);color:#0284c7}.tag.f{background:rgba(185,28,28,.14);color:#b91c1c}
+.tag.p{background:rgba(2,132,199,.14);color:#0284c7}.tag.f{background:rgba(185,28,28,.14);color:var(--cx-danger-text, #b91c1c)}
 .tag.inf{background:var(--cx-hairline);color:var(--cx-text-mute)}
 td.num.inf{color:var(--cx-text-faint)}
 .empty{color:var(--cx-text-mute);font-size:14px;padding:30px 0;text-align:center}
 </style></head><body>
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary)"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-3 3 3 5-6"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text)"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-3 3 3 5-6"/></svg></span>
   <div><div class="cx-mod-header__title">Trail de explosión de fórmula</div>
   <div class="cx-mod-header__sub"><strong>Abastecimiento</strong> &middot; desglose auditable de la demanda de MP</div></div>
   <div class="cx-mod-header__nav"><a href="/inventarios" class="cx-btn cx-btn-ghost cx-btn-sm">&larr; Volver</a>
@@ -6876,7 +6876,7 @@ def planta_rotulos_limpieza_todas():
         vistos.add(nm)
         sheets.extend(_rotulos_de_area(c, a[0], a[2]))
     body = ('\n'.join(sheets) if sheets
-            else '<div style="text-align:center;color:#888;padding:40px">No hay salas configuradas.</div>')
+            else '<div style="text-align:center;color:var(--cx-text-mute, #888);padding:40px">No hay salas configuradas.</div>')
     _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)
     return Response(_rotulo_f02_doc(body, 'Rótulos de Limpieza F02 · todas las salas',
                                     lw=_lw, lh=_lh, base_path='/planta/rotulos-limpieza'),
@@ -20810,28 +20810,28 @@ def _notificar_tarea_operativa(tarea_id):
             # Armar email HTML claro y accionable
             urgencia_color = '#dc2626' if fecha_obj else '#1e40af'
             html = f"""
-            <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
-              <div style="background:#0f172a;color:#fff;padding:18px 22px">
-                <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px">Nueva tarea operativa · EOS Inventarios</div>
+            <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:10px;overflow:hidden">
+              <div style="background:var(--cx-text, #0f172a);color:#fff;padding:18px 22px">
+                <div style="font-size:11px;color:var(--cx-text-faint, #94a3b8);text-transform:uppercase;letter-spacing:.6px">Nueva tarea operativa · EOS Inventarios</div>
                 <h2 style="margin:6px 0 0;font-size:18px">{_html_escape(titulo)}</h2>
               </div>
-              <div style="padding:18px 22px;color:#1e293b;font-size:14px;line-height:1.55">
+              <div style="padding:18px 22px;color:var(--cx-text, #1e293b);font-size:14px;line-height:1.55">
                 <p style="margin:0 0 12px">{_html_escape(descripcion)}</p>
                 <table style="border-collapse:collapse;font-size:13px;margin-top:14px">
-                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Cantidad</td><td style="font-weight:700">{int(cantidad or 0):,} und</td></tr>
-                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Producto</td><td>{_html_escape(producto or '—')}</td></tr>
-                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Material</td><td style="font-family:monospace">{_html_escape(mee_codigo or '—')}</td></tr>
-                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Fecha objetivo</td><td style="color:{urgencia_color};font-weight:700">{_html_escape(fecha_obj or 'sin fecha')}</td></tr>
-                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Tipo</td><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">{_html_escape(tipo or '')}</code></td></tr>
-                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Asignada a</td><td>{_html_escape(asignado_a or '')}</td></tr>
-                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Creada por</td><td>{_html_escape(creado_por or '')}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:var(--cx-text-mute, #64748b)">Cantidad</td><td style="font-weight:700">{int(cantidad or 0):,} und</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:var(--cx-text-mute, #64748b)">Producto</td><td>{_html_escape(producto or '—')}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:var(--cx-text-mute, #64748b)">Material</td><td style="font-family:monospace">{_html_escape(mee_codigo or '—')}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:var(--cx-text-mute, #64748b)">Fecha objetivo</td><td style="color:{urgencia_color};font-weight:700">{_html_escape(fecha_obj or 'sin fecha')}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:var(--cx-text-mute, #64748b)">Tipo</td><td><code style="background:var(--cx-border-soft, #f1f5f9);padding:2px 6px;border-radius:4px;font-size:11px">{_html_escape(tipo or '')}</code></td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:var(--cx-text-mute, #64748b)">Asignada a</td><td>{_html_escape(asignado_a or '')}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:var(--cx-text-mute, #64748b)">Creada por</td><td>{_html_escape(creado_por or '')}</td></tr>
                 </table>
-                <div style="margin-top:18px;padding:12px 14px;background:#f0fdf4;border-left:3px solid #16a34a;border-radius:6px;color:#166534;font-size:13px">
+                <div style="margin-top:18px;padding:12px 14px;background:var(--cx-success-pale, #f0fdf4);border-left:3px solid var(--cx-success, #16a34a);border-radius:6px;color:var(--cx-success-text, #166534);font-size:13px">
                   Marca <b>Completar</b> en el modulo cuando termines:<br>
-                  <a href="{APP_BASE_URL}/inventarios" style="color:#0f766e;font-weight:600">Planta → Programación → Tareas operativas</a>
+                  <a href="{APP_BASE_URL}/inventarios" style="color:var(--cx-info-text, #0f766e);font-weight:600">Planta → Programación → Tareas operativas</a>
                 </div>
               </div>
-              <div style="background:#f8fafc;padding:12px 22px;font-size:11px;color:#64748b;border-top:1px solid #e2e8f0">
+              <div style="background:var(--cx-bg-alt, #f8fafc);padding:12px 22px;font-size:11px;color:var(--cx-text-mute, #64748b);border-top:1px solid var(--cx-border, #e2e8f0)">
                 Esta notificacion se envio automaticamente. No respondas a este correo.
               </div>
             </div>
@@ -22781,23 +22781,23 @@ def _rotulo_pagina(secciones, ahora, titulo):
         '<!DOCTYPE html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         '<title>' + _rot_esc(titulo) + '</title><style>'
-        'body{font-family:system-ui,Arial,sans-serif;margin:0;padding:16px;background:#f8fafc;color:#0f172a}'
+        'body{font-family:system-ui,Arial,sans-serif;margin:0;padding:16px;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #0f172a)}'
         '.no-print{margin-bottom:14px}'
-        'button{padding:9px 18px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer}'
-        '.head{border:3px solid #16a34a;border-radius:12px;padding:14px 20px;margin:0 0 14px;background:#fff;page-break-inside:avoid}'
-        '.head h1{margin:0;font-size:22px}.head .cod{color:#64748b;font-size:13px}'
+        'button{padding:9px 18px;background:var(--cx-success, #16a34a);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer}'
+        '.head{border:3px solid var(--cx-success, #16a34a);border-radius:12px;padding:14px 20px;margin:0 0 14px;background:var(--cx-card, #fff);page-break-inside:avoid}'
+        '.head h1{margin:0;font-size:22px}.head .cod{color:var(--cx-text-mute, #64748b);font-size:13px}'
         '.bigstate{display:inline-block;margin-top:10px;padding:7px 24px;border-radius:10px;color:#fff;font-size:28px;font-weight:900;letter-spacing:2px}'
-        '.prod{margin-top:10px;font-size:13px;color:#334155}'
+        '.prod{margin-top:10px;font-size:13px;color:var(--cx-text-soft, #334155)}'
         '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:26px}'
-        '.tag{border:2px solid #ccc;border-radius:10px;padding:10px;text-align:center;background:#fff;page-break-inside:avoid}'
+        '.tag{border:2px solid var(--cx-border, #ccc);border-radius:10px;padding:10px;text-align:center;background:var(--cx-card, #fff);page-break-inside:avoid}'
         '.tag .tn{font-weight:800;font-size:14px;line-height:1.2;min-height:34px;display:flex;align-items:center;justify-content:center}'
-        '.tag .tc{color:#64748b;font-size:10px;text-transform:uppercase;margin:2px 0 8px}'
+        '.tag .tc{color:var(--cx-text-mute, #64748b);font-size:10px;text-transform:uppercase;margin:2px 0 8px}'
         '.tag .ts{color:#fff;font-size:18px;font-weight:900;padding:6px;border-radius:7px;letter-spacing:1px}'
-        '.tag .tf{font-size:9px;color:#94a3b8;margin-top:8px;line-height:1.5}'
-        '@media print{.no-print{display:none}body{background:#fff;padding:6px}}'
+        '.tag .tf{font-size:9px;color:var(--cx-text-faint, #94a3b8);margin-top:8px;line-height:1.5}'
+        '@media print{.no-print{display:none}body{background:var(--cx-card, #fff);padding:6px}}'
         '</style></head><body>'
         '<div class="no-print"><button onclick="window.print()">🖨️ Imprimir rótulos de estado</button>'
-        ' <span style="color:#64748b;font-size:13px;margin-left:8px">Auto-generado desde el estado en vivo · ' + ahora + '</span></div>'
+        ' <span style="color:var(--cx-text-mute, #64748b);font-size:13px;margin-left:8px">Auto-generado desde el estado en vivo · ' + ahora + '</span></div>'
         + secciones + '</body></html>')
 
 
@@ -22812,7 +22812,7 @@ def rotulo_estado_area(area_id):
     if not a:
         return 'Área no existe', 404
     ahora = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M')
-    sec = _rotulo_seccion(c, a, ahora) or '<div style="color:#888;padding:20px">Esta área no tiene equipos registrados.</div>'
+    sec = _rotulo_seccion(c, a, ahora) or '<div style="color:var(--cx-text-mute, #888);padding:20px">Esta área no tiene equipos registrados.</div>'
     return _rotulo_pagina(sec, ahora, 'Rótulo de estado · ' + str(a[2] or ''))
 
 
@@ -22837,7 +22837,7 @@ def rotulos_estado_todas():
             secs += s
             vistos.add(nm)
     if not secs:
-        secs = '<div style="color:#888;padding:20px">No hay equipos registrados por área.</div>'
+        secs = '<div style="color:var(--cx-text-mute, #888);padding:20px">No hay equipos registrados por área.</div>'
     return _rotulo_pagina(secs, ahora, 'Rótulos de estado · todas las áreas')
 
 
@@ -22992,27 +22992,27 @@ _PLANO_FAB_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plano de Fabricación</title>
 <style>
- body{font-family:system-ui,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ body{font-family:system-ui,Arial;margin:0;background:var(--cx-text, #0f172a);color:var(--cx-border, #e2e8f0)}
  .wrap{max-width:1100px;margin:0 auto;padding:20px}
- h1{font-size:21px;margin:6px 0}.muted{color:#94a3b8;font-size:13px}
+ h1{font-size:21px;margin:6px 0}.muted{color:var(--cx-text-faint, #94a3b8);font-size:13px}
  a{color:#a5b4fc;text-decoration:none}
  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:14px}
- .card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:14px;border-top:5px solid #475569}
- .card.libre{border-top-color:#22c55e}.card.ocupada{border-top-color:#f59e0b}
- .card.sucia{border-top-color:#ef4444}.card.limpiando{border-top-color:#38bdf8}
- .nom{font-size:16px;font-weight:800}.cap{font-size:11px;color:#94a3b8}
+ .card{background:var(--cx-text, #1e293b);border:1px solid var(--cx-text-soft, #334155);border-radius:14px;padding:14px;border-top:5px solid var(--cx-text-soft, #475569)}
+ .card.libre{border-top-color:#22c55e}.card.ocupada{border-top-color:var(--cx-warn, #f59e0b)}
+ .card.sucia{border-top-color:var(--cx-danger, #ef4444)}.card.limpiando{border-top-color:#38bdf8}
+ .nom{font-size:16px;font-weight:800}.cap{font-size:11px;color:var(--cx-text-faint, #94a3b8)}
  .badge{display:inline-block;border-radius:6px;padding:2px 9px;font-size:11px;font-weight:700;margin:6px 0}
- .b-libre{background:#14532d;color:#bbf7d0}.b-ocupada{background:#78350f;color:#fde68a}
- .b-sucia{background:#7f1d1d;color:#fecaca}.b-limpiando{background:#0c4a6e;color:#bae6fd}
+ .b-libre{background:#14532d;color:#bbf7d0}.b-ocupada{background:var(--cx-accent-dark, #78350f);color:#fde68a}
+ .b-sucia{background:var(--cx-danger, #7f1d1d);color:#fecaca}.b-limpiando{background:var(--cx-info, #0c4a6e);color:#bae6fd}
  .prod{font-size:13px;margin:6px 0;line-height:1.5}.prod b{color:#fde68a}
  button{padding:8px 12px;border:0;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;width:100%}
- .b-iniciar{background:#16a34a}.b-finalizar{background:#d97706}
+ .b-iniciar{background:var(--cx-success, #16a34a)}.b-finalizar{background:var(--cx-accent-dark, #d97706)}
  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
- .modal.show{display:flex}.box{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:20px;width:340px;max-width:92vw}
- label{font-size:12px;color:#cbd5e1;display:block;margin:9px 0 3px}
- select,input{width:100%;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:7px;box-sizing:border-box}
+ .modal.show{display:flex}.box{background:var(--cx-text, #1e293b);border:1px solid var(--cx-text-soft, #334155);border-radius:14px;padding:20px;width:340px;max-width:92vw}
+ label{font-size:12px;color:var(--cx-border, #cbd5e1);display:block;margin:9px 0 3px}
+ select,input{width:100%;padding:8px;background:#0b1220;color:var(--cx-border, #e2e8f0);border:1px solid var(--cx-text-soft, #334155);border-radius:7px;box-sizing:border-box}
  .row2{display:flex;gap:8px;margin-top:14px}.row2 button{flex:1}
- .b-cancel{background:#475569}
+ .b-cancel{background:var(--cx-text-soft, #475569)}
  #msg{margin:10px 0;font-size:13px}.err{color:#f87171}.ok{color:#34d399}
 </style></head><body><div class="wrap">
 <a href="/inventarios" id="volver">&larr; Volver</a>

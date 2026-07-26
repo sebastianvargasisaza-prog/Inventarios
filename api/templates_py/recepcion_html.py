@@ -17,7 +17,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px 24px;margin-bottom:22px;box-shadow:0 4px 24px rgba(76,29,149,.06);}
 .card h2{font-size:16.5px;font-weight:800;letter-spacing:-.01em;margin-bottom:16px;color:var(--ink);display:flex;align-items:center;gap:9px;padding-left:12px;border-left:4px solid var(--vio);line-height:1.15;}
 .oc-queue{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:13px;margin-bottom:8px;}
-.oc-card{position:relative;background:var(--card);border:1px solid var(--line);border-left:5px solid #cbd5e1;border-radius:14px;padding:13px 15px;cursor:pointer;transition:transform .14s ease,box-shadow .16s ease;box-shadow:0 2px 10px rgba(76,29,149,.05);}
+.oc-card{position:relative;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--cx-border);border-radius:14px;padding:13px 15px;cursor:pointer;transition:transform .14s ease,box-shadow .16s ease;box-shadow:0 2px 10px rgba(76,29,149,.05);}
 .oc-card:hover{box-shadow:0 13px 30px rgba(124,58,237,.16);transform:translateY(-3px);}
 .oc-card .oc-num{font-weight:800;font-size:13.5px;color:var(--viod);letter-spacing:-.01em;}
 .oc-card .oc-prov{font-size:12px;color:var(--mut);margin-top:3px;font-weight:600;}
@@ -34,17 +34,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .btn-success:hover{filter:brightness(1.06);}
 .btn-print{background:linear-gradient(135deg,#3b82f6,#1e40af);color:#fff;}
 .btn-print:hover{filter:brightness(1.06);}
-.btn-env{padding:6px 11px;border:1px solid #ddd6fe;border-radius:9px;background:#f5f3ff;color:#5b21b6;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s;}
-.btn-env:hover{background:#ede9fe;border-color:#c4b5fd;}
-.btn-env.multi{background:linear-gradient(135deg,#ede9fe,#ddd6fe);border-color:#a78bfa;color:#4c1d95;}
-.btn-env:disabled{background:#f8fafc;color:#cbd5e1;border-color:#eef2f7;cursor:default;}
+.btn-env{padding:6px 11px;border:1px solid #ddd6fe;border-radius:9px;background:var(--cx-primary-pale);color:var(--cx-primary-text);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s;}
+.btn-env:hover{background:var(--cx-primary-soft);border-color:var(--cx-primary-light);}
+.btn-env.multi{background:linear-gradient(135deg,#ede9fe,#ddd6fe);border-color:var(--cx-primary-light);color:var(--cx-primary-text);}
+.btn-env:disabled{background:var(--cx-bg-alt);color:var(--cx-border);border-color:#eef2f7;cursor:default;}
 .oc-info{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}
 .oc-info .lbl{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
 .oc-info .val{font-size:14px;font-weight:700;color:var(--ink);margin-top:2px;}
 .badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:800;}
-.badge-autorizada{background:#fef3c7;color:#92400e;}
-.badge-pagada{background:#d1fae5;color:#065f46;}
-.badge-recibida{background:#dbeafe;color:#1e40af;}
+.badge-autorizada{background:var(--cx-warn-pale);color:var(--cx-warn-text);}
+.badge-pagada{background:var(--cx-success-pale);color:var(--cx-success-text);}
+.badge-recibida{background:var(--cx-info-pale);color:var(--cx-info-text);}
 .badge-borrador{background:#f3f4f6;color:#374151;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 th{background:var(--soft);padding:10px 9px;text-align:left;font-weight:800;color:var(--vio);text-transform:uppercase;font-size:10.5px;letter-spacing:.05em;border-bottom:2px solid var(--line);white-space:nowrap;}
@@ -54,9 +54,9 @@ td input[type=number]{width:76px;padding:6px 8px;border:1px solid var(--line);bo
 td input[type=number]:focus{outline:none;border-color:var(--vio2);box-shadow:0 0 0 3px rgba(124,58,237,.1);}
 td select{padding:6px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:var(--card);color:var(--ink);}
 td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:var(--card);color:var(--ink);}
-.row-ok td{background:#f0fdf4;}
-.row-disc td{background:#fff7ed;}
-.row-falta td{background:#fef2f2;}
+.row-ok td{background:var(--cx-success-pale);}
+.row-disc td{background:var(--cx-warn-pale);}
+.row-falta td{background:var(--cx-danger-pale);}
 .obs-row{margin-top:14px;}
 .obs-row label{font-size:13px;font-weight:700;display:block;margin-bottom:6px;color:var(--ink);}
 .obs-row textarea{width:100%;padding:10px 13px;border:1px solid var(--line);border-radius:10px;font-size:13px;resize:vertical;min-height:74px;background:var(--card);color:var(--ink);}
@@ -66,8 +66,8 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 .receptor-row input{flex:1;max-width:270px;padding:9px 13px;border:1px solid var(--line);border-radius:10px;font-size:13px;background:var(--card);color:var(--ink);}
 .submit-row{margin-top:18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .msg{font-size:13px;padding:9px 15px;border-radius:9px;}
-.msg-ok{background:#d1fae5;color:#065f46;}
-.msg-err{background:#fee2e2;color:#991b1b;}
+.msg-ok{background:var(--cx-success-pale);color:var(--cx-success-text);}
+.msg-err{background:var(--cx-danger-pale);color:var(--cx-danger-text);}
 .tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:2px solid var(--line);flex-wrap:wrap;}
 .tab-btn{padding:10px 18px;border:none;background:none;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;border-radius:8px 8px 0 0;transition:color .12s,background .12s;}
 .tab-btn.active{color:var(--viod);border-bottom-color:var(--vio);font-weight:800;background:var(--soft);}
@@ -77,19 +77,19 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 .empty{text-align:center;padding:34px;color:var(--mut);font-size:13px;}
 .cnt-badge{display:inline-block;background:var(--vio);color:#fff;border-radius:20px;font-size:11px;font-weight:800;padding:1px 8px;margin-left:5px;}
 .tab-btn.active .cnt-badge{background:var(--viod);}
-.disc{color:#dc2626;font-weight:700;}
+.disc{color:var(--cx-danger-text);font-weight:700;}
 .valor{font-family:'Courier New',monospace;font-size:12px;font-weight:700;}
 .progress-bar{background:var(--line);border-radius:4px;height:6px;margin-top:4px;}
-.progress-fill{background:#16a34a;height:6px;border-radius:4px;transition:width .3s;}
+.progress-fill{background:var(--cx-success);height:6px;border-radius:4px;transition:width .3s;}
 .item-pct{font-size:11px;color:var(--mut);margin-top:2px;}
-.icon-ok{color:#16a34a;font-size:16px;}
-.icon-disc{color:#d97706;font-size:16px;}
-.icon-falta{color:#dc2626;font-size:16px;}
+.icon-ok{color:var(--cx-success-text);font-size:16px;}
+.icon-disc{color:var(--cx-warn-text);font-size:16px;}
+.icon-falta{color:var(--cx-danger-text);font-size:16px;}
 </style>
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M14 18V6a2 2 0 00-2-2H4a2 2 0 00-2 2v11a1 1 0 001 1h2"/><path d="M15 18h-3M22 18h-2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M14 9h3l3 4v5h-2"/></svg>
@@ -107,22 +107,22 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 <div class="container">
 
-  <div class="card" style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-left:4px solid #6d28d9;">
-    <div style="font-size:13px;color:#44403c;line-height:1.6;">
+  <div class="card" style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-left:4px solid var(--cx-primary);">
+    <div style="font-size:13px;color:var(--cx-text-soft);line-height:1.6;">
       <b>&#128203; Esto es la recepci&oacute;n administrativa</b> de <b>materias primas y envases</b>: comprob&aacute;s que lleg&oacute; lo de la OC/factura y las cantidades. Lo t&eacute;cnico (an&aacute;lisis, liberaci&oacute;n) lo hace <b>Calidad</b> despu&eacute;s (F01/F02) &middot; el lote entra a <b>cuarentena</b> hasta que Calidad lo apruebe.<br>
-      <span style="color:#78716c;font-size:12px;">Los <b>consumibles y gastos</b> (papeler&iacute;a, EPP, aseo, servicios) NO se reciben ac&aacute; &rarr; se manejan en <b>Cat&aacute;logo / Consumos</b>. Los <b>servicios</b> solo se pagan.</span>
+      <span style="color:var(--cx-text-mute);font-size:12px;">Los <b>consumibles y gastos</b> (papeler&iacute;a, EPP, aseo, servicios) NO se reciben ac&aacute; &rarr; se manejan en <b>Cat&aacute;logo / Consumos</b>. Los <b>servicios</b> solo se pagan.</span>
     </div>
   </div>
 
   <div class="card">
     <h2>&#9203; OCs Pendientes de Recepcion</h2>
-    <input type="text" oninput="filterByText('#queue-list .oc-card', this.value)" placeholder="&#128269; Buscar OC o proveedor…" style="width:100%;max-width:360px;padding:9px 13px;border:1px solid #e7e5e4;border-radius:10px;font-size:13px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
-    <div id="queue-list"><p style="color:#a8a29e;font-size:13px;">Cargando...</p></div>
+    <input type="text" oninput="filterByText('#queue-list .oc-card', this.value)" placeholder="&#128269; Buscar OC o proveedor…" style="width:100%;max-width:360px;padding:9px 13px;border:1px solid var(--cx-border);border-radius:10px;font-size:13px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
+    <div id="queue-list"><p style="color:var(--cx-text-faint);font-size:13px;">Cargando...</p></div>
   </div>
 
   <div class="card" id="serig-card" style="display:none">
     <h2>&#127912; Envases que volvieron de serigraf&iacute;a / tampograf&iacute;a</h2>
-    <p style="color:#78716c;font-size:12px;margin:2px 0 12px">Marc&aacute; que llegaron y con qu&eacute; cantidad (administrativo). Al recibirlos, quedan en cuarentena y le avisa a <b>Calidad</b> y <b>Direcci&oacute;n T&eacute;cnica</b> para que revisen el <b>arte</b>.</p>
+    <p style="color:var(--cx-text-mute);font-size:12px;margin:2px 0 12px">Marc&aacute; que llegaron y con qu&eacute; cantidad (administrativo). Al recibirlos, quedan en cuarentena y le avisa a <b>Calidad</b> y <b>Direcci&oacute;n T&eacute;cnica</b> para que revisen el <b>arte</b>.</p>
     <div id="serig-list"></div>
   </div>
 
@@ -221,8 +221,8 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
         <div id="rec-sum" style="font-size:12px;margin-top:10px;"></div>
       </div>
       <div style="padding:14px 22px;border-top:1px solid var(--line,#eee);display:flex;gap:8px;justify-content:flex-end;">
-        <button onclick="cerrarRecModal()" class="btn" style="background:#f1f5f9;color:#475569;">Cancelar</button>
-        <button onclick="recGuardar(false)" class="btn" style="background:#ede9fe;color:#5b21b6;">Guardar</button>
+        <button onclick="cerrarRecModal()" class="btn" style="background:var(--cx-border-soft);color:var(--cx-text-soft);">Cancelar</button>
+        <button onclick="recGuardar(false)" class="btn" style="background:var(--cx-primary-soft);color:var(--cx-primary-text);">Guardar</button>
         <button onclick="recGuardar(true)" class="btn btn-primary">&#128424;&#65039; Guardar e imprimir rótulos</button>
       </div>
     </div>
@@ -273,7 +273,7 @@ function recSum(){
   if(!amts.length){ el.innerHTML=''; return; }
   var sum=amts.reduce(function(a,b){return a+b;},0);
   var diff=Math.round((sum-_recCtx.total)*100)/100;
-  el.innerHTML='Suma: <b>'+sum.toLocaleString()+' g</b> &middot; total recibido '+_recCtx.total.toLocaleString()+' g'+(Math.abs(diff)>0.01?' &middot; <span style="color:#c2410c;font-weight:700;">difiere '+diff+' g</span>':' &middot; <span style="color:#16a34a;font-weight:700;">cuadra &#10003;</span>');
+  el.innerHTML='Suma: <b>'+sum.toLocaleString()+' g</b> &middot; total recibido '+_recCtx.total.toLocaleString()+' g'+(Math.abs(diff)>0.01?' &middot; <span style="color:#c2410c;font-weight:700;">difiere '+diff+' g</span>':' &middot; <span style="color:var(--cx-success-text);font-weight:700;">cuadra &#10003;</span>');
 }
 // etiqueta compacta de la celda Envases segun el desglose guardado
 function envCellLabel(amts){
@@ -318,7 +318,7 @@ function renderQueue(all) {
     });
     var el = document.getElementById('queue-list');
     if (pendientes.length === 0) {
-      el.innerHTML = '<p style="color:#a8a29e;font-size:13px;">Sin OCs pendientes de recepcion.</p>';
+      el.innerHTML = '<p style="color:var(--cx-text-faint);font-size:13px;">Sin OCs pendientes de recepcion.</p>';
       return;
     }
     var today = new Date();
@@ -329,19 +329,19 @@ function renderQueue(all) {
       // Badge segun estado real
       var badge = '';
       if (oc.en_transito) {
-        badge = '<span style="display:inline-block;background:#1e40af;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.4px;">&#x1F69A; EN TR&Aacute;NSITO</span>';
+        badge = '<span style="display:inline-block;background:var(--cx-info);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.4px;">&#x1F69A; EN TR&Aacute;NSITO</span>';
       } else if (oc.estado === 'Parcial') {
-        badge = '<span style="display:inline-block;background:#f59e0b;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.4px;">PARCIAL</span>';
+        badge = '<span style="display:inline-block;background:var(--cx-warn);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.4px;">PARCIAL</span>';
       } else if (oc.estado === 'Aprobada') {
         badge = '<span style="display:inline-block;background:#9333ea;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.4px;">APROBADA</span>';
       }
       // Trazabilidad SOL → OC
       var solRef = oc.sol_numero
-        ? '<div style="font-size:10px;color:#7c3aed;font-weight:600;margin-top:3px;">&larr; ' + oc.sol_numero + '</div>'
+        ? '<div style="font-size:10px;color:var(--cx-primary-text);font-weight:600;margin-top:3px;">&larr; ' + oc.sol_numero + '</div>'
         : '';
       // ETA si la hay
       var eta = oc.fecha_entrega_est
-        ? '<div style="font-size:10px;color:#0891b2;margin-top:2px;">&#x23F0; ETA ' + oc.fecha_entrega_est + '</div>'
+        ? '<div style="font-size:10px;color:var(--cx-info-text);margin-top:2px;">&#x23F0; ETA ' + oc.fecha_entrega_est + '</div>'
         : '';
       // franja de estado (scan a la vista): azul=en tránsito · ámbar=parcial · violeta=aprobada
       var stripe = oc.en_transito ? '#3b82f6' : (oc.estado === 'Parcial' ? '#f59e0b' : (oc.estado === 'Aprobada' ? '#9333ea' : '#a78bfa'));
@@ -441,18 +441,18 @@ function renderOC(d) {
       tr.id = 'item-row-' + i;
       if (esCargo) {
         tr.innerHTML =
-          '<td style="text-align:center;color:#cbd5e1;">&middot;</td><td></td>' +
-          '<td><strong style="color:#78716c;">' + descMat + '</strong><br><small style="color:#a8a29e;">' + (it.codigo_mp||'') + '</small></td>' +
-          '<td colspan="8" style="color:#78716c;font-style:italic;font-size:12px;">&#128164; Cargo administrativo (flete / domicilio / servicio) &middot; no se recibe f&iacute;sicamente</td>';
+          '<td style="text-align:center;color:var(--cx-border);">&middot;</td><td></td>' +
+          '<td><strong style="color:var(--cx-text-mute);">' + descMat + '</strong><br><small style="color:var(--cx-text-faint);">' + (it.codigo_mp||'') + '</small></td>' +
+          '<td colspan="8" style="color:var(--cx-text-mute);font-style:italic;font-size:12px;">&#128164; Cargo administrativo (flete / domicilio / servicio) &middot; no se recibe f&iacute;sicamente</td>';
         tbody.appendChild(tr);
         return;
       }
       tr.innerHTML =
         '<td style="text-align:center;">' + getItemIcon('OK', pct) + '</td>' +
         '<td style="text-align:center;">' + (yaCompleta
-            ? '<span title="Ya recibida completa" style="color:#16a34a;font-weight:800;font-size:15px;">&#10003;</span>'
+            ? '<span title="Ya recibida completa" style="color:var(--cx-success-text);font-weight:800;font-size:15px;">&#10003;</span>'
             : '<input type="checkbox" id="rx-' + i + '" checked onchange="toggleRecibir(' + i + ')" style="width:18px;height:18px;cursor:pointer;" title="Destildá para dejar esta MP pendiente">') + '</td>' +
-        '<td><strong>' + descMat + '</strong><br><small style="color:#78716c">' + (it.codigo_mp || it.nombre_mp || '') + (recibidoYa > 0 && !yaCompleta ? ' · <span style="color:#b45309;">ya recibido ' + recibidoYa.toLocaleString() + '</span>' : '') + '</small></td>' +
+        '<td><strong>' + descMat + '</strong><br><small style="color:var(--cx-text-mute)">' + (it.codigo_mp || it.nombre_mp || '') + (recibidoYa > 0 && !yaCompleta ? ' · <span style="color:var(--cx-warn-text);">ya recibido ' + recibidoYa.toLocaleString() + '</span>' : '') + '</small></td>' +
         '<td class="valor">' + Number(it.cantidad_g||0).toLocaleString() + ' ' + unidad + '</td>' +
         '<td><input type="number" id="cant-' + i + '" data-codigo="' + it.codigo_mp + '" data-sol="' + it.cantidad_g + '" value="' + prevRec + '"' + (yaCompleta ? ' disabled' : '') + ' min="0" step="0.01" oninput="updateRow(' + i + ')"></td>' +
         '<td id="dif-' + i + '" class="valor" style="font-weight:600;"></td>' +
@@ -460,10 +460,10 @@ function renderOC(d) {
         '<td><input type="text" id="lote-' + i + '" placeholder="Ej: L-2026-001" style="width:110px;"></td>' +
         '<td><input type="text" id="nota-' + i + '" placeholder="Observacion opcional"></td>' +
         '<td style="text-align:center;">' + ((esMee || esCons)
-            ? '<span style="color:#cbd5e1;font-size:12px;" title="No aplica desglose por envase">n/a</span>'
+            ? '<span style="color:var(--cx-border);font-size:12px;" title="No aplica desglose por envase">n/a</span>'
             : '<button type="button" class="btn-env" id="env-btn-' + i + '" onclick="abrirRecModal(' + i + ')" data-envcod="' + (it.codigo_mp||'') + '" title="Definir en cuántos envases llegó y cuánto hay en cada uno (ej: 3 de 1000 + 1 de 500)">1 envase</button>') + '</td>' +
         '<td style="text-align:center;">' + (esCons
-            ? '<span style="color:#cbd5e1;font-size:12px;" title="Los consumibles no llevan rótulo de bodega">n/a</span>'
+            ? '<span style="color:var(--cx-border);font-size:12px;" title="Los consumibles no llevan rótulo de bodega">n/a</span>'
             : '<button class="btn btn-print" style="padding:5px 11px;font-size:11px;white-space:nowrap;" data-rotidx="' + i + '" data-rotcod="' + (it.codigo_mp||'') + '" data-rotmee="' + (esMee ? 1 : 0) + '" title="Imprimir rótulo de este material (usa la cantidad recibida, el lote y el desglose de envases de esta fila)">&#128424;&#65039; Rótulo</button>') + '</td>';
       tbody.appendChild(tr);
       updateRow(i);
@@ -595,28 +595,28 @@ function imprimirActaRecepcion(oc, payload, result) {
   var w = window.open('', '_blank', 'width=760,height=900,toolbar=0,scrollbars=1,resizable=1');
   var hoy = new Date().toLocaleString('es-CO');
   var itemsHtml = (payload.items_recepcion || []).map(function(it) {
-    var cls = it.estado === 'OK' ? 'color:#16a34a' : 'color:#dc2626';
+    var cls = it.estado === 'OK' ? 'color:var(--cx-success-text)' : 'color:var(--cx-danger-text)';
     return '<tr><td>' + it.codigo_mp + '</td><td>' + it.cantidad_recibida.toLocaleString() + '</td><td style="' + cls + ';font-weight:600;">' + it.estado + '</td><td>' + (it.notas||'-') + '</td></tr>';
   }).join('');
   var discBanner = payload.tiene_discrepancias
-    ? '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:12px;margin-bottom:16px;color:#92400e;font-weight:600;">⚠ Esta recepcion contiene discrepancias. Requiere revision.</div>'
-    : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:12px;margin-bottom:16px;color:#166534;font-weight:600;">✓ Recepcion conforme sin discrepancias.</div>';
+    ? '<div style="background:var(--cx-warn-pale);border:1px solid #fed7aa;border-radius:6px;padding:12px;margin-bottom:16px;color:var(--cx-warn-text);font-weight:600;">⚠ Esta recepcion contiene discrepancias. Requiere revision.</div>'
+    : '<div style="background:var(--cx-success-pale);border:1px solid #bbf7d0;border-radius:6px;padding:12px;margin-bottom:16px;color:var(--cx-success-text);font-weight:600;">✓ Recepcion conforme sin discrepancias.</div>';
   w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Acta Recepcion</title>'
-    + '<style>body{font-family:Arial,sans-serif;padding:30px;font-size:13px;color:#1C1917;}'
-    + 'h2{color:#292524;margin-bottom:4px;}h3{color:#57534e;margin:20px 0 10px;}'
+    + '<style>body{font-family:Arial,sans-serif;padding:30px;font-size:13px;color:var(--cx-text);}'
+    + 'h2{color:var(--cx-text);margin-bottom:4px;}h3{color:var(--cx-text-soft);margin:20px 0 10px;}'
     + '.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}'
     + 'table{width:100%;border-collapse:collapse;margin-bottom:16px;}'
-    + 'th{background:#f5f5f4;padding:8px 10px;text-align:left;font-size:11px;color:#57534e;border:1px solid #e7e5e4;}'
-    + 'td{padding:7px 10px;border:1px solid #e7e5e4;}'
-    + '.meta{background:#fafaf9;border-radius:6px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}'
-    + '.meta .lbl{font-size:10px;color:#78716c;text-transform:uppercase;} .meta .val{font-size:13px;font-weight:600;}'
+    + 'th{background:var(--cx-bg-alt);padding:8px 10px;text-align:left;font-size:11px;color:var(--cx-text-soft);border:1px solid var(--cx-border);}'
+    + 'td{padding:7px 10px;border:1px solid var(--cx-border);}'
+    + '.meta{background:var(--cx-bg-alt);border-radius:6px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}'
+    + '.meta .lbl{font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;} .meta .val{font-size:13px;font-weight:600;}'
     + '.firma{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px;}'
-    + '.firma-box{border-top:1px solid #292524;padding-top:8px;font-size:11px;color:#78716c;text-align:center;}'
+    + '.firma-box{border-top:1px solid var(--cx-text);padding-top:8px;font-size:11px;color:var(--cx-text-mute);text-align:center;}'
     + '.noPrint{text-align:center;margin-bottom:20px;} @media print{.noPrint{display:none!important;}}'
     + '</style></head><body>'
-    + '<div class="noPrint"><button onclick="window.print()" style="padding:9px 24px;background:#292524;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Imprimir</button></div>'
-    + '<div class="header"><div><h2>ACTA DE RECEPCION DE MERCANCIA</h2><p style="color:#78716c;font-size:12px;">Espagiria Laboratorio - COC-PRO-002-F07</p></div>'
-    + '<div style="text-align:right;font-size:11px;color:#78716c;"><div>Fecha: ' + hoy + '</div></div></div>'
+    + '<div class="noPrint"><button onclick="window.print()" style="padding:9px 24px;background:var(--cx-text);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Imprimir</button></div>'
+    + '<div class="header"><div><h2>ACTA DE RECEPCION DE MERCANCIA</h2><p style="color:var(--cx-text-mute);font-size:12px;">Espagiria Laboratorio - COC-PRO-002-F07</p></div>'
+    + '<div style="text-align:right;font-size:11px;color:var(--cx-text-mute);"><div>Fecha: ' + hoy + '</div></div></div>'
     + discBanner
     + '<div class="meta">'
     + '<div><div class="lbl">No. OC</div><div class="val">' + (oc ? oc.numero_oc : '-') + '</div></div>'
@@ -627,7 +627,7 @@ function imprimirActaRecepcion(oc, payload, result) {
     + '<h3>Detalle de items recibidos</h3>'
     + '<table><thead><tr><th>Codigo MP</th><th>Cant. Recibida</th><th>Estado</th><th>Notas</th></tr></thead><tbody>' + itemsHtml + '</tbody></table>'
     + '<h3>Observaciones</h3>'
-    + '<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:6px;padding:12px;min-height:60px;">' + (payload.observaciones_recepcion||'Sin observaciones adicionales.') + '</div>'
+    + '<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:12px;min-height:60px;">' + (payload.observaciones_recepcion||'Sin observaciones adicionales.') + '</div>'
     + '<div class="firma">'
     + '<div class="firma-box">Recibido por<br><br><strong>' + payload.receptor_nombre + '</strong></div>'
     + '<div class="firma-box">Control de Calidad<br><br>&nbsp;</div>'
@@ -668,9 +668,9 @@ function buildTable(rows) {
       + '<td>' + fmtDate(row.fecha) + '</td>'
       + '<td>' + fmtDate(row.fecha_autorizacion) + '</td>'
       + '<td>' + fmtDate(row.fecha_pago) + '</td>'
-      + '<td>' + (row.fecha_recepcion ? fmtDate(row.fecha_recepcion) : '<span style="color:#d97706">Pendiente</span>') + '</td>'
-      + '<td style="color:#57534e">' + (row.recibido_por||'-') + '</td>'
-      + '<td style="max-width:200px;color:#57534e">' + (row.observaciones||'-') + '</td>'
+      + '<td>' + (row.fecha_recepcion ? fmtDate(row.fecha_recepcion) : '<span style="color:var(--cx-warn-text)">Pendiente</span>') + '</td>'
+      + '<td style="color:var(--cx-text-soft)">' + (row.recibido_por||'-') + '</td>'
+      + '<td style="max-width:200px;color:var(--cx-text-soft)">' + (row.observaciones||'-') + '</td>'
       + '</tr>';
   });
   h += '</tbody></table></div>';
@@ -726,18 +726,18 @@ async function buscarLote() {
   var lote = document.getElementById('lote-input').value.trim();
   if (!lote) return;
   var el = document.getElementById('lote-result');
-  el.innerHTML = '<p style="color:#a8a29e;font-size:13px;">Buscando...</p>';
+  el.innerHTML = '<p style="color:var(--cx-text-faint);font-size:13px;">Buscando...</p>';
   try {
     var r = await fetch('/api/recepcion/trazabilidad/' + encodeURIComponent(lote));
     var d = await r.json();
     var movs = d.movimientos || [];
-    if (!movs.length) { el.innerHTML = '<p style="color:#dc2626;font-size:13px;">Lote no encontrado.</p>'; return; }
+    if (!movs.length) { el.innerHTML = '<p style="color:var(--cx-danger-text);font-size:13px;">Lote no encontrado.</p>'; return; }
     var oc = d.oc;
     var h = '';
     if (oc) {
-      h += '<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-bottom:12px;">'
+      h += '<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:12px;margin-bottom:12px;">'
         + '<div style="font-weight:700;margin-bottom:6px;">OC de Origen: ' + oc.numero_oc + '</div>'
-        + '<div style="font-size:12px;color:#57534e;">Proveedor: ' + (oc.proveedor||'-') + ' | Fecha: ' + (oc.fecha||'-').slice(0,10) + ' | Estado OC: ' + (oc.estado||'-') + ' | Recibido por: ' + (oc.recibido_por||'-') + '</div>'
+        + '<div style="font-size:12px;color:var(--cx-text-soft);">Proveedor: ' + (oc.proveedor||'-') + ' | Fecha: ' + (oc.fecha||'-').slice(0,10) + ' | Estado OC: ' + (oc.estado||'-') + ' | Recibido por: ' + (oc.recibido_por||'-') + '</div>'
         + '</div>';
     }
     h += '<table><thead><tr><th>Material</th><th>Cant.</th><th>Tipo</th><th>Fecha</th><th>Estado Lote</th><th>Proveedor</th><th>Vence</th></tr></thead><tbody>';
@@ -758,7 +758,7 @@ async function buscarLote() {
     });
     h += '</tbody></table>';
     el.innerHTML = h;
-  } catch(e) { el.innerHTML = '<p style="color:#dc2626;">Error: ' + e.message + '</p>'; }
+  } catch(e) { el.innerHTML = '<p style="color:var(--cx-danger-text);">Error: ' + e.message + '</p>'; }
 }
 
 // PERF (Sebastián 15-jul): loadQueue y loadMonitoreo pedían el MISMO endpoint
@@ -792,8 +792,8 @@ async function loadSerigRetornos(){
       var enviado=Math.round(o.cantidad_enviada||0);
       return '<div style="border:1px solid #ede9f6;border-radius:12px;padding:12px 15px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
         +'<div><div style="font-weight:700;color:#1e1b2e">'+esc(o.serigrafiado||o.serigrafiado_codigo||'')+'</div>'
-        +'<div style="font-size:11.5px;color:#78716c;margin-top:2px">'+esc(o.producto||'?')+' &middot; '+esc(o.metodo||'')+' &middot; '+esc(o.proveedor||'')+' &middot; enviados '+enviado+' uds</div></div>'
-        +'<div style="display:flex;gap:8px;align-items:center"><input type="number" id="sr-cant-'+o.id+'" value="'+enviado+'" min="0" style="width:90px;padding:7px 9px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px;text-align:right"> '
+        +'<div style="font-size:11.5px;color:var(--cx-text-mute);margin-top:2px">'+esc(o.producto||'?')+' &middot; '+esc(o.metodo||'')+' &middot; '+esc(o.proveedor||'')+' &middot; enviados '+enviado+' uds</div></div>'
+        +'<div style="display:flex;gap:8px;align-items:center"><input type="number" id="sr-cant-'+o.id+'" value="'+enviado+'" min="0" style="width:90px;padding:7px 9px;border:1px solid var(--cx-border);border-radius:8px;font-size:13px;text-align:right"> '
         +'<button onclick="recibirSerig('+o.id+')" style="background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:9px;padding:9px 15px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">✓ Recibir</button></div></div>';
     }).join('');
   }catch(e){ card.style.display='none'; }

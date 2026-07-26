@@ -63,6 +63,28 @@
   no lo recupera (`is_alive()` sigue en True).
 - Branch protection en GitHub para que el CI sea bloqueante.
 
+### Diseño · lo que queda tras la migración a tokens del 26-jul
+Contexto: se migraron **9.685 declaraciones de color a tokens `--cx-*`** en 58 archivos y se
+separaron los pares relleno/texto (`--cx-primary` vs `--cx-primary-text`), porque el tema oscuro
+estaba a medio construir. Medido en el navegador, **antes** ninguna vista de Planta respetaba el
+tema oscuro; **ahora** sí, con esto pendiente:
+- **18,2% del texto del dashboard sigue bajo 3:1 en tema oscuro** (163 de 895 elementos medidos).
+  Dos fuentes, ambas identificadas:
+  1. **Capas de variables propias de cada página** (`--gm-ac:#6d28d9`, `--line`, `--mut`, `--txt`…
+     · 124 declaraciones). No las migré a propósito: una variable propia puede usarse como texto
+     Y como fondo, así que mapearla a ciegas es peor que dejarla. Hay que revisar caso por caso
+     cuál es (el nombre ayuda: `--bg`/`--line`/`--mut` son claros, `--c`/`--v`/`--gm-ac` no).
+  2. **Cola larga de colores sin token** (`#1e63a8`, `#a21caf`, `#c0392b`, `#0f766e`…). O se les
+     asigna un token del sistema, o se agrega el token que falte a `cortex.css`.
+- **NO borrar en bloque los 201 `display:none`.** Estaba en mi plan y es un error: M86 ya advierte
+  que las pestañas se ocultan con `display:none` **sin quitar el nodo**, porque `goTab` mapea por
+  ÍNDICE del `.tab` en el DOM y borrar un nodo desalinea el resaltado. Hay que ir uno por uno
+  distinguiendo "pantalla vieja escondida" (se borra) de "pestaña oculta a propósito" (se queda).
+- Las 3 vistas del día (Fabricación · Envasado · Acondicionamiento) siguen pendientes de rediseño
+  (fila de KPIs, chips de estado, avance 3/5, desglose de presentaciones visible en la fila, edad
+  en días con color, operario/área). Va junto con la construcción de fabricación.
+- Vigilado por `tests/test_deuda_diseno_no_crece.py` (en el gate): si el número sube, falla.
+
 ### Arquitectura
 - Sacar el HTML/JS de los strings de Python. `dashboard_html.py` tiene **1,9 MB**; cada edición
   ahí exige node-check manual del valor evaluado. Es el cambio de mayor impacto en mantenibilidad.

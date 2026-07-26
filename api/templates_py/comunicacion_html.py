@@ -11,54 +11,54 @@ HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0f172a;color:#e2e8f0}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--cx-text);color:var(--cx-border)}
   .header{background:linear-gradient(135deg,#78350f,#a16207);padding:18px 28px;display:flex;align-items:center;justify-content:space-between}
   .header h1{margin:0;font-size:1.4em}
   .header a{color:#fde68a;font-size:0.85em;text-decoration:none}
   .container{max-width:1400px;margin:0 auto;padding:24px}
-  .tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:2px solid #334155;padding-bottom:8px;flex-wrap:wrap}
-  .tab{padding:8px 16px;background:#1e293b;border:1px solid #334155;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px;color:#94a3b8;font-weight:600}
-  .tab.active{background:#a16207;color:#fff;border-color:#a16207}
-  .badge-count{background:#dc2626;color:#fff;padding:1px 6px;border-radius:8px;font-size:10px;margin-left:6px}
+  .tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:2px solid var(--cx-text-soft);padding-bottom:8px;flex-wrap:wrap}
+  .tab{padding:8px 16px;background:var(--cx-text);border:1px solid var(--cx-text-soft);border-radius:8px 8px 0 0;cursor:pointer;font-size:13px;color:var(--cx-text-faint);font-weight:600}
+  .tab.active{background:var(--cx-accent-dark);color:#fff;border-color:var(--cx-accent-dark)}
+  .badge-count{background:var(--cx-danger);color:#fff;padding:1px 6px;border-radius:8px;font-size:10px;margin-left:6px}
   .grid{display:grid;gap:14px}
   .grid-4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
   .grid-2{grid-template-columns:1fr 1fr}
-  .card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px}
-  .card h3{margin:0 0 8px;font-size:0.78em;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em}
+  .card{background:var(--cx-text);border:1px solid var(--cx-text-soft);border-radius:10px;padding:18px}
+  .card h3{margin:0 0 8px;font-size:0.78em;color:var(--cx-text-faint);text-transform:uppercase;letter-spacing:0.06em}
   .card .val{font-size:1.9em;font-weight:700;color:#fff}
-  .panel{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px;margin-bottom:14px}
+  .panel{background:var(--cx-text);border:1px solid var(--cx-text-soft);border-radius:10px;padding:18px;margin-bottom:14px}
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th{background:#0f172a;color:#94a3b8;font-weight:600;text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase}
-  td{padding:8px 10px;border-bottom:1px solid #334155;vertical-align:top}
+  th{background:var(--cx-text);color:var(--cx-text-faint);font-weight:600;text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase}
+  td{padding:8px 10px;border-bottom:1px solid var(--cx-text-soft);vertical-align:top}
   .badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;display:inline-block}
-  .badge.alta{background:#7f1d1d;color:#fca5a5}
-  .badge.media{background:#78350f;color:#fcd34d}
+  .badge.alta{background:var(--cx-danger);color:#fca5a5}
+  .badge.media{background:var(--cx-accent-dark);color:#fcd34d}
   .badge.baja{background:#064e3b;color:#34d399}
-  .badge.estado-asig{background:#1e293b;color:#94a3b8;border:1px solid #475569}
+  .badge.estado-asig{background:var(--cx-text);color:var(--cx-text-faint);border:1px solid var(--cx-text-soft)}
   .badge.estado-enpr{background:#1e3a8a;color:#93c5fd}
-  .badge.estado-bloq{background:#7f1d1d;color:#fca5a5}
+  .badge.estado-bloq{background:var(--cx-danger);color:#fca5a5}
   .badge.estado-hech{background:#064e3b;color:#34d399}
-  .badge.estado-canc{background:#1e293b;color:#64748b}
+  .badge.estado-canc{background:var(--cx-text);color:var(--cx-text-mute)}
   .raci{font-size:10px}
   .raci .R{color:#f87171;font-weight:700}
-  .raci .A{color:#fbbf24;font-weight:700}
+  .raci .A{color:var(--cx-accent);font-weight:700}
   .raci .C{color:#22d3ee}
-  .raci .I{color:#94a3b8}
+  .raci .I{color:var(--cx-text-faint)}
   .btn{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
-  .btn-primary{background:#a16207;color:#fff}
-  .btn-secondary{background:#334155;color:#e2e8f0}
-  .btn-danger{background:#7f1d1d;color:#fff}
-  .btn-success{background:#15803d;color:#fff}
-  input,textarea,select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;font-size:13px;width:100%;font-family:inherit}
-  label{display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:600;margin-bottom:4px;margin-top:10px}
+  .btn-primary{background:var(--cx-accent-dark);color:#fff}
+  .btn-secondary{background:var(--cx-text-soft);color:var(--cx-border)}
+  .btn-danger{background:var(--cx-danger);color:#fff}
+  .btn-success{background:var(--cx-success);color:#fff}
+  input,textarea,select{background:var(--cx-text);color:var(--cx-border);border:1px solid var(--cx-text-soft);border-radius:6px;padding:8px;font-size:13px;width:100%;font-family:inherit}
+  label{display:block;font-size:11px;color:var(--cx-text-faint);text-transform:uppercase;font-weight:600;margin-bottom:4px;margin-top:10px}
   .hidden{display:none}
-  .empty{color:#64748b;font-style:italic;padding:20px;text-align:center}
-  .mensaje{background:#0f172a;padding:10px 14px;border-radius:8px;margin-bottom:8px}
-  .mensaje.no-leido{border-left:3px solid #fbbf24;background:#0f172a}
-  .mensaje .header-msg{display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-bottom:4px}
+  .empty{color:var(--cx-text-mute);font-style:italic;padding:20px;text-align:center}
+  .mensaje{background:var(--cx-text);padding:10px 14px;border-radius:8px;margin-bottom:8px}
+  .mensaje.no-leido{border-left:3px solid var(--cx-accent);background:var(--cx-text)}
+  .mensaje .header-msg{display:flex;justify-content:space-between;font-size:11px;color:var(--cx-text-faint);margin-bottom:4px}
   .alert-ia{background:#1e1b3b;border-left:3px solid #818cf8;padding:10px 14px;margin-top:10px;border-radius:6px;font-size:12px}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999}
-  .modal-body{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto}
+  .modal-body{background:var(--cx-text);border:1px solid var(--cx-text-soft);border-radius:12px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto}
   .modal-body h2{margin:0 0 14px;font-size:1.1em}
 
   /* ─── MOBILE RESPONSIVE ─── */
@@ -77,7 +77,7 @@ HTML = r"""
     /* Tablas → cards apilados */
     table thead { display:none; }
     table, table tbody, table tr, table td { display:block; width:100%; }
-    table tr { background:#0f172a; border-radius:8px; padding:10px; margin-bottom:8px; border:1px solid #334155; }
+    table tr { background:var(--cx-text); border-radius:8px; padding:10px; margin-bottom:8px; border:1px solid var(--cx-text-soft); }
     table td { border-bottom:none; padding:4px 0; font-size:12px; }
     table td:first-child { font-weight:700; color:#fff; font-size:13px; padding-bottom:6px; }
     /* Modales 95% en mobile */
@@ -103,7 +103,7 @@ HTML = r"""
 </head>
 <body>
   <header class="cx-mod-header cx-fade-in">
-    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
     <div>
       <div class="cx-mod-header__title">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
@@ -125,7 +125,7 @@ HTML = r"""
     <div class="grid grid-4">
       <div class="card"><h3>Mis tareas activas</h3><div class="val" id="kpi-mis">-</div></div>
       <div class="card"><h3>Vencidas</h3><div class="val" id="kpi-venc" style="color:#fca5a5">-</div></div>
-      <div class="card"><h3>Mensajes sin leer</h3><div class="val" id="kpi-msj" style="color:#fbbf24">-</div></div>
+      <div class="card"><h3>Mensajes sin leer</h3><div class="val" id="kpi-msj" style="color:var(--cx-accent)">-</div></div>
       <div class="card"><h3>Quejas Alta/Crítica</h3><div class="val" id="kpi-quejas" style="color:#f87171">-</div></div>
     </div>
 
@@ -195,7 +195,7 @@ HTML = r"""
     <div id="tab-quejas" class="hidden">
       <div class="panel">
         <h3 style="margin:0 0 12px">📢 Reportar problema o queja</h3>
-        <div style="font-size:12px;color:#94a3b8;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--cx-text-faint);margin-bottom:12px">
           Describe el problema. La IA lo analizará, sugerirá acción, y si es severidad Alta/Crítica se escalará automáticamente a gerencia.
         </div>
         <textarea id="queja-contexto" rows="6" placeholder="Ej: Hoy Catalina no me respondió cuando le solicité aprobación urgente para OC, llevo 3 días sin que avance la compra de glicerina..."></textarea>
@@ -236,7 +236,7 @@ HTML = r"""
       <label>Fecha compromiso</label>
       <input type="date" id="t-fecha">
       <label>RACI (Responsable / Accountable / Consulted / Informed)</label>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:6px">
+      <div style="font-size:11px;color:var(--cx-text-faint);margin-bottom:6px">
         <strong>R</strong>=Responsable (hace) · <strong>A</strong>=Aprueba (rinde cuentas) · <strong>C</strong>=Consultado · <strong>I</strong>=Informado
       </div>
       <div id="t-raci-rows"></div>
@@ -258,7 +258,7 @@ HTML = r"""
       <input id="a-asistentes" placeholder="sebastian, luz, jefferson, ...">
       <label>Transcripción completa (Gemini)</label>
       <textarea id="a-transcripcion" rows="12" placeholder="Pega la transcripción completa..."></textarea>
-      <div style="font-size:11px;color:#94a3b8;margin-top:6px">
+      <div style="font-size:11px;color:var(--cx-text-faint);margin-top:6px">
         Después de guardar puedes hacer click en "Parsear" para crear tareas automáticas.
       </div>
       <div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end">
@@ -348,12 +348,12 @@ async function cargarTareas() {
         const venc = t.fecha_compromiso || '';
         const vencRojo = venc && venc < new Date().toISOString().slice(0,10) && t.estado !== 'Hecha';
         return '<tr>' +
-          '<td><strong>'+_esc(t.titulo)+'</strong>'+(t.origen!='manual'?'<div style="font-size:10px;color:#64748b">('+t.origen+')</div>':'')+'</td>' +
-          '<td style="font-size:11px;color:#94a3b8">'+_esc(t.area||'-')+'</td>' +
+          '<td><strong>'+_esc(t.titulo)+'</strong>'+(t.origen!='manual'?'<div style="font-size:10px;color:var(--cx-text-mute)">('+t.origen+')</div>':'')+'</td>' +
+          '<td style="font-size:11px;color:var(--cx-text-faint)">'+_esc(t.area||'-')+'</td>' +
           '<td>'+raci+'</td>' +
           '<td>'+prio+'</td>' +
           '<td>'+estadoBadge+'</td>' +
-          '<td style="font-size:11px;'+(vencRojo?'color:#fca5a5;font-weight:700':'color:#94a3b8')+'">'+_esc(venc||'-')+'</td>' +
+          '<td style="font-size:11px;'+(vencRojo?'color:#fca5a5;font-weight:700':'color:var(--cx-text-faint)')+'">'+_esc(venc||'-')+'</td>' +
           '<td><button class="btn btn-secondary" style="padding:4px 10px;font-size:11px" onclick="cambiarEstado('+t.id+')">Avanzar</button></td>' +
           '</tr>';
       }).join('') + '</tbody></table>';
@@ -433,7 +433,7 @@ async function cargarBandeja() {
       return '<div class="mensaje '+(noLeido?'no-leido':'')+'" '+(noLeido?'onclick="marcarLeido('+m.id+')"':'')+'>' +
         '<div class="header-msg"><span><strong>'+_esc(m.de_usuario)+'</strong> → '+_esc(m.a_usuario)+'</span><span>'+_esc(m.fecha)+'</span></div>' +
         (m.asunto ? '<div style="font-weight:600;font-size:13px;margin-bottom:4px">'+_esc(m.asunto)+'</div>' : '') +
-        '<div style="font-size:13px;color:#cbd5e1">'+_esc(m.mensaje)+'</div></div>';
+        '<div style="font-size:13px;color:var(--cx-border)">'+_esc(m.mensaje)+'</div></div>';
     }).join('');
   } catch(e) { console.error(e); }
 }
@@ -466,7 +466,7 @@ async function cargarActas() {
       actas.map(a =>
         '<tr><td>'+_esc(a.fecha)+'</td>' +
         '<td>'+_esc(a.titulo)+'</td>' +
-        '<td style="font-size:11px;color:#94a3b8">'+(a.asistentes||[]).join(', ')+'</td>' +
+        '<td style="font-size:11px;color:var(--cx-text-faint)">'+(a.asistentes||[]).join(', ')+'</td>' +
         '<td>'+(a.parseada ? '<span style="color:#34d399">'+a.tareas_creadas+' ✓</span>' : 'Sin parsear')+'</td>' +
         '<td>'+(!a.parseada ? '<button class="btn btn-success" style="padding:4px 10px;font-size:11px" onclick="parsearActa('+a.id+')">Parsear</button>' : '')+'</td></tr>'
       ).join('') + '</tbody></table>';
@@ -515,15 +515,15 @@ async function enviarQueja() {
     const r = await fetch('/api/comunicacion/quejas', _fetchOpts('POST', {contexto: ctx}));
     const d = await r.json();
     if (!r.ok) {
-      document.getElementById('queja-resultado').innerHTML = '<div class="alert-ia" style="border-color:#dc2626">Error: '+_esc(d.error||'')+'</div>';
+      document.getElementById('queja-resultado').innerHTML = '<div class="alert-ia" style="border-color:var(--cx-danger)">Error: '+_esc(d.error||'')+'</div>';
       return;
     }
     if (d.analisis) {
       document.getElementById('queja-resultado').innerHTML = '<div class="alert-ia">' +
-        '<div style="font-weight:700;margin-bottom:4px">📊 Análisis IA - Severidad: <span style="color:#fbbf24">'+_esc(d.analisis.severidad||'-')+'</span></div>' +
+        '<div style="font-weight:700;margin-bottom:4px">📊 Análisis IA - Severidad: <span style="color:var(--cx-accent)">'+_esc(d.analisis.severidad||'-')+'</span></div>' +
         '<div style="margin-bottom:6px"><strong>Lectura:</strong> '+_esc(d.analisis.analisis||'')+'</div>' +
         '<div style="margin-bottom:6px"><strong>Acción sugerida:</strong> '+_esc(d.analisis.accion_sugerida||'')+'</div>' +
-        '<div style="font-size:11px;color:#94a3b8">Escalado a: '+_esc(d.analisis.escalar_a||'-')+'</div>' +
+        '<div style="font-size:11px;color:var(--cx-text-faint)">Escalado a: '+_esc(d.analisis.escalar_a||'-')+'</div>' +
         '</div>';
     } else {
       document.getElementById('queja-resultado').innerHTML = '<div class="alert-ia">Queja registrada. Análisis IA no disponible (API key no configurada).</div>';
@@ -531,7 +531,7 @@ async function enviarQueja() {
     document.getElementById('queja-contexto').value = '';
     cargarQuejas();
   } catch(e) {
-    document.getElementById('queja-resultado').innerHTML = '<div class="alert-ia" style="border-color:#dc2626">Error: '+e.message+'</div>';
+    document.getElementById('queja-resultado').innerHTML = '<div class="alert-ia" style="border-color:var(--cx-danger)">Error: '+e.message+'</div>';
   }
 }
 

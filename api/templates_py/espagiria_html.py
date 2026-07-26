@@ -18,27 +18,27 @@ HTML = r"""
   .container { max-width:1400px; margin:0 auto; padding:24px; }
   .grid { display:grid; gap:16px; }
   .grid-4 { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
-  .card { background:var(--cx-card); border:1px solid #e7e5e4; border-radius:10px; padding:18px; }
+  .card { background:var(--cx-card); border:1px solid var(--cx-border); border-radius:10px; padding:18px; }
   .card h3 { margin:0 0 8px; font-size:0.78em; color:var(--cx-text-mute); text-transform:uppercase; letter-spacing:0.06em; font-weight:600; }
   .card .val { font-size:1.9em; font-weight:700; color:#fff; }
   .card .sub { font-size:0.8em; color:var(--cx-text-mute); margin-top:4px; }
-  .section-title { font-size:1.05em; font-weight:700; color:#fff; margin:28px 0 12px; padding-bottom:6px; border-bottom:2px solid #e7e5e4; }
-  .alert { background:#3f0f0f; border-left:4px solid #dc2626; padding:10px 14px; margin-bottom:8px; border-radius:6px; font-size:13px; }
-  .alert.media { background:#1e1b3b; border-left-color:#f59e0b; }
-  .alert .title { font-weight:600; color:#dc2626; margin-bottom:3px; }
-  .alert.media .title { color:#b45309; }
+  .section-title { font-size:1.05em; font-weight:700; color:#fff; margin:28px 0 12px; padding-bottom:6px; border-bottom:2px solid var(--cx-border); }
+  .alert { background:#3f0f0f; border-left:4px solid var(--cx-danger); padding:10px 14px; margin-bottom:8px; border-radius:6px; font-size:13px; }
+  .alert.media { background:#1e1b3b; border-left-color:var(--cx-warn); }
+  .alert .title { font-weight:600; color:var(--cx-danger-text); margin-bottom:3px; }
+  .alert.media .title { color:var(--cx-warn-text); }
   .alert .accion { font-size:11px; color:var(--cx-text-mute); margin-top:4px; font-style:italic; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th { background:var(--cx-bg-alt); color:var(--cx-text-mute); font-weight:600; text-align:left; padding:8px 10px; font-size:11px; text-transform:uppercase; }
-  td { padding:8px 10px; border-bottom:1px solid #e7e5e4; }
+  td { padding:8px 10px; border-bottom:1px solid var(--cx-border); }
   .badge { padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
-  .badge.alta { background:var(--cx-danger-pale); color:#dc2626; }
-  .badge.media { background:var(--cx-warn-pale); color:#b45309; }
-  .badge.baja { background:var(--cx-success-pale); color:#16a34a; }
+  .badge.alta { background:var(--cx-danger-pale); color:var(--cx-danger-text); }
+  .badge.media { background:var(--cx-warn-pale); color:var(--cx-warn-text); }
+  .badge.baja { background:var(--cx-success-pale); color:var(--cx-success-text); }
   .badge.estado-asig { background:var(--cx-card); color:var(--cx-text-mute); }
-  .badge.estado-prog { background:var(--cx-info-pale); color:#2563eb; }
-  .badge.estado-bloq { background:var(--cx-danger-pale); color:#dc2626; }
-  .badge.estado-hecha { background:var(--cx-success-pale); color:#16a34a; }
+  .badge.estado-prog { background:var(--cx-info-pale); color:var(--cx-info-text); }
+  .badge.estado-bloq { background:var(--cx-danger-pale); color:var(--cx-danger-text); }
+  .badge.estado-hecha { background:var(--cx-success-pale); color:var(--cx-success-text); }
   .empty { color:var(--cx-text-mute); font-style:italic; padding:20px; text-align:center; }
   .grid-2 { grid-template-columns:1fr 1fr; }
 
@@ -56,7 +56,7 @@ HTML = r"""
     /* Tablas → cards apilados */
     table thead { display:none; }
     table, table tbody, table tr, table td { display:block; width:100%; }
-    table tr { background:var(--cx-bg-alt); border-radius:8px; padding:10px; margin-bottom:8px; border:1px solid #e7e5e4; }
+    table tr { background:var(--cx-bg-alt); border-radius:8px; padding:10px; margin-bottom:8px; border:1px solid var(--cx-border); }
     table td { border-bottom:none; padding:4px 0; font-size:12px; }
     table td:first-child { font-weight:700; color:#fff; font-size:13px; padding-bottom:6px; }
     .alert { padding:10px 12px; font-size:12px; }
@@ -70,7 +70,7 @@ HTML = r"""
 </head>
 <body>
   <header class="cx-mod-header cx-fade-in">
-    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
     <div>
       <div class="cx-mod-header__title">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M12 21V8M12 8c-3 0-6-2-6-5 3 0 6 2 6 5z"/><path d="M12 8c3 0 6-2 6-5-3 0-6 2-6 5zM8 14c-2 0-4-1-4-3 2 0 4 1 4 3zM16 14c2 0 4-1 4-3-2 0-4 1-4 3z"/></svg>
@@ -88,7 +88,7 @@ HTML = r"""
   <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
   <!-- TABS -->
-  <div style="background:var(--cx-card);border-bottom:1px solid #e7e5e4;padding:0 28px;display:flex;gap:0;overflow-x:auto;">
+  <div style="background:var(--cx-card);border-bottom:1px solid var(--cx-border);padding:0 28px;display:flex;gap:0;overflow-x:auto;">
     <button class="esp-tab active" data-tab="inicio" onclick="esw('inicio')" style="background:none;border:none;color:#a5f3fc;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid #06b6d4;white-space:nowrap;">⚡ Inicio</button>
     <button class="esp-tab" data-tab="dash" onclick="esw('dash')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">📊 Dashboard</button>
     <button class="esp-tab" data-tab="lab" onclick="esw('lab')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">🔬 Lab en Vivo</button>
@@ -117,14 +117,14 @@ HTML = r"""
     <!-- KPIs principales -->
     <div class="grid grid-4">
       <div class="card"><h3>📦 Producciones del mes</h3><div class="val" id="kpi-prod">-</div><div class="sub" id="kpi-prod-sub"></div></div>
-      <div class="card"><h3>⚠️ MPs bajo mínimo</h3><div class="val" id="kpi-mps" style="color:#dc2626;">-</div><div class="sub">Necesitan reposición</div></div>
-      <div class="card"><h3>📅 Lotes vencen 30 días</h3><div class="val" id="kpi-venc" style="color:#b45309;">-</div><div class="sub" id="kpi-venc-sub"></div></div>
+      <div class="card"><h3>⚠️ MPs bajo mínimo</h3><div class="val" id="kpi-mps" style="color:var(--cx-danger-text);">-</div><div class="sub">Necesitan reposición</div></div>
+      <div class="card"><h3>📅 Lotes vencen 30 días</h3><div class="val" id="kpi-venc" style="color:var(--cx-warn-text);">-</div><div class="sub" id="kpi-venc-sub"></div></div>
       <div class="card"><h3>🛒 OCs activas</h3><div class="val" id="kpi-ocs">-</div><div class="sub" id="kpi-ocs-sub"></div></div>
     </div>
 
     <div class="grid grid-4" style="margin-top:14px;">
       <div class="card"><h3>📋 Solicitudes pendientes</h3><div class="val" id="kpi-sol">-</div><div class="sub">Esperan aprobación</div></div>
-      <div class="card"><h3>🔬 NCs abiertas</h3><div class="val" id="kpi-ncs" style="color:#b45309;">-</div><div class="sub">Calidad sin cerrar</div></div>
+      <div class="card"><h3>🔬 NCs abiertas</h3><div class="val" id="kpi-ncs" style="color:var(--cx-warn-text);">-</div><div class="sub">Calidad sin cerrar</div></div>
       <div class="card"><h3>🟡 Lotes en cuarentena</h3><div class="val" id="kpi-cuar">-</div><div class="sub">Por liberar</div></div>
       <div class="card"><h3>🚚 Pedidos activos</h3><div class="val" id="kpi-ped">-</div><div class="sub">En proceso o despacho</div></div>
     </div>
@@ -177,8 +177,8 @@ HTML = r"""
       <div class="grid grid-4">
         <div class="card"><h3>⚙️ En curso</h3><div class="val" id="lab-kpi-curso">-</div><div class="sub">Producciones activas</div></div>
         <div class="card"><h3>📅 Hoy</h3><div class="val" id="lab-kpi-hoy">-</div><div class="sub">Programadas hoy</div></div>
-        <div class="card"><h3>🟡 Cuarentena</h3><div class="val" id="lab-kpi-cuar" style="color:#b45309;">-</div><div class="sub">Lotes</div></div>
-        <div class="card"><h3>⚠️ OOS abiertos</h3><div class="val" id="lab-kpi-oos" style="color:#dc2626;">-</div><div class="sub">En investigación</div></div>
+        <div class="card"><h3>🟡 Cuarentena</h3><div class="val" id="lab-kpi-cuar" style="color:var(--cx-warn-text);">-</div><div class="sub">Lotes</div></div>
+        <div class="card"><h3>⚠️ OOS abiertos</h3><div class="val" id="lab-kpi-oos" style="color:var(--cx-danger-text);">-</div><div class="sub">En investigación</div></div>
       </div>
 
       <div class="grid grid-2" style="margin-top:18px;">
@@ -222,7 +222,7 @@ HTML = r"""
         </div>
         <div class="card">
           <h3>🎓 Capacitaciones pendientes</h3>
-          <div class="val" id="lab-cap" style="color:#b45309;">-</div>
+          <div class="val" id="lab-cap" style="color:var(--cx-warn-text);">-</div>
           <div class="sub">Empleados sin firmar SOPs</div>
         </div>
       </div>
@@ -235,14 +235,14 @@ HTML = r"""
           <div style="font-size:1.2em;font-weight:700;color:#fff;">👥 Clientes Maquila 360</div>
           <div style="font-size:12px;color:var(--cx-text-mute);">Vista completa de cada cliente · click en uno para ver ficha 360</div>
         </div>
-        <input id="cli-search" type="text" placeholder="Buscar cliente..." oninput="filtrarClientes()" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:8px 12px;border-radius:6px;font-size:13px;max-width:240px;">
+        <input id="cli-search" type="text" placeholder="Buscar cliente..." oninput="filtrarClientes()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:6px;font-size:13px;max-width:240px;">
       </div>
 
       <div id="cli-grid" class="grid grid-4"><div class="empty">Cargando clientes...</div></div>
 
       <!-- Modal ficha 360 -->
       <div id="cli-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;padding:20px;">
-        <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:24px;width:900px;max-width:95vw;max-height:90vh;overflow-y:auto;">
+        <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:24px;width:900px;max-width:95vw;max-height:90vh;overflow-y:auto;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <h2 id="cli-modal-title" style="margin:0;font-size:1.3em;color:#fff;">Cliente</h2>
             <button onclick="cerrarCliModal()" style="background:none;border:none;color:var(--cx-text-mute);font-size:24px;cursor:pointer;">&times;</button>
@@ -270,41 +270,41 @@ HTML = r"""
 
     <!-- MODAL PEDIDO RAPIDO -->
     <div id="pr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;padding:20px;">
-      <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;">
+      <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
           <h2 style="margin:0;font-size:1.2em;color:#fff;">📦 Nuevo pedido maquila</h2>
           <button onclick="cerrarPedidoRapido()" style="background:none;border:none;color:var(--cx-text-mute);font-size:24px;cursor:pointer;">&times;</button>
         </div>
         <div style="margin-bottom:14px;">
           <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Cliente *</label>
-          <select id="pr-cliente" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
+          <select id="pr-cliente" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
             <option value="">- Seleccionar cliente -</option>
           </select>
         </div>
         <div style="margin-bottom:14px;">
           <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Producto *</label>
-          <input id="pr-producto" type="text" placeholder="Ej: Hydra Balance 30ml" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
+          <input id="pr-producto" type="text" placeholder="Ej: Hydra Balance 30ml" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
           <div>
             <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Unidades *</label>
-            <input id="pr-uds" type="number" min="1" placeholder="0" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
+            <input id="pr-uds" type="number" min="1" placeholder="0" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
           </div>
           <div>
             <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Precio unidad (COP)</label>
-            <input id="pr-precio" type="number" min="0" placeholder="0" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
+            <input id="pr-precio" type="number" min="0" placeholder="0" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
           </div>
         </div>
         <div style="margin-bottom:14px;">
           <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Fecha entrega objetivo</label>
-          <input id="pr-fecha" type="date" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
+          <input id="pr-fecha" type="date" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
         </div>
         <div style="margin-bottom:14px;">
           <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Observaciones</label>
-          <textarea id="pr-obs" placeholder="Detalles adicionales..." style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;min-height:60px;"></textarea>
+          <textarea id="pr-obs" placeholder="Detalles adicionales..." style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;min-height:60px;"></textarea>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button onclick="cerrarPedidoRapido()" style="background:none;border:1px solid #e7e5e4;color:var(--cx-text-mute);padding:10px 16px;border-radius:6px;font-size:13px;cursor:pointer;">Cancelar</button>
+          <button onclick="cerrarPedidoRapido()" style="background:none;border:1px solid var(--cx-border);color:var(--cx-text-mute);padding:10px 16px;border-radius:6px;font-size:13px;cursor:pointer;">Cancelar</button>
           <button onclick="guardarPedidoRapido()" style="background:var(--cx-success-pale);border:none;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">Crear pedido</button>
         </div>
       </div>
@@ -357,7 +357,7 @@ async function cargar() {
       tList.innerHTML = '<table><thead><tr><th>Tarea</th><th>Comprom.</th><th>Prio</th><th>Estado</th></tr></thead><tbody>' +
         d.mis_tareas_pendientes.map(t =>
           '<tr><td>' + _esc(t.titulo) + '<div style="font-size:10px;color:var(--cx-text-mute);">'+(t.area||'')+'</div></td>' +
-          '<td style="color:#b45309;font-size:11px;">'+(t.fecha_compromiso||'sin fecha')+'</td>' +
+          '<td style="color:var(--cx-warn-text);font-size:11px;">'+(t.fecha_compromiso||'sin fecha')+'</td>' +
           '<td><span class="badge '+(t.prioridad||'baja').toLowerCase()+'">'+(t.prioridad||'-')+'</span></td>' +
           '<td><span class="badge estado-'+(t.estado||'').toLowerCase().substring(0,4)+'">'+_esc(t.estado||'-')+'</span></td></tr>'
         ).join('') + '</tbody></table>';
@@ -414,7 +414,7 @@ async function cargar() {
         p.reincidentes.map(t =>
           '<tr><td style="font-size:12px;">'+_esc(t.titulo)+'</td>' +
           '<td style="font-size:11px;color:#a5f3fc;">'+_esc(t.responsables||'-')+'</td>' +
-          '<td style="color:#dc2626;font-weight:700;">'+Math.round(t.dias_abierta)+'</td></tr>'
+          '<td style="color:var(--cx-danger-text);font-weight:700;">'+Math.round(t.dias_abierta)+'</td></tr>'
         ).join('') + '</tbody></table>';
     }
 
@@ -426,7 +426,7 @@ async function cargar() {
         p.completadas_semana.slice(0,15).map(t =>
           '<tr><td style="font-size:12px;">'+_esc(t.titulo)+'</td>' +
           '<td style="font-size:11px;color:var(--cx-text-mute);">'+_esc(t.area||'-')+'</td>' +
-          '<td style="font-size:11px;color:#16a34a;">'+_esc((t.fecha_completada||'').substring(0,10))+'</td></tr>'
+          '<td style="font-size:11px;color:var(--cx-success-text);">'+_esc((t.fecha_completada||'').substring(0,10))+'</td></tr>'
         ).join('') + '</tbody></table>';
     }
   } catch(e) { console.error('Pre-comite error:', e); }
@@ -595,7 +595,7 @@ function renderClientes() {
       '<div style="font-size:11px;color:var(--cx-text-mute);">' + _esc(c.empresa_grupo||'-') + '</div>' +
       '<div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;">' +
         '<div><div style="font-size:10px;color:var(--cx-text-mute);">PEDIDOS</div><div style="font-size:1.1em;font-weight:700;color:#fff;">' + (c.total_pedidos||0) + '</div></div>' +
-        '<div><div style="font-size:10px;color:var(--cx-text-mute);">VALOR TOTAL</div><div style="font-size:1.1em;font-weight:700;color:#16a34a;">$' + fmtNum(Math.round(c.valor_total||0)) + '</div></div>' +
+        '<div><div style="font-size:10px;color:var(--cx-text-mute);">VALOR TOTAL</div><div style="font-size:1.1em;font-weight:700;color:var(--cx-success-text);">$' + fmtNum(Math.round(c.valor_total||0)) + '</div></div>' +
       '</div>' +
       '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:8px;">' + ult + '</div>' +
       '</div>';
@@ -623,9 +623,9 @@ async function verCli360(id) {
     // KPIs
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px;">';
     html += '<div class="card"><h3>📦 Pedidos</h3><div class="val">' + s.total_pedidos + '</div></div>';
-    html += '<div class="card"><h3>💵 Valor total</h3><div class="val" style="color:#16a34a;">$' + fmtNum(Math.round(s.valor_total||0)) + '</div></div>';
+    html += '<div class="card"><h3>💵 Valor total</h3><div class="val" style="color:var(--cx-success-text);">$' + fmtNum(Math.round(s.valor_total||0)) + '</div></div>';
     html += '<div class="card"><h3>🎯 Ticket prom</h3><div class="val">$' + fmtNum(Math.round(s.ticket_promedio||0)) + '</div></div>';
-    html += '<div class="card"><h3>🔥 Pipeline</h3><div class="val" style="color:#b45309;">' + (s.pipeline_activos||0) + '</div></div>';
+    html += '<div class="card"><h3>🔥 Pipeline</h3><div class="val" style="color:var(--cx-warn-text);">' + (s.pipeline_activos||0) + '</div></div>';
     html += '<div class="card"><h3>⏱️ Días sin pedido</h3><div class="val" style="color:' + (s.dias_sin_pedido > 60 ? '#f87171' : '#fff') + ';">' + (s.dias_sin_pedido!=null ? s.dias_sin_pedido : '-') + '</div></div>';
     html += '</div>';
     // Pipeline activo
@@ -695,10 +695,10 @@ async function cargarQA() {
     var d = await fetch('/api/espagiria/quick-actions').then(function(r){return r.json();});
     var c = document.getElementById('qa-content');
     if (!d.secciones || !d.secciones.length) {
-      c.innerHTML = '<div class="card" style="text-align:center;padding:40px;border-left:4px solid #10b981;"><div style="font-size:3em;">✅</div><div style="font-size:1.2em;color:#16a34a;font-weight:700;margin-top:12px;">Todo bajo control</div><div style="color:var(--cx-text-mute);margin-top:6px;">Sin acciones urgentes pendientes hoy</div></div>';
+      c.innerHTML = '<div class="card" style="text-align:center;padding:40px;border-left:4px solid var(--cx-success);"><div style="font-size:3em;">✅</div><div style="font-size:1.2em;color:var(--cx-success-text);font-weight:700;margin-top:12px;">Todo bajo control</div><div style="color:var(--cx-text-mute);margin-top:6px;">Sin acciones urgentes pendientes hoy</div></div>';
       return;
     }
-    var html = '<div style="background:var(--cx-danger-pale);color:#dc2626;padding:14px 18px;border-radius:8px;margin-bottom:16px;font-weight:700;">' +
+    var html = '<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:14px 18px;border-radius:8px;margin-bottom:16px;font-weight:700;">' +
                '⚠ ' + d.total_urgentes + ' acciones requieren tu atención</div>';
     d.secciones.forEach(function(s){
       var col = s.severidad === 'alta' ? '#dc2626' : '#f59e0b';
@@ -711,11 +711,11 @@ async function cargarQA() {
               '</div>';
       // Mini lista
       if (s.items && s.items.length) {
-        html += '<div style="font-size:12px;color:var(--cx-text-soft);border-top:1px solid #e7e5e4;padding-top:8px;">';
+        html += '<div style="font-size:12px;color:var(--cx-text-soft);border-top:1px solid var(--cx-border);padding-top:8px;">';
         s.items.slice(0, 5).forEach(function(it){
           var label = it.numero || it.codigo || it.titulo || it.lote || it.material_nombre || it.cliente_nombre || '?';
           var sub = it.cliente_nombre || it.producto_nombre || it.area || it.parametro || it.dias_vencido || it.dias || '';
-          html += '<div style="padding:4px 0;border-bottom:1px solid #e7e5e4;">' +
+          html += '<div style="padding:4px 0;border-bottom:1px solid var(--cx-border);">' +
                   '<b>' + _esc(label) + '</b>' +
                   (sub ? ' <span style="color:var(--cx-text-mute);">· ' + _esc(String(sub).substring(0,80)) + '</span>' : '') +
                   '</div>';
@@ -797,8 +797,8 @@ async function cargarCartera() {
     document.getElementById('cart-kpis').innerHTML =
       '<div class="card"><h3>📋 Pedidos entregados</h3><div class="val">' + (k.total_pedidos||0) + '</div></div>' +
       '<div class="card"><h3>💵 Total facturado</h3><div class="val" style="color:#fff;">$' + fmtNum(Math.round(k.total_facturado||0)) + '</div></div>' +
-      '<div class="card"><h3>✅ Pagado</h3><div class="val" style="color:#16a34a;">$' + fmtNum(Math.round(k.total_pagado||0)) + '</div></div>' +
-      '<div class="card"><h3>🚨 Vencido +30d</h3><div class="val" style="color:#dc2626;">$' + fmtNum(Math.round(k.total_vencido_30d||0)) + '</div></div>';
+      '<div class="card"><h3>✅ Pagado</h3><div class="val" style="color:var(--cx-success-text);">$' + fmtNum(Math.round(k.total_pagado||0)) + '</div></div>' +
+      '<div class="card"><h3>🚨 Vencido +30d</h3><div class="val" style="color:var(--cx-danger-text);">$' + fmtNum(Math.round(k.total_vencido_30d||0)) + '</div></div>';
     // Por cliente
     var pcDiv = document.getElementById('cart-por-cliente');
     if (!d.por_cliente || !d.por_cliente.length) {
@@ -810,9 +810,9 @@ async function cargarCartera() {
           return '<tr><td><b>' + _esc(c.cliente) + '</b></td>' +
             '<td style="text-align:right;">' + c.pedidos + '</td>' +
             '<td style="text-align:right;">$' + fmtNum(Math.round(c.facturado||0)) + '</td>' +
-            '<td style="text-align:right;color:#16a34a;">$' + fmtNum(Math.round(c.pagado||0)) + '</td>' +
+            '<td style="text-align:right;color:var(--cx-success-text);">$' + fmtNum(Math.round(c.pagado||0)) + '</td>' +
             '<td style="text-align:right;color:' + col + ';font-weight:700;">$' + fmtNum(Math.round(c.saldo||0)) + '</td>' +
-            '<td style="text-align:right;color:#dc2626;font-weight:700;">$' + fmtNum(Math.round(c.vencido_30d||0)) + '</td></tr>';
+            '<td style="text-align:right;color:var(--cx-danger-text);font-weight:700;">$' + fmtNum(Math.round(c.vencido_30d||0)) + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
     // Detalle
@@ -830,7 +830,7 @@ async function cargarCartera() {
             '<td>' + _esc(p.cliente_nombre||'') + '</td>' +
             '<td style="font-size:11px;">' + _esc((p.producto_nombre||'').substring(0,40)) + '</td>' +
             '<td style="text-align:right;">$' + fmtNum(Math.round(p.valor_total||0)) + '</td>' +
-            '<td style="text-align:right;color:#16a34a;">$' + fmtNum(Math.round(p.pagado||0)) + '</td>' +
+            '<td style="text-align:right;color:var(--cx-success-text);">$' + fmtNum(Math.round(p.pagado||0)) + '</td>' +
             '<td style="text-align:right;font-weight:700;">$' + fmtNum(Math.round(p.saldo||0)) + '</td>' +
             '<td><span class="badge ' + ec + '">' + _esc(p.estado_pago||'') + '</span></td>' +
             '<td>' + (p.dias_desde_pedido||0) + 'd</td></tr>';

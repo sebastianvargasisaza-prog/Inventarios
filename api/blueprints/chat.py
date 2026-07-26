@@ -52,57 +52,57 @@ def chat_widget_js():
 
   var s = document.createElement('style');
   s.textContent = ''+
-    '#cw-fab{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 4px 16px rgba(124,58,237,.4);z-index:9998;display:flex;align-items:center;justify-content:center;transition:transform .15s}'+
-    '#cw-fab:hover{transform:scale(1.08);background:#6d28d9}'+
-    '#cw-badge{position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;border-radius:50%;min-width:22px;height:22px;font-size:12px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff}'+
-    '#cw-panel{position:fixed;bottom:84px;right:20px;width:380px;max-width:94vw;height:540px;max-height:78vh;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);z-index:9998;display:none;flex-direction:column;overflow:hidden;border:1px solid #e2e8f0;font-family:Segoe UI,sans-serif}'+
-    '#cw-head{background:#7c3aed;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:14px;gap:6px}'+
+    '#cw-fab{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:var(--cx-primary, #7c3aed);color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 4px 16px rgba(124,58,237,.4);z-index:9998;display:flex;align-items:center;justify-content:center;transition:transform .15s}'+
+    '#cw-fab:hover{transform:scale(1.08);background:var(--cx-primary, #6d28d9)}'+
+    '#cw-badge{position:absolute;top:-4px;right:-4px;background:var(--cx-danger, #dc2626);color:#fff;border-radius:50%;min-width:22px;height:22px;font-size:12px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid var(--cx-card, #fff)}'+
+    '#cw-panel{position:fixed;bottom:84px;right:20px;width:380px;max-width:94vw;height:540px;max-height:78vh;background:var(--cx-card, #fff);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);z-index:9998;display:none;flex-direction:column;overflow:hidden;border:1px solid var(--cx-border, #e2e8f0);font-family:Segoe UI,sans-serif}'+
+    '#cw-head{background:var(--cx-primary, #7c3aed);color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:14px;gap:6px}'+
     '#cw-head .actions{display:flex;align-items:center;gap:8px}'+
     '#cw-head a,#cw-head button{color:#e9d5ff;font-size:11px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);border:none;padding:4px 8px;border-radius:6px;cursor:pointer}'+
     '#cw-head a:hover,#cw-head button:hover{color:#fff;background:rgba(255,255,255,.25)}'+
     '#cw-body{flex:1;overflow:hidden;display:flex;flex-direction:column}'+
     '#cw-tlist{overflow-y:auto;flex:1}'+
-    '.cw-thread{padding:10px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;display:flex;align-items:flex-start;gap:8px;transition:background .15s}'+
-    '.cw-thread:hover{background:#f8fafc}'+
-    '.cw-thread.unread{background:#faf5ff;border-left:3px solid #7c3aed}'+
-    '.cw-thread .nm{font-size:13px;font-weight:600;color:#0f172a;line-height:1.3}'+
-    '.cw-thread .pv{font-size:11px;color:#64748b;line-height:1.4;margin-top:2px}'+
-    '.cw-thread .ts{font-size:10px;color:#94a3b8;white-space:nowrap;margin-left:auto}'+
-    '.cw-thread .uc{background:#dc2626;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:6px}'+
+    '.cw-thread{padding:10px 14px;border-bottom:1px solid var(--cx-border-soft, #f1f5f9);cursor:pointer;display:flex;align-items:flex-start;gap:8px;transition:background .15s}'+
+    '.cw-thread:hover{background:var(--cx-bg-alt, #f8fafc)}'+
+    '.cw-thread.unread{background:#faf5ff;border-left:3px solid var(--cx-primary, #7c3aed)}'+
+    '.cw-thread .nm{font-size:13px;font-weight:600;color:var(--cx-text, #0f172a);line-height:1.3}'+
+    '.cw-thread .pv{font-size:11px;color:var(--cx-text-mute, #64748b);line-height:1.4;margin-top:2px}'+
+    '.cw-thread .ts{font-size:10px;color:var(--cx-text-faint, #94a3b8);white-space:nowrap;margin-left:auto}'+
+    '.cw-thread .uc{background:var(--cx-danger, #dc2626);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:6px}'+
     '#cw-conv{display:none;flex-direction:column;height:100%}'+
-    '#cw-conv-head{background:#f8fafc;padding:8px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:600;color:#0f172a;display:flex;align-items:center;gap:6px}'+
-    '#cw-back{background:none;border:none;color:#7c3aed;cursor:pointer;font-size:16px;padding:0}'+
-    '#cw-task-btn{margin-left:auto;background:#16a34a;color:#fff;border:none;padding:4px 8px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600}'+
-    '#cw-task-btn:hover{background:#15803d}'+
+    '#cw-conv-head{background:var(--cx-bg-alt, #f8fafc);padding:8px 14px;border-bottom:1px solid var(--cx-border, #e2e8f0);font-size:13px;font-weight:600;color:var(--cx-text, #0f172a);display:flex;align-items:center;gap:6px}'+
+    '#cw-back{background:none;border:none;color:var(--cx-primary-text, #7c3aed);cursor:pointer;font-size:16px;padding:0}'+
+    '#cw-task-btn{margin-left:auto;background:var(--cx-success, #16a34a);color:#fff;border:none;padding:4px 8px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600}'+
+    '#cw-task-btn:hover{background:var(--cx-success, #15803d)}'+
     '#cw-new{display:none;flex-direction:column;height:100%}'+
-    '#cw-new-head{background:#f8fafc;padding:8px 14px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#0f172a}'+
+    '#cw-new-head{background:var(--cx-bg-alt, #f8fafc);padding:8px 14px;border-bottom:1px solid var(--cx-border, #e2e8f0);display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--cx-text, #0f172a)}'+
     '#cw-new-body{flex:1;overflow-y:auto;padding:10px}'+
     '.cw-user{padding:8px 12px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:4px;border:1px solid transparent}'+
     '.cw-user:hover{background:#faf5ff;border-color:#e9d5ff}'+
-    '.cw-user.selected{background:#ede9fe;border-color:#7c3aed}'+
-    '.cw-user .dot{width:8px;height:8px;border-radius:50%;background:#94a3b8}'+
-    '.cw-user.online .dot{background:#16a34a}'+
-    '.cw-user .nm{flex:1;font-size:13px;color:#0f172a}'+
-    '.cw-user .est{font-size:10px;color:#94a3b8}'+
-    '#cw-new-actions{padding:10px;border-top:1px solid #e2e8f0;background:#fff;display:flex;gap:6px}'+
+    '.cw-user.selected{background:var(--cx-primary-soft, #ede9fe);border-color:var(--cx-primary, #7c3aed)}'+
+    '.cw-user .dot{width:8px;height:8px;border-radius:50%;background:var(--cx-text-faint, #94a3b8)}'+
+    '.cw-user.online .dot{background:var(--cx-success, #16a34a)}'+
+    '.cw-user .nm{flex:1;font-size:13px;color:var(--cx-text, #0f172a)}'+
+    '.cw-user .est{font-size:10px;color:var(--cx-text-faint, #94a3b8)}'+
+    '#cw-new-actions{padding:10px;border-top:1px solid var(--cx-border, #e2e8f0);background:var(--cx-card, #fff);display:flex;gap:6px}'+
     '#cw-task-modal{position:absolute;inset:0;background:rgba(255,255,255,.97);z-index:5;padding:14px;display:none;flex-direction:column;overflow-y:auto}'+
-    '#cw-task-modal h4{font-size:14px;color:#0f172a;margin-bottom:10px}'+
-    '#cw-task-modal label{font-size:11px;font-weight:600;color:#64748b;display:block;margin-top:8px;margin-bottom:3px}'+
-    '#cw-task-modal input,#cw-task-modal textarea{width:100%;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;font-family:inherit}'+
-    '#cw-msgs{overflow-y:auto;flex:1;padding:10px;background:#f8fafc}'+
+    '#cw-task-modal h4{font-size:14px;color:var(--cx-text, #0f172a);margin-bottom:10px}'+
+    '#cw-task-modal label{font-size:11px;font-weight:600;color:var(--cx-text-mute, #64748b);display:block;margin-top:8px;margin-bottom:3px}'+
+    '#cw-task-modal input,#cw-task-modal textarea{width:100%;padding:6px 9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:12px;font-family:inherit}'+
+    '#cw-msgs{overflow-y:auto;flex:1;padding:10px;background:var(--cx-bg-alt, #f8fafc)}'+
     '.cw-m{max-width:80%;padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.4;margin-bottom:6px;word-wrap:break-word}'+
-    '.cw-m.own{background:#7c3aed;color:#fff;margin-left:auto}'+
-    '.cw-m.other{background:#fff;color:#0f172a;border:1px solid #e2e8f0}'+
-    '.cw-m .who{font-size:10px;font-weight:600;color:#7c3aed;margin-bottom:2px}'+
+    '.cw-m.own{background:var(--cx-primary, #7c3aed);color:#fff;margin-left:auto}'+
+    '.cw-m.other{background:var(--cx-card, #fff);color:var(--cx-text, #0f172a);border:1px solid var(--cx-border, #e2e8f0)}'+
+    '.cw-m .who{font-size:10px;font-weight:600;color:var(--cx-primary-text, #7c3aed);margin-bottom:2px}'+
     '.cw-m.own .who{color:#e9d5ff}'+
-    '#cw-inp{display:flex;gap:6px;padding:8px;border-top:1px solid #e2e8f0;background:#fff}'+
-    '#cw-text{flex:1;border:1px solid #cbd5e1;border-radius:18px;padding:7px 12px;font-size:13px;font-family:inherit;outline:none}'+
-    '#cw-text:focus{border-color:#7c3aed}'+
-    '#cw-send{background:#7c3aed;color:#fff;border:none;border-radius:18px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}'+
-    '#cw-send:hover{background:#6d28d9}'+
-    '#cw-toast{position:fixed;bottom:90px;right:20px;background:#1e293b;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:9999;max-width:320px;font-size:13px;cursor:pointer;animation:cwSlide .3s ease-out;border-left:4px solid #7c3aed}'+
+    '#cw-inp{display:flex;gap:6px;padding:8px;border-top:1px solid var(--cx-border, #e2e8f0);background:var(--cx-card, #fff)}'+
+    '#cw-text{flex:1;border:1px solid var(--cx-border, #cbd5e1);border-radius:18px;padding:7px 12px;font-size:13px;font-family:inherit;outline:none}'+
+    '#cw-text:focus{border-color:var(--cx-primary, #7c3aed)}'+
+    '#cw-send{background:var(--cx-primary, #7c3aed);color:#fff;border:none;border-radius:18px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}'+
+    '#cw-send:hover{background:var(--cx-primary, #6d28d9)}'+
+    '#cw-toast{position:fixed;bottom:90px;right:20px;background:var(--cx-text, #1e293b);color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:9999;max-width:320px;font-size:13px;cursor:pointer;animation:cwSlide .3s ease-out;border-left:4px solid var(--cx-primary, #7c3aed)}'+
     '@keyframes cwSlide{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}'+
-    '.cw-empty{text-align:center;color:#94a3b8;padding:30px 14px;font-size:13px}';
+    '.cw-empty{text-align:center;color:var(--cx-text-faint, #94a3b8);padding:30px 14px;font-size:13px}';
   document.head.appendChild(s);
 
   var fab = document.createElement('button');
@@ -127,23 +127,23 @@ def chat_widget_js():
         '<div id="cw-inp"><input id="cw-text" placeholder="Escribe..." autocomplete="off"><button id="cw-send">Enviar</button></div>'+
       '</div>'+
       '<div id="cw-new">'+
-        '<div id="cw-new-head"><button id="cw-new-back" style="background:none;border:none;color:#7c3aed;cursor:pointer;font-size:16px;padding:0">←</button>'+
+        '<div id="cw-new-head"><button id="cw-new-back" style="background:none;border:none;color:var(--cx-primary-text, #7c3aed);cursor:pointer;font-size:16px;padding:0">←</button>'+
           '<span style="flex:1">Nueva conversación</span></div>'+
-        '<div style="padding:10px;border-bottom:1px solid #e2e8f0;background:#fafafa">'+
+        '<div style="padding:10px;border-bottom:1px solid var(--cx-border, #e2e8f0);background:#fafafa">'+
           '<div style="display:flex;gap:6px;margin-bottom:6px">'+
-            '<label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">'+
+            '<label style="font-size:11px;color:var(--cx-text-mute, #64748b);display:flex;align-items:center;gap:4px;cursor:pointer">'+
               '<input type="radio" name="cw-tipo" value="directo" checked> 1-a-1</label>'+
-            '<label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">'+
+            '<label style="font-size:11px;color:var(--cx-text-mute, #64748b);display:flex;align-items:center;gap:4px;cursor:pointer">'+
               '<input type="radio" name="cw-tipo" value="grupo"> Grupo</label>'+
           '</div>'+
-          '<input id="cw-new-name" type="text" placeholder="Nombre del grupo (opcional para 1-a-1)" style="display:none;width:100%;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;margin-bottom:6px">'+
-          '<input id="cw-new-search" type="text" placeholder="Buscar usuario..." style="width:100%;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">'+
+          '<input id="cw-new-name" type="text" placeholder="Nombre del grupo (opcional para 1-a-1)" style="display:none;width:100%;padding:6px 9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:12px;margin-bottom:6px">'+
+          '<input id="cw-new-search" type="text" placeholder="Buscar usuario..." style="width:100%;padding:6px 9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:6px;font-size:12px">'+
         '</div>'+
         '<div id="cw-new-body"></div>'+
         '<div id="cw-new-actions">'+
-          '<span id="cw-new-count" style="flex:1;font-size:11px;color:#64748b;align-self:center">0 seleccionados</span>'+
-          '<button id="cw-new-cancel" style="background:#e2e8f0;color:#475569;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Cancelar</button>'+
-          '<button id="cw-new-create" style="background:#7c3aed;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Crear</button>'+
+          '<span id="cw-new-count" style="flex:1;font-size:11px;color:var(--cx-text-mute, #64748b);align-self:center">0 seleccionados</span>'+
+          '<button id="cw-new-cancel" style="background:var(--cx-border, #e2e8f0);color:var(--cx-text-soft, #475569);border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Cancelar</button>'+
+          '<button id="cw-new-create" style="background:var(--cx-primary, #7c3aed);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Crear</button>'+
         '</div>'+
       '</div>'+
       '<div id="cw-task-modal">'+
@@ -153,8 +153,8 @@ def chat_widget_js():
         '<label>Asignar a (usernames separados por coma)</label><input id="cw-task-asign" type="text" placeholder="ej: mayerlin,camilo">'+
         '<label>Fecha objetivo (opcional)</label><input id="cw-task-fecha" type="date">'+
         '<div style="display:flex;gap:6px;margin-top:14px;justify-content:flex-end">'+
-          '<button id="cw-task-cancel" style="background:#e2e8f0;color:#475569;border:none;padding:7px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Cancelar</button>'+
-          '<button id="cw-task-save" style="background:#16a34a;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Crear tarea</button>'+
+          '<button id="cw-task-cancel" style="background:var(--cx-border, #e2e8f0);color:var(--cx-text-soft, #475569);border:none;padding:7px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Cancelar</button>'+
+          '<button id="cw-task-save" style="background:var(--cx-success, #16a34a);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Crear tarea</button>'+
         '</div>'+
       '</div>'+
     '</div>';
@@ -258,7 +258,7 @@ def chat_widget_js():
         '<span class="dot"></span>'+
         '<span class="nm">'+_esc(u.display_name||u.username)+'</span>'+
         '<span class="est">'+u.estado+'</span>'+
-        (sel?'<span style="color:#7c3aed;font-weight:700">✓</span>':'')+
+        (sel?'<span style="color:var(--cx-primary-text, #7c3aed);font-weight:700">✓</span>':'')+
       '</div>';
     }).join('');
     body.querySelectorAll('.cw-user').forEach(function(el){
@@ -499,7 +499,7 @@ def chat_widget_js():
     if (prev) prev.remove();
     var t = document.createElement('div');
     t.id = 'cw-toast';
-    t.innerHTML = '<div style="font-weight:700;margin-bottom:2px">'+titulo+'</div><div style="font-size:11px;color:#cbd5e1">'+sub+'</div>';
+    t.innerHTML = '<div style="font-weight:700;margin-bottom:2px">'+titulo+'</div><div style="font-size:11px;color:var(--cx-border, #cbd5e1)">'+sub+'</div>';
     t.onclick = function(){
       if (panel.style.display !== 'flex') { panel.style.display = 'flex'; cargarThreads(); }
       t.remove();
@@ -816,11 +816,11 @@ def chat_messages(thread_id):
                     body = (
                         f"<h2>Te mencionaron en EOS Chat</h2>"
                         f"<p><b>{user}</b> escribió:</p>"
-                        f"<div style='background:#f5f5f4;padding:14px;border-radius:8px;border-left:4px solid #6d28d9'>"
+                        f"<div style='background:var(--cx-bg-alt, #f5f5f4);padding:14px;border-radius:8px;border-left:4px solid var(--cx-primary, #6d28d9)'>"
                         f"<i>{contenido[:500]}</i>"
                         f"</div>"
                         f"<p><a href='/chat'>Abrir el chat</a> para responder.</p>"
-                        f"<p style='color:#94a3b8;font-size:11px'>Mensaje automatico HHA Group · EOS</p>"
+                        f"<p style='color:var(--cx-text-faint, #94a3b8);font-size:11px'>Mensaje automatico HHA Group · EOS</p>"
                     )
                     notif = SistemaNotificaciones()
                     _th.Thread(
@@ -1038,14 +1038,14 @@ def chat_asignar_tarea(thread_id):
             body = (
                 f"<h2>Nueva tarea desde el chat EOS</h2>"
                 f"<p><b>{user}</b> te asignó:</p>"
-                f"<div style='background:#f5f5f4;padding:14px;border-radius:8px;border-left:4px solid #7c3aed'>"
+                f"<div style='background:var(--cx-bg-alt, #f5f5f4);padding:14px;border-radius:8px;border-left:4px solid var(--cx-primary, #7c3aed)'>"
                 f"<b>{titulo}</b>"
                 + (f"<br><i>{descripcion}</i>" if descripcion and descripcion != titulo else "")
                 + (f"<br>⏰ <b>Fecha objetivo:</b> {fecha_obj}" if fecha_obj else "")
                 + f"<br>👥 <b>Asignados:</b> {asignado_a}"
                 + f"</div>"
                 + f"<p>Revisa la tarea en <a href='/chat'>el chat</a> o en /planta → Tareas Operativas.</p>"
-                + f"<p style='color:#94a3b8;font-size:11px'>Mensaje automatico HHA Group · EOS</p>"
+                + f"<p style='color:var(--cx-text-faint, #94a3b8);font-size:11px'>Mensaje automatico HHA Group · EOS</p>"
             )
             notif = SistemaNotificaciones()
             threading.Thread(

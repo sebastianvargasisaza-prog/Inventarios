@@ -41,93 +41,93 @@ html.embed-mode .msg{max-width:88%}
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;color:#e8e8ea;height:100vh;overflow:hidden}
-.app{display:flex;height:100vh;background:#fff;color:#1c1917}
+.app{display:flex;height:100vh;background:var(--cx-card);color:var(--cx-text)}
 
 /* Sidebar */
-.sidebar{width:340px;background:#fafaf9;border-right:1px solid #e7e5e4;display:flex;flex-direction:column;flex-shrink:0;height:100vh}
-.me-bar{padding:14px 16px;background:#fff;border-bottom:1px solid #e7e5e4;display:flex;align-items:center;gap:12px}
+.sidebar{width:340px;background:var(--cx-bg-alt);border-right:1px solid var(--cx-border);display:flex;flex-direction:column;flex-shrink:0;height:100vh}
+.me-bar{padding:14px 16px;background:var(--cx-card);border-bottom:1px solid var(--cx-border);display:flex;align-items:center;gap:12px}
 .me-avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
 .me-info{flex:1;min-width:0}
-.me-name{font-weight:700;font-size:14px;color:#1c1917;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.me-status{font-size:11px;color:#15803d;display:flex;align-items:center;gap:4px;margin-top:1px}
-.dot-online{width:7px;height:7px;border-radius:50%;background:#15803d}
-.btn-icon{width:34px;height:34px;border-radius:6px;background:transparent;border:1px solid #e7e5e4;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#78716c}
-.btn-icon:hover{background:#f5f5f4;color:#1c1917;border-color:#d6d3d1}
+.me-name{font-weight:700;font-size:14px;color:var(--cx-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.me-status{font-size:11px;color:var(--cx-success-text);display:flex;align-items:center;gap:4px;margin-top:1px}
+.dot-online{width:7px;height:7px;border-radius:50%;background:var(--cx-success)}
+.btn-icon{width:34px;height:34px;border-radius:6px;background:transparent;border:1px solid var(--cx-border);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--cx-text-mute)}
+.btn-icon:hover{background:var(--cx-bg-alt);color:var(--cx-text);border-color:var(--cx-border)}
 .btn-icon svg{width:18px;height:18px}
 
-.search-wrap{padding:10px 12px;background:#fff;border-bottom:1px solid #e7e5e4}
-.search-input{width:100%;padding:8px 12px;border:1px solid #e7e5e4;border-radius:8px;font-size:13px;background:#f5f5f4;outline:none}
-.search-input:focus{background:#fff;border-color:#a78bfa}
+.search-wrap{padding:10px 12px;background:var(--cx-card);border-bottom:1px solid var(--cx-border)}
+.search-input{width:100%;padding:8px 12px;border:1px solid var(--cx-border);border-radius:8px;font-size:13px;background:var(--cx-bg-alt);outline:none}
+.search-input:focus{background:var(--cx-card);border-color:var(--cx-primary-light)}
 
-.tabs-bar{padding:6px 12px;background:#fff;border-bottom:1px solid #e7e5e4;display:flex;gap:4px;overflow-x:auto;flex-wrap:wrap}
-.tab-pill{padding:5px 10px;font-size:11px;border-radius:14px;border:1px solid #e7e5e4;background:#fff;cursor:pointer;font-weight:600;color:#78716c;white-space:nowrap}
-.tab-pill.on{background:#1c1917;color:#fff;border-color:#1c1917}
+.tabs-bar{padding:6px 12px;background:var(--cx-card);border-bottom:1px solid var(--cx-border);display:flex;gap:4px;overflow-x:auto;flex-wrap:wrap}
+.tab-pill{padding:5px 10px;font-size:11px;border-radius:14px;border:1px solid var(--cx-border);background:var(--cx-card);cursor:pointer;font-weight:600;color:var(--cx-text-mute);white-space:nowrap}
+.tab-pill.on{background:var(--cx-text);color:#fff;border-color:var(--cx-text)}
 
-.thread-list{flex:1;overflow-y:auto;background:#fafaf9}
-.thread-item{padding:11px 14px;border-bottom:1px solid #f5f5f4;display:flex;align-items:center;gap:11px;cursor:pointer;background:#fff;margin:0}
-.thread-item:hover{background:#fafaf9}
-.thread-item.active{background:#f3e8ff;border-left:3px solid #6d28d9;padding-left:11px}
-.t-avatar{width:42px;height:42px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;position:relative;background:#94a3b8}
-.t-avatar.online::after{content:'';position:absolute;bottom:0;right:0;width:11px;height:11px;background:#15803d;border:2px solid #fff;border-radius:50%}
+.thread-list{flex:1;overflow-y:auto;background:var(--cx-bg-alt)}
+.thread-item{padding:11px 14px;border-bottom:1px solid var(--cx-bg-alt);display:flex;align-items:center;gap:11px;cursor:pointer;background:var(--cx-card);margin:0}
+.thread-item:hover{background:var(--cx-bg-alt)}
+.thread-item.active{background:#f3e8ff;border-left:3px solid var(--cx-primary);padding-left:11px}
+.t-avatar{width:42px;height:42px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;position:relative;background:var(--cx-text-faint)}
+.t-avatar.online::after{content:'';position:absolute;bottom:0;right:0;width:11px;height:11px;background:var(--cx-success);border:2px solid var(--cx-card);border-radius:50%}
 .t-body{flex:1;min-width:0}
 .t-row1{display:flex;justify-content:space-between;align-items:center}
-.t-name{font-weight:700;font-size:13px;color:#1c1917;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.t-time{font-size:10px;color:#a8a29e;flex-shrink:0;margin-left:6px}
+.t-name{font-weight:700;font-size:13px;color:var(--cx-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-time{font-size:10px;color:var(--cx-text-faint);flex-shrink:0;margin-left:6px}
 .t-row2{display:flex;justify-content:space-between;align-items:center;margin-top:2px}
-.t-preview{font-size:12px;color:#78716c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
-.t-badge{background:#6d28d9;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;min-width:18px;text-align:center;margin-left:4px}
+.t-preview{font-size:12px;color:var(--cx-text-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.t-badge{background:var(--cx-primary);color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;min-width:18px;text-align:center;margin-left:4px}
 
 /* Main chat */
 .main{flex:1;display:flex;flex-direction:column;background:#f5f4f0;background-image:radial-gradient(circle at 20% 30%, rgba(167,139,250,.04) 0, transparent 50%), radial-gradient(circle at 80% 70%, rgba(109,40,217,.04) 0, transparent 50%);min-width:0}
-.empty-main{flex:1;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:14px;padding:40px;text-align:center;flex-direction:column;gap:16px}
-.empty-main svg{width:80px;height:80px;color:#cbd5e1}
+.empty-main{flex:1;display:flex;align-items:center;justify-content:center;color:var(--cx-text-faint);font-size:14px;padding:40px;text-align:center;flex-direction:column;gap:16px}
+.empty-main svg{width:80px;height:80px;color:var(--cx-border)}
 
-.chat-header{padding:13px 18px;background:#fff;border-bottom:1px solid #e7e5e4;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.chat-header{padding:13px 18px;background:var(--cx-card);border-bottom:1px solid var(--cx-border);display:flex;align-items:center;gap:12px;flex-shrink:0}
 .ch-info{flex:1;min-width:0}
-.ch-name{font-weight:700;font-size:15px;color:#1c1917}
-.ch-status{font-size:11px;color:#78716c;margin-top:1px}
-.ch-status.online{color:#15803d}
+.ch-name{font-weight:700;font-size:15px;color:var(--cx-text)}
+.ch-status{font-size:11px;color:var(--cx-text-mute);margin-top:1px}
+.ch-status.online{color:var(--cx-success-text)}
 
 .msgs-wrap{flex:1;overflow-y:auto;padding:18px;background:#f5f4f0}
 .msg{display:flex;margin-bottom:10px;max-width:75%}
 .msg.mine{margin-left:auto;flex-direction:row-reverse}
-.add-react{position:absolute;top:0;background:#fff;border:1px solid #e7e5e4;border-radius:50%;width:26px;height:26px;cursor:pointer;font-size:12px;display:none;align-items:center;justify-content:center;z-index:5}
+.add-react{position:absolute;top:0;background:var(--cx-card);border:1px solid var(--cx-border);border-radius:50%;width:26px;height:26px;cursor:pointer;font-size:12px;display:none;align-items:center;justify-content:center;z-index:5}
 .msg .add-react{right:-32px}
 .msg.mine .add-react{left:-32px;right:auto}
 .msg:hover .add-react{display:flex}
-.mention{background:#ede9fe;color:#6d28d9;padding:1px 4px;border-radius:4px;font-weight:700}
-.mention.me{background:#fef3c7;color:#92400e}
-.mention-suggest{position:absolute;background:#fff;border:1px solid #e7e5e4;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:180px;overflow-y:auto;z-index:9999;min-width:180px}
+.mention{background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:1px 4px;border-radius:4px;font-weight:700}
+.mention.me{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.mention-suggest{position:absolute;background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:180px;overflow-y:auto;z-index:9999;min-width:180px}
 .mention-suggest .item{padding:7px 12px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
-.mention-suggest .item:hover,.mention-suggest .item.sel{background:#f5f5f4}
-.bubble{padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;color:#1c1917;background:#fff;border:1px solid #e7e5e4;box-shadow:0 1px 2px rgba(0,0,0,.03);max-width:100%;word-wrap:break-word;overflow-wrap:break-word}
-.msg.mine .bubble{background:#dcfce7;border-color:#bbf7d0;color:#14532d}
-.bubble-meta{font-size:10px;color:#a8a29e;margin-top:3px}
-.msg.mine .bubble-meta{text-align:right;color:#15803d}
-.sender-name{font-size:11px;font-weight:700;color:#6d28d9;margin-bottom:2px}
-.day-divider{text-align:center;margin:14px 0;font-size:11px;color:#78716c;font-weight:600}
-.day-divider span{background:#fff;padding:3px 12px;border-radius:10px;border:1px solid #e7e5e4}
+.mention-suggest .item:hover,.mention-suggest .item.sel{background:var(--cx-bg-alt)}
+.bubble{padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;color:var(--cx-text);background:var(--cx-card);border:1px solid var(--cx-border);box-shadow:0 1px 2px rgba(0,0,0,.03);max-width:100%;word-wrap:break-word;overflow-wrap:break-word}
+.msg.mine .bubble{background:var(--cx-success-pale);border-color:#bbf7d0;color:#14532d}
+.bubble-meta{font-size:10px;color:var(--cx-text-faint);margin-top:3px}
+.msg.mine .bubble-meta{text-align:right;color:var(--cx-success-text)}
+.sender-name{font-size:11px;font-weight:700;color:var(--cx-primary-text);margin-bottom:2px}
+.day-divider{text-align:center;margin:14px 0;font-size:11px;color:var(--cx-text-mute);font-weight:600}
+.day-divider span{background:var(--cx-card);padding:3px 12px;border-radius:10px;border:1px solid var(--cx-border)}
 
-.composer{padding:11px 16px;background:#fff;border-top:1px solid #e7e5e4;display:flex;align-items:flex-end;gap:8px;flex-shrink:0}
-.composer-input{flex:1;padding:9px 13px;border:1px solid #e7e5e4;border-radius:18px;font-size:13.5px;outline:none;resize:none;font-family:inherit;background:#fafaf9;max-height:120px;min-height:36px}
-.composer-input:focus{border-color:#6d28d9;background:#fff}
-.send-btn{width:38px;height:38px;border:none;background:#6d28d9;color:#fff;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.send-btn:hover{background:#5b21b6}
-.send-btn:disabled{background:#cbd5e1;cursor:default}
+.composer{padding:11px 16px;background:var(--cx-card);border-top:1px solid var(--cx-border);display:flex;align-items:flex-end;gap:8px;flex-shrink:0}
+.composer-input{flex:1;padding:9px 13px;border:1px solid var(--cx-border);border-radius:18px;font-size:13.5px;outline:none;resize:none;font-family:inherit;background:var(--cx-bg-alt);max-height:120px;min-height:36px}
+.composer-input:focus{border-color:var(--cx-primary);background:var(--cx-card)}
+.send-btn{width:38px;height:38px;border:none;background:var(--cx-primary);color:#fff;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.send-btn:hover{background:var(--cx-primary-dark)}
+.send-btn:disabled{background:var(--cx-border);cursor:default}
 .send-btn svg{width:18px;height:18px;transform:translateX(1px)}
 
 /* Modal nuevo chat */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
 .modal-bg.on{display:flex}
-.modal-box{background:#fff;border-radius:14px;padding:24px;width:480px;max-width:100%;max-height:90vh;overflow-y:auto;color:#1c1917}
+.modal-box{background:var(--cx-card);border-radius:14px;padding:24px;width:480px;max-width:100%;max-height:90vh;overflow-y:auto;color:var(--cx-text)}
 .modal-box h3{font-size:16px;margin-bottom:14px}
 .user-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent}
-.user-row:hover{background:#fafaf9;border-color:#e7e5e4}
-.user-row.selected{background:#f3e8ff;border-color:#6d28d9}
-.u-name{font-size:13px;color:#1c1917;flex:1}
+.user-row:hover{background:var(--cx-bg-alt);border-color:var(--cx-border)}
+.user-row.selected{background:#f3e8ff;border-color:var(--cx-primary)}
+.u-name{font-size:13px;color:var(--cx-text);flex:1}
 .u-status{font-size:11px}
-.u-status.online{color:#15803d;font-weight:600}
-.u-status.offline{color:#a8a29e}
+.u-status.online{color:var(--cx-success-text);font-weight:600}
+.u-status.offline{color:var(--cx-text-faint)}
 
 @media(max-width:768px){
   .sidebar{width:100%;display:none}
@@ -156,7 +156,7 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
     <div class="search-wrap">
       <input class="search-input" id="search-input" placeholder="Buscar conversación o mensaje..." oninput="onSearchInput(this.value)">
     </div>
-    <div id="search-results" style="display:none;max-height:280px;overflow-y:auto;border-bottom:1px solid #e7e5e4;background:#fff;"></div>
+    <div id="search-results" style="display:none;max-height:280px;overflow-y:auto;border-bottom:1px solid var(--cx-border);background:var(--cx-card);"></div>
 
     <div class="tabs-bar">
       <div class="tab-pill on" data-filter="todos" onclick="setFiltro('todos',this)">Todos</div>
@@ -165,7 +165,7 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
     </div>
 
     <div class="thread-list" id="thread-list">
-      <div style="padding:30px;text-align:center;color:#a8a29e;font-size:12px">Cargando conversaciones...</div>
+      <div style="padding:30px;text-align:center;color:var(--cx-text-faint);font-size:12px">Cargando conversaciones...</div>
     </div>
   </aside>
 
@@ -173,7 +173,7 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
   <section class="main" id="main">
     <div class="empty-main" id="empty-main">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      <div style="font-size:18px;font-weight:600;color:#475569">EOS · Chat interno del holding</div>
+      <div style="font-size:18px;font-weight:600;color:var(--cx-text-soft)">EOS · Chat interno del holding</div>
       <div style="font-size:13px;max-width:420px;line-height:1.5">Selecciona una conversación o inicia una nueva con el botón <b>+</b> arriba a la izquierda. Polling cada 5s - los mensajes nuevos llegan solos.</div>
     </div>
 
@@ -187,7 +187,7 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
       </div>
       <div class="msgs-wrap" id="msgs-wrap"></div>
       <div class="composer">
-        <button class="send-btn" id="task-btn" onclick="abrirModalTarea()" title="Asignar tarea (crea tarea operativa + email a asignados)" style="background:#a16207;flex-shrink:0">📋</button>
+        <button class="send-btn" id="task-btn" onclick="abrirModalTarea()" title="Asignar tarea (crea tarea operativa + email a asignados)" style="background:var(--cx-accent-dark);flex-shrink:0">📋</button>
         <textarea class="composer-input" id="composer" rows="1" placeholder="Escribe un mensaje..." onkeydown="composerKeydown(event)" oninput="autoresize(this)"></textarea>
         <button class="send-btn" id="send-btn" onclick="enviarMensaje()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
       </div>
@@ -204,31 +204,31 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
       <h3>📋 Asignar tarea</h3>
       <button class="btn-icon" onclick="cerrarModalTarea()">&times;</button>
     </div>
-    <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400e;line-height:1.5">
+    <div style="background:var(--cx-warn-pale);border:1px solid #fdba74;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--cx-warn-text);line-height:1.5">
       Crea una <b>tarea operativa</b> visible en /planta. El asignado recibe email automático.
       Aparece como card en este chat.
     </div>
     <div style="margin-bottom:10px">
-      <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Título *</label>
-      <input id="tarea-titulo" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:4px;font-size:13px" placeholder="Ej. Sacar 100 envases para serigrafía">
+      <label style="font-size:11px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Título *</label>
+      <input id="tarea-titulo" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin-top:4px;font-size:13px" placeholder="Ej. Sacar 100 envases para serigrafía">
     </div>
     <div style="margin-bottom:10px">
-      <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Descripción</label>
-      <textarea id="tarea-desc" rows="2" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:4px;font-size:13px;resize:vertical" placeholder="Detalle opcional..."></textarea>
+      <label style="font-size:11px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Descripción</label>
+      <textarea id="tarea-desc" rows="2" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin-top:4px;font-size:13px;resize:vertical" placeholder="Detalle opcional..."></textarea>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <div>
-        <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Asignar a *</label>
-        <select id="tarea-asignado" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:4px;font-size:13px"></select>
+        <label style="font-size:11px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Asignar a *</label>
+        <select id="tarea-asignado" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin-top:4px;font-size:13px"></select>
       </div>
       <div>
-        <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Fecha objetivo</label>
-        <input type="date" id="tarea-fecha" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:4px;font-size:13px">
+        <label style="font-size:11px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Fecha objetivo</label>
+        <input type="date" id="tarea-fecha" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin-top:4px;font-size:13px">
       </div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button class="tab-pill" onclick="cerrarModalTarea()">Cancelar</button>
-      <button class="tab-pill on" onclick="crearTareaChat()" style="background:#a16207;color:#fff;border-color:#a16207">📋 Asignar y notificar</button>
+      <button class="tab-pill on" onclick="crearTareaChat()" style="background:var(--cx-accent-dark);color:#fff;border-color:var(--cx-accent-dark)">📋 Asignar y notificar</button>
     </div>
   </div>
 </div>
@@ -245,11 +245,11 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
       <button class="tab-pill" data-tipo="broadcast" onclick="setTipoChat('broadcast',this)">📢 Todos</button>
     </div>
     <div id="grupo-nombre-wrap" style="display:none;margin-bottom:14px">
-      <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Nombre del grupo</label>
-      <input id="grupo-nombre" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:6px;font-size:13px" placeholder="Ej. Equipo Planta">
+      <label style="font-size:11px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Nombre del grupo</label>
+      <input id="grupo-nombre" style="width:100%;padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;margin-top:6px;font-size:13px" placeholder="Ej. Equipo Planta">
     </div>
-    <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Personas</label>
-    <div id="users-list" style="margin-top:6px;max-height:300px;overflow-y:auto;border:1px solid #e7e5e4;border-radius:8px;padding:6px"></div>
+    <label style="font-size:11px;color:var(--cx-text-soft);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Personas</label>
+    <div id="users-list" style="margin-top:6px;max-height:300px;overflow-y:auto;border:1px solid var(--cx-border);border-radius:8px;padding:6px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button class="tab-pill" onclick="cerrarModalNuevo()">Cancelar</button>
       <button class="tab-pill on" onclick="crearNuevoChat()">Crear chat →</button>
@@ -346,7 +346,7 @@ function renderThreads(){
     return true;
   });
   if(!filtered.length){
-    list.innerHTML = '<div style="padding:30px;text-align:center;color:#a8a29e;font-size:12px">Sin conversaciones'+(BUSCAR?' que coincidan con "'+_esc(BUSCAR)+'"':'')+'</div>';
+    list.innerHTML = '<div style="padding:30px;text-align:center;color:var(--cx-text-faint);font-size:12px">Sin conversaciones'+(BUSCAR?' que coincidan con "'+_esc(BUSCAR)+'"':'')+'</div>';
     return;
   }
   list.innerHTML = filtered.map(function(t){
@@ -455,12 +455,12 @@ async function cargarMensajes(thread_id, append){
       var hora = d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
       // Render especial para mensajes tipo 'tarea': card con accion completar
       if(m.tipo_mensaje === 'tarea' && m.tarea_operativa_id){
-        var tareaCard = '<div style="background:#fff7ed;border:1px solid #fdba74;border-left:4px solid #f59e0b;border-radius:10px;padding:12px 14px;margin:4px 0;max-width:380px">'+
-          '<div style="font-size:11px;color:#92400e;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">📋 Tarea asignada</div>'+
-          '<div style="font-size:13px;color:#1c1917;line-height:1.4">'+_esc(m.contenido)+'</div>'+
+        var tareaCard = '<div style="background:var(--cx-warn-pale);border:1px solid #fdba74;border-left:4px solid var(--cx-warn);border-radius:10px;padding:12px 14px;margin:4px 0;max-width:380px">'+
+          '<div style="font-size:11px;color:var(--cx-warn-text);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">📋 Tarea asignada</div>'+
+          '<div style="font-size:13px;color:var(--cx-text);line-height:1.4">'+_esc(m.contenido)+'</div>'+
           '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'+
-            '<button onclick="completarTareaChat('+m.tarea_operativa_id+')" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Completar</button>'+
-            '<a href="/planta#tareas" target="_blank" style="background:#f5f5f4;color:#44403c;text-decoration:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600">Ver en /planta</a>'+
+            '<button onclick="completarTareaChat('+m.tarea_operativa_id+')" style="background:var(--cx-success);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Completar</button>'+
+            '<a href="/planta#tareas" target="_blank" style="background:var(--cx-bg-alt);color:var(--cx-text-soft);text-decoration:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600">Ver en /planta</a>'+
           '</div>'+
         '</div>';
         html += '<div class="msg'+(mine?' mine':'')+'"><div>'+
@@ -496,7 +496,7 @@ async function cargarMensajes(thread_id, append){
           '</div></div>';
       }
     });
-    if(!msgs.length) html = '<div style="text-align:center;padding:60px 20px;color:#a8a29e;font-size:13px">Sin mensajes aún. ¡Sé el primero en escribir!</div>';
+    if(!msgs.length) html = '<div style="text-align:center;padding:60px 20px;color:var(--cx-text-faint);font-size:13px">Sin mensajes aún. ¡Sé el primero en escribir!</div>';
     wrap.innerHTML = html;
     if(atBottom || !append){ wrap.scrollTop = wrap.scrollHeight; }
   } catch(e){ console.error('msgs:',e); }
@@ -565,10 +565,10 @@ async function cargarUsuarios(){
 function renderUsersList(){
   var list = document.getElementById('users-list');
   if(TIPO_NUEVO === 'broadcast'){
-    list.innerHTML = '<div style="padding:14px;text-align:center;color:#475569;font-size:12px">📢 Mensaje a <b>TODOS</b> los usuarios del sistema (sebastian, alejandro, catalina, mayra, luz, daniela, miguel, luis, etc).</div>';
+    list.innerHTML = '<div style="padding:14px;text-align:center;color:var(--cx-text-soft);font-size:12px">📢 Mensaje a <b>TODOS</b> los usuarios del sistema (sebastian, alejandro, catalina, mayra, luz, daniela, miguel, luis, etc).</div>';
     return;
   }
-  if(!USERS.length){ list.innerHTML='<div style="padding:14px;color:#a8a29e">Sin usuarios</div>'; return; }
+  if(!USERS.length){ list.innerHTML='<div style="padding:14px;color:var(--cx-text-faint)">Sin usuarios</div>'; return; }
   list.innerHTML = USERS.map(function(u){
     var sel = SELECTED_USERS.indexOf(u.username) >= 0;
     var color = avatarColor(u.username);
@@ -794,20 +794,20 @@ function onSearchInput(val){
       var d = await r.json();
       var results = d.results || [];
       if(!results.length){
-        box.innerHTML = '<div style="padding:14px;color:#a8a29e;font-size:12px;text-align:center">Sin mensajes que coincidan con "'+_esc(val)+'"</div>';
+        box.innerHTML = '<div style="padding:14px;color:var(--cx-text-faint);font-size:12px;text-align:center">Sin mensajes que coincidan con "'+_esc(val)+'"</div>';
         box.style.display = 'block';
         return;
       }
-      var html = '<div style="padding:8px 14px;color:#78716c;font-size:11px;font-weight:700;text-transform:uppercase">'+results.length+' mensaje'+(results.length>1?'s':'')+' encontrado'+(results.length>1?'s':'')+'</div>';
+      var html = '<div style="padding:8px 14px;color:var(--cx-text-mute);font-size:11px;font-weight:700;text-transform:uppercase">'+results.length+' mensaje'+(results.length>1?'s':'')+' encontrado'+(results.length>1?'s':'')+'</div>';
       results.forEach(function(m){
         var threadLabel = m.thread_tipo === 'directo' ? '@'+_esc(m.sender) :
                           (m.thread_nombre || (m.thread_tipo==='broadcast'?'Todos':'Grupo'));
         html += '<div onclick="abrirThread('+m.thread_id+');document.getElementById(\'search-input\').value=\'\';onSearchInput(\'\');" '+
-          'style="padding:10px 14px;border-bottom:1px solid #f5f5f4;cursor:pointer" '+
+          'style="padding:10px 14px;border-bottom:1px solid var(--cx-bg-alt);cursor:pointer" '+
           'onmouseover="this.style.background=\'#fafaf9\'" onmouseout="this.style.background=\'\'">'+
-          '<div style="font-size:11px;color:#7c3aed;font-weight:700">'+_esc(threadLabel)+' · '+_esc(m.sender)+'</div>'+
-          '<div style="font-size:13px;color:#1c1917;margin-top:2px">'+_esc(m.contenido.substring(0,120))+'</div>'+
-          '<div style="font-size:10px;color:#a8a29e;margin-top:2px">'+(m.creado_en||'').substring(0,16)+'</div>'+
+          '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:700">'+_esc(threadLabel)+' · '+_esc(m.sender)+'</div>'+
+          '<div style="font-size:13px;color:var(--cx-text);margin-top:2px">'+_esc(m.contenido.substring(0,120))+'</div>'+
+          '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:2px">'+(m.creado_en||'').substring(0,16)+'</div>'+
           '</div>';
       });
       box.innerHTML = html;
@@ -825,7 +825,7 @@ function abrirPickerReact(msgId, ev){
   if(prev) prev.remove();
   var picker = document.createElement('div');
   picker.id = 'cw-picker-react';
-  picker.style.cssText = 'position:fixed;background:#fff;border:1px solid #e7e5e4;border-radius:24px;padding:6px 10px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:99999;display:flex;gap:4px';
+  picker.style.cssText = 'position:fixed;background:var(--cx-card);border:1px solid var(--cx-border);border-radius:24px;padding:6px 10px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:99999;display:flex;gap:4px';
   // Posicionar cerca del click
   var x = (ev && ev.clientX) || 100;
   var y = (ev && ev.clientY) || 100;

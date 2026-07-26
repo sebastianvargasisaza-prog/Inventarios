@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-07-25** (M100 · abastecimiento MP: el motor trataba el stock como NÚMERO PLANO sin mirar cuándo vence → una MP que vence en 30d cubría un consumo del día 90 y el déficit salía corto (53 MPs) · un TABULADOR pegado a un código = clave distinta = 1000 envases invisibles en el kardex, normalizá toda clave con .strip() en el punto de escritura · un endpoint de diagnóstico con un chequeo caído DEBE declararlo, si no su lista vacía miente · M99 · una MISMA regla de negocio en DOS constantes distintas diverge en silencio: `DIAS_HABILES`=L-V validaba y `DIAS_PRODUCCION`=L/M/V ubicaba → el calendario aceptaba martes que los generadores nunca elegían (2 rutas, 2 calendarios) y la capacidad del mes caía de 44 a 26 cupos, comiéndose el colchón de 20d · el ➕ del calendario era el ÚNICO de 3 caminos sin validar día hábil/festivo · si N caminos hacen lo mismo, comparar sus GUARDS no solo su lógica · test que agenda a `hoy+N` cae siempre en el mismo día de semana · M98 · un campo con nombre de MÉTRICA que en realidad es una ETIQUETA de texto: `tendencia` ('aceleracion_fuerte') se convertía con float() → 500 en prod, y en JS se comparaba >= 0.08 → alerta muerta que nunca apareció · leé el `return` del productor antes de comparar/convertir · el número va en un campo APARTE (`tendencia_pct`), no se reinterpreta la etiqueta · un except alrededor del float() tapa el 500 pero deja la decisión con el default · M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
+Última actualización: **2026-07-26** (M104 · un color de RELLENO y el mismo color como TEXTO no pueden ser el mismo token: al invertir el tema tiran en direcciones opuestas → el violeta como texto daba 2,06:1 sobre la tarjeta oscura · mapear `color:#fff` a `--cx-card` habría dejado 1.107 botones con texto oscuro sobre relleno oscuro: preguntá qué SIGNIFICA el color en ese lugar, no a qué valor es igual · el tema oscuro estaba a MEDIO construir (sólo neutros y pálidos, nunca los semánticos) y nadie lo notó porque casi nada usaba tokens · `var()` NO resuelve en atributos SVG ni en theme-color ni en canvas · en blueprints va con respaldo `var(--tok, #hex)` porque ahí viven los rótulos imprimibles · una regla que nadie verifica es una intención, no un blindaje: el trinquete va con techo EXACTO y hay que probar que MUERDE) · **2026-07-25** (M100 · abastecimiento MP: el motor trataba el stock como NÚMERO PLANO sin mirar cuándo vence → una MP que vence en 30d cubría un consumo del día 90 y el déficit salía corto (53 MPs) · un TABULADOR pegado a un código = clave distinta = 1000 envases invisibles en el kardex, normalizá toda clave con .strip() en el punto de escritura · un endpoint de diagnóstico con un chequeo caído DEBE declararlo, si no su lista vacía miente · M99 · una MISMA regla de negocio en DOS constantes distintas diverge en silencio: `DIAS_HABILES`=L-V validaba y `DIAS_PRODUCCION`=L/M/V ubicaba → el calendario aceptaba martes que los generadores nunca elegían (2 rutas, 2 calendarios) y la capacidad del mes caía de 44 a 26 cupos, comiéndose el colchón de 20d · el ➕ del calendario era el ÚNICO de 3 caminos sin validar día hábil/festivo · si N caminos hacen lo mismo, comparar sus GUARDS no solo su lógica · test que agenda a `hoy+N` cae siempre en el mismo día de semana · M98 · un campo con nombre de MÉTRICA que en realidad es una ETIQUETA de texto: `tendencia` ('aceleracion_fuerte') se convertía con float() → 500 en prod, y en JS se comparaba >= 0.08 → alerta muerta que nunca apareció · leé el `return` del productor antes de comparar/convertir · el número va en un campo APARTE (`tendencia_pct`), no se reinterpreta la etiqueta · un except alrededor del float() tapa el 500 pero deja la decisión con el default · M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
 
 ---
 
@@ -1117,6 +1117,70 @@ tardé en ver que era un solo problema:
   solo y dio 429 verde.
   ⚠ Esto arregla la acumulación ENTRE corridas. DENTRO de una corrida el orden sigue importando:
   que los 96 archivos limpien lo suyo queda como trabajo mecánico pendiente.
+
+## 🎨 M104 · Un color de RELLENO y el mismo color como TEXTO no pueden ser el mismo token · 26-jul
+
+Sebastián, mirando Envasado: *"siempre me pregunto ¿es premium? · ¿qué hay para mejorar aquí?"* →
+la respuesta medida: **8.077 colores a mano contra 40 tokens** sólo en `dashboard_html.py` (99,5%
+hardcodeado), 415 valores distintos, y **cuatro paletas de grises conviviendo** (zinc en los
+tokens, slate en el dashboard, stone y gray de tailwind en otras vistas). Por eso el tema oscuro
+no funcionaba en Planta: los fondos claros están fijos en el HTML y le ganan a la hoja de estilos.
+
+**El error que cometí y que vale más que la migración entera:** mapeé `color:#fff` a
+`var(--cx-card)`. Parece obvio — `#fff` es el color de la tarjeta — pero **`#fff` como TEXTO no
+significa "superficie de tarjeta", significa "texto blanco sobre un relleno de color"**, y eso NO
+depende del tema. En oscuro `--cx-card` es `#1e293b`, así que 1.107 botones habrían quedado con
+texto oscuro sobre relleno oscuro. **Regla: antes de mapear un color a un token, preguntá qué
+SIGNIFICA en ese lugar, no a qué valor es igual.** Dos usos con el mismo hex pueden necesitar
+tokens opuestos.
+
+**La forma general del mismo problema:** un color de relleno y el mismo color como texto tiran en
+direcciones opuestas al invertir el tema (el relleno se queda oscuro para que el texto blanco
+encima se lea; el texto tiene que aclararse para leerse sobre el fondo oscuro). Con un solo token
+el violeta como texto daba **2,06:1** sobre la tarjeta oscura. Fix: pares `--cx-*-text`
+(primary/success/danger/info/warn) con valor propio por tema, los 5 medidos y pasando AA (4,5:1)
+en claro Y en oscuro; `background:` usa el token de relleno, `color:` usa el de texto.
+**Corolario: el tema oscuro de EOS estaba a MEDIO construir** — sólo invertía neutros y pálidos,
+nunca los semánticos, y nadie lo notó porque casi nada usaba tokens.
+
+**Cómo migrar 9.685 colores sin romper nada (lo que hay que verificar ANTES de reemplazar):**
+- `var()` sólo resuelve donde el navegador espera un VALOR CSS. **NO** en atributos SVG
+  (`fill="#fff"`, 145 casos · en atributo de presentación no es confiable), **NO** en
+  `<meta name="theme-color">` (lo lee el chrome del navegador), **NO** en comparaciones JS ni en
+  colores de Chart.js/canvas. Medí cada contexto riesgoso ANTES de correr el reemplazo.
+- Reemplazá sólo dentro de declaraciones (`prop:#hex`), nunca por hex suelto. Exigir que el hex
+  venga pegado a los dos puntos deja los gradientes afuera solo, y las comillas protegen los
+  `{'color': '#fff'}` de JS.
+- **Decidí por (color, PROPIEDAD), no por color.** Un tinte claro como `color:` es texto sobre un
+  chip oscuro (`#fca5a5` tenía 21 usos así) y mandarlo al token sólido lo vuelve ilegible; el
+  mismo tinte como `background:` es el fondo pálido. Medí el reparto antes de armar el mapa.
+- **En `blueprints/` usá `var(--token, #hex)` con respaldo.** Ahí viven los RÓTULOS y los
+  imprimibles regulados, y algunos no enlazan `cortex.css`: sin respaldo perderían todo el color.
+  Con respaldo el cambio es un superconjunto estricto de lo anterior. (`plan.py` tiene 1.559
+  colores y cero enlaces a cortex porque inyecta fragmentos en páginas que sí la enlazan — otra
+  razón para no intentar adivinar el contexto de cada fragmento.)
+- Verificación obligatoria (M64/M65): tamaño del archivo, `ast.parse`, y **`node --check` de los
+  N bloques `<script>` del valor EVALUADO** (95 en templates + 136 en blueprints).
+
+**Un trinquete vale más que la regla.** La regla 0 ("toda UI que toco sale premium con tokens")
+estaba escrita desde hace meses y se incumplió 8.077 veces: **una regla que nadie verifica es una
+intención, no un blindaje.** `test_deuda_diseno_no_crece.py` fija el máximo actual y falla si
+sube. Dos cosas que hacen que un trinquete sirva: (a) **techo EXACTO, y un test que falla si
+sobra holgura** — con margen se afloja solo y deja de apretar; (b) **probá que tiene dientes**
+(agregá un color y confirmá que falla) — un trinquete que no muerde es peor que nada porque da
+falsa tranquilidad.
+
+**Lo que el trinquete v1 no veía:** sólo contaba HEX, y `background:white` ignora el tema oscuro
+igual que `background:#fff` (617 colores escritos como palabra clave o `rgb()`). Los `rgba()`
+TRANSLÚCIDOS sí se dejan: funcionan en los dos temas. Al medir deuda, enumerá todas las FORMAS de
+escribir lo mismo, no sólo la más común.
+
+**Estado y lo que falta (medido en el navegador, no estimado):** en tema oscuro el 18,2% del texto
+del dashboard sigue bajo 3:1 (163 de 895 elementos). Dos fuentes conocidas: (1) **capas de
+variables propias de cada página** (`--gm-ac:#6d28d9`, `--line`, `--mut`… · 124 declaraciones) que
+mi migrador no veía porque su regex exige un nombre de propiedad CSS estándar — no las toqué
+porque una variable propia puede usarse como texto Y como fondo, y mapearla mal es peor que
+dejarla; (2) la cola larga de colores sin token (`#1e63a8`, `#a21caf`, `#c0392b`).
 
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 

@@ -16,19 +16,19 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .topbar a{color:rgba(255,255,255,0.7);text-decoration:none;font-size:0.82em;padding:5px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;}
 .topbar a:hover{background:rgba(255,255,255,0.1);color:white;}
 /* SWITCHER */
-.switcher{display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:3px solid #E8E4DE;}
-.sw-card{padding:18px 28px;cursor:pointer;display:flex;align-items:center;gap:14px;background:white;transition:all 0.2s;border-bottom:4px solid transparent;margin-bottom:-3px;}
+.switcher{display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:3px solid var(--cx-border);}
+.sw-card{padding:18px 28px;cursor:pointer;display:flex;align-items:center;gap:14px;background:var(--cx-card);transition:all 0.2s;border-bottom:4px solid transparent;margin-bottom:-3px;}
 .sw-card:hover{background:#f8fafa;}
-.sw-card.active-a{border-bottom-color:#6d28d9;background:#f0fafa;}
+.sw-card.active-a{border-bottom-color:var(--cx-primary);background:#f0fafa;}
 .sw-card.active-m{border-bottom-color:#5C4B99;background:#f5f0ff;}
 .sw-icon{font-size:1.8em;}
 .sw-title{font-size:1em;font-weight:800;color:#1C2B30;}
 .sw-sub{font-size:0.78em;color:#7A9E9C;margin-top:1px;}
 .sw-card.active-m .sw-sub{color:#9B89C4;}
 /* TABS */
-.module-tabs{background:white;border-bottom:1px solid #E8E4DE;padding:0 28px;display:flex;gap:4px;}
+.module-tabs{background:var(--cx-card);border-bottom:1px solid var(--cx-border);padding:0 28px;display:flex;gap:4px;}
 .tab{padding:12px 20px;cursor:pointer;font-size:0.86em;font-weight:600;color:#7A9E9C;border-bottom:3px solid transparent;transition:all 0.2s;white-space:nowrap;}
-.tab.active-a{color:#6d28d9;border-bottom-color:#6d28d9;}
+.tab.active-a{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);}
 .tab.active-m{color:#5C4B99;border-bottom-color:#5C4B99;}
 .tab:hover:not(.active-a):not(.active-m){background:#f5fafa;}
 /* CONTENT */
@@ -37,76 +37,76 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .section-block{display:none;}.section-block.active{display:block;}
 /* KPIs */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:24px;}
-.kpi{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:18px 20px;border-left:4px solid var(--c,#6d28d9);}
+.kpi{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:18px 20px;border-left:4px solid var(--c,#6d28d9);}
 .kpi-val{font-size:1.9em;font-weight:900;color:var(--c,#6d28d9);line-height:1;}
 .kpi-lbl{font-size:0.75em;color:#7A9E9C;text-transform:uppercase;letter-spacing:1px;margin-top:5px;}
 .kpi-sub{font-size:0.8em;color:#9C8B7A;margin-top:3px;}
 /* TABLE */
-.tbl{width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,0.06);}
-.tbl thead th{background:#f8fafa;color:#5C7A7A;font-size:0.76em;text-transform:uppercase;letter-spacing:0.8px;padding:9px 13px;text-align:left;border-bottom:1px solid #E8E4DE;}
+.tbl{width:100%;border-collapse:collapse;background:var(--cx-card);border-radius:10px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,0.06);}
+.tbl thead th{background:#f8fafa;color:#5C7A7A;font-size:0.76em;text-transform:uppercase;letter-spacing:0.8px;padding:9px 13px;text-align:left;border-bottom:1px solid var(--cx-border);}
 .tbl tbody td{padding:10px 13px;border-bottom:1px solid #F0EEEA;font-size:0.86em;vertical-align:middle;}
 .tbl tbody tr:hover{background:#fafcfc;}.tbl tbody tr:last-child td{border-bottom:none;}
 /* BUTTONS */
-.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border:none;border-radius:7px;cursor:pointer;font-size:0.85em;font-weight:600;transition:all 0.2s;background:#6d28d9;color:white;}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border:none;border-radius:7px;cursor:pointer;font-size:0.85em;font-weight:600;transition:all 0.2s;background:var(--cx-primary);color:white;}
 .btn:hover{background:#1d5c5a;transform:translateY(-1px);}
 .btn-m{background:#5C4B99;}.btn-m:hover{background:#4a3a7a;}
-.btn-ghost{background:white;color:#6d28d9;border:1.5px solid #6d28d9;}
+.btn-ghost{background:var(--cx-card);color:var(--cx-primary-text);border:1.5px solid var(--cx-primary);}
 .btn-ghost:hover{background:#f0f9f9;}
-.btn-ghost-m{background:white;color:#5C4B99;border:1.5px solid #5C4B99;}
+.btn-ghost-m{background:var(--cx-card);color:#5C4B99;border:1.5px solid #5C4B99;}
 .btn-ghost-m:hover{background:#f5f0ff;}
 .btn-sm{padding:4px 11px;font-size:0.78em;}
 .btn-xs{padding:3px 8px;font-size:0.74em;}
 /* BADGES */
 .badge{display:inline-block;padding:3px 9px;border-radius:10px;font-size:0.73em;font-weight:700;}
-.badge-verde{background:#d1fae5;color:#065f46;}.badge-amarillo{background:#fef3c7;color:#92400e;}
-.badge-rojo{background:#fee2e2;color:#991b1b;}.badge-gris{background:#f3f4f6;color:#374151;}
-.badge-azul{background:#dbeafe;color:#1e40af;}.badge-morado{background:#ede9fe;color:#5b21b6;}
+.badge-verde{background:var(--cx-success-pale);color:var(--cx-success-text);}.badge-amarillo{background:var(--cx-warn-pale);color:var(--cx-warn-text);}
+.badge-rojo{background:var(--cx-danger-pale);color:var(--cx-danger-text);}.badge-gris{background:#f3f4f6;color:#374151;}
+.badge-azul{background:var(--cx-info-pale);color:var(--cx-info-text);}.badge-morado{background:var(--cx-primary-soft);color:var(--cx-primary-text);}
 /* SEMAFORO */
 .sem{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:middle;margin-right:5px;}
-.sem-v{background:#10b981;}.sem-a{background:#f59e0b;}.sem-r{background:#ef4444;}
+.sem-v{background:var(--cx-success);}.sem-a{background:var(--cx-warn);}.sem-r{background:var(--cx-danger);}
 /* NIVEL */
-.nv-ingreso{background:#dbeafe;color:#1e40af;}
-.nv-estrategico{background:#d1fae5;color:#065f46;}
-.nv-mayorista{background:#fef3c7;color:#92400e;}
+.nv-ingreso{background:var(--cx-info-pale);color:var(--cx-info-text);}
+.nv-estrategico{background:var(--cx-success-pale);color:var(--cx-success-text);}
+.nv-mayorista{background:var(--cx-warn-pale);color:var(--cx-warn-text);}
 /* FORMS */
-.form-panel{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:22px;margin-bottom:18px;display:none;}
+.form-panel{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:22px;margin-bottom:18px;display:none;}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
 .form-row.triple{grid-template-columns:1fr 1fr 1fr;}
 .form-row.single{grid-template-columns:1fr;}
 .fg label{display:block;font-size:0.77em;font-weight:600;color:#5C7A7A;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;}
 .fg input,.fg select,.fg textarea{width:100%;padding:8px 11px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.86em;background:#fafcfc;}
-.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:#6d28d9;}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--cx-primary);}
 /* MESSAGES */
-.msg-ok{background:#d1fae5;color:#065f46;padding:9px 13px;border-radius:7px;margin:7px 0;font-size:0.85em;}
-.msg-err{background:#fee2e2;color:#991b1b;padding:9px 13px;border-radius:7px;margin:7px 0;font-size:0.85em;}
-.empty{text-align:center;color:#aaa;padding:28px;font-size:0.88em;}
+.msg-ok{background:var(--cx-success-pale);color:var(--cx-success-text);padding:9px 13px;border-radius:7px;margin:7px 0;font-size:0.85em;}
+.msg-err{background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:9px 13px;border-radius:7px;margin:7px 0;font-size:0.85em;}
+.empty{text-align:center;color:var(--cx-text-faint);padding:28px;font-size:0.88em;}
 .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
 .section-header h2{font-size:1.05em;font-weight:700;color:#1C2B30;}
 /* STOCK BAR */
-.stock-bar{height:5px;border-radius:3px;background:#E8E4DE;overflow:hidden;margin-top:3px;}
+.stock-bar{height:5px;border-radius:3px;background:var(--cx-border);overflow:hidden;margin-top:3px;}
 .stock-bar-fill{height:100%;border-radius:3px;transition:width 0.4s;}
 /* KANBAN */
 .kanban-wrap{display:flex;gap:10px;overflow-x:auto;padding-bottom:12px;}
 .kan-col{min-width:165px;max-width:185px;background:#f8fafa;border-radius:10px;padding:10px;}
 .kan-col-hdr{font-size:0.72em;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#5C7A7A;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;}
-.kan-col-hdr .cnt{background:#e5e7eb;color:#6b7280;border-radius:8px;padding:1px 7px;font-size:0.9em;}
-.kan-card{background:white;border:1px solid #E8E4DE;border-radius:8px;padding:10px;margin-bottom:7px;cursor:pointer;transition:box-shadow 0.15s;}
+.kan-col-hdr .cnt{background:var(--cx-border);color:var(--cx-text-mute);border-radius:8px;padding:1px 7px;font-size:0.9em;}
+.kan-card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;padding:10px;margin-bottom:7px;cursor:pointer;transition:box-shadow 0.15s;}
 .kan-card:hover{box-shadow:0 2px 8px rgba(92,75,153,0.15);border-color:#9B89C4;}
 .kan-card-emp{font-weight:700;font-size:0.85em;color:#1C2B30;margin-bottom:3px;}
-.kan-card-prod{font-size:0.77em;color:#6b7280;margin-bottom:5px;}
+.kan-card-prod{font-size:0.77em;color:var(--cx-text-mute);margin-bottom:5px;}
 .kan-card-val{font-size:0.8em;color:#5C4B99;font-weight:700;}
 /* MODAL */
 .mdl{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:none;align-items:center;justify-content:center;}
 .mdl.show{display:flex;}
-.mdl-box{background:white;border-radius:14px;width:92%;max-width:480px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+.mdl-box{background:var(--cx-card);border-radius:14px;width:92%;max-width:480px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
 .mdl-hdr{padding:14px 18px;display:flex;justify-content:space-between;align-items:center;color:white;}
-.mdl-hdr-a{background:#6d28d9;}.mdl-hdr-m{background:#5C4B99;}
+.mdl-hdr-a{background:var(--cx-primary);}.mdl-hdr-m{background:#5C4B99;}
 .mdl-hdr strong{font-size:0.95em;}
 .mdl-hdr button{background:rgba(255,255,255,0.2);border:none;color:white;font-size:1.2em;cursor:pointer;border-radius:5px;padding:2px 8px;}
 .mdl-body{padding:20px;}
 .mdl-footer{padding:0 20px 18px;display:flex;gap:10px;justify-content:flex-end;}
 /* PROGRESS */
-.meta-bar{height:22px;background:#e5e7eb;border-radius:11px;overflow:hidden;margin-top:6px;}
+.meta-bar{height:22px;background:var(--cx-border);border-radius:11px;overflow:hidden;margin-top:6px;}
 .meta-fill{height:100%;border-radius:11px;background:linear-gradient(90deg,#5C4B99,#9B89C4);transition:width 1s;}
 /* Mobile responsive · 27-may-2026 */
 @media (max-width: 768px) {
@@ -122,13 +122,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/></svg>
       Clientes
     </div>
-    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; canal B2B · pedidos · despachos · <span id="usr-lbl" style="color:#a8a29e"></span></div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; canal B2B · pedidos · despachos · <span id="usr-lbl" style="color:var(--cx-text-faint)"></span></div>
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">Módulos</a>
@@ -179,7 +179,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div class="kpi" style="--c:#dc2626"><div class="kpi-val" id="ka-cartera">&#x2014;</div><div class="kpi-lbl">Cartera pendiente</div><div class="kpi-sub">Saldo sin pagar</div></div>
     <div class="kpi" style="--c:#dc2626"><div class="kpi-val" id="ka-churn">&#x2014;</div><div class="kpi-lbl">Aliados en riesgo</div><div class="kpi-sub">&gt;75 d&#xed;as sin pedido</div></div>
   </div>
-  <div style="background:white;border:1px solid #E8E4DE;border-radius:12px;padding:18px;margin-bottom:18px;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:18px;margin-bottom:18px;">
     <h3 style="font-size:0.92em;font-weight:700;color:#1C2B30;margin-bottom:12px;">&#x1F4B0; Cartera por Aliado</h3>
     <table class="tbl"><thead><tr><th>Aliado</th><th style="text-align:right;">Facturado</th><th style="text-align:right;">Pagado</th><th style="text-align:right;">Saldo deuda</th><th>Estado pago</th></tr></thead>
     <tbody id="cartera-dash-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody></table>
@@ -268,81 +268,81 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
   <!-- Capa 1: Salud del Canal -->
   <div id="canal-salud-section" style="margin-bottom:24px;">
-    <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
       📡 Salud del Canal · <span style="font-weight:400;text-transform:none;">mes en curso</span>
     </div>
     <!-- Row 1: Revenue MoM + activos/dormidos + retención + concentración -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
 
       <!-- Revenue este mes -->
-      <div style="background:#0f172a;border-radius:12px;padding:16px;color:#fff;">
-        <div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Revenue canal · mes</div>
+      <div style="background:var(--cx-text);border-radius:12px;padding:16px;color:#fff;">
+        <div style="font-size:10px;font-weight:700;color:var(--cx-text-faint);text-transform:uppercase;margin-bottom:4px;">Revenue canal · mes</div>
         <div style="font-size:1.7em;font-weight:900;" id="cs-rev-mes">-</div>
         <div style="margin-top:6px;font-size:12px;" id="cs-rev-mom">
           <span id="cs-mom-badge" style="padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px;">-</span>
-          <span style="color:#94a3b8;margin-left:4px;">vs mes ant.</span>
+          <span style="color:var(--cx-text-faint);margin-left:4px;">vs mes ant.</span>
         </div>
-        <div style="font-size:10px;color:#64748b;margin-top:4px;" id="cs-rev-anio">Año: -</div>
+        <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;" id="cs-rev-anio">Año: -</div>
       </div>
 
       <!-- Activos vs Dormidos -->
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Aliados · estado</div>
+      <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:16px;">
+        <div style="font-size:10px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:8px;">Aliados · estado</div>
         <div style="display:flex;align-items:flex-end;gap:12px;">
           <div>
-            <div style="font-size:1.5em;font-weight:900;color:#16a34a;" id="cs-activos">-</div>
-            <div style="font-size:10px;color:#16a34a;font-weight:600;">Activos</div>
+            <div style="font-size:1.5em;font-weight:900;color:var(--cx-success-text);" id="cs-activos">-</div>
+            <div style="font-size:10px;color:var(--cx-success-text);font-weight:600;">Activos</div>
           </div>
-          <div style="color:#e2e8f0;font-size:1.5em;font-weight:300;">|</div>
+          <div style="color:var(--cx-border);font-size:1.5em;font-weight:300;">|</div>
           <div>
-            <div style="font-size:1.5em;font-weight:900;color:#dc2626;" id="cs-dormidos">-</div>
-            <div style="font-size:10px;color:#dc2626;font-weight:600;">Dormidos &gt;60d</div>
+            <div style="font-size:1.5em;font-weight:900;color:var(--cx-danger-text);" id="cs-dormidos">-</div>
+            <div style="font-size:10px;color:var(--cx-danger-text);font-weight:600;">Dormidos &gt;60d</div>
           </div>
         </div>
-        <div style="margin-top:8px;font-size:11px;color:#94a3b8;" id="cs-valor-riesgo">Valor en riesgo: -</div>
+        <div style="margin-top:8px;font-size:11px;color:var(--cx-text-faint);" id="cs-valor-riesgo">Valor en riesgo: -</div>
       </div>
 
       <!-- Tasa de Retención -->
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px;">Retención · 90d</div>
+      <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:16px;">
+        <div style="font-size:10px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Retención · 90d</div>
         <div style="position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column;">
           <svg viewBox="0 0 80 80" width="80" height="80" style="transform:rotate(-90deg)">
             <circle cx="40" cy="40" r="34" fill="none" stroke="#f1f5f9" stroke-width="8"/>
             <circle cx="40" cy="40" r="34" fill="none" stroke="#16a34a" stroke-width="8"
               stroke-dasharray="213.6" id="cs-ret-circle" stroke-dashoffset="213.6" stroke-linecap="round"/>
           </svg>
-          <div style="position:absolute;font-size:1.1em;font-weight:900;color:#0f172a;" id="cs-ret-pct">-</div>
+          <div style="position:absolute;font-size:1.1em;font-weight:900;color:var(--cx-text);" id="cs-ret-pct">-</div>
         </div>
       </div>
 
       <!-- Concentración -->
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Concentración top</div>
+      <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:16px;">
+        <div style="font-size:10px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:8px;">Concentración top</div>
         <div style="margin-bottom:6px;">
           <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
-            <span style="color:#475569;">Top 1</span><span style="font-weight:700;color:#0f172a;" id="cs-top1-pct">-</span>
+            <span style="color:var(--cx-text-soft);">Top 1</span><span style="font-weight:700;color:var(--cx-text);" id="cs-top1-pct">-</span>
           </div>
-          <div style="height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
-            <div id="cs-top1-bar" style="height:100%;background:#f59e0b;border-radius:3px;width:0%;transition:width .5s;"></div>
+          <div style="height:6px;background:var(--cx-border-soft);border-radius:3px;overflow:hidden;">
+            <div id="cs-top1-bar" style="height:100%;background:var(--cx-warn);border-radius:3px;width:0%;transition:width .5s;"></div>
           </div>
         </div>
         <div>
           <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
-            <span style="color:#475569;">Top 3</span><span style="font-weight:700;color:#0f172a;" id="cs-top3-pct">-</span>
+            <span style="color:var(--cx-text-soft);">Top 3</span><span style="font-weight:700;color:var(--cx-text);" id="cs-top3-pct">-</span>
           </div>
-          <div style="height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
-            <div id="cs-top3-bar" style="height:100%;background:#3b82f6;border-radius:3px;width:0%;transition:width .5s;"></div>
+          <div style="height:6px;background:var(--cx-border-soft);border-radius:3px;overflow:hidden;">
+            <div id="cs-top3-bar" style="height:100%;background:var(--cx-info);border-radius:3px;width:0%;transition:width .5s;"></div>
           </div>
         </div>
-        <div style="font-size:10px;color:#94a3b8;margin-top:8px;">% del revenue total del canal</div>
+        <div style="font-size:10px;color:var(--cx-text-faint);margin-top:8px;">% del revenue total del canal</div>
       </div>
     </div>
 
     <!-- Row 2: Top aliados por revenue -->
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
-      <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:10px;">🏆 Top aliados · revenue acumulado</div>
+    <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:16px;">
+      <div style="font-size:10px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:10px;">🏆 Top aliados · revenue acumulado</div>
       <div id="cs-top-aliados" style="display:flex;flex-direction:column;gap:8px;">
-        <div style="color:#94a3b8;font-size:12px;">Cargando...</div>
+        <div style="color:var(--cx-text-faint);font-size:12px;">Cargando...</div>
       </div>
     </div>
   </div>
@@ -350,30 +350,30 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
   <!-- Capa 2: Score Individual -->
   <div id="scores-section" style="margin-bottom:24px;">
-    <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
       🏅 Score Individual · <span style="font-weight:400;text-transform:none;">ranking automático 0-100</span>
     </div>
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+    <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;overflow:hidden;">
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead>
-          <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
-            <th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">#</th>
-            <th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">Aliado</th>
-            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Score</th>
-            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Recencia</th>
-            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Frec.</th>
-            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">LTV</th>
-            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">Este mes</th>
-            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">MoM</th>
-            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Próxima compra</th>
+          <tr style="background:var(--cx-bg-alt);border-bottom:2px solid var(--cx-border);">
+            <th style="padding:10px 14px;text-align:left;font-weight:700;color:var(--cx-text-soft);">#</th>
+            <th style="padding:10px 14px;text-align:left;font-weight:700;color:var(--cx-text-soft);">Aliado</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:var(--cx-text-soft);">Score</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:var(--cx-text-soft);">Recencia</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:var(--cx-text-soft);">Frec.</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:var(--cx-text-soft);">LTV</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:var(--cx-text-soft);">Este mes</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:var(--cx-text-soft);">MoM</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:var(--cx-text-soft);">Próxima compra</th>
           </tr>
         </thead>
         <tbody id="scores-body">
-          <tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">Cargando...</td></tr>
+          <tr><td colspan="9" style="text-align:center;padding:20px;color:var(--cx-text-faint);">Cargando...</td></tr>
         </tbody>
       </table>
     </div>
-    <div style="margin-top:8px;font-size:10px;color:#94a3b8;padding-left:4px;">
+    <div style="margin-top:8px;font-size:10px;color:var(--cx-text-faint);padding-left:4px;">
       Score = Recencia (30) + Frecuencia (25) + Crecimiento MoM (25) + LTV relativo (20)
     </div>
   </div>
@@ -381,34 +381,34 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
   <!-- Capa 3: SKUs por Segmento + Cartera -->
   <div id="capa3-section" style="margin-bottom:24px;">
-    <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
       🧪 SKUs por Segmento &nbsp;·&nbsp; <span style="font-weight:400;text-transform:none;">qué compra cada tipo de aliada</span>
     </div>
 
     <!-- SKUs por categoría - tarjetas dinámicas -->
     <div id="skus-segmento-wrap" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px;">
-      <div style="color:#94a3b8;font-size:12px;padding:16px;">Cargando segmentos...</div>
+      <div style="color:var(--cx-text-faint);font-size:12px;padding:16px;">Cargando segmentos...</div>
     </div>
 
     <!-- Cartera por aliado -->
-    <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
       💳 Cartera por Aliado &nbsp;·&nbsp; <span style="font-weight:400;text-transform:none;">saldo pendiente de cobro</span>
-      &nbsp;<span id="cartera-total-badge" style="background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700;padding:2px 10px;border-radius:12px;"></span>
+      &nbsp;<span id="cartera-total-badge" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);font-size:11px;font-weight:700;padding:2px 10px;border-radius:12px;"></span>
     </div>
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+    <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;overflow:hidden;">
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead>
-          <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
-            <th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">Aliado</th>
-            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">Facturado</th>
-            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">Pagado</th>
-            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">Saldo</th>
-            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Estado</th>
-            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Últ. pedido</th>
+          <tr style="background:var(--cx-bg-alt);border-bottom:2px solid var(--cx-border);">
+            <th style="padding:10px 14px;text-align:left;font-weight:700;color:var(--cx-text-soft);">Aliado</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:var(--cx-text-soft);">Facturado</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:var(--cx-text-soft);">Pagado</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:var(--cx-text-soft);">Saldo</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:var(--cx-text-soft);">Estado</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:var(--cx-text-soft);">Últ. pedido</th>
           </tr>
         </thead>
         <tbody id="c3-cartera-body">
-          <tr><td colspan="6" style="text-align:center;padding:20px;color:#94a3b8;">Cargando...</td></tr>
+          <tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-faint);">Cargando...</td></tr>
         </tbody>
       </table>
     </div>
@@ -416,17 +416,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
   <!-- KPIs -->
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="seg-kpis">
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;">
-      <div style="font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;">Total facturado</div>
-      <div style="font-size:1.6em;font-weight:800;color:#15803d;" id="seg-total">-</div>
+    <div style="background:var(--cx-success-pale);border:1px solid #bbf7d0;border-radius:10px;padding:14px;">
+      <div style="font-size:10px;font-weight:700;color:var(--cx-success-text);text-transform:uppercase;">Total facturado</div>
+      <div style="font-size:1.6em;font-weight:800;color:var(--cx-success-text);" id="seg-total">-</div>
     </div>
-    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px;">
-      <div style="font-size:10px;font-weight:700;color:#2563eb;text-transform:uppercase;">Este mes</div>
+    <div style="background:var(--cx-info-pale);border:1px solid #bfdbfe;border-radius:10px;padding:14px;">
+      <div style="font-size:10px;font-weight:700;color:var(--cx-info-text);text-transform:uppercase;">Este mes</div>
       <div style="font-size:1.6em;font-weight:800;color:#1d4ed8;" id="seg-mes">-</div>
     </div>
     <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:14px;">
-      <div style="font-size:10px;font-weight:700;color:#ca8a04;text-transform:uppercase;">Ticket promedio</div>
-      <div style="font-size:1.6em;font-weight:800;color:#a16207;" id="seg-ticket">-</div>
+      <div style="font-size:10px;font-weight:700;color:var(--cx-warn-text);text-transform:uppercase;">Ticket promedio</div>
+      <div style="font-size:1.6em;font-weight:800;color:var(--cx-warn-text);" id="seg-ticket">-</div>
     </div>
     <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:10px;padding:14px;">
       <div style="font-size:10px;font-weight:700;color:#9333ea;text-transform:uppercase;">Frec. promedio</div>
@@ -436,13 +436,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
 
   <!-- Chart ventas por mes -->
-  <div style="background:white;border:1px solid #E8E4DE;border-radius:10px;padding:16px;margin-bottom:18px;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:16px;margin-bottom:18px;">
     <div style="font-size:0.85em;font-weight:700;color:#1C2B30;margin-bottom:12px;">Ventas netas por aliado - últimos 6 meses</div>
     <div id="seg-chart" style="overflow-x:auto;"></div>
   </div>
 
   <!-- Tabla principal -->
-  <div style="background:white;border:1px solid #E8E4DE;border-radius:10px;overflow:hidden;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;overflow:hidden;">
     <table class="tbl">
       <thead><tr>
         <th>Aliado</th><th>Categoría</th><th>Canal</th><th>Redes</th>
@@ -459,7 +459,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
 <!-- Modal editar seguimiento aliado -->
 <div id="modal-seg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center;">
-  <div style="background:white;border-radius:14px;padding:28px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <div style="background:var(--cx-card);border-radius:14px;padding:28px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
       <h3 style="font-size:1em;font-weight:700;color:#1C2B30;" id="modal-seg-title">Editar aliado</h3>
       <button onclick="closeModalSeg()" style="background:none;border:none;font-size:1.3em;cursor:pointer;color:#7A9E9C;">&#x2715;</button>
@@ -467,7 +467,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <input type="hidden" id="seg-edit-id">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
       <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">Categoría profesional</label>
-        <select id="seg-cat" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;">
+        <select id="seg-cat" style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;margin-top:3px;">
           <option value="">-- Sin categoría --</option>
           <option>Cosmetóloga</option><option>Esteticista</option>
           <option>Dermacosmetóloga</option><option>Revendedora independiente</option>
@@ -476,7 +476,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
         </select>
       </div>
       <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">Canal de captación</label>
-        <select id="seg-canal" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;">
+        <select id="seg-canal" style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;margin-top:3px;">
           <option value="">-- Sin canal --</option>
           <option>Instagram</option><option>TikTok</option><option>Facebook</option>
           <option>WhatsApp</option><option>Referido</option>
@@ -486,18 +486,18 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
       <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">📸 Instagram</label>
-        <input type="text" id="seg-ig" placeholder="@usuario" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;">
+        <input type="text" id="seg-ig" placeholder="@usuario" style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;">
       </div>
       <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">🎵 TikTok</label>
-        <input type="text" id="seg-tt" placeholder="@usuario" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;">
+        <input type="text" id="seg-tt" placeholder="@usuario" style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;">
       </div>
       <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">📱 WhatsApp</label>
-        <input type="text" id="seg-wa" placeholder="+57..." style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;">
+        <input type="text" id="seg-wa" placeholder="+57..." style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;">
       </div>
     </div>
     <div style="margin-bottom:14px;">
       <label style="font-size:11px;font-weight:600;color:#7A9E9C;">Notas de seguimiento</label>
-      <textarea id="seg-notas" rows="3" placeholder="Observaciones, acuerdos, próximos pasos..." style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;resize:vertical;"></textarea>
+      <textarea id="seg-notas" rows="3" placeholder="Observaciones, acuerdos, próximos pasos..." style="width:100%;padding:7px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;resize:vertical;"></textarea>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button onclick="closeModalSeg()" class="btn btn-ghost btn-sm">Cancelar</button>
@@ -520,7 +520,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
       <div class="fg"><label>Entrega estimada</label><input type="date" id="ped-fecha-ent"></div>
     </div>
     <div class="fg" style="margin-bottom:12px;"><label>Observaciones</label><textarea id="ped-obs" rows="2"></textarea></div>
-    <div style="font-size:11px;color:#888;display:grid;grid-template-columns:15% 1fr 10% 15% 5%;gap:6px;padding:0 2px;margin-bottom:4px;font-weight:700;">
+    <div style="font-size:11px;color:var(--cx-text-mute);display:grid;grid-template-columns:15% 1fr 10% 15% 5%;gap:6px;padding:0 2px;margin-bottom:4px;font-weight:700;">
       <span>SKU</span><span>Descripci&#xf3;n</span><span>Cant.</span><span>Precio unit.</span><span></span></div>
     <div id="ped-items-list">
       <div class="ped-item-row" style="display:grid;grid-template-columns:15% 1fr 10% 15% 5%;gap:6px;margin-bottom:5px;align-items:center;">
@@ -528,7 +528,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
         <input type="text" class="ped-desc" placeholder="Producto" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.84em;">
         <input type="number" class="ped-cant" placeholder="500" min="1" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.84em;">
         <input type="number" class="ped-precio" placeholder="31933" min="0" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.84em;">
-        <button onclick="this.parentElement.remove()" style="padding:4px;background:#fee2e2;border:none;border-radius:4px;cursor:pointer;">&#x2715;</button>
+        <button onclick="this.parentElement.remove()" style="padding:4px;background:var(--cx-danger-pale);border:none;border-radius:4px;cursor:pointer;">&#x2715;</button>
       </div>
     </div>
     <button class="btn btn-ghost btn-sm" onclick="addItemPedido()" style="margin-bottom:8px;">+ L&#xed;nea</button>
@@ -553,7 +553,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- CARTERA / PAGOS -->
 <div id="ta-cartera" class="page">
   <div class="section-header"><h2>&#x1F4B0; Cartera y Pagos</h2></div>
-  <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.83em;color:#166534;">
+  <div style="background:var(--cx-success-pale);border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.83em;color:var(--cx-success-text);">
     La norma del canal es <strong>pago anticipado</strong>. Cualquier saldo es cartera activa que requiere seguimiento inmediato.
   </div>
   <div class="kpi-grid" style="margin-bottom:18px;">
@@ -571,10 +571,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- CHURN -->
 <div id="ta-churn" class="page">
   <div class="section-header"><h2>&#x26a0; Riesgo Churn &#x2014; Sin pedido reciente</h2></div>
-  <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.83em;color:#92400e;">
+  <div style="background:var(--cx-warn-pale);border:1px solid #fed7aa;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.83em;color:var(--cx-warn-text);">
     Aliados con m&#xe1;s de <strong>75 d&#xed;as</strong> sin pedido. Requieren contacto proactivo.
   </div>
-  <div id="churn-list"><p style="color:#aaa;text-align:center;padding:28px;">Cargando...</p></div>
+  <div id="churn-list"><p style="color:var(--cx-text-faint);text-align:center;padding:28px;">Cargando...</p></div>
 </div>
 </div><!-- /content animus -->
 </div><!-- /sec-animus -->
@@ -582,7 +582,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
 <!-- SECTION: MAQUILA 360 -->
 <div class="section-block" id="sec-maquila">
-<div class="module-tabs" style="background:white;border-bottom:1px solid #E8E4DE;padding:0 28px;display:flex;gap:4px;">
+<div class="module-tabs" style="background:var(--cx-card);border-bottom:1px solid var(--cx-border);padding:0 28px;display:flex;gap:4px;">
   <div class="tab active-m" onclick="goTabM('tm-dash',this)">&#x1F4CA; Dashboard</div>
   <div class="tab" onclick="goTabM('tm-pipeline',this)">&#x1F9E9; Pipeline</div>
   <div class="tab" onclick="goTabM('tm-prospectos',this)">&#x1F4C4; Prospectos</div>
@@ -592,11 +592,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
 <!-- DASHBOARD MAQUILA -->
 <div id="tm-dash" class="page active">
-  <div style="background:white;border:1px solid #ede9fe;border-radius:12px;padding:18px;margin-bottom:20px;border-left:4px solid #5C4B99;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-primary-soft);border-radius:12px;padding:18px;margin-bottom:20px;border-left:4px solid #5C4B99;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div>
         <div style="font-size:0.78em;font-weight:700;color:#5C4B99;text-transform:uppercase;letter-spacing:1px;">Meta Maquila 360 &#x2014; 12 meses</div>
-        <div style="font-size:0.82em;color:#6b7280;margin-top:2px;">Pasar de $30M a $76M/mes en facturaci&#xf3;n externa</div>
+        <div style="font-size:0.82em;color:var(--cx-text-mute);margin-top:2px;">Pasar de $30M a $76M/mes en facturaci&#xf3;n externa</div>
       </div>
       <div style="text-align:right;">
         <div style="font-size:1.5em;font-weight:900;color:#5C4B99;" id="mq-facturacion-mes">$0</div>
@@ -623,7 +623,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <h2>Pipeline Maquila 360</h2>
     <button class="btn btn-ghost-m btn-sm" onclick="toggleForm('f-prosp')">+ Nuevo prospecto</button>
   </div>
-  <div class="form-panel" id="f-prosp" style="border-color:#ede9fe;">
+  <div class="form-panel" id="f-prosp" style="border-color:var(--cx-primary-soft);">
     <h3 style="margin-bottom:14px;font-size:0.92em;font-weight:700;color:#5C4B99;">Nuevo prospecto / cliente</h3>
     <div class="form-row">
       <div class="fg"><label>Empresa / Marca *</label><input type="text" id="mp-emp" placeholder="Nombre de la marca"></div>
@@ -657,7 +657,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div id="mp-msg"></div>
   </div>
   <div class="kanban-wrap" id="kanban-pipeline">
-    <p style="color:#aaa;padding:20px;">Cargando pipeline...</p>
+    <p style="color:var(--cx-text-faint);padding:20px;">Cargando pipeline...</p>
   </div>
 </div>
 
@@ -666,7 +666,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <div class="section-header"><h2>Todos los prospectos</h2>
     <button class="btn btn-ghost-m btn-sm" onclick="toggleForm('f-prosp2')">+ Nuevo</button>
   </div>
-  <div class="form-panel" id="f-prosp2" style="border-color:#ede9fe;">
+  <div class="form-panel" id="f-prosp2" style="border-color:var(--cx-primary-soft);">
     <div class="form-row">
       <div class="fg"><label>Empresa *</label><input type="text" id="mp2-emp"></div>
       <div class="fg"><label>Contacto</label><input type="text" id="mp2-cont"></div>
@@ -695,7 +695,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <div class="section-header"><h2>&#xd3;rdenes de Maquila</h2>
     <button class="btn btn-ghost-m btn-sm" onclick="toggleForm('f-orden')">+ Nueva orden</button>
   </div>
-  <div class="form-panel" id="f-orden" style="border-color:#ede9fe;">
+  <div class="form-panel" id="f-orden" style="border-color:var(--cx-primary-soft);">
     <div class="form-row">
       <div class="fg"><label>Empresa / Cliente *</label><input type="text" id="mo-emp"></div>
       <div class="fg"><label>Producto *</label><input type="text" id="mo-prod"></div>
@@ -731,7 +731,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <button onclick="closeMdl('m-cliente360')">&times;</button>
   </div>
   <div id="cliente360-content" style="padding:20px;max-height:76vh;overflow-y:auto;">
-    <p style="text-align:center;color:#aaa;padding:40px;">Cargando...</p>
+    <p style="text-align:center;color:var(--cx-text-faint);padding:40px;">Cargando...</p>
   </div>
 </div>
 </div>
@@ -810,7 +810,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <p style="margin-bottom:10px;font-size:0.84em;color:#5C7A7A;"><strong id="me-emp"></strong></p>
     <div class="fg">
       <label>Nueva etapa</label>
-      <select id="me-etapa" style="padding:10px 12px;border:1.5px solid #ede9fe;border-radius:7px;width:100%;font-size:0.9em;">
+      <select id="me-etapa" style="padding:10px 12px;border:1.5px solid var(--cx-primary-soft);border-radius:7px;width:100%;font-size:0.9em;">
         <option>Contacto</option><option>Brief</option><option>Formulaci&#xf3;n</option>
         <option>Muestra</option><option>Aprobaci&#xf3;n</option><option>Orden</option>
         <option>Producci&#xf3;n</option><option>Entrega</option><option>Facturado</option><option>Perdido</option>
@@ -835,7 +835,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
   <div class="mdl-body">
     <p style="margin-bottom:6px;font-size:0.84em;color:#5C7A7A;">Pedido: <strong id="mp-num" style="font-family:monospace;"></strong></p>
-    <p style="margin-bottom:12px;font-size:0.84em;color:#5C7A7A;">Total: <strong id="mp-total"></strong> - Pagado prev.: <strong id="mp-pagado-prev" style="color:#16a34a;"></strong></p>
+    <p style="margin-bottom:12px;font-size:0.84em;color:#5C7A7A;">Total: <strong id="mp-total"></strong> - Pagado prev.: <strong id="mp-pagado-prev" style="color:var(--cx-success-text);"></strong></p>
     <div class="fg" style="margin-bottom:10px;">
       <label>Monto pagado acumulado (total cobrado, no abono)</label>
       <input type="number" id="mp-monto" min="0" step="1000" style="padding:10px 12px;border:1.5px solid #D8E4E4;border-radius:7px;width:100%;font-size:0.9em;box-sizing:border-box;">
@@ -967,7 +967,7 @@ async function loadDashA(){
       return '<tr>'
         +'<td style="font-weight:700;">'+esc(a.nombre)+'</td>'
         +'<td style="text-align:right;">'+fmt(a.facturado)+'</td>'
-        +'<td style="text-align:right;color:#16a34a;">'+fmt(a.pagado)+'</td>'
+        +'<td style="text-align:right;color:var(--cx-success-text);">'+fmt(a.pagado)+'</td>'
         +'<td style="text-align:right;font-weight:700;color:'+saldoColor+';">'+fmt(saldo)+'</td>'
         +'<td>'+estadoPago+'</td></tr>';
     }).join('');
@@ -993,22 +993,22 @@ async function loadAliados(){
     tb.innerHTML=cls.map(function(cl){
       var saldo=saldoMap[cl.id]||0;
       var saldoCell=saldo>0
-        ?'<span style="color:#dc2626;font-weight:700;">'+fmt(saldo)+'</span>'
-        :'<span style="color:#16a34a;">&#x2014;</span>';
+        ?'<span style="color:var(--cx-danger-text);font-weight:700;">'+fmt(saldo)+'</span>'
+        :'<span style="color:var(--cx-success-text);">&#x2014;</span>';
       return '<tr>'
-        +'<td style="font-family:monospace;font-size:0.8em;color:#888;">'+esc(cl.codigo)+'</td>'
+        +'<td style="font-family:monospace;font-size:0.8em;color:var(--cx-text-mute);">'+esc(cl.codigo)+'</td>'
         +'<td style="font-weight:700;">'+esc(cl.nombre)+'</td>'
-        +'<td style="color:#888;font-size:0.85em;">'+(cl.ciudad?esc(cl.ciudad):'&#x2014;')+'</td>'
+        +'<td style="color:var(--cx-text-mute);font-size:0.85em;">'+(cl.ciudad?esc(cl.ciudad):'&#x2014;')+'</td>'
         +'<td>'+nivelBadge(cl.nivel_aliado||'Ingreso')+'</td>'
         +'<td>'+semHtml(cl.semaforo||'verde')+'</td>'
         +'<td style="text-align:center;">'+(cl.total_pedidos||0)+'</td>'
-        +'<td style="text-align:right;font-weight:600;color:#6d28d9;">'+fmt(cl.facturado_total)+'</td>'
+        +'<td style="text-align:right;font-weight:600;color:var(--cx-primary-text);">'+fmt(cl.facturado_total)+'</td>'
         +'<td style="text-align:right;">'+saldoCell+'</td>'
-        +'<td style="color:#999;font-size:0.83em;">'+(cl.ultimo_pedido||'').substring(0,10)+'</td>'
+        +'<td style="color:var(--cx-text-faint);font-size:0.83em;">'+(cl.ultimo_pedido||'').substring(0,10)+'</td>'
         +'<td style="white-space:nowrap;">'
         +'<button class="btn btn-ghost btn-xs" onclick="abrirEditAliado('+cl.id+')">Editar</button> '
         +'<button class="btn btn-xs" onclick="abrirCliente360('+cl.id+')">360</button> '
-        +'<button class="btn btn-xs" style="background:#fee2e2;color:#dc2626;" onclick="eliminarAliado('+cl.id+',this)">Eliminar</button>'
+        +'<button class="btn btn-xs" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);" onclick="eliminarAliado('+cl.id+',this)">Eliminar</button>'
         +'</td></tr>';
     }).join('');
   }catch(e){console.error(e);}
@@ -1083,15 +1083,15 @@ async function loadPedidos(estado){
       return '<tr>'
         +'<td style="font-family:monospace;font-weight:700;">'+p.numero+'</td>'
         +'<td style="font-weight:600;">'+(p.cliente||'&#x2014;')+'</td>'
-        +'<td style="color:#999;font-size:0.83em;">'+(p.fecha||'').substring(0,10)+'</td>'
+        +'<td style="color:var(--cx-text-faint);font-size:0.83em;">'+(p.fecha||'').substring(0,10)+'</td>'
         +'<td>'+badgePed(p.estado)+'</td>'
-        +'<td style="text-align:right;font-weight:700;color:#6d28d9;">'+fmt(valor)+'</td>'
-        +'<td style="text-align:right;color:#16a34a;">'+fmt(pagado)+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:var(--cx-primary-text);">'+fmt(valor)+'</td>'
+        +'<td style="text-align:right;color:var(--cx-success-text);">'+fmt(pagado)+'</td>'
         +'<td style="text-align:right;font-weight:700;color:'+saldoColor+';">'+fmt(saldo)+'</td>'
         +'<td><span class="badge '+epBadge+'">'+epago+'</span></td>'
         +'<td style="white-space:nowrap;">'
         +'<button class="btn btn-ghost btn-xs" data-pnum="'+p.numero+'" onclick="cambEstBtn(this)">Estado</button> '
-        +'<button class="btn btn-xs" style="background:#f0fdf4;color:#166534;" data-pnum="'+p.numero+'" data-pval="'+valor+'" data-ppag="'+pagado+'" onclick="abrirPagoBtn(this)">'+pagoLabel+'</button>'
+        +'<button class="btn btn-xs" style="background:var(--cx-success-pale);color:var(--cx-success-text);" data-pnum="'+p.numero+'" data-pval="'+valor+'" data-ppag="'+pagado+'" onclick="abrirPagoBtn(this)">'+pagoLabel+'</button>'
         +'</td></tr>';
     }).join('');
   }catch(e){console.error(e);}
@@ -1103,7 +1103,7 @@ function addItemPedido(){
     +'<input type="text" class="ped-desc" placeholder="Descripción" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.84em;">'
     +'<input type="number" class="ped-cant" placeholder="0" min="1" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.84em;">'
     +'<input type="number" class="ped-precio" placeholder="0" min="0" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.84em;">'
-    +'<button onclick="this.parentElement.remove()" style="padding:4px;background:#fee2e2;border:none;border-radius:4px;cursor:pointer;">&#x2715;</button>';
+    +'<button onclick="this.parentElement.remove()" style="padding:4px;background:var(--cx-danger-pale);border:none;border-radius:4px;cursor:pointer;">&#x2715;</button>';
   document.getElementById('ped-items-list').appendChild(div);
 }
 async function crearPedido(){
@@ -1136,13 +1136,13 @@ function cambiarEstadoPedido(numero){
 async function confirmarEstadoPedido(){
   var nuevo=document.getElementById('m-estado-sel').value;
   var msg=document.getElementById('m-estado-msg');
-  if(!nuevo){msg.innerHTML='<span style="color:#dc2626;font-size:0.84em;">Selecciona un estado</span>';return;}
+  if(!nuevo){msg.innerHTML='<span style="color:var(--cx-danger-text);font-size:0.84em;">Selecciona un estado</span>';return;}
   var r=await fetch('/api/pedidos/'+_pedidoEstadoActivo,_fetchOpts('PATCH', {estado:nuevo}));
   var res=await r.json();
   if(r.ok){
-    msg.innerHTML='<span style="color:#16a34a;font-size:0.84em;">&#x2713; Actualizado</span>';
+    msg.innerHTML='<span style="color:var(--cx-success-text);font-size:0.84em;">&#x2713; Actualizado</span>';
     setTimeout(function(){closeMdl('m-estado-ped');loadPedidos('');},500);
-  } else {msg.innerHTML='<span style="color:#dc2626;font-size:0.84em;">'+(res.error||'Error')+'</span>';}
+  } else {msg.innerHTML='<span style="color:var(--cx-danger-text);font-size:0.84em;">'+(res.error||'Error')+'</span>';}
 }
 function cambEstBtn(el){cambiarEstadoPedido(el.dataset.pnum);}
 
@@ -1171,10 +1171,10 @@ async function confirmarPago(){
   var r=await fetch('/api/pedidos/'+_pagoActivo,_fetchOpts('PATCH', {monto_pagado:monto,estado_pago:estado}));
   var res=await r.json();
   if(r.ok){
-    msg.innerHTML='<span style="color:#16a34a;font-size:0.84em;">&#x2713; Pago registrado</span>';
+    msg.innerHTML='<span style="color:var(--cx-success-text);font-size:0.84em;">&#x2713; Pago registrado</span>';
     setTimeout(function(){closeMdl('m-pago-ped');loadPedidos('');loadDashA();},600);
   } else {
-    msg.innerHTML='<span style="color:#dc2626;font-size:0.84em;">'+(res.error||'Error al guardar')+'</span>';
+    msg.innerHTML='<span style="color:var(--cx-danger-text);font-size:0.84em;">'+(res.error||'Error al guardar')+'</span>';
   }
 }
 
@@ -1196,17 +1196,17 @@ async function loadCartera(){
     tb.innerHTML=aliados.map(function(a){
       var saldo=a.saldo||0;
       var saldoCell=saldo>0
-        ?'<strong style="color:#dc2626;">'+fmt(saldo)+'</strong>'
-        :'<span style="color:#16a34a;">&#x2713;</span>';
+        ?'<strong style="color:var(--cx-danger-text);">'+fmt(saldo)+'</strong>'
+        :'<span style="color:var(--cx-success-text);">&#x2713;</span>';
       return '<tr>'
         +'<td style="font-weight:700;">'+a.nombre+'</td>'
-        +'<td style="color:#888;font-size:0.85em;">'+(a.ciudad||'&#x2014;')+'</td>'
+        +'<td style="color:var(--cx-text-mute);font-size:0.85em;">'+(a.ciudad||'&#x2014;')+'</td>'
         +'<td>'+semHtml(a.semaforo||'verde')+'</td>'
         +'<td style="text-align:right;">'+(a.total_pedidos||0)+'</td>'
-        +'<td style="text-align:right;font-weight:600;color:#6d28d9;">'+fmt(a.facturado)+'</td>'
-        +'<td style="text-align:right;color:#16a34a;">'+fmt(a.pagado)+'</td>'
+        +'<td style="text-align:right;font-weight:600;color:var(--cx-primary-text);">'+fmt(a.facturado)+'</td>'
+        +'<td style="text-align:right;color:var(--cx-success-text);">'+fmt(a.pagado)+'</td>'
         +'<td style="text-align:right;">'+saldoCell+'</td>'
-        +'<td style="color:#999;font-size:0.83em;">'+(a.ultimo_pedido||'&#x2014;').substring(0,10)+'</td>'
+        +'<td style="color:var(--cx-text-faint);font-size:0.83em;">'+(a.ultimo_pedido||'&#x2014;').substring(0,10)+'</td>'
         +'</tr>';
     }).join('');
   }catch(e){console.error(e);}
@@ -1215,7 +1215,7 @@ async function loadCartera(){
 // ─── CHURN ────────────────────────────────────────────────────────────────
 async function loadChurn(){
   var el=document.getElementById('churn-list');
-  el.innerHTML='<p style="color:#aaa;text-align:center;padding:24px;">Cargando...</p>';
+  el.innerHTML='<p style="color:var(--cx-text-faint);text-align:center;padding:24px;">Cargando...</p>';
   var d=await fetch('/api/clientes/alertas-recompra').then(function(r){return r.json();});
   var lista=d.alertas||[];
   if(!lista.length){el.innerHTML='<div class="msg-ok">&#x2713; Todos los aliados con pedidos recientes.</div>';return;}
@@ -1229,7 +1229,7 @@ async function loadChurn(){
       +'<td><strong style="color:'+nivelColor+';">'+c.dias_sin_pedido+'</strong> d</td>'
       +'<td style="text-align:center;">'+c.total_pedidos+'</td>'
       +'<td style="text-align:right;">'+fmt(c.valor_total)+'</td>'
-      +'<td style="font-size:0.8em;">'+(c.email?'<a href="mailto:'+c.email+'" style="color:#6d28d9;">'+c.email+'</a>':'-')+'</td>'
+      +'<td style="font-size:0.8em;">'+(c.email?'<a href="mailto:'+c.email+'" style="color:var(--cx-primary-text);">'+c.email+'</a>':'-')+'</td>'
       +'<td><button class="btn btn-xs" onclick="abrirCliente360('+c.id+')">360</button></td></tr>';
   });
   h+='</tbody></table>';
@@ -1240,18 +1240,18 @@ async function loadChurn(){
 async function abrirCliente360(cid){
   var el=document.getElementById('cliente360-content');
   openMdl('m-cliente360');
-  el.innerHTML='<p style="text-align:center;color:#aaa;padding:32px;">Cargando...</p>';
+  el.innerHTML='<p style="text-align:center;color:var(--cx-text-faint);padding:32px;">Cargando...</p>';
   var d=await fetch('/api/clientes/'+cid+'/ficha360').then(function(r){return r.json();});
-  if(d.error){el.innerHTML='<p style="color:#dc2626;">'+esc(d.error)+'</p>';return;}
+  if(d.error){el.innerHTML='<p style="color:var(--cx-danger-text);">'+esc(d.error)+'</p>';return;}
   var cl=d.cliente,s=d.stats;
   var diasColor='#16a34a';
   if(s.dias_sin_pedido!==null&&s.dias_sin_pedido!==undefined)
     diasColor=s.dias_sin_pedido>120?'#dc2626':(s.dias_sin_pedido>75?'#d97706':'#16a34a');
   var h='<h2 style="font-size:1.1em;font-weight:800;color:#1C2B30;margin-bottom:4px;">'+cl.nombre+'</h2>'
-    +'<div style="color:#78716c;font-size:0.83em;margin-bottom:14px;">'+cl.tipo+' - '+cl.empresa+(cl.nit?' | NIT: '+cl.nit:'')+'</div>'
+    +'<div style="color:var(--cx-text-mute);font-size:0.83em;margin-bottom:14px;">'+cl.tipo+' - '+cl.empresa+(cl.nit?' | NIT: '+cl.nit:'')+'</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;">'
-    +'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.9em;font-weight:900;color:#16a34a;">'+s.total_pedidos+'</div><div style="font-size:0.72em;color:#166534;text-transform:uppercase;letter-spacing:1px;">Pedidos</div></div>'
-    +'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.3em;font-weight:900;color:#2563eb;">'+fmt(s.valor_total)+'</div><div style="font-size:0.72em;color:#1e40af;text-transform:uppercase;letter-spacing:1px;">Total</div></div>'
+    +'<div style="background:var(--cx-success-pale);border:1px solid #bbf7d0;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.9em;font-weight:900;color:var(--cx-success-text);">'+s.total_pedidos+'</div><div style="font-size:0.72em;color:var(--cx-success-text);text-transform:uppercase;letter-spacing:1px;">Pedidos</div></div>'
+    +'<div style="background:var(--cx-info-pale);border:1px solid #bfdbfe;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.3em;font-weight:900;color:var(--cx-info-text);">'+fmt(s.valor_total)+'</div><div style="font-size:0.72em;color:var(--cx-info-text);text-transform:uppercase;letter-spacing:1px;">Total</div></div>'
     +'<div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.9em;font-weight:900;color:'+diasColor+';">'+(s.dias_sin_pedido!==null&&s.dias_sin_pedido!==undefined?s.dias_sin_pedido:'N/A')+'</div><div style="font-size:0.72em;color:#581c87;text-transform:uppercase;letter-spacing:1px;">D&#xed;as sin pedido</div></div>'
     +'</div>';
   if(d.pedidos_recientes&&d.pedidos_recientes.length){
@@ -1288,7 +1288,7 @@ async function loadDashM(){
     var ord_act=(ords||[]).filter(function(o){return ['Cotizacion','Orden','Producción'].includes(o.estado);}).slice(0,8);
     var el=document.getElementById('mq-ord-recientes');
     if(ord_act.length){
-      var h='<div style="background:white;border:1px solid #ede9fe;border-radius:12px;padding:16px;">'
+      var h='<div style="background:var(--cx-card);border:1px solid var(--cx-primary-soft);border-radius:12px;padding:16px;">'
         +'<h3 style="font-size:0.88em;font-weight:700;color:#5C4B99;margin-bottom:12px;">&#xd3;rdenes activas</h3>'
         +'<table class="tbl"><thead><tr><th>Empresa</th><th>Producto</th><th>Estado</th><th style="text-align:right;">Valor</th></tr></thead><tbody>';
       ord_act.forEach(function(o){
@@ -1299,7 +1299,7 @@ async function loadDashM(){
       h+='</tbody></table></div>';
       el.innerHTML=h;
     } else {
-      el.innerHTML='<div style="background:#f5f0ff;border:1px solid #ede9fe;border-radius:10px;padding:18px;text-align:center;color:#9B89C4;font-size:0.88em;">Sin órdenes activas</div>';
+      el.innerHTML='<div style="background:#f5f0ff;border:1px solid var(--cx-primary-soft);border-radius:10px;padding:18px;text-align:center;color:#9B89C4;font-size:0.88em;">Sin órdenes activas</div>';
     }
   }catch(e){console.error(e);}
 }
@@ -1331,8 +1331,8 @@ async function loadPipeline(){
       var nivelBg={'Operativa':'#f3f4f6','Asistida':'#dbeafe','Integral':'#ede9fe'};
       var niv=p.nivel_servicio||'';
       var nivelBadge=niv?('<span style="background:'+( nivelBg[niv]||'#f3f4f6')+';color:'+( nivelColor[niv]||'#6b7280')+';font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;">'+niv+'</span>'):'';
-      var incubBadge=p.es_incubacion?'<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;">🌱 Incubacion</span>':'';
-      var kamBadge=p.kam_asignado?('<span style="color:#6b7280;font-size:10px;">KAM: '+p.kam_asignado+'</span>'):'';
+      var incubBadge=p.es_incubacion?'<span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;">🌱 Incubacion</span>':'';
+      var kamBadge=p.kam_asignado?('<span style="color:var(--cx-text-mute);font-size:10px;">KAM: '+p.kam_asignado+'</span>'):'';
       h+='<div class="kan-card" onclick="abrirMoverEtapa('+p.id+')">'
         +'<div class="kan-card-emp">'+p.empresa+'</div>'
         +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin:3px 0;">'+nivelBadge+incubBadge+'</div>'
@@ -1343,7 +1343,7 @@ async function loadPipeline(){
         +'</div>'
         +'</div>';
     });
-    if(!cards.length) h+='<div style="color:#ccc;font-size:0.78em;text-align:center;padding:10px;">Sin prospectos</div>';
+    if(!cards.length) h+='<div style="color:var(--cx-border);font-size:0.78em;text-align:center;padding:10px;">Sin prospectos</div>';
     h+='</div>';
   });
   kw.innerHTML=h;
@@ -1362,7 +1362,7 @@ async function confirmarEtapaMaq(){
   var r=await fetch('/api/maquila/prospectos/'+_prospectoActivo,_fetchOpts('PATCH', {etapa:nueva}));
   var res=await r.json();
   if(res.ok){
-    document.getElementById('me-msg').innerHTML='<div style="color:#16a34a;font-size:0.84em;">✓ Movido</div>';
+    document.getElementById('me-msg').innerHTML='<div style="color:var(--cx-success-text);font-size:0.84em;">✓ Movido</div>';
     setTimeout(function(){closeMdl('m-etapa-maq');loadPipeline();},400);
   }
 }
@@ -1380,7 +1380,7 @@ async function loadProspectos(){
       +'<td style="font-size:0.83em;">'+(p.producto_tipo?esc(p.producto_tipo):'-')+'</td>'
       +'<td>'+etapaBadge(p.etapa)+'</td>'
       +'<td style="text-align:right;color:#5C4B99;font-weight:700;">'+fmt(p.valor_estimado)+'</td>'
-      +'<td style="color:#999;font-size:0.82em;">'+(p.fecha_contacto||'').substring(0,10)+'</td>'
+      +'<td style="color:var(--cx-text-faint);font-size:0.82em;">'+(p.fecha_contacto||'').substring(0,10)+'</td>'
       +'<td><button class="btn btn-ghost-m btn-xs" onclick="abrirMoverEtapa('+p.id+')">Etapa</button></td>'
       +'</tr>';
   }).join('');
@@ -1416,11 +1416,11 @@ async function loadOrdenes(){
   var estColors={'Cotizacion':'badge-gris','Orden':'badge-azul','Producción':'badge-amarillo','Entregado':'badge-verde','Facturado':'badge-verde'};
   tb.innerHTML=ords.map(function(o){
     return '<tr>'
-      +'<td style="font-family:monospace;font-size:0.8em;color:#888;">#'+o.id+'</td>'
+      +'<td style="font-family:monospace;font-size:0.8em;color:var(--cx-text-mute);">#'+o.id+'</td>'
       +'<td style="font-weight:700;">'+esc(o.empresa)+'</td>'
       +'<td>'+esc(o.producto)+'</td>'
       +'<td style="text-align:right;">'+(o.batch_size_kg||0)+' kg</td>'
-      +'<td style="color:#999;font-size:0.82em;">'+(o.fecha_entrega||'-')+'</td>'
+      +'<td style="color:var(--cx-text-faint);font-size:0.82em;">'+(o.fecha_entrega||'-')+'</td>'
       +'<td><span class="badge '+(estColors[o.estado]||'badge-gris')+'">'+o.estado+'</span></td>'
       +'<td style="text-align:right;color:#5C4B99;font-weight:700;">'+fmt(o.valor_total)+'</td>'
       +'<td><button class="btn btn-ghost-m btn-xs" onclick="abrirEstOrden('+o.id+')">Estado</button></td>'
@@ -1473,7 +1473,7 @@ async function loadSkusSegmento() {
     const wrap = document.getElementById('skus-segmento-wrap');
     const segs = d.segmentos || [];
     if(!segs.length){
-      wrap.innerHTML='<div style="color:#94a3b8;font-size:12px;padding:16px;">Sin datos - aliadas sin categoría asignada</div>';
+      wrap.innerHTML='<div style="color:var(--cx-text-faint);font-size:12px;padding:16px;">Sin datos - aliadas sin categoría asignada</div>';
       return;
     }
     const paleta = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#f97316'];
@@ -1484,23 +1484,23 @@ async function loadSkusSegmento() {
         const barW = Math.round((sk.revenue / maxRev) * 100);
         return `<div style="margin-bottom:8px;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;">
-            <span style="font-size:11px;font-weight:700;color:#1e293b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:150px;" title="${esc(sk.descripcion||sk.sku)}">${esc(sk.sku)}</span>
-            <span style="font-size:10px;color:#64748b;white-space:nowrap;margin-left:6px;">${sk.uds} uds &nbsp;${fmtCOP(sk.revenue)}</span>
+            <span style="font-size:11px;font-weight:700;color:var(--cx-text);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:150px;" title="${esc(sk.descripcion||sk.sku)}">${esc(sk.sku)}</span>
+            <span style="font-size:10px;color:var(--cx-text-mute);white-space:nowrap;margin-left:6px;">${sk.uds} uds &nbsp;${fmtCOP(sk.revenue)}</span>
           </div>
-          <div style="height:5px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+          <div style="height:5px;background:var(--cx-border-soft);border-radius:3px;overflow:hidden;">
             <div style="height:100%;width:${barW}%;background:${color};border-radius:3px;opacity:.75;"></div>
           </div>
         </div>`;
       }).join('');
-      return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+      return `<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div>
-            <div style="font-size:13px;font-weight:800;color:#0f172a;">${esc(seg.categoria)}</div>
-            <div style="font-size:10px;color:#94a3b8;margin-top:2px;">${seg.total_pedidos} pedidos &nbsp;·&nbsp; ${fmtCOP(seg.total_revenue)}</div>
+            <div style="font-size:13px;font-weight:800;color:var(--cx-text);">${esc(seg.categoria)}</div>
+            <div style="font-size:10px;color:var(--cx-text-faint);margin-top:2px;">${seg.total_pedidos} pedidos &nbsp;·&nbsp; ${fmtCOP(seg.total_revenue)}</div>
           </div>
           <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></div>
         </div>
-        ${skuRows || '<div style="color:#94a3b8;font-size:11px;">Sin items registrados</div>'}
+        ${skuRows || '<div style="color:var(--cx-text-faint);font-size:11px;">Sin items registrados</div>'}
       </div>`;
     }).join('');
   } catch(e){ console.error('loadSkusSegmento:', e); }
@@ -1522,7 +1522,7 @@ async function loadCartera3() {
     const tbody = document.getElementById('c3-cartera-body');
     const rows  = d.aliados || [];
     if(!rows.length){
-      tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:#94a3b8;">Sin aliados registrados</td></tr>';
+      tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-faint);">Sin aliados registrados</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(r => {
@@ -1532,22 +1532,22 @@ async function loadCartera3() {
       const saldoBg    = saldo > 500000 ? '#fee2e2' : saldo > 0 ? '#fef9c3' : '#dcfce7';
       const semMap = {'verde':'🟢','amarillo':'🟡','rojo':'🔴'};
       const sem = semMap[r.semaforo] || '⚪';
-      return `<tr style="border-bottom:1px solid #f1f5f9;">
-        <td style="padding:10px 14px;font-weight:600;color:#1e293b;">${sem} ${r.nombre}</td>
-        <td style="padding:10px 14px;text-align:right;color:#475569;">${fmtCOP(r.facturado)}</td>
+      return `<tr style="border-bottom:1px solid var(--cx-border-soft);">
+        <td style="padding:10px 14px;font-weight:600;color:var(--cx-text);">${sem} ${r.nombre}</td>
+        <td style="padding:10px 14px;text-align:right;color:var(--cx-text-soft);">${fmtCOP(r.facturado)}</td>
         <td style="padding:10px 14px;text-align:right;">
           <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">
-            <div style="width:40px;height:4px;background:#f1f5f9;border-radius:2px;overflow:hidden;">
-              <div style="height:100%;width:${pct}%;background:#16a34a;border-radius:2px;"></div>
+            <div style="width:40px;height:4px;background:var(--cx-border-soft);border-radius:2px;overflow:hidden;">
+              <div style="height:100%;width:${pct}%;background:var(--cx-success);border-radius:2px;"></div>
             </div>
-            <span style="color:#16a34a;">${fmtCOP(r.pagado)}</span>
+            <span style="color:var(--cx-success-text);">${fmtCOP(r.pagado)}</span>
           </div>
         </td>
         <td style="padding:10px 14px;text-align:right;">
           <span style="background:${saldoBg};color:${saldoColor};font-weight:800;padding:2px 10px;border-radius:10px;">${fmtCOP(saldo)}</span>
         </td>
-        <td style="padding:10px 14px;text-align:center;font-size:11px;color:#475569;">${pct}% cobrado</td>
-        <td style="padding:10px 14px;text-align:center;font-size:11px;color:#94a3b8;">${r.ultimo_pedido ? r.ultimo_pedido.slice(0,10) : '-'}</td>
+        <td style="padding:10px 14px;text-align:center;font-size:11px;color:var(--cx-text-soft);">${pct}% cobrado</td>
+        <td style="padding:10px 14px;text-align:center;font-size:11px;color:var(--cx-text-faint);">${r.ultimo_pedido ? r.ultimo_pedido.slice(0,10) : '-'}</td>
       </tr>`;
     }).join('');
   } catch(e){ console.error('loadCartera3:', e); }
@@ -1560,7 +1560,7 @@ async function loadScores() {
     const tbody = document.getElementById('scores-body');
     const items = d.scores || [];
     if(!items.length){
-      tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">Sin aliados con historial de compras</td></tr>';
+      tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--cx-text-faint);">Sin aliados con historial de compras</td></tr>';
       return;
     }
     const medals = ['🥇','🥈','🥉'];
@@ -1607,13 +1607,13 @@ async function loadScores() {
         }
       }
 
-      return `<tr style="border-bottom:1px solid #f1f5f9;">
-        <td style="padding:10px 14px;font-size:14px;">${medals[i]||'<span style="color:#94a3b8;">'+(i+1)+'</span>'}</td>
-        <td style="padding:10px 14px;font-weight:600;color:#1e293b;">${s.nombre}</td>
+      return `<tr style="border-bottom:1px solid var(--cx-border-soft);">
+        <td style="padding:10px 14px;font-size:14px;">${medals[i]||'<span style="color:var(--cx-text-faint);">'+(i+1)+'</span>'}</td>
+        <td style="padding:10px 14px;font-weight:600;color:var(--cx-text);">${s.nombre}</td>
         <td style="padding:10px 14px;">
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="background:${scBg};color:${scColor};font-weight:800;font-size:13px;padding:3px 10px;border-radius:12px;min-width:38px;text-align:center;">${sc}</span>
-            <div style="flex:1;height:5px;background:#f1f5f9;border-radius:3px;min-width:60px;overflow:hidden;">
+            <div style="flex:1;height:5px;background:var(--cx-border-soft);border-radius:3px;min-width:60px;overflow:hidden;">
               <div style="height:100%;width:${barW}%;background:${barColor};border-radius:3px;"></div>
             </div>
           </div>
@@ -1622,8 +1622,8 @@ async function loadScores() {
           <span style="background:${recBg};color:${recColor};font-weight:700;font-size:11px;padding:2px 8px;border-radius:10px;">${recTxt}</span>
         </td>
         <td style="padding:10px 14px;text-align:center;font-weight:700;color:${frecColor};">${frecTxt}</td>
-        <td style="padding:10px 14px;text-align:right;font-weight:700;color:#0f172a;">${fmtCOP(s.ltv)}</td>
-        <td style="padding:10px 14px;text-align:right;color:#16a34a;font-weight:600;">${fmtCOP(s.rev_mes)}</td>
+        <td style="padding:10px 14px;text-align:right;font-weight:700;color:var(--cx-text);">${fmtCOP(s.ltv)}</td>
+        <td style="padding:10px 14px;text-align:right;color:var(--cx-success-text);font-weight:600;">${fmtCOP(s.rev_mes)}</td>
         <td style="padding:10px 14px;text-align:center;">
           <span style="background:${momBg};color:${momColor};font-weight:700;font-size:11px;padding:2px 8px;border-radius:10px;">${momTxt}</span>
         </td>
@@ -1677,18 +1677,18 @@ async function loadCanalSalud() {
     // Top aliados list
     const topEl = document.getElementById('cs-top-aliados');
     const tops  = d.top_aliados || [];
-    if(!tops.length){ topEl.innerHTML='<div style="color:#94a3b8;font-size:12px;">Sin datos</div>'; return; }
+    if(!tops.length){ topEl.innerHTML='<div style="color:var(--cx-text-faint);font-size:12px;">Sin datos</div>'; return; }
     const maxRev = tops[0].revenue || 1;
     topEl.innerHTML = tops.map((t,i)=>{
       const barW = Math.round((t.revenue/maxRev)*100);
       const medals = ['🥇','🥈','🥉','4.','5.'];
       return `<div style="display:grid;grid-template-columns:24px 180px 1fr 90px;align-items:center;gap:8px;">
         <span style="font-size:13px;">${medals[i]||i+1+'.'}</span>
-        <span style="font-size:12px;font-weight:600;color:#1e293b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${t.nombre}</span>
-        <div style="height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+        <span style="font-size:12px;font-weight:600;color:var(--cx-text);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${t.nombre}</span>
+        <div style="height:8px;background:var(--cx-border-soft);border-radius:4px;overflow:hidden;">
           <div style="height:100%;background:#6366f1;border-radius:4px;width:${barW}%;"></div>
         </div>
-        <span style="font-size:12px;font-weight:700;color:#6366f1;text-align:right;">${fmtCOP(t.revenue)} <span style="font-weight:400;color:#94a3b8;">${t.pct.toFixed(1)}%</span></span>
+        <span style="font-size:12px;font-weight:700;color:#6366f1;text-align:right;">${fmtCOP(t.revenue)} <span style="font-weight:400;color:var(--cx-text-faint);">${t.pct.toFixed(1)}%</span></span>
       </div>`;
     }).join('');
   } catch(e){ console.error('loadCanalSalud:', e); }
@@ -1733,16 +1733,16 @@ async function loadSeguimiento() {
     const topSku = (r.top_skus||[])[0];
     const freqBadge = r.frecuencia_dias!=null
       ? `<span style="background:${r.frecuencia_dias<=30?'#dcfce7':r.frecuencia_dias<=60?'#fef9c3':'#fee2e2'};color:${r.frecuencia_dias<=30?'#15803d':r.frecuencia_dias<=60?'#a16207':'#b91c1c'};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">${r.frecuencia_dias}d</span>`
-      : '<span style="color:#aaa;font-size:11px;">-</span>';
+      : '<span style="color:var(--cx-text-faint);font-size:11px;">-</span>';
     return `<tr>
-      <td><strong>${r.nombre}</strong><br><span style="font-size:10px;color:#94a3b8;">${r.ciudad||''}</span></td>
-      <td><span style="font-size:11px;background:#f1f5f9;padding:2px 7px;border-radius:10px;">${r.categoria_profesional||'-'}</span></td>
-      <td><span style="font-size:11px;color:#64748b;">${r.canal_captacion||'-'}</span></td>
+      <td><strong>${r.nombre}</strong><br><span style="font-size:10px;color:var(--cx-text-faint);">${r.ciudad||''}</span></td>
+      <td><span style="font-size:11px;background:var(--cx-border-soft);padding:2px 7px;border-radius:10px;">${r.categoria_profesional||'-'}</span></td>
+      <td><span style="font-size:11px;color:var(--cx-text-mute);">${r.canal_captacion||'-'}</span></td>
       <td style="text-align:center;">${redesHtml||'-'}</td>
       <td style="text-align:right;font-weight:700;">${fmtCOP(r.total_facturado)}</td>
-      <td style="text-align:right;color:#16a34a;font-weight:600;">${fmtCOP(r.mes_actual)}</td>
+      <td style="text-align:right;color:var(--cx-success-text);font-weight:600;">${fmtCOP(r.mes_actual)}</td>
       <td style="text-align:center;">${freqBadge}</td>
-      <td style="font-size:11px;">${topSku?topSku.sku+' <span style="color:#94a3b8;">('+topSku.uds+' uds)</span>':'-'}</td>
+      <td style="font-size:11px;">${topSku?topSku.sku+' <span style="color:var(--cx-text-faint);">('+topSku.uds+' uds)</span>':'-'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="abrirModalSeg(${r.id})">Editar</button></td>
     </tr>`;
   }).join('');
@@ -1756,7 +1756,7 @@ function fmtCOP(v) {
 }
 
 function renderSegChart(ventas_mes) {
-  if(!ventas_mes.length){ document.getElementById('seg-chart').innerHTML='<p style="color:#aaa;text-align:center;padding:20px;">Sin datos de ventas</p>'; return; }
+  if(!ventas_mes.length){ document.getElementById('seg-chart').innerHTML='<p style="color:var(--cx-text-faint);text-align:center;padding:20px;">Sin datos de ventas</p>'; return; }
 
   // Build meses and aliados
   const meses = [...new Set(ventas_mes.map(v=>v.mes))].sort();
@@ -1863,7 +1863,7 @@ async function guardarSeguimiento() {
         <option>Facturado</option>
       </select>
     </div>
-    <p id="eo-msg" style="color:#c0392b;font-size:0.82em;margin-top:6px"></p>
+    <p id="eo-msg" style="color:var(--cx-danger-text);font-size:0.82em;margin-top:6px"></p>
     <div class="mdl-ftr">
       <button class="btn" style="background:#5C4B99;color:white" onclick="confirmarEstOrden()">Guardar</button>
       <button class="btn btn-sec" onclick="document.getElementById('m-est-orden').style.display='none'">Cancelar</button>

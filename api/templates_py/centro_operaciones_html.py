@@ -12,12 +12,12 @@ HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f5f4f0; color:#1c1917; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f5f4f0; color:var(--cx-text); }
   .header { background:linear-gradient(135deg,#4c1d95 0%,#6d28d9 100%); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; color:#fff; }
   .header h1 { margin:0; font-size:1.4em; font-weight:700; color:#fff; }
   .header a { color:#ddd6fe; font-size:0.85em; text-decoration:none; }
   .header a:hover { color:#fff; }
-  .live-dot { display:inline-block; width:8px; height:8px; background:#fbbf24; border-radius:50%; margin-right:6px; animation:pulse 2s infinite; vertical-align:middle; }
+  .live-dot { display:inline-block; width:8px; height:8px; background:var(--cx-accent); border-radius:50%; margin-right:6px; animation:pulse 2s infinite; vertical-align:middle; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
   .container { max-width:1600px; margin:0 auto; padding:18px; }
   .grid { display:grid; gap:14px; }
@@ -25,31 +25,31 @@ HTML = r"""
   .grid-2 { grid-template-columns:1fr 1fr; }
   .card { background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:14px; padding:16px; box-shadow:var(--cx-sh-card); transition:box-shadow .2s ease,transform .2s ease; }
   .card:hover { transform:translateY(-2px); box-shadow:var(--cx-sh-card-hover); }
-  .card .label { font-size:0.7em; color:#78716c; text-transform:uppercase; letter-spacing:0.06em; font-weight:700; margin-bottom:8px; }
-  .card .val { font-size:1.8em; font-weight:800; color:#1c1917; line-height:1; }
-  .card .sub { font-size:0.78em; color:#a8a29e; margin-top:6px; }
+  .card .label { font-size:0.7em; color:var(--cx-text-mute); text-transform:uppercase; letter-spacing:0.06em; font-weight:700; margin-bottom:8px; }
+  .card .val { font-size:1.8em; font-weight:800; color:var(--cx-text); line-height:1; }
+  .card .sub { font-size:0.78em; color:var(--cx-text-faint); margin-top:6px; }
   .card .delta { font-size:0.7em; padding:2px 8px; border-radius:8px; font-weight:700; display:inline-block; }
-  .delta-pos { background:var(--cx-success-pale); color:var(--cx-success); }
-  .delta-neg { background:var(--cx-danger-pale); color:var(--cx-danger); }
+  .delta-pos { background:var(--cx-success-pale); color:var(--cx-success-text); }
+  .delta-neg { background:var(--cx-danger-pale); color:var(--cx-danger-text); }
   .delta-warn { background:var(--cx-warn-pale); color:var(--cx-warn-dark,#b45309); }
-  .delta-neutral { background:var(--cx-info-pale); color:var(--cx-info); }
+  .delta-neutral { background:var(--cx-info-pale); color:var(--cx-info-text); }
   .area-title { font-size:0.78em; font-weight:700; color:var(--cx-text-mute); text-transform:uppercase; letter-spacing:0.1em; margin:24px 0 8px; padding-bottom:6px; border-bottom:1px solid var(--cx-hairline); display:flex; align-items:center; }
   .area-title-icon { margin-right:8px; }
   .panel { background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:14px; padding:18px; box-shadow:var(--cx-sh-card); }
-  .panel h3 { margin:0 0 12px; font-size:0.95em; color:#1c1917; display:flex; align-items:center; gap:8px; }
+  .panel h3 { margin:0 0 12px; font-size:0.95em; color:var(--cx-text); display:flex; align-items:center; gap:8px; }
   .activity { font-size:0.82em; max-height:280px; overflow-y:auto; }
-  .activity-row { padding:8px 0; border-bottom:1px solid #f5f5f4; display:flex; gap:10px; align-items:start; }
+  .activity-row { padding:8px 0; border-bottom:1px solid var(--cx-bg-alt); display:flex; gap:10px; align-items:start; }
   .activity-row:last-child { border-bottom:none; }
   .activity-icon { font-size:14px; flex-shrink:0; }
   .activity-content { flex:1; min-width:0; }
-  .activity-title { font-weight:600; color:#1c1917; font-size:12px; }
-  .activity-detail { font-size:11px; color:#78716c; margin-top:2px; }
-  .activity-time { font-size:10px; color:#a8a29e; white-space:nowrap; }
-  .quick-link { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; background:var(--cx-primary-soft); color:var(--cx-primary); border-radius:6px; text-decoration:none; font-size:11px; font-weight:600; margin-left:8px; }
-  .quick-link:hover { background:#ddd6fe; }
-  .empty { color:#a8a29e; font-style:italic; padding:20px; text-align:center; font-size:13px; }
-  .refresh-btn { background:transparent; border:1px solid #d6d3d1; color:#57534e; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:12px; }
-  .refresh-btn:hover { border-color:var(--cx-primary); color:var(--cx-primary); }
+  .activity-title { font-weight:600; color:var(--cx-text); font-size:12px; }
+  .activity-detail { font-size:11px; color:var(--cx-text-mute); margin-top:2px; }
+  .activity-time { font-size:10px; color:var(--cx-text-faint); white-space:nowrap; }
+  .quick-link { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; background:var(--cx-primary-soft); color:var(--cx-primary-text); border-radius:6px; text-decoration:none; font-size:11px; font-weight:600; margin-left:8px; }
+  .quick-link:hover { background:var(--cx-primary-soft); }
+  .empty { color:var(--cx-text-faint); font-style:italic; padding:20px; text-align:center; font-size:13px; }
+  .refresh-btn { background:transparent; border:1px solid var(--cx-border); color:var(--cx-text-soft); border-radius:6px; padding:6px 12px; cursor:pointer; font-size:12px; }
+  .refresh-btn:hover { border-color:var(--cx-primary); color:var(--cx-primary-text); }
   /* Mobile responsive */
   @media (max-width:768px) {
     .header { padding:12px 14px; flex-wrap:wrap; gap:8px; }
@@ -72,8 +72,8 @@ HTML = r"""
   .cm-tab { appearance:none; border:none; background:transparent; cursor:pointer; font-size:14px; font-weight:600;
             color:var(--cx-text-mute); padding:10px 4px; margin-right:14px; border-bottom:2.5px solid transparent;
             transition:color .15s, border-color .15s; display:inline-flex; align-items:center; gap:7px; }
-  .cm-tab:hover { color:var(--cx-primary); }
-  .cm-tab.active { color:var(--cx-primary); border-bottom-color:var(--cx-primary); }
+  .cm-tab:hover { color:var(--cx-primary-text); }
+  .cm-tab.active { color:var(--cx-primary-text); border-bottom-color:var(--cx-primary); }
   .cm-badge { min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--cx-danger,#dc2626); color:#fff;
               font-size:10px; font-weight:700; display:none; align-items:center; justify-content:center; line-height:1; }
   .cm-badge.on { display:inline-flex; }
@@ -91,7 +91,7 @@ HTML = r"""
   #decisiones .dec-badge { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.7px;
             color:var(--cx-text-mute,#a8a29e); background:transparent; white-space:nowrap; flex:0 0 auto; }
   #decisiones .dec-arrow { flex:0 0 auto; display:flex; align-items:center; color:var(--cx-text-mute,#d6d3d1); transition:transform .15s, color .15s; }
-  #decisiones .dec-card:hover .dec-arrow { color:var(--cx-primary,#6d28d9); transform:translateX(3px); }
+  #decisiones .dec-card:hover .dec-arrow { color:var(--cx-primary-text,#6d28d9); transform:translateX(3px); }
   @media (max-width:768px){ #decisiones { grid-template-columns:1fr; } .cm-tab { font-size:12.5px; margin-right:8px; } }
   /* KPI clickeable: cada tarjeta lleva a donde ver/actuar */
   a.card { text-decoration:none; color:inherit; cursor:pointer; position:relative; display:block; }
@@ -106,13 +106,13 @@ HTML = r"""
 </head>
 <body>
   <header class="cx-mod-header cx-fade-in">
-    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
     <div>
       <div class="cx-mod-header__title">
-        <span class="live-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;margin-right:8px;animation:pulse 1.5s infinite;"></span>
+        <span class="live-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--cx-danger);margin-right:8px;animation:pulse 1.5s infinite;"></span>
         Centro de Mando
       </div>
-      <div class="cx-mod-header__sub">Tu día de un vistazo &middot; <a href="/gerencia" style="color:#6d28d9;text-decoration:none;font-weight:600">Gerencia</a> &middot; <a href="/financiero" style="color:#6d28d9;text-decoration:none;font-weight:600">Financiero</a></div>
+      <div class="cx-mod-header__sub">Tu día de un vistazo &middot; <a href="/gerencia" style="color:var(--cx-primary-text);text-decoration:none;font-weight:600">Gerencia</a> &middot; <a href="/financiero" style="color:var(--cx-primary-text);text-decoration:none;font-weight:600">Financiero</a></div>
     </div>
     <div class="cx-mod-header__nav">
       <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="cargar(true)" title="Actualizar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg>Actualizar</button>
@@ -136,10 +136,10 @@ HTML = r"""
     <!-- PANE: DECISIONES (lo que puedo atacar HOY) -->
     <div class="pane" id="pane-dec">
     <div class="area-title" style="border:none;padding-bottom:2px"><span class="area-title-icon">🎯</span>Lo que podés atacar hoy
-      <span id="dec-resumen" style="margin-left:auto;font-size:12px;font-weight:600;color:#78716c"></span>
+      <span id="dec-resumen" style="margin-left:auto;font-size:12px;font-weight:600;color:var(--cx-text-mute)"></span>
     </div>
     <div id="dec-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px 0"></div>
-    <div id="decisiones"><div class="empty" style="padding:14px;color:#78716c">Cargando decisiones...</div></div>
+    <div id="decisiones"><div class="empty" style="padding:14px;color:var(--cx-text-mute)">Cargando decisiones...</div></div>
     </div>
 
     <!-- PANE: PULSO DEL DÍA -->
@@ -148,9 +148,9 @@ HTML = r"""
     <!-- ÁREA: CAJA HOY (solo del día - el mes vive en Financiero) -->
     <div class="area-title"><span class="area-title-icon">💰</span>Caja del día <a class="quick-link" href="/financiero" style="margin-left:auto;">Ver mes en Financiero →</a></div>
     <div class="grid grid-6">
-      <a class="card" href="/financiero"><div class="label">Ingresos hoy</div><div class="val" id="caja-ing-hoy">-</div><div class="sub" style="color:#64748b">solo hoy</div></a>
-      <a class="card" href="/financiero"><div class="label">Egresos hoy</div><div class="val" style="color:#fca5a5" id="caja-egr-hoy">-</div><div class="sub" style="color:#64748b">solo hoy</div></a>
-      <a class="card" href="/financiero"><div class="label">Neto hoy</div><div class="val" id="caja-neto-hoy">-</div><div class="sub" style="color:#64748b">ing − egr del día</div></a>
+      <a class="card" href="/financiero"><div class="label">Ingresos hoy</div><div class="val" id="caja-ing-hoy">-</div><div class="sub" style="color:var(--cx-text-mute)">solo hoy</div></a>
+      <a class="card" href="/financiero"><div class="label">Egresos hoy</div><div class="val" style="color:#fca5a5" id="caja-egr-hoy">-</div><div class="sub" style="color:var(--cx-text-mute)">solo hoy</div></a>
+      <a class="card" href="/financiero"><div class="label">Neto hoy</div><div class="val" id="caja-neto-hoy">-</div><div class="sub" style="color:var(--cx-text-mute)">ing − egr del día</div></a>
     </div>
 
     <!-- ÁREA: PRODUCCIÓN + INVENTARIO -->
@@ -161,7 +161,7 @@ HTML = r"""
       <a class="card" href="/compras"><div class="label">MPs en cero</div><div class="val" style="color:#fca5a5" id="inv-cero">-</div><div class="sub">stock crítico</div></a>
       <a class="card" href="/compras"><div class="label">MPs bajo mín.</div><div class="val" style="color:#fcd34d" id="inv-bajo">-</div><div class="sub">requieren reposición</div></a>
       <a class="card" href="/inventarios"><div class="label">Lotes vencen 7d</div><div class="val" style="color:#fcd34d" id="inv-venc">-</div><div class="sub">acción urgente</div></a>
-      <a class="card" href="/aseguramiento"><div class="label">NCs abiertas</div><div class="val" style="color:#fbbf24" id="ncs">-</div><div class="sub">calidad sin cerrar</div></a>
+      <a class="card" href="/aseguramiento"><div class="label">NCs abiertas</div><div class="val" style="color:var(--cx-accent)" id="ncs">-</div><div class="sub">calidad sin cerrar</div></a>
     </div>
 
     <!-- ÁREA: COMERCIAL -->
@@ -190,21 +190,21 @@ HTML = r"""
     <div class="grid grid-6">
       <a class="card" href="/tecnica"><div class="label">Fórmulas vigentes</div><div class="val" id="t-formulas">-</div><div class="sub">activas en producción</div></a>
       <a class="card" href="/admin/reportes-invima"><div class="label">Registros INVIMA</div><div class="val" id="t-invima">-</div><div class="sub">vigentes</div></a>
-      <a class="card" href="/tecnica"><div class="label">SGDs vencen 30d</div><div class="val" style="color:#fbbf24" id="t-sgd">-</div><div class="sub">SOPs por revisar</div></a>
+      <a class="card" href="/tecnica"><div class="label">SGDs vencen 30d</div><div class="val" style="color:var(--cx-accent)" id="t-sgd">-</div><div class="sub">SOPs por revisar</div></a>
     </div>
 
     <!-- ÁREA: PERSONAS / RRHH -->
     <div class="area-title"><span class="area-title-icon">👤</span>Personas <a class="quick-link" href="/rrhh">RRHH</a></div>
     <div class="grid grid-6">
       <a class="card" href="/rrhh"><div class="label">Empleados activos</div><div class="val" id="rrhh-act">-</div><div class="sub">en planilla</div></a>
-      <a class="card" href="/rrhh"><div class="label">Ausencias pendientes</div><div class="val" style="color:#fbbf24" id="rrhh-aus">-</div><div class="sub">por aprobar</div></a>
+      <a class="card" href="/rrhh"><div class="label">Ausencias pendientes</div><div class="val" style="color:var(--cx-accent)" id="rrhh-aus">-</div><div class="sub">por aprobar</div></a>
     </div>
 
     <!-- ÁREA: EQUIPO / COMUNICACIÓN -->
     <div class="area-title"><span class="area-title-icon">💬</span>Comunicación <a class="quick-link" href="/comunicacion">Compromisos &amp; Chat</a></div>
     <div class="grid grid-6">
       <a class="card" href="/comunicacion"><div class="label">Compromisos vencidos</div><div class="val" style="color:#fca5a5" id="t-venc">-</div><div class="sub">todas las áreas</div></a>
-      <a class="card" href="/chat"><div class="label">Mensajes sin leer</div><div class="val" style="color:#fbbf24" id="msg-sin">-</div><div class="sub">en mi bandeja</div></a>
+      <a class="card" href="/chat"><div class="label">Mensajes sin leer</div><div class="val" style="color:var(--cx-accent)" id="msg-sin">-</div><div class="sub">en mi bandeja</div></a>
       <a class="card" href="/comunicacion"><div class="label">Quejas Alta/Crítica</div><div class="val" style="color:#fca5a5" id="quejas">-</div><div class="sub">requieren acción</div></a>
       <a class="card" href="/marketing"><div class="label">Campañas activas</div><div class="val" id="camp">-</div><div class="sub">marketing</div></a>
     </div>
@@ -218,12 +218,12 @@ HTML = r"""
       <div class="panel">
         <h3>🎯 Acceso rápido</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
-          <a href="/gerencia" class="card" style="text-decoration:none;text-align:center;color:#fbbf24"><div style="font-size:24px;margin-bottom:4px">🏛️</div><div style="font-size:12px;font-weight:600">Gerencia</div></a>
-          <a href="/financiero" class="card" style="text-decoration:none;text-align:center;color:#15803d"><div style="font-size:24px;margin-bottom:4px">💵</div><div style="font-size:12px;font-weight:600">Financiero</div></a>
+          <a href="/gerencia" class="card" style="text-decoration:none;text-align:center;color:var(--cx-accent)"><div style="font-size:24px;margin-bottom:4px">🏛️</div><div style="font-size:12px;font-weight:600">Gerencia</div></a>
+          <a href="/financiero" class="card" style="text-decoration:none;text-align:center;color:var(--cx-success-text)"><div style="font-size:24px;margin-bottom:4px">💵</div><div style="font-size:12px;font-weight:600">Financiero</div></a>
           <a href="/programacion" class="card" style="text-decoration:none;text-align:center;color:#22d3ee"><div style="font-size:24px;margin-bottom:4px">📅</div><div style="font-size:12px;font-weight:600">Programación</div></a>
-          <a href="/marketing" class="card" style="text-decoration:none;text-align:center;color:#a78bfa"><div style="font-size:24px;margin-bottom:4px">📣</div><div style="font-size:12px;font-weight:600">Marketing</div></a>
+          <a href="/marketing" class="card" style="text-decoration:none;text-align:center;color:var(--cx-primary-light)"><div style="font-size:24px;margin-bottom:4px">📣</div><div style="font-size:12px;font-weight:600">Marketing</div></a>
           <a href="/calidad" class="card" style="text-decoration:none;text-align:center;color:#f87171"><div style="font-size:24px;margin-bottom:4px">🔬</div><div style="font-size:12px;font-weight:600">Calidad</div></a>
-          <a href="/tecnica" class="card" style="text-decoration:none;text-align:center;color:#fbbf24"><div style="font-size:24px;margin-bottom:4px">🔧</div><div style="font-size:12px;font-weight:600">Técnica</div></a>
+          <a href="/tecnica" class="card" style="text-decoration:none;text-align:center;color:var(--cx-accent)"><div style="font-size:24px;margin-bottom:4px">🔧</div><div style="font-size:12px;font-weight:600">Técnica</div></a>
         </div>
       </div>
     </div>
@@ -337,7 +337,7 @@ function pintarDecisiones(){
   var cont = document.getElementById('decisiones');
   var lista = _DEC_FILTRO==='todas' ? _DEC : _DEC.filter(function(d){return d.nivel===_DEC_FILTRO;});
   if(!lista.length){
-    cont.innerHTML = '<div class="empty" style="padding:16px;color:#16a34a;font-weight:600">✓ Nada urgente que atacar ahora mismo.</div>';
+    cont.innerHTML = '<div class="empty" style="padding:16px;color:var(--cx-success-text);font-weight:600">✓ Nada urgente que atacar ahora mismo.</div>';
     return;
   }
   cont.innerHTML = lista.map(function(d){
@@ -371,7 +371,7 @@ function pintarChips(){
 async function cargarDecisiones(){
   try{
     var d = await fetch('/api/centro/decisiones').then(function(r){return r.json();});
-    if(d.error){ document.getElementById('decisiones').innerHTML='<div class="empty" style="padding:14px;color:#78716c">'+_esc(d.error)+'</div>'; return; }
+    if(d.error){ document.getElementById('decisiones').innerHTML='<div class="empty" style="padding:14px;color:var(--cx-text-mute)">'+_esc(d.error)+'</div>'; return; }
     _DEC = d.decisiones||[];
     _DEC_RES = d.resumen||{};
     var rz = document.getElementById('dec-resumen');

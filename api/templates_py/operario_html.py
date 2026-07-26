@@ -18,29 +18,29 @@ def render_operario():
 <title>Mi Día · Planta</title>
 <style>
 * { box-sizing: border-box; }
-html,body { margin:0; padding:0; background:#0f172a; color:#f1f5f9;
+html,body { margin:0; padding:0; background:var(--cx-text); color:var(--cx-border-soft);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             font-size: 16px; -webkit-tap-highlight-color: transparent; }
-header { background:#1e293b; padding:16px; position:sticky; top:0; z-index:10;
-         border-bottom:1px solid #334155; }
+header { background:var(--cx-text); padding:16px; position:sticky; top:0; z-index:10;
+         border-bottom:1px solid var(--cx-text-soft); }
 h1 { font-size:20px; margin:0 0 4px 0; font-weight:600; }
-.muted { color:#94a3b8; font-size:14px; }
-.warn { color:#fbbf24; }
+.muted { color:var(--cx-text-faint); font-size:14px; }
+.warn { color:var(--cx-accent); }
 .good { color:#22c55e; }
-.crit { color:#ef4444; }
+.crit { color:var(--cx-danger-text); }
 main { padding:16px; padding-bottom:80px; max-width:600px; margin:0 auto; }
-.card { background:#1e293b; border-radius:16px; padding:16px; margin-bottom:16px;
-        border-left:6px solid #475569; box-shadow:0 2px 8px rgba(0,0,0,0.3); }
-.card.iniciar { border-left-color:#3b82f6; }
-.card.continuar { border-left-color:#f59e0b; }
-.card.completar_pp { border-left-color:#10b981; }
-.card.ya_completado { border-left-color:#64748b; opacity:0.6; }
+.card { background:var(--cx-text); border-radius:16px; padding:16px; margin-bottom:16px;
+        border-left:6px solid var(--cx-text-soft); box-shadow:0 2px 8px rgba(0,0,0,0.3); }
+.card.iniciar { border-left-color:var(--cx-info); }
+.card.continuar { border-left-color:var(--cx-warn); }
+.card.completar_pp { border-left-color:var(--cx-success); }
+.card.ya_completado { border-left-color:var(--cx-text-mute); opacity:0.6; }
 .card-title { font-size:18px; font-weight:700; margin-bottom:4px; }
-.card-meta { font-size:14px; color:#cbd5e1; margin-bottom:8px; }
-.chip { display:inline-block; background:#334155; color:#cbd5e1; padding:3px 10px;
+.card-meta { font-size:14px; color:var(--cx-border); margin-bottom:8px; }
+.chip { display:inline-block; background:var(--cx-text-soft); color:var(--cx-border); padding:3px 10px;
         border-radius:12px; font-size:12px; margin-right:6px; margin-bottom:4px;
         font-family: ui-monospace, SFMono-Regular, monospace; }
-.chip-rol { background:#1e40af; color:#dbeafe; }
+.chip-rol { background:var(--cx-info); color:#dbeafe; }
 .chip-area { background:#365314; color:#d9f99d; }
 .chip-op { background:#581c87; color:#e9d5ff; }
 .btn { display:inline-block; padding:14px 20px; min-height:50px; min-width:120px;
@@ -48,29 +48,29 @@ main { padding:16px; padding-bottom:80px; max-width:600px; margin:0 auto; }
        cursor:pointer; transition: transform 0.05s, opacity 0.15s;
        -webkit-appearance: none; appearance: none; }
 .btn:active { transform: scale(0.97); }
-.btn-iniciar { background:#3b82f6; color:white; }
-.btn-continuar { background:#f59e0b; color:#1e293b; }
-.btn-completar { background:#10b981; color:white; }
-.btn-secondary { background:#334155; color:#cbd5e1; }
+.btn-iniciar { background:var(--cx-info); color:white; }
+.btn-continuar { background:var(--cx-warn); color:var(--cx-text); }
+.btn-completar { background:var(--cx-success); color:white; }
+.btn-secondary { background:var(--cx-text-soft); color:var(--cx-border); }
 .btn-big { width:100%; padding:18px; font-size:18px; min-height:60px; margin-top:8px; }
-.empty { text-align:center; padding:40px 20px; color:#64748b; }
+.empty { text-align:center; padding:40px 20px; color:var(--cx-text-mute); }
 .empty-icon { font-size:48px; margin-bottom:12px; opacity:0.5; }
 .estado-badge { display:inline-block; padding:4px 10px; border-radius:8px;
                 font-size:13px; font-weight:600; margin-bottom:8px; }
-.estado-pendiente { background:#475569; color:#e2e8f0; }
-.estado-en_proceso { background:#854d0e; color:#fef3c7; }
-.estado-completado { background:#065f46; color:#d1fae5; }
-.progreso { background:#334155; height:6px; border-radius:3px; overflow:hidden;
+.estado-pendiente { background:var(--cx-text-soft); color:var(--cx-border); }
+.estado-en_proceso { background:#854d0e; color:var(--cx-warn-pale); }
+.estado-completado { background:var(--cx-success); color:#d1fae5; }
+.progreso { background:var(--cx-text-soft); height:6px; border-radius:3px; overflow:hidden;
             margin:8px 0; }
-.progreso-fill { background:#10b981; height:100%; transition: width 0.3s; }
-.loading { text-align:center; padding:40px; color:#64748b; }
+.progreso-fill { background:var(--cx-success); height:100%; transition: width 0.3s; }
+.loading { text-align:center; padding:40px; color:var(--cx-text-mute); }
 .loading::after { content: "..."; animation: dots 1.5s infinite; }
 @keyframes dots { 0%,20% { content:"."; } 40% { content:".."; } 60%,100% { content:"..."; } }
-.fab { position:fixed; bottom:16px; right:16px; background:#334155; color:white;
+.fab { position:fixed; bottom:16px; right:16px; background:var(--cx-text-soft); color:white;
        width:48px; height:48px; border-radius:24px; display:flex;
        align-items:center; justify-content:center; cursor:pointer; font-size:24px;
        box-shadow:0 4px 12px rgba(0,0,0,0.4); z-index:5; border:none; }
-.tag-mi-rol { background:#1e40af; color:white; padding:6px 12px; border-radius:8px;
+.tag-mi-rol { background:var(--cx-info); color:white; padding:6px 12px; border-radius:8px;
               font-size:14px; font-weight:600; margin-bottom:8px; display:inline-block; }
 .banner-msg { background:#7c2d12; color:#fed7aa; padding:12px 16px; border-radius:12px;
               margin-bottom:16px; font-size:14px; }
@@ -90,15 +90,15 @@ main { padding:16px; padding-bottom:80px; max-width:600px; margin:0 auto; }
   <div id="contenido" class="loading">Cargando tu día</div>
   <!-- Pieza 6 Kanban · 19-may-2026 · navegación cruzada para que admin/jefe
        no se pierdan entre Mi Día (operario) y vistas de equipo. -->
-  <div id="nav-equipo" style="display:none;margin-top:24px;padding:14px;background:#1e293b;border-radius:10px;border:1px solid #334155">
-    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">📊 Vistas de equipo (admin/jefe)</div>
+  <div id="nav-equipo" style="display:none;margin-top:24px;padding:14px;background:var(--cx-text);border-radius:10px;border:1px solid var(--cx-text-soft)">
+    <div style="font-size:11px;color:var(--cx-text-faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">📊 Vistas de equipo (admin/jefe)</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <a href="/planta/kanban" style="flex:1;min-width:140px;background:#0891b2;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:700;font-size:13px;text-align:center">🏭 Kanban planta</a>
-      <a href="/dashboard#programacion" onclick="try{sessionStorage.setItem('prog_tab','mando')}catch(e){}" style="flex:1;min-width:140px;background:#1a4a7a;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:700;font-size:13px;text-align:center">🎯 Centro de Mando</a>
+      <a href="/planta/kanban" style="flex:1;min-width:140px;background:var(--cx-info);color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:700;font-size:13px;text-align:center">🏭 Kanban planta</a>
+      <a href="/dashboard#programacion" onclick="try{sessionStorage.setItem('prog_tab','mando')}catch(e){}" style="flex:1;min-width:140px;background:var(--cx-primary);color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:700;font-size:13px;text-align:center">🎯 Centro de Mando</a>
     </div>
   </div>
-  <div style="text-align:center;margin-top:24px;padding-top:24px;border-top:1px solid #334155">
-    <a href="/inventarios" style="color:#94a3b8;font-size:13px;text-decoration:none">
+  <div style="text-align:center;margin-top:24px;padding-top:24px;border-top:1px solid var(--cx-text-soft)">
+    <a href="/inventarios" style="color:var(--cx-text-faint);font-size:13px;text-decoration:none">
       &larr; Ver inventario completo de Planta
     </a>
   </div>
@@ -277,7 +277,7 @@ function renderProducciones(d) {
       if (p.area_estado === 'sucia' && p.area_id) {
         const nombreSala = p.area_nombre || p.area_codigo || 'sala';
         btn = ya
-            + '<button class="btn btn-big" style="background:#0e7490;color:#fff;margin-top:8px" '
+            + '<button class="btn btn-big" style="background:var(--cx-info);color:#fff;margin-top:8px" '
             + 'data-area-id="' + p.area_id + '" '
             + 'data-area-nom="' + escapeHtml(nombreSala) + '" '
             + 'onclick="marcarLimpiaBtn(this)">'
@@ -545,7 +545,7 @@ if (_miDiaVozDisponible()) {
     b.id = 'mi-dia-voz-btn';
     b.textContent = '🎤 Voz';
     b.title = 'Tocá y decí: "terminé dispensación" / "atascada"';
-    b.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#0891b2;color:#fff;border:none;padding:14px 22px;border-radius:30px;font-size:14px;font-weight:700;box-shadow:0 4px 14px rgba(8,145,178,.4);z-index:99;cursor:pointer';
+    b.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--cx-info);color:#fff;border:none;padding:14px 22px;border-radius:30px;font-size:14px;font-weight:700;box-shadow:0 4px 14px rgba(8,145,178,.4);z-index:99;cursor:pointer';
     b.onclick = _miDiaVozIniciar;
     document.body.appendChild(b);
   });

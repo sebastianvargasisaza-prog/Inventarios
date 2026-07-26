@@ -3848,7 +3848,7 @@ def _notificar_animus_pqr(cod, row, clase, crit, f_limite):
     cliente = _esc(row.get('contacto_nombre') or 'Cliente')
     asunto = f'[PQR {cod}] Nuevo PQR de calidad recibido' + (f' · criticidad {crit.upper()}' if crit else '')
     html = (
-        f"<h2 style='color:#6d28d9'>Nuevo PQR de calidad · Radicado {_esc(cod)}</h2>"
+        f"<h2 style='color:var(--cx-primary-text, #6d28d9)'>Nuevo PQR de calidad · Radicado {_esc(cod)}</h2>"
         f"<p>Llegó un PQR a Aseguramiento (Espagiria). Notificación automática (ASG-PRO-003).</p>"
         f"<ul>"
         f"<li><b>Radicado:</b> {_esc(cod)}</li>"
@@ -3859,7 +3859,7 @@ def _notificar_animus_pqr(cod, row, clase, crit, f_limite):
         f"<li><b>Fecha límite de respuesta (SLA 15 días háb.):</b> {_esc(f_limite or '—')}</li>"
         f"</ul>"
         f"<p><b>Mensaje del cliente:</b><br>{_esc((row.get('mensaje') or '')[:1500])}</p>"
-        f"<p style='color:#888;font-size:0.9em'>Gestionar en EOS &rsaquo; Aseguramiento &rsaquo; Quejas.</p>"
+        f"<p style='color:var(--cx-text-mute, #888);font-size:0.9em'>Gestionar en EOS &rsaquo; Aseguramiento &rsaquo; Quejas.</p>"
     )
     return _enviar_email_pqr(asunto, html, destinos)
 

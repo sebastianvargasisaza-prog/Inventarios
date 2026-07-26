@@ -15,7 +15,7 @@ HTML = r"""<!DOCTYPE html>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
     margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: #f1f5f9; color: #0f172a; padding: 0; min-height: 100vh;
+    background: var(--cx-border-soft); color: var(--cx-text); padding: 0; min-height: 100vh;
   }
   .header {
     background: linear-gradient(135deg, #0c4a6e, #0e7490);
@@ -26,20 +26,20 @@ HTML = r"""<!DOCTYPE html>
   .header .sub { margin-top: 6px; font-size: 13px; color: #a5f3fc; }
   .container { max-width: 520px; margin: 0 auto; padding: 18px; }
   .card {
-    background: #fff; border-radius: 14px; padding: 20px;
+    background: var(--cx-card); border-radius: 14px; padding: 20px;
     box-shadow: 0 4px 18px rgba(0,0,0,.08); margin-bottom: 14px;
   }
   label {
-    display: block; font-size: 12px; font-weight: 700; color: #475569;
+    display: block; font-size: 12px; font-weight: 700; color: var(--cx-text-soft);
     text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
   }
   input, textarea, select {
     width: 100%; padding: 14px 14px; font-size: 16px;
-    border: 1px solid #cbd5e1; border-radius: 10px; background: #fff;
-    color: #0f172a; -webkit-appearance: none;
+    border: 1px solid var(--cx-border); border-radius: 10px; background: var(--cx-card);
+    color: var(--cx-text); -webkit-appearance: none;
   }
   input:focus, textarea:focus, select:focus {
-    outline: none; border-color: #0e7490; box-shadow: 0 0 0 3px rgba(14,116,144,.15);
+    outline: none; border-color: var(--cx-info); box-shadow: 0 0 0 3px rgba(14,116,144,.15);
   }
   textarea { resize: vertical; min-height: 80px; }
   .field { margin-bottom: 14px; }
@@ -49,32 +49,32 @@ HTML = r"""<!DOCTYPE html>
     margin-bottom: 6px;
   }
   .tipo-btn {
-    padding: 18px 12px; border: 2px solid #cbd5e1; background: #fff;
+    padding: 18px 12px; border: 2px solid var(--cx-border); background: var(--cx-card);
     border-radius: 12px; cursor: pointer; text-align: center;
-    font-size: 14px; font-weight: 600; color: #475569;
+    font-size: 14px; font-weight: 600; color: var(--cx-text-soft);
     transition: all 0.15s; display: flex; flex-direction: column;
     align-items: center; gap: 6px;
   }
   .tipo-btn .icon { font-size: 26px; }
   .tipo-btn:active { transform: scale(0.97); }
   .tipo-btn.active {
-    border-color: #0e7490; background: #ecfeff; color: #0c4a6e;
+    border-color: var(--cx-info); background: #ecfeff; color: var(--cx-info-text);
     box-shadow: 0 4px 12px rgba(14,116,144,.2);
   }
   .submit {
-    width: 100%; padding: 18px; background: #0e7490; color: #fff;
+    width: 100%; padding: 18px; background: var(--cx-info); color: #fff;
     border: none; border-radius: 12px; font-size: 17px; font-weight: 700;
     cursor: pointer; box-shadow: 0 4px 14px rgba(14,116,144,.3);
   }
-  .submit:disabled { background: #94a3b8; }
+  .submit:disabled { background: var(--cx-text-faint); }
   .submit:active:not(:disabled) { transform: scale(0.98); }
   .msg {
     padding: 14px; border-radius: 10px; font-size: 14px;
     margin-bottom: 14px; font-weight: 500;
   }
-  .msg.ok { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
-  .msg.err { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
-  .help { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .msg.ok { background: var(--cx-success-pale); color: var(--cx-success-text); border: 1px solid #86efac; }
+  .msg.err { background: var(--cx-danger-pale); color: var(--cx-danger-text); border: 1px solid #fca5a5; }
+  .help { font-size: 12px; color: var(--cx-text-mute); margin-top: 4px; }
   @media (max-width: 480px) {
     .container { padding: 12px; }
     .card { padding: 16px; }
@@ -147,7 +147,7 @@ HTML = r"""<!DOCTYPE html>
       <button type="submit" class="submit" id="btn-submit">📨 Enviar reporte</button>
     </form>
 
-    <div style="text-align:center;color:#64748b;font-size:11px;padding:20px 10px;">
+    <div style="text-align:center;color:var(--cx-text-mute);font-size:11px;padding:20px 10px;">
       Sistema EOS · HHA Group<br>
       Si tu reporte es URGENTE llama directo a RH.
     </div>

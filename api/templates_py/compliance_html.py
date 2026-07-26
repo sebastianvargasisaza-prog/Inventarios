@@ -9,58 +9,58 @@ HTML = r"""<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1c1917;font-size:14px}
+body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);font-size:14px}
 .topbar{background:linear-gradient(90deg,#0c4a6e,#0f766e);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:14px}
 .topbar h1{font-size:18px;font-weight:700;flex:1}
-.topbar a{color:#cbd5e1;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,.1)}
-.tabs{background:#fff;border-bottom:2px solid #e2e8f0;display:flex;gap:0;overflow-x:auto}
-.tabbtn{padding:12px 22px;font-size:13px;font-weight:600;color:#64748b;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
-.tabbtn:hover{background:#f8fafc;color:#0c4a6e}
-.tabbtn.on{color:#0c4a6e;border-bottom-color:#0f766e;font-weight:700}
+.topbar a{color:var(--cx-border);text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,.1)}
+.tabs{background:var(--cx-card);border-bottom:2px solid var(--cx-border);display:flex;gap:0;overflow-x:auto}
+.tabbtn{padding:12px 22px;font-size:13px;font-weight:600;color:var(--cx-text-mute);background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
+.tabbtn:hover{background:var(--cx-bg-alt);color:var(--cx-info-text)}
+.tabbtn.on{color:var(--cx-info-text);border-bottom-color:var(--cx-info);font-weight:700}
 .pane{display:none;padding:22px 24px;max-width:1300px;margin:0 auto}
 .pane.on{display:block}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
-.kpi{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;border-left:4px solid #0f766e}
-.kpi.warn{border-left-color:#d97706}
-.kpi.danger{border-left-color:#dc2626}
-.kpi-l{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
-.kpi-v{font-size:24px;font-weight:800;color:#0f172a}
-.kpi-s{font-size:11px;color:#64748b;margin-top:2px}
-.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px}
+.kpi{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:14px;border-left:4px solid var(--cx-info)}
+.kpi.warn{border-left-color:var(--cx-accent-dark)}
+.kpi.danger{border-left-color:var(--cx-danger)}
+.kpi-l{font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.kpi-v{font-size:24px;font-weight:800;color:var(--cx-text)}
+.kpi-s{font-size:11px;color:var(--cx-text-mute);margin-top:2px}
+.card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:16px;margin-bottom:12px}
 .btn{padding:7px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
-.btn-primary{background:#0f766e;color:#fff}.btn-primary:hover{background:#115e59}
-.btn-secondary{background:#e2e8f0;color:#475569}
-.btn-danger{background:#dc2626;color:#fff}
-.btn-warn{background:#d97706;color:#fff}
-.btn-success{background:#16a34a;color:#fff}
+.btn-primary{background:var(--cx-info);color:#fff}.btn-primary:hover{background:#115e59}
+.btn-secondary{background:var(--cx-border);color:var(--cx-text-soft)}
+.btn-danger{background:var(--cx-danger);color:#fff}
+.btn-warn{background:var(--cx-accent-dark);color:#fff}
+.btn-success{background:var(--cx-success);color:#fff}
 .btn-sm{padding:4px 8px;font-size:11px}
-input,select,textarea{padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;width:100%}
-input:focus,select:focus,textarea:focus{border-color:#0f766e;outline:none}
+input,select,textarea{padding:8px 10px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;font-family:inherit;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--cx-info);outline:none}
 .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .row > * {flex:1;min-width:180px}
-label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4px}
+label{font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;margin-bottom:4px}
 .badge{padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;text-transform:uppercase}
-.b-abierto,.b-abierta{background:#fee2e2;color:#991b1b}
-.b-en_proceso,.b-en_investigacion,.b-en_implementacion{background:#fef3c7;color:#92400e}
-.b-cerrado,.b-cerrada{background:#d1fae5;color:#065f46}
-.b-pendiente{background:#dbeafe;color:#1e40af}
-.b-ejecutado{background:#d1fae5;color:#065f46}
-.b-vencido{background:#fee2e2;color:#991b1b}
-.b-critico{background:#fee2e2;color:#991b1b;border:1px solid #dc2626}
-.b-mayor{background:#fed7aa;color:#9a3412}
-.b-menor{background:#fef3c7;color:#92400e}
+.b-abierto,.b-abierta{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
+.b-en_proceso,.b-en_investigacion,.b-en_implementacion{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.b-cerrado,.b-cerrada{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.b-pendiente{background:var(--cx-info-pale);color:var(--cx-info-text)}
+.b-ejecutado{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.b-vencido{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
+.b-critico{background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid var(--cx-danger)}
+.b-mayor{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.b-menor{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
 .b-observacion{background:#e0e7ff;color:#3730a3}
-.b-INVIMA{background:#fee2e2;color:#991b1b;font-weight:800}
-.b-BPM_interna{background:#dbeafe;color:#1e40af}
+.b-INVIMA{background:var(--cx-danger-pale);color:var(--cx-danger-text);font-weight:800}
+.b-BPM_interna{background:var(--cx-info-pale);color:var(--cx-info-text)}
 .b-autoinspeccion{background:#e0e7ff;color:#3730a3}
-.empty{text-align:center;color:#94a3b8;padding:30px;font-style:italic}
-.progress{height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;margin-top:6px}
+.empty{text-align:center;color:var(--cx-text-faint);padding:30px;font-style:italic}
+.progress{height:8px;background:var(--cx-border);border-radius:4px;overflow:hidden;margin-top:6px}
 .progress-bar{height:100%;background:linear-gradient(90deg,#16a34a,#0f766e);transition:width .3s}
 .progress-bar.warn{background:linear-gradient(90deg,#f59e0b,#d97706)}
 .progress-bar.danger{background:linear-gradient(90deg,#dc2626,#991b1b)}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{padding:8px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;background:#f8fafc;text-transform:uppercase;font-size:10px;letter-spacing:.5px}
-td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+th{padding:8px;text-align:left;color:var(--cx-text-mute);border-bottom:1px solid var(--cx-border);background:var(--cx-bg-alt);text-transform:uppercase;font-size:10px;letter-spacing:.5px}
+td{padding:8px;border-bottom:1px solid var(--cx-border-soft);vertical-align:top}
 tr:hover{background:#fafafa}
 </style>
 </head>
@@ -84,8 +84,8 @@ tr:hover{background:#fafafa}
 <!-- PANE: Cronogramas BPM -->
 <div id="pane-cron" class="pane on">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-    <h3 style="color:#0c4a6e">Cronogramas BPM · año <span id="year-cron"></span></h3>
-    <div style="font-size:11px;color:#64748b">Click en un cronograma → ver/agregar ejecuciones</div>
+    <h3 style="color:var(--cx-info-text)">Cronogramas BPM · año <span id="year-cron"></span></h3>
+    <div style="font-size:11px;color:var(--cx-text-mute)">Click en un cronograma → ver/agregar ejecuciones</div>
   </div>
   <div id="cronograma-list"></div>
 </div>
@@ -93,7 +93,7 @@ tr:hover{background:#fafafa}
 <!-- PANE: CAPA -->
 <div id="pane-capa" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-    <h3 style="color:#0c4a6e">CAPA · Desviaciones, no-conformidades, quejas</h3>
+    <h3 style="color:var(--cx-info-text)">CAPA · Desviaciones, no-conformidades, quejas</h3>
     <button class="btn btn-primary" onclick="abrirModalCAPA()">+ Nueva desviación</button>
   </div>
   <div style="margin-bottom:10px">
@@ -104,7 +104,7 @@ tr:hover{background:#fafafa}
       <option value="en_implementacion">En implementación</option>
       <option value="cerrada">Cerradas</option>
     </select>
-    <input type="text" placeholder="Buscar..." oninput="buscarTabla('capa', this.value)" style="display:inline-block;width:auto;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;margin-left:6px">
+    <input type="text" placeholder="Buscar..." oninput="buscarTabla('capa', this.value)" style="display:inline-block;width:auto;padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;margin-left:6px">
   </div>
   <div id="capa-list"></div>
   <div id="pg-capa"></div>
@@ -113,7 +113,7 @@ tr:hover{background:#fafafa}
 <!-- PANE: Hallazgos -->
 <div id="pane-hall" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-    <h3 style="color:#0c4a6e">Hallazgos abiertos · INVIMA, auditoría, autoinspección</h3>
+    <h3 style="color:var(--cx-info-text)">Hallazgos abiertos · INVIMA, auditoría, autoinspección</h3>
     <button class="btn btn-primary" onclick="abrirModalHallazgo()">+ Nuevo hallazgo</button>
   </div>
   <div style="margin-bottom:10px">
@@ -131,7 +131,7 @@ tr:hover{background:#fafafa}
       <option value="auditoria_externa">Auditoría externa</option>
       <option value="queja_cliente">Queja cliente</option>
     </select>
-    <input type="text" placeholder="Buscar..." oninput="buscarTabla('hall', this.value)" style="display:inline-block;width:auto;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;margin-left:6px">
+    <input type="text" placeholder="Buscar..." oninput="buscarTabla('hall', this.value)" style="display:inline-block;width:auto;padding:6px 10px;border:1px solid var(--cx-border);border-radius:4px;margin-left:6px">
   </div>
   <div id="hall-list"></div>
   <div id="pg-hall"></div>
@@ -139,8 +139,8 @@ tr:hover{background:#fafafa}
 
 <!-- MODAL: Nueva CAPA -->
 <div id="modal-capa" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:9999;align-items:center;justify-content:center;padding:20px">
-  <div style="background:#fff;border-radius:14px;padding:22px 26px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
-    <h3 style="color:#0c4a6e;margin-bottom:14px">Nueva desviación / no-conformidad</h3>
+  <div style="background:var(--cx-card);border-radius:14px;padding:22px 26px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
+    <h3 style="color:var(--cx-info-text);margin-bottom:14px">Nueva desviación / no-conformidad</h3>
     <div class="row">
       <div><label>Tipo</label>
         <select id="cp-tipo">
@@ -178,8 +178,8 @@ tr:hover{background:#fafafa}
 
 <!-- MODAL: Nuevo hallazgo -->
 <div id="modal-hall" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:9999;align-items:center;justify-content:center;padding:20px">
-  <div style="background:#fff;border-radius:14px;padding:22px 26px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
-    <h3 style="color:#0c4a6e;margin-bottom:14px">Nuevo hallazgo</h3>
+  <div style="background:var(--cx-card);border-radius:14px;padding:22px 26px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
+    <h3 style="color:var(--cx-info-text);margin-bottom:14px">Nuevo hallazgo</h3>
     <div class="row">
       <div><label>Origen</label>
         <select id="hl-origen">
@@ -217,9 +217,9 @@ tr:hover{background:#fafafa}
 
 <!-- MODAL: Detalle ejecuciones cronograma -->
 <div id="modal-cron" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:9999;align-items:center;justify-content:center;padding:20px">
-  <div style="background:#fff;border-radius:14px;padding:22px 26px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto">
+  <div style="background:var(--cx-card);border-radius:14px;padding:22px 26px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <h3 id="cron-modal-title" style="color:#0c4a6e"></h3>
+      <h3 id="cron-modal-title" style="color:var(--cx-info-text)"></h3>
       <button class="btn btn-secondary btn-sm" onclick="cerrarModal('modal-cron')">×</button>
     </div>
     <div id="cron-modal-body"></div>
@@ -276,9 +276,9 @@ function _paginar(data, page, size) {
 function _renderPag(tabla, info) {
   var s = TBL_STATE[tabla];
   if (info.total <= s.size && info.total < 26) {
-    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+    return '<div style="font-size:11px;color:var(--cx-text-mute);padding:6px 0;">' + info.total + ' filas</div>';
   }
-  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#64748b;">';
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:var(--cx-text-mute);">';
   html += '<span>Pág ' + info.page + '/' + info.totalPages + ' · ' + info.total + '</span>';
   html += '<span style="flex:1"></span>';
   html += '<button class="btn ghost" onclick="cambiarPag(\'' + tabla + '\',-1)"' +
@@ -286,7 +286,7 @@ function _renderPag(tabla, info) {
   html += '<button class="btn ghost" onclick="cambiarPag(\'' + tabla + '\',1)"' +
           (info.page >= info.totalPages ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px">&rarr;</button>';
   html += '<select onchange="cambiarPagSize(\'' + tabla + '\', this.value)" ' +
-          'style="border:1px solid #cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+          'style="border:1px solid var(--cx-border);padding:4px 6px;border-radius:5px;font-size:12px;">';
   ['25','50','100','999'].forEach(function(o){
     var label = o === '999' ? 'Todas' : o;
     html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
@@ -337,17 +337,17 @@ async function cargarCronogramas(){
       return '<div class="card" style="cursor:pointer" onclick="abrirCronograma('+c.id+',&quot;'+_esc(c.codigo+' - '+c.nombre)+'&quot;)">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">' +
           '<div style="flex:1;min-width:200px">' +
-            '<div style="font-weight:700;color:#0c4a6e;font-family:monospace;font-size:12px">'+_esc(c.codigo)+'</div>' +
-            '<div style="font-size:14px;font-weight:600;color:#0f172a;margin-top:2px">'+_esc(c.nombre)+'</div>' +
-            '<div style="font-size:11px;color:#64748b;margin-top:4px">Frecuencia: '+_esc(c.frecuencia||'-')+' · Responsable: '+_esc(c.responsable||'-')+'</div>' +
+            '<div style="font-weight:700;color:var(--cx-info-text);font-family:monospace;font-size:12px">'+_esc(c.codigo)+'</div>' +
+            '<div style="font-size:14px;font-weight:600;color:var(--cx-text);margin-top:2px">'+_esc(c.nombre)+'</div>' +
+            '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">Frecuencia: '+_esc(c.frecuencia||'-')+' · Responsable: '+_esc(c.responsable||'-')+'</div>' +
           '</div>' +
           '<div style="text-align:right">' +
             '<div style="font-size:24px;font-weight:800;color:'+(clase==='danger'?'#dc2626':clase==='warn'?'#d97706':'#16a34a')+'">'+pct+'%</div>' +
-            '<div style="font-size:10px;color:#64748b">'+c.ejecutadas+'/'+c.objetivo+' año</div>' +
+            '<div style="font-size:10px;color:var(--cx-text-mute)">'+c.ejecutadas+'/'+c.objetivo+' año</div>' +
           '</div>' +
         '</div>' +
         '<div class="progress"><div class="progress-bar '+clase+'" style="width:'+pct+'%"></div></div>' +
-        '<div style="margin-top:6px;font-size:11px;color:#64748b">' +
+        '<div style="margin-top:6px;font-size:11px;color:var(--cx-text-mute)">' +
           '✅ '+c.ejecutadas+' ejecutadas · ' +
           '⚠ '+c.vencidas+' vencidas · ' +
           '📅 '+c.proximas+' próximas pendientes' +
@@ -456,16 +456,16 @@ async function cargarCAPA(){
     }
     if(pgEl) pgEl.innerHTML = _renderPag('capa', info);
     box.innerHTML = info.items.map(function(x){
-      var diasAlert = x.dias_abierta>5 && x.estado!=='cerrada' ? ' <span style="background:#dc2626;color:#fff;padding:2px 6px;border-radius:6px;font-size:10px">⚠ '+x.dias_abierta+' días</span>' : '';
+      var diasAlert = x.dias_abierta>5 && x.estado!=='cerrada' ? ' <span style="background:var(--cx-danger);color:#fff;padding:2px 6px;border-radius:6px;font-size:10px">⚠ '+x.dias_abierta+' días</span>' : '';
       return '<div class="card">' +
         '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
-          '<div><b style="font-family:monospace;color:#0c4a6e">'+_esc(x.codigo)+'</b> <span class="badge b-'+x.severidad+'">'+x.severidad+'</span> <span class="badge b-'+x.estado+'">'+_esc(x.estado)+'</span>'+diasAlert+'</div>' +
-          '<div style="font-size:11px;color:#94a3b8">'+_esc(x.fecha_apertura)+' → '+_esc(x.fecha_objetivo||'sin obj')+'</div>' +
+          '<div><b style="font-family:monospace;color:var(--cx-info-text)">'+_esc(x.codigo)+'</b> <span class="badge b-'+x.severidad+'">'+x.severidad+'</span> <span class="badge b-'+x.estado+'">'+_esc(x.estado)+'</span>'+diasAlert+'</div>' +
+          '<div style="font-size:11px;color:var(--cx-text-faint)">'+_esc(x.fecha_apertura)+' → '+_esc(x.fecha_objetivo||'sin obj')+'</div>' +
         '</div>' +
         '<div style="font-weight:600;margin-top:6px">'+_esc(x.titulo)+'</div>' +
-        (x.descripcion?'<div style="color:#475569;font-size:13px;margin-top:4px">'+_esc(x.descripcion)+'</div>':'') +
-        (x.producto_relacionado?'<div style="font-size:11px;color:#64748b;margin-top:4px">📦 '+_esc(x.producto_relacionado)+(x.lote?' lote '+_esc(x.lote):'')+'</div>':'') +
-        '<div style="font-size:11px;color:#64748b;margin-top:4px">Responsable: '+_esc(x.responsable||'-')+'</div>' +
+        (x.descripcion?'<div style="color:var(--cx-text-soft);font-size:13px;margin-top:4px">'+_esc(x.descripcion)+'</div>':'') +
+        (x.producto_relacionado?'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">📦 '+_esc(x.producto_relacionado)+(x.lote?' lote '+_esc(x.lote):'')+'</div>':'') +
+        '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">Responsable: '+_esc(x.responsable||'-')+'</div>' +
         (ES_RESPONSABLE && x.estado!=='cerrada' ? '<div style="margin-top:8px"><button class="btn btn-success btn-sm" onclick="cerrarCAPA('+x.id+')">✓ Cerrar desviación</button></div>' : '') +
         '</div>';
     }).join('');
@@ -529,16 +529,16 @@ async function cargarHallazgos(){
     }
     if(pgEl) pgEl.innerHTML = _renderPag('hall', info);
     box.innerHTML = info.items.map(function(h){
-      var venc = h.vencido ? ' <span style="background:#dc2626;color:#fff;padding:2px 6px;border-radius:6px;font-size:10px">VENCIDO '+Math.abs(h.dias_a_limite)+'d</span>' : (h.dias_a_limite!=null && h.dias_a_limite<=7 && h.estado!=='cerrado'?' <span style="background:#d97706;color:#fff;padding:2px 6px;border-radius:6px;font-size:10px">'+h.dias_a_limite+'d restantes</span>':'');
+      var venc = h.vencido ? ' <span style="background:var(--cx-danger);color:#fff;padding:2px 6px;border-radius:6px;font-size:10px">VENCIDO '+Math.abs(h.dias_a_limite)+'d</span>' : (h.dias_a_limite!=null && h.dias_a_limite<=7 && h.estado!=='cerrado'?' <span style="background:var(--cx-accent-dark);color:#fff;padding:2px 6px;border-radius:6px;font-size:10px">'+h.dias_a_limite+'d restantes</span>':'');
       return '<div class="card" style="border-left:4px solid '+(h.severidad==='critico'?'#dc2626':h.severidad==='mayor'?'#d97706':'#64748b')+'">' +
         '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
-          '<div><b style="font-family:monospace;color:#0c4a6e">'+_esc(h.codigo)+'</b> <span class="badge b-'+h.origen+'">'+_esc(h.origen)+'</span> <span class="badge b-'+h.severidad+'">'+_esc(h.severidad)+'</span> <span class="badge b-'+h.estado+'">'+_esc(h.estado)+'</span>'+venc+'</div>' +
-          '<div style="font-size:11px;color:#94a3b8">'+_esc(h.fecha_deteccion)+(h.fecha_limite?' → '+_esc(h.fecha_limite):'')+'</div>' +
+          '<div><b style="font-family:monospace;color:var(--cx-info-text)">'+_esc(h.codigo)+'</b> <span class="badge b-'+h.origen+'">'+_esc(h.origen)+'</span> <span class="badge b-'+h.severidad+'">'+_esc(h.severidad)+'</span> <span class="badge b-'+h.estado+'">'+_esc(h.estado)+'</span>'+venc+'</div>' +
+          '<div style="font-size:11px;color:var(--cx-text-faint)">'+_esc(h.fecha_deteccion)+(h.fecha_limite?' → '+_esc(h.fecha_limite):'')+'</div>' +
         '</div>' +
         '<div style="font-weight:600;margin-top:6px">'+_esc(h.titulo)+'</div>' +
-        (h.descripcion?'<div style="color:#475569;font-size:13px;margin-top:4px">'+_esc(h.descripcion)+'</div>':'') +
-        '<div style="font-size:11px;color:#64748b;margin-top:4px">Área: '+_esc(h.area||'-')+' · Responsable: '+_esc(h.responsable||'-')+'</div>' +
-        (h.accion_propuesta?'<div style="font-size:12px;color:#475569;margin-top:4px"><b>Acción:</b> '+_esc(h.accion_propuesta)+'</div>':'') +
+        (h.descripcion?'<div style="color:var(--cx-text-soft);font-size:13px;margin-top:4px">'+_esc(h.descripcion)+'</div>':'') +
+        '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">Área: '+_esc(h.area||'-')+' · Responsable: '+_esc(h.responsable||'-')+'</div>' +
+        (h.accion_propuesta?'<div style="font-size:12px;color:var(--cx-text-soft);margin-top:4px"><b>Acción:</b> '+_esc(h.accion_propuesta)+'</div>':'') +
         (ES_RESPONSABLE && h.estado!=='cerrado' ? '<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-warn btn-sm" onclick="enProcesoHallazgo('+h.id+')">→ En proceso</button><button class="btn btn-success btn-sm" onclick="cerrarHallazgo('+h.id+')">✓ Cerrar</button></div>' : '') +
         '</div>';
     }).join('');

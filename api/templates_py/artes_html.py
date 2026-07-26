@@ -14,11 +14,11 @@ ARTES_HTML = r"""<!doctype html>
   .hd .sub{color:var(--cx-text-mute,#78716c);font-size:12.5px;}
   .hd .nav{margin-left:auto;display:flex;gap:8px;align-items:center;}
   .btn{appearance:none;border:1px solid var(--cx-hairline,#e7e5e4);background:var(--cx-card,#fff);color:var(--cx-text,#1c1917);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
-  .btn:hover{border-color:var(--cx-primary,#6d28d9);color:var(--cx-primary,#6d28d9);}
+  .btn:hover{border-color:var(--cx-primary,#6d28d9);color:var(--cx-primary-text,#6d28d9);}
   .btn.primary{background:var(--cx-primary,#6d28d9);color:#fff;border-color:var(--cx-primary,#6d28d9);}
   .btn.primary:hover{filter:brightness(1.06);color:#fff;}
-  .btn.ok{background:#16a34a;color:#fff;border-color:#16a34a;}
-  .btn.danger{background:#dc2626;color:#fff;border-color:#dc2626;}
+  .btn.ok{background:var(--cx-success);color:#fff;border-color:var(--cx-success);}
+  .btn.danger{background:var(--cx-danger);color:#fff;border-color:var(--cx-danger);}
   .btn.sm{padding:5px 10px;font-size:12px;}
   .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0;}
   .kpi{background:var(--cx-card,#fff);border:1px solid var(--cx-hairline,#e7e5e4);border-radius:12px;padding:12px 18px;min-width:120px;}
@@ -26,33 +26,33 @@ ARTES_HTML = r"""<!doctype html>
   .kpi .l{font-size:11px;color:var(--cx-text-mute,#78716c);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
   .bar{background:var(--cx-card,#fff);border:1px solid var(--cx-hairline,#e7e5e4);border-radius:12px;padding:14px 16px;margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
   .chips{display:flex;gap:6px;flex-wrap:wrap;}
-  .chip{border:1px solid #d6d3d1;background:transparent;color:#57534e;border-radius:20px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;}
+  .chip{border:1px solid var(--cx-border);background:transparent;color:var(--cx-text-soft);border-radius:20px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;}
   .chip.on{background:var(--cx-primary,#6d28d9);color:#fff;border-color:var(--cx-primary,#6d28d9);}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(460px,1fr));gap:14px;}
   .card{background:var(--cx-card,#fff);border:1px solid var(--cx-hairline,#e7e5e4);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;}
   .card .top{padding:14px 16px 10px;}
   .card .pt{font-weight:700;font-size:15px;}
   .card .meta{color:var(--cx-text-mute,#78716c);font-size:12px;margin-top:3px;}
-  .card .prev{background:#f5f5f4;border-top:1px solid var(--cx-hairline,#e7e5e4);border-bottom:1px solid var(--cx-hairline,#e7e5e4);height:240px;display:flex;align-items:center;justify-content:center;}
+  .card .prev{background:var(--cx-bg-alt);border-top:1px solid var(--cx-hairline,#e7e5e4);border-bottom:1px solid var(--cx-hairline,#e7e5e4);height:240px;display:flex;align-items:center;justify-content:center;}
   .card .prev iframe{width:100%;height:100%;border:0;}
-  .card .prev .nofile{color:#a8a29e;font-size:13px;text-align:center;padding:20px;}
+  .card .prev .nofile{color:var(--cx-text-faint);font-size:13px;text-align:center;padding:20px;}
   .card .acts{padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .st{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 9px;border-radius:20px;}
-  .st.pendiente_dt{background:#fef3c7;color:#b45309;}
-  .st.aprobado{background:#dcfce7;color:#15803d;}
-  .st.rechazado{background:#fee2e2;color:#b91c1c;}
-  .st.borrador,.st.obsoleto{background:#f5f5f4;color:#78716c;}
-  .tag{font-size:11px;color:#78716c;}
+  .st.pendiente_dt{background:var(--cx-warn-pale);color:var(--cx-warn-text);}
+  .st.aprobado{background:var(--cx-success-pale);color:var(--cx-success-text);}
+  .st.rechazado{background:var(--cx-danger-pale);color:var(--cx-danger-text);}
+  .st.borrador,.st.obsoleto{background:var(--cx-bg-alt);color:var(--cx-text-mute);}
+  .tag{font-size:11px;color:var(--cx-text-mute);}
   .field{display:flex;flex-direction:column;gap:4px;}
-  .field label{font-size:11px;font-weight:600;color:#78716c;text-transform:uppercase;letter-spacing:.04em;}
+  .field label{font-size:11px;font-weight:600;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.04em;}
   input,select,textarea{font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--cx-hairline,#e7e5e4);border-radius:8px;background:var(--cx-card,#fff);color:var(--cx-text,#1c1917);}
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50;}
   .modal{background:var(--cx-card,#fff);border-radius:16px;padding:24px;width:min(440px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.25);}
   .modal h3{margin:0 0 14px;font-size:17px;}
   .modal .row{display:flex;flex-direction:column;gap:10px;}
   .modal .foot{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;}
-  .muted{color:#a8a29e;font-size:13px;}
-  .empty{text-align:center;color:#a8a29e;padding:40px;font-style:italic;}
+  .muted{color:var(--cx-text-faint);font-size:13px;}
+  .empty{text-align:center;color:var(--cx-text-faint);padding:40px;font-style:italic;}
   @media(max-width:700px){.grid{grid-template-columns:1fr;}}
 </style>
 </head>
@@ -72,9 +72,9 @@ ARTES_HTML = r"""<!doctype html>
   </div>
 
   <div class="kpis">
-    <div class="kpi"><div class="n" id="k-pend" style="color:#b45309">-</div><div class="l">Pendientes DT</div></div>
-    <div class="kpi"><div class="n" id="k-aprob" style="color:#15803d">-</div><div class="l">Aprobados</div></div>
-    <div class="kpi"><div class="n" id="k-recibir" style="color:#0891b2">-</div><div class="l">Por recibir (2ª mirada)</div></div>
+    <div class="kpi"><div class="n" id="k-pend" style="color:var(--cx-warn-text)">-</div><div class="l">Pendientes DT</div></div>
+    <div class="kpi"><div class="n" id="k-aprob" style="color:var(--cx-success-text)">-</div><div class="l">Aprobados</div></div>
+    <div class="kpi"><div class="n" id="k-recibir" style="color:var(--cx-info-text)">-</div><div class="l">Por recibir (2ª mirada)</div></div>
   </div>
 
   <div class="bar">
@@ -152,14 +152,14 @@ async function loadArteColaDT(){
     var its=(d&&d.items)||[];
     if(!its.length){ box.innerHTML=''; return; }
     var cards=its.map(function(it){
-      return '<div style="background:#fff;border:1px solid #ede9f6;border-left:4px solid #7c3aed;border-radius:12px;padding:13px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'
+      return '<div style="background:var(--cx-card);border:1px solid #ede9f6;border-left:4px solid var(--cx-primary);border-radius:12px;padding:13px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'
         +'<div><div style="font-weight:800;font-size:14px;color:#1e1b2e">'+esc(it.serigrafiado_desc||it.serigrafiado)+'</div>'
-        +'<div style="font-size:11.5px;color:#78716c;margin-top:2px">'+esc(it.serigrafiado)+' &middot; '+esc(it.producto||'?')+' &middot; '+esc(it.metodo||'')+' &middot; '+esc(it.proveedor||'')+' &middot; '+esc(it.cantidad||0)+' uds &middot; volvió '+esc(it.fecha_retorno||'')+'</div></div>'
+        +'<div style="font-size:11.5px;color:var(--cx-text-mute);margin-top:2px">'+esc(it.serigrafiado)+' &middot; '+esc(it.producto||'?')+' &middot; '+esc(it.metodo||'')+' &middot; '+esc(it.proveedor||'')+' &middot; '+esc(it.cantidad||0)+' uds &middot; volvió '+esc(it.fecha_retorno||'')+'</div></div>'
         +'<button onclick="abrirArteChkDT('+it.id+',this)" data-desc="'+esc((it.serigrafiado_desc||it.serigrafiado)+' · '+(it.producto||''))+'" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:9px;padding:9px 15px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">🎨 Revisar arte / liberar</button></div>';
     }).join('');
-    box.innerHTML='<div style="background:#fff;border:1px solid #ece9f6;border-radius:14px;padding:16px 18px;margin:16px 0">'
-      +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:4px"><span style="font-size:16px">🎨</span><b style="font-size:15px;color:#1e1b2e">Arte de envases por revisar</b><span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:800;border-radius:999px;padding:2px 9px">'+its.length+'</span></div>'
-      +'<div style="font-size:11.5px;color:#78716c;margin-bottom:12px">Envases que volvieron de serigrafía/tampografía · verificá <b>arte, estado y características</b> y liberá.</div>'
+    box.innerHTML='<div style="background:var(--cx-card);border:1px solid #ece9f6;border-radius:14px;padding:16px 18px;margin:16px 0">'
+      +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:4px"><span style="font-size:16px">🎨</span><b style="font-size:15px;color:#1e1b2e">Arte de envases por revisar</b><span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);font-size:10px;font-weight:800;border-radius:999px;padding:2px 9px">'+its.length+'</span></div>'
+      +'<div style="font-size:11.5px;color:var(--cx-text-mute);margin-bottom:12px">Envases que volvieron de serigrafía/tampografía · verificá <b>arte, estado y características</b> y liberá.</div>'
       +cards+'</div>';
   }catch(e){ box.innerHTML=''; }
 }
@@ -168,30 +168,30 @@ function abrirArteChkDT(oid, btn){
   var ov=document.getElementById('arte-chk-ov'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='arte-chk-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto';
-  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:540px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
+  ov.innerHTML='<div style="background:var(--cx-card);border-radius:16px;max-width:540px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
     +'<div style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-bottom:1px solid #ece9f6;padding:18px 22px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:16px;font-weight:800;color:#1e1b2e">🎨 Checklist de arte</div><div style="font-size:11px;color:#8b8b9e;margin-top:2px">'+desc+'</div></div><button onclick="document.getElementById(\'arte-chk-ov\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button></div>'
     +'<div style="padding:18px 22px">'
-    +'<div style="font-size:11px;color:#78716c;margin-bottom:14px">Lo firma <b>Dirección Técnica o Calidad</b>. Si algo no cumple, no liberes y dejá la observación.</div>'
-    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-arte" style="width:17px;height:17px;margin-top:1px"><span><b>Arte conforme</b> al aprobado por DT <span style="color:#dc2626">*</span></span></label>'
-    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-estado" style="width:17px;height:17px;margin-top:1px"><span><b>Estado</b> OK (sin daños, limpio) <span style="color:#dc2626">*</span></span></label>'
-    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-caract" style="width:17px;height:17px;margin-top:1px"><span><b>Características</b> correctas (color, ubicación, impresión) <span style="color:#dc2626">*</span></span></label>'
+    +'<div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:14px">Lo firma <b>Dirección Técnica o Calidad</b>. Si algo no cumple, no liberes y dejá la observación.</div>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-arte" style="width:17px;height:17px;margin-top:1px"><span><b>Arte conforme</b> al aprobado por DT <span style="color:var(--cx-danger-text)">*</span></span></label>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-estado" style="width:17px;height:17px;margin-top:1px"><span><b>Estado</b> OK (sin daños, limpio) <span style="color:var(--cx-danger-text)">*</span></span></label>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-caract" style="width:17px;height:17px;margin-top:1px"><span><b>Características</b> correctas (color, ubicación, impresión) <span style="color:var(--cx-danger-text)">*</span></span></label>'
     +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:13px;cursor:pointer"><input type="checkbox" id="ak-cant" style="width:17px;height:17px;margin-top:1px"><span><b>Cantidad</b> coincide con lo enviado</span></label>'
-    +'<textarea id="ak-obs" rows="2" placeholder="Observaciones (opcional)" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>'
+    +'<textarea id="ak-obs" rows="2" placeholder="Observaciones (opcional)" style="width:100%;padding:9px 11px;border:1px solid var(--cx-border);border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>'
     +'<div id="ak-msg" style="font-size:12px;margin-top:8px"></div></div>'
-    +'<div style="border-top:1px solid #eef2f7;padding:14px 22px;display:flex;justify-content:flex-end;gap:8px"><button onclick="document.getElementById(\'arte-chk-ov\').remove()" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;padding:8px 15px;cursor:pointer">Cancelar</button><button onclick="guardarArteChkDT('+oid+')" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer">✓ Firmar y liberar</button></div></div>';
+    +'<div style="border-top:1px solid #eef2f7;padding:14px 22px;display:flex;justify-content:flex-end;gap:8px"><button onclick="document.getElementById(\'arte-chk-ov\').remove()" style="background:var(--cx-border-soft);color:var(--cx-text-soft);border:1px solid var(--cx-border);border-radius:8px;padding:8px 15px;cursor:pointer">Cancelar</button><button onclick="guardarArteChkDT('+oid+')" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer">✓ Firmar y liberar</button></div></div>';
   document.body.appendChild(ov);
 }
 async function guardarArteChkDT(oid){
   var arte=document.getElementById('ak-arte').checked, estado=document.getElementById('ak-estado').checked, caract=document.getElementById('ak-caract').checked, cant=document.getElementById('ak-cant').checked;
   var obs=document.getElementById('ak-obs').value.trim(), msg=document.getElementById('ak-msg');
-  if(!(arte&&estado&&caract)){ msg.innerHTML='<span style="color:#dc2626">Arte + estado + características deben estar OK para liberar.</span>'; return; }
+  if(!(arte&&estado&&caract)){ msg.innerHTML='<span style="color:var(--cx-danger-text)">Arte + estado + características deben estar OK para liberar.</span>'; return; }
   try{
     var t=await csrf();
     var r=await fetch('/api/programacion/marcacion-orden/'+oid+'/liberar-checklist',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},credentials:'same-origin',body:JSON.stringify({arte:arte,estado:estado,caracteristicas:caract,cantidad:cant,observaciones:obs})});
     var d=await r.json();
     if(d.ok){ var ov=document.getElementById('arte-chk-ov'); if(ov) ov.remove(); alert('✓ Liberado por '+(d.rol||'')); loadArteColaDT(); }
-    else msg.innerHTML='<span style="color:#dc2626">'+esc(d.error||'Error')+'</span>';
-  }catch(e){ msg.innerHTML='<span style="color:#dc2626">Error de red</span>'; }
+    else msg.innerHTML='<span style="color:var(--cx-danger-text)">'+esc(d.error||'Error')+'</span>';
+  }catch(e){ msg.innerHTML='<span style="color:var(--cx-danger-text)">Error de red</span>'; }
 }
 async function cargar(){
   loadArteColaDT();
@@ -247,7 +247,7 @@ function render(){
     }
     var extra='';
     if(a.estado==='aprobado'){ extra = '<span class="tag">arte OK: '+esc(a.arte_aprobado_por||'')+(a.inci_revisado?' · INCI ✓':'')+(a.fisica_aprobada?' · física ✓ '+esc(a.fisica_aprobada_por||''):' · falta 2ª mirada')+'</span>'; }
-    if(a.estado==='rechazado' && a.rechazo_motivo){ extra='<span class="tag" style="color:#b91c1c">Rechazo: '+esc(a.rechazo_motivo)+'</span>'; }
+    if(a.estado==='rechazado' && a.rechazo_motivo){ extra='<span class="tag" style="color:var(--cx-danger-text)">Rechazo: '+esc(a.rechazo_motivo)+'</span>'; }
     if(a.estado==='pendiente_dt'){ extra='<span class="tag">solicitó '+esc(a.solicitado_por||'')+(a.solicitud_notas?' · '+esc(a.solicitud_notas):'')+'</span>'; }
     return '<div class="card">'
       + '<div class="top"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="pt">'+esc(a.producto_nombre)+'</span><span class="st '+esc(a.estado)+'">'+esc(a.estado.replace("_"," "))+'</span></div>'

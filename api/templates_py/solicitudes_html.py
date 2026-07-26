@@ -16,44 +16,44 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .topbar-logo{font-size:17px;font-weight:700;letter-spacing:-.5px}
 .topbar-sub{font-size:12px;opacity:.55;margin-left:auto}
 .container{max-width:760px;margin:28px auto;padding:0 16px}
-.card{background:#fff;border-radius:16px;padding:24px 26px;margin-bottom:20px;box-shadow:0 2px 16px rgba(15,23,42,.06);border:1px solid #eef0f2}
+.card{background:var(--cx-card);border-radius:16px;padding:24px 26px;margin-bottom:20px;box-shadow:0 2px 16px rgba(15,23,42,.06);border:1px solid #eef0f2}
 .card-title{font-size:15px;font-weight:800;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid #f0f0f0;letter-spacing:-.01em}
-label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
-input,select,textarea{width:100%;border:1px solid #e2e8f0;border-radius:9px;padding:10px 13px;font-size:14px;background:#fafafa;transition:border .15s,box-shadow .15s;color:#1d1d1f}
-input:focus,select:focus,textarea:focus{outline:none;border-color:#7A4A8B;background:#fff;box-shadow:0 0 0 3px rgba(122,74,139,.12)}
+label{display:block;font-size:11px;font-weight:700;color:var(--cx-text-mute);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+input,select,textarea{width:100%;border:1px solid var(--cx-border);border-radius:9px;padding:10px 13px;font-size:14px;background:#fafafa;transition:border .15s,box-shadow .15s;color:#1d1d1f}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#7A4A8B;background:var(--cx-card);box-shadow:0 0 0 3px rgba(122,74,139,.12)}
 textarea{resize:vertical;min-height:80px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .field{margin-bottom:16px}
 .emp-tabs{display:flex;gap:10px;margin-bottom:22px}
-.emp-tab{flex:1;padding:14px 10px;border:2px solid #eee;border-radius:10px;background:#fff;cursor:pointer;font-size:14px;font-weight:600;text-align:center;transition:all .15s;color:#888}
+.emp-tab{flex:1;padding:14px 10px;border:2px solid var(--cx-border-soft);border-radius:10px;background:var(--cx-card);cursor:pointer;font-size:14px;font-weight:600;text-align:center;transition:all .15s;color:var(--cx-text-mute)}
 .emp-tab.active-esp{border-color:#2B7A78;background:#edf7f7;color:#2B7A78}
 .emp-tab.active-ani{border-color:#7A4A8B;background:#f5eeff;color:#7A4A8B}
 .tipo-row{display:flex;gap:8px;margin-bottom:14px}
-.tipo-tab{flex:1;padding:10px;border:2px solid #eee;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;text-align:center;transition:all .15s;color:#888}
+.tipo-tab{flex:1;padding:10px;border:2px solid var(--cx-border-soft);border-radius:8px;background:var(--cx-card);cursor:pointer;font-size:13px;font-weight:600;text-align:center;transition:all .15s;color:var(--cx-text-mute)}
 .tipo-tab.active{border-color:#4A6741;background:#f0f7ee;color:#4A6741}
-.tipo-hint{font-size:12px;color:#888;background:#fafafa;border-radius:6px;padding:8px 12px;margin-bottom:16px;line-height:1.5}
+.tipo-hint{font-size:12px;color:var(--cx-text-mute);background:#fafafa;border-radius:6px;padding:8px 12px;margin-bottom:16px;line-height:1.5}
 .urg-row{display:flex;gap:8px}
-.urg-btn{flex:1;padding:9px;border:2px solid #ddd;border-radius:8px;background:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;text-align:center}
+.urg-btn{flex:1;padding:9px;border:2px solid var(--cx-border);border-radius:8px;background:var(--cx-card);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;text-align:center}
 .urg-n{border-color:#2B7A78;background:#edf7f7;color:#2B7A78}
 .urg-u{border-color:#B5924A;background:#fdf6ec;color:#B5924A}
-.urg-c{border-color:#dc2626;background:#fef2f2;color:#dc2626}
+.urg-c{border-color:var(--cx-danger);background:var(--cx-danger-pale);color:var(--cx-danger-text)}
 .items-tbl{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px}
-.items-tbl th{text-align:left;padding:6px 6px;background:#f9f9f9;font-weight:600;font-size:11px;color:#999;border-bottom:1px solid #eee;text-transform:uppercase;letter-spacing:.3px}
+.items-tbl th{text-align:left;padding:6px 6px;background:#f9f9f9;font-weight:600;font-size:11px;color:var(--cx-text-faint);border-bottom:1px solid var(--cx-border-soft);text-transform:uppercase;letter-spacing:.3px}
 .items-tbl td{padding:4px 3px;vertical-align:middle}
 .items-tbl input,.items-tbl select{padding:6px 7px;font-size:13px;border-radius:6px}
 .btn-add-item{font-size:13px;color:#7A4A8B;background:none;border:none;cursor:pointer;padding:4px 0;font-weight:600}
 .btn-add-item:hover{text-decoration:underline}
-.btn-del{background:none;border:none;color:#ddd;cursor:pointer;font-size:16px;padding:4px 8px;transition:color .1s}
-.btn-del:hover{color:#dc2626}
+.btn-del{background:none;border:none;color:var(--cx-border);cursor:pointer;font-size:16px;padding:4px 8px;transition:color .1s}
+.btn-del:hover{color:var(--cx-danger-text)}
 .btn-primary{width:100%;background:linear-gradient(135deg,#4A6741,#3a5331);color:#fff;border:none;border-radius:11px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;margin-top:4px;transition:transform .1s,box-shadow .15s;box-shadow:0 4px 16px rgba(74,103,65,.28);letter-spacing:.01em}
 .btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(74,103,65,.36)}
 .btn-primary:active{transform:translateY(0)}
-.btn-primary:disabled{background:#cbd5e1;cursor:not-allowed;box-shadow:none;transform:none}
+.btn-primary:disabled{background:var(--cx-border);cursor:not-allowed;box-shadow:none;transform:none}
 .confirm-box{text-align:center;padding:40px 16px}
 .confirm-ico{font-size:60px;margin-bottom:12px;display:inline-block;animation:pop .4s cubic-bezier(.2,1.4,.5,1)}
 @keyframes pop{0%{transform:scale(0);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
 .confirm-sol{font-size:34px;font-weight:800;color:#4A6741;letter-spacing:1px;margin:10px 0}
-.confirm-msg{font-size:14px;color:#666;line-height:1.6;margin-bottom:20px}
+.confirm-msg{font-size:14px;color:var(--cx-text-mute);line-height:1.6;margin-bottom:20px}
 .btn-new{display:inline-block;padding:10px 28px;background:#4A6741;color:#fff;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;border:none}
 .lookup-row{display:flex;gap:8px}
 .lookup-row input{flex:1}
@@ -61,20 +61,20 @@ textarea{resize:vertical;min-height:80px}
 .status-box{margin-top:16px;display:none}
 .sol-detail{margin-top:12px;background:#fafafa;border-radius:8px;padding:14px;font-size:13px}
 .sol-detail table{width:100%;border-collapse:collapse}
-.sol-detail th{text-align:left;font-size:11px;color:#aaa;padding:4px 6px;border-bottom:1px solid #eee;text-transform:uppercase}
+.sol-detail th{text-align:left;font-size:11px;color:var(--cx-text-faint);padding:4px 6px;border-bottom:1px solid var(--cx-border-soft);text-transform:uppercase}
 .sol-detail td{padding:5px 6px;font-size:13px}
 .sbadge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
-.s-pend{background:#fef3c7;color:#92400e}
-.s-apro{background:#d1fae5;color:#065f46}
-.s-rech{background:#fee2e2;color:#991b1b}
-.s-blue{background:#dbeafe;color:#1e40af}
-.err-msg{color:#dc2626;font-size:13px;margin-top:8px;display:none}
+.s-pend{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+.s-apro{background:var(--cx-success-pale);color:var(--cx-success-text)}
+.s-rech{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
+.s-blue{background:var(--cx-info-pale);color:var(--cx-info-text)}
+.err-msg{color:var(--cx-danger-text);font-size:13px;margin-top:8px;display:none}
 .footer{text-align:center;font-size:12px;color:#bbb;margin:40px 0 20px}
 </style>
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6M9 9h2"/></svg>
@@ -248,9 +248,9 @@ textarea{resize:vertical;min-height:80px}
 <div class="card" id="confirm-card" style="display:none">
   <div class="confirm-box">
     <div class="confirm-ico">&#9989;</div>
-    <div style="font-size:14px;color:#888;margin-bottom:4px">Solicitud registrada</div>
+    <div style="font-size:14px;color:var(--cx-text-mute);margin-bottom:4px">Solicitud registrada</div>
     <div class="confirm-sol" id="confirm-num">SOL-2026-0001</div>
-    <div class="confirm-msg">Guarda este n&uacute;mero para seguimiento.<br>El equipo de compras ya fue notificado &middot; <strong>te avisaremos por correo</strong> cuando sea revisada.<br><span style="font-size:12px;color:#94a3b8">Tambi&eacute;n pod&eacute;s consultar el estado aqu&iacute; abajo con tu n&uacute;mero.</span></div>
+    <div class="confirm-msg">Guarda este n&uacute;mero para seguimiento.<br>El equipo de compras ya fue notificado &middot; <strong>te avisaremos por correo</strong> cuando sea revisada.<br><span style="font-size:12px;color:var(--cx-text-faint)">Tambi&eacute;n pod&eacute;s consultar el estado aqu&iacute; abajo con tu n&uacute;mero.</span></div>
     <button class="btn-new" onclick="nuevaSolicitud()">+ Nueva Solicitud</button>
   </div>
 </div>
@@ -266,7 +266,7 @@ textarea{resize:vertical;min-height:80px}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
       <strong id="sol-num-disp" style="font-size:15px;font-family:monospace;"></strong>
       <span class="sbadge" id="sol-badge"></span>
-      <span style="font-size:12px;color:#aaa;" id="sol-fecha-disp"></span>
+      <span style="font-size:12px;color:var(--cx-text-faint);" id="sol-fecha-disp"></span>
     </div>
     <div class="sol-detail">
       <div style="margin-bottom:8px;font-size:13px;">
@@ -281,8 +281,8 @@ textarea{resize:vertical;min-height:80px}
       </div>
       <table><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th>Valor est.</th></tr></thead>
         <tbody id="s-items"></tbody></table>
-      <div id="s-obs" style="margin-top:8px;color:#666;font-size:12px"></div>
-      <div id="s-oc" style="margin-top:6px;font-size:12px;color:#1e40af;font-weight:700"></div>
+      <div id="s-obs" style="margin-top:8px;color:var(--cx-text-mute);font-size:12px"></div>
+      <div id="s-oc" style="margin-top:6px;font-size:12px;color:var(--cx-info-text);font-weight:700"></div>
     </div>
   </div>
 </div>
@@ -480,7 +480,7 @@ async function consultarSol(){
     var items=d.items||[];
     document.getElementById('s-items').innerHTML=items.length?items.map(function(it){
       return '<tr><td>'+esc(it.codigo_mp||'---')+'</td><td>'+esc(it.nombre_mp)+'</td><td>'+(it.cantidad_g||0)+' '+(it.unidad||'und')+'</td><td>'+(it.valor_estimado?'$'+it.valor_estimado:'---')+'</td></tr>';
-    }).join(''):'<tr><td colspan="4" style="color:#aaa">Sin items</td></tr>';
+    }).join(''):'<tr><td colspan="4" style="color:var(--cx-text-faint)">Sin items</td></tr>';
     document.getElementById('status-box').style.display='block';
   }catch(e){document.getElementById('lookup-err').style.display='block';}
 }

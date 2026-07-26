@@ -29,7 +29,7 @@ TOOLTIP_CSS = """
   content:attr(data-tip);
   position:absolute; left:50%; bottom:calc(100% + 9px);
   transform:translateX(-50%) translateY(4px);
-  background:#1e293b; color:#fff; text-align:left;
+  background:var(--cx-text); color:#fff; text-align:left;
   padding:8px 12px; border-radius:9px;
   font-size:12px; font-weight:600; line-height:1.4; letter-spacing:.1px;
   white-space:normal; width:max-content; max-width:260px;
@@ -41,7 +41,7 @@ TOOLTIP_CSS = """
 [data-tip]::before{
   content:''; position:absolute; left:50%; bottom:calc(100% + 3px);
   transform:translateX(-50%);
-  border:6px solid transparent; border-top-color:#1e293b;
+  border:6px solid transparent; border-top-color:var(--cx-text);
   opacity:0; visibility:hidden;
   transition:opacity .14s ease, visibility .14s;
   z-index:99999;
@@ -63,7 +63,7 @@ TOOLTIP_CSS = """
 }
 [data-tip][data-tip-pos="bottom"]::before{
   bottom:auto; top:calc(100% + 3px);
-  border-top-color:transparent; border-bottom-color:#1e293b;
+  border-top-color:transparent; border-bottom-color:var(--cx-text);
 }
 [data-tip][data-tip-pos="bottom"]:hover::after,[data-tip][data-tip-pos="bottom"]:focus::after{
   transform:translateX(-50%) translateY(0);

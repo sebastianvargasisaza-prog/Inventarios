@@ -27,8 +27,8 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
   .topbar {
     margin-bottom: 18px;
   }
-  h1 { font-size: 26px; margin: 0; color: #0f172a; font-weight: 700; }
-  .subtitle { font-size: 13px; color: #64748b; margin-top: 4px; }
+  h1 { font-size: 26px; margin: 0; color: var(--cx-text); font-weight: 700; }
+  .subtitle { font-size: 13px; color: var(--cx-text-mute); margin-top: 4px; }
   .nav { font-size: 12px; margin-top: 8px; }
   .nav a { color: #2B7A78; text-decoration: none; margin-right: 14px; }
   .nav a:hover { text-decoration: underline; }
@@ -47,43 +47,43 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
   .lg-chip .dot { width: 10px; height: 10px; border-radius: 50%; }
   .lg-chip.fab    { background: #fef9c3; color: #854d0e; }
   .lg-chip.fab .dot    { background: #facc15; }
-  .lg-chip.env    { background: #dbeafe; color: #1e40af; }
-  .lg-chip.env .dot    { background: #3b82f6; }
-  .lg-chip.micro  { background: #fed7aa; color: #9a3412; }
+  .lg-chip.env    { background: var(--cx-info-pale); color: var(--cx-info-text); }
+  .lg-chip.env .dot    { background: var(--cx-info); }
+  .lg-chip.micro  { background: var(--cx-warn-pale); color: var(--cx-warn-text); }
   .lg-chip.micro .dot  { background: #f97316; }
-  .lg-chip.lib    { background: #dcfce7; color: #166534; }
+  .lg-chip.lib    { background: var(--cx-success-pale); color: var(--cx-success-text); }
   .lg-chip.lib .dot    { background: #22c55e; }
   .lg-chip.acond  { background: #f3e8ff; color: #6b21a8; }
   .lg-chip.acond .dot  { background: #a855f7; }
   .lg-chip.entr   { background: #fce7f3; color: #9d174d; }
   .lg-chip.entr .dot   { background: #ec4899; }
-  .lg-chip.limp   { background: #fff7ed; color: #9a3412; }
+  .lg-chip.limp   { background: var(--cx-warn-pale); color: var(--cx-warn-text); }
   .lg-chip.limp .dot   { background: #fb923c; }
   .lg-chip.urg {
-    background: #fee2e2; color: #991b1b;
-    border: 2px solid #dc2626;
+    background: var(--cx-danger-pale); color: var(--cx-danger-text);
+    border: 2px solid var(--cx-danger);
   }
-  .lg-chip.urg .dot { background: #dc2626; }
+  .lg-chip.urg .dot { background: var(--cx-danger); }
 
   /* Botones de semana */
   .semanas {
     display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px;
   }
   button.semana {
-    background: #fff; border: 1px solid #cbd5e1; border-radius: 8px;
+    background: var(--cx-card); border: 1px solid var(--cx-border); border-radius: 8px;
     padding: 10px 20px; font-size: 14px; font-weight: 600;
-    cursor: pointer; color: #475569;
+    cursor: pointer; color: var(--cx-text-soft);
     transition: all 0.15s ease;
   }
-  button.semana:hover { background: #f1f5f9; border-color: #94a3b8; }
+  button.semana:hover { background: var(--cx-border-soft); border-color: var(--cx-text-faint); }
   button.semana.active {
-    background: #2563eb; border-color: #2563eb; color: #fff;
+    background: var(--cx-info); border-color: var(--cx-info); color: #fff;
     box-shadow: 0 2px 6px rgba(37,99,235,0.3);
   }
 
   /* Tabla matriz */
   .matriz-wrap {
-    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    background: var(--cx-card); border: 1px solid var(--cx-border); border-radius: 12px;
     overflow-x: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
   table.matriz {
@@ -91,10 +91,10 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
     table-layout: fixed;
   }
   table.matriz th, table.matriz td {
-    border: 1px solid #e5e7eb; vertical-align: top; padding: 0;
+    border: 1px solid var(--cx-border); vertical-align: top; padding: 0;
   }
   table.matriz th.area-h {
-    background: #f9fafb; color: #374151;
+    background: var(--cx-bg-alt); color: #374151;
     padding: 12px 14px; text-align: left;
     width: 180px; font-weight: 600; font-size: 13px;
   }
@@ -102,23 +102,23 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
     font-size: 18px; margin-right: 4px; vertical-align: middle;
   }
   table.matriz th.area-h .area-sub {
-    font-weight: 400; font-size: 11px; color: #6b7280;
+    font-weight: 400; font-size: 11px; color: var(--cx-text-mute);
     margin-top: 2px;
   }
   table.matriz th.day-h {
-    background: #fff; color: #374151;
+    background: var(--cx-card); color: #374151;
     font-weight: 600; padding: 14px 8px; text-align: center;
-    border-bottom: 2px solid #e5e7eb;
+    border-bottom: 2px solid var(--cx-border);
   }
   table.matriz th.day-h .day-name { font-size: 14px; }
   table.matriz th.day-h .day-date {
     font-size: 12px; font-weight: 400; color: #9ca3af; margin-top: 2px;
   }
   table.matriz td.cell {
-    padding: 6px; min-height: 95px; height: 95px; background: #fff;
+    padding: 6px; min-height: 95px; height: 95px; background: var(--cx-card);
     vertical-align: top;
   }
-  table.matriz td.cell.empty { background: #fff; }
+  table.matriz td.cell.empty { background: var(--cx-card); }
 
   /* Tarjetas dentro de cada celda */
   .act-card {
@@ -139,26 +139,26 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
   /* Colores pastel por tipo · matchea HTML de Alejandro */
   .act-card.fab    { background: #fef9c3; }
   .act-card.fab .act-type    { color: #854d0e; }
-  .act-card.env    { background: #dbeafe; }
-  .act-card.env .act-type    { color: #1e40af; }
-  .act-card.micro  { background: #fed7aa; }
-  .act-card.micro .act-type  { color: #9a3412; }
-  .act-card.lib    { background: #dcfce7; }
-  .act-card.lib .act-type    { color: #166534; }
+  .act-card.env    { background: var(--cx-info-pale); }
+  .act-card.env .act-type    { color: var(--cx-info-text); }
+  .act-card.micro  { background: var(--cx-warn-pale); }
+  .act-card.micro .act-type  { color: var(--cx-warn-text); }
+  .act-card.lib    { background: var(--cx-success-pale); }
+  .act-card.lib .act-type    { color: var(--cx-success-text); }
   .act-card.acond  { background: #f3e8ff; }
   .act-card.acond .act-type  { color: #6b21a8; }
   .act-card.entr   { background: #fce7f3; }
   .act-card.entr .act-type   { color: #9d174d; }
-  .act-card.limp   { background: #fff7ed; }
-  .act-card.limp .act-type   { color: #9a3412; }
+  .act-card.limp   { background: var(--cx-warn-pale); }
+  .act-card.limp .act-type   { color: var(--cx-warn-text); }
 
   /* URGENTE · borde rojo grueso (sin animación) */
   .act-card.urg {
-    border: 2px solid #dc2626;
+    border: 2px solid var(--cx-danger);
     box-shadow: 0 0 0 1px #fecaca;
   }
   .urg-icon {
-    color: #dc2626; font-weight: 700; margin-right: 3px; font-size: 11px;
+    color: var(--cx-danger-text); font-weight: 700; margin-right: 3px; font-size: 11px;
   }
 
   /* Headers de área con color de borde izquierdo según tipo */
@@ -166,7 +166,7 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
     border-left: 4px solid #facc15;
   }
   .row-env1 th.area-h, .row-env2 th.area-h {
-    border-left: 4px solid #3b82f6;
+    border-left: 4px solid var(--cx-info);
   }
   .row-micro th.area-h { border-left: 4px solid #f97316; }
   .row-lib th.area-h   { border-left: 4px solid #22c55e; }
@@ -176,18 +176,18 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
 
   .spinner {
     display: inline-block; width: 14px; height: 14px;
-    border: 2px solid #cbd5e1; border-top-color: #2563eb;
+    border: 2px solid var(--cx-border); border-top-color: var(--cx-info);
     border-radius: 50%; animation: spin 0.8s linear infinite;
     margin-right: 8px; vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading {
-    text-align: center; padding: 50px; color: #64748b; font-size: 14px;
+    text-align: center; padding: 50px; color: var(--cx-text-mute); font-size: 14px;
   }
   .footer-note {
-    margin-top: 18px; padding: 12px 16px; background: #fffbeb;
-    border-left: 4px solid #f59e0b; border-radius: 6px; font-size: 12px;
-    color: #78350f;
+    margin-top: 18px; padding: 12px 16px; background: var(--cx-warn-pale);
+    border-left: 4px solid var(--cx-warn); border-radius: 6px; font-size: 12px;
+    color: var(--cx-warn-text);
   }
 </style>
 </head>
@@ -331,7 +331,7 @@ async function cargarSemana(desde) {
     if (desde) url += '?desde=' + encodeURIComponent(desde);
     var r = await fetch(url);
     if (!r.ok) {
-      content.innerHTML = `<div class="loading" style="color:#dc2626">Error ${r.status}</div>`;
+      content.innerHTML = `<div class="loading" style="color:var(--cx-danger-text)">Error ${r.status}</div>`;
       return;
     }
     var d = await r.json();
@@ -339,7 +339,7 @@ async function cargarSemana(desde) {
     content.innerHTML = '<div class="matriz-wrap">' + buildTable(d) + '</div>';
     pintarTabsSemana(d.rango && d.rango.desde);
   } catch(e) {
-    content.innerHTML = '<div class="loading" style="color:#dc2626">Error red: ' + _esc(e.message) + '</div>';
+    content.innerHTML = '<div class="loading" style="color:var(--cx-danger-text)">Error red: ' + _esc(e.message) + '</div>';
   }
 }
 
@@ -366,7 +366,7 @@ function pintarTabsSemana(lunesActualISO) {
   // Botón "← Sem ant." y "Sem sig. →" extras
   html += `<button class="semana" onclick="cambiarSemana(-1)" title="Semana anterior">←</button>`;
   html += `<button class="semana" onclick="cambiarSemana(1)" title="Semana siguiente">→</button>`;
-  html += `<button class="semana" onclick="irHoy()" style="background:#1e293b;color:#fff;border-color:#1e293b">📅 Hoy</button>`;
+  html += `<button class="semana" onclick="irHoy()" style="background:var(--cx-text);color:#fff;border-color:var(--cx-text)">📅 Hoy</button>`;
   tabs.innerHTML = html;
 }
 

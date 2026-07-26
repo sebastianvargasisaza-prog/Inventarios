@@ -407,24 +407,24 @@ _SEGURIDAD_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Configurar MFA · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:20px}
 .wrap{max-width:560px;margin:0 auto}
-.card{background:white;border-radius:14px;padding:24px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
-h1{margin:0 0 10px;color:#0f766e;font-size:22px}
-h2{margin:14px 0 8px;color:#1e293b;font-size:16px}
-.muted{color:#64748b;font-size:13px;line-height:1.5}
-button{background:#0f766e;color:white;border:none;padding:11px 22px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer}
+.card{background:var(--cx-card, #fff);border-radius:14px;padding:24px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h1{margin:0 0 10px;color:var(--cx-info-text, #0f766e);font-size:22px}
+h2{margin:14px 0 8px;color:var(--cx-text, #1e293b);font-size:16px}
+.muted{color:var(--cx-text-mute, #64748b);font-size:13px;line-height:1.5}
+button{background:var(--cx-info, #0f766e);color:white;border:none;padding:11px 22px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer}
 button:disabled{opacity:.5;cursor:not-allowed}
-input[type=text]{padding:12px 16px;border:1px solid #cbd5e1;border-radius:8px;font-size:18px;width:200px;letter-spacing:6px;font-family:ui-monospace;text-align:center}
-.qr-box{display:flex;justify-content:center;padding:20px;background:white;border-radius:10px;margin:14px 0}
+input[type=text]{padding:12px 16px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:18px;width:200px;letter-spacing:6px;font-family:ui-monospace;text-align:center}
+.qr-box{display:flex;justify-content:center;padding:20px;background:var(--cx-card, #fff);border-radius:10px;margin:14px 0}
 .qr-box img{display:block;max-width:240px}
-.secret{font-family:ui-monospace;background:#f1f5f9;padding:10px 14px;border-radius:6px;font-size:13px;letter-spacing:1px;word-break:break-all}
-.step{counter-increment:step;background:#f8fafc;border-left:4px solid #0f766e;padding:12px 14px;border-radius:6px;margin:10px 0}
-.step::before{content:counter(step) ". ";color:#0f766e;font-weight:800}
+.secret{font-family:ui-monospace;background:var(--cx-border-soft, #f1f5f9);padding:10px 14px;border-radius:6px;font-size:13px;letter-spacing:1px;word-break:break-all}
+.step{counter-increment:step;background:var(--cx-bg-alt, #f8fafc);border-left:4px solid var(--cx-info, #0f766e);padding:12px 14px;border-radius:6px;margin:10px 0}
+.step::before{content:counter(step) ". ";color:var(--cx-info-text, #0f766e);font-weight:800}
 ol{counter-reset:step;list-style:none;padding:0}
-.ok{color:#16a34a;font-weight:700}
-.crit{color:#dc2626}
-.backup{background:#fef3c7;border:2px solid #ca8a04;padding:14px;border-radius:10px;font-family:ui-monospace;font-size:20px;letter-spacing:4px;text-align:center;font-weight:800;color:#7c2d12}
+.ok{color:var(--cx-success-text, #16a34a);font-weight:700}
+.crit{color:var(--cx-danger-text, #dc2626)}
+.backup{background:var(--cx-warn-pale, #fef3c7);border:2px solid var(--cx-accent-dark, #ca8a04);padding:14px;border-radius:10px;font-family:ui-monospace;font-size:20px;letter-spacing:4px;text-align:center;font-weight:800;color:#7c2d12}
 </style></head><body>
 <div class="wrap">
 <a href="/modulos">&larr; Volver al panel</a>
@@ -441,10 +441,10 @@ ol{counter-reset:step;list-style:none;padding:0}
 
   <div id="paso1" style="display:none;margin-top:20px">
     <h2>📱 1. Instalá Google Authenticator</h2>
-    <a href="https://apps.apple.com/co/app/google-authenticator/id388497605" target="_blank" style="display:inline-block;padding:12px 18px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:#1e293b;border:1px solid #cbd5e1;margin-right:8px">
+    <a href="https://apps.apple.com/co/app/google-authenticator/id388497605" target="_blank" style="display:inline-block;padding:12px 18px;background:var(--cx-border-soft, #f1f5f9);border-radius:8px;text-decoration:none;color:var(--cx-text, #1e293b);border:1px solid var(--cx-border, #cbd5e1);margin-right:8px">
       📱 iPhone · App Store
     </a>
-    <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" style="display:inline-block;padding:12px 18px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:#1e293b;border:1px solid #cbd5e1">
+    <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" style="display:inline-block;padding:12px 18px;background:var(--cx-border-soft, #f1f5f9);border-radius:8px;text-decoration:none;color:var(--cx-text, #1e293b);border:1px solid var(--cx-border, #cbd5e1)">
       🤖 Android · Play Store
     </a>
 
@@ -462,7 +462,7 @@ ol{counter-reset:step;list-style:none;padding:0}
       <input type="text" id="token" maxlength="6" placeholder="000000" autocomplete="off">
       <button onclick="verificar()" id="btn-verificar">✓ Verificar y activar</button>
     </div>
-    <div id="err" style="margin-top:10px;color:#dc2626;font-size:13px"></div>
+    <div id="err" style="margin-top:10px;color:var(--cx-danger-text, #dc2626);font-size:13px"></div>
   </div>
 
   <div id="paso2" style="display:none;margin-top:20px">
@@ -953,9 +953,9 @@ def login_mfa_page():
   h1 { margin: 0 0 8px; font-size: 22px; }
   p { color: #8b949e; font-size: 14px; line-height: 1.5; margin: 0 0 24px; }
   input[type=text] { width: 100%; padding: 14px; font-size: 22px; text-align: center; letter-spacing: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; color: #fff; box-sizing: border-box; }
-  input[type=text]:focus { border-color: #6d28d9; outline: none; }
-  button { width: 100%; padding: 12px; margin-top: 16px; background: #6d28d9; color: #fff; border: 0; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
-  button:hover { background: #5b21b6; }
+  input[type=text]:focus { border-color: var(--cx-primary, #6d28d9); outline: none; }
+  button { width: 100%; padding: 12px; margin-top: 16px; background: var(--cx-primary, #6d28d9); color: #fff; border: 0; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:hover { background: var(--cx-primary-dark, #5b21b6); }
   .alt { display: block; margin-top: 16px; text-align: center; font-size: 13px; color: #8b949e; }
   .alt a { color: #7ACFCC; text-decoration: none; }
   .err { background: #2d1b1d; border: 1px solid #6e2a30; color: #f85149; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
@@ -1163,8 +1163,8 @@ def login_mfa_backup():
   p { color: #8b949e; font-size: 14px; line-height: 1.5; margin: 0 0 24px; }
   .warn { background: #2d2517; border: 1px solid #6e5a2a; color: #f0c674; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
   input[type=text] { width: 100%; padding: 12px; font-size: 16px; font-family: monospace; letter-spacing: 2px; text-transform: uppercase; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; color: #fff; box-sizing: border-box; }
-  button { width: 100%; padding: 12px; margin-top: 16px; background: #6d28d9; color: #fff; border: 0; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
-  button:hover { background: #5b21b6; }
+  button { width: 100%; padding: 12px; margin-top: 16px; background: var(--cx-primary, #6d28d9); color: #fff; border: 0; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:hover { background: var(--cx-primary-dark, #5b21b6); }
   .alt { display: block; margin-top: 16px; text-align: center; font-size: 13px; }
   .alt a { color: #7ACFCC; text-decoration: none; }
   .err { background: #2d1b1d; border: 1px solid #6e2a30; color: #f85149; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }

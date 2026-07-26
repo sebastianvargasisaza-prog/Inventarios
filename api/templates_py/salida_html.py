@@ -10,62 +10,62 @@ SALIDA_HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-size:14px;}
-.topbar{background:#1C1917;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
+body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:var(--cx-text);font-size:14px;}
+.topbar{background:var(--cx-text);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
 .topbar h1{font-size:18px;font-weight:600;}
-.topbar a{color:#a8a29e;text-decoration:none;font-size:13px;}
+.topbar a{color:var(--cx-text-faint);text-decoration:none;font-size:13px;}
 .topbar a:hover{color:#fff;}
-.topbar .rec-link{background:#292524;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;}
+.topbar .rec-link{background:var(--cx-text);color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;}
 .container{max-width:1100px;margin:0 auto;padding:20px;}
-.card{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:20px;margin-bottom:20px;}
-.card h2{font-size:16px;font-weight:600;margin-bottom:14px;color:#292524;}
+.card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:20px;margin-bottom:20px;}
+.card h2{font-size:16px;font-weight:600;margin-bottom:14px;color:var(--cx-text);}
 .ped-queue{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-bottom:8px;}
-.ped-card{background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;cursor:pointer;transition:all .15s;border-left:3px solid #4A6741;}
-.ped-card:hover{border-color:#292524;background:#f5f5f4;}
-.ped-card.selected{border-left-color:#1e40af;background:#eff6ff;}
+.ped-card{background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:12px;cursor:pointer;transition:all .15s;border-left:3px solid #4A6741;}
+.ped-card:hover{border-color:var(--cx-text);background:var(--cx-bg-alt);}
+.ped-card.selected{border-left-color:var(--cx-info);background:var(--cx-info-pale);}
 .ped-card .pn{font-weight:700;font-size:13px;}
-.ped-card .pc{font-size:12px;color:#78716c;margin-top:2px;}
+.ped-card .pc{font-size:12px;color:var(--cx-text-mute);margin-top:2px;}
 .ped-card .pv{font-size:12px;color:#4A6741;font-weight:600;margin-top:4px;}
-.ped-card .pe{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;margin-top:4px;}
-.ped-card .pe.prep{background:#dbeafe;color:#1e40af;}
+.ped-card .pe{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:var(--cx-warn-pale);color:var(--cx-warn-text);margin-top:4px;}
+.ped-card .pe.prep{background:var(--cx-info-pale);color:var(--cx-info-text);}
 .btn{padding:9px 18px;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:500;}
-.btn-primary{background:#292524;color:#fff;}
-.btn-primary:hover{background:#1c1917;}
+.btn-primary{background:var(--cx-text);color:#fff;}
+.btn-primary:hover{background:var(--cx-text);}
 .btn-success{background:#4A6741;color:#fff;}
 .btn-success:hover{background:#3a5331;}
-.btn-print{background:#1e40af;color:#fff;}
+.btn-print{background:var(--cx-info);color:#fff;}
 .btn-print:hover{background:#1d4ed8;}
 .btn-sm{padding:5px 12px;font-size:12px;}
-.ped-info{background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;}
-.ped-info .lbl{font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;}
-.ped-info .val{font-size:14px;font-weight:600;color:#292524;margin-top:2px;}
+.ped-info{background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;}
+.ped-info .lbl{font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;}
+.ped-info .val{font-size:14px;font-weight:600;color:var(--cx-text);margin-top:2px;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
-th{background:#f5f5f4;padding:9px 12px;text-align:left;font-weight:600;color:#57534e;border-bottom:1px solid #e7e5e4;}
-td{padding:8px 12px;border-bottom:1px solid #f5f5f4;vertical-align:middle;}
-tr:hover td{background:#fafaf9;}
-td input[type=number]{width:100px;padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
-td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
-.stock-ok{color:#16a34a;font-weight:600;}
-.stock-low{color:#d97706;font-weight:600;}
-.stock-zero{color:#dc2626;font-weight:600;}
+th{background:var(--cx-bg-alt);padding:9px 12px;text-align:left;font-weight:600;color:var(--cx-text-soft);border-bottom:1px solid var(--cx-border);}
+td{padding:8px 12px;border-bottom:1px solid var(--cx-bg-alt);vertical-align:middle;}
+tr:hover td{background:var(--cx-bg-alt);}
+td input[type=number]{width:100px;padding:5px 8px;border:1px solid var(--cx-border);border-radius:5px;font-size:13px;}
+td input[type=text]{width:100%;padding:5px 8px;border:1px solid var(--cx-border);border-radius:5px;font-size:13px;}
+.stock-ok{color:var(--cx-success-text);font-weight:600;}
+.stock-low{color:var(--cx-warn-text);font-weight:600;}
+.stock-zero{color:var(--cx-danger-text);font-weight:600;}
 .submit-row{margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .msg{font-size:13px;padding:8px 14px;border-radius:6px;}
-.msg-ok{background:#d1fae5;color:#065f46;}
-.msg-err{background:#fee2e2;color:#991b1b;}
-.empty{text-align:center;padding:32px;color:#a8a29e;font-size:13px;}
-.tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid #e7e5e4;}
-.tab-btn{padding:9px 18px;border:none;background:none;font-size:13px;font-weight:500;color:#78716c;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;}
-.tab-btn.active{color:#292524;border-bottom-color:#292524;}
-.tab-btn:hover{color:#292524;}
+.msg-ok{background:var(--cx-success-pale);color:var(--cx-success-text);}
+.msg-err{background:var(--cx-danger-pale);color:var(--cx-danger-text);}
+.empty{text-align:center;padding:32px;color:var(--cx-text-faint);font-size:13px;}
+.tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid var(--cx-border);}
+.tab-btn{padding:9px 18px;border:none;background:none;font-size:13px;font-weight:500;color:var(--cx-text-mute);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;}
+.tab-btn.active{color:var(--cx-text);border-bottom-color:var(--cx-text);}
+.tab-btn:hover{color:var(--cx-text);}
 .tab-content{display:none;}
 .tab-content.active{display:block;}
-.cnt-badge{display:inline-block;background:#292524;color:#fff;border-radius:20px;font-size:11px;padding:1px 7px;margin-left:4px;}
-.section-title{font-size:13px;font-weight:600;color:#57534e;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;}
+.cnt-badge{display:inline-block;background:var(--cx-text);color:#fff;border-radius:20px;font-size:11px;padding:1px 7px;margin-left:4px;}
+.section-title{font-size:13px;font-weight:600;color:var(--cx-text-soft);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;}
 </style>
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M14 18V6a2 2 0 00-2-2H4a2 2 0 00-2 2v11a1 1 0 001 1h2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M14 9h3l3 4v5h-2"/></svg>
@@ -85,7 +85,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 
   <div class="card">
     <h2>&#128203; Pedidos Listos para Despachar</h2>
-    <div id="ped-queue"><p style="color:#a8a29e;font-size:13px;">Cargando...</p></div>
+    <div id="ped-queue"><p style="color:var(--cx-text-faint);font-size:13px;">Cargando...</p></div>
   </div>
 
   <div class="card" id="despacho-form-card" style="display:none;">
@@ -111,7 +111,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 
     <div style="margin-top:16px;">
       <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Observaciones del despacho:</label>
-      <textarea id="despacho-obs" style="width:100%;padding:9px 12px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;min-height:60px;" placeholder="Condiciones de entrega, instrucciones especiales..."></textarea>
+      <textarea id="despacho-obs" style="width:100%;padding:9px 12px;border:1px solid var(--cx-border);border-radius:6px;font-size:13px;resize:vertical;min-height:60px;" placeholder="Condiciones de entrega, instrucciones especiales..."></textarea>
     </div>
 
     <div class="submit-row">
@@ -148,7 +148,7 @@ async function loadPedQueue() {
     var peds = d.pedidos || [];
     var el = document.getElementById('ped-queue');
     if (!peds.length) {
-      el.innerHTML = '<p style="color:#a8a29e;font-size:13px;">Sin pedidos listos para despachar.</p>';
+      el.innerHTML = '<p style="color:var(--cx-text-faint);font-size:13px;">Sin pedidos listos para despachar.</p>';
       return;
     }
     var html = '<div class="ped-queue">';
@@ -292,27 +292,27 @@ function imprimirActaEntrega(ped, items, numDespacho, preview) {
       + '<td style="text-align:right;font-weight:600;">$' + Number(sub||0).toLocaleString() + '</td></tr>';
   }).join('');
   var previewBanner = preview
-    ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px;margin-bottom:16px;color:#92400e;font-size:12px;font-weight:600;">BORRADOR - Vista previa. El despacho aun no ha sido confirmado en el sistema.</div>'
+    ? '<div style="background:var(--cx-warn-pale);border:1px solid #fcd34d;border-radius:6px;padding:10px;margin-bottom:16px;color:var(--cx-warn-text);font-size:12px;font-weight:600;">BORRADOR - Vista previa. El despacho aun no ha sido confirmado en el sistema.</div>'
     : '';
   w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Acta de Entrega</title>'
-    + '<style>body{font-family:Arial,sans-serif;padding:30px;font-size:13px;color:#1C1917;}'
-    + 'h2{color:#1C1917;margin-bottom:4px;}h3{color:#57534e;margin:20px 0 10px;}'
+    + '<style>body{font-family:Arial,sans-serif;padding:30px;font-size:13px;color:var(--cx-text);}'
+    + 'h2{color:var(--cx-text);margin-bottom:4px;}h3{color:var(--cx-text-soft);margin:20px 0 10px;}'
     + '.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}'
     + 'table{width:100%;border-collapse:collapse;margin-bottom:16px;}'
-    + 'th{background:#f5f5f4;padding:8px 10px;text-align:left;font-size:11px;color:#57534e;border:1px solid #e7e5e4;}'
-    + 'td{padding:7px 10px;border:1px solid #e7e5e4;}'
-    + '.meta{background:#fafaf9;border-radius:6px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}'
-    + '.meta .lbl{font-size:10px;color:#78716c;text-transform:uppercase;} .meta .val{font-size:13px;font-weight:600;}'
-    + '.total-row td{background:#f5f5f4;font-weight:700;}'
+    + 'th{background:var(--cx-bg-alt);padding:8px 10px;text-align:left;font-size:11px;color:var(--cx-text-soft);border:1px solid var(--cx-border);}'
+    + 'td{padding:7px 10px;border:1px solid var(--cx-border);}'
+    + '.meta{background:var(--cx-bg-alt);border-radius:6px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}'
+    + '.meta .lbl{font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;} .meta .val{font-size:13px;font-weight:600;}'
+    + '.total-row td{background:var(--cx-bg-alt);font-weight:700;}'
     + '.firma{display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:40px;}'
-    + '.firma-box{border-top:1px solid #292524;padding-top:8px;font-size:11px;color:#78716c;text-align:center;}'
+    + '.firma-box{border-top:1px solid var(--cx-text);padding-top:8px;font-size:11px;color:var(--cx-text-mute);text-align:center;}'
     + '.noPrint{text-align:center;margin-bottom:20px;} @media print{.noPrint{display:none!important;}}'
     + '</style></head><body>'
-    + '<div class="noPrint"><button onclick="window.print()" style="padding:9px 24px;background:#1C1917;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Imprimir</button></div>'
+    + '<div class="noPrint"><button onclick="window.print()" style="padding:9px 24px;background:var(--cx-text);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Imprimir</button></div>'
     + previewBanner
     + '<div class="header">'
-    + '<div><h2>ACTA DE ENTREGA / REMISION</h2><p style="color:#78716c;font-size:12px;">ANIMUS Lab - HHA Group</p></div>'
-    + '<div style="text-align:right;font-size:11px;color:#78716c;">'
+    + '<div><h2>ACTA DE ENTREGA / REMISION</h2><p style="color:var(--cx-text-mute);font-size:12px;">ANIMUS Lab - HHA Group</p></div>'
+    + '<div style="text-align:right;font-size:11px;color:var(--cx-text-mute);">'
     + '<div>No. Despacho: <strong>' + (numDespacho||'BORRADOR') + '</strong></div>'
     + '<div>Fecha: ' + hoy + '</div></div></div>'
     + '<div class="meta">'
