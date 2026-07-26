@@ -15122,6 +15122,387 @@ cargar();
     return Response(html, mimetype="text/html")
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# MOVER un ENVASE del kardex de MATERIA PRIMA al de ENVASES (corrección regulada)
+# ═══════════════════════════════════════════════════════════════════════════
+# Un envase recibido por OC cuyo código todavía no estaba en `maestro_mee` caía a
+# la rama MP de `recibir_oc` y entraba a `movimientos` (kardex de MATERIA PRIMA).
+# El origen ya está tapado (enrutado por prefijo MEE-/ENV-) y la auditoría lo hace
+# visible (`envases_en_kardex_mp`), pero las unidades YA escritas siguen ahí:
+# inflan el inventario de MP y dejan el stock de envase en 0, así que
+# abastecimiento las vuelve a pedir. Caso real: MEE-IMP-019 y MEE-IMP-020
+# (1000 uds c/u · OC-2026-0275).
+#
+# Mover unidades entre kardex es una corrección REGULADA, no un UPDATE: se hace
+# como en el resto del sistema (M31) → **Salida compensatoria + Entrada, net-zero
+# y auditada**, sin borrar ni reescribir el movimiento original (INVIMA conserva
+# el rastro de lo que pasó, incluido el error).
+#
+# Invariantes:
+#   · NUNCA toca un código que exista en `maestro_mps` (eso sí sería materia prima).
+#   · La Salida espeja el `estado_lote` ORIGINAL → net-zero EXACTO en toda vista
+#     (una Salida con estado distinto al de la Entrada descuadra el stock · M31).
+#   · La Entrada al kardex de envases CONSERVA el estado (CUARENTENA sigue en
+#     cuarentena · no se libera nada por la puerta de atrás).
+#   · Idempotente y anti-doble-click en multi-worker: reclama el movimiento ancla
+#     con CAS (UPDATE condicional + rowcount) ANTES de escribir nada.
+#   · dry_run por defecto: `aplicar:true` es lo único que escribe.
+_MARCA_A_MEE = '::MOVIDO-A-KARDEX-MEE'
+# Estados que NO tienen equivalente en el kardex de envases: `_get_mee_stock` solo
+# excluye CUARENTENA y RECHAZADO, así que un lote VENCIDO/BLOQUEADO llegaría allá
+# como disponible = stock de envase inflado. Se reportan, no se mueven.
+_ESTADOS_MEE_OK = {'', 'VIGENTE', 'APROBADO', 'CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO'}
+
+
+def _estado_mee_equivalente(estado_lote):
+    """Traduce el estado del kardex de MP al del kardex de envases (conserva la disposición)."""
+    e = (estado_lote or '').strip().upper()
+    if e.startswith('CUARENTENA'):
+        return 'CUARENTENA'
+    if e == 'RECHAZADO':
+        return 'RECHAZADO'
+    return 'VIGENTE'
+
+
+def _envases_kardex_mp_plan(c, solo_codigos=None):
+    """Qué envases hay dentro del kardex de MATERIA PRIMA y cómo se moverían.
+
+    Núcleo COMPARTIDO por la vista previa y el apply: el número que se muestra es
+    exactamente el que decide (M5). Devuelve una lista por código con el desglose
+    por (lote, estado), o [] si el kardex está limpio.
+    """
+    filtro = solo_codigos and {str(x).strip().upper() for x in solo_codigos if str(x).strip()}
+    _caso = ("WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
+             "WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END")
+    # GROUP BY por EXPRESIÓN → toda columna proyectada que no sea la expresión agrupada
+    # va dentro de un agregado, o PostgreSQL la rechaza (M12b/M45). El HAVING repite la
+    # expresión completa, nunca el alias.
+    # El ancla del CAS es el movimiento más viejo del grupo QUE TODAVÍA NO SE MOVIÓ: si tomáramos
+    # MIN(id) a secas, una recepción NUEVA y errada del mismo (código, lote, estado) heredaría el
+    # ancla ya marcada de la corrección anterior → el CAS daría rowcount 0 y esas unidades nuevas
+    # no se podrían mover NUNCA. La marca es una constante del módulo, no entra input del usuario.
+    _ancla = ("COALESCE(MIN(CASE WHEN COALESCE(observaciones,'') NOT LIKE '%" + _MARCA_A_MEE +
+              "%' THEN id END), MIN(id))")
+    rows = c.execute(
+        "SELECT material_id, COALESCE(lote,'') AS lote, UPPER(COALESCE(estado_lote,'')) AS est, "
+        "       MAX(material_nombre) AS nombre, MAX(fecha) AS fecha, "
+        "       MAX(COALESCE(proveedor,'')) AS proveedor, " + _ancla + " AS mov_ancla, "
+        "       COALESCE(SUM(CASE " + _caso + "), 0) AS neto "
+        "FROM movimientos "
+        "WHERE (UPPER(COALESCE(material_id,'')) LIKE 'MEE-%' "
+        "       OR UPPER(COALESCE(material_id,'')) LIKE 'MEE!_%' ESCAPE '!' "
+        "       OR UPPER(COALESCE(material_id,'')) LIKE 'ENV-%' "
+        "       OR UPPER(COALESCE(material_id,'')) LIKE 'ENV!_%' ESCAPE '!') "
+        "GROUP BY material_id, COALESCE(lote,''), UPPER(COALESCE(estado_lote,'')) "
+        "HAVING COALESCE(SUM(CASE " + _caso + "), 0) > 0.01 "
+        "ORDER BY material_id, lote").fetchall()
+    if not rows:
+        return []
+    # Un código que SÍ está en el maestro de MP es materia prima de verdad (nombre que
+    # empieza con ENV- por casualidad, por ejemplo) → jamás se toca.
+    en_mps = set()
+    for r in c.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps").fetchall():
+        if r[0]:
+            en_mps.add(r[0])
+    en_mee = set()
+    for r in c.execute("SELECT UPPER(TRIM(codigo)) FROM maestro_mee").fetchall():
+        if r[0]:
+            en_mee.add(r[0])
+    por_codigo = {}
+    for r in rows:
+        cod = (r['material_id'] or '').strip()
+        k = cod.upper()
+        if not k or (filtro and k not in filtro):
+            continue
+        est = (r['est'] or '').strip().upper()
+        movible = k not in en_mps and est in _ESTADOS_MEE_OK
+        if k in en_mps:
+            motivo = 'está en maestro_mps: es materia prima, no un envase'
+        elif est not in _ESTADOS_MEE_OK:
+            motivo = 'estado %s no tiene equivalente en el kardex de envases' % est
+        else:
+            motivo = ''
+        item = por_codigo.setdefault(cod, {
+            'codigo': cod, 'nombre': (r['nombre'] or cod), 'en_maestro_mee': k in en_mee,
+            'es_materia_prima': k in en_mps, 'uds_total': 0.0, 'uds_movibles': 0.0, 'lotes': [],
+        })
+        uds = round(float(r['neto'] or 0), 2)
+        item['uds_total'] = round(item['uds_total'] + uds, 2)
+        if movible:
+            item['uds_movibles'] = round(item['uds_movibles'] + uds, 2)
+        item['lotes'].append({
+            'lote': r['lote'] or '', 'estado_lote': est or '(vacío)', 'uds': uds,
+            'fecha': r['fecha'] or '', 'proveedor': r['proveedor'] or '',
+            'mov_ancla': int(r['mov_ancla'] or 0),
+            'estado_destino': _estado_mee_equivalente(est), 'movible': movible, 'motivo': motivo,
+        })
+    return sorted(por_codigo.values(), key=lambda x: -x['uds_total'])
+
+
+@bp.route("/api/admin/envases-kardex-mp", methods=["GET"])
+def admin_envases_kardex_mp_preview():
+    """Vista previa: envases que quedaron dentro del kardex de materia prima."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    plan = _envases_kardex_mp_plan(c)
+    return jsonify({
+        'ok': True, 'total_codigos': len(plan),
+        'uds_total': round(sum(x['uds_total'] for x in plan), 2),
+        'uds_movibles': round(sum(x['uds_movibles'] for x in plan), 2),
+        'plan': plan,
+    })
+
+
+@bp.route("/api/admin/envases-kardex-mp/mover", methods=["POST"])
+def admin_envases_kardex_mp_mover():
+    """Mueve las unidades al kardex de ENVASES: Salida compensatoria + Entrada, net-zero.
+
+    Body: {codigos:[...] (opcional · default todos los movibles), aplicar:bool (default false),
+           descripciones:{codigo:texto} (opcional · para el alta en maestro_mee)}.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    aplicar = bool(d.get('aplicar', False))
+    pedidos = d.get('codigos') or None
+    descripciones = d.get('descripciones') or {}
+    conn = get_db(); c = conn.cursor()
+    plan = _envases_kardex_mp_plan(c, solo_codigos=pedidos)
+    if not plan:
+        return jsonify({'ok': True, 'dry_run': not aplicar, 'plan': [], 'movidos': [], 'errores': [],
+                        'mensaje': 'El kardex de materia prima no tiene envases dentro'})
+    if not aplicar:
+        return jsonify({'ok': True, 'dry_run': True, 'plan': plan, 'movidos': [], 'errores': [],
+                        'uds_movibles': round(sum(x['uds_movibles'] for x in plan), 2)})
+
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    ahora = (_dt.now(_tz.utc) - _td(hours=5))          # ancla Colombia (M24)
+    fecha = ahora.isoformat()
+    hoy = ahora.date().isoformat()
+    try:
+        from .inventario import _MEE_PREFIJOS as _PREF
+    except Exception:
+        _PREF = {'ENV': 'Envase', 'IMP': 'Impreso', 'GOT': 'Gotero', 'TAP': 'Tapa',
+                 'ETQ': 'Etiqueta', 'PLG': 'Plegadiza'}
+    movidos = []
+    errores = []
+    altas = []
+    for item in plan:
+        cod = item['codigo']
+        movibles = [l for l in item['lotes'] if l['movible']]
+        if not movibles:
+            errores.append({'codigo': cod, 'error': (item['lotes'][0]['motivo'] if item['lotes']
+                                                     else 'sin lotes movibles')})
+            continue
+        try:
+            # Alta en el maestro de envases si el código todavía no está (es justo la causa
+            # del desvío). ON CONFLICT NATIVO: ni el aplicador de migraciones ni el adapter
+            # lo reescriben, y se comporta igual en SQLite y PostgreSQL (M38/PG).
+            if not item['en_maestro_mee']:
+                _p = cod.upper().split('-')
+                cat = _PREF.get(_p[1], 'Envase') if len(_p) > 2 and _p[0] == 'MEE' else 'Envase'
+                desc = (str(descripciones.get(cod) or descripciones.get(cod.upper()) or '').strip()
+                        or (item['nombre'] if item['nombre'] and item['nombre'].upper() != cod.upper()
+                            else cod))
+                c.execute(
+                    "INSERT INTO maestro_mee (codigo, descripcion, categoria, proveedor, fabricante, "
+                    "                         estado, stock_actual, stock_minimo, unidad, fecha_creacion) "
+                    "VALUES (?,?,?,?,'','Activo',0,0,'und',?) ON CONFLICT (codigo) DO NOTHING",
+                    (cod, desc, cat, (movibles[0].get('proveedor') or ''), hoy))
+                altas.append({'codigo': cod, 'descripcion': desc, 'categoria': cat})
+            uds_cod = 0.0
+            lotes_ok = []
+            for l in movibles:
+                # CAS: reclamar el movimiento ancla del grupo ANTES de escribir. Dos clicks
+                # concurrentes (3 workers) pasarían ambos un SELECT-luego-INSERT y moverían
+                # el doble; con el UPDATE condicional solo uno consigue rowcount==1 (M31/M27).
+                c.execute(
+                    "UPDATE movimientos SET observaciones = COALESCE(observaciones,'') || ? "
+                    "WHERE id=? AND COALESCE(observaciones,'') NOT LIKE ?",
+                    (' ' + _MARCA_A_MEE, l['mov_ancla'], '%' + _MARCA_A_MEE + '%'))
+                if c.rowcount != 1:
+                    continue                        # ya lo movió otro worker · no es error
+                obs = ('Corrección de kardex: %s uds pasan al kardex de ENVASES (entraron por error '
+                       'al de materia prima) · lote %s · %s' % (('%g' % l['uds']), (l['lote'] or 's/lote'),
+                                                                _MARCA_A_MEE))
+                # La Salida espeja el estado_lote ORIGINAL → net-zero exacto en toda vista (M31).
+                c.execute(
+                    "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
+                    "                         observaciones, lote, estado_lote, operador) "
+                    "VALUES (?,?,?,'Salida',?,?,?,?,?)",
+                    (cod, item['nombre'] or cod, l['uds'], fecha, obs, l['lote'] or '',
+                     (l['estado_lote'] if l['estado_lote'] != '(vacío)' else ''), u))
+                est_dest = l['estado_destino']
+                c.execute(
+                    "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, observaciones, "
+                    "                             responsable, fecha, estado) "
+                    "VALUES (?,'Entrada',?,?,?,?,?,?)",
+                    (cod, l['uds'], l['lote'] or '',
+                     'Corrección de kardex: venía del kardex de materia prima (mov #%s)' % l['mov_ancla'],
+                     u, fecha, est_dest))
+                # El cache solo suma lo que queda disponible · en CUARENTENA/RECHAZADO
+                # `_get_mee_stock` lo excluye y el cron de drift alinea el cache (M26).
+                if est_dest == 'VIGENTE':
+                    c.execute("UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? "
+                              "WHERE UPPER(TRIM(codigo))=?", (l['uds'], cod.upper()))
+                uds_cod += l['uds']
+                lotes_ok.append({'lote': l['lote'], 'uds': l['uds'], 'estado': est_dest})
+            if not lotes_ok:
+                continue                            # todo el código ya estaba movido
+            # El audit va ANTES del commit (con el cursor del caller) o el rastro se pierde (M22).
+            audit_log(c, usuario=u, accion='MOVER_ENVASE_A_KARDEX_MEE', tabla='movimientos',
+                      registro_id=cod,
+                      antes={'kardex': 'materia prima', 'uds': round(uds_cod, 2)},
+                      despues={'kardex': 'envases', 'uds': round(uds_cod, 2), 'lotes': lotes_ok},
+                      detalle='Salida compensatoria + Entrada net-zero · corrección de kardex')
+            movidos.append({'codigo': cod, 'uds': round(uds_cod, 2), 'lotes': lotes_ok})
+        except Exception as e:
+            conn.rollback()
+            errores.append({'codigo': cod, 'error': str(e)[:200]})
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'movidos': movidos, 'altas_maestro_mee': altas,
+                    'errores': errores, 'uds_movidas': round(sum(x['uds'] for x in movidos), 2),
+                    'restante': _envases_kardex_mp_plan(c)})
+
+
+@bp.route("/admin/envases-kardex-mp", methods=["GET"])
+def admin_envases_kardex_mp_page():
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/envases-kardex-mp")
+    if session.get('compras_user') not in ADMIN_USERS:
+        return "<h2 style='font-family:sans-serif;padding:40px'>Solo admins</h2>", 403
+    return Response(_ENVASES_KARDEX_MP_HTML, mimetype="text/html")
+
+
+_ENVASES_KARDEX_MP_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Envases dentro del kardex de MP &middot; EOS</title>
+<style>
+:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
+.wrap{max-width:96vw;margin:0 auto;}
+h1{font-size:23px;margin:0 0 4px;letter-spacing:-.02em;}
+.sub{color:var(--mut);font-size:13px;margin-bottom:20px;line-height:1.6;max-width:900px;}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:20px;margin-bottom:16px;}
+.kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 20px;min-width:170px;box-shadow:0 2px 10px rgba(15,23,42,.04);}
+.kpi span{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:700;}
+.kpi b{display:block;font-size:26px;margin-top:4px;letter-spacing:-.02em;}
+.kpi.warn b{color:#dc2626;}.kpi.good b{color:#16a34a;}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+button{font-family:inherit;cursor:pointer;border-radius:10px;font-weight:700;font-size:13px;padding:10px 18px;border:1px solid transparent;transition:.15s;}
+button:hover{transform:translateY(-1px)}
+.btn-p{background:linear-gradient(135deg,var(--vl),var(--v));color:#fff;box-shadow:0 4px 12px rgba(109,40,217,.25);}
+.btn-o{background:#fff;border-color:var(--line);color:var(--txt);}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{background:#faf5ff;color:var(--v);text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;padding:10px 8px;text-align:left;border-bottom:1px solid var(--line);}
+td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top;}
+tr:hover td{background:#faf9fb;}
+.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;}
+.chip{display:inline-block;border-radius:20px;padding:2px 10px;font-size:10.5px;font-weight:700;}
+.chip-ok{background:#f0fdf4;color:#15803d;}
+.chip-cua{background:#fffbeb;color:#b45309;}
+.chip-no{background:#fef2f2;color:#b91c1c;}
+.muted{color:var(--mut);}
+.nota{background:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:13px 16px;font-size:12.5px;color:#4c1d95;line-height:1.6;margin-bottom:16px;}
+#status{font-size:13px;color:var(--mut);}
+.vacio{padding:34px;text-align:center;color:#15803d;font-weight:700;font-size:15px;}
+</style></head><body><div class="wrap">
+<h1>&#x1F4E6; Envases dentro del kardex de materia prima</h1>
+<div class="sub">Un envase recibido por OC cuyo c&oacute;digo todav&iacute;a no estaba en el maestro de envases
+entraba al kardex de <b>materia prima</b>: inflaba el inventario de MP y dejaba su stock de envase en 0,
+as&iacute; que abastecimiento lo volv&iacute;a a pedir. El origen ya est&aacute; corregido; ac&aacute; se mueven las unidades que ya se escribieron.</div>
+<div class="nota"><b>C&oacute;mo se mueve:</b> no se borra ni se reescribe nada. Se registra una <b>Salida compensatoria</b>
+en el kardex de materia prima (con el mismo estado del lote, para que el neto quede exacto) y una <b>Entrada</b>
+en el kardex de envases con el mismo lote y el mismo estado. Un lote en cuarentena sigue en cuarentena.
+Todo queda auditado y el movimiento original se conserva.</div>
+<div class="kpis" id="kpis"></div>
+<div class="card">
+  <div class="bar">
+    <button class="btn-o" onclick="cargar()">&#x21BB; Actualizar</button>
+    <button class="btn-p" id="btn-mover" onclick="mover()" style="display:none">&#x2713; Mover al kardex de envases</button>
+    <span id="status">Cargando&hellip;</span>
+  </div>
+  <div style="overflow-x:auto"><table><thead><tr>
+    <th style="width:34px"><input type="checkbox" id="chk-all" onchange="todos(this.checked)"></th>
+    <th>C&oacute;digo</th><th>Nombre</th><th>Lote</th><th>Estado hoy</th>
+    <th class="num">Unidades</th><th>Queda como</th><th>Maestro de envases</th>
+  </tr></thead><tbody id="body"><tr><td colspan="8" class="muted" style="padding:20px;text-align:center">Cargando&hellip;</td></tr></tbody></table></div>
+</div>
+<script>
+var DATA=[];var BUSY=false;
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function uds(n){return Number(n||0).toLocaleString('es-CO',{maximumFractionDigits:0});}
+async function cargar(){
+  document.getElementById('status').textContent='Cargando…';
+  try{
+    var r=await fetch('/api/admin/envases-kardex-mp',{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok){document.getElementById('status').textContent='Error: '+(d.error||r.status);return;}
+    DATA=d.plan||[];render(d);
+  }catch(e){document.getElementById('status').textContent='Error de red: '+e.message;}
+}
+function render(d){
+  var k=document.getElementById('kpis');
+  k.innerHTML='<div class="kpi '+(DATA.length?'warn':'good')+'"><span>Códigos mal ubicados</span><b>'+DATA.length+'</b></div>'
+    +'<div class="kpi '+(d.uds_total?'warn':'good')+'"><span>Unidades en el kardex de MP</span><b>'+uds(d.uds_total)+'</b></div>'
+    +'<div class="kpi"><span>Unidades movibles</span><b>'+uds(d.uds_movibles)+'</b></div>';
+  var b=document.getElementById('body');
+  if(!DATA.length){
+    b.innerHTML='<tr><td colspan="8" class="vacio">✅ El kardex de materia prima no tiene envases dentro</td></tr>';
+    document.getElementById('status').textContent='Kardex limpio';
+    document.getElementById('btn-mover').style.display='none';
+    return;
+  }
+  document.getElementById('status').textContent=DATA.length+' código(s) por mover';
+  document.getElementById('btn-mover').style.display='';
+  var h='';
+  DATA.forEach(function(x){
+    (x.lotes||[]).forEach(function(l,i){
+      var cls=l.estado_destino==='CUARENTENA'?'chip-cua':(l.movible?'chip-ok':'chip-no');
+      h+='<tr>'
+        +'<td>'+(i===0?'<input type="checkbox" class="rowchk" data-cod="'+esc(x.codigo)+'"'+(x.uds_movibles>0?' checked':' disabled')+'>':'')+'</td>'
+        +'<td class="mono">'+(i===0?esc(x.codigo):'')+'</td>'
+        +'<td>'+(i===0?esc(x.nombre):'')+'</td>'
+        +'<td class="mono">'+esc(l.lote||'(sin lote)')+'</td>'
+        +'<td><span class="chip '+(l.movible?'chip-ok':'chip-no')+'">'+esc(l.estado_lote)+'</span></td>'
+        +'<td class="num">'+uds(l.uds)+'</td>'
+        +'<td>'+(l.movible?'<span class="chip '+cls+'">'+esc(l.estado_destino)+'</span>':'<span class="muted" style="font-size:11px">'+esc(l.motivo)+'</span>')+'</td>'
+        +'<td>'+(i===0?(x.en_maestro_mee?'<span class="chip chip-ok">ya existe</span>':'<span class="chip chip-cua">se da de alta</span>'):'')+'</td>'
+      +'</tr>';
+    });
+  });
+  b.innerHTML=h;
+}
+function todos(v){var cs=document.querySelectorAll('.rowchk');for(var i=0;i<cs.length;i++){if(!cs[i].disabled)cs[i].checked=v;}}
+async function mover(){
+  if(BUSY)return;
+  var cods=[];var cs=document.querySelectorAll('.rowchk');
+  for(var i=0;i<cs.length;i++){if(cs[i].checked)cods.push(cs[i].getAttribute('data-cod'));}
+  if(!cods.length){alert('Seleccioná al menos un código');return;}
+  if(!confirm('Mover '+cods.length+' código(s) al kardex de envases? Se registra Salida compensatoria + Entrada, queda auditado y el movimiento original se conserva.'))return;
+  BUSY=true;setTimeout(function(){BUSY=false;},2000);
+  document.getElementById('status').textContent='Moviendo…';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/envases-kardex-mp/mover',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},
+      body:JSON.stringify({codigos:cods,aplicar:true})});
+    var d=await r.json();
+    if(!r.ok){alert('Error: '+(d.error||r.status));document.getElementById('status').textContent='Error';BUSY=false;return;}
+    var msg='✓ '+(d.movidos||[]).length+' código(s) movidos · '+uds(d.uds_movidas)+' unidades';
+    if((d.errores||[]).length)msg+='\n⚠ '+d.errores.length+' con problema: '+d.errores.map(function(e){return e.codigo+': '+e.error;}).join(' | ');
+    alert(msg);BUSY=false;cargar();
+  }catch(e){BUSY=false;alert('Error de red: '+e.message);}
+}
+cargar();
+</script></div></body></html>"""
+
+
 # ════════════════════════════════════════════════════════════════════════
 # IMPORT INVENTARIO ENVASE — formato real de Sebastian (29-abr-2026)
 # Excel con hojas ENVASES / GOTEROS / TAPAS / ETIQUETAS / PLEGADIZAS,

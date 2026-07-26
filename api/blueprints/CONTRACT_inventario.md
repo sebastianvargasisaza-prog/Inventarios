@@ -390,3 +390,31 @@ y esconden bugs reales.**
 `compras.handle_mee` también declaraba POST con un gate más estricto (`_require_compras_write`)
 que **nunca corría**, porque Werkzeug resuelve la primera regla registrada — daba la ilusión
 de un control que no existía. `compras.handle_mee` quedó GET-only (catálogo de envases).
+
+## 📦 INV-9 · Mover un envase entre kardex es Salida compensatoria + Entrada (25-jul)
+
+Un envase recibido por OC cuyo código todavía no estaba en `maestro_mee` caía a la rama MP de
+`recibir_oc` y entraba a **`movimientos`** (kardex de materia prima): inflaba el inventario de MP,
+dejaba su stock de envase en 0 (abastecimiento lo volvía a pedir) y se saltaba la cuarentena de
+envases. Origen tapado (enrutado por prefijo `MEE-`/`ENV-`); las unidades ya escritas se corrigen
+con `admin.admin_envases_kardex_mp_mover`.
+
+**Invariante:** mover unidades entre kardex NUNCA es un `UPDATE material_id` ni un DELETE. Se hace
+como toda reversa del sistema (INV-1 / M31):
+
+| Paso | Dónde | Detalle |
+|---|---|---|
+| Salida compensatoria | `movimientos` | mismo `lote` y **mismo `estado_lote` que la Entrada original** → net-zero EXACTO en toda vista (una Salida con otro estado descuadra las vistas que filtran por estado) |
+| Entrada | `movimientos_mee` | mismo `lote_ref`, y el estado se **conserva**: CUARENTENA sigue en cuarentena, RECHAZADO sigue rechazado |
+| Alta | `maestro_mee` | solo si el código no existía · `ON CONFLICT (codigo) DO NOTHING` · `stock_actual` arranca en 0 (el default de la tabla es 2000) |
+| Rastro | `audit_log` | `MOVER_ENVASE_A_KARDEX_MEE`, antes/después, **antes del commit** (M22) |
+
+Guards duros: nunca toca un código presente en `maestro_mps` (eso es materia prima de verdad);
+los estados sin equivalente en el kardex de envases (VENCIDO/AGOTADO/BLOQUEADO — `_get_mee_stock`
+solo excluye CUARENTENA y RECHAZADO) se **reportan pero no se mueven**, o llegarían allá como
+disponibles; el movimiento ancla se reclama con CAS antes de escribir (anti-doble-click en los 3
+workers); `dry_run` por defecto. La vista previa y el apply comparten el núcleo
+`_envases_kardex_mp_plan` — el número que se muestra es el que decide (M5).
+
+Página: `/admin/envases-kardex-mp`. Detección continua: `envases_en_kardex_mp` en
+`/api/admin/auditoria-lotes`. Tests: `tests/test_envases_kardex_mp.py` (en el gate).

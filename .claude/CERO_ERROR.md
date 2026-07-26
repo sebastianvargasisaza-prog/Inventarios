@@ -1015,6 +1015,19 @@ sus chequeos no corrieron; si no, su silencio miente.** Tests `test_auditoria_lo
 0 vencidos contados como disponibles · 11 lotes SIN fecha de vencimiento (dato a completar,
 INVIMA) · 17 sin ubicación · 3 sin INCI.
 
+**📦 Corregir un dato mal ubicado NUNCA es un `UPDATE` de la clave.** Los envases que quedaron
+dentro del kardex de MP (MEE-IMP-019/020) se movieron con el mismo patrón que toda reversa del
+sistema (M31): **Salida compensatoria + Entrada, net-zero y auditada**, conservando el movimiento
+original (INVIMA guarda el rastro del error, no lo borra). Cuatro reglas que salen de armarlo:
+(1) la pata compensatoria espeja el `estado_lote` ORIGINAL, o el neto descuadra justo en las
+vistas que filtran por estado; (2) **al cruzar de kardex hay que traducir el estado, no copiarlo**:
+`_get_mee_stock` solo excluye CUARENTENA y RECHAZADO, así que un lote VENCIDO/BLOQUEADO llegaría
+al kardex de envases como DISPONIBLE → esos estados se reportan y NO se mueven; (3) un alta en
+`maestro_mee` va con `stock_actual` explícito en **0** — el `CREATE TABLE` tiene `DEFAULT 2000` y
+un alta descuidada inventa 2000 unidades; (4) la vista previa y el apply comparten el núcleo
+(`_envases_kardex_mp_plan`) y el ancla se reclama con CAS antes de escribir. Ver INV-9 en
+`CONTRACT_inventario.md` · `/admin/envases-kardex-mp` · `test_envases_kardex_mp.py` (en el gate).
+
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 
 Cosas que una auditoría marca como "inconsistencia" y NO lo son. Verificar acá antes de reportar:
