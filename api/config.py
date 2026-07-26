@@ -105,6 +105,23 @@ FINANZAS_ACCESS = {"mayra", "catalina", "sebastian", "alejandro"}
 # Clientes: contabilidad + asistentes (ventas, gerencias) + admins.
 CLIENTES_ACCESS = {"mayra", "catalina", "valentina", "daniela", "luz", "alejandro", "sebastian"}
 TECNICA_USERS   = {"hernando", "miguel", "alejandro", "sebastian"}
+# ── Quién puede VER una fórmula maestra (Sebastián 25-jul) ────────────────────
+# La receta (código de MP + porcentaje) es el activo regulado más sensible de la
+# planta: define qué se dispensa, alimenta el descuento FEFO, la compra y el MBR.
+# Hasta hoy CUALQUIER usuario logueado la leía: el candado de la pantalla era un
+# PIN de navegador (cosmético) y `GET /api/formulas` no pedía rol — verificado
+# con una sesión de un usuario común, que recibió las 40 recetas completas.
+# El set es el de permiso INVIMA: Dirección Técnica (dueña de la fórmula),
+# Control de Calidad (verifica la dispensación), Aseguramiento (gobierna el SGC)
+# y Dirección. Quien no está acá sigue viendo los NOMBRES de producto (para
+# elegir en Fabricación o en un pedido B2B), nunca los ingredientes.
+# Override por env sin redeploy: FORMULAS_VER_USERS_OVERRIDE="a,b,c".
+_FORMULAS_VER_OVERRIDE = os.environ.get("FORMULAS_VER_USERS_OVERRIDE", "").strip()
+FORMULAS_VER_USERS = (
+    {u.strip().lower() for u in _FORMULAS_VER_OVERRIDE.split(",") if u.strip()}
+    if _FORMULAS_VER_OVERRIDE
+    else (TECNICA_USERS | CALIDAD_USERS | ASEGURAMIENTO_USERS | ADMIN_USERS)
+)
 # Marketing: equipo de marketing + asistentes de gerencia (cada una para su empresa).
 MARKETING_USERS = {"jefferson", "felipe", "daniela", "luz", "alejandro", "sebastian"}
 # Acceso al módulo ÁNIMUS Lab (skincare): asistente de gerencia + admins.

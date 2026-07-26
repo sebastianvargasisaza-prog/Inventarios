@@ -391,6 +391,33 @@ y esconden bugs reales.**
 que **nunca corría**, porque Werkzeug resuelve la primera regla registrada — daba la ilusión
 de un control que no existía. `compras.handle_mee` quedó GET-only (catálogo de envases).
 
+## 🔒 INV-10 · La RECETA de una fórmula sólo la ve quien tiene permiso INVIMA (25-jul)
+
+`GET /api/formulas` exigía únicamente estar logueado: cualquier usuario (planta, marketing,
+contabilidad) recibía las 40 recetas completas con **código de MP y porcentaje**. Verificado con
+una sesión real de un usuario común. El candado de la pantalla ("Fórmulas desbloqueadas /
+Bloquear") es un **PIN de navegador**: la receta ya había viajado al browser antes de pedirlo, así
+que ocultaba sin proteger — un control que parece control y no lo es (misma clase que `/diag/*`
+abierto a internet, M95).
+
+**Invariante:** el resolver único es `inventario._puede_ver_formulas()` sobre
+`config.FORMULAS_VER_USERS` = Dirección Técnica ∪ Control de Calidad ∪ Aseguramiento ∪ Dirección
+(override sin redeploy: `FORMULAS_VER_USERS_OVERRIDE`). **Fail-closed**: si la config no carga, no
+se muestra la receta.
+
+Quien no tiene permiso **no recibe 403**: recibe la misma estructura con `items: []`,
+`solo_nombres: true` y un `motivo`. Los NOMBRES tienen que seguir viajando o el módulo nace roto
+(M32): los consumen el select de Fabricación (`loadFormulas` → `#prod-sel`) y el formulario de
+pedido B2B. El operario sigue viendo lo que debe pesar en el legajo de SU lote — lo que se cierra
+es *navegar el recetario*.
+
+⚠ Pendiente de la misma auditoría: hay endpoints que devuelven porcentajes sin gate de rol. Los
+**operativos** (pesajes-plan, dispensado, rótulos, simular, factibilidad, listo-producir) son
+correctos así — el operario los necesita para su lote. Los de **volcado de catálogo**
+(`/api/plan/diag-formulas-dump`, `/api/programacion/trail-explosion`,
+`/api/programacion/diag-formula-anomalia`, `/api/plan/diag-mp/<codigo>`, `/api/formula/costo`)
+deberían pasar por `_puede_ver_formulas`. Tests: `tests/test_formulas_permiso_invima.py`.
+
 ## 📦 INV-9 · Mover un envase entre kardex es Salida compensatoria + Entrada (25-jul)
 
 Un envase recibido por OC cuyo código todavía no estaba en `maestro_mee` caía a la rama MP de

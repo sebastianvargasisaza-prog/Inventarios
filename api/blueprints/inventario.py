@@ -579,6 +579,23 @@ def dashboard_insights():
     })
 
 
+def _puede_ver_formulas(usuario=None):
+    """¿Este usuario puede ver la RECETA (ingredientes + porcentajes) de una fórmula maestra?
+
+    Sebastián 25-jul: sólo los que tienen permiso INVIMA. Set en `config.FORMULAS_VER_USERS`
+    (Dirección Técnica ∪ Control de Calidad ∪ Aseguramiento ∪ Dirección). UN solo resolver para
+    todos los puntos que exponen la receta — si cada endpoint arma su propio criterio, uno queda
+    viejo y la fórmula se filtra por ahí (M1).
+    """
+    u = (usuario if usuario is not None else session.get('compras_user', '')) or ''
+    try:
+        from config import FORMULAS_VER_USERS as _FV
+        return u in _FV
+    except Exception:
+        # Fail-CLOSED: si la config no carga, no se muestra la receta (dato regulado).
+        return False
+
+
 @bp.route('/api/formulas', methods=['GET', 'POST'])
 def handle_formulas():
     conn = get_db()
@@ -827,6 +844,27 @@ def handle_formulas():
                 'error': 'Falla guardando fórmula',
                 'detalle': str(e)[:300],
             }), 500
+    # FIX 25-jul (Sebastián: "que no las puedan ver si no los que tienen permiso INVIMA").
+    # El POST ya estaba gateado desde la auditoría del 25-jul, pero el GET NO: cualquier usuario
+    # logueado (una operaria, marketing, la contadora) recibía las 40 recetas COMPLETAS con código
+    # de MP y porcentaje. Verificado con una sesión real de un usuario común. El candado de la
+    # pantalla ("Fórmulas desbloqueadas / Bloquear") es un PIN de NAVEGADOR: la receta ya había
+    # viajado al browser antes de pedirlo, así que ocultaba sin proteger — un control que parece
+    # control y no lo es (misma clase que `/diag/*` abierto a internet · M95).
+    # Quien no tiene permiso NO recibe 403 a secas: recibe la lista de NOMBRES (sin ingredientes),
+    # que es lo que necesitan el select de Fabricación y el formulario de pedido B2B (M32: al
+    # cerrar un permiso hay que mirar TODOS los consumidores, o el módulo nace roto).
+    if not _puede_ver_formulas():
+        c.execute('SELECT producto_nombre, unidad_base_g, descripcion, fecha_creacion '
+                  'FROM formula_headers ORDER BY producto_nombre')
+        return jsonify({
+            'formulas': [{'producto_nombre': h[0], 'unidad_base_g': h[1], 'descripcion': h[2],
+                          'fecha_creacion': h[3], 'items': [], 'oculta': True}
+                         for h in c.fetchall()],
+            'solo_nombres': True,
+            'motivo': ('La receta (ingredientes y porcentajes) es un dato regulado INVIMA · '
+                       'la ven Dirección Técnica, Control de Calidad, Aseguramiento y Dirección'),
+        })
     c.execute('SELECT producto_nombre, unidad_base_g, descripcion, fecha_creacion FROM formula_headers ORDER BY producto_nombre')
     headers = c.fetchall()
     formulas = []

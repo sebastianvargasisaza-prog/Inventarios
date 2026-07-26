@@ -59,6 +59,8 @@ CORAZON=(
   "tests/test_codigo_kardex_limpio.py"
   "tests/test_auditoria_lotes_pg.py"
   "tests/test_envases_kardex_mp.py"
+  "tests/test_formulas_permiso_invima.py"
+  "tests/test_legajo_trazabilidad_responsables.py"
   "tests/test_inci_ambiguos.py"
   "tests/test_cron_mee_cuarentena.py"
   "tests/test_descuento_kg_editado.py"

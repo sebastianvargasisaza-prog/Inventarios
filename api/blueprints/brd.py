@@ -2606,6 +2606,54 @@ def _presentaciones_planeadas(conn, producto, ebr_produccion_id=None):
     return out
 
 
+def _ebr_audit_rows(conn, ebr_id):
+    """Audit trail del lote (Part 11 §11.10(e)): quién hizo qué y cuándo.
+
+    A nivel orden (`registro_id=ebr_id`) y por hijo (pesaje/paso/IPC/despeje, que llevan el
+    ebr_id dentro del JSON `despues`). UN solo productor para las dos vistas del legajo — el
+    embebido en Planta y `/vista-completa` — porque tener la query duplicada es justo cómo una
+    de las dos se queda vieja (M1/M87).
+    """
+    return conn.execute(
+        """SELECT fecha, usuario, accion, COALESCE(detalle,''),
+                  COALESCE(antes,''), COALESCE(despues,''), COALESCE(tabla,'')
+           FROM audit_log
+           WHERE (tabla='ebr_ejecuciones' AND registro_id = ?)
+              OR (tabla IN ('ebr_pesajes','ebr_pasos_ejecutados','ipc_resultados',
+                            'ipc_estandar_resultados','ebr_despeje_items','ebr_despeje_linea')
+                  AND (despues LIKE ? OR despues LIKE ?))
+           ORDER BY fecha DESC LIMIT 200""",
+        (str(ebr_id), '%"ebr_id": ' + str(ebr_id) + ',%',
+         '%"ebr_id": ' + str(ebr_id) + '}%'),
+    ).fetchall()
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/audit", methods=["GET"])
+def ebr_audit(ebr_id):
+    """Trazabilidad de responsables del lote · sección INVIMA del legajo.
+
+    FIX 25-jul (Sebastián, revisando el batch digital): la sección 11 del legajo decía
+    "Sin acciones registradas todavía" en TODOS los lotes — incluso en uno con 13/13
+    verificaciones firmadas y 47 acciones en el audit trail. Causa: el legajo embebido en
+    Planta se arma con `/api/brd/ebr/<id>` + 11 sub-recursos, y el `audit` sólo existía en
+    `/vista-completa`, que ese camino NUNCA llama → `d.audit` siempre undefined → el `else`
+    del render pintaba el texto de vacío. Los datos estaban; la pantalla no los pedía.
+    (Misma familia que M94: el consumidor lee una clave que su productor no entrega, y el
+    resultado es indistinguible de "no hay nada".)
+    """
+    conn = get_db()
+    try:
+        rows = _ebr_audit_rows(conn, ebr_id)
+    except Exception as e:
+        log.warning('ebr_audit %s falló: %s', ebr_id, e)
+        return jsonify({'items': [], 'error': str(e)[:200]}), 200
+    # `_persona` (nombre completo) es un helper LOCAL de `ebr_vista_completa`, no del módulo:
+    # usarlo acá daba NameError → 500. El legajo muestra el username, que es la firma real.
+    return jsonify({'items': [{
+        'fecha': r[0], 'usuario': r[1], 'accion': r[2], 'detalle': r[3],
+    } for r in rows]})
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/vista-completa", methods=["GET"])
 def ebr_vista_completa(ebr_id):
     """MyBatch parity Sprint B · 21-may-2026 · Sebastián.
@@ -3288,18 +3336,7 @@ def ebr_vista_completa(ebr_id):
     # 6. Audit log filtrado + Correcciones (Audit Trail Part 11 · MyBatch parity).
     # A nivel orden (registro_id=ebr_id) y por MP/paso/IPC (despues contiene ebr_id).
     try:
-        rows = conn.execute(
-            """SELECT fecha, usuario, accion, COALESCE(detalle,''),
-                      COALESCE(antes,''), COALESCE(despues,''), COALESCE(tabla,'')
-               FROM audit_log
-               WHERE (tabla='ebr_ejecuciones' AND registro_id = ?)
-                  OR (tabla IN ('ebr_pesajes','ebr_pasos_ejecutados','ipc_resultados',
-                                'ipc_estandar_resultados','ebr_despeje_items','ebr_despeje_linea')
-                      AND (despues LIKE ? OR despues LIKE ?))
-               ORDER BY fecha DESC LIMIT 200""",
-            (str(ebr_id), '%"ebr_id": ' + str(ebr_id) + ',%',
-             '%"ebr_id": ' + str(ebr_id) + '}%'),
-        ).fetchall()
+        rows = _ebr_audit_rows(conn, ebr_id)
         out['audit'] = [{
             'fecha': r[0], 'usuario': r[1], 'accion': r[2], 'detalle': r[3],
         } for r in rows]

@@ -5778,6 +5778,9 @@ async function loadFormulas(){
   try{
     var r=await fetch('/api/formulas'), d=await r.json();
     fData=d.formulas||[];
+    // El servidor decide si manda la receta o solo los nombres (permiso INVIMA · 25-jul).
+    window._FORMULAS_SOLO_NOMBRES = !!d.solo_nombres;
+    window._FORMULAS_MOTIVO = d.motivo||'';
     renderFormulas(fData);
     var sel=document.getElementById('prod-sel');
     if(sel){
@@ -5800,6 +5803,24 @@ function renderFormulas(fl){
   var c=document.getElementById('formulas-list'); if(!c) return;
   if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun.</p>';return;}
   var html='';
+  // 25-jul · la receta es dato regulado INVIMA: quien no tiene permiso recibe del servidor
+  // los NOMBRES (para poder elegir producto en Fabricacion) pero NUNCA los ingredientes.
+  // El servidor ya no manda los items, asi que esto no es solo un ocultamiento visual.
+  if(window._FORMULAS_SOLO_NOMBRES){
+    html+='<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:16px 18px;margin-bottom:14px;color:#4c1d95;line-height:1.6">'
+         +'<div style="font-weight:800;font-size:14px;margin-bottom:4px">&#128274; Las recetas no est&aacute;n disponibles para tu usuario</div>'
+         +'<div style="font-size:12.5px">'+_escHTML(window._FORMULAS_MOTIVO||'')+'.</div>'
+         +'<div style="font-size:12px;margin-top:6px;color:#6d28d9">Pod&eacute;s seguir trabajando normal: el producto aparece en Fabricaci&oacute;n y en el legajo ves lo que ten&eacute;s que pesar de tu lote.</div>'
+         +'</div>';
+    html+='<div style="font-size:12px;color:#78716c;margin-bottom:8px">'+fl.length+' producto(s) con f&oacute;rmula registrada:</div>';
+    fl.forEach(function(f){
+      html+='<div style="padding:9px 12px;border-bottom:1px solid #eef0f2;font-size:13px">'
+           +'<b>'+_escHTML(f.producto_nombre)+'</b>'
+           +'<span style="color:#94a3b8;font-size:11.5px"> &middot; base '+(f.unidad_base_g||0).toLocaleString('es-CO')+' g</span></div>';
+    });
+    c.innerHTML=html;
+    return;
+  }
   if(!formulasPin){
     html+='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 15px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">'
          +'<span>&#128274; Cantidades ocultas - activa el PIN para ver la f&oacute;rmula completa</span>'
@@ -8027,11 +8048,16 @@ async function abrirEBR(id, targetId){
       _ebrJson('/api/brd/ebr/'+id+'/despeje'),
       _ebrJson('/api/brd/ebr/'+id+'/precauciones'),
       _ebrJson('/api/brd/ebr/'+id+'/registros-fisicos'),
-      _ebrJson('/api/brd/ebr/'+id+'/despeje-items')
+      _ebrJson('/api/brd/ebr/'+id+'/despeje-items'),
+      // 25-jul · sin esto la seccion "Trazabilidad de responsables (INVIMA)" salia SIEMPRE
+      // vacia: el render lee d.audit y el endpoint base nunca lo trajo (solo /vista-completa,
+      // que este camino no llama). Los datos existian; la pantalla no los pedia.
+      _ebrJson('/api/brd/ebr/'+id+'/audit')
     ]);
     var dp=P[0],dcm=P[1],dar=P[2],dob=P[3];
     var ipcSpecs=_arr(P[4]),ipcRes=_arr(P[5]),ipcEstandar=_arr(P[6]);
     var despeje=_arr(P[7]),prec=_arr(P[8]),regs=_arr(P[9]),despejeChk=P[10]||{};
+    d.audit=_arr(P[11]);
     box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs,ipcEstandar,despejeChk);
     window._ebrCurrentId=id;
     if(_keepYEBR!=null){ window.scrollTo(0,_keepYEBR); }
