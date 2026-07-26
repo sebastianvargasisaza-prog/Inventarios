@@ -1486,11 +1486,19 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
             return {'ok': True, 'id': ex[0], 'numero_op': ex[1],
                     'pasos': 0, 'reusado': True}
     # MBR aprobado más reciente del producto (BPM: no se fabrica sin MBR aprobado).
+    # FIX 26-jul · el match era por nombre EXACTO (case-sensitive) y por eso dos productos
+    # con instructivo cargado nacían SIN legajo: la fórmula dice 'BLUSH BALM' y el MBR está
+    # guardado 'Blush Balm'; igual 'SUERO EXFOLIANTE NOVA PHA' vs 'Suero Exfoliante Nova PHA'.
+    # Para el sistema eran productos distintos → NO_MBR_APROBADO → la orden caía a "registro
+    # simple" y el procedimiento aprobado nunca llegaba al piso. Es la regla M2: todo match de
+    # producto por nombre entre tablas distintas va con UPPER(TRIM(...)) a AMBOS lados.
+    # `id DESC` desempata: sin él, dos MBR de la misma versión salen en orden no determinista
+    # en PostgreSQL.
     mbr = cur.execute(
         """SELECT id, version, lote_size_g
              FROM mbr_templates
-            WHERE producto_nombre=? AND estado='aprobado'
-            ORDER BY version DESC LIMIT 1""",
+            WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND estado='aprobado'
+            ORDER BY version DESC, id DESC LIMIT 1""",
         (producto_nombre,),
     ).fetchone()
     if not mbr:
@@ -1646,7 +1654,26 @@ def _generar_mbr_desde_formula(cur, producto_nombre, usuario=''):
     for it in items:
         orden += 1
         mat_nom, mat_id, pct, cant_g = it[0], it[1], it[2], it[3]
-        desc = f"Dispensar {mat_nom or mat_id} ({mat_id}) · {round(float(cant_g or 0),2)} g ({round(float(pct or 0),2)}%)"
+        # FIX 26-jul · el paso NO puede llevar un peso ABSOLUTO congelado. El texto de un paso
+        # se escribe una vez y sirve para lotes de cualquier tamaño, así que un gramaje fijo
+        # queda mintiendo en cuanto cambia el lote. Caso real: un lote de 10 kg mostraba
+        # "Dispensar AGUA · 77.79 g" mientras la hoja de pesaje decía 7.779 g — 100 veces menos,
+        # los dos números dentro del MISMO legajo (M5: el número que se muestra tiene que ser el
+        # que decide). Encima venía de `cantidad_g_por_lote`, una columna DERIVADA que puede
+        # quedar stale (M71) y que además es relativa a la base de la FÓRMULA, no a este lote.
+        # Lo invariante es el PORCENTAJE; el peso de cada lote lo calcula la hoja de pesaje
+        # desde la cantidad real (M67). %-first, con la derivada solo como respaldo.
+        try:
+            _pct = float(pct or 0)
+        except (TypeError, ValueError):
+            _pct = 0.0
+        if _pct <= 0 and lote_size_g > 0:
+            try:
+                _pct = float(cant_g or 0) / float(lote_size_g) * 100.0
+            except (TypeError, ValueError, ZeroDivisionError):
+                _pct = 0.0
+        desc = (f"Dispensar {mat_nom or mat_id} ({mat_id}) · {round(_pct, 3)}% de la fórmula "
+                f"· el peso exacto de ESTE lote está en la hoja de pesaje")
         cur.execute(
             """INSERT INTO mbr_pasos
                  (mbr_template_id, orden, fase, descripcion, tipo_paso,
@@ -2604,6 +2631,165 @@ def _presentaciones_planeadas(conn, producto, ebr_produccion_id=None):
                 'estado': 'Programado', 'cliente': cli,
             })
     return out
+
+
+def _mbr_desactualizados(conn):
+    """Legajos ABIERTOS que quedaron colgados de una versión de MBR que ya no es la aprobada.
+
+    Cuando se aprueba una versión nueva del MBR (por ejemplo, al cargar el instructivo real de
+    fabricación), la anterior pasa a `obsoleto` — pero los legajos YA ABIERTOS siguen apuntando
+    a la vieja. Caso real (26-jul): las órdenes en curso mostraban 3 pasos genéricos de relleno
+    mientras la v2 aprobada tenía el procedimiento completo. El instructivo existía y no llegaba
+    al piso. Los legajos NUEVOS sí toman la aprobada (`crear_ebr_desde_mbr`).
+
+    Núcleo COMPARTIDO por la vista previa y el apply: el número que se muestra es el que decide.
+    """
+    # OJO: `ebr_ejecuciones` NO tiene `producto_nombre` — el producto vive en el MBR
+    # (`mbr_templates.producto_nombre`). Escribirlo como columna del EBR daba "no such column"
+    # (M12a · columna fantasma). Lo cazó el test antes de que llegara a producción.
+    filas = conn.execute(
+        """SELECT e.id, e.numero_op, COALESCE(m.producto_nombre,'') AS producto_nombre,
+                  e.estado, e.mbr_template_id,
+                  e.mbr_version, COALESCE(m.estado,'') AS estado_mbr,
+                  COALESCE(e.lote_codigo, e.lote) AS lote, COALESCE(e.fase,'fabricacion') AS fase
+             FROM ebr_ejecuciones e
+             LEFT JOIN mbr_templates m ON m.id = e.mbr_template_id
+            WHERE LOWER(COALESCE(e.estado,'')) NOT IN ('liberado','rechazado','completado','cancelado')
+            ORDER BY e.id DESC""",
+    ).fetchall()
+    out = []
+    for f in filas:
+        # El MBR aprobado de HOY para ese producto · mismo criterio que crear_ebr_desde_mbr
+        # (UPPER/TRIM · si acá resolviera distinto, la herramienta propondría otra versión).
+        mejor = conn.execute(
+            """SELECT id, version FROM mbr_templates
+                WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND estado='aprobado'
+                ORDER BY version DESC, id DESC LIMIT 1""",
+            (f['producto_nombre'],),
+        ).fetchone()
+        if not mejor or int(mejor['id']) == int(f['mbr_template_id'] or 0):
+            continue
+        # ¿Ya se ejecutó algún paso? Cambiar el procedimiento con el lote en marcha NO es una
+        # corrección automática: es una desviación que decide Calidad. Se reporta, no se toca.
+        ejecutados = conn.execute(
+            "SELECT COUNT(*) FROM ebr_pasos_ejecutados WHERE ebr_id=? "
+            "AND LOWER(COALESCE(estado,'pendiente'))<>'pendiente'", (f['id'],)).fetchone()[0]
+        pasos_nuevos = conn.execute(
+            "SELECT COUNT(*) FROM mbr_pasos WHERE mbr_template_id=?", (mejor['id'],)).fetchone()[0]
+        out.append({
+            'ebr_id': f['id'], 'numero_op': f['numero_op'], 'producto': f['producto_nombre'],
+            'lote': f['lote'], 'fase': f['fase'], 'estado_ebr': f['estado'],
+            'mbr_actual': f['mbr_template_id'], 'version_actual': f['mbr_version'],
+            'estado_mbr_actual': f['estado_mbr'] or '(no existe)',
+            'mbr_aprobado': mejor['id'], 'version_aprobada': mejor['version'],
+            'pasos_actuales': conn.execute(
+                "SELECT COUNT(*) FROM ebr_pasos_ejecutados WHERE ebr_id=?", (f['id'],)).fetchone()[0],
+            'pasos_nuevos': pasos_nuevos,
+            'pasos_ya_ejecutados': ejecutados,
+            'movible': ejecutados == 0,
+            'motivo': ('' if ejecutados == 0 else
+                       'el lote ya ejecutó %s paso(s): cambiar el procedimiento en marcha es una '
+                       'desviación que decide Calidad, no un ajuste automático' % ejecutados),
+        })
+    return out
+
+
+@bp.route("/api/brd/mbr-desactualizados", methods=["GET"])
+def brd_mbr_desactualizados():
+    """Vista previa: legajos abiertos colgados de una versión de MBR que ya no es la aprobada."""
+    err = _require_login()
+    if err:
+        return err
+    plan = _mbr_desactualizados(get_db())
+    return jsonify({'ok': True, 'total': len(plan),
+                    'movibles': sum(1 for x in plan if x['movible']), 'plan': plan})
+
+
+@bp.route("/api/brd/revincular-mbr", methods=["POST"])
+def brd_revincular_mbr():
+    """Re-vincula legajos abiertos a la versión APROBADA de su MBR (trae el instructivo real).
+
+    Body: {ebr_ids:[...] (opcional · default todos los movibles), aplicar:bool (default false)}.
+
+    Reglas duras (GMP):
+      · NUNCA toca un legajo liberado/rechazado/completado (mig 111: son inmutables).
+      · NUNCA toca un legajo que ya ejecutó un paso — eso es una desviación de Calidad.
+      · Reemplaza sólo pasos en estado `pendiente`, así que no puede borrar una firma.
+      · Todo queda en audit_log, antes del commit.
+    """
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    d = request.get_json(silent=True) or {}
+    aplicar = bool(d.get('aplicar', False))
+    pedidos = d.get('ebr_ids')
+    usuario = session.get('compras_user', '')
+    conn = get_db()
+    cur = conn.cursor()
+    plan = _mbr_desactualizados(conn)
+    if pedidos:
+        _ids = {int(x) for x in pedidos}
+        plan = [p for p in plan if p['ebr_id'] in _ids]
+    if not aplicar:
+        return jsonify({'ok': True, 'dry_run': True, 'plan': plan,
+                        'movibles': sum(1 for x in plan if x['movible'])})
+    hechos, saltados = [], []
+    for p in plan:
+        if not p['movible']:
+            saltados.append({'numero_op': p['numero_op'], 'motivo': p['motivo']})
+            continue
+        try:
+            # CAS: reclamar el legajo con la condición de que SIGA en la versión vieja. Dos
+            # clicks concurrentes (3 workers) pasarían ambos el chequeo de arriba y clonarían
+            # los pasos dos veces (M27/M31).
+            cur.execute(
+                "UPDATE ebr_ejecuciones SET mbr_template_id=?, mbr_version=? "
+                "WHERE id=? AND mbr_template_id=? "
+                "AND LOWER(COALESCE(estado,'')) NOT IN ('liberado','rechazado','completado','cancelado')",
+                (p['mbr_aprobado'], p['version_aprobada'], p['ebr_id'], p['mbr_actual']))
+            if cur.rowcount != 1:
+                saltados.append({'numero_op': p['numero_op'],
+                                 'motivo': 'ya lo re-vinculó otro usuario o cambió de estado'})
+                continue
+            # Sólo los PENDIENTES: si hubiera un paso firmado, el guard de arriba ya excluyó el
+            # legajo, y este WHERE es la segunda red — una firma no se puede borrar nunca.
+            cur.execute("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id=? "
+                        "AND LOWER(COALESCE(estado,'pendiente'))='pendiente'", (p['ebr_id'],))
+            borrados = cur.rowcount
+            _fase = p['fase'] if p['fase'] in _FASES_VALIDAS else 'fabricacion'
+            nuevos = 0
+            for s in cur.execute(
+                """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
+                          requiere_e_sign, requiere_qc, COALESCE(fase,'') AS fase
+                     FROM mbr_pasos WHERE mbr_template_id=? ORDER BY orden""",
+                    (p['mbr_aprobado'],)).fetchall():
+                if _fase_canonica(s[7]) != _fase:
+                    continue
+                cur.execute(
+                    """INSERT INTO ebr_pasos_ejecutados
+                         (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
+                          equipo_requerido, requiere_e_sign, requiere_qc, estado, fase)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)""",
+                    (p['ebr_id'], s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]))
+                nuevos += 1
+            audit_log(cur, usuario=usuario, accion='REVINCULAR_MBR_EBR',
+                      tabla='ebr_ejecuciones', registro_id=str(p['ebr_id']),
+                      antes={'mbr': p['mbr_actual'], 'version': p['version_actual'],
+                             'estado_mbr': p['estado_mbr_actual'], 'pasos': borrados},
+                      despues={'mbr': p['mbr_aprobado'], 'version': p['version_aprobada'],
+                               'pasos': nuevos},
+                      detalle='Trae el procedimiento aprobado al legajo abierto (ningún paso '
+                              'estaba ejecutado)')
+            hechos.append({'numero_op': p['numero_op'], 'producto': p['producto'],
+                           'de_v': p['version_actual'], 'a_v': p['version_aprobada'],
+                           'pasos_antes': borrados, 'pasos_ahora': nuevos})
+        except Exception as e:
+            conn.rollback()
+            log.warning('revincular MBR ebr=%s falló: %s', p['ebr_id'], e)
+            saltados.append({'numero_op': p['numero_op'], 'motivo': str(e)[:180]})
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'revinculados': hechos,
+                    'saltados': saltados, 'restante': _mbr_desactualizados(conn)})
 
 
 def _ebr_audit_rows(conn, ebr_id):

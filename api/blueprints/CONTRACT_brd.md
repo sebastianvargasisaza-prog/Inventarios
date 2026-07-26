@@ -296,3 +296,36 @@ concurrentes dejaban el EBR 'rechazado' con el PT ya promovido a VIGENTE
 - `_batch_role_info.verifica` ahora incluye `aseguramiento` → Miguel verifica igual que
   Calidad (Laura/Yuliel) y Director Técnico (Hernando), SIN cambiar el acceso a los
   módulos de cada rol (separación de cargos intacta).
+
+## 📕 El instructivo aprobado tiene que LLEGAR al legajo (26-jul)
+
+Sebastián había cargado el procedimiento real (fases, °C, hidratación, pH) en 27 de los 30 MBR
+aprobados y el operario seguía viendo 3 pasos genéricos de relleno. El instructivo existía; no
+llegaba al piso. Tres causas independientes:
+
+1. **`crear_ebr_desde_mbr` resolvía el MBR por nombre EXACTO** (case-sensitive). La fórmula dice
+   `BLUSH BALM` y el MBR está guardado `Blush Balm`; igual `SUERO EXFOLIANTE NOVA PHA` vs
+   `Suero Exfoliante Nova PHA` → `NO_MBR_APROBADO` → la orden nacía sin legajo y caía a "registro
+   simple". Ahora `UPPER(TRIM(...))` a ambos lados (M2) + `ORDER BY version DESC, id DESC` (sin el
+   desempate por id, dos MBR de la misma versión salen en orden no determinista en PG). **El gate
+   de EBR_MODE=strict en `programacion.py` usa el MISMO criterio** — si resolviera distinto,
+   bloquearía una producción cuyo MBR sí existe.
+2. **Los legajos ABIERTOS quedan colgados de la versión vieja** cuando se aprueba una nueva (la
+   anterior pasa a `obsoleto`). Herramienta: `GET /api/brd/mbr-desactualizados` (preview) +
+   `POST /api/brd/revincular-mbr` (`aplicar:true`). Reglas duras: nunca toca un legajo
+   liberado/rechazado/completado (mig 111); **nunca toca un legajo que ya ejecutó un paso** (eso
+   es una desviación que decide Calidad, no un ajuste automático); sólo reemplaza pasos en estado
+   `pendiente`, así que **una firma no se puede borrar**; CAS sobre `mbr_template_id` para que dos
+   clicks concurrentes no clonen los pasos dos veces; audit `REVINCULAR_MBR_EBR` antes del commit.
+3. **El paso de dispensación NO puede llevar un peso absoluto congelado.** El texto se escribe una
+   vez y sirve para lotes de cualquier tamaño: un lote de 10 kg mostraba
+   `Dispensar AGUA · 77,79 g` mientras la hoja de pesaje decía **7.779 g** — 100× de diferencia,
+   los dos números en el MISMO legajo (M5). Encima salía de `cantidad_g_por_lote`, columna
+   DERIVADA que puede quedar stale (M71) y relativa a la base de la FÓRMULA, no al lote. Ahora el
+   paso expresa el **porcentaje** y remite a la hoja de pesaje, que lo calcula desde la cantidad
+   real (M67).
+
+⚠ `mbr_pasos` de un MBR aprobado es INMUTABLE por trigger (UPDATE/DELETE/INSERT). Corregir el
+texto de un MBR ya aprobado exige obsoletar + versión nueva, nunca un UPDATE.
+
+Tests: `tests/test_mbr_instructivo_llega_al_piso.py`, `tests/test_revincular_mbr.py` (en el gate).

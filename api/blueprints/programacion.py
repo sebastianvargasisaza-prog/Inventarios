@@ -25032,8 +25032,12 @@ def planta_aceptar_produccion(produccion_id):
     # MBR (receta maestra) aprobado. Se evalúa ANTES de cualquier mutación.
     # Solo aplica con EBR_MODE='strict' (default 'off' no bloquea nada).
     if EBR_MODE == 'strict':
+        # Mismo criterio que `crear_ebr_desde_mbr` (26-jul · M2): si el gate resolviera el MBR
+        # distinto que quien lo crea, bloquearía una producción cuyo MBR SÍ existe, sólo porque
+        # el nombre está guardado con otras mayúsculas ('BLUSH BALM' vs 'Blush Balm').
         _mbr_ok = c.execute(
-            "SELECT 1 FROM mbr_templates WHERE producto_nombre=? AND estado='aprobado' LIMIT 1",
+            "SELECT 1 FROM mbr_templates WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+            "AND estado='aprobado' LIMIT 1",
             (producto,),
         ).fetchone()
         if not _mbr_ok:
