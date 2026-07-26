@@ -103,6 +103,48 @@ if [ "$MODE" = "--pg" ] || [ "$MODE" = "pg" ]; then
     echo ""
     exit 1
   fi
+
+  # ── RECREAR EL ESQUEMA ANTES DE CORRER (26-jul) ──────────────────────────────
+  # Por qué: la BD de PG local PERSISTE entre corridas, y 96 archivos de test siembran en las
+  # tablas del corazón SIN limpiar (QAFORMULA-*, CASEDUP SERUM, PROD-KGEDIT-X, QAB2B…). Con esa
+  # basura acumulada, `test_P6` (toda fórmula activa suma 95-101) y varios golden fallan CON EL
+  # CÓDIGO SANO. El 26-jul interpreté ese rojo como "rompí algo" tres veces seguidas antes de
+  # entender que era basura de corridas anteriores. Un gate que da rojo por su propia basura es
+  # peor que no tenerlo: enseña a ignorarlo.
+  # CI no lo sufre (contenedor nuevo cada vez); esto le da a local la MISMA garantía.
+  # El harness reconstruye todo solo: carga pg_schema.sql y auto-sana tablas/columnas faltantes.
+  case "$PGDATABASE" in
+    *test*|*TEST*) ;;
+    *)
+      echo ""
+      echo "❌ ABORTO: PGDATABASE='$PGDATABASE' no parece una base de TEST."
+      echo "   Este paso BORRA el esquema completo. Sólo corre contra una base con 'test' en el"
+      echo "   nombre, para que no exista forma de apuntarle a producción por accidente."
+      echo ""
+      exit 1
+      ;;
+  esac
+  PSQL_BIN="${PSQL_BIN:-}"
+  if [ -z "$PSQL_BIN" ]; then
+    if command -v psql &>/dev/null; then
+      PSQL_BIN="psql"
+    elif [ -x "C:/Users/sebas/pgdev/pg2/pgsql/bin/psql.exe" ]; then
+      PSQL_BIN="C:/Users/sebas/pgdev/pg2/pgsql/bin/psql.exe"
+    fi
+  fi
+  if [ -n "$PSQL_BIN" ]; then
+    echo "    esquema: recreando $PGDATABASE desde cero (evita basura de corridas anteriores)"
+    if ! "$PSQL_BIN" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -q \
+         -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1; then
+      echo "    ⚠ no se pudo recrear el esquema · el resultado puede traer basura acumulada"
+    fi
+  else
+    # Ruidoso a propósito: si no se pudo limpiar, quien lea el verde tiene que saber que el
+    # rojo/verde puede venir de datos viejos y no del código.
+    echo "    ⚠ psql NO encontrado · NO se recreó el esquema"
+    echo "      El resultado puede dar rojo por fixtures de corridas anteriores, no por tu código."
+    echo "      Definí PSQL_BIN=/ruta/psql para que el gate se limpie solo."
+  fi
   TESTS=("tests/test_golden_paths.py" "${CORAZON[@]}")
 elif [ "$MODE" = "--full" ] || [ "$MODE" = "full" ]; then
   TESTS=(

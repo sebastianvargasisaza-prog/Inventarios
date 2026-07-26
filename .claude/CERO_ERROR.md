@@ -1106,6 +1106,17 @@ tardé en ver que era un solo problema:
   filas huérfanas corrida tras corrida.
 - **`audit_log` no se limpia** (inmutable por trigger · Part 11) y no hace falta.
 - Antes de agregar un test al gate: `for i in 1 2 3; do pytest <archivo> ...; done` en modo PG.
+- **✅ RESUELTO EN LA HERRAMIENTA (26-jul): `guardian.sh --pg` RECREA el esquema antes de correr.**
+  Medido: **96 de los 203 archivos que siembran en las tablas del corazón no borran nada**, así que
+  la BD local acumulaba `QAFORMULA-*`, `CASEDUP SERUM`, `PROD-KGEDIT-X`, `QAB2B`… y con esa basura
+  `test_P6` y varios golden daban rojo **con el código sano**. Ahora el gate arranca de cero, igual
+  que CI (contenedor nuevo). Guard duro: **aborta si `PGDATABASE` no tiene 'test' en el nombre**, así
+  no hay forma de apuntarle a producción. Si no encuentra `psql`, avisa RUIDOSAMENTE que el
+  resultado puede venir de datos viejos (un verde que no se puede creer es peor que un rojo).
+  Verificado end-to-end: ensucié la base con 8 fórmulas fuera de rango, corrí el gate, se limpió
+  solo y dio 429 verde.
+  ⚠ Esto arregla la acumulación ENTRE corridas. DENTRO de una corrida el orden sigue importando:
+  que los 96 archivos limpien lo suyo queda como trabajo mecánico pendiente.
 
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 
