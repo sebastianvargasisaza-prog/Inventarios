@@ -14207,19 +14207,22 @@ def mee_crear():
         except Exception as _ae:
             import logging as _lg
             _lg.getLogger('inventario').warning('audit crear_mee fallo: %s', _ae)
-        # Partes del empaque (mig 298 · mee_partes) · Sebastián 28-jun · el envase se compone de gotero/tapa/plegadiza
+        # Partes del empaque (mig 298 · mee_partes) · el envase se compone de gotero/tapa/plegadiza.
+        # 26-jul: pasa por el helper ÚNICO. Antes insertaba directo, sin verificar que la pieza
+        # existiera en el maestro: un código mal tecleado creaba una pieza fantasma que el
+        # abastecimiento intentaba comprar y el envasado descontar, sin que nadie pudiera reponerla.
+        from audit_helpers import agregar_parte_envase as _add_parte
         _partes = d.get('partes') or []
+        _partes_rechazadas = []
         if isinstance(_partes, list):
             for _p in _partes:
-                _pcod = str((_p or {}).get('codigo') or '').strip().upper()
-                if not _pcod:
-                    continue
-                try:
-                    _pcant = float((_p or {}).get('cantidad') or 1)
-                except (ValueError, TypeError):
-                    _pcant = 1
-                c.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
-                          "VALUES (?,?,?,?,datetime('now','-5 hours'))", (codigo, _pcod, '', _pcant))
+                _ok, _motivo = _add_parte(
+                    c, envase=codigo, parte=(_p or {}).get('codigo'),
+                    descripcion=(_p or {}).get('descripcion') or '',
+                    cantidad=(_p or {}).get('cantidad') or 1, usuario=_u)
+                if not _ok and str((_p or {}).get('codigo') or '').strip():
+                    # no se traga en silencio: el alta sigue, pero el caller se entera de cuál falló
+                    _partes_rechazadas.append({'codigo': (_p or {}).get('codigo'), 'motivo': _motivo})
         # Alerta a las 2 de calidad · material nuevo por calificar (Nivel 1 · Sebastián 28-jun)
         try:
             from blueprints.notif import push_notif_multi
@@ -14234,7 +14237,11 @@ def mee_crear():
         conn.commit()
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-    return jsonify({'ok': True, 'codigo': codigo, 'message': f'Material {codigo} creado exitosamente'})
+    return jsonify({'ok': True, 'codigo': codigo,
+                    'message': f'Material {codigo} creado exitosamente',
+                    # las piezas que NO se pudieron declarar viajan en la respuesta: antes se
+                    # perdían en silencio y el envase quedaba sin su gotero sin que nadie supiera
+                    'partes_rechazadas': _partes_rechazadas})
 
 
 # ── Código MEE automático/consecutivo (como MP) · Sebastián 9-jul ──────────────
@@ -14272,7 +14279,8 @@ def mee_siguiente_codigo():
         return jsonify({'error': 'tipo inválido'}), 400
     conn = get_db(); c = conn.cursor()
     n = _siguiente_num_mee(c, pref)
-    return jsonify({'ok': True, 'codigo': 'MEE-%s-%03d' % (pref, n), 'categoria': _MEE_PREFIJOS[pref]})
+    return jsonify({'ok': True, 'codigo': 'MEE-%s-%03d' % (pref, n),
+                    'categoria': _MEE_PREFIJOS[pref]})
 
 
 @bp.route('/api/mee/crear-auto', methods=['POST'])
@@ -14317,21 +14325,20 @@ def mee_crear_auto():
     if not codigo:
         return jsonify({'error': 'No se pudo generar un código libre, reintentá'}), 500
     # partes (componentes) opcionales · igual que mee_crear
+    # 26-jul · por el helper ÚNICO. Antes insertaba directo y con `except: pass`: una pieza mal
+    # tecleada no se guardaba y NADIE se enteraba (M4), o entraba como código fantasma que el
+    # abastecimiento intentaría comprar y el envasado descontar sin que exista en el maestro.
+    from audit_helpers import agregar_parte_envase as _add_parte
     _partes = d.get('partes') or []
+    _partes_rechazadas = []
     if isinstance(_partes, list):
         for _p in _partes:
-            _pcod = str((_p or {}).get('codigo') or '').strip().upper()
-            if not _pcod:
-                continue
-            try:
-                _pcant = float((_p or {}).get('cantidad') or 1)
-            except (ValueError, TypeError):
-                _pcant = 1
-            try:
-                c.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
-                          "VALUES (?,?,?,?,?)", (codigo, _pcod, '', _pcant, _ts))
-            except Exception:
-                pass
+            _ok, _motivo = _add_parte(
+                c, envase=codigo, parte=(_p or {}).get('codigo'),
+                descripcion=(_p or {}).get('descripcion') or '',
+                cantidad=(_p or {}).get('cantidad') or 1, usuario=_u)
+            if not _ok and str((_p or {}).get('codigo') or '').strip():
+                _partes_rechazadas.append({'codigo': (_p or {}).get('codigo'), 'motivo': _motivo})
     try:
         from audit_helpers import audit_log as _al
         _al(c, usuario=_u, accion='CREAR_MEE_AUTO', tabla='maestro_mee', registro_id=codigo,
@@ -14350,7 +14357,11 @@ def mee_crear_auto():
     except Exception:
         pass
     conn.commit()
-    return jsonify({'ok': True, 'codigo': codigo, 'categoria': cat, 'message': f'Creado {codigo}'})
+    return jsonify({'ok': True, 'codigo': codigo, 'categoria': cat,
+                    'message': f'Creado {codigo}',
+                    # las piezas que NO se pudieron declarar viajan en la respuesta: antes el
+                    # `except: pass` las perdía y el envase quedaba sin su gotero en silencio
+                    'partes_rechazadas': _partes_rechazadas})
 
 
 @bp.route('/api/mee/partes', methods=['GET'])

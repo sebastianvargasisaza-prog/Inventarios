@@ -297,3 +297,66 @@ def registrar_documento(c, *, tipo_doc, url, entidad='MP', codigo='', producto_n
     except Exception as e:
         log.warning("registrar_documento falló (tipo=%s lote=%s): %s", tipo_doc, lote, e)
         return None
+
+
+def agregar_parte_envase(c, *, envase, parte, descripcion='', cantidad=1, usuario=''):
+    """Declara una PIEZA de un envase (`mee_partes`) · punto ÚNICO de escritura.
+
+    Sebastián 26-jul: *"revisa también si en inventario de MEE está bien montada la lógica para
+    agregar los envases con sus partes"*. Estaba escrita CUATRO veces y sólo una lo hacía bien:
+
+    | camino                         | validaba | dedupeaba | auditaba |
+    |--------------------------------|----------|-----------|----------|
+    | herramienta admin tapas+goteros| sí       | sí        | sí       |
+    | alta de envase nuevo           | NO       | NO        | no       |
+    | alta con código automático     | NO       | NO        | no (+ `except` mudo) |
+
+    Los dos del medio son el problema: **un código mal tecleado crea una pieza fantasma** que el
+    abastecimiento intenta comprar y el envasado intenta descontar, sin existir en el maestro y sin
+    que nadie pueda reponerla. Es el mismo patrón que costó caro con los códigos de MP (M1: nunca
+    inventar un material). Y uno tragaba el error en silencio, así que la pieza no se guardaba y
+    nadie se enteraba (M4).
+
+    Reglas, iguales para todos los que la llamen:
+      · la pieza tiene que EXISTIR en `maestro_mee`;
+      · no puede ser el propio envase;
+      · no se declara dos veces (descontaría el doble);
+      · cantidad > 0;
+      · queda en `audit_log` quién la declaró, porque cambia lo que se compra y lo que se descuenta
+        en todos los lotes futuros.
+
+    Returns:
+        (True, None) si quedó declarada · (False, motivo) si no. **Nunca lanza**: el caller decide
+        si el motivo es un 400 al usuario o una línea de log en una carga masiva.
+    """
+    env = (str(envase or '')).strip().upper()
+    par = (str(parte or '')).strip().upper()
+    if not env or not par:
+        return False, 'envase y pieza son obligatorios'
+    if par == env:
+        return False, 'un envase no puede ser pieza de sí mismo'
+    try:
+        cant = float(cantidad or 1)
+    except (TypeError, ValueError):
+        return False, 'cantidad inválida'
+    if cant <= 0:
+        return False, 'la cantidad debe ser mayor que cero'
+    try:
+        if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (par,)).fetchone():
+            return False, ("la pieza '%s' no existe en el maestro de envases · creala primero en "
+                           "Bodega MEE" % par)
+        if c.execute("SELECT 1 FROM mee_partes WHERE UPPER(TRIM(mee_codigo))=? "
+                     "AND UPPER(TRIM(COALESCE(parte_codigo,'')))=?", (env, par)).fetchone():
+            return False, 'esa pieza ya está declarada para este envase'
+        c.execute(
+            "INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
+            "VALUES (?,?,?,?, datetime('now','-5 hours'))",
+            (env, par, str(descripcion or '')[:120], cant))
+        audit_log(c, usuario=usuario or '', accion='AGREGAR_PARTE_ENVASE', tabla='mee_partes',
+                  registro_id=env,
+                  despues={'envase': env, 'parte': par, 'cantidad': cant,
+                           'descripcion': str(descripcion or '')[:120]})
+        return True, None
+    except Exception as e:
+        log.warning('agregar_parte_envase(%s, %s) falló: %s', env, par, e)
+        return False, 'no se pudo declarar la pieza: %s' % str(e)[:120]

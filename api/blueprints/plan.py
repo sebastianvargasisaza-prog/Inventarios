@@ -1029,6 +1029,34 @@ def admin_b2b_lote_desglose(lote_id):
     })
 
 
+def _envase_por_defecto_del_cliente(conn, cliente):
+    """El envase de un cliente, cuando NO hay ambigüedad. Devuelve '' si no se puede saber.
+
+    `clientes_b2b_envases` (mig 173, mayo) guarda qué envases usa cada cliente, pero se usaba sólo
+    para VALIDAR: si escribías uno que no era suyo lo rechazaba, y si no escribías nada, el pedido
+    entraba sin envase y ese cliente terminaba llevándose el frasco de ÁNIMUS sin que nadie lo
+    notara. Sebastián 26-jul: *"que jale el envase del cliente"*.
+
+    **Sólo auto-completa con UN único envase activo.** Con varios no adivina: elegir por él sería
+    poner un frasco equivocado en un pedido de cliente, que es peor que pedirle que elija. El
+    `cliente_id` de la whitelist se compara normalizado porque en el calendario el cliente llega
+    como texto libre.
+    """
+    c = (str(cliente or '')).strip()
+    if not c:
+        return ''
+    try:
+        filas = conn.execute(
+            "SELECT TRIM(envase_codigo) FROM clientes_b2b_envases "
+            "WHERE UPPER(TRIM(cliente_id))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+            "AND COALESCE(envase_codigo,'')<>''", (c,)).fetchall()
+    except Exception as e:
+        log.warning('_envase_por_defecto_del_cliente(%s) falló: %s', c, e)
+        return ''
+    codigos = sorted({(r[0] or '').strip().upper() for r in filas if (r[0] or '').strip()})
+    return codigos[0] if len(codigos) == 1 else ''
+
+
 @bp.route("/api/plan/lote/<int:lote_id>/agregar-cliente", methods=["POST"])
 def plan_lote_agregar_cliente(lote_id):
     """Sebastián 17-jul · Agregar OTRO CLIENTE a mano a un lote del Calendario, que SUMA
@@ -1044,6 +1072,14 @@ def plan_lote_agregar_cliente(lote_id):
     body = request.get_json(silent=True) or {}
     cliente = (str(body.get('cliente') or '')).strip()[:120]
     envase = (str(body.get('envase_codigo') or '')).strip()[:60]
+    if not envase and cliente:
+        # El envase del cliente SE SABE: `clientes_b2b_envases` lo guarda desde mayo. Pero sólo se
+        # usaba para VALIDAR (rechazar uno que no fuera suyo), nunca para SUGERIR — así que había
+        # que teclearlo pedido por pedido, y si alguien lo olvidaba ese cliente se llevaba en
+        # silencio el frasco de ÁNIMUS. Sebastián 26-jul: "que jale el envase del cliente".
+        # Sólo se auto-completa cuando NO hay ambigüedad (un único envase activo); con varios, la
+        # elección sigue siendo del usuario (M-adivinar-nunca).
+        envase = _envase_por_defecto_del_cliente(get_db(), cliente)
     try:
         kg = round(float(body.get('kg') or 0), 2)
     except Exception:

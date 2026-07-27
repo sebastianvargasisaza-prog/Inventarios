@@ -6694,22 +6694,16 @@ def brd_envase_agregar_parte(codigo):
     if cant <= 0:
         return jsonify({"error": "la cantidad debe ser mayor que cero"}), 400
     conn = get_db(); cur = conn.cursor()
-    # la pieza tiene que EXISTIR en el maestro: si no, se compraría y descontaría un código
-    # fantasma que nadie puede reponer (M1 · nunca inventar un material)
-    if not cur.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (parte,)).fetchone():
-        return jsonify({"error": "la pieza '%s' no existe en el maestro de envases · creala "
-                                 "primero en Bodega MEE" % parte, "codigo": "PIEZA_INEXISTENTE"}), 400
-    if parte == env:
-        return jsonify({"error": "un envase no puede ser pieza de sí mismo"}), 400
-    if cur.execute("SELECT 1 FROM mee_partes WHERE UPPER(TRIM(mee_codigo))=? "
-                   "AND UPPER(TRIM(COALESCE(parte_codigo,'')))=?", (env, parte)).fetchone():
-        return jsonify({"error": "esa pieza ya está declarada para este envase",
-                        "codigo": "YA_EXISTE"}), 409
-    cur.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
-                "VALUES (?,?,?,?, datetime('now','-5 hours'))", (env, parte, desc, cant))
-    audit_log(cur, usuario=user, accion="AGREGAR_PARTE_ENVASE", tabla="mee_partes",
-              registro_id=env, despues={"envase": env, "parte": parte, "cantidad": cant,
-                                        "descripcion": desc})
+    # el helper ÚNICO valida contra el maestro, no deja duplicar y audita · los 4 caminos que
+    # escriben `mee_partes` pasan por acá para que no vuelvan a divergir (M1)
+    from audit_helpers import agregar_parte_envase
+    ok, motivo = agregar_parte_envase(cur, envase=env, parte=parte, descripcion=desc,
+                                      cantidad=cant, usuario=user)
+    if not ok:
+        conn.rollback()
+        codigo_err = ("YA_EXISTE" if 'ya está declarada' in (motivo or '')
+                      else ("PIEZA_INEXISTENTE" if 'no existe' in (motivo or '') else "INVALIDO"))
+        return jsonify({"error": motivo, "codigo": codigo_err}), (409 if codigo_err == "YA_EXISTE" else 400)
     conn.commit()
     return jsonify({"ok": True, "envase": env, "parte": parte, "cantidad": cant}), 201
 
