@@ -96,6 +96,9 @@ CORAZON=(
   # El F01 escribe al kardex lo que Calidad verifica contra el envase (si no, el rotulo
   # sale con los datos viejos y el lote provisional nunca se puede liberar).
   "tests/test_f01_escribe_kardex.py"
+  # El desempeno del proveedor se DERIVA de las recepciones · incluye la regla de que una
+  # dimension sin dato va en gris y no en cero (si no, califica injusto).
+  "tests/test_proveedor_desempeno.py"
 )
 
 echo ""

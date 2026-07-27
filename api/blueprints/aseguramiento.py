@@ -30,6 +30,8 @@ from flask import Blueprint, jsonify, request, session, Response
 
 from database import get_db
 from config import ADMIN_USERS, CALIDAD_USERS, COMPRAS_USERS
+# El "hoy" del negocio va anclado a Colombia, no al UTC del server (M24).
+from tz_colombia import hoy_colombia as _hoy_col
 from audit_helpers import (
     audit_log as _audit_log_global,
     intentar_insert_con_retry as _retry_global,
@@ -3344,6 +3346,209 @@ def revision_direccion_ejecutar(rid):
 
 
 # --- (b) CALIFICACIÓN DE PROVEEDORES (reusa proveedores + scorecard de compras) ---
+# ════════════════════════════════════════════════════════════════════════════════
+# DESEMPEÑO DEL PROVEEDOR · derivado de la recepción, no tecleado
+# ════════════════════════════════════════════════════════════════════════════════
+# Sebastián 27-jul, sobre la pantalla de Calidad: "todo esto debe sumarse a la calificación del
+# proveedor".
+#
+# `proveedores_calificacion` es la parte de GOBIERNO (criticidad, certificaciones, visitas) y se
+# llena a mano. Lo que faltaba es el DESEMPEÑO, y ese no se teclea: EOS ya registra los hechos en
+# cada recepción. Un indicador que alguien tiene que recordar actualizar termina viejo y deja de
+# mirarse; uno derivado siempre dice la verdad de hoy.
+#
+# Las cinco dimensiones salen de datos que ya existen:
+#   · CANTIDAD      · lo pedido vs lo que realmente entró (`ordenes_compra_items`)
+#   · PUNTUALIDAD   · fecha de entrega estimada vs fecha de recepción real
+#   · DOCUMENTACIÓN · los 6 criterios del F01 (rotulado, empaque, MSDS, ficha, CoA, coincide)
+#   · CALIDAD       · resultado del F01/F02 conforme vs no conforme
+#   · TRAZABILIDAD  · ¿mandó el lote real, o quedó el provisional 'OC-...'?
+#
+# El puntaje es un promedio de las dimensiones que TIENEN dato: un proveedor sin F01 todavía no
+# tiene nota de documentación, y meterle un 0 lo castigaría por algo que no hizo mal (M33: un KPI
+# sin denominador va en gris, no en rojo).
+
+_DESEMPENO_DIMS = ('cantidad', 'puntualidad', 'documentacion', 'calidad', 'trazabilidad')
+_F01_CRITERIOS = ('crit_rotulado', 'crit_empaque', 'crit_hoja_seguridad',
+                  'crit_ficha_tecnica', 'crit_coa', 'crit_doc_coincide')
+
+
+def _es_si(v):
+    """El F01 guarda los criterios como texto libre ('si'/'Sí'/'ok'/'1')."""
+    return str(v or '').strip().lower() in ('si', 'sí', 'ok', '1', 'true', 'conforme', 'cumple')
+
+
+def _desempeno_proveedores(conn, desde=None, hasta=None):
+    """Calcula el desempeño de cada proveedor a partir de sus recepciones. Read-only."""
+    c = conn.cursor()
+    desde = desde or (_hoy_col() - timedelta(days=365)).isoformat()
+    hasta = hasta or _hoy_col().isoformat()
+    prov = {}
+
+    def _p(nombre):
+        k = str(nombre or '').strip()
+        if not k:
+            return None
+        if k not in prov:
+            prov[k] = {'proveedor': k, 'ocs': 0, 'ocs_a_tiempo': 0, 'ocs_con_fecha': 0,
+                       'items': 0, 'items_completos': 0, 'g_pedidos': 0.0, 'g_recibidos': 0.0,
+                       'f01': 0, 'f01_conforme': 0, 'crit_ok': 0, 'crit_total': 0,
+                       'lote_real': 0, 'lote_provisional': 0, 'nc': 0, 'dias_atraso_total': 0}
+        return prov[k]
+
+    # ── CANTIDAD y PUNTUALIDAD · de las OC ya recibidas ──────────────────────────
+    filas = c.execute(
+        "SELECT oc.numero_oc, COALESCE(oc.proveedor,''), COALESCE(oc.fecha,''), "
+        "       COALESCE(oc.fecha_entrega_est,''), COALESCE(oc.fecha_recepcion,'') "
+        "FROM ordenes_compra oc "
+        "WHERE COALESCE(oc.fecha_recepcion,'') <> '' "
+        "  AND substr(oc.fecha_recepcion,1,10) >= ? AND substr(oc.fecha_recepcion,1,10) <= ?",
+        (desde, hasta)).fetchall()
+    for numero, proveedor, f_oc, f_est, f_rec in filas:
+        p = _p(proveedor)
+        if p is None:
+            continue
+        p['ocs'] += 1
+        # Puntualidad sólo si la OC tenía fecha prometida: sin promesa no hay incumplimiento.
+        if (f_est or '').strip() and (f_rec or '').strip():
+            p['ocs_con_fecha'] += 1
+            try:
+                _d = (date.fromisoformat(f_rec[:10]) - date.fromisoformat(f_est[:10])).days
+                if _d <= 0:
+                    p['ocs_a_tiempo'] += 1
+                else:
+                    p['dias_atraso_total'] += _d
+            except (ValueError, TypeError):
+                p['ocs_con_fecha'] -= 1        # fecha ilegible: no cuenta ni a favor ni en contra
+        for cod, ped, rec in c.execute(
+                "SELECT COALESCE(codigo_mp,''), COALESCE(cantidad_g,0), "
+                "       COALESCE(cantidad_recibida_g,0) FROM ordenes_compra_items "
+                "WHERE numero_oc=?", (numero,)).fetchall():
+            ped_f, rec_f = float(ped or 0), float(rec or 0)
+            if ped_f <= 0:
+                continue
+            p['items'] += 1
+            p['g_pedidos'] += ped_f
+            p['g_recibidos'] += rec_f
+            # "Completo" con la misma tolerancia de pesaje que usa la recepción (5%).
+            if rec_f >= ped_f * 0.95:
+                p['items_completos'] += 1
+
+    # ── DOCUMENTACIÓN, CALIDAD y TRAZABILIDAD · de los F01 ───────────────────────
+    _cols = ', '.join('COALESCE(%s,\'\')' % k for k in _F01_CRITERIOS)
+    for fila in c.execute(
+            "SELECT COALESCE(proveedor,''), COALESCE(resultado,''), COALESCE(lote_proveedor,''), "
+            + _cols + " FROM recepcion_tecnica_doc "
+            "WHERE COALESCE(anulado,0)=0 "
+            "  AND substr(COALESCE(fecha_recepcion,creado_en),1,10) >= ? "
+            "  AND substr(COALESCE(fecha_recepcion,creado_en),1,10) <= ?",
+            (desde, hasta)).fetchall():
+        p = _p(fila[0])
+        if p is None:
+            continue
+        p['f01'] += 1
+        if str(fila[1] or '').strip().lower() in ('conforme', 'aprobado'):
+            p['f01_conforme'] += 1
+        _lp = str(fila[2] or '').strip()
+        # El lote provisional lo pone EOS cuando el proveedor no lo mandó: es un dato de él.
+        if _lp and not _lp.upper().startswith('OC-'):
+            p['lote_real'] += 1
+        else:
+            p['lote_provisional'] += 1
+        for v in fila[3:]:
+            p['crit_total'] += 1
+            if _es_si(v):
+                p['crit_ok'] += 1
+
+    # ── NO CONFORMIDADES de material (rechazos) ──────────────────────────────────
+    # `no_conformidades` no guarda el proveedor, así que se cruza por el lote/código con el F01.
+    try:
+        for _lote, _cod in c.execute(
+                "SELECT COALESCE(lote,''), COALESCE(codigo_mp,'') FROM no_conformidades "
+                "WHERE substr(COALESCE(fecha,''),1,10) >= ? AND substr(COALESCE(fecha,''),1,10) <= ?",
+                (desde, hasta)).fetchall():
+            if not (_lote or _cod):
+                continue
+            _pr = c.execute(
+                "SELECT COALESCE(proveedor,'') FROM recepcion_tecnica_doc "
+                "WHERE COALESCE(anulado,0)=0 AND (lote=? OR lote_proveedor=?) "
+                "  AND (?='' OR codigo_insumo=?) ORDER BY id DESC LIMIT 1",
+                (_lote, _lote, _cod, _cod)).fetchone()
+            if _pr and (_pr[0] or '').strip():
+                _p(_pr[0])['nc'] += 1
+    except Exception as e:
+        # Un chequeo que falla NO puede verse igual que uno limpio (M100): se reporta abajo.
+        log.warning('desempeño proveedores · no_conformidades no se pudo cruzar: %s', e)
+
+    def _pct(num, den):
+        return None if not den else round(100.0 * num / den, 1)
+
+    salida = []
+    for p in prov.values():
+        dims = {
+            'cantidad':     _pct(p['items_completos'], p['items']),
+            'puntualidad':  _pct(p['ocs_a_tiempo'], p['ocs_con_fecha']),
+            'documentacion': _pct(p['crit_ok'], p['crit_total']),
+            'calidad':      _pct(p['f01_conforme'], p['f01']),
+            'trazabilidad': _pct(p['lote_real'], p['lote_real'] + p['lote_provisional']),
+        }
+        con_dato = [v for v in dims.values() if v is not None]
+        p['dimensiones'] = dims
+        # Promedio sólo de lo que tiene dato: un proveedor sin F01 todavía no tiene nota de
+        # documentación, y ponerle 0 lo castigaría por algo que no hizo mal.
+        p['puntaje'] = round(sum(con_dato) / len(con_dato), 1) if con_dato else None
+        p['dims_con_dato'] = len(con_dato)
+        p['atraso_promedio_dias'] = (round(p['dias_atraso_total'] / max(1, p['ocs_con_fecha'] - p['ocs_a_tiempo']), 1)
+                                     if p['ocs_con_fecha'] > p['ocs_a_tiempo'] else 0)
+        if p['puntaje'] is None:
+            p['semaforo'] = 'gris'
+        elif p['puntaje'] >= 90 and p['nc'] == 0:
+            p['semaforo'] = 'verde'
+        elif p['puntaje'] >= 75:
+            p['semaforo'] = 'amarillo'
+        else:
+            p['semaforo'] = 'rojo'
+        salida.append(p)
+    # Peor primero: es la lista de con quién hay que hablar.
+    salida.sort(key=lambda x: (x['puntaje'] if x['puntaje'] is not None else 999, -x['nc']))
+    return salida, {'desde': desde, 'hasta': hasta}
+
+
+@bp.route('/api/aseguramiento/proveedores-desempeno', methods=['GET'])
+def proveedores_desempeno():
+    """Desempeño de cada proveedor calculado de sus recepciones (read-only)."""
+    u = session.get('compras_user', '')
+    if not u:
+        return jsonify({'error': 'No autorizado'}), 401
+    if u not in (_autorizados_escritura() | set(CALIDAD_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'No autorizado'}), 403
+    conn = get_db()
+    desde = (request.args.get('desde') or '').strip() or None
+    hasta = (request.args.get('hasta') or '').strip() or None
+    filas, rango = _desempeno_proveedores(conn, desde, hasta)
+    # El estado de gobierno de cada uno, para verlos juntos (la nota sin el estado no decide nada)
+    gob = {}
+    try:
+        for r in conn.execute("SELECT proveedor, estado, criticidad FROM proveedores_calificacion").fetchall():
+            gob[str(r[0] or '').strip()] = {'estado': r[1], 'criticidad': r[2]}
+    except Exception as e:
+        log.warning('desempeño · no se pudo leer proveedores_calificacion: %s', e)
+    for f in filas:
+        g = gob.get(f['proveedor']) or {}
+        f['estado_calificacion'] = g.get('estado') or 'sin_calificar'
+        f['criticidad'] = g.get('criticidad') or ''
+    return jsonify({
+        'ok': True, 'rango': rango, 'proveedores': filas,
+        'resumen': {
+            'n': len(filas),
+            'rojos': sum(1 for f in filas if f['semaforo'] == 'rojo'),
+            'con_nc': sum(1 for f in filas if f['nc'] > 0),
+            'sin_calificar': sum(1 for f in filas if f['estado_calificacion'] == 'sin_calificar'),
+        },
+        'dimensiones': list(_DESEMPENO_DIMS),
+    })
+
+
 @bp.route('/api/aseguramiento/proveedores-calificacion', methods=['GET', 'POST'])
 def proveedores_calificacion():
     if 'compras_user' not in session:

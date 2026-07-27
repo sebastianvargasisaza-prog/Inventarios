@@ -801,6 +801,21 @@ code{background:var(--cx-border-soft);padding:1px 6px;border-radius:3px;font-fam
   <!-- (prov) Calificación de proveedores -->
   <div id="gob-prov" class="gob-pane" style="display:none">
     <div class="kpi-row" id="gob-prov-kpis" style="margin-bottom:12px"></div>
+
+    <!-- Desempeño calculado de la recepción · el texto de abajo ya lo prometia y no existia -->
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">📊 Desempeño real (sale de las recepciones)</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input id="gob-des-desde" type="date" style="padding:5px 8px;border:1px solid var(--cx-border);border-radius:4px">
+          <input id="gob-des-hasta" type="date" style="padding:5px 8px;border:1px solid var(--cx-border);border-radius:4px">
+          <button class="btn btn-sm" onclick="gobLoadDesempeno()">Actualizar</button>
+        </div>
+      </div>
+      <div style="font-size:0.8em;color:var(--cx-text-mute);margin-bottom:8px">Nada de esto se teclea: se calcula de lo que ya quedó registrado al recibir. Cantidad (pedido vs recibido) &middot; puntualidad (fecha prometida vs real) &middot; documentación (los 6 criterios del F01) &middot; calidad (F01 conforme) &middot; trazabilidad (¿mandó el lote real?). Una dimensión sin dato queda en gris, no en cero.</div>
+      <div id="gob-des-list"><p class="empty">Cargando...</p></div>
+    </div>
+
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px">
         <div class="card-title" style="margin:0">🏭 Proveedores (maestro de Compras + calificación AC)</div>
@@ -3134,7 +3149,74 @@ async function gobEjecutarRevision(id){
   }catch(e){ toast('Error red: '+e.message,'error'); }
 }
 
-// ── (prov) Calificación de proveedores ───────────────────────────────
+// ── (prov) Desempeño real · derivado de las recepciones ──────────────
+function _desCel(v){
+  // Una dimension SIN dato va en gris con un guion, nunca en 0: poner cero castigaria al
+  // proveedor por algo que no hizo mal (un proveedor sin F01 aun no tiene nota de documentacion).
+  if (v === null || v === undefined) {
+    return '<td style="text-align:center;color:var(--cx-text-mute)" title="Todavia sin dato">-</td>';
+  }
+  var col = v >= 90 ? 'var(--cx-success-text)' : v >= 75 ? 'var(--cx-warn-text)' : 'var(--cx-danger-text)';
+  return '<td style="text-align:center;color:'+col+';font-weight:700">'+v+'%</td>';
+}
+async function gobLoadDesempeno(){
+  try{
+    var qs = [];
+    var d1 = document.getElementById('gob-des-desde');
+    var d2 = document.getElementById('gob-des-hasta');
+    if (d1 && d1.value) qs.push('desde=' + d1.value);
+    if (d2 && d2.value) qs.push('hasta=' + d2.value);
+    var r = await fetch('/api/aseguramiento/proveedores-desempeno' + (qs.length ? '?' + qs.join('&') : ''),
+                        {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    var rows = d.proveedores || [];
+    if(!rows.length){
+      document.getElementById('gob-des-list').innerHTML =
+        '<p class="empty">Sin recepciones en el rango. El desempeño aparece cuando hay OC recibidas.</p>';
+      return;
+    }
+    var sem = {verde:'var(--cx-success-text)', amarillo:'var(--cx-warn-text)',
+               rojo:'var(--cx-danger-text)', gris:'var(--cx-text-mute)'};
+    var html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.85em">'
+      + '<thead><tr>'
+      + '<th style="text-align:left">Proveedor</th><th style="text-align:center">Nota</th>'
+      + '<th style="text-align:center">Cantidad</th><th style="text-align:center">Puntualidad</th>'
+      + '<th style="text-align:center">Documentos</th><th style="text-align:center">Calidad</th>'
+      + '<th style="text-align:center">Trazabilidad</th>'
+      + '<th style="text-align:center">OC</th><th style="text-align:center">Atraso</th>'
+      + '<th style="text-align:center">NC</th><th style="text-align:left">Calificación</th>'
+      + '</tr></thead><tbody>';
+    rows.forEach(function(p){
+      var dm = p.dimensiones || {};
+      var nota = (p.puntaje === null || p.puntaje === undefined)
+        ? '<span style="color:var(--cx-text-mute)">sin dato</span>'
+        : '<span style="color:'+(sem[p.semaforo]||'')+';font-weight:800;font-size:1.05em">'+p.puntaje+'%</span>';
+      html += '<tr style="border-top:1px solid var(--cx-border)">'
+        + '<td style="font-weight:600">'+_esc(p.proveedor)+'</td>'
+        + '<td style="text-align:center">'+nota+'</td>'
+        + _desCel(dm.cantidad) + _desCel(dm.puntualidad) + _desCel(dm.documentacion)
+        + _desCel(dm.calidad) + _desCel(dm.trazabilidad)
+        + '<td style="text-align:center">'+(p.ocs||0)+'</td>'
+        + '<td style="text-align:center">'+(p.atraso_promedio_dias ? p.atraso_promedio_dias+'d' : '-')+'</td>'
+        + '<td style="text-align:center;'+((p.nc||0)>0?'color:var(--cx-danger-text);font-weight:700':'')+'">'+(p.nc||0)+'</td>'
+        + '<td>'+_provEstadoBadge(p.estado_calificacion === 'sin_calificar' ? '' : p.estado_calificacion)
+        + (p.estado_calificacion === 'sin_calificar' ? '<span style="color:var(--cx-warn-text)">sin calificar</span>' : '')
+        + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    var s2 = d.resumen || {};
+    if ((s2.rojos||0) || (s2.sin_calificar||0)) {
+      html += '<div style="margin-top:8px;font-size:0.82em;color:var(--cx-text-soft)">'
+        + (s2.rojos||0) + ' proveedor(es) por debajo de 75% &middot; '
+        + (s2.con_nc||0) + ' con no conformidades &middot; '
+        + (s2.sin_calificar||0) + ' sin calificación de gobierno.</div>';
+    }
+    document.getElementById('gob-des-list').innerHTML = html;
+  }catch(e){ _gobErr('gob-des-list', e); }
+}
+
+// ── (prov) Calificación de proveedores ───────────────────────────────────
 async function gobLoadProv(){
   try{
     var r = await fetch('/api/aseguramiento/proveedores-calificacion', {credentials:'same-origin'});
@@ -3149,6 +3231,7 @@ async function gobLoadProv(){
       '<div class="kpi"><div class="kpi-label">Críticos</div><div class="kpi-val">'+(s.criticos||0)+'</div></div>'+
       '<div class="kpi"><div class="kpi-label">Reeval. vencida</div><div class="kpi-val '+((s.reevaluacion_vencida||0)>0?'crit':'good')+'">'+(s.reevaluacion_vencida||0)+'</div></div>';
     gobRenderProv();
+    gobLoadDesempeno();   // el desempeño se ve al lado de la calificación, no en otra pantalla
   }catch(e){ _gobErr('gob-prov-list', e); }
 }
 function _provEstadoBadge(est){
