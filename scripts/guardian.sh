@@ -69,6 +69,7 @@ CORAZON=(
   "tests/test_deuda_diseno_no_crece.py"
   "tests/test_envasado_lista_premium.py"
   "tests/test_despeje_orden_mybatch.py"
+  "tests/test_diag_envases_partes.py"
   "tests/test_legajo_trazabilidad_responsables.py"
   "tests/test_inci_ambiguos.py"
   "tests/test_cron_mee_cuarentena.py"

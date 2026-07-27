@@ -15339,6 +15339,135 @@ def _envases_kardex_mp_plan(c, solo_codigos=None):
     return sorted(por_codigo.values(), key=lambda x: -x['uds_total'])
 
 
+@bp.route("/api/admin/diag-envases-partes", methods=["GET"])
+def admin_diag_envases_partes():
+    """Diagnóstico SOLO LECTURA de la cadena del envase (Sebastián 26-jul).
+
+    *"revisemos cómo está el inventario de envase, si realmente trae el envase con sus partes, y
+    todo lo está juntando, si en necesidades y calendario cuando calcula abastecimiento jala esos
+    envases, y finalmente los pone disponibles en envasado."*
+
+    Lo que mide, y por qué importa: hay DOS mecanismos para "las partes de un envase" y no se
+    hablan entre sí.
+      · `mee_partes` (frasco → gotero/tapa) lo lee el ABASTECIMIENTO: compra el frasco con sus
+        componentes.
+      · `producto_presentaciones.tapa_codigo/caja_codigo` lo lee el ENVASADO al cerrar: es lo que
+        DESCUENTA del kardex.
+    Cuando una parte está en el primero y no en el segundo, **se compra y nunca se descuenta**: el
+    stock de goteros crece en el papel y no baja nunca. Es el patrón M55/M73 otra vez ("lo que se
+    compra tiene que ser lo que se descuenta"), ahora entre estas dos tablas.
+
+    No escribe nada. Sirve para dimensionar el arreglo antes de tocar código.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    out = {"ok": True}
+    fallos = []            # un diagnóstico con un chequeo caído DEBE declararlo (M100)
+
+    def _chk(nombre, fn):
+        try:
+            return fn()
+        except Exception as e:
+            fallos.append({"chequeo": nombre, "error": str(e)[:180]})
+            return None
+
+    # 1 · El maestro de envases: cuántos hay, cuántos tienen FOTO (mig 298 la pidió obligatoria
+    #     al ingresar; la 304 borró las de Shopify porque el match no era confiable).
+    def _maestro():
+        r = c.execute(
+            "SELECT COUNT(*), "
+            "SUM(CASE WHEN COALESCE(imagen_url,'')<>'' THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN COALESCE(volumen_ml,0)>0 THEN 1 ELSE 0 END) "
+            "FROM maestro_mee WHERE COALESCE(estado,'')='Activo'").fetchone()
+        tot = int(r[0] or 0); con_foto = int(r[1] or 0)
+        return {"activos": tot, "con_foto": con_foto, "sin_foto": tot - con_foto,
+                "con_volumen": int(r[2] or 0)}
+    out["maestro"] = _chk("maestro", _maestro)
+
+    # 2 · Partes por envase (lo que el abastecimiento arrastra)
+    def _partes():
+        filas = c.execute(
+            "SELECT UPPER(TRIM(mee_codigo)), UPPER(TRIM(COALESCE(parte_codigo,''))), "
+            "COALESCE(descripcion,''), COALESCE(cantidad,1) FROM mee_partes").fetchall()
+        por_envase = {}
+        for f in filas:
+            por_envase.setdefault(f[0], []).append(
+                {"parte": f[1], "descripcion": f[2], "cantidad": float(f[3] or 1)})
+        return {"envases_con_partes": len(por_envase), "partes_totales": len(filas),
+                "detalle": por_envase}
+    out["partes"] = _chk("partes", _partes)
+
+    # 3 · Presentaciones (lo que el envasado descuenta)
+    def _pres():
+        filas = c.execute(
+            "SELECT COALESCE(producto_nombre,''), COALESCE(presentacion_codigo,''), "
+            "COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), COALESCE(caja_codigo,'') "
+            "FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall()
+        sin_envase, sin_tapa, sin_caja = [], [], []
+        for f in filas:
+            etiqueta = "%s · %s" % (f[0], f[1])
+            if not (f[2] or "").strip():
+                sin_envase.append(etiqueta)
+            if not (f[3] or "").strip():
+                sin_tapa.append(etiqueta)
+            if not (f[4] or "").strip():
+                sin_caja.append(etiqueta)
+        return {"activas": len(filas), "sin_envase": sin_envase,
+                "sin_tapa": len(sin_tapa), "sin_caja": len(sin_caja),
+                "sin_tapa_detalle": sin_tapa[:40], "sin_caja_detalle": sin_caja[:40]}
+    out["presentaciones"] = _chk("presentaciones", _pres)
+
+    # 4 · EL CRUCE QUE IMPORTA · partes que se COMPRAN y no se DESCUENTAN
+    def _huerfanas():
+        partes = (out.get("partes") or {}).get("detalle") or {}
+        filas = c.execute(
+            "SELECT COALESCE(producto_nombre,''), COALESCE(presentacion_codigo,''), "
+            "UPPER(TRIM(COALESCE(envase_codigo,''))), UPPER(TRIM(COALESCE(tapa_codigo,''))), "
+            "UPPER(TRIM(COALESCE(caja_codigo,''))) "
+            "FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall()
+        casos = []
+        for f in filas:
+            env = f[2]
+            if not env:
+                continue
+            descontados = {x for x in (f[3], f[4]) if x}
+            for p in partes.get(env, []):
+                if p["parte"] and p["parte"] not in descontados:
+                    casos.append({
+                        "producto": f[0], "presentacion": f[1], "envase": env,
+                        "parte_que_se_compra": p["parte"],
+                        "descripcion": p["descripcion"],
+                        "se_descuenta": False,
+                    })
+        return casos
+    out["se_compra_y_no_se_descuenta"] = _chk("cruce", _huerfanas)
+
+    # 5 · Productos que se planean pero no tienen presentación (el envasado no sabe qué frasco usar)
+    def _sin_pres():
+        return [r[0] for r in c.execute(
+            "SELECT DISTINCT UPPER(TRIM(fh.producto_nombre)) FROM formula_headers fh "
+            "WHERE COALESCE(fh.activo,1)=1 AND UPPER(TRIM(fh.producto_nombre)) NOT IN "
+            "(SELECT UPPER(TRIM(COALESCE(producto_nombre,''))) FROM producto_presentaciones "
+            " WHERE COALESCE(activo,1)=1) ORDER BY 1").fetchall()]
+    out["productos_activos_sin_presentacion"] = _chk("sin_presentacion", _sin_pres)
+
+    _cruce = out.get("se_compra_y_no_se_descuenta") or []
+    out["resumen"] = {
+        "partes_huerfanas": len(_cruce),
+        "presentaciones_sin_tapa": (out.get("presentaciones") or {}).get("sin_tapa"),
+        "envases_sin_foto": (out.get("maestro") or {}).get("sin_foto"),
+        "productos_sin_presentacion": len(out.get("productos_activos_sin_presentacion") or []),
+    }
+    out["checks_fallidos"] = fallos
+    out["ok"] = not fallos
+    if fallos:
+        out["aviso"] = ("%d chequeo(s) no corrieron · los conteos de abajo están INCOMPLETOS"
+                        % len(fallos))
+    return jsonify(out)
+
+
 @bp.route("/api/admin/envases-kardex-mp", methods=["GET"])
 def admin_envases_kardex_mp_preview():
     """Vista previa: envases que quedaron dentro del kardex de materia prima."""

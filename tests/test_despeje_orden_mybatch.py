@@ -12,16 +12,13 @@ este archivo existe para vigilar: `ebr_despeje_items` referencia por `item_idx`,
 menor a 30 grados · Sí" pasaría a decir "El área está libre... · Sí" — eso es falsificar un
 registro regulado (Part 11), y no lo detecta ningún test de los que ya existían.
 """
-import os
-import sys
-
-# conftest agrega `api/` al path recién dentro del fixture `app`, así que los tests que sólo miran
-# la CONSTANTE (sin BD · más rápidos y deterministas · M103) no lo tendrían. Se agrega acá.
-_API = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'api')
-if _API not in sys.path:
-    sys.path.insert(0, _API)
-
-from blueprints.brd import DESPEJE_LINEA_ITEMS, despeje_checklist   # noqa: E402
+# ⚠ NADA de importar `blueprints.*` a nivel de módulo. pytest IMPORTA TODOS los archivos de test
+# antes de correr el primero, y los blueprints ejecutan DDL al importarse: hacerlo acá arriba
+# inicializa la base ANTES de que el harness la prepare y envenena la corrida entera. Este archivo
+# fue el único del set del corazón que lo hacía y volvió rojo al gate completo, mientras que en
+# aislamiento pasaba perfecto. El resto de los archivos importan DENTRO de cada test por esta misma
+# razón. Los tests que sólo miran la constante piden igual el fixture `app` para que el orden de
+# inicialización sea el mismo que el de todos los demás.
 
 # El orden EXACTO de MyBatch (capturas del 26-jul-2026, OF-2026-77).
 ORDEN_MYBATCH = [
@@ -40,8 +37,9 @@ ORDEN_MYBATCH = [
 ]
 
 
-def test_el_orden_es_el_de_mybatch():
+def test_el_orden_es_el_de_mybatch(app):
     """Si alguien reordena la lista, esto lo caza. El orden es el procedimiento."""
+    from blueprints.brd import DESPEJE_LINEA_ITEMS
     assert len(DESPEJE_LINEA_ITEMS) == 12, (
         'MyBatch tiene 12 verificaciones, EOS tiene %d' % len(DESPEJE_LINEA_ITEMS))
     for i, marca in enumerate(ORDEN_MYBATCH):
@@ -50,19 +48,22 @@ def test_el_orden_es_el_de_mybatch():
             % (i + 1, marca, DESPEJE_LINEA_ITEMS[i][:60]))
 
 
-def test_lo_primero_es_que_no_quede_nada_del_producto_anterior():
+def test_lo_primero_es_que_no_quede_nada_del_producto_anterior(app):
     """El corazón del despeje. Estaba de último."""
+    from blueprints.brd import DESPEJE_LINEA_ITEMS
     assert 'libre de materias primas' in DESPEJE_LINEA_ITEMS[0]
     assert 'producto anterior' in DESPEJE_LINEA_ITEMS[0]
 
 
-def test_el_epp_va_al_final():
+def test_el_epp_va_al_final(app):
     """Lo último antes de arrancar es el EPP de quien trabaja. Estaba de segundo."""
+    from blueprints.brd import DESPEJE_LINEA_ITEMS
     assert 'EPP' in DESPEJE_LINEA_ITEMS[-1]
 
 
-def test_el_item_de_temperatura_ya_no_esta():
+def test_el_item_de_temperatura_ya_no_esta(app):
     """MyBatch no lo tiene · las condiciones ambientales las cubren los ítems 9 y 10."""
+    from blueprints.brd import DESPEJE_LINEA_ITEMS
     assert not any('emperatura' in t for t in DESPEJE_LINEA_ITEMS), DESPEJE_LINEA_ITEMS
 
 
@@ -94,6 +95,7 @@ def _ebr_de_prueba(producto):
 def test_un_item_ya_firmado_conserva_SU_texto_aunque_la_lista_cambie(app):
     """La regla dura de Part 11: lo que se muestra de un ítem registrado es el texto que el
     operario tenía delante cuando firmó, no el que hoy ocupe esa posición en la constante."""
+    from blueprints.brd import DESPEJE_LINEA_ITEMS, despeje_checklist
     with app.app_context():
         eid, conn = _ebr_de_prueba('DESPEJE TEXTO VIEJO')
         conn.execute(
@@ -113,6 +115,7 @@ def test_un_item_ya_firmado_conserva_SU_texto_aunque_la_lista_cambie(app):
 def test_un_item_retirado_del_procedimiento_no_desaparece_del_lote(app):
     """Un registro regulado no se borra porque el procedimiento haya cambiado después. La mig 381
     manda el ítem retirado al índice 100; tiene que seguir viéndose, al final y marcado."""
+    from blueprints.brd import despeje_checklist
     with app.app_context():
         eid, conn = _ebr_de_prueba('DESPEJE ITEM RETIRADO')
         conn.execute(
@@ -129,9 +132,10 @@ def test_un_item_retirado_del_procedimiento_no_desaparece_del_lote(app):
     assert all(not f['historico'] for f in filas[:12])
 
 
-def test_el_remapeo_de_la_migracion_es_la_inversion_exacta():
+def test_el_remapeo_de_la_migracion_es_la_inversion_exacta(app):
     """El mapa viejo->nuevo de la mig 381 (nuevo = 12 - viejo) tiene que dejar cada texto en su
     posición de MyBatch. Se verifica contra la lista VIEJA, escrita acá tal como estaba."""
+    from blueprints.brd import DESPEJE_LINEA_ITEMS
     vieja = [
         "Temperatura menor a 30 grados",
         "¿Cuenta con los EPP requeridos para el proceso?",
