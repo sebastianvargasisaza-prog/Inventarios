@@ -475,3 +475,29 @@ el número de lote físico vive en `ebr_ejecuciones.lote_codigo`.
 Estado al 26-jul: 21 sin vencimiento (12 en cuarentena) · 62 sin ubicación (47 en cuarentena) ·
 30 MPs sin INCI (1 con stock) · 1 producción en curso sin legajo (`PROD-03764` ESENCIA ILUMINADORA,
 producto ya descontinuado, trabada desde el 30-jun).
+
+
+## 🔬 El F01 escribe al kardex lo que Calidad verifica contra el envase (27-jul)
+
+Sebastián: *"Calidad allí hace la recepción, deben poder poner todos los datos de su F01 pero a
+la vez editar el rótulo en todos los pasos de la recepción"*.
+
+El F01 ya pedía lote real, cantidad pesada y vencimiento, pero los guardaba **sólo en
+`recepcion_tecnica_doc`**: el kardex se quedaba con el lote provisional que asigna la recepción
+administrativa y con la cantidad comprada. Y el **rótulo se imprime leyendo `movimientos`**, así
+que el envase se rotulaba con datos viejos. Las correcciones sólo aterrizaban al aprobar el F02,
+que es el último paso.
+
+Ahora `POST /api/calidad/recepcion-tecnica` (origen MP) escribe al kardex:
+- `lote_proveedor` → `movimientos.lote` (**todas** las filas de ese lote, no sólo la Entrada, o la
+  ubicación y las salidas quedan colgando de una llave que ya no existe) + `movimientos.lote_proveedor`;
+- `cantidad_recibida` → `movimientos.cantidad` (lo que entra a bodega es lo que **pesó**);
+- `fecha_vencimiento` → `movimientos.fecha_vencimiento` (sin esto el cron de vencidos nunca lo marca);
+- `area_almacenamiento` → `movimientos.estanteria` (va al rótulo).
+
+**Sólo mientras el lote está en CUARENTENA** (M86): corregir hacia atrás un lote ya consumido
+corrompería el kardex. Todo queda en `audit_log` con `F01_CORRIGE_KARDEX` y el valor anterior.
+
+Cierra el circuito con INV-11 de `CONTRACT_compras.md`: la recepción administrativa deja un lote
+provisional que **no se puede liberar**, el F01 pone el real, y ahí sí se libera.
+Tests: `tests/test_f01_escribe_kardex.py` (en el gate).

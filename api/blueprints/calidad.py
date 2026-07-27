@@ -1432,6 +1432,92 @@ def calidad_recepcion_tecnica():
         cur.execute(f"INSERT INTO recepcion_tecnica_doc ({','.join(_f)}) VALUES ({','.join(['?']*len(_f))})",
                     [vals[k] for k in _F01_COLS] + [origen, u, _fecha_co()])
         _f01_id = cur.lastrowid  # capturar YA · _crear_nc_rechazo mueve lastrowid (su audit_log) · M22
+
+        # ── Lo que Calidad verifica contra el ENVASE entra al KARDEX acá (Sebastián 27-jul) ──
+        # "Calidad allí hace la recepción, deben poder poner todos los datos de su F01 pero a la
+        # vez editar el rótulo en todos los pasos."
+        #
+        # El F01 ya pedía lote real, cantidad pesada y vencimiento, pero los guardaba SOLO en el
+        # documento: el kardex se quedaba con el lote provisional y la cantidad comprada, y el
+        # RÓTULO se imprime leyendo el kardex → el envase se rotulaba con datos viejos. Las
+        # correcciones sólo aterrizaban al aprobar el F02, que es el último paso, cuando el
+        # envase ya lleva rato rotulado y guardado.
+        #
+        # Estos tres NO son un juicio de calidad, son hechos de lo que llegó, y quien los puede
+        # leer es quien tiene el envase en la mano. Por eso se escriben en el F01.
+        #
+        # Sólo mientras el lote sigue en CUARENTENA (M86): corregir el lote o la cantidad de
+        # material YA CONSUMIDO corrompería el kardex hacia atrás.
+        _kardex_corr = []
+        if origen == 'MP':
+            _mrow = cur.execute(
+                "SELECT COALESCE(lote,''), cantidad, COALESCE(fecha_vencimiento,''), "
+                "       material_id, UPPER(COALESCE(estado_lote,'')) "
+                "FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+            if _mrow and _mrow[4] in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
+                _k_lote, _k_cant, _k_fv, _k_mat = _mrow[0], _mrow[1], _mrow[2], _mrow[3]
+                _lote_key = _k_lote
+
+                # 1) LOTE real del envase. Reemplaza al provisional 'OC-...' que asigna la
+                #    recepción administrativa cuando el remito no lo trae. Va sobre TODAS las
+                #    filas de ese lote, no sólo la Entrada, o la ubicación y las salidas quedan
+                #    colgando de una llave que ya no existe.
+                _lp = (vals.get('lote_proveedor') or '').strip()
+                if _lp and _lp != _k_lote:
+                    cur.execute("UPDATE movimientos SET lote=? WHERE material_id=? AND lote=?",
+                                (_lp[:120], _k_mat, _k_lote))
+                    _kardex_corr.append('Lote:%s->%s' % (_k_lote, _lp))
+                    _lote_key = _lp
+                # el lote del proveedor queda además en su columna propia (trazabilidad CoA)
+                if _lp:
+                    try:
+                        cur.execute("UPDATE movimientos SET lote_proveedor=? "
+                                    "WHERE material_id=? AND lote=? AND tipo='Entrada'",
+                                    (_lp[:120], _k_mat, _lote_key))
+                    except Exception as _e_lp:
+                        log.warning('F01 lote_proveedor no se pudo escribir (mov %s): %s', mov_id, _e_lp)
+
+                # 2) CANTIDAD pesada en balanza. Es la que manda: lo que entra a bodega es lo que
+                #    pesó, no lo que decía la factura. La diferencia contra lo que registró la
+                #    recepción administrativa queda en el audit (y alimenta al proveedor).
+                try:
+                    _cant_f01 = float(str(vals.get('cantidad_recibida') or '').strip() or 0)
+                except (TypeError, ValueError):
+                    _cant_f01 = 0.0
+                if _cant_f01 > 0 and abs(float(_k_cant or 0) - _cant_f01) > 0.001:
+                    cur.execute("UPDATE movimientos SET cantidad=? WHERE id=?", (_cant_f01, mov_id))
+                    _kardex_corr.append('Cant:%g->%g' % (float(_k_cant or 0), _cant_f01))
+
+                # 3) VENCIMIENTO del envase. Sin esto el lote entra sin fecha y el cron de
+                #    vencidos nunca lo puede marcar.
+                _fv_f01 = (vals.get('fecha_vencimiento') or '').strip()
+                if _fv_f01 and _fv_f01[:10] != str(_k_fv or '')[:10]:
+                    cur.execute("UPDATE movimientos SET fecha_vencimiento=? "
+                                "WHERE material_id=? AND lote=? AND tipo='Entrada'",
+                                (_fv_f01, _k_mat, _lote_key))
+                    _kardex_corr.append('FVenc:%s' % _fv_f01[:10])
+
+                # 4) UBICACIÓN (área de almacenamiento del F01) → va al rótulo.
+                _area = (vals.get('area_almacenamiento') or '').strip()
+                if _area:
+                    try:
+                        cur.execute("UPDATE movimientos SET estanteria=? "
+                                    "WHERE material_id=? AND lote=?", (_area[:50], _k_mat, _lote_key))
+                    except Exception as _e_ar:
+                        log.warning('F01 area no se pudo escribir (mov %s): %s', mov_id, _e_ar)
+
+                if _kardex_corr:
+                    # Un cambio de lote/cantidad en un registro regulado NO puede quedar sin
+                    # rastro: queda quién, cuándo y el valor anterior.
+                    audit_log(cur, usuario=u, accion='F01_CORRIGE_KARDEX', tabla='movimientos',
+                              registro_id=mov_id,
+                              antes={'lote': _k_lote, 'cantidad': float(_k_cant or 0),
+                                     'fecha_vencimiento': str(_k_fv or '')},
+                              despues={'lote': _lote_key, 'cantidad': _cant_f01 or float(_k_cant or 0),
+                                       'fecha_vencimiento': _fv_f01 or str(_k_fv or ''),
+                                       'correcciones': _kardex_corr},
+                              detalle='F01 · Calidad verificó contra el envase: ' + ' · '.join(_kardex_corr))
+
         _liberado = 0; _nc_id = None
         if origen == 'MEE' and resultado in ('conforme', 'no_conforme'):
             # el F01 del envase decide (no hay F02) · CAS: solo si sigue en cuarentena (M23/M27)
