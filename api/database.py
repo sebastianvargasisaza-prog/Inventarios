@@ -10409,6 +10409,37 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE ebr_envasado_unidades ADD COLUMN no_envasada INTEGER DEFAULT 0",
         "ALTER TABLE ebr_envasado_unidades ADD COLUMN motivo_no_envasada TEXT DEFAULT ''",
     ]),
+    (383, "Tesorería · recibo NUMERADO para cada movimiento de efectivo, y anular en vez de "
+          "borrar (Sebastián 5-jul: el módulo de caja nace para 'reemplazar los recibos sueltos "
+          "sin numeración'). Faltaban las dos mitades: la caja guardaba el movimiento pero sin "
+          "número propio, y el DELETE lo borraba DURO. Un correlativo del que se pueden arrancar "
+          "hojas no prueba nada: el valor de numerar es justamente que un hueco se vea. Ahora el "
+          "movimiento anulado se conserva, deja de sumar al saldo, y queda con quién y por qué. "
+          "El backfill numera lo ya cargado en orden cronológico para no dejar filas sin recibo.", [
+        "ALTER TABLE animus_caja_menor ADD COLUMN recibo_numero TEXT",
+        "ALTER TABLE animus_caja_menor ADD COLUMN anulado INTEGER DEFAULT 0",
+        "ALTER TABLE animus_caja_menor ADD COLUMN anulado_por TEXT DEFAULT ''",
+        "ALTER TABLE animus_caja_menor ADD COLUMN anulado_motivo TEXT DEFAULT ''",
+        "ALTER TABLE animus_caja_menor ADD COLUMN anulado_at TEXT DEFAULT ''",
+        # Numerar lo YA cargado, cronológico y estable: el correlativo sale del puesto que ocupa
+        # la fila al ordenar por (fecha, id) dentro de su año. Sin esto, las filas viejas quedan
+        # sin recibo y el "todo movimiento tiene número" nacería incumplido.
+        # `printf('%04d',n)` y NO `substr('0000'||n,-4)`: el índice negativo de substr es
+        # SQLite-only (en PG devuelve la cadena entera y el número saldría con los ceros de más).
+        # printf sí está en la capa de compat (`api/pg_functions.sql`).
+        """UPDATE animus_caja_menor SET recibo_numero = (
+               SELECT 'RC-' || substr(a.fecha,1,4) || '-' || printf('%04d', (
+                          SELECT COUNT(*) FROM animus_caja_menor b
+                          WHERE substr(b.fecha,1,4) = substr(a.fecha,1,4)
+                            AND (b.fecha < a.fecha OR (b.fecha = a.fecha AND b.id <= a.id))
+                      ))
+               FROM animus_caja_menor a WHERE a.id = animus_caja_menor.id)
+           WHERE COALESCE(recibo_numero,'') = ''""",
+        # UNIQUE = la garantía real de que no se repite un número de recibo (el correlativo
+        # calculado no es race-safe con 3 workers · el caller reintenta contra este índice).
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_caja_recibo_numero "
+        "ON animus_caja_menor(recibo_numero)",
+    ]),
 ]
 
 

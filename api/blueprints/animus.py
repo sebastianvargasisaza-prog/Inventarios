@@ -3,8 +3,11 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from config import DB_PATH, ADMIN_USERS, ANIMUS_ACCESS
 from database import get_db
-from audit_helpers import audit_log
+from audit_helpers import audit_log, siguiente_correlativo, intentar_insert_con_retry
 from http_helpers import validate_money
+# El "hoy" de un movimiento de DINERO se ancla en Colombia, nunca en el UTC del server (M24):
+# Render corre en UTC y después de las 19:00 locales `datetime.now()` ya está en el día siguiente.
+from tz_colombia import hoy_colombia as _hoy_col, now_colombia as _now_col
 
 bp = Blueprint("animus", __name__)
 
@@ -248,9 +251,12 @@ def animus_comando():
     conn = _db()
     c = conn.cursor()
     try:
-        hoy = datetime.now().strftime("%Y-%m-%d")
-        hace30  = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-        hace90  = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+        # Ventanas ancladas a Colombia (M24): con el UTC de Render, de noche "hoy" ya era
+        # mañana y los KPIs del día salían vacíos con la operación todavía abierta.
+        _ahora = _now_col()
+        hoy = _ahora.strftime("%Y-%m-%d")
+        hace30  = (_ahora - timedelta(days=30)).strftime("%Y-%m-%d")
+        hace90  = (_ahora - timedelta(days=90)).strftime("%Y-%m-%d")
 
         # Stock PT por SKU
         stock_pt = _fmt_many(c.execute("""
@@ -1033,7 +1039,12 @@ def animus_caja_listar():
     conn = _db(); c = conn.cursor()
     sql = """
         SELECT id, fecha, tipo, concepto, monto, metodo, referencia,
-               observaciones, registrado_por, fecha_creacion
+               observaciones, registrado_por, fecha_creacion,
+               COALESCE(recibo_numero,'') AS recibo_numero,
+               COALESCE(anulado,0)        AS anulado,
+               COALESCE(anulado_por,'')   AS anulado_por,
+               COALESCE(anulado_motivo,'') AS anulado_motivo,
+               COALESCE(anulado_at,'')    AS anulado_at
         FROM animus_caja_menor WHERE 1=1
     """
     params = []
@@ -1042,15 +1053,20 @@ def animus_caja_listar():
     if tipo in ("ingreso", "egreso"):
         sql += " AND tipo = ?"; params.append(tipo)
     if q:
-        sql += " AND (concepto LIKE ? OR referencia LIKE ? OR observaciones LIKE ?)"
-        ql = f"%{q}%"; params += [ql, ql, ql]
+        sql += " AND (concepto LIKE ? OR referencia LIKE ? OR observaciones LIKE ? "
+        sql += "      OR recibo_numero LIKE ?)"
+        ql = f"%{q}%"; params += [ql, ql, ql, ql]
     sql += " ORDER BY fecha DESC, id DESC LIMIT 500"
     movs = [dict(r) for r in c.execute(sql, params).fetchall()]
 
-    # KPIs globales (sin filtros) para no confundir
-    from datetime import datetime as _dt
-    hoy = _dt.now().strftime("%Y-%m-%d")
-    mes = _dt.now().strftime("%Y-%m")
+    # KPIs globales (sin filtros) para no confundir.
+    # El "hoy" de un movimiento de DINERO va en hora Colombia (M24): Render corre en UTC, así que
+    # después de las 19:00 locales `datetime.now()` ya está en el día siguiente y los KPIs del día
+    # aparecían vacíos mientras la caja seguía operando.
+    hoy = _hoy_col().isoformat()
+    mes = hoy[:7]
+    # Un movimiento ANULADO no suma al saldo ni a los KPIs (sigue existiendo y se ve en la lista,
+    # que es justamente el punto de anular en vez de borrar).
     kpis = c.execute("""
         SELECT
           COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END), 0) as saldo_total,
@@ -1060,6 +1076,7 @@ def animus_caja_listar():
           COALESCE(SUM(CASE WHEN tipo='egreso'  AND substr(fecha,1,7)=? THEN monto ELSE 0 END), 0) as egreso_mes,
           COUNT(*) as n_total
         FROM animus_caja_menor
+        WHERE COALESCE(anulado,0) = 0
     """, (hoy, hoy, mes, mes)).fetchone()
 
     return jsonify({
@@ -1084,58 +1101,98 @@ def animus_caja_registrar():
     monto, err = validate_money(d.get("monto"), allow_zero=False, field_name='monto')
     if err:
         return jsonify(err), 400
-    fecha = (d.get("fecha") or datetime.now().strftime("%Y-%m-%d")).strip()
+    # El "hoy" de un movimiento de dinero se ancla en Colombia, no en el UTC del server (M24).
+    fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
     metodo = (d.get("metodo") or "efectivo").strip()
     referencia = (d.get("referencia") or "").strip()
     obs = (d.get("observaciones") or "").strip()
 
     conn = _db()
     c = conn.cursor()
-    c.execute("""INSERT INTO animus_caja_menor
-        (fecha, tipo, concepto, monto, metodo, referencia, observaciones, registrado_por)
-        VALUES (?,?,?,?,?,?,?,?)""",
-        (fecha, tipo, concepto, monto, metodo, referencia, obs, u))
-    mov_id = c.lastrowid
+    # Recibo NUMERADO: es la razón de ser del módulo (Sebastián 5-jul · "reemplaza los recibos
+    # sueltos sin numeración"). El correlativo se calcula leyendo el máximo del año, que NO es
+    # race-safe con 3 workers → el UNIQUE `ux_caja_recibo_numero` es la garantía real y el retry
+    # resuelve la colisión (mismo patrón que el numerador de OC).
+    # El año sale de la FECHA del movimiento (no del reloj), para que la serie de cada año quede
+    # completa. Si la fecha viene mal formada, cae al año de Colombia: un prefijo basura ('RC-abc-')
+    # arrancaría una serie paralela que nadie podría auditar.
+    anio = fecha[:4] if len(fecha) >= 4 and fecha[:4].isdigit() else _hoy_col().strftime('%Y')
+    prefijo = 'RC-%s-' % anio
+
+    def _insertar():
+        n = siguiente_correlativo(c, 'animus_caja_menor', 'recibo_numero', prefijo)
+        recibo = '%s%04d' % (prefijo, n)
+        c.execute("""INSERT INTO animus_caja_menor
+            (fecha, tipo, concepto, monto, metodo, referencia, observaciones,
+             registrado_por, recibo_numero)
+            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (fecha, tipo, concepto, monto, metodo, referencia, obs, u, recibo))
+        return recibo, c.lastrowid
+
+    recibo, mov_id = intentar_insert_con_retry(_insertar, columna='recibo_numero')
     try:
         audit_log(c, usuario=u, accion='ANIMUS_CAJA_MOV',
                   tabla='animus_caja_menor', registro_id=mov_id,
                   despues={'tipo': tipo, 'concepto': concepto[:120],
                             'monto': monto, 'metodo': metodo,
-                            'fecha': fecha},
-                  detalle=f"Caja ÁNIMUS · {tipo} · {concepto[:60]} · ${monto/1000:.0f}K")
+                            'fecha': fecha, 'recibo': recibo},
+                  detalle=f"Caja ÁNIMUS · {recibo} · {tipo} · {concepto[:60]} · ${monto/1000:.0f}K")
     except Exception:
         pass
     conn.commit()
-    return jsonify({"ok": True, "id": mov_id})
+    return jsonify({"ok": True, "id": mov_id, "recibo_numero": recibo})
 
 
 @bp.route("/api/animus/caja/<int:mov_id>", methods=["DELETE"])
 def animus_caja_eliminar(mov_id):
-    """Elimina un movimiento. ADMIN ONLY — los movimientos son audit trail."""
+    """ANULA un movimiento de caja (no lo borra). ADMIN ONLY.
+
+    Antes hacía `DELETE` de verdad, lo que contradecía al propio módulo: la caja existe para
+    reemplazar los recibos sueltos SIN numeración, y un talonario del que se pueden arrancar
+    hojas no prueba nada — el valor de numerar es justamente que el hueco se vea. Ahora el
+    movimiento se conserva con su número de recibo, deja de sumar al saldo, y guarda quién lo
+    anuló, cuándo y por qué. Es el mismo criterio que el resto del sistema con un registro ya
+    emitido: se reversa, no se destruye.
+    """
     u, err, code = _auth()
     if err: return err, code
     if u not in ADMIN_USERS:
-        return jsonify({"error": "Solo admin puede eliminar movimientos de caja"}), 403
+        return jsonify({"error": "Solo admin puede anular movimientos de caja"}), 403
+    motivo = ((request.get_json(silent=True) or {}).get("motivo")
+              or request.args.get("motivo") or "").strip()
+    if not motivo:
+        return jsonify({"error": "Indicá el motivo de la anulación (queda en el recibo)"}), 400
     conn = _db()
     c = conn.cursor()
-    # Capturar antes para audit
     antes_row = c.execute(
-        "SELECT tipo, concepto, monto FROM animus_caja_menor WHERE id=?", (mov_id,)
+        "SELECT tipo, concepto, monto, COALESCE(recibo_numero,''), COALESCE(anulado,0) "
+        "FROM animus_caja_menor WHERE id=?", (mov_id,)
     ).fetchone()
     if not antes_row:
         return jsonify({"error": "Movimiento no encontrado"}), 404
-    antes = {'tipo': antes_row[0], 'concepto': antes_row[1], 'monto': antes_row[2]}
-    c.execute("DELETE FROM animus_caja_menor WHERE id=?", (mov_id,))
+    antes = {'tipo': antes_row[0], 'concepto': antes_row[1], 'monto': antes_row[2],
+             'recibo': antes_row[3]}
+    if int(antes_row[4] or 0):
+        return jsonify({"error": "Ese recibo ya está anulado",
+                        "recibo_numero": antes_row[3]}), 409
+    # CAS: la condición de estado va en el WHERE · con 3 workers dos anulaciones concurrentes
+    # pasarían ambas el chequeo de arriba y la segunda pisaría el motivo de la primera.
+    c.execute("UPDATE animus_caja_menor SET anulado=1, anulado_por=?, anulado_motivo=?, "
+              "anulado_at=? WHERE id=? AND COALESCE(anulado,0)=0",
+              (u, motivo[:300], _now_col().strftime('%Y-%m-%d %H:%M:%S'), mov_id))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "Ese recibo ya está anulado"}), 409
     try:
-        audit_log(c, usuario=u, accion='ANIMUS_CAJA_ELIMINAR',
+        audit_log(c, usuario=u, accion='ANIMUS_CAJA_ANULAR',
                   tabla='animus_caja_menor', registro_id=mov_id,
-                  antes=antes,
-                  detalle=f"Eliminó movimiento caja ÁNIMUS id={mov_id} "
-                          f"({antes['tipo']} ${antes['monto']/1000:.0f}K)")
+                  antes=antes, despues={'anulado': 1, 'motivo': motivo[:300]},
+                  detalle=f"Anuló recibo de caja {antes['recibo'] or ('id=%d' % mov_id)} "
+                          f"({antes['tipo']} ${antes['monto']/1000:.0f}K) · {motivo[:80]}")
     except Exception:
         pass
     conn.commit()
-    return jsonify({"ok": True, "eliminado": mov_id})
+    return jsonify({"ok": True, "anulado": mov_id, "recibo_numero": antes['recibo']})
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1276,7 +1333,7 @@ def animus_inv_ciclico_registrar():
         return jsonify({"error": "cantidades inválidas"}), 400
     diferencia = cant_fisica - cant_shopify
     explicacion = (d.get("explicacion") or "").strip()
-    fecha = (d.get("fecha_conteo") or datetime.now().strftime("%Y-%m-%d")).strip()
+    fecha = (d.get("fecha_conteo") or _hoy_col().isoformat()).strip()   # Colombia, no UTC (M24)
     nombre = (d.get("producto_nombre") or "").strip()
 
     # Si hay diferencia y no hay explicación, advertir pero no bloquear
@@ -1529,7 +1586,7 @@ def animus_inv_fisico_baseline():
             return jsonify({"error": "unidades_baseline debe ser entero"}), 400
         if unidades < 0:
             return jsonify({"error": "unidades_baseline no puede ser negativo"}), 400
-        fecha_baseline = d.get("fecha_baseline") or datetime.now().date().isoformat()
+        fecha_baseline = d.get("fecha_baseline") or _hoy_col().isoformat()   # M24
         descripcion = d.get("descripcion") or ""
         observaciones = d.get("observaciones") or ""
         # Verificar si ya hay baseline (UPSERT-like)
@@ -1592,7 +1649,7 @@ def animus_inv_fisico_entrada():
     origen = (d.get("origen") or "produccion").strip()
     if origen not in ('produccion','devolucion','ajuste','otro'):
         return jsonify({"error": "origen invalido (produccion|devolucion|ajuste|otro)"}), 400
-    fecha = d.get("fecha") or datetime.now().date().isoformat()
+    fecha = d.get("fecha") or _hoy_col().isoformat()   # M24
     conn = _db(); c = conn.cursor()
     c.execute("""INSERT INTO animus_inventario_movimientos
                  (sku, tipo, cantidad, fecha, origen, referencia, motivo, usuario)
@@ -1629,7 +1686,7 @@ def animus_inv_fisico_salida():
     origen = (d.get("origen") or "presencial").strip()
     if origen not in ('presencial','regalo','dano','vencido','devolucion_planta','otro'):
         return jsonify({"error": "origen invalido"}), 400
-    fecha = d.get("fecha") or datetime.now().date().isoformat()
+    fecha = d.get("fecha") or _hoy_col().isoformat()   # M24
     conn = _db(); c = conn.cursor()
     c.execute("""INSERT INTO animus_inventario_movimientos
                  (sku, tipo, cantidad, fecha, origen, referencia, motivo, usuario)
@@ -1943,7 +2000,7 @@ def animus_inv_fisico_sembrar_baselines():
         ya_existentes.add((r['sku'] or '').upper())
 
     skus_a_crear = sorted(skus_shopify - ya_existentes)
-    fecha = datetime.now().date().isoformat()
+    fecha = _hoy_col().isoformat()   # M24
     creados = []
     for sku in skus_a_crear:
         try:
@@ -2217,7 +2274,7 @@ def animus_pqr_actualizar(pid):
     if "respuesta" in d:
         campos.append("respuesta=?"); vals.append((d.get("respuesta") or "")[:3000])
         campos.append("respondido_por=?"); vals.append(u)
-        campos.append("respondido_en=?"); vals.append(datetime.now().strftime("%Y-%m-%d"))
+        campos.append("respondido_en=?"); vals.append(_hoy_col().isoformat())   # M24
     if not campos:
         return jsonify({"error": "nada que actualizar"}), 400
     campos.append("actualizado_en=?"); vals.append(datetime.now().strftime("%Y-%m-%d %H:%M"))

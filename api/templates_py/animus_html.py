@@ -197,6 +197,7 @@ window.addEventListener('error', function(ev){
     <div style="overflow-x:auto;">
       <table>
         <thead><tr>
+          <th>Recibo</th>
           <th>Fecha</th>
           <th>Tipo</th>
           <th>Concepto</th>
@@ -206,7 +207,7 @@ window.addEventListener('error', function(ev){
           <th>Por</th>
           <th></th>
         </tr></thead>
-        <tbody id="caja-body"><tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+        <tbody id="caja-body"><tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -628,25 +629,39 @@ function renderCajaKPIs(k){
 function renderCajaMovs(rows){
   const body = document.getElementById('caja-body');
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin movimientos registrados.</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin movimientos registrados.</td></tr>';
     return;
   }
   body.innerHTML = rows.map(function(m){
+    // Un recibo ANULADO se sigue viendo (por eso se anula en vez de borrar): tachado, con quien
+    // lo anulo y por que. El hueco en el correlativo es justamente lo que se quiere poder ver.
+    const anul = !!m.anulado;
     const tipoBadge = m.tipo === 'ingreso'
       ? '<span class="badge badge-green">+ Ingreso</span>'
       : '<span class="badge badge-red">- Egreso</span>';
     const monto = m.tipo === 'ingreso'
       ? '<span class="diff-pos">+' + fmtCOP(m.monto) + '</span>'
       : '<span class="diff-neg">-' + fmtCOP(m.monto) + '</span>';
-    return '<tr>' +
+    const recibo = m.recibo_numero
+      ? '<span style="font-family:ui-monospace,monospace;font-weight:700;font-size:12px;">'+esc(m.recibo_numero)+'</span>'
+      : '<span style="color:var(--cx-text-mute);font-size:11px;">sin numero</span>';
+    const motivo = anul
+      ? '<div style="font-size:10px;color:var(--cx-danger-text);margin-top:2px;">Anulado por '
+        + esc(m.anulado_por||'?') + (m.anulado_motivo ? ' &middot; ' + esc(m.anulado_motivo) : '') + '</div>'
+      : '';
+    const accion = anul
+      ? '<span class="badge badge-gray" title="Anulado">ANULADO</span>'
+      : '<button class="btn btn-outline btn-sm" onclick="anularCaja('+m.id+')" title="Anular recibo">Anular</button>';
+    return '<tr style="' + (anul ? 'opacity:.55;text-decoration:line-through;' : '') + '">' +
+      '<td>'+recibo+'</td>' +
       '<td>'+fmtFecha(m.fecha)+'</td>' +
       '<td>'+tipoBadge+'</td>' +
-      '<td>'+esc(m.concepto||'')+'</td>' +
+      '<td style="text-decoration:none;">'+esc(m.concepto||'')+motivo+'</td>' +
       '<td style="text-align:right;font-weight:700;">'+monto+'</td>' +
       '<td><span class="badge badge-gray">'+esc(m.metodo||'efectivo')+'</span></td>' +
       '<td style="font-size:11px;color:var(--cx-text-mute);">'+esc(m.referencia||'-')+'</td>' +
       '<td style="font-size:11px;color:var(--cx-text-mute);">'+esc(m.registrado_por||'-')+'</td>' +
-      '<td><button class="btn btn-outline btn-sm" onclick="eliminarCaja('+m.id+')" title="Eliminar">x</button></td>' +
+      '<td style="text-decoration:none;">'+accion+'</td>' +
     '</tr>';
   }).join('');
 }
@@ -655,7 +670,10 @@ function abrirRegistro(tipo){
   document.getElementById('caja-tipo').value = tipo;
   document.getElementById('modal-caja-title').textContent =
     tipo === 'ingreso' ? '+ Registrar ingreso' : '- Registrar egreso';
-  document.getElementById('caja-fecha').value = new Date().toISOString().slice(0,10);
+  // toISOString() da UTC: despues de las 19:00 en Colombia pre-llenaba el dia SIGUIENTE y el
+  // movimiento quedaba con la fecha equivocada (mismo M24 que el backend). Se ancla a Colombia.
+  document.getElementById('caja-fecha').value =
+    new Date(Date.now() - 5*3600*1000).toISOString().slice(0,10);
   ['monto','concepto','referencia','obs'].forEach(function(f){
     const el = document.getElementById('caja-'+f);
     if (el) el.value = '';
@@ -688,13 +706,17 @@ async function guardarCaja(){
   }
 }
 
-async function eliminarCaja(id){
-  if (!confirm('Eliminar este movimiento? Solo admin puede.')) return;
+async function anularCaja(id){
+  // El recibo NO se borra: se anula y queda a la vista. Por eso se pide el motivo, que se
+  // guarda en el recibo y en la auditoria (un correlativo con hojas arrancadas no prueba nada).
+  const motivo = prompt('Motivo de la anulacion (queda en el recibo):', '');
+  if (motivo === null) return;
+  if (!motivo.trim()) { showToast('El motivo es obligatorio', 'error'); return; }
   try {
-    const r = await fetch('/api/animus/caja/' + id, { method:'DELETE' });
+    const r = await fetch('/api/animus/caja/' + id, _fetchOpts('DELETE', {motivo: motivo.trim()}));
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
-    showToast('Eliminado', 'success');
+    showToast('Recibo ' + (d.recibo_numero||'') + ' anulado', 'success');
     loadCaja();
   } catch(e) {
     showToast('Error de red: ' + e.message, 'error');

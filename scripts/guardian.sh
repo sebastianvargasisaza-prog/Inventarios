@@ -81,6 +81,11 @@ CORAZON=(
   "tests/test_en_transito_azul.py"
   "tests/test_e2e_mp_chain.py"
   "tests/test_diag_solo_admin.py"
+  # Dinero con la fecha corrida (27-jul): el "hoy" del server es UTC y después de las 19:00 en
+  # Colombia un pago de fin de mes caía en el período contable siguiente. Cubre los 5 módulos.
+  "tests/test_hoy_colombia_dinero.py"
+  "tests/test_caja_recibo_numerado.py"
+  "tests/test_animus_audit.py"
 )
 
 echo ""
