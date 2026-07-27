@@ -130,6 +130,25 @@ def test_sin_unidades_registradas_no_inventa_numeros(app):
     assert o['unidades_total'] == 0, o
 
 
+def test_una_orden_abierta_esta_noche_no_dice_hace_menos_un_dia(app):
+    """La esquina horaria que más se repite en este sistema (M24).
+
+    `iniciado_at_utc` es UTC; "hoy" se ancla en Colombia (UTC-5). Entre las 19:00 y la medianoche
+    local, la fecha UTC ya es MAÑANA, así que cortar la marca con [:10] mostraba la orden un día
+    adelantada y la edad daba **-1 días**. Este test fija una hora que cae en esa ventana.
+    """
+    from blueprints.brd import _fecha_colombia
+    # 27-jul 02:00 UTC = 26-jul 21:00 en Colombia · la fecha correcta es el 26
+    assert _fecha_colombia('2026-07-27T02:00:00') == '2026-07-26'
+    assert _fecha_colombia('2026-07-27T12:00:00') == '2026-07-27'   # mediodía UTC = mismo día
+    assert _fecha_colombia('2026-07-26') == '2026-07-26'            # fecha suelta: tal cual
+    assert _fecha_colombia('') == ''
+    # y de punta a punta: una orden recién abierta nunca puede tener edad negativa
+    ebr = _sembrar(app, dias_atras=0)
+    o, _ = _orden(_admin(app), ebr)
+    assert o['dias'] == 0, 'una orden de hoy dio %s días' % o['dias']
+
+
 def test_fabricacion_recibe_el_mismo_avance(app):
     """Las dos vistas del día comparten el enriquecimiento: si alguien lo hace específico de
     envasado, Fabricación pierde la columna de avance y la edad sin que nada falle."""

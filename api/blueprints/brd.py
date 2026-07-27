@@ -164,6 +164,26 @@ DESPEJE_LINEA_ITEMS = [
 ]
 
 
+def _fecha_colombia(ts):
+    """La fecha (YYYY-MM-DD) de una marca de tiempo UTC, en hora de Colombia (UTC-5).
+
+    Cortar un `..._at_utc` con `[:10]` da la fecha UTC, que entre las 19:00 y la medianoche local
+    ya es el día siguiente. Mostrarla así adelanta un día la orden, y compararla contra un "hoy"
+    anclado en Colombia da edades negativas (M24). Si el valor ya es una fecha suelta (los
+    registros simples guardan `YYYY-MM-DD`), se devuelve tal cual.
+    """
+    s = (ts or '').strip()
+    if len(s) <= 10:
+        return s[:10]
+    from datetime import datetime as _d, timedelta as _td
+    for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S'):
+        try:
+            return (_d.strptime(s[:19], fmt) - _td(hours=5)).date().isoformat()
+        except ValueError:
+            continue
+    return s[:10]
+
+
 def despeje_checklist(conn, ebr_id, etapa='dispensacion'):
     """Las verificaciones de despeje de un EBR, en el orden del procedimiento.
 
@@ -6676,7 +6696,48 @@ def cerrar_envasado_ebr(ebr_id):
             _b2b_custom = []
     _b2b_rem = sum(u for _, u in _b2b_custom)  # uds B2B a restar del descuento del envase default
 
+    # ── PARTES DEL FRASCO (mee_partes) · Sebastián 26-jul ─────────────────────────────────────
+    # Un frasco arrastra sus componentes (gotero, tapa, inner cup). El ABASTECIMIENTO ya los
+    # compraba leyendo `mee_partes`, pero el envasado descontaba SOLO lo que estuviera en
+    # `producto_presentaciones.tapa_codigo/caja_codigo` — y medido en producción, las 43
+    # presentaciones activas estaban SIN tapa: el sistema **nunca descontó una tapa, en ningún
+    # producto**. Se compraban, entraban a bodega, se usaban, y no salían jamás del kardex.
+    # Es el patrón M55/M73 otra vez: lo que se compra tiene que ser lo que se descuenta. Ahora
+    # ambos lados leen la MISMA tabla, así que cargar las partes de un frasco sincroniza compra y
+    # descuento de una sola vez y no pueden volver a divergir.
+    _partes = {}
+    try:
+        for _r in cur.execute(
+            "SELECT UPPER(TRIM(mee_codigo)), UPPER(TRIM(COALESCE(parte_codigo,''))), "
+            "COALESCE(cantidad,1) FROM mee_partes WHERE COALESCE(parte_codigo,'')<>''").fetchall():
+            _partes.setdefault(_r[0], []).append((_r[1], float(_r[2] or 1)))
+    except Exception as _e_pt:
+        # nunca romper el cierre por esto, pero dejar rastro (un except mudo esconde el bug · M94)
+        log.warning("cerrar-envasado: no se pudieron leer las partes del envase: %s", _e_pt)
+        _partes = {}
+
     descuentos = []
+
+    def _salida_mee(cod, cantidad, etiqueta, presentacion):
+        """Una Salida de MEE. Nunca cantidad <= 0 (el trigger de PG la rechaza · M18)."""
+        cod = (cod or "").strip()
+        if not cod or cantidad is None or cantidad <= 0:
+            return
+        cur.execute(
+            "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
+            "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
+            (cod, cantidad, "Envasado EBR-" + str(ebr_id) + " lote " + lote + " · "
+             + etiqueta + (" " + presentacion if presentacion else ""), user))
+        descuentos.append({"mee_codigo": cod, "tipo": etiqueta, "cantidad": cantidad,
+                           "presentacion": presentacion})
+
+    def _salida_partes(envase_cod, unidades, presentacion, ya_descontados):
+        """Los componentes del frasco realmente usado, sin repetir lo que ya bajó por tapa/caja."""
+        for _pc, _pcant in _partes.get((envase_cod or "").strip().upper(), []):
+            if not _pc or _pc in ya_descontados:
+                continue
+            _salida_mee(_pc, round(unidades * (_pcant or 1), 4), "parte", presentacion)
+
     try:
         for p in cur.execute(
             "SELECT COALESCE(presentacion_codigo,''), COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), "
@@ -6685,31 +6746,22 @@ def cerrar_envasado_ebr(ebr_id):
             n = uds.get(p[0], 0)
             if n <= 0:
                 continue
-            for cod, etq in ((p[1], "envase"), (p[2], "tapa"), (p[3], "caja")):
-                cod = (cod or "").strip()
-                if not cod:
-                    continue
-                qty = n
-                if etq == "envase":
-                    if _env_override:            # el lote usa OTRO envase → descontar ese
-                        cod = _env_override
-                    if _b2b_rem > 0:             # restar las uds que van a envase B2B custom
-                        _sub = min(_b2b_rem, qty)
-                        qty -= _sub; _b2b_rem -= _sub
-                if qty <= 0:
-                    continue
-                cur.execute(
-                    "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
-                    "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
-                    (cod, qty, "Envasado EBR-" + str(ebr_id) + " lote " + lote + " · " + etq + " " + p[0], user))
-                descuentos.append({"mee_codigo": cod, "tipo": etq, "cantidad": qty, "presentacion": p[0]})
+            # el envase REALMENTE usado en este lote (override del lote manda)
+            _env_efectivo = (_env_override or (p[1] or "")).strip()
+            _qty_envase = n
+            if _b2b_rem > 0:                     # restar las uds que van a envase B2B custom
+                _sub = min(_b2b_rem, _qty_envase)
+                _qty_envase -= _sub; _b2b_rem -= _sub
+            _salida_mee(_env_efectivo, _qty_envase, "envase", p[0])
+            _salida_mee(p[2], n, "tapa", p[0])
+            _salida_mee(p[3], n, "caja", p[0])
+            # las partes acompañan al FRASCO, así que van por las unidades del frasco
+            _salida_partes(_env_efectivo, _qty_envase, p[0],
+                           {(c or "").strip().upper() for c in (_env_efectivo, p[2], p[3]) if c})
         # Envases custom por cliente B2B · 1:1 con sus unidades (aparte del default)
         for _ec, _un in _b2b_custom:
-            cur.execute(
-                "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
-                "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
-                (_ec, _un, "Envasado EBR-" + str(ebr_id) + " lote " + lote + " · envase B2B", user))
-            descuentos.append({"mee_codigo": _ec, "tipo": "envase_b2b", "cantidad": _un, "presentacion": ""})
+            _salida_mee(_ec, _un, "envase_b2b", "")
+            _salida_partes(_ec, _un, "", {(_ec or "").strip().upper()})
     except Exception as _e:
         conn.rollback()
         log.warning("cerrar-envasado descuento MEE fallo (rollback): %s", _e)
@@ -7840,7 +7892,11 @@ def ordenes_unificadas():
             "aprobada": (rd.get("cantidad_real_g") if liberado else None),
             "ml_envasable": rd.get("ml_envasable"),
             "estado": ("En proceso" if _en_curso else _estado_orden_norm("legajo", rd.get("estado"))),
-            "fecha": (rd.get("iniciado_at_utc") or "")[:10],
+            # La fecha se muestra y se compara en hora COLOMBIA. `iniciado_at_utc` es UTC: cortarlo
+            # con [:10] daba la fecha UTC, que después de las 7 de la tarde local ya es MAÑANA. Con
+            # eso, una orden abierta hoy a la noche calculaba "hace -1 días" (M24: el que escribe y
+            # el que lee tienen que estar en la misma base).
+            "fecha": _fecha_colombia(rd.get("iniciado_at_utc")),
             "link": f"/planta/orden/{rd['id']}",
             "ebr_id": rd["id"],
             "produccion_id": (_ppid if _en_curso else None),

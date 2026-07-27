@@ -23557,8 +23557,26 @@ def _gate_envases_listos(produccion, conn):
         ).fetchone()
         stock = _get_mee_stock(conn).get(str(env_code).strip().upper(), 0)
         nombre_mee = (mee[0] if mee else '') or env_code
+        # PARTES del frasco (mee_partes · Sebastián 26-jul): un envasado sin goteros no se puede
+        # arrancar aunque sobren frascos. Este candado miraba SOLO el envase, así que el operario
+        # llegaba al puesto y se enteraba ahí. Es la misma tabla que ya usan el abastecimiento
+        # (para comprarlas) y el cierre de envasado (para descontarlas).
+        partes_pres = []
+        try:
+            for _pr in conn.execute(
+                "SELECT UPPER(TRIM(COALESCE(parte_codigo,''))), COALESCE(descripcion,'') "
+                "FROM mee_partes WHERE UPPER(TRIM(mee_codigo))=? AND COALESCE(parte_codigo,'')<>''",
+                (str(env_code).strip().upper(),)).fetchall():
+                _pstock = _get_mee_stock(conn).get(_pr[0], 0)
+                partes_pres.append({'parte': _pr[0], 'descripcion': _pr[1], 'stock': _pstock})
+                if _pstock <= 0:
+                    falta_envase.append(f'{etiqueta} · {_pr[1] or _pr[0]} ({_pr[0]})')
+        except Exception as _e_gp:
+            log.warning('_gate_envases_listos: no se pudieron leer las partes de %s: %s',
+                        env_code, _e_gp)
         items_pres.append({'presentacion': etiqueta, 'envase': env_code,
-                           'envase_nombre': nombre_mee, 'stock': stock})
+                           'envase_nombre': nombre_mee, 'stock': stock,
+                           'partes': partes_pres})
         if stock <= 0:
             falta_envase.append(f'{etiqueta} ({env_code})')
     if falta_envase:

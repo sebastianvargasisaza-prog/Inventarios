@@ -70,6 +70,7 @@ CORAZON=(
   "tests/test_envasado_lista_premium.py"
   "tests/test_despeje_orden_mybatch.py"
   "tests/test_diag_envases_partes.py"
+  "tests/test_envase_partes_se_descuentan.py"
   "tests/test_legajo_trazabilidad_responsables.py"
   "tests/test_inci_ambiguos.py"
   "tests/test_cron_mee_cuarentena.py"
