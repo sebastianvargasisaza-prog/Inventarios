@@ -93,11 +93,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- ─── DASHBOARD ─── -->
 <div id="page-dashboard" class="page active">
   <div class="kpi-grid" id="kpi-financiero">
-    <div class="kpi" style="--c:#6d28d9"><div class="kpi-val" id="kpi-ing-mes">-</div><div class="kpi-lbl">Ingresos del mes</div><div class="kpi-sub" id="kpi-ing-sub"></div></div>
-    <div class="kpi" style="--c:#c0392b"><div class="kpi-val" id="kpi-egr-mes">-</div><div class="kpi-lbl">Egresos del mes</div><div class="kpi-sub" id="kpi-egr-sub"></div></div>
-    <div class="kpi" style="--c:#B5924A"><div class="kpi-val" id="kpi-flujo-mes">-</div><div class="kpi-lbl">Flujo neto mes</div><div class="kpi-sub" id="kpi-flujo-sub"></div></div>
-    <div class="kpi" style="--c:#7A4A8B"><div class="kpi-val" id="kpi-caja">-</div><div class="kpi-lbl">Saldo de caja</div><div class="kpi-sub" id="kpi-caja-sub"></div></div>
-    <div class="kpi" style="--c:#10b981;border-left:3px solid var(--cx-success);"><div class="kpi-val" id="kpi-shopify" style="color:var(--cx-success-text);">-</div><div class="kpi-lbl">Shopify DTC · mes</div><div class="kpi-sub" id="kpi-shopify-sub"></div></div>
+    <div class="kpi" style="--c:var(--cx-primary-text, #6d28d9)"><div class="kpi-val" id="kpi-ing-mes">-</div><div class="kpi-lbl">Ingresos del mes</div><div class="kpi-sub" id="kpi-ing-sub"></div></div>
+    <div class="kpi" style="--c:var(--cx-danger-text, #c0392b)"><div class="kpi-val" id="kpi-egr-mes">-</div><div class="kpi-lbl">Egresos del mes</div><div class="kpi-sub" id="kpi-egr-sub"></div></div>
+    <div class="kpi" style="--c:var(--cx-warn-text, #B5924A)"><div class="kpi-val" id="kpi-flujo-mes">-</div><div class="kpi-lbl">Flujo neto mes</div><div class="kpi-sub" id="kpi-flujo-sub"></div></div>
+    <div class="kpi" style="--c:var(--cx-primary-text, #7A4A8B)"><div class="kpi-val" id="kpi-caja">-</div><div class="kpi-lbl">Saldo de caja</div><div class="kpi-sub" id="kpi-caja-sub"></div></div>
+    <div class="kpi" style="--c:var(--cx-success-text, #10b981);border-left:3px solid var(--cx-success);"><div class="kpi-val" id="kpi-shopify" style="color:var(--cx-success-text);">-</div><div class="kpi-lbl">Shopify DTC · mes</div><div class="kpi-sub" id="kpi-shopify-sub"></div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
     <div class="chart-wrap">

@@ -577,7 +577,7 @@ _SYNC_BATCH_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sincronizar fórmulas · Batch records · EOS</title>
 <style>
-:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+:root{--v:var(--cx-primary-text, #6d28d9);--vl:#7c3aed;--txt:var(--cx-text, #1c1917);--mut:var(--cx-text-mute, #78716c);--line:var(--cx-border, #eef0f2);--bg:#faf9fb;}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
 .wrap{max-width:1180px;margin:0 auto;}
 a.back{color:var(--v);text-decoration:none;font-size:13px;font-weight:600;}
@@ -15610,7 +15610,7 @@ _ENVASES_KARDEX_MP_HTML = r"""<!doctype html><html lang="es"><head><meta charset
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Envases dentro del kardex de MP &middot; EOS</title>
 <style>
-:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+:root{--v:var(--cx-primary-text, #6d28d9);--vl:#7c3aed;--txt:var(--cx-text, #1c1917);--mut:var(--cx-text-mute, #78716c);--line:var(--cx-border, #eef0f2);--bg:#faf9fb;}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
 .wrap{max-width:96vw;margin:0 auto;}
 h1{font-size:23px;margin:0 0 4px;letter-spacing:-.02em;}
@@ -18467,7 +18467,7 @@ _TESORERIA_HUB_HTML = r"""<!doctype html><html lang="es"><head><meta charset="ut
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tesorería · EOS</title>
 <style>
-:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+:root{--v:var(--cx-primary-text, #6d28d9);--vl:#7c3aed;--txt:var(--cx-text, #1c1917);--mut:var(--cx-text-mute, #78716c);--line:var(--cx-border, #eef0f2);--bg:#faf9fb;}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
 .wrap{max-width:1200px;margin:0 auto;}
 h1{font-size:24px;margin:0 0 4px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;}
@@ -18558,7 +18558,7 @@ _VIGILANCIA_PRECIOS_HTML = r"""<!doctype html><html lang="es"><head><meta charse
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Vigilancia de precios · Tesorería · EOS</title>
 <style>
-:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+:root{--v:var(--cx-primary-text, #6d28d9);--vl:#7c3aed;--txt:var(--cx-text, #1c1917);--mut:var(--cx-text-mute, #78716c);--line:var(--cx-border, #eef0f2);--bg:#faf9fb;}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
 .wrap{max-width:1200px;margin:0 auto;}
 h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;}
@@ -18643,7 +18643,7 @@ _RECONCILIAR_PRECIOS_HTML = r"""<!doctype html><html lang="es"><head><meta chars
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reconciliar precios ÷1000 · EOS</title>
 <style>
-:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+:root{--v:var(--cx-primary-text, #6d28d9);--vl:#7c3aed;--txt:var(--cx-text, #1c1917);--mut:var(--cx-text-mute, #78716c);--line:var(--cx-border, #eef0f2);--bg:#faf9fb;}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
 .wrap{max-width:1200px;margin:0 auto;}
 h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em;}
@@ -18910,7 +18910,7 @@ _MAPEAR_HUERFANOS_HTML = r"""<!doctype html><html lang="es"><head><meta charset=
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Mapear lotes huérfanos · EOS</title>
 <style>
-:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+:root{--v:var(--cx-primary-text, #6d28d9);--vl:#7c3aed;--txt:var(--cx-text, #1c1917);--mut:var(--cx-text-mute, #78716c);--line:var(--cx-border, #eef0f2);--bg:#faf9fb;}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
 .wrap{max-width:1100px;margin:0 auto;}
 h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em;}

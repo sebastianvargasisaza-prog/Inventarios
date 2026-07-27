@@ -214,7 +214,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <button onclick="cerrarAjuste()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:1.05em;line-height:1;flex:none;" title="Cerrar">&#10005;</button>
     </div>
     <div style="padding:18px 22px;overflow-y:auto;">
-    <div class="gm-sec" style="--gm-ac:#6d28d9;">
+    <div class="gm-sec" style="--gm-ac:var(--cx-primary-text, #6d28d9);">
       <div class="gm-t">&#128203; Conteo f&#237;sico</div>
       <div class="form-group"><label>Stock en sistema (g)</label><input type="number" id="ajuste-sistema" readonly style="background:#f5f5f5;color:var(--cx-text-mute);"></div>
       <div class="form-group"><label style="color:var(--cx-primary-text);font-weight:700;">Cantidad f&#237;sica real (g) *</label><input type="number" id="ajuste-fisico" placeholder="Lo que tienes f&#237;sicamente" step="0.01" min="0" style="border:2px solid var(--cx-primary);"></div>
@@ -225,7 +225,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
       <div id="ajuste-msg" style="margin-top:8px;font-size:0.85em;"></div>
     </div>
-    <div class="gm-sec" style="--gm-ac:#d97706;">
+    <div class="gm-sec" style="--gm-ac:var(--cx-warn-text, #d97706);">
       <div class="gm-t">&#128202; Stock m&#237;nimo</div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div class="form-group" style="flex:1;margin-bottom:0;"><label>Nuevo m&#237;nimo (g)</label><input type="number" id="ajuste-smin" placeholder="0" step="0.1" min="0"></div>
@@ -234,7 +234,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div id="ajuste-smin-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
     <!-- Sebastian 8-may-2026: corregir ubicacion del lote (encontradas discrepancias en inventario real). -->
-    <div class="gm-sec" style="--gm-ac:#1e63a8;">
+    <div class="gm-sec" style="--gm-ac:var(--cx-info-text, #1e63a8);">
       <div class="gm-t">&#128205; Ubicaci&#243;n f&#237;sica del lote</div>
       <div class="gm-cur">Actual: <b id="ajuste-ubic-actual">-</b></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -247,7 +247,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <!-- Sebastián 9-may-2026: editar fecha de vencimiento del lote
          (algunos lotes ingresaron sin fecha y necesita corregirla). -->
-    <div class="gm-sec" style="--gm-ac:#a21caf;">
+    <div class="gm-sec" style="--gm-ac:var(--cx-primary-text, #a21caf);">
       <div class="gm-t">&#128197; Fecha de vencimiento</div>
       <div class="gm-cur">Actual: <b id="ajuste-fv-actual">-</b></div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
@@ -259,7 +259,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <!-- Sebastián 9-may-2026: corregir número de lote (algunos están
          mal escritos · ej. '20250703' debe ser 'YT20250703'). -->
-    <div class="gm-sec" style="--gm-ac:#0d9488;">
+    <div class="gm-sec" style="--gm-ac:var(--cx-success-text, #0d9488);">
       <div class="gm-t">&#127991;&#65039; N&#250;mero de lote</div>
       <div class="gm-cur">Actual: <b id="ajuste-lt-actual" style="font-family:monospace;">-</b></div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
@@ -270,7 +270,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <small style="color:var(--cx-text-faint);font-size:0.75em;display:block;margin-top:6px;">Aplica el cambio a TODOS los movimientos de este lote. Si el lote nuevo ya existe se confirma fusi&oacute;n.</small>
       <div id="ajuste-lt-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
-    <div class="gm-sec" style="--gm-ac:#7c3aed;">
+    <div class="gm-sec" style="--gm-ac:var(--cx-primary-text, #7c3aed);">
       <div class="gm-t">&#9749; Consumo manual</div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div class="form-group" style="flex:1;margin-bottom:0;"><label>Cantidad a consumir (g)</label><input type="number" id="ajuste-consumo" placeholder="Ej: 250" step="0.1" min="0.01"></div>
@@ -278,7 +278,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
       <div id="ajuste-consumo-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
-    <div class="gm-sec" style="--gm-ac:#c0392b;">
+    <div class="gm-sec" style="--gm-ac:var(--cx-danger-text, #c0392b);">
       <div class="gm-t">&#128190; Archivar material</div>
       <p style="font-size:0.82em;color:var(--cx-text-faint);margin:0 0 8px;">Oculta el material del cat&#225;logo activo sin eliminar su historial.</p>
       <button onclick="archivarMP()" class="gm-btn" style="background:var(--cx-danger);">Archivar este material</button>
@@ -11057,7 +11057,7 @@ function envBotonAgregarPieza(ebrId,it){
     +'<button onclick="envToggleAgregar(&#39;'+id+'&#39;)" style="background:none;border:1px dashed '
     +'var(--cx-border);color:var(--cx-primary-text);border-radius:6px;padding:3px 9px;font-size:10px;'
     +'font-weight:700;cursor:pointer">+ pieza</button>'
-    +'<div id="'+id+'" style="display:none;margin-top:7px">'
+    +'<div id="'+id+'" hidden style="margin-top:7px">'
     +'<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">'
     +'<input id="'+id+'-cod" placeholder="C&oacute;digo MEE" style="width:120px;padding:4px 6px;border:1px solid '
     +'var(--cx-border);border-radius:5px;font-size:11px;font-family:ui-monospace,monospace">'
@@ -11073,8 +11073,11 @@ function envBotonAgregarPieza(ebrId,it){
     +'</div></div>';
 }
 function envToggleAgregar(id){
+  // `hidden` (atributo) y no `style.display`: es lo correcto para un plegable, y deja el conteo
+  // de bloques ocultos PERMANENTES limpio · ese trinquete vigila pantallas viejas escondidas,
+  // no formularios que se abren y cierran.
   var el=document.getElementById(id); if(!el) return;
-  el.style.display=(el.style.display==='none'?'block':'none');
+  el.hidden=!el.hidden;
 }
 async function envAgregarPieza(ebrId, envase, id){
   var cod=((document.getElementById(id+'-cod')||{}).value||'').trim();

@@ -44,6 +44,9 @@ TECHO_DISPLAY_NONE_DASHBOARD = 201
 TECHO_COLORES_TOTAL = 5014   # los 42 templates juntos
 TECHO_FONDO_OPACO = 0        # un fondo opaco sin token IGNORA el tema oscuro · debe quedar en 0
 TECHO_TEXTO_PALABRA = 28     # `color:gray|black|red…` · el blanco no cuenta (ver abajo)
+# Variables PROPIAS de cada página con color fijo (`--mut: #6b7280`). Eran 124; se enlazaron
+# al sistema las 69 inequívocas. Las 55 restantes son de páginas ya oscuras o de uso mixto.
+TECHO_VARIABLES_PROPIAS = 55
 
 # `(?<!&)` deja fuera las ENTIDADES HTML: `&#9888;` (⚠) y `&#128203;` (📋) matcheaban como si
 # fueran colores y le sumaban ruido al conteo. Un trinquete que cuenta iconos como deuda mide mal.
@@ -240,6 +243,37 @@ def test_el_texto_blanco_sobre_los_rellenos_se_sigue_leyendo():
     assert not fallos, ('el texto blanco no se lee sobre estos rellenos:\n  ' +
                         '\n  '.join(fallos) +
                         '\nEl relleno tiene que quedarse OSCURO; para el texto está --cx-*-text.')
+
+
+def test_las_variables_propias_de_pagina_no_crecen():
+    """La tercera forma de esconder un color fijo, y la que más costó ver.
+
+    Cada página se declaró su mini-paleta (`--mut: #6b7280`, `--txt: #1c1917`, `--gm-ac: #6d28d9`…)
+    y la usa por todos lados. El migrador no las veía porque su regex pide un nombre de propiedad
+    CSS estándar, y una declaración de variable no lo es. Eran 124 y explicaban buena parte del
+    texto ilegible en tema oscuro: el chip "Conteo físico" daba 2,06:1 por un `--gm-ac` fijo.
+
+    Se enlazaron al sistema las 69 INEQUÍVOCAS (medido antes: las que se usan siempre como texto,
+    o siempre como borde/pálido). Las 55 restantes se dejaron a propósito: `--bg` y `--card` valen
+    #0f172a y #1e293b porque esas páginas YA son oscuras, y `--ink`/`--soft`/`--violet` se usan
+    como texto Y como fondo, así que el token correcto depende del sitio.
+
+    Este techo evita que la cuenta suba mientras se revisan una por una.
+    """
+    patron = re.compile(r'(--[a-z][a-z0-9-]*)\s*:\s*#[0-9a-fA-F]{3,8}(?![0-9a-fA-F])')
+    total = 0
+    for base in (TEMPLATES, os.path.join(RAIZ, 'api', 'blueprints')):
+        for f in sorted(os.listdir(base)):
+            if not f.endswith('.py'):
+                continue
+            with io.open(os.path.join(base, f), encoding='utf-8') as fh:
+                for m in patron.finditer(fh.read()):
+                    if not m.group(1).startswith('--cx-'):
+                        total += 1
+    assert total <= TECHO_VARIABLES_PROPIAS, (
+        'subió a %d variables propias con color fijo (techo %d). Una variable de página con un hex '
+        'fijo ignora el tema oscuro en TODOS sus usos de una vez. Enlazala al sistema: '
+        '`--mut: var(--cx-text-mute, #6b7280)`.' % (total, TECHO_VARIABLES_PROPIAS))
 
 
 def test_el_techo_esta_apretado():

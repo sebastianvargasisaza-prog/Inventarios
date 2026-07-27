@@ -10672,7 +10672,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
          '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
          '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>'
          "<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');"
-         ':root{--ink:#18181b;--soft:#3f3f46;--mute:#71717a;--line:#e4e4e7;--violet:#6d28d9;--violet-d:#4c1d95;--pale:#f5f3ff}'
+         ':root{--ink:#18181b;--soft:#3f3f46;--mute:var(--cx-text-mute, #71717a);--line:var(--cx-border, #e4e4e7);--violet:#6d28d9;--violet-d:var(--cx-primary-text, #4c1d95);--pale:var(--cx-primary-pale, #f5f3ff)}'
          '*{margin:0;padding:0;box-sizing:border-box}'
          "body{font-family:'Inter',system-ui,Arial,sans-serif;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}"
          '.ph{background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}'
@@ -10844,7 +10844,7 @@ def _rotulo_recep_css(lw, lh):
     w4 = str(lw - 8)  # ancho en impresión con margen lateral (evita corte a los lados)
     return (
       "<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');"
-      ":root{--ink:#18181b;--soft:#3f3f46;--mute:#71717a;--line:#e4e4e7;--violet:#6d28d9;--violet-d:#4c1d95;--pale:#f5f3ff}"
+      ":root{--ink:#18181b;--soft:#3f3f46;--mute:var(--cx-text-mute, #71717a);--line:var(--cx-border, #e4e4e7);--violet:#6d28d9;--violet-d:var(--cx-primary-text, #4c1d95);--pale:var(--cx-primary-pale, #f5f3ff)}"
       "*{margin:0;padding:0;box-sizing:border-box}"
       "body{font-family:'Inter',system-ui,Arial,sans-serif;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}"
       ".ph{background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}"

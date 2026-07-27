@@ -2277,7 +2277,7 @@ _PANEL_PROGRAMAR_HTML = r"""<!doctype html><html lang="es"><head><meta charset="
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Panel de programación · EOS</title>
 <style>
-:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;--ok:#16a34a;--amb:#d97706;}
+:root{--v:var(--cx-primary-text, #6d28d9);--vl:#7c3aed;--txt:var(--cx-text, #1c1917);--mut:var(--cx-text-mute, #78716c);--line:var(--cx-border, #eef0f2);--bg:#faf9fb;--ok:#16a34a;--amb:#d97706;}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:24px;}
 .wrap{max-width:1600px;margin:0 auto;}
 h1{font-size:22px;margin:0 0 12px;letter-spacing:-.02em;}
@@ -6467,7 +6467,7 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-  :root{{--ink:#18181b;--soft:#3f3f46;--mute:#71717a;--line:#e4e4e7;--violet:#6d28d9;--violet-d:#4c1d95;--pale:#f5f3ff}}
+  :root{{--ink:#18181b;--soft:#3f3f46;--mute:var(--cx-text-mute, #71717a);--line:var(--cx-border, #e4e4e7);--violet:#6d28d9;--violet-d:var(--cx-primary-text, #4c1d95);--pale:var(--cx-primary-pale, #f5f3ff)}}
   *{{box-sizing:border-box}}
   body{{font-family:'Inter',system-ui,Arial,sans-serif;margin:0;padding:28px;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}}
   .sheet{{max-width:760px;margin:0 auto 22px;background:var(--cx-card, #fff);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 12px 28px rgba(24,24,27,.08)}}

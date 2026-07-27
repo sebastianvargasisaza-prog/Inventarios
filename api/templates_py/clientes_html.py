@@ -174,10 +174,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- DASHBOARD ÁNIMUS -->
 <div id="ta-dash" class="page active">
   <div class="kpi-grid" id="kpi-animus">
-    <div class="kpi" style="--c:#6d28d9"><div class="kpi-val" id="ka-aliados">&#x2014;</div><div class="kpi-lbl">Aliados activos</div></div>
-    <div class="kpi" style="--c:#4A8B6A"><div class="kpi-val" id="ka-facturado">&#x2014;</div><div class="kpi-lbl">Facturado total</div></div>
-    <div class="kpi" style="--c:#dc2626"><div class="kpi-val" id="ka-cartera">&#x2014;</div><div class="kpi-lbl">Cartera pendiente</div><div class="kpi-sub">Saldo sin pagar</div></div>
-    <div class="kpi" style="--c:#dc2626"><div class="kpi-val" id="ka-churn">&#x2014;</div><div class="kpi-lbl">Aliados en riesgo</div><div class="kpi-sub">&gt;75 d&#xed;as sin pedido</div></div>
+    <div class="kpi" style="--c:var(--cx-primary-text, #6d28d9)"><div class="kpi-val" id="ka-aliados">&#x2014;</div><div class="kpi-lbl">Aliados activos</div></div>
+    <div class="kpi" style="--c:var(--cx-success-text, #4A8B6A)"><div class="kpi-val" id="ka-facturado">&#x2014;</div><div class="kpi-lbl">Facturado total</div></div>
+    <div class="kpi" style="--c:var(--cx-danger-text, #dc2626)"><div class="kpi-val" id="ka-cartera">&#x2014;</div><div class="kpi-lbl">Cartera pendiente</div><div class="kpi-sub">Saldo sin pagar</div></div>
+    <div class="kpi" style="--c:var(--cx-danger-text, #dc2626)"><div class="kpi-val" id="ka-churn">&#x2014;</div><div class="kpi-lbl">Aliados en riesgo</div><div class="kpi-sub">&gt;75 d&#xed;as sin pedido</div></div>
   </div>
   <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:18px;margin-bottom:18px;">
     <h3 style="font-size:0.92em;font-weight:700;color:#1C2B30;margin-bottom:12px;">&#x1F4B0; Cartera por Aliado</h3>
@@ -557,9 +557,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     La norma del canal es <strong>pago anticipado</strong>. Cualquier saldo es cartera activa que requiere seguimiento inmediato.
   </div>
   <div class="kpi-grid" style="margin-bottom:18px;">
-    <div class="kpi" style="--c:#dc2626"><div class="kpi-val" id="kc-total">&#x2014;</div><div class="kpi-lbl">Cartera total</div><div class="kpi-sub">Saldo sin pagar</div></div>
-    <div class="kpi" style="--c:#B5924A"><div class="kpi-val" id="kc-aliados">&#x2014;</div><div class="kpi-lbl">Aliados con deuda</div></div>
-    <div class="kpi" style="--c:#4A8B6A"><div class="kpi-val" id="kc-pagado">&#x2014;</div><div class="kpi-lbl">Total cobrado</div></div>
+    <div class="kpi" style="--c:var(--cx-danger-text, #dc2626)"><div class="kpi-val" id="kc-total">&#x2014;</div><div class="kpi-lbl">Cartera total</div><div class="kpi-sub">Saldo sin pagar</div></div>
+    <div class="kpi" style="--c:var(--cx-warn-text, #B5924A)"><div class="kpi-val" id="kc-aliados">&#x2014;</div><div class="kpi-lbl">Aliados con deuda</div></div>
+    <div class="kpi" style="--c:var(--cx-success-text, #4A8B6A)"><div class="kpi-val" id="kc-pagado">&#x2014;</div><div class="kpi-lbl">Total cobrado</div></div>
   </div>
   <table class="tbl">
     <thead><tr><th>Aliado</th><th>Ciudad</th><th>Sem.</th><th style="text-align:right;">Pedidos</th><th style="text-align:right;">Facturado</th><th style="text-align:right;">Pagado</th><th style="text-align:right;">Saldo deuda</th><th>&#xda;lt. pedido</th></tr></thead>
@@ -609,10 +609,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     </div>
   </div>
   <div class="kpi-grid">
-    <div class="kpi" style="--c:#5C4B99"><div class="kpi-val" id="mq-prosp">&#x2014;</div><div class="kpi-lbl">Prospectos activos</div></div>
-    <div class="kpi" style="--c:#059669"><div class="kpi-val" id="mq-ord">&#x2014;</div><div class="kpi-lbl">&#xd3;rdenes activas</div></div>
-    <div class="kpi" style="--c:#D97706"><div class="kpi-val" id="mq-val">&#x2014;</div><div class="kpi-lbl">Valor pipeline</div></div>
-    <div class="kpi" style="--c:#DC2626"><div class="kpi-val" id="mq-cierre">&#x2014;</div><div class="kpi-lbl">En negociaci&#xf3;n/cierre</div></div>
+    <div class="kpi" style="--c:var(--cx-primary-text, #5C4B99)"><div class="kpi-val" id="mq-prosp">&#x2014;</div><div class="kpi-lbl">Prospectos activos</div></div>
+    <div class="kpi" style="--c:var(--cx-success-text, #059669)"><div class="kpi-val" id="mq-ord">&#x2014;</div><div class="kpi-lbl">&#xd3;rdenes activas</div></div>
+    <div class="kpi" style="--c:var(--cx-warn-text, #D97706)"><div class="kpi-val" id="mq-val">&#x2014;</div><div class="kpi-lbl">Valor pipeline</div></div>
+    <div class="kpi" style="--c:var(--cx-danger-text, #DC2626)"><div class="kpi-val" id="mq-cierre">&#x2014;</div><div class="kpi-lbl">En negociaci&#xf3;n/cierre</div></div>
   </div>
   <div id="mq-ord-recientes"></div>
 </div>
