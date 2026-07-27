@@ -6567,11 +6567,14 @@ def envases_plan_ebr(ebr_id):
     reg = {}
     try:
         for r in conn.execute(
-            "SELECT COALESCE(presentacion_codigo,''), COALESCE(unidades,0), COALESCE(registrado_por,'') "
+            "SELECT COALESCE(presentacion_codigo,''), COALESCE(unidades,0), COALESCE(registrado_por,''), "
+            "COALESCE(no_envasada,0), COALESCE(motivo_no_envasada,'') "
             "FROM ebr_envasado_unidades WHERE ebr_id=?", (ebr_id,)).fetchall():
-            reg[r[0]] = {"unidades": r[1], "registrado_por": r[2]}
-    except Exception:
-        pass
+            reg[r[0]] = {"unidades": r[1], "registrado_por": r[2],
+                         "no_envasada": bool(r[3]), "motivo_no_envasada": r[4]}
+    except Exception as _e:
+        # columnas de la mig 382 · si la instancia no migró todavía, seguir sin la marca
+        log.warning("envases-plan: unidades registradas no disponibles: %s", _e)
     # FOTO y PARTES del frasco (Sebastián 26-jul: *"quiero que allí sugiera con foto el envase"*).
     # El operario tiene que RECONOCER el frasco en el estante; un código como MEE-ENV-012 no le
     # dice nada. La foto ya existía en el modelo (`maestro_mee.imagen_url`, mig 298 · se llamaba
@@ -6621,11 +6624,142 @@ def envases_plan_ebr(ebr_id):
                 "partes": _pt,
                 "unidades": reg.get(pc, {}).get("unidades", 0),
                 "registrado_por": reg.get(pc, {}).get("registrado_por", ""),
+                "no_envasada": reg.get(pc, {}).get("no_envasada", False),
+                "motivo_no_envasada": reg.get(pc, {}).get("motivo_no_envasada", ""),
             })
     except Exception as _e:
         log.warning("envases-plan fallo: %s", _e)
+
+    # CLIENTES del lote (Sebastián 26-jul: *"esto está solo para ánimus, recuerda que tenemos
+    # varios clientes"*). `pedidos_b2b_lote` ya guarda qué cliente aporta cuántas unidades y CON
+    # QUÉ ENVASE PROPIO, y el cierre del envasado ya lo respeta: descuenta el frasco del cliente
+    # por sus unidades y el de ÁNIMUS por el resto. Lo que faltaba era MOSTRARLO: el operario
+    # envasaba un lote con unidades de un cliente sin verlo en pantalla.
+    clientes = []
+    try:
+        _pid = conn.execute("SELECT COALESCE(produccion_id,0) FROM ebr_ejecuciones WHERE id=?",
+                            (ebr_id,)).fetchone()
+        _pid = int((_pid[0] if _pid else 0) or 0)
+        if _pid:
+            for r in conn.execute(
+                "SELECT COALESCE(cliente_nombre,''), COALESCE(unidades_aporte,0), "
+                "COALESCE(ml_unidad,0), COALESCE(envase_codigo,''), COALESCE(modo,'') "
+                "FROM pedidos_b2b_lote WHERE lote_produccion_id=? ORDER BY id", (_pid,)).fetchall():
+                clientes.append({
+                    "cliente": r[0] or "(sin nombre)", "unidades": int(r[1] or 0),
+                    "volumen_ml": float(r[2] or 0), "modo": r[4],
+                    "envase": _mee(r[3]),
+                    # sin envase propio, ese cliente se lleva el frasco de ÁNIMUS
+                    "usa_envase_propio": bool((r[3] or "").strip()),
+                })
+    except Exception as _e:
+        log.warning("envases-plan: clientes del lote no disponibles: %s", _e)
     return jsonify({"ok": True, "producto": producto, "lote": erow[1],
-                    "descontado": bool((erow[3] or "").strip()), "items": items})
+                    "descontado": bool((erow[3] or "").strip()), "items": items,
+                    "clientes": clientes,
+                    "unidades_clientes": sum(c["unidades"] for c in clientes)})
+
+
+@bp.route("/api/brd/envase/<path:codigo>/parte", methods=["POST"])
+def brd_envase_agregar_parte(codigo):
+    """Agrega una PIEZA a un envase desde el legajo (Sebastián 26-jul).
+
+    *"falta allí en envasado la opción de agregar partes por si no están mapeadas"*. Quien envasa
+    es quien DESCUBRE que al frasco le falta declarar el gotero, y mandarlo a otra pantalla (o a
+    pedirle el favor a un admin) es lo que hace que el dato nunca se cargue: hoy sólo 2 de 92
+    envases tienen sus piezas.
+
+    Escribe en `mee_partes`, la misma tabla que usan el abastecimiento (para comprarlas) y el
+    cierre del envasado (para descontarlas), así que declarar la pieza acá arregla las dos puntas.
+    Mismo permiso que ejecutar el legajo (Planta/Calidad/Admin) y **auditado**: cambia lo que se
+    compra y lo que se descuenta, tiene que quedar quién lo declaró.
+    """
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    env = (codigo or "").strip().upper()
+    body = request.get_json(silent=True) or {}
+    parte = (body.get("parte_codigo") or "").strip().upper()
+    desc = (body.get("descripcion") or "").strip()[:120]
+    try:
+        cant = float(body.get("cantidad") or 1)
+    except (TypeError, ValueError):
+        cant = 1
+    if not env:
+        return jsonify({"error": "envase requerido"}), 400
+    if not parte:
+        return jsonify({"error": "el código de la pieza es obligatorio · sin él no se puede "
+                                 "descontar del kardex"}), 400
+    if cant <= 0:
+        return jsonify({"error": "la cantidad debe ser mayor que cero"}), 400
+    conn = get_db(); cur = conn.cursor()
+    # la pieza tiene que EXISTIR en el maestro: si no, se compraría y descontaría un código
+    # fantasma que nadie puede reponer (M1 · nunca inventar un material)
+    if not cur.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (parte,)).fetchone():
+        return jsonify({"error": "la pieza '%s' no existe en el maestro de envases · creala "
+                                 "primero en Bodega MEE" % parte, "codigo": "PIEZA_INEXISTENTE"}), 400
+    if parte == env:
+        return jsonify({"error": "un envase no puede ser pieza de sí mismo"}), 400
+    if cur.execute("SELECT 1 FROM mee_partes WHERE UPPER(TRIM(mee_codigo))=? "
+                   "AND UPPER(TRIM(COALESCE(parte_codigo,'')))=?", (env, parte)).fetchone():
+        return jsonify({"error": "esa pieza ya está declarada para este envase",
+                        "codigo": "YA_EXISTE"}), 409
+    cur.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
+                "VALUES (?,?,?,?, datetime('now','-5 hours'))", (env, parte, desc, cant))
+    audit_log(cur, usuario=user, accion="AGREGAR_PARTE_ENVASE", tabla="mee_partes",
+              registro_id=env, despues={"envase": env, "parte": parte, "cantidad": cant,
+                                        "descripcion": desc})
+    conn.commit()
+    return jsonify({"ok": True, "envase": env, "parte": parte, "cantidad": cant}), 201
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/presentacion-no-envasada", methods=["POST"])
+def brd_presentacion_no_envasada(ebr_id):
+    """Marca que una presentación NO se envasó en este lote (Sebastián 26-jul).
+
+    Él preguntó: *"la opción de eliminar presentación de este envasado, o con sólo dejarlo en
+    cero?"*. Ninguna de las dos: **el cero es ambiguo** — no distingue "todavía no conté" de "no
+    salió ninguna", y quien firma después no puede saber cuál de las dos fue. Y borrar la fila
+    haría desaparecer que esa presentación estaba planeada, que es justo lo que un registro
+    regulado no puede perder.
+
+    Así que se marca explícito, con quién y cuándo. La fila se atenúa, no se descuenta nada de
+    esa presentación (unidades=0) y el registro conserva la decisión.
+    """
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    pc = (body.get("presentacion_codigo") or "").strip()
+    marcar = bool(body.get("no_envasada", True))
+    motivo = (body.get("motivo") or "").strip()[:200]
+    if not pc:
+        return jsonify({"error": "presentacion_codigo requerido"}), 400
+    conn = get_db(); cur = conn.cursor()
+    d = cur.execute("SELECT COALESCE(envases_descontados_at,'') FROM ebr_ejecuciones WHERE id=?",
+                    (ebr_id,)).fetchone()
+    if not d:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if (d[0] or "").strip():
+        return jsonify({"error": "el envasado ya se cerró · no editable",
+                        "codigo": "YA_CERRADO"}), 409
+    cur.execute(
+        "INSERT INTO ebr_envasado_unidades (ebr_id, presentacion_codigo, etiqueta, volumen_ml, "
+        "unidades, no_envasada, motivo_no_envasada, registrado_por, registrado_at_utc) "
+        "VALUES (?,?,'',0,0,?,?,?, datetime('now','utc')) "
+        "ON CONFLICT(ebr_id, presentacion_codigo) DO UPDATE SET "
+        "no_envasada=excluded.no_envasada, motivo_no_envasada=excluded.motivo_no_envasada, "
+        "unidades=CASE WHEN excluded.no_envasada=1 THEN 0 ELSE ebr_envasado_unidades.unidades END, "
+        "registrado_por=excluded.registrado_por, registrado_at_utc=excluded.registrado_at_utc",
+        (ebr_id, pc, 1 if marcar else 0, motivo, user))
+    audit_log(cur, usuario=user,
+              accion=("MARCAR_PRESENTACION_NO_ENVASADA" if marcar else "REVERTIR_NO_ENVASADA"),
+              tabla="ebr_envasado_unidades", registro_id=ebr_id,
+              despues={"presentacion": pc, "no_envasada": marcar, "motivo": motivo})
+    conn.commit()
+    return jsonify({"ok": True, "presentacion_codigo": pc, "no_envasada": marcar})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/registrar-unidades", methods=["POST"])

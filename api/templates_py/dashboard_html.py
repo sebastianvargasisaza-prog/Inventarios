@@ -10964,22 +10964,133 @@ async function cargarEnvasesPlan(ebrId){
   try{
     var d=await (await fetch('/api/brd/ebr/'+ebrId+'/envases-plan',{credentials:'same-origin'})).json();
     if(!d.ok||!d.items||!d.items.length){ wrap.innerHTML='<div style="color:var(--cx-text-faint)">Este producto no tiene presentaciones configuradas. Cargalas en <b>Planta &rsaquo; Presentaciones</b> (producto &rarr; 15/30/50ml &rarr; envase/tapa/caja).</div>'; return; }
+    window._envPlan=window._envPlan||{}; window._envPlan[ebrId]=d;
     var desc=d.descontado;
-    var h='<table class="table" style="font-size:12px"><thead><tr><th>Presentaci&oacute;n</th><th>Vol</th><th>Envase</th><th>Piezas que se descuentan</th><th>Unidades</th><th></th></tr></thead><tbody>';
+    var h='';
+    // ── CLIENTES del lote ────────────────────────────────────────────────────────────────────
+    // EOS ya guardaba qué cliente aporta cuántas unidades y con qué frasco propio, y el cierre ya
+    // lo respetaba · lo que faltaba era MOSTRARLO: el operario envasaba un lote con unidades de un
+    // cliente sin verlo en pantalla, y por eso la sección se sentía "sólo para ÁNIMUS".
+    if(d.clientes && d.clientes.length){
+      h+='<div style="background:var(--cx-info-pale);border:1px solid var(--cx-border);'
+        +'border-left:3px solid var(--cx-info);border-radius:10px;padding:12px 14px;margin-bottom:14px">'
+        +'<div style="font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;'
+        +'color:var(--cx-info-text);margin-bottom:9px">&#128101; Este lote lleva unidades de otros clientes</div>';
+      d.clientes.forEach(function(c){
+        h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap">'
+          +'<b style="font-size:13px;color:var(--cx-text);min-width:130px">'+_escHTML(c.cliente)+'</b>'
+          +'<span style="font-size:12px;color:var(--cx-text-soft);font-variant-numeric:tabular-nums">'
+          +c.unidades.toLocaleString('es-CO')+' uds'+(c.volumen_ml?(' &middot; '+c.volumen_ml+' ml'):'')+'</span>';
+        if(c.usa_envase_propio){
+          h+='<span style="display:flex;align-items:center;gap:6px;margin-left:auto">'
+            +envMiniatura(c.envase,false)
+            +'<span style="font-size:10px;font-family:ui-monospace,monospace;color:var(--cx-text-mute)">'
+            +_escHTML((c.envase&&c.envase.codigo)||'')+'</span>'
+            +'<span style="font-size:10px;font-weight:700;color:var(--cx-info-text)">envase del cliente</span></span>';
+        } else {
+          h+='<span style="margin-left:auto;font-size:11px;color:var(--cx-warn-text)">'
+            +'&#9888; sin envase propio &middot; se lleva el de &Aacute;NIMUS</span>';
+        }
+        h+='</div>';
+      });
+      h+='<div style="font-size:11px;color:var(--cx-text-mute);margin-top:7px;border-top:1px solid '
+        +'var(--cx-border);padding-top:7px">El resto de las unidades van con el envase de &Aacute;NIMUS. '
+        +'Al cerrar, cada cliente descuenta SU frasco.</div></div>';
+    }
+    // ── PRESENTACIONES ───────────────────────────────────────────────────────────────────────
+    h+='<div style="overflow-x:auto"><table class="table" style="font-size:12px"><thead><tr>'
+      +'<th>Presentaci&oacute;n</th><th>Envase</th><th>Piezas que se descuentan</th>'
+      +'<th style="text-align:right">Unidades</th><th></th></tr></thead><tbody>';
     d.items.forEach(function(it){
-      var pc=it.presentacion_codigo;
-      var inp=desc?('<b>'+(it.unidades||0)+'</b>'):('<input id="eu-'+ebrId+'-'+pc+'" type="number" min="0" value="'+(it.unidades||0)+'" style="width:80px;padding:4px;border:1px solid var(--cx-border);border-radius:4px">');
-      var btn=desc?'':('<button onclick="ebrRegistrarUnidades('+ebrId+',&#39;'+pc+'&#39;,'+(it.volumen_ml||0)+')" style="background:var(--cx-success);color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer">Guardar</button>');
-      h+='<tr><td>'+_escHTML(it.etiqueta||pc)+'</td><td>'+(it.volumen_ml||0)+' ml</td>'
-        +'<td>'+envPieza(it.envase, true)+'</td>'
-        +'<td>'+envPiezasSecundarias(it)+'</td>'
-        +'<td>'+inp+'</td><td>'+btn+'</td></tr>';
+      var pc=it.presentacion_codigo, no=it.no_envasada;
+      var inp=desc?('<b style="font-variant-numeric:tabular-nums">'+(it.unidades||0)+'</b>')
+        :('<input id="eu-'+ebrId+'-'+_escHTML(pc)+'" type="number" min="0" value="'+(it.unidades||0)+'" '
+          +(no?'disabled ':'')+'style="width:86px;padding:5px;border:1px solid var(--cx-border);'
+          +'border-radius:5px;text-align:right;font-variant-numeric:tabular-nums'+(no?';opacity:.5':'')+'">');
+      var acciones='';
+      if(!desc){
+        acciones='<button onclick="ebrRegistrarUnidades('+ebrId+',&#39;'+_escHTML(pc)+'&#39;,'+(it.volumen_ml||0)+')" '
+          +(no?'disabled ':'')+'style="background:var(--cx-success);color:#fff;border:none;border-radius:5px;'
+          +'padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer'+(no?';opacity:.45':'')+'">Guardar</button>'
+          +' <button onclick="envNoEnvasada('+ebrId+',&#39;'+_escHTML(pc)+'&#39;,'+(no?'false':'true')+')" '
+          +'title="'+(no?'Volver a incluir esta presentaci&oacute;n':'Marcar que esta presentaci&oacute;n NO sali&oacute; en este lote')+'" '
+          +'style="background:var(--cx-card);color:var(--cx-text-mute);border:1px solid var(--cx-border);'
+          +'border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer">'
+          +(no?'Incluir':'No se envas&oacute;')+'</button>';
+      }
+      h+='<tr'+(no?' style="opacity:.55"':'')+'>'
+        +'<td><b>'+_escHTML(it.etiqueta||pc)+'</b><div style="font-size:10px;color:var(--cx-text-mute)">'
+        +(it.volumen_ml||0)+' ml</div>'
+        +(no?('<div style="font-size:10px;font-weight:700;color:var(--cx-warn-text);margin-top:3px">'
+              +'NO SE ENVAS&Oacute;'+(it.motivo_no_envasada?(' &middot; '+_escHTML(it.motivo_no_envasada)):'')+'</div>'):'')
+        +'</td>'
+        +'<td>'+envPieza(it.envase,true)+'</td>'
+        +'<td>'+envPiezasSecundarias(it)+(desc?'':envBotonAgregarPieza(ebrId,it))+'</td>'
+        +'<td style="text-align:right">'+inp+'</td>'
+        +'<td style="white-space:nowrap">'+acciones+'</td></tr>';
     });
-    h+='</tbody></table>';
-    if(desc){ h+='<div style="margin-top:8px;color:var(--cx-success-text);font-weight:700">&#10003; Envases descontados (legajo cerrado).</div>'; }
-    else { h+='<button onclick="ebrCerrarEnvasado('+ebrId+')" style="margin-top:10px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer">&#128274; Cerrar envasado y descontar envases</button> <span style="color:var(--cx-text-faint);font-size:11px">descuenta el frasco y TODAS sus piezas (tapa, caja, gotero&hellip;) &times; unidades de cada presentaci&oacute;n</span>'; }
+    h+='</tbody></table></div>';
+    if(desc){ h+='<div style="margin-top:10px;color:var(--cx-success-text);font-weight:700">&#10003; Envases descontados (legajo cerrado).</div>'; }
+    else { h+='<button onclick="ebrCerrarEnvasado('+ebrId+')" style="margin-top:12px;background:var(--cx-primary-grad);color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer">&#128274; Cerrar envasado y descontar envases</button> <span style="color:var(--cx-text-mute);font-size:11px">descuenta el frasco y TODAS sus piezas (tapa, caja, gotero&hellip;) &times; unidades de cada presentaci&oacute;n</span>'; }
     wrap.innerHTML=h;
   }catch(e){ wrap.innerHTML='<div style="color:var(--cx-danger-text)">Error cargando presentaciones.</div>'; }
+}
+// Declarar una pieza del frasco SIN salir del legajo (Sebastián 26-jul). Quien envasa es quien
+// descubre que al frasco le falta el gotero; mandarlo a otra pantalla es lo que hace que el dato
+// nunca se cargue (hoy sólo 2 de 92 envases tienen sus piezas declaradas).
+function envBotonAgregarPieza(ebrId,it){
+  var env=(it.envase&&it.envase.codigo)||'';
+  if(!env) return '';
+  var id='ap-'+ebrId+'-'+(it.presentacion_codigo||'').replace(/[^A-Za-z0-9]/g,'');
+  return '<div style="margin-top:7px">'
+    +'<button onclick="envToggleAgregar(&#39;'+id+'&#39;)" style="background:none;border:1px dashed '
+    +'var(--cx-border);color:var(--cx-primary-text);border-radius:6px;padding:3px 9px;font-size:10px;'
+    +'font-weight:700;cursor:pointer">+ pieza</button>'
+    +'<div id="'+id+'" style="display:none;margin-top:7px">'
+    +'<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">'
+    +'<input id="'+id+'-cod" placeholder="C&oacute;digo MEE" style="width:120px;padding:4px 6px;border:1px solid '
+    +'var(--cx-border);border-radius:5px;font-size:11px;font-family:ui-monospace,monospace">'
+    +'<input id="'+id+'-desc" placeholder="gotero / tapa&hellip;" style="width:110px;padding:4px 6px;'
+    +'border:1px solid var(--cx-border);border-radius:5px;font-size:11px">'
+    +'<input id="'+id+'-cant" type="number" min="1" step="1" value="1" style="width:52px;padding:4px 6px;'
+    +'border:1px solid var(--cx-border);border-radius:5px;font-size:11px;text-align:right">'
+    +'<button onclick="envAgregarPieza('+ebrId+',&#39;'+_escHTML(env)+'&#39;,&#39;'+id+'&#39;)" '
+    +'style="background:var(--cx-primary);color:#fff;border:none;border-radius:5px;padding:4px 10px;'
+    +'font-size:11px;font-weight:700;cursor:pointer">Agregar</button></div>'
+    +'<div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px">Queda declarada para '
+    +'<b>'+_escHTML(env)+'</b>: se va a COMPRAR y a DESCONTAR con este frasco, en todos los lotes.</div>'
+    +'</div></div>';
+}
+function envToggleAgregar(id){
+  var el=document.getElementById(id); if(!el) return;
+  el.style.display=(el.style.display==='none'?'block':'none');
+}
+async function envAgregarPieza(ebrId, envase, id){
+  var cod=((document.getElementById(id+'-cod')||{}).value||'').trim();
+  var des=((document.getElementById(id+'-desc')||{}).value||'').trim();
+  var cnt=parseFloat(((document.getElementById(id+'-cant')||{}).value||'1'))||1;
+  if(!cod){ alert('El c\u00f3digo de la pieza es obligatorio: sin \u00e9l no se puede descontar del kardex.'); return; }
+  var r=await fetch('/api/brd/envase/'+encodeURIComponent(envase)+'/parte',
+    {method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',
+     body:JSON.stringify({parte_codigo:cod,descripcion:des,cantidad:cnt})});
+  var j=await r.json().catch(function(){return {};});
+  if(!r.ok){ alert(j.error||'No se pudo agregar la pieza'); return; }
+  cargarEnvasesPlan(ebrId);
+}
+// El CERO es ambiguo: no distingue "todavía no conté" de "no salió ninguna". Se marca explícito,
+// con motivo, y queda en audit_log. Borrar la fila haría desaparecer que estaba planeada.
+async function envNoEnvasada(ebrId, pc, marcar){
+  var motivo='';
+  if(marcar){
+    motivo=prompt('\u00bfPor qu\u00e9 no se envas\u00f3 esta presentaci\u00f3n? (queda en el registro)')||'';
+    if(!motivo.trim()){ return; }
+  }
+  var r=await fetch('/api/brd/ebr/'+ebrId+'/presentacion-no-envasada',
+    {method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',
+     body:JSON.stringify({presentacion_codigo:pc,no_envasada:marcar,motivo:motivo})});
+  var j=await r.json().catch(function(){return {};});
+  if(!r.ok){ alert(j.error||'No se pudo marcar'); return; }
+  cargarEnvasesPlan(ebrId);
 }
 async function ebrRegistrarUnidades(ebrId, pc, vol){
   var el=document.getElementById('eu-'+ebrId+'-'+pc);

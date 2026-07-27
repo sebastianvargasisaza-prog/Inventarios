@@ -10399,6 +10399,16 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "UPDATE ebr_despeje_items SET item_idx = 1012 - item_idx "
         "WHERE item_idx >= 1001 AND item_idx <= 1012",
     ]),
+
+    (382, "Envasado · marcar una presentación como NO ENVASADA en este lote (Sebastián 26-jul). "
+          "Preguntó si se borraba la fila o bastaba dejarla en cero: ninguna de las dos. El CERO "
+          "es ambiguo (no distingue 'todavía no conté' de 'no salió ninguna', y quien firma "
+          "después no puede saber cuál fue), y borrar la fila haría desaparecer que esa "
+          "presentación estaba planeada — justo lo que un registro regulado no puede perder. Se "
+          "marca explícito, con motivo, y queda en audit_log quién y cuándo.", [
+        "ALTER TABLE ebr_envasado_unidades ADD COLUMN no_envasada INTEGER DEFAULT 0",
+        "ALTER TABLE ebr_envasado_unidades ADD COLUMN motivo_no_envasada TEXT DEFAULT ''",
+    ]),
 ]
 
 

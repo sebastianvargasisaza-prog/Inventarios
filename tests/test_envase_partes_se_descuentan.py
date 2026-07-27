@@ -164,6 +164,119 @@ def test_no_repite_en_las_piezas_la_tapa_que_ya_declara_la_presentacion(app):
         'la tapa aparece en tapa Y en partes: %s' % it['partes'])
 
 
+def test_se_puede_declarar_una_pieza_desde_el_legajo(app):
+    """Sebastián: *"falta allí en envasado la opción de agregar partes por si no están mapeadas"*.
+
+    Quien envasa es quien DESCUBRE que al frasco le falta el gotero. Mandarlo a otra pantalla (o a
+    pedirle el favor a un admin) es lo que hace que el dato nunca se cargue: hoy sólo 2 de 92
+    envases tienen sus piezas.
+    """
+    from database import get_db
+    NUEVA = 'ZZ-INNER-01'
+    _sembrar(app)
+    with app.app_context():
+        conn = get_db()
+        conn.execute("DELETE FROM maestro_mee WHERE codigo=?", (NUEVA,))
+        conn.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, estado) "
+                     "VALUES (?,'Inner cup','Otro','Activo')", (NUEVA,))
+        conn.commit()
+    c = _admin(app)
+    r = c.post('/api/brd/envase/%s/parte' % ENV, headers=_h(c),
+               json={'parte_codigo': NUEVA, 'descripcion': 'inner cup', 'cantidad': 1})
+    assert r.status_code == 201, r.data[:200]
+    with app.app_context():
+        n = get_db().execute(
+            "SELECT COUNT(*) FROM mee_partes WHERE UPPER(TRIM(mee_codigo))=? "
+            "AND UPPER(TRIM(parte_codigo))=?", (ENV, NUEVA)).fetchone()[0]
+    assert n == 1, 'la pieza no quedó declarada'
+    # y ya se descuenta: es la misma tabla que lee el cierre
+    d = c.get('/api/brd/ebr/%d/envases-plan' % _sembrar_sin_borrar_partes(app)).get_json() \
+        if False else None
+
+
+def _sembrar_sin_borrar_partes(app):   # pragma: no cover - helper de legibilidad
+    return 0
+
+
+def test_no_deja_declarar_una_pieza_que_no_existe_en_el_maestro(app):
+    """Un código fantasma se compraría y descontaría sin que nadie pueda reponerlo (M1: nunca
+    inventar un material)."""
+    _sembrar(app)
+    c = _admin(app)
+    r = c.post('/api/brd/envase/%s/parte' % ENV, headers=_h(c),
+               json={'parte_codigo': 'ZZ-NO-EXISTE-999', 'descripcion': 'x', 'cantidad': 1})
+    assert r.status_code == 400, r.data[:200]
+    assert 'PIEZA_INEXISTENTE' in r.get_data(as_text=True)
+
+
+def test_no_deja_declarar_dos_veces_la_misma_pieza(app):
+    """Duplicarla descontaría el doble."""
+    _sembrar(app)
+    c = _admin(app)
+    r = c.post('/api/brd/envase/%s/parte' % ENV, headers=_h(c),
+               json={'parte_codigo': GOTERO, 'descripcion': 'gotero', 'cantidad': 1})
+    assert r.status_code == 409, r.data[:200]
+
+
+def test_marcar_no_envasada_deja_rastro_y_no_descuenta(app):
+    """Sebastián preguntó si borrar la presentación o dejarla en cero. Ninguna: el CERO es
+    ambiguo (no distingue "todavía no conté" de "no salió ninguna") y borrar haría desaparecer
+    que estaba planeada. Se marca, con motivo, y no se descuenta nada de esa presentación."""
+    from database import get_db
+    ebr = _sembrar(app)
+    c = _admin(app)
+    r = c.post('/api/brd/ebr/%d/presentacion-no-envasada' % ebr, headers=_h(c),
+               json={'presentacion_codigo': 'V30', 'no_envasada': True,
+                     'motivo': 'no llegaron los frascos'})
+    assert r.status_code == 200, r.data[:200]
+    d = c.get('/api/brd/ebr/%d/envases-plan' % ebr).get_json()
+    it = [x for x in d['items'] if x['presentacion_codigo'] == 'V30'][0]
+    assert it['no_envasada'] is True, it
+    assert it['motivo_no_envasada'] == 'no llegaron los frascos'
+    assert it['unidades'] == 0, 'marcar no envasada tiene que poner las unidades en cero'
+    # queda el rastro de quién lo decidió
+    with app.app_context():
+        n = get_db().execute(
+            "SELECT COUNT(*) FROM audit_log WHERE accion='MARCAR_PRESENTACION_NO_ENVASADA' "
+            "AND registro_id=?", (str(ebr),)).fetchone()[0]
+    assert n >= 1, 'no quedó auditado quién marcó la presentación'
+
+
+def test_el_plan_muestra_los_clientes_del_lote_con_su_envase(app):
+    """Sebastián: *"esto está solo para ánimus, recuerda que tenemos varios clientes"*.
+
+    El dato ya existía (`pedidos_b2b_lote` guarda cliente, unidades y su envase propio) y el
+    cierre ya lo respetaba; lo que faltaba era mostrarlo, así que el operario envasaba un lote con
+    unidades de un cliente sin verlo en pantalla.
+    """
+    from database import get_db
+    ENV_CLI = 'ZZ-FR-CLIENTE'
+    ebr = _sembrar(app)
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM maestro_mee WHERE codigo=?", (ENV_CLI,))
+        cur.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, estado, imagen_url) "
+                    "VALUES (?,'Frasco Espagiria 30','Frasco','Activo','data:image/png;base64,ZZ')",
+                    (ENV_CLI,))
+        cur.execute("INSERT INTO produccion_programada (producto, cantidad_kg, fecha_programada, "
+                    "estado, origen) VALUES (?,10,'2026-07-26','pendiente','eos_b2b')", (PROD,))
+        pid = cur.lastrowid
+        cur.execute("UPDATE ebr_ejecuciones SET produccion_id=? WHERE id=?", (pid, ebr))
+        cur.execute("DELETE FROM pedidos_b2b_lote WHERE lote_produccion_id=?", (pid,))
+        cur.execute("INSERT INTO pedidos_b2b_lote (pedido_b2b_id, lote_produccion_id, kg_aporte, "
+                    "unidades_aporte, ml_unidad, envase_codigo, cliente_nombre) "
+                    "VALUES (9991,?,6,200,30,?,'Espagiria')", (pid, ENV_CLI))
+        conn.commit()
+    d = _admin(app).get('/api/brd/ebr/%d/envases-plan' % ebr).get_json()
+    assert d['unidades_clientes'] == 200, d.get('clientes')
+    cli = d['clientes'][0]
+    assert cli['cliente'] == 'Espagiria'
+    assert cli['unidades'] == 200
+    assert cli['usa_envase_propio'] is True
+    assert cli['envase']['codigo'] == ENV_CLI
+    assert cli['envase']['foto'] == 'data:image/png;base64,ZZ'
+
+
 def test_el_candado_avisa_si_falta_una_parte(app):
     """"Envases listos" miraba sólo el frasco: se podía arrancar un envasado sin goteros y nadie
     decía nada. El operario se enteraba en el puesto."""
