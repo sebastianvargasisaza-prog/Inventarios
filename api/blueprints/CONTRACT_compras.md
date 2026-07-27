@@ -78,6 +78,21 @@ Cuando Catalina edita un item:
 - Guardado por `tests/test_hoy_colombia_dinero.py` (barre los 6 módulos de dinero
   por el patrón y falla si vuelve a aparecer). Ver M106 en `.claude/CERO_ERROR.md`.
 
+### INV-11 · La recepción ADMINISTRATIVA no exige datos que sólo Calidad puede tomar (27-jul)
+- `recibir_oc` ya **no bloquea** por falta de `lote_proveedor`. Quien recibe (Catalina) cuenta
+  lo que llegó; el lote real, el peso en balanza y el vencimiento los lee **Calidad** del envase
+  físico en el F01. Exigirlos antes dejaba la recepción administrativa sin poder cerrarse.
+- El control INVIMA **se movió, no se quitó** (M39): el material entra en CUARENTENA (el FEFO la
+  excluye → no se puede consumir), si no hubo lote se asigna uno sintético `OC-<numero>-<n>` y se
+  devuelve en `lotes_sinteticos`, y **`/api/lotes/liberar` rechaza APROBAR un lote sintético**
+  (`LOTE_SINTETICO_SIN_LIBERAR`, 422). RECHAZAR sí se permite: trabar un rechazo dejaría material
+  malo atascado en cuarentena.
+- **`lote_proveedor` cae a `lote`**: la pantalla tiene UN campo de lote y mandaba `lote`, mientras
+  el backend leía `lote_proveedor` → el lote tecleado se descartaba en silencio y la validación lo
+  veía siempre vacío (422 aunque lo escribiera). Una llave que se arma en dos lados coincide en los
+  dos (M2).
+- Tests: `tests/test_recepcion_administrativa.py` (en el gate).
+
 ---
 
 ## Endpoints downstream que CONSUMEN sus datos

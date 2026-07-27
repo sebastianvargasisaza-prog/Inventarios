@@ -8272,6 +8272,29 @@ def liberar_lote():
         return jsonify({'error': 'Accion debe ser APROBAR o RECHAZAR'}), 400
     nuevo_estado = 'VIGENTE' if accion == 'APROBAR' else 'RECHAZADO'
     conn = get_db(); c = conn.cursor()
+
+    # No se LIBERA un lote con número sintético (27-jul · INVIMA Res. 2674/2013).
+    #
+    # La recepción administrativa ya no exige el lote: quien recibe cuenta lo que llegó, y el
+    # lote real lo lee Calidad del envase físico. Cuando no hubo lote, la recepción asigna uno
+    # sintético 'OC-<numero>-<n>', que NO sirve para cruzar con el CoA del proveedor. El control
+    # se hace acá, que es donde el material pasa a ser usable: para APROBAR hay que haber puesto
+    # el lote real (se hace en el F01, que ya permite corregirlo mientras está en cuarentena).
+    # RECHAZAR sí se permite con lote sintético: rechazar material es siempre seguro y trabarlo
+    # dejaría un lote malo atascado en cuarentena.
+    if accion == 'APROBAR':
+        _lote_actual = c.execute(
+            "SELECT COALESCE(lote,'') FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+        _lote_actual = (_lote_actual[0] if _lote_actual else '').strip()
+        if _lote_actual.startswith('OC-') or not _lote_actual:
+            return jsonify({
+                'error': 'Este lote todavía tiene el número provisional que asignó la recepción',
+                'codigo': 'LOTE_SINTETICO_SIN_LIBERAR',
+                'lote_actual': _lote_actual,
+                'hint': ('Poné el lote REAL del envase en el F01 (recepción técnica) antes de '
+                         'liberar: el provisional no cruza con el CoA del proveedor.'),
+            }), 422
+
     # Firma electrónica Part 11 §11.200 · liberar/rechazar un lote en cuarentena
     # es una decisión regulada INVIMA · exige re-autenticación (password+MFA)
     # vía /api/sign. APROBAR→meaning 'libera', RECHAZAR→meaning 'rechaza'.

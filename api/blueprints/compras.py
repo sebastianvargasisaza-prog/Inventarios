@@ -6181,6 +6181,10 @@ def recibir_oc(numero_oc):
     sin_lote_proveedor = []  # FIX 27-may (P1 INVIMA) · obligatorio para MPs
     # El corte de "ya venció" va en hora Colombia: con el UTC de Render, un lote que vence
     # HOY se marcaba como vencido desde las 19:00 de la víspera (M24).
+    # `_date` se sigue usando más abajo para calcular los días de vencido: al anclar la fecha
+    # a Colombia se había quitado este import y quedaba un NameError → 500 en toda recepción
+    # con un lote vencido. Al reemplazar un `X.today()` hay que grepear los OTROS usos de X.
+    from datetime import date as _date
     hoy_iso = _hoy_col().isoformat()
 
     # Detectar si la OC es de Materia Prima · solo MPs exigen lote_proveedor
@@ -6210,7 +6214,9 @@ def recibir_oc(numero_oc):
         # falta, bloqueamos con 422 · admin puede pasar forzar:true para
         # excepción legítima (lote pendiente de proveedor, etc.).
         if _es_oc_mp:
-            _lote_prov_check = (ir.get('lote_proveedor') or '').strip()
+            # Lee las DOS llaves: la pantalla manda `lote` (M2 · antes miraba sólo
+            # `lote_proveedor`, que la UI nunca envía, así que faltaba SIEMPRE).
+            _lote_prov_check = (ir.get('lote_proveedor') or ir.get('lote') or '').strip()
             _cant_check = 0
             try: _cant_check = float(cant_raw or 0)
             except Exception: pass
@@ -6260,8 +6266,21 @@ def recibir_oc(numero_oc):
             except (ValueError, TypeError):
                 pass
 
-    # Si hay violaciones bloqueantes y no se fuerza, abortar limpio
-    if not forzar_excepciones and (sobrerecepciones or vencimientos_pasados or sin_lote_proveedor):
+    # Si hay violaciones bloqueantes y no se fuerza, abortar limpio.
+    #
+    # `sin_lote_proveedor` SALIÓ de las bloqueantes (Sebastián 27-jul): esta es la recepción
+    # ADMINISTRATIVA — quien recibe cuenta lo que llegó y registra la cantidad. El lote real, el
+    # peso en balanza y el vencimiento los toma CALIDAD contra el envase físico (F01), que es
+    # quien los puede leer. Exigirlos acá dejaba a la recepción administrativa sin poder
+    # cerrarse por un dato que quien recibe no tiene.
+    #
+    # El control NO desaparece, se mueve a donde se puede cumplir (M39):
+    #   · el material entra en CUARENTENA, y el FEFO excluye cuarentena → no se puede consumir;
+    #   · si no hubo lote se asigna uno SINTÉTICO y se devuelve `lotes_sinteticos` como aviso;
+    #   · liberar exige lote REAL: un lote sintético no se libera (ver `liberar_lote`).
+    # Así la trazabilidad INVIMA queda garantizada en la liberación, que es el punto donde el
+    # material pasa a ser usable, y no en un formulario que se llena antes de tener el dato.
+    if not forzar_excepciones and (sobrerecepciones or vencimientos_pasados):
         return jsonify({
             'error': 'Recepción bloqueada por validaciones',
             'codigo': 'RECEPCION_VIOLA_REGLAS',
@@ -6269,7 +6288,7 @@ def recibir_oc(numero_oc):
             'vencimientos_pasados': vencimientos_pasados,
             'sin_lote_proveedor': sin_lote_proveedor,
             'sin_cantidad': sin_cantidad,
-            'hint': ('Verifica cantidades, vencimientos y lote_proveedor (INVIMA). '
+            'hint': ('Verifica cantidades y vencimientos. '
                      'Si la excepción es legítima (admin), envía body con forzar:true.'),
         }), 422
 
@@ -6327,7 +6346,12 @@ def recibir_oc(numero_oc):
         # COA + lote proveedor (Fase 2 · INVIMA · mig 151)
         coa_url = (ir.get('coa_url') or '').strip()
         coa_filename = (ir.get('coa_filename') or '').strip()
-        lote_proveedor = (ir.get('lote_proveedor') or '').strip()
+        # El lote del proveedor cae al `lote` que escribe la pantalla de recepción. La pantalla
+        # tiene UN solo campo de lote; el backend manejaba dos nombres y leía el que la UI nunca
+        # manda, así que el lote tecleado por quien recibe se descartaba en silencio y la
+        # trazabilidad quedaba con el lote sintético. Una llave que se arma en dos lados tiene
+        # que coincidir en los dos (M2).
+        lote_proveedor = (ir.get('lote_proveedor') or ir.get('lote') or '').strip()
         ficha_seguridad_url = (ir.get('ficha_seguridad_url') or '').strip()
         # Solo registrar movimiento (kardex) si hay algo recibido Y no es consumible administrativo.
         # Consumibles: se acumula en la línea de la OC (abajo) pero NO entran al kardex ni a cuarentena.
