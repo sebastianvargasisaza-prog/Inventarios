@@ -86,6 +86,9 @@ CORAZON=(
   "tests/test_hoy_colombia_dinero.py"
   "tests/test_caja_recibo_numerado.py"
   "tests/test_animus_audit.py"
+  # La plata de contraentrega: incluye el guard de que ningún sync de Shopify borre la
+  # marca que escribe otro (era lo que se la comía en silencio).
+  "tests/test_contraentrega_caja.py"
 )
 
 echo ""

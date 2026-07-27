@@ -1,4 +1,4 @@
-import sqlite3, json, traceback, urllib.request
+import sqlite3, json, re, traceback, unicodedata, urllib.request
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from config import DB_PATH, ADMIN_USERS, ANIMUS_ACCESS
@@ -1012,6 +1012,39 @@ def animus_calendario():
     return jsonify({"eventos": eventos})
 
 # ════════════════════════════════════════════════════════════════════
+def registrar_movimiento_caja(c, *, tipo, concepto, monto, fecha, metodo='efectivo',
+                              referencia='', observaciones='', usuario=''):
+    """Da de alta un movimiento de caja CON su recibo numerado. Punto único de alta.
+
+    Existe como helper y no inline porque hay dos caminos que dan de alta plata en caja (el
+    registro manual y el cobro de un pedido contraentrega) y si cada uno arma su propio
+    correlativo terminan con dos series que se pisan (M1/M3).
+
+    El correlativo se calcula leyendo el máximo del año, que NO es race-safe con 3 workers: la
+    garantía real es el UNIQUE `ux_caja_recibo_numero` y el retry resuelve la colisión (mismo
+    patrón que el numerador de OC). El año sale de la FECHA del movimiento, no del reloj, para
+    que la serie de cada año quede completa; si la fecha viene mal formada cae al año de
+    Colombia, porque un prefijo basura ('RC-abc-') arrancaría una serie paralela que nadie
+    podría auditar.
+
+    Devuelve (recibo_numero, mov_id). NO hace commit: lo hace el caller.
+    """
+    anio = fecha[:4] if len(fecha) >= 4 and fecha[:4].isdigit() else _hoy_col().strftime('%Y')
+    prefijo = 'RC-%s-' % anio
+
+    def _insertar():
+        n = siguiente_correlativo(c, 'animus_caja_menor', 'recibo_numero', prefijo)
+        recibo = '%s%04d' % (prefijo, n)
+        c.execute("""INSERT INTO animus_caja_menor
+            (fecha, tipo, concepto, monto, metodo, referencia, observaciones,
+             registrado_por, recibo_numero)
+            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (fecha, tipo, concepto, monto, metodo, referencia, observaciones, usuario, recibo))
+        return recibo, c.lastrowid
+
+    return intentar_insert_con_retry(_insertar, columna='recibo_numero')
+
+
 # CAJA MENOR (Daniela) — efectivo de ventas contraentrega
 # ════════════════════════════════════════════════════════════════════
 # Daniela recibe efectivo cuando los clientes pagan contraentrega y
@@ -1109,27 +1142,9 @@ def animus_caja_registrar():
 
     conn = _db()
     c = conn.cursor()
-    # Recibo NUMERADO: es la razón de ser del módulo (Sebastián 5-jul · "reemplaza los recibos
-    # sueltos sin numeración"). El correlativo se calcula leyendo el máximo del año, que NO es
-    # race-safe con 3 workers → el UNIQUE `ux_caja_recibo_numero` es la garantía real y el retry
-    # resuelve la colisión (mismo patrón que el numerador de OC).
-    # El año sale de la FECHA del movimiento (no del reloj), para que la serie de cada año quede
-    # completa. Si la fecha viene mal formada, cae al año de Colombia: un prefijo basura ('RC-abc-')
-    # arrancaría una serie paralela que nadie podría auditar.
-    anio = fecha[:4] if len(fecha) >= 4 and fecha[:4].isdigit() else _hoy_col().strftime('%Y')
-    prefijo = 'RC-%s-' % anio
-
-    def _insertar():
-        n = siguiente_correlativo(c, 'animus_caja_menor', 'recibo_numero', prefijo)
-        recibo = '%s%04d' % (prefijo, n)
-        c.execute("""INSERT INTO animus_caja_menor
-            (fecha, tipo, concepto, monto, metodo, referencia, observaciones,
-             registrado_por, recibo_numero)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
-            (fecha, tipo, concepto, monto, metodo, referencia, obs, u, recibo))
-        return recibo, c.lastrowid
-
-    recibo, mov_id = intentar_insert_con_retry(_insertar, columna='recibo_numero')
+    recibo, mov_id = registrar_movimiento_caja(
+        c, tipo=tipo, concepto=concepto, monto=monto, fecha=fecha,
+        metodo=metodo, referencia=referencia, observaciones=obs, usuario=u)
     try:
         audit_log(c, usuario=u, accion='ANIMUS_CAJA_MOV',
                   tabla='animus_caja_menor', registro_id=mov_id,
@@ -1193,6 +1208,323 @@ def animus_caja_eliminar(mov_id):
         pass
     conn.commit()
     return jsonify({"ok": True, "anulado": mov_id, "recibo_numero": antes['recibo']})
+
+
+# ════════════════════════════════════════════════════════════════════
+# CONTRAENTREGA — la plata que llega cuando entregan el pedido
+# ════════════════════════════════════════════════════════════════════
+# Sebastián 27-jul: "caja menor es toda la plata que llega por envíos contraentrega · en Shopify
+# les ponen contraentrega · saber pedido tal, tanto valor, que marquen que sí ingresó esa plata,
+# y saber en tiempo real cuánto ingresa".
+#
+# La marca la escribe una persona al crear el pedido, así que NO viene en un campo estructurado:
+# va en la NOTA del pedido, y a veces como ETIQUETA. El medio de pago la trae solo cuando la
+# tienda usa una pasarela COD. Se miran las TRES y el detector dice cuál fue la que matcheó —
+# depender de una sola pierde pedidos en silencio, que es el peor modo de fallar acá.
+#
+# El patrón vive en `app_settings` para poder ajustarlo sin desplegar: si mañana empiezan a
+# escribir "pago al recibir", se corrige desde la app y no con un deploy.
+
+COD_PATRON_DEFAULT = (r'contra\s*-?\s*entrega|contraentrega|cash\s+on\s+delivery|\bcod\b'
+                      r'|pago\s+al\s+recibir|pago\s+contra\s+entrega')
+
+
+def _norm_txt(s):
+    """Minúsculas y sin tildes: 'CONTRA-ENTREGA' y 'Contraentrega' son la misma marca."""
+    s = unicodedata.normalize('NFKD', str(s or ''))
+    return ''.join(ch for ch in s if not unicodedata.combining(ch)).lower()
+
+
+def cod_patron(conn):
+    """El patrón configurable. Si quedó vacío o inválido, cae al default (nunca deja de detectar)."""
+    try:
+        row = conn.execute(
+            "SELECT valor FROM app_settings WHERE clave='cod_patron'").fetchone()
+        p = (row[0] if row else '') or ''
+        if p.strip():
+            re.compile(p)          # si no compila, mejor el default que quedarse sin detección
+            return p.strip()
+    except Exception:
+        pass
+    return COD_PATRON_DEFAULT
+
+
+def es_contraentrega(nota, tags, gateway, patron=None):
+    """¿Este pedido es contraentrega? Devuelve (bool, dónde matcheó).
+
+    El "dónde" no es adorno: cuando alguien pregunte por qué un pedido entró (o no) a la caja de
+    contraentrega, la respuesta tiene que ser verificable sin abrir el código.
+    """
+    rx = re.compile(patron or COD_PATRON_DEFAULT)
+    for campo, valor in (('nota', nota), ('etiqueta', tags), ('medio de pago', gateway)):
+        if valor and rx.search(_norm_txt(valor)):
+            return True, campo
+    return False, ''
+
+
+def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
+    """Los pedidos contraentrega del rango, con su estado de cobro.
+
+    La detección se hace en Python y no en SQL a propósito: el patrón es una expresión regular
+    configurable, y traducirla a LIKE encadenados la volvería otra regla distinta de la que el
+    diagnóstico muestra (M5: el número que se ve tiene que ser el que decide). El rango de fechas
+    acota el escaneo.
+    """
+    patron = cod_patron(conn)
+    desde = desde or (_hoy_col() - timedelta(days=90)).isoformat()
+    hasta = hasta or _hoy_col().isoformat()
+    filas = conn.execute(
+        """SELECT o.shopify_id, o.nombre, o.total, o.creado_en, o.ciudad,
+                  COALESCE(o.nota,''), COALESCE(o.tags,''), COALESCE(o.gateway,''),
+                  COALESCE(o.estado,''), COALESCE(o.estado_pago,''),
+                  cc.id, cc.valor_recibido, cc.estado, cc.cobrado_por, cc.cobrado_at,
+                  COALESCE(cc.observaciones,''), cc.caja_mov_id
+             FROM animus_shopify_orders o
+             LEFT JOIN animus_cod_cobros cc
+                    ON cc.shopify_id = o.shopify_id AND cc.estado <> 'anulado'
+            WHERE substr(COALESCE(o.creado_en,''),1,10) >= ?
+              AND substr(COALESCE(o.creado_en,''),1,10) <= ?
+              AND LOWER(COALESCE(o.estado,'')) <> 'cancelled'
+            ORDER BY o.creado_en DESC, o.shopify_id DESC""",
+        (desde, hasta)).fetchall()
+
+    out = []
+    for f in filas:
+        ok, donde = es_contraentrega(f[5], f[6], f[7], patron)
+        if not ok:
+            continue
+        cobrado = f[10] is not None
+        if cobrado and not incluir_cobrados:
+            continue
+        esperado = float(f[2] or 0)
+        recibido = float(f[11] or 0) if cobrado else 0.0
+        out.append({
+            'shopify_id': f[0], 'pedido': f[1] or '', 'valor_esperado': esperado,
+            'fecha': (f[3] or '')[:10], 'ciudad': f[4] or '',
+            'detectado_por': donde, 'nota': (f[5] or '')[:200],
+            'entrega': f[8], 'estado_pago': f[9],
+            'cobrado': cobrado, 'valor_recibido': recibido,
+            'estado_cobro': f[12] or 'pendiente', 'cobrado_por': f[13] or '',
+            'cobrado_at': f[14] or '', 'observaciones': f[15] or '',
+            'caja_mov_id': f[16],
+            'diferencia': round(recibido - esperado, 2) if cobrado else 0.0,
+        })
+    return out
+
+
+@bp.route("/api/animus/contraentrega", methods=["GET"])
+def animus_cod_listar():
+    """Pedidos contraentrega + cuánta plata se espera y cuánta entró de verdad."""
+    u, err, code = _auth()
+    if err: return err, code
+    desde = (request.args.get("desde") or "").strip() or None
+    hasta = (request.args.get("hasta") or "").strip() or None
+    filtro = (request.args.get("estado") or "").strip().lower()
+
+    conn = _db()
+    pedidos = _cod_pedidos(conn, desde, hasta)
+    hoy = _hoy_col().isoformat()
+    mes = hoy[:7]
+
+    # Esperado PENDIENTE = la plata que está en la calle y todavía no entró. Es el número que
+    # contesta "¿estamos teniendo ese dinero?", así que se calcula sobre lo NO cobrado.
+    kpis = {
+        'esperado_pendiente': round(sum(p['valor_esperado'] for p in pedidos if not p['cobrado']), 2),
+        'n_pendientes':       sum(1 for p in pedidos if not p['cobrado']),
+        'cobrado_hoy':        round(sum(p['valor_recibido'] for p in pedidos
+                                        if p['cobrado'] and p['cobrado_at'][:10] == hoy), 2),
+        'cobrado_mes':        round(sum(p['valor_recibido'] for p in pedidos
+                                        if p['cobrado'] and p['cobrado_at'][:7] == mes), 2),
+        'n_cobrados':         sum(1 for p in pedidos if p['cobrado']),
+        # Descuadre = lo que se recibió de menos (o de más) respecto de lo que decía el pedido.
+        'descuadre':          round(sum(p['diferencia'] for p in pedidos if p['cobrado']), 2),
+        'n_descuadres':       sum(1 for p in pedidos if p['cobrado'] and abs(p['diferencia']) >= 1),
+    }
+    if filtro == 'pendiente':
+        pedidos = [p for p in pedidos if not p['cobrado']]
+    elif filtro == 'cobrado':
+        pedidos = [p for p in pedidos if p['cobrado']]
+    elif filtro == 'descuadre':
+        pedidos = [p for p in pedidos if p['cobrado'] and abs(p['diferencia']) >= 1]
+
+    return jsonify({"ok": True, "pedidos": pedidos, "kpis": kpis,
+                    "patron": cod_patron(conn),
+                    "rango": {"desde": desde or (_hoy_col() - timedelta(days=90)).isoformat(),
+                              "hasta": hasta or hoy}})
+
+
+@bp.route("/api/animus/contraentrega/diagnostico", methods=["GET"])
+def animus_cod_diagnostico():
+    """Read-only: por qué se detecta (o no) la contraentrega, contra los datos REALES.
+
+    Existe porque la marca la escribe una persona a mano y nadie puede afirmar de memoria cómo
+    la escribe. Muestra cuántos pedidos hay, cuántos matchean y por cuál de las tres señales, y
+    una muestra de las notas/etiquetas que NO matchearon — que es donde se ve si están usando una
+    palabra que el patrón no contempla.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Solo admin"}), 403
+    conn = _db()
+    patron = cod_patron(conn)
+    desde = (request.args.get("desde") or (_hoy_col() - timedelta(days=90)).isoformat())
+    filas = conn.execute(
+        "SELECT COALESCE(nota,''), COALESCE(tags,''), COALESCE(gateway,''), nombre "
+        "FROM animus_shopify_orders "
+        "WHERE substr(COALESCE(creado_en,''),1,10) >= ? "
+        "  AND LOWER(COALESCE(estado,'')) <> 'cancelled'", (desde,)).fetchall()
+    por_señal = {'nota': 0, 'etiqueta': 0, 'medio de pago': 0}
+    sin_match, con_texto = [], 0
+    for nota, tags, gw, nombre in filas:
+        if (nota or '').strip() or (tags or '').strip():
+            con_texto += 1
+        ok, donde = es_contraentrega(nota, tags, gw, patron)
+        if ok:
+            por_señal[donde] += 1
+        elif ((nota or '').strip() or (tags or '').strip()) and len(sin_match) < 25:
+            sin_match.append({'pedido': nombre or '', 'nota': (nota or '')[:120],
+                              'etiquetas': (tags or '')[:120], 'medio_pago': (gw or '')[:60]})
+    return jsonify({
+        "ok": True, "patron": patron, "desde": desde,
+        "pedidos_en_rango": len(filas),
+        "con_nota_o_etiqueta": con_texto,
+        "detectados": sum(por_señal.values()),
+        "por_señal": por_señal,
+        # Si `detectados` es 0 pero `con_nota_o_etiqueta` no lo es, la respuesta está acá:
+        # se está escribiendo la marca de una forma que el patrón no contempla.
+        "muestra_sin_match": sin_match,
+        "como_ajustar": "PUT /api/animus/contraentrega/patron con {patron: '...'} (admin · sin deploy)",
+    })
+
+
+@bp.route("/api/animus/contraentrega/patron", methods=["PUT"])
+def animus_cod_patron_set():
+    """Ajusta el patrón de detección sin desplegar (admin)."""
+    u, err, code = _auth()
+    if err: return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Solo admin"}), 403
+    nuevo = ((request.get_json(silent=True) or {}).get("patron") or "").strip()
+    if not nuevo:
+        return jsonify({"error": "patrón vacío · dejaría la caja de contraentrega sin detectar nada"}), 400
+    try:
+        re.compile(nuevo)
+    except re.error as e:
+        return jsonify({"error": "expresión inválida: %s" % e}), 400
+    conn = _db(); c = conn.cursor()
+    antes = cod_patron(conn)
+    c.execute("INSERT INTO app_settings (clave, valor) VALUES ('cod_patron', ?) "
+              "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor", (nuevo,))
+    audit_log(c, usuario=u, accion='ANIMUS_COD_PATRON', tabla='app_settings',
+              registro_id='cod_patron', antes={'patron': antes}, despues={'patron': nuevo},
+              detalle='Cambió el patrón de detección de contraentrega')
+    conn.commit()
+    return jsonify({"ok": True, "patron": nuevo})
+
+
+@bp.route("/api/animus/contraentrega/<path:shopify_id>/cobrar", methods=["POST"])
+def animus_cod_cobrar(shopify_id):
+    """Marca que la plata de ese pedido SÍ entró, y la asienta en caja con su recibo."""
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json(silent=True) or {}
+    conn = _db(); c = conn.cursor()
+
+    row = c.execute(
+        "SELECT nombre, total, COALESCE(nota,''), COALESCE(tags,''), COALESCE(gateway,''), "
+        "       COALESCE(creado_en,'') FROM animus_shopify_orders WHERE shopify_id=?",
+        (str(shopify_id),)).fetchone()
+    if not row:
+        return jsonify({"error": "Ese pedido no está en EOS · corré el sync de Shopify"}), 404
+    ok_cod, _donde = es_contraentrega(row[2], row[3], row[4], cod_patron(conn))
+    if not ok_cod:
+        # No es un capricho: cobrar en esta caja un pedido que NO es contraentrega mete plata que
+        # ya entró por la pasarela y descuadra el saldo contra la realidad.
+        return jsonify({"error": "Ese pedido no está marcado como contraentrega",
+                        "pedido": row[0] or ''}), 409
+
+    esperado = float(row[1] or 0)
+    recibido = d.get("valor_recibido")
+    recibido = esperado if recibido in (None, '') else float(recibido)
+    if recibido < 0:
+        return jsonify({"error": "El valor recibido no puede ser negativo"}), 400
+    obs = (d.get("observaciones") or "").strip()
+    dif = round(recibido - esperado, 2)
+    if abs(dif) >= 1 and not obs:
+        # Un descuadre sin explicación es justo el dato que después nadie puede reconstruir.
+        return jsonify({"error": "Recibiste %s y el pedido dice %s · explicá la diferencia"
+                                 % (f'{recibido:,.0f}', f'{esperado:,.0f}')}), 400
+    estado = 'descuadre' if abs(dif) >= 1 else 'cobrado'
+    fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
+    pedido = row[0] or str(shopify_id)
+
+    # El UNIQUE de shopify_id es lo que impide cobrar dos veces el mismo pedido: el chequeo
+    # previo no sirve con 3 workers (los dos pasarían). Se intenta y se traduce el choque.
+    try:
+        c.execute("""INSERT INTO animus_cod_cobros
+              (shopify_id, pedido, valor_esperado, valor_recibido, estado,
+               cobrado_por, cobrado_at, observaciones)
+              VALUES (?,?,?,?,?,?,?,?)""",
+            (str(shopify_id), pedido, esperado, recibido, estado, u,
+             _now_col().strftime('%Y-%m-%d %H:%M:%S'), obs))
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return jsonify({"error": "Ese pedido ya está cobrado", "pedido": pedido}), 409
+    cobro_id = c.lastrowid
+
+    # La plata entra a caja por el MISMO camino que un ingreso manual: mismo correlativo, mismo
+    # recibo. Dos numeradores distintos para la misma caja serían dos series que se pisan.
+    recibo, mov_id = registrar_movimiento_caja(
+        c, tipo='ingreso',
+        concepto='Contraentrega %s' % pedido,
+        monto=recibido, fecha=fecha, metodo='efectivo',
+        referencia=str(shopify_id),
+        observaciones=(obs or 'Cobro de pedido contraentrega'), usuario=u)
+    c.execute("UPDATE animus_cod_cobros SET caja_mov_id=? WHERE id=?", (mov_id, cobro_id))
+
+    audit_log(c, usuario=u, accion='ANIMUS_COD_COBRAR', tabla='animus_cod_cobros',
+              registro_id=cobro_id,
+              despues={'pedido': pedido, 'esperado': esperado, 'recibido': recibido,
+                       'estado': estado, 'recibo': recibo},
+              detalle='Contraentrega %s cobrada · recibo %s · %s' % (pedido, recibo, estado))
+    conn.commit()
+    return jsonify({"ok": True, "pedido": pedido, "recibo_numero": recibo,
+                    "estado": estado, "diferencia": dif, "caja_mov_id": mov_id})
+
+
+@bp.route("/api/animus/contraentrega/<path:shopify_id>/anular", methods=["POST"])
+def animus_cod_anular(shopify_id):
+    """Deshace un cobro mal marcado: anula el cobro Y su recibo de caja, sin borrar ninguno."""
+    u, err, code = _auth()
+    if err: return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Solo admin puede anular un cobro"}), 403
+    motivo = ((request.get_json(silent=True) or {}).get("motivo") or "").strip()
+    if not motivo:
+        return jsonify({"error": "Indicá el motivo de la anulación"}), 400
+    conn = _db(); c = conn.cursor()
+    row = c.execute("SELECT id, pedido, caja_mov_id FROM animus_cod_cobros "
+                    "WHERE shopify_id=? AND estado <> 'anulado'", (str(shopify_id),)).fetchone()
+    if not row:
+        return jsonify({"error": "Ese pedido no tiene un cobro activo"}), 404
+    # CAS: la condición de estado va en el WHERE, para que dos anulaciones a la vez no dejen
+    # el recibo de caja anulado dos veces con motivos distintos.
+    if c.execute("UPDATE animus_cod_cobros SET estado='anulado', "
+                 "observaciones = COALESCE(observaciones,'') || ' · ANULADO: ' || ? "
+                 "WHERE id=? AND estado <> 'anulado'", (motivo[:200], row[0])).rowcount != 1:
+        conn.rollback()
+        return jsonify({"error": "Ese cobro ya está anulado"}), 409
+    if row[2]:
+        c.execute("UPDATE animus_caja_menor SET anulado=1, anulado_por=?, anulado_motivo=?, "
+                  "anulado_at=? WHERE id=? AND COALESCE(anulado,0)=0",
+                  (u, ('Cobro contraentrega anulado: ' + motivo)[:300],
+                   _now_col().strftime('%Y-%m-%d %H:%M:%S'), row[2]))
+    audit_log(c, usuario=u, accion='ANIMUS_COD_ANULAR', tabla='animus_cod_cobros',
+              registro_id=row[0], despues={'motivo': motivo[:200]},
+              detalle='Anuló el cobro contraentrega de %s · %s' % (row[1], motivo[:80]))
+    conn.commit()
+    return jsonify({"ok": True, "pedido": row[1]})
 
 
 # ════════════════════════════════════════════════════════════════════

@@ -164,6 +164,7 @@ window.addEventListener('error', function(ev){
 
 <div class="tabs-bar">
   <button class="tab-btn active" data-tab="caja" onclick="switchTab('caja')">&#128176; Caja Menor</button>
+  <button class="tab-btn" data-tab="cod" onclick="switchTab('cod')">&#128666; Contraentrega</button>
   <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario Fisico</button>
   <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Conteo Ciclico</button>
   <button class="tab-btn" data-tab="pqr" onclick="switchTab('pqr')">&#128233; PQR Clientes</button>
@@ -214,6 +215,50 @@ window.addEventListener('error', function(ev){
 </div>
 
 <!-- TAB: INVENTARIO CICLICO -->
+<div id="tab-cod" class="tab-panel">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+    <div>
+      <div class="page-title">&#128666; Contraentrega</div>
+      <div class="page-sub">Pedidos que se cobran al entregar. Marca cuales ya entraron: la plata pasa a Caja Menor con su recibo.</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input id="cod-desde" type="date" class="input" style="width:auto;" onchange="loadCod()">
+      <input id="cod-hasta" type="date" class="input" style="width:auto;" onchange="loadCod()">
+    </div>
+  </div>
+
+  <div class="kpi-grid" id="cod-kpis"></div>
+
+  <div class="card">
+    <div class="card-hdr">
+      <span class="card-title">Pedidos contraentrega</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="cod-filtro" class="select" style="width:auto;" onchange="loadCod()">
+          <option value="pendiente">Falta cobrar</option>
+          <option value="">Todos</option>
+          <option value="cobrado">Ya cobrados</option>
+          <option value="descuadre">Con descuadre</option>
+        </select>
+      </div>
+    </div>
+    <div id="cod-aviso"></div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>Pedido</th>
+          <th>Fecha</th>
+          <th>Ciudad</th>
+          <th style="text-align:right;">Valor</th>
+          <th>Marca</th>
+          <th>Estado</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="cod-body"><tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <div id="tab-inventario" class="tab-panel">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
@@ -569,6 +614,7 @@ function switchTab(name){
 }
 function loadTab(name){
   if (name === 'caja') loadCaja();
+  else if (name === 'cod') loadCod();
   else if (name === 'invfis') { cargarInvFisico(); cargarMovimientosInvFis(); }
   else if (name === 'inventario') { loadInvSkus(); loadInvConteos(); }
   else if (name === 'pqr') loadAnimusPqr();
@@ -718,6 +764,138 @@ async function anularCaja(id){
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Recibo ' + (d.recibo_numero||'') + ' anulado', 'success');
     loadCaja();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
+// Contraentrega
+async function loadCod(){
+  const qs = [];
+  const d1 = document.getElementById('cod-desde').value;
+  const d2 = document.getElementById('cod-hasta').value;
+  const st = document.getElementById('cod-filtro').value;
+  if (d1) qs.push('desde=' + d1);
+  if (d2) qs.push('hasta=' + d2);
+  if (st) qs.push('estado=' + st);
+  try {
+    const r = await fetch('/api/animus/contraentrega' + (qs.length ? '?' + qs.join('&') : ''));
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    renderCodKPIs(d.kpis||{});
+    renderCodPedidos(d.pedidos||[]);
+    // Si no aparece NINGUN pedido, casi siempre es que la marca se escribe distinta a lo que
+    // el detector busca. Decirlo aca evita que alguien concluya "no hay contraentregas".
+    const av = document.getElementById('cod-aviso');
+    av.innerHTML = (d.pedidos||[]).length ? '' :
+      '<div style="padding:14px 16px;background:var(--cx-warn-pale);border-left:3px solid var(--cx-warn);'
+      + 'border-radius:8px;margin:0 0 12px;font-size:13px;color:var(--cx-text-soft);">'
+      + 'Sin pedidos contraentrega en este rango. Si deberia haber, revisa como se esta escribiendo '
+      + 'la marca en Shopify: el detector busca <code>' + esc(d.patron||'') + '</code> en la nota, '
+      + 'las etiquetas y el medio de pago.</div>';
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
+function renderCodKPIs(k){
+  const cards = [
+    { label: 'Falta cobrar', val: fmtCOP(k.esperado_pendiente||0), color:'kpi-yellow',
+      sub: (k.n_pendientes||0) + ' pedidos en la calle' },
+    { label: 'Entro hoy', val: fmtCOP(k.cobrado_hoy||0), color:'kpi-green', sub:'' },
+    { label: 'Entro este mes', val: fmtCOP(k.cobrado_mes||0), color:'kpi-green',
+      sub: (k.n_cobrados||0) + ' pedidos cobrados' },
+    { label: 'Descuadre', val: fmtCOP(k.descuadre||0),
+      color: (k.n_descuadres||0) ? 'kpi-red' : 'kpi-blue',
+      sub: (k.n_descuadres||0) + ' con diferencia' },
+  ];
+  document.getElementById('cod-kpis').innerHTML = cards.map(function(c){
+    return '<div class="kpi-card '+c.color+'"><div class="label">'+c.label+'</div>'
+      + '<div class="val">'+c.val+'</div>'
+      + (c.sub ? '<div class="sub">'+c.sub+'</div>' : '') + '</div>';
+  }).join('');
+}
+
+function renderCodPedidos(rows){
+  // Las filas quedan accesibles por INDICE: los botones pasan el indice y no el id ni el nombre,
+  // asi no hay texto del usuario interpolado dentro del onclick (nada que escapar, nada que
+  // romper si un nombre de pedido trae una comilla).
+  window._COD_ROWS = rows;
+  const body = document.getElementById('cod-body');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin pedidos en este filtro.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(function(p, i){
+    const dif = p.diferencia || 0;
+    let estado;
+    if (!p.cobrado) {
+      estado = '<span class="badge badge-yellow">Falta cobrar</span>';
+    } else if (Math.abs(dif) >= 1) {
+      estado = '<span class="badge badge-red">Descuadre ' + fmtCOP(dif) + '</span>'
+        + '<div style="font-size:10px;color:var(--cx-text-mute);margin-top:2px;">'
+        + esc(p.cobrado_por||'') + ' &middot; recibio ' + fmtCOP(p.valor_recibido||0) + '</div>';
+    } else {
+      estado = '<span class="badge badge-green">Cobrado</span>'
+        + '<div style="font-size:10px;color:var(--cx-text-mute);margin-top:2px;">'
+        + esc(p.cobrado_por||'') + ' &middot; ' + esc((p.cobrado_at||'').slice(0,10)) + '</div>';
+    }
+    const accion = p.cobrado
+      ? '<button class="btn btn-outline btn-sm" onclick="codAnular(' + i + ')">Anular</button>'
+      : '<button class="btn btn-primary btn-sm" onclick="codCobrar(' + i + ')">Si entro</button>';
+    return '<tr>'
+      + '<td style="font-weight:700;">'+esc(p.pedido||'')+'</td>'
+      + '<td>'+fmtFecha(p.fecha)+'</td>'
+      + '<td style="font-size:12px;">'+esc(p.ciudad||'-')+'</td>'
+      + '<td style="text-align:right;font-weight:700;">'+fmtCOP(p.valor_esperado||0)+'</td>'
+      + '<td><span class="badge badge-gray" title="'+esc(p.nota||'')+'">'+esc(p.detectado_por||'')+'</span></td>'
+      + '<td>'+estado+'</td>'
+      + '<td>'+accion+'</td>'
+      + '</tr>';
+  }).join('');
+}
+
+async function codCobrar(i){
+  const p = (window._COD_ROWS || [])[i];
+  if (!p) return;
+  const sid = p.shopify_id, esperado = p.valor_esperado || 0, pedido = p.pedido || '';
+  // Se pregunta el valor en vez de asumirlo: el mensajero a veces entrega distinto, y ese
+  // descuadre es justo lo que hay que poder ver.
+  const txt = prompt('Cuanto entro por ' + pedido + '? (el pedido dice ' + fmtCOP(esperado) + ')', esperado);
+  if (txt === null) return;
+  const val = parseFloat(String(txt).replace(/[^0-9.-]/g, ''));
+  if (isNaN(val) || val < 0) { showToast('Valor invalido', 'error'); return; }
+  let obs = '';
+  if (Math.abs(val - esperado) >= 1) {
+    obs = prompt('Hay una diferencia de ' + fmtCOP(val - esperado) + '. Que paso?', '') || '';
+    if (!obs.trim()) { showToast('La diferencia necesita explicacion', 'error'); return; }
+  }
+  try {
+    const r = await fetch('/api/animus/contraentrega/' + encodeURIComponent(sid) + '/cobrar',
+                          _fetchOpts('POST', {valor_recibido: val, observaciones: obs}));
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast('Recibo ' + d.recibo_numero + ' registrado en caja', 'success');
+    loadCod();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
+async function codAnular(i){
+  const p = (window._COD_ROWS || [])[i];
+  if (!p) return;
+  const sid = p.shopify_id;
+  const motivo = prompt('Motivo de la anulacion (queda en el recibo):', '');
+  if (motivo === null) return;
+  if (!motivo.trim()) { showToast('El motivo es obligatorio', 'error'); return; }
+  try {
+    const r = await fetch('/api/animus/contraentrega/' + encodeURIComponent(sid) + '/anular',
+                          _fetchOpts('POST', {motivo: motivo.trim()}));
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast('Cobro anulado', 'success');
+    loadCod();
   } catch(e) {
     showToast('Error de red: ' + e.message, 'error');
   }

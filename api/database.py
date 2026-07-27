@@ -10440,6 +10440,37 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_caja_recibo_numero "
         "ON animus_caja_menor(recibo_numero)",
     ]),
+    (384, "Caja de CONTRAENTREGA (Sebastián 27-jul): 'caja menor es toda la plata que llega por "
+          "envíos contraentrega · en Shopify les ponen contraentrega'. La marca se escribe a mano "
+          "al crear el pedido, en la NOTA o en una etiqueta, así que se traen las dos (más el "
+          "medio de pago, que a veces la trae solo) y el detector mira las tres. "
+          "El estado del COBRO va en su PROPIA tabla y no en `animus_shopify_orders`: esa la "
+          "reescribe el sync en cada corrida, así que un 'ya entró la plata' guardado ahí se "
+          "borraría solo (M20). Se ancla por `shopify_id`, que es la llave estable del pedido.", [
+        "ALTER TABLE animus_shopify_orders ADD COLUMN nota TEXT DEFAULT ''",
+        "ALTER TABLE animus_shopify_orders ADD COLUMN gateway TEXT DEFAULT ''",
+        """CREATE TABLE IF NOT EXISTS animus_cod_cobros (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            shopify_id      TEXT NOT NULL,
+            pedido          TEXT DEFAULT '',
+            valor_esperado  REAL NOT NULL DEFAULT 0,
+            valor_recibido  REAL NOT NULL DEFAULT 0,
+            estado          TEXT NOT NULL DEFAULT 'cobrado'
+                            CHECK(estado IN ('cobrado','descuadre','anulado')),
+            cobrado_por     TEXT DEFAULT '',
+            cobrado_at      TEXT DEFAULT '',
+            caja_mov_id     INTEGER,
+            observaciones   TEXT DEFAULT ''
+        )""",
+        # UNIQUE = la garantía real de que un pedido no se cobra dos veces (el chequeo previo no
+        # es race-safe con 3 workers · igual que el recibo de caja de la mig 383).
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_cod_cobros_shopify "
+        "ON animus_cod_cobros(shopify_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cod_cobros_estado ON animus_cod_cobros(estado)",
+        # Buscar la marca en nota/etiquetas recorre la tabla entera; con el índice por fecha
+        # la vista se acota al rango que se está mirando.
+        "CREATE INDEX IF NOT EXISTS idx_shopify_orders_creado ON animus_shopify_orders(creado_en)",
+    ]),
 ]
 
 
