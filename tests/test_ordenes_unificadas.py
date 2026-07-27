@@ -496,8 +496,11 @@ def test_despeje_roles_operario_registra_calidad_corrige(app, db_clean):
     Dirección Técnica puede CORREGIR un resultado ya registrado (MyBatch
     'Corregir Resultado')."""
     ebr = _crear_ebr_iniciado('LOTE-ROL', 'OP-2026-6002', 'PROD ROL TEST')
-    # operario (luis · PLANTA_USERS, no Calidad) registra el ítem 0 → OK
-    op = _login(app, user='luis')
+    # 26-jul · era 'luis', que está DADO DE BAJA desde la mig 375: su login está bloqueado, así
+    # que el test fallaba por la persona, no por el permiso que dice verificar. Un test que
+    # hardcodea a alguien se rompe cuando esa persona se va (M102). Se usa una operaria ACTIVA de
+    # planta que no está en Calidad, que es lo que el test necesita.
+    op = _login(app, user='mayerlin')
     r = op.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 1}, headers=_h())
     assert r.status_code == 201, r.data
     # el mismo operario intenta CORREGIR (ya hay resultado) → 403

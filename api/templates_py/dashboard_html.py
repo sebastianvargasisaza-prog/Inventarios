@@ -8414,7 +8414,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</div>';
   }
   // Registros físicos (adjuntar PDF · MyBatch ⑦)
-  h+='</div>'+_secOpen('📎 Registros Físicos del Proceso Manufactura');
+  h+='</div>'+_secOpen('📎 Registros Físicos del Proceso '+(fa==='envasado'?'de Envasado':(fa==='acondicionamiento'?'de Acondicionamiento':'Manufactura')));
   if(regs.length){
     h+='<ul style="font-size:12px;margin:0 0 8px;padding-left:18px;">';
     for(var rg=0;rg<regs.length;rg++){var rr2=regs[rg];
@@ -8600,8 +8600,19 @@ async function ebrTerminarLote(ebrId){
   if(v===null)return;
   var n=parseFloat(String(v).replace(',','.'));
   if(!(n>0)){alert('Cantidad inválida');return;}
+  // DENSIDAD del granel · es el puente OP -> OF: convierte los gramos fabricados en los mL que
+  // realmente se pueden envasar (17.000 g a 0,916 g/mL = 13.659 mL). El campo y el calculo ya
+  // existian en el sistema desde hace meses, pero NINGUNA pantalla lo pedia, asi que siempre
+  // llegaba vacio al legajo de envasado. Este es el unico momento del proceso en que alguien
+  // tiene el granel delante para medirla. Opcional: si no se midio, se sigue sin ella.
+  var dv=await _cxPrompt('Densidad del granel (opcional)',
+    'g/mL a 25 °C · convierte los '+n.toLocaleString('es-CO')+' g en los mL que pasan a envasado. '
+    +'Dejalo vacío si no se midió.','ej: 0,916','');
+  var dens=parseFloat(String(dv===null?'':dv).replace(',','.'));
+  var cuerpo={cantidad_real_g:n};
+  if(dens>0){ cuerpo.densidad_g_ml=dens; }
   try{
-    var r=await fetch('/api/brd/ebr/'+ebrId+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cantidad_real_g:n})});
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cuerpo)});
     if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
