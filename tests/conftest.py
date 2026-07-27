@@ -109,6 +109,44 @@ def _migrar_a_postgres(sqlite_path):
         copiar_datos(sqlite_path, pg)
 
 
+def _copiar_unicos(sq, pg, tabla):
+    """Recrea en PG los índices ÚNICOS que la tabla tiene en SQLite.
+
+    27-jul · El auto-sanado creaba las tablas ausentes con columnas y clave primaria, pero SIN los
+    índices únicos. Consecuencia: cualquier `INSERT ... ON CONFLICT (a,b)` fallaba en el gate con
+    "there is no unique or exclusion constraint matching the ON CONFLICT specification" — un rojo
+    que NO existe en producción (allá la tabla se crea con su UNIQUE) y que además dejaba al gate
+    **ciego** para los conflictos de unicidad reales, que son el mecanismo con el que este sistema
+    garantiza idempotencia y evita dobles descuentos.
+
+    Un gate que da un rojo falso y a la vez no puede ver el problema verdadero es lo peor de los
+    dos mundos: enseña a ignorarlo y no protege.
+    """
+    import psycopg
+    try:
+        indices = sq.execute('PRAGMA index_list("%s")' % tabla).fetchall()
+    except Exception:
+        return
+    for idx in indices:
+        # PRAGMA index_list: (seq, name, unique, origin, partial)
+        nombre, es_unico, parcial = idx[1], idx[2], (idx[4] if len(idx) > 4 else 0)
+        if not es_unico or parcial:
+            continue
+        try:
+            cols = [r[2] for r in sq.execute('PRAGMA index_info("%s")' % nombre).fetchall() if r[2]]
+        except Exception:
+            continue
+        if not cols:
+            continue
+        try:
+            with pg.cursor() as cur:
+                cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS "%s" ON "%s" (%s)'
+                            % (('ux_%s_%s' % (tabla, '_'.join(cols)))[:60], tabla,
+                               ','.join('"%s"' % c for c in cols)))
+        except psycopg.Error as e:
+            print('[pg-autoheal] UNIQUE %s(%s) falló: %s' % (tabla, ','.join(cols), str(e)[:120]))
+
+
 def _sync_columnas_faltantes(sqlite_path, pg):
     """Auto-sana el esquema PG contra el SQLite actual (drift pg_schema.sql vs migraciones):
     CREA las TABLAS ausentes en PG y agrega las COLUMNAS ausentes a las existentes, tomando el
@@ -164,6 +202,7 @@ def _sync_columnas_faltantes(sqlite_path, pg):
                         cur.execute('CREATE TABLE IF NOT EXISTS "%s" (%s)' % (t, ','.join(col_defs)))
                 except psycopg.Error as _e_ct:
                     print('[pg-autoheal] CREATE TABLE %s falló: %s' % (t, str(_e_ct)[:160]))
+                _copiar_unicos(sq, pg, t)
                 continue
             for col, sqlite_type in sq_cols.items():
                 if col.lower() not in pg_cols:
