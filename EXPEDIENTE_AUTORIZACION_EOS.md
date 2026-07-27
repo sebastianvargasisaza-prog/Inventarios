@@ -38,14 +38,14 @@ se tome con la información completa, incluido lo que falta.
 | Módulo | Qué permite | Personas autorizadas |
 |---|---|---|
 | **Fórmulas maestras (receta)** | Ver la composición y los porcentajes de cada producto | alejandro (Dirección / Socio), hernando (Director Técnico), laura (Jefe de Control de Calidad), miguel (Aseguramiento de Calidad), sebastian (Dirección General), yuliel (Analista de Control de Calidad) |
-| **Batch record electrónico (legajo de lote)** | Ejecutar los pasos del lote: despeje, pesaje, envasado, controles | alejandro (Dirección / Socio), camilo (Operario de Producción), jose (Jefe de Producción), laura (Jefe de Control de Calidad), luis (Operario (retirado · acceso desactivado)), mayerlin (Operaria de Dispensación), milton (Operario de Envasado), sebastian (Dirección General), sergio (Operario de Producción), smurillo (Operario de Producción), yuliel (Analista de Control de Calidad) |
+| **Batch record electrónico (legajo de lote)** | Ejecutar los pasos del lote: despeje, pesaje, envasado, controles | alejandro (Dirección / Socio), camilo (Operario de Producción), jose (Jefe de Producción), laura (Jefe de Control de Calidad), mayerlin (Operaria de Dispensación), milton (Operario de Envasado), sebastian (Dirección General), sergio (Operario de Producción), smurillo (Operario de Producción), yuliel (Analista de Control de Calidad) |
 | **Control de Calidad** | Liberar o rechazar lotes, registrar CoA e IPC | alejandro (Dirección / Socio), laura (Jefe de Control de Calidad), sebastian (Dirección General), yuliel (Analista de Control de Calidad) |
 | **Aseguramiento de Calidad** | Desviaciones, CAPA, control de cambios, calificación de equipos | alejandro (Dirección / Socio), miguel (Aseguramiento de Calidad), sebastian (Dirección General) |
 | **Dirección Técnica** | Aprobar procedimientos maestros (MBR) y dar visto bueno | alejandro (Dirección / Socio), hernando (Director Técnico), miguel (Aseguramiento de Calidad), sebastian (Dirección General) |
-| **Planta / Producción** | Programar, iniciar y cerrar producciones | camilo (Operario de Producción), jose (Jefe de Producción), luis (Operario (retirado · acceso desactivado)), mayerlin (Operaria de Dispensación), milton (Operario de Envasado), sergio (Operario de Producción), smurillo (Operario de Producción) |
+| **Planta / Producción** | Programar, iniciar y cerrar producciones | camilo (Operario de Producción), jose (Jefe de Producción), mayerlin (Operaria de Dispensación), milton (Operario de Envasado), sergio (Operario de Producción), smurillo (Operario de Producción) |
 | **Compras y proveedores** | Solicitudes, órdenes de compra, recepción | alejandro (Dirección / Socio), catalina (Asistente de Compras), mayra (Contadora), sebastian (Dirección General) |
 | **Autorización de órdenes de compra** | Autorizar y pagar OC (con límite · ver segregación de funciones) | catalina (Asistente de Compras), mayra (Contadora) |
-| **Liberación de materia prima** | Pasar una MP de cuarentena a disponible | catalina (Asistente de Compras) |
+| **Liberación de materia prima** | Pasar una MP de cuarentena a disponible | — |
 | **Gestión humana** | Nómina y datos de personal | alejandro (Dirección / Socio), catalina (Asistente de Compras), daniela (Asistente), gloria (Gestión Humana), luz (Comercial / B2B), mayra (Contadora), sebastian (Dirección General) |
 | **Marketing** | Campañas y contenido (sin acceso a datos regulados) | alejandro (Dirección / Socio), daniela (Asistente), felipe (Marketing), jefferson (Marketing), luz (Comercial / B2B), sebastian (Dirección General) |
 | **Administración del sistema** | Configuración, correcciones auditadas, gestión de usuarios | alejandro (Dirección / Socio), sebastian (Dirección General) |
@@ -80,14 +80,8 @@ explícita de la Dirección Técnica antes de autorizar el uso.
 
 | Persona | Cargo | Conflicto | Por qué importa | Cómo se resuelve |
 |---|---|---|---|---|
-| **catalina** | Asistente de Compras | Compra la materia prima **y** la libera de cuarentena | La Resolución 2214/2021 art. 10 asigna la disposición del lote a Calidad. Hoy quien gestiona la compra también decide si el material entra a producción. | Sacar a la persona de `MP_LIBERA_USERS` y dejar la liberación en Control de Calidad. Es reversible: es un conjunto en `config.py`. |
 | **catalina** | Asistente de Compras | Autoriza la orden de compra **y** registra el pago | Concentra autorización y ejecución del desembolso. | Decisión de gerencia ya tomada, con el rastro de auditoría como control compensatorio: cada autorización y cada pago quedan registrados con autor y fecha. |
 | **mayra** | Contadora | Autoriza la orden de compra **y** registra el pago | Concentra autorización y ejecución del desembolso. | Decisión de gerencia ya tomada, con el rastro de auditoría como control compensatorio: cada autorización y cada pago quedan registrados con autor y fecha. |
-
-> ⚠ **luis** figura(n) todavía en conjuntos de rol de `config.py` pese a estar dado(s) de
-> baja. El acceso está bloqueado a nivel de contraseña (no puede iniciar sesión), pero
-> conviene retirarlo de los roles para que la matriz no muestre permisos de una persona
-> que ya no está.
 
 ---
 

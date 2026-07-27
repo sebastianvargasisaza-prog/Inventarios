@@ -58,7 +58,12 @@ ASEGURAMIENTO_USERS = {
         "ASEGURAMIENTO_USERS_OVERRIDE", "miguel,alejandro,sebastian"
     ).split(",") if u.strip()
 }
-PLANTA_USERS    = {"luis", "smurillo", "sergio", "mayerlin", "camilo", "jose", "milton"}
+# 'luis' salió del set el 26-jul-2026: está dado de baja desde la mig 375 (su login ya estaba
+# bloqueado con `users_passwords.activo=0`), pero seguía figurando acá, así que la matriz de
+# accesos del expediente lo mostraba con permisos sobre el batch record. Un empleado retirado que
+# aparece con permisos en un documento de autorización es una objeción segura. NO se borra su
+# usuario ni su historial: GMP/Part 11 conservan quién hizo qué (sus firmas y registros siguen).
+PLANTA_USERS    = {"smurillo", "sergio", "mayerlin", "camilo", "jose", "milton"}
 
 DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
 
@@ -163,11 +168,22 @@ OC_AUTORIZA_USERS = {"catalina", "mayra"}
 OC_SIN_LIMITE_MONTO = {"catalina"}
 
 # ── Quién puede LIBERAR / APROBAR lotes de Materia Prima (además de Calidad) ──
-# Sebastián 26-jun-2026: Catalina también libera/aprueba materias primas (disposición QC del lote:
-# aprobar recepción, liberar de cuarentena → VIGENTE). Se suma al gate QC (QC_USERS) y al de aprobar-lote
-# en recepción — NO le da el módulo Calidad completo (KPIs/micro/desviaciones siguen CALIDAD_USERS).
-# La liberación sigue exigiendo e-firma (Part 11): firma como ella misma. Reversible: sacarla del set.
-MP_LIBERA_USERS = {"catalina"}
+# VACÍO A PROPÓSITO · Sebastián 26-jul-2026: *"Catalina no libera ya, fue mientras hacíamos
+# pruebas"*.
+#
+# Del 26-jun al 26-jul Catalina (Asistente de Compras) estuvo en este conjunto para poder probar
+# el flujo de recepción. Al generar el expediente para la Dirección Técnica, el propio documento
+# lo detectó y lo declaró como conflicto de segregación: **quien compra la materia prima no puede
+# ser quien la libera de cuarentena.** La Resolución 2214/2021 art. 10 asigna la disposición del
+# lote a Calidad, y el docstring de `aprobar_lote` (despachos.py) ya lo decía — o sea que el
+# permiso real contradecía la documentación del propio código.
+#
+# La liberación queda donde corresponde: Control de Calidad, Aseguramiento, Dirección Técnica y
+# Dirección (ver el gate en `despachos.py` y `QC_USERS` en `inventario.py`).
+#
+# Si alguna vez hay que volver a ampliarlo, tiene que ser una decisión explícita de la Dirección
+# Técnica y quedar reflejada en `EXPEDIENTE_AUTORIZACION_EOS.md`, que detecta este cruce solo.
+MP_LIBERA_USERS = set()
 
 # PIN para desbloquear vista de cantidades en Fórmulas.
 # DEBE setearse via env var FORMULA_PIN. Si falta, se genera un PIN
