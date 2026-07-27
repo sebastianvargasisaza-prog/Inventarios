@@ -98,8 +98,8 @@ Cada control indica dónde se hace cumplir, para que sea comprobable.
 | **Control de accesos** (§11.10 d) | Cada función exige un rol; no alcanza con tener sesión iniciada | Sección 2 · verificado sobre el enrutador real |
 | **Datos exactos y completos** (ALCOA+) | El inventario se calcula sumando los movimientos del kardex, nunca un total guardado que pueda desviarse | `movimientos` / `movimientos_mee` |
 | **Trazabilidad del lote** | De producto terminado a materia prima y viceversa, con sus documentos | Expediente por lote · `documentos_regulados` |
-| **Control de cambios del sistema** | Cada cambio de esquema queda numerado y registrado | **375** migraciones registradas |
-| **Verificación continua** | Batería automática que se ejecuta antes de cada publicación | **405** archivos de prueba |
+| **Control de cambios del sistema** | Cada cambio de esquema queda numerado y registrado | **376** migraciones registradas |
+| **Verificación continua** | Batería automática que se ejecuta antes de cada publicación | **409** archivos de prueba |
 
 ### 3.1 · Control de accesos medido sobre el sistema real
 
