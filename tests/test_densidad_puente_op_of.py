@@ -115,3 +115,49 @@ def test_la_pantalla_de_cierre_pide_la_densidad(app):
     assert 'densidad_g_ml' in cuerpo, (
         'el cierre de producción ya no pide la densidad · sin eso el legajo de envasado la '
         'muestra siempre vacía')
+
+
+def test_el_legajo_hereda_el_area_del_lote_programado(app):
+    """La cabecera mostraba "Área/Línea: -" siempre. No faltaba la columna (existe desde la mig
+    219) ni la vista (ya la pinta): **ninguno de los 8 sitios que crean un EBR la pasaba**. Ahora
+    se hereda del lote programado, que es quien sabe en qué área se produce.
+
+    Se deriva dentro del helper y no en cada caller, porque 8 copias de la misma regla vuelven a
+    divergir (M1).
+    """
+    from blueprints.brd import crear_ebr_desde_mbr
+    from database import get_db
+    PRODA, LOTEA = 'ZZ AREA PRODUCTO', 'L-ZZ-AREA'
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        for r in cur.execute("SELECT id FROM ebr_ejecuciones WHERE lote LIKE ?",
+                             (LOTEA + '%',)).fetchall():
+            cur.execute("DELETE FROM ebr_ejecuciones WHERE id=?", (r[0],))
+        for r in cur.execute("SELECT id FROM mbr_templates WHERE producto_nombre=?",
+                             (PRODA,)).fetchall():
+            cur.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (r[0],))
+            cur.execute("DELETE FROM mbr_templates WHERE id=?", (r[0],))
+        # El fixture se arma en el ORDEN REAL del flujo: draft -> pasos -> aprobar. Insertar los
+        # pasos con el MBR ya aprobado lo rechaza el disparador de inmutabilidad, y ese rechazo es
+        # la invariante funcionando, no un bug del test (M93).
+        cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, "
+                    "creado_por) VALUES (?,1,'draft',10000,'test')", (PRODA,))
+        mbr = cur.lastrowid
+        cur.execute("INSERT INTO mbr_pasos (mbr_template_id, orden, descripcion, tipo_paso, fase) "
+                    "VALUES (?,1,'Mezclar','mezclado','fabricacion')", (mbr,))
+        cur.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr,))
+        ar = cur.execute("SELECT id, codigo FROM areas_planta ORDER BY id LIMIT 1").fetchone()
+        assert ar, 'no hay áreas de planta sembradas'
+        cur.execute("INSERT INTO produccion_programada (producto, cantidad_kg, fecha_programada, "
+                    "estado, origen, area_id) VALUES (?,10,'2026-07-27','pendiente','eos_plan',?)",
+                    (PRODA, ar[0]))
+        pid = cur.lastrowid
+        conn.commit()
+        res = crear_ebr_desde_mbr(cur, producto_nombre=PRODA, lote=LOTEA,
+                                  produccion_id=pid, usuario='test')
+        conn.commit()
+        # el helper devuelve la clave 'id', no 'ebr_id' · leer el return antes de indexarlo (M94)
+        assert res and res.get('id'), res
+        got = cur.execute("SELECT COALESCE(area_codigo,'') FROM ebr_ejecuciones WHERE id=?",
+                          (res['id'],)).fetchone()[0]
+    assert got == ar[1], 'el legajo no heredó el área del lote: "%s" (esperaba "%s")' % (got, ar[1])

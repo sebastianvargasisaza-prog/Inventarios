@@ -1666,6 +1666,23 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
             pass
     if cant is None:
         cant = mbr[2]
+    # ÁREA/LÍNEA · la hereda del lote programado (26-jul). La columna `area_codigo` existe desde la
+    # mig 219 y la cabecera del legajo la muestra, pero NINGÚN caller la pasaba: los 8 sitios que
+    # crean un EBR la dejaban vacía, así que el legajo mostraba "Área/Línea: -" siempre. En vez de
+    # parchar los 8, se deriva acá, que es donde ya está el `produccion_id` y donde no puede
+    # volver a divergir (M1). El caller que la pase explícitamente sigue mandando.
+    if not (area_codigo or '').strip() and produccion_id:
+        try:
+            _ar = cur.execute(
+                "SELECT COALESCE(a.codigo,'') FROM produccion_programada pp "
+                "JOIN areas_planta a ON a.id = pp.area_id WHERE pp.id=?",
+                (produccion_id,)).fetchone()
+            if _ar and (_ar[0] or '').strip():
+                area_codigo = _ar[0].strip()
+        except Exception as _e_ar:
+            # nunca impedir la creación del legajo por esto, pero dejar rastro (M94)
+            log.warning('crear_ebr_desde_mbr: no se pudo heredar el área de la producción %s: %s',
+                        produccion_id, _e_ar)
     numero_op = assign_numero_op(cur)
     try:
         cur.execute(
