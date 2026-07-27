@@ -64,6 +64,20 @@ Cuando Catalina edita un item:
 - Motivo: el comercial varía por proveedor y era la mayor fuente de error en
   recepción. Tests: `tests/test_recepcion_ingreso_inci.py`.
 
+### INV-10 · El PERÍODO de un egreso sale de la FECHA DEL PAGO, nunca del reloj (27-jul)
+- Al espejar un pago de OC a `flujo_egresos`, `periodo = fecha_pago[:7]`. Antes
+  salía de `datetime.now()`, y eso partía la fila en dos meses de dos maneras:
+  (a) un pago registrado hoy con **fecha retroactiva** guardaba `fecha` del mes
+  pasado y `periodo` del mes en curso; (b) `now()` es **UTC** en Render, así que
+  después de las 19:00 en Colombia un pago de fin de mes ya contaba en el mes
+  siguiente (M24).
+- Corolario para todo el módulo: el "hoy" de compras se toma de
+  `tz_colombia.hoy_colombia()`, nunca de `date.today()`. Aplica también al corte
+  de "ya venció" al validar recepciones: con UTC, un lote que vence HOY se
+  marcaba vencido desde las 19:00 de la víspera.
+- Guardado por `tests/test_hoy_colombia_dinero.py` (barre los 6 módulos de dinero
+  por el patrón y falla si vuelve a aparecer). Ver M106 en `.claude/CERO_ERROR.md`.
+
 ---
 
 ## Endpoints downstream que CONSUMEN sus datos

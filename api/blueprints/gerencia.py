@@ -15,6 +15,8 @@ from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, FINANZA
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from audit_helpers import audit_log
+# El "hoy" de un período contable va anclado a Colombia, no al UTC del server (M24).
+from tz_colombia import hoy_colombia as _hoy_col
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -169,8 +171,7 @@ def gerencia_kpis():
 def gerencia_flujo_operacional():
     if 'compras_user' not in session or session.get('compras_user','') not in FINANZAS_ACCESS:
         return jsonify({'error': 'No autorizado'}), 401
-    from datetime import date
-    today = date.today()
+    today = _hoy_col()   # Colombia, no el UTC del server (M24)
     conn = get_db(); c = conn.cursor()
     # OCs en tránsito (Autorizada, sin recepción)
     c.execute("""SELECT oc.numero_oc, oc.proveedor, oc.fecha, oc.valor_total
@@ -252,8 +253,9 @@ def admin_generate_hash():
 def gerencia_dashboard_extra():
     if 'compras_user' not in session or session.get('compras_user','') not in FINANZAS_ACCESS:
         return jsonify({'error': 'No autorizado'}), 401
-    from datetime import date, timedelta
-    today    = date.today()
+    # El mes/año del tablero financiero se ancla en Colombia: con el UTC del server, la
+    # noche del último día del mes el tablero saltaba al mes siguiente y salía en cero (M24).
+    today    = _hoy_col()
     mes_str  = today.strftime('%Y-%m')
     year_str = today.strftime('%Y')
     cutoff7  = (today - timedelta(days=7)).isoformat()
@@ -548,7 +550,9 @@ def gerencia_input_manual():
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user','')
     d = request.json or {}
-    periodo = d.get('periodo', datetime.now().strftime('%Y-%m'))
+    # Período contable en hora Colombia: con el UTC del server, el último día del mes
+    # después de las 19:00 el input de gerencia se guardaba en el mes siguiente (M24).
+    periodo = d.get('periodo', _hoy_col().strftime('%Y-%m'))
     saldo_caja = float(d.get('saldo_caja',0))
     ingresos_animus = float(d.get('ingresos_animus',0))
     ingresos_maquila = float(d.get('ingresos_maquila',0))

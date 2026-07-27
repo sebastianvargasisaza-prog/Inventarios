@@ -22,6 +22,9 @@ except ImportError:
     CONTADORA_USERS = ()
 from database import get_db
 from audit_helpers import audit_log
+# El "hoy" del negocio va en hora Colombia, no en el UTC de Render (M24): las ventanas de
+# KPI, el mes por defecto y la llave de dedup de las alertas diarias dependen de eso.
+from tz_colombia import hoy_colombia as _hoy_col
 
 bp = Blueprint("marketing", __name__)
 # Fallback hardcoded · sembrado en mig 186 hacia marketing_eventos_calendario.
@@ -213,7 +216,7 @@ def _send_push_alert(conn, tipo, clave_unica, asunto, cuerpo_resumen,
             "sebastianvargasisaza@gmail.com"
         )
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = _hoy_col().isoformat()   # Colombia: la llave de dedup es por día del negocio (M24)
     try:
         # UNIQUE constraint maneja la deduplicación por día
         conn.execute("""INSERT OR IGNORE INTO marketing_push_alerts_log
@@ -337,7 +340,7 @@ def _ig_check_refresh(conn, allow_network=True):
     app_secret = _cfg(conn, "meta_app_secret")
     expiry_str = _cfg(conn, "instagram_token_expiry")  # e.g. "2026-06-20"
 
-    today = _date.today()
+    today = _hoy_col()   # M24
 
     # Calcular dias restantes segun expiry guardado
     if expiry_str:
@@ -368,7 +371,7 @@ def _ig_check_refresh(conn, allow_network=True):
             new_token  = data.get("access_token")
             expires_in = data.get("expires_in", 5184000)  # 60 dias default
             if new_token:
-                new_expiry = (_date.today() + _td(seconds=int(expires_in))).isoformat()
+                new_expiry = (_hoy_col() + _td(seconds=int(expires_in))).isoformat()   # M24
                 conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
                              ("instagram_token", new_token))
                 conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
@@ -1924,7 +1927,7 @@ def mkt_meta_progreso():
     u, err, code = _auth()
     if err: return err, code
     from datetime import datetime as _dt
-    mes = (request.args.get('mes') or _dt.now().strftime('%Y-%m')).strip()
+    mes = (request.args.get('mes') or _hoy_col().strftime('%Y-%m')).strip()   # M24
     if not _re_atrib.match(r'^\d{4}-\d{2}$', mes):
         return jsonify({"error": "mes inválido (YYYY-MM)"}), 400
     conn = _db(); c = conn.cursor()
@@ -1954,8 +1957,7 @@ def mkt_meta_progreso():
         if not meta_val or meta_val <= 0: return None
         return round(real / meta_val * 100, 1)
     # Días transcurridos del mes vs días totales · para proyección
-    from datetime import date as _date
-    hoy = _date.today()
+    hoy = _hoy_col()   # M24 · si acá corre el día del mes siguiente, la proyección se dispara
     mes_year, mes_month = int(mes[:4]), int(mes[5:7])
     if hoy.year == mes_year and hoy.month == mes_month:
         dias_t = hoy.day
@@ -3528,8 +3530,8 @@ def mkt_analytics_roi():
         # ── Shopify baseline KPIs (shown when campaigns are empty) ────────────
         hace30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         hace60 = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
-        hoy    = datetime.now().strftime("%Y-%m-%d")
-        mes_ini_sh = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+        hoy    = _hoy_col().isoformat()   # M24
+        mes_ini_sh = _hoy_col().replace(day=1).isoformat()
 
         # Cobertura real de datos
         cobertura = c.execute(
@@ -3599,7 +3601,7 @@ def mkt_analytics_tendencias():
     c = conn.cursor()
     try:
         meses = int(request.args.get("meses", 6))
-        hoy   = datetime.now().strftime("%Y-%m-%d")
+        hoy   = _hoy_col().isoformat()   # M24
         hace90  = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
         hace180 = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
         desde   = (datetime.now() - timedelta(days=meses * 30)).strftime("%Y-%m-%d")
@@ -5204,8 +5206,8 @@ def mkt_pagos_influencers_list():
 
         # KPIs sobre la lista filtrada
         from datetime import datetime as _dt
-        now_month = _dt.now().strftime("%Y-%m")
-        now_year = _dt.now().strftime("%Y")
+        now_month = _hoy_col().strftime("%Y-%m")   # M24
+        now_year = _hoy_col().strftime("%Y")
         total_pagado = sum(p["valor"] or 0 for p in pagos if p["estado"] == "Pagada")
         total_pendiente = sum(p["valor"] or 0 for p in pagos if p["estado"] == "Pendiente")
         pagos_mes = [p for p in pagos if p["estado"] == "Pagada" and (p["fecha"] or "").startswith(now_month)]

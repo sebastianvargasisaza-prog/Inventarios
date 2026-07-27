@@ -12,6 +12,15 @@ from database import get_db, db_connect
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from http_helpers import validate_money
 from audit_helpers import audit_log
+# ── "HOY" SIEMPRE EN HORA COLOMBIA (26-jul-2026) ─────────────────────────────────────────────
+# Render corre en UTC y la empresa opera en Colombia (UTC-5). `_hoy_col()` del servidor salta al
+# día siguiente después de las 7 de la tarde local, así que un pago registrado el 31 a las 19:30
+# se guardaba con fecha del 1 y su `periodo` contable caía en el MES SIGUIENTE. Es dinero en el
+# mes equivocado, y pasaba todas las noches de fin de mes.
+# `api/tz_colombia.py` ya resolvía esto desde mayo y sólo lo usaba un módulo (M1: el helper
+# canónico existe, hay que usarlo).
+from tz_colombia import hoy_colombia as _hoy_col
+
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -139,7 +148,9 @@ def financiero_kpis():
         _backfill_egresos_animus(conn)
     except Exception:
         pass
-    periodo_actual = datetime.now().strftime('%Y-%m')
+    # Colombia, no UTC (M24): al cerrar el mes, después de las 19:00 locales el tablero
+    # saltaba al mes siguiente y mostraba los KPIs en cero con el mes todavía en curso.
+    periodo_actual = _hoy_col().strftime('%Y-%m')
     # KPIs mes actual
     c.execute("SELECT COALESCE(SUM(monto),0), COUNT(*) FROM flujo_ingresos WHERE periodo=?", (periodo_actual,))
     ing_mes, ing_count = c.fetchone()
@@ -602,8 +613,8 @@ def pnl_por_empresa():
     """
     if 'compras_user' not in session or session.get('compras_user','') not in (ADMIN_USERS | CONTADORA_USERS):
         return jsonify({'error': 'No autorizado'}), 401
-    desde = request.args.get('desde', date.today().replace(day=1).isoformat())
-    hasta = request.args.get('hasta', date.today().isoformat())
+    desde = request.args.get('desde', _hoy_col().replace(day=1).isoformat())
+    hasta = request.args.get('hasta', _hoy_col().isoformat())
 
     conn = get_db(); c = conn.cursor()
     empresas = ['HHA', 'ESPAGIRIA', 'ANIMUS']
@@ -986,7 +997,7 @@ def financiero_ar_aging():
     from datetime import date
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
-    today = date.today()
+    today = _hoy_col()
     conn = get_db(); c = conn.cursor()
     # FIX 10-jun audit · la tabla `pedidos` tiene `numero` y `cliente_id` (no
     # `numero_pedido`/`cliente`) → la query daba 500 siempre y la cartera AR nunca
@@ -1032,7 +1043,7 @@ def financiero_ap_aging():
     from datetime import date
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
-    today = date.today()
+    today = _hoy_col()
     conn = get_db(); c = conn.cursor()
     c.execute("""SELECT numero_oc, proveedor, fecha, valor_total
                  FROM ordenes_compra
@@ -1074,7 +1085,7 @@ def financiero_working_capital():
     from datetime import date, timedelta
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
-    today = date.today()
+    today = _hoy_col()
     conn = get_db(); c = conn.cursor()
     # AR
     c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos WHERE estado NOT IN ('Cancelado','Facturado','Entregado') AND valor_total > 0")
@@ -1164,7 +1175,7 @@ def financiero_pnl():
     from datetime import date, timedelta
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
-    today   = date.today()
+    today   = _hoy_col()
     mes_str = today.strftime('%Y-%m')
     year_str= today.strftime('%Y')
     periodo = today.strftime('%b %Y')

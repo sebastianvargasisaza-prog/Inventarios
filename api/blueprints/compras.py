@@ -18,6 +18,9 @@ from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from audit_helpers import audit_log, intentar_insert_con_retry, siguiente_numero_oc as _siguiente_numero_oc, siguiente_correlativo, registrar_documento
 from http_helpers import validate_money
+# El "hoy" contable se ancla en Colombia, nunca en el UTC del server (M24): Render corre en UTC y
+# después de las 19:00 locales un pago de fin de mes caía en el período contable siguiente.
+from tz_colombia import hoy_colombia as _hoy_col
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -540,8 +543,7 @@ def dashboard_stats():
     _h = _DASH_STATS_CACHE.get('payload')
     if _h is not None and (_tds.time() - _DASH_STATS_CACHE.get('ts', 0)) < _DASH_STATS_TTL:
         return jsonify(_h)
-    from datetime import date
-    hoy = date.today().isoformat()
+    hoy = _hoy_col().isoformat()   # Colombia, no el UTC del server (M24)
     conn = get_db(); c = conn.cursor()
 
     # Soporta 'Entrada', 'Ingreso', 'Ajuste', 'Devolucion' como entradas;
@@ -4768,7 +4770,7 @@ def consolidar_auto_pendientes():
             obs = (
                 f"AUTO-PLAN consolidado · proveedor: {g['proveedor_label']} · "
                 f"{g['items_count']} MPs · {round(g['total_g']/1000.0,1)}kg total · "
-                f"{resumen} · (consolidacion legacy {datetime.now().date().isoformat()})"
+                f"{resumen} · (consolidacion legacy {_hoy_col().isoformat()})"
             )
             # numero AUTO-XXXX único con reintento ante carrera MAX+1
             for _intento in range(6):
@@ -6177,8 +6179,9 @@ def recibir_oc(numero_oc):
     vencimientos_pasados = []
     sin_cantidad = []
     sin_lote_proveedor = []  # FIX 27-may (P1 INVIMA) · obligatorio para MPs
-    from datetime import date as _date
-    hoy_iso = _date.today().isoformat()
+    # El corte de "ya venció" va en hora Colombia: con el UTC de Render, un lote que vence
+    # HOY se marcaba como vencido desde las 19:00 de la víspera (M24).
+    hoy_iso = _hoy_col().isoformat()
 
     # Detectar si la OC es de Materia Prima · solo MPs exigen lote_proveedor
     # INVIMA (Resolución 2674/2013). Empaque/Servicios/Cuenta-Cobro NO.
@@ -7299,9 +7302,15 @@ def pagar_oc(numero_oc):
             observaciones=obs,
             categoria=cat_egreso,
         ) else 'Espagiria'
+        # El PERÍODO contable sale de la fecha del PAGO, no de "ahora". Tenía dos formas de
+        # quedar mal: (a) un pago con fecha retroactiva (se registra hoy un pago de la semana
+        # pasada) caía en el mes en curso mientras `fecha` decía el mes anterior — la misma fila
+        # con dos meses distintos; (b) `datetime.now()` es UTC en Render, así que después de las
+        # 19:00 en Colombia un pago de fin de mes ya contaba en el mes siguiente (M24).
+        periodo_egr = (fecha_pago or '')[:7] or _hoy_col().strftime('%Y-%m')
         cur.execute("INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por, observaciones) VALUES (?,?,?,?,?,?,?,?,?,?)",
                    (fecha_pago, empresa_egreso, f'Pago OC {numero_oc} - {proveedor}',
-                    cat_egreso, monto, datetime.now().strftime('%Y-%m'),
+                    cat_egreso, monto, periodo_egr,
                     'compras', numero_oc, usuario_actual, f'{medio}. {obs}'))
     except sqlite3.OperationalError as _e:
         if 'no such table' not in str(_e).lower():
@@ -8932,7 +8941,7 @@ _DISCREPANCIAS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="ut
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Discrepancias de compra</title>
 <style>
-:root{--vio:#6d28d9;--viod:#4c1d95;--ink:#1e1b2e;--mut:#78716c;--line:#e5e7eb;--card:#fff;--bg:#f5f3ff;--ok:#16a34a;--warn:#c2410c;--dang:#dc2626}
+:root{--vio:#6d28d9;--viod:#4c1d95;--ink:#1e1b2e;--mut:var(--cx-text-mute, #78716c);--line:var(--cx-border, #e5e7eb);--card:#fff;--bg:#f5f3ff;--ok:#16a34a;--warn:#c2410c;--dang:#dc2626}
 *{box-sizing:border-box;margin:0}body{font-family:Inter,system-ui,Arial,sans-serif;background:#faf9ff;color:var(--ink);padding:0 0 60px}
 .top{background:linear-gradient(90deg,var(--viod),var(--vio));color:#fff;padding:16px 26px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
 .top h1{font-size:18px;font-weight:800;display:flex;align-items:center;gap:9px}.top a{color:#e9d5ff;text-decoration:none;font-size:13px;font-weight:600}
@@ -11293,7 +11302,7 @@ def alertas_vivas_compras():
         return err, code
 
     from datetime import date, timedelta
-    hoy = date.today()
+    hoy = _hoy_col()   # M24
     hace_7 = (hoy - timedelta(days=7)).isoformat()
     hace_15 = (hoy - timedelta(days=15)).isoformat()
     hace_3 = (hoy - timedelta(days=3)).isoformat()
@@ -11439,8 +11448,8 @@ def reporte_ejecutivo_compras():
 
     from datetime import date, timedelta
     desde = (request.args.get('desde') or
-             (date.today() - timedelta(days=365)).isoformat())
-    hasta = request.args.get('hasta') or date.today().isoformat()
+             (_hoy_col() - timedelta(days=365)).isoformat())
+    hasta = request.args.get('hasta') or _hoy_col().isoformat()
 
     conn = get_db(); c = conn.cursor()
 

@@ -9,6 +9,15 @@ from flask import Blueprint, jsonify, request, Response, session
 from config import DB_PATH, ADMIN_USERS, CONTADORA_USERS
 from database import get_db
 from audit_helpers import audit_log
+# ── "HOY" SIEMPRE EN HORA COLOMBIA (26-jul-2026) ─────────────────────────────────────────────
+# Render corre en UTC y la empresa opera en Colombia (UTC-5). `_hoy_col()` del servidor salta al
+# día siguiente después de las 7 de la tarde local, así que un pago registrado el 31 a las 19:30
+# se guardaba con fecha del 1 y su `periodo` contable caía en el MES SIGUIENTE. Es dinero en el
+# mes equivocado, y pasaba todas las noches de fin de mes.
+# `api/tz_colombia.py` ya resolvía esto desde mayo y sólo lo usaba un módulo (M1: el helper
+# canónico existe, hay que usarlo).
+from tz_colombia import hoy_colombia as _hoy_col
+
 from http_helpers import validate_money
 
 log = logging.getLogger('contabilidad')
@@ -30,7 +39,7 @@ def _user():
 
 # ─── Numeración secuencial atómica ───────────────────────────────────────────
 def _next_numero(conn, empresa: str, tipo: str = 'FV') -> str:
-    anio = date.today().year
+    anio = _hoy_col().year
     prefix = {'ANIMUS': 'ANI', 'Espagiria': 'ESP'}.get(empresa, 'GEN')
     conn.execute(
         "INSERT OR IGNORE INTO config_facturacion(empresa,anio,tipo,siguiente) VALUES(?,?,?,1)",
@@ -467,7 +476,7 @@ def cont_facturas_generar():
         return jsonify(err), 400
 
     numero = _next_numero(conn, empresa)
-    hoy = date.today().isoformat()
+    hoy = _hoy_col().isoformat()
 
     conn.execute("""
         INSERT INTO facturas
@@ -558,7 +567,7 @@ def cont_factura_pago(numero):
             'codigo': 'OVER_PAYMENT'
         }), 422
 
-    fecha_pago = data.get('fecha') or date.today().isoformat()
+    fecha_pago = data.get('fecha') or _hoy_col().isoformat()
     medio = data.get('medio', 'Transferencia')
     referencia = data.get('referencia', '')
     conn.execute("""
@@ -618,7 +627,7 @@ def cont_factura_pago(numero):
             (ref_flujo,)
         ).fetchone()
         if not ya_existe:
-            periodo = (fecha_pago or date.today().isoformat())[:7]
+            periodo = (fecha_pago or _hoy_col().isoformat())[:7]
             concepto = f'Cobro factura {numero}' + (f' — {cliente[:40]}' if cliente else '')
             conn.execute("""
                 INSERT INTO flujo_ingresos
@@ -676,8 +685,8 @@ def cont_export_siigo():
     if not _auth():
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
-    desde = request.args.get('desde', date.today().replace(day=1).isoformat())
-    hasta = request.args.get('hasta', date.today().isoformat())
+    desde = request.args.get('desde', _hoy_col().replace(day=1).isoformat())
+    hasta = request.args.get('hasta', _hoy_col().isoformat())
     empresa = request.args.get('empresa', '')
 
     q = "SELECT * FROM facturas WHERE fecha_emision>=? AND fecha_emision<=? AND estado!='Anulada'"
@@ -751,8 +760,8 @@ def cont_tesoreria():
     if not _auth():
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
-    desde = request.args.get('desde', (date.today() - timedelta(days=30)).isoformat())
-    hasta = request.args.get('hasta', date.today().isoformat())
+    desde = request.args.get('desde', (_hoy_col() - timedelta(days=30)).isoformat())
+    hasta = request.args.get('hasta', _hoy_col().isoformat())
 
     # Egresos + JOIN al último comprobante de egreso (CE) por OC.
     # Si la tabla comprobantes_pago no existe aún (migración no corrida),
@@ -800,8 +809,8 @@ def cont_kpis():
     if not _auth():
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
-    hoy = date.today().isoformat()
-    mes_inicio = date.today().replace(day=1).isoformat()
+    hoy = _hoy_col().isoformat()
+    mes_inicio = _hoy_col().replace(day=1).isoformat()
 
     # Facturado este mes
     fact_mes = conn.execute(
