@@ -1467,12 +1467,26 @@ def job_lunes_7am_workflow(app):
                         addr = o.get("shipping_address") or o.get("billing_address") or {}
                         _tg = o.get("tags","") or ""
                         _cg = ((o.get("customer") or {}).get("tags","")) or ""
+                        _nota = (o.get("note") or "")
+                        _gw = ", ".join(o.get("payment_gateway_names") or []) or (o.get("gateway") or "")
+                        # UPSERT que toca SOLO lo de este sync (M20 · ver el writer canónico en
+                        # shopify_client.py): `INSERT OR REPLACE` reseteaba los descuentos y el
+                        # flag `flujo_synced` que este sync no escribe.
                         conn.execute("""
-                            INSERT OR REPLACE INTO animus_shopify_orders
+                            INSERT INTO animus_shopify_orders
                               (shopify_id, nombre, email, total, moneda, estado, estado_pago,
                                sku_items, unidades_total, ciudad, pais, creado_en, synced_at,
-                               tags, customer_tags)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?)
+                               tags, customer_tags, nota, gateway)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?,?,?)
+                            ON CONFLICT(shopify_id) DO UPDATE SET
+                              nombre=excluded.nombre, email=excluded.email, total=excluded.total,
+                              moneda=excluded.moneda, estado=excluded.estado,
+                              estado_pago=excluded.estado_pago, sku_items=excluded.sku_items,
+                              unidades_total=excluded.unidades_total, ciudad=excluded.ciudad,
+                              pais=excluded.pais, creado_en=excluded.creado_en,
+                              synced_at=excluded.synced_at, tags=excluded.tags,
+                              customer_tags=excluded.customer_tags, nota=excluded.nota,
+                              gateway=excluded.gateway
                         """, (str(o["id"]), o.get("name",""), o.get("email",""),
                               float(o.get("total_price",0)), o.get("currency","COP"),
                               # FIX 7-jul (audit ultracode · M45): cancelled_at = marca de cancelación (= canónico
@@ -1482,7 +1496,7 @@ def job_lunes_7am_workflow(app):
                               items_sku, total_uds,
                               addr.get("city",""), addr.get("country_code","CO"),
                               _shopify_created_at_bogota(o.get("created_at","")),
-                              _tg, _cg))
+                              _tg, _cg, _nota, _gw))
                         synced += 1
                     next_url = None
                     for part in link_hdr.split(","):

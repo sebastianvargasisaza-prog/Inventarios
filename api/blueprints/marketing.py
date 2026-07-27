@@ -3860,11 +3860,27 @@ def mkt_sync(platform):
                         _creado = _tz_h(o.get("created_at",""))
                     except Exception:
                         _creado = (o.get("created_at") or "")[:10]
-                    conn.execute("""INSERT OR REPLACE INTO animus_shopify_orders
+                    # UPSERT que toca SOLO las columnas de este sync (M20). Con `INSERT OR
+                    # REPLACE` toda columna no listada vuelve a su default, y como los tres
+                    # sincronizadores de esta tabla listan columnas distintas, se pisaban entre
+                    # ellos: éste borraba `tags`/`customer_tags` (donde vive la marca de
+                    # CONTRAENTREGA) y los otros dos borraban los descuentos. Ganaba el que
+                    # corriera último. También borraba `flujo_synced`, el flag de "ya espejado a
+                    # ingresos" (el chequeo por `referencia` evitaba el doble ingreso, pero el
+                    # espejo re-procesaba todo cada vez).
+                    conn.execute("""INSERT INTO animus_shopify_orders
                         (shopify_id,nombre,email,total,moneda,estado,estado_pago,
                          sku_items,unidades_total,ciudad,pais,creado_en,synced_at,
                          discount_codes,subtotal,total_descuentos)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?,?)""",
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?,?)
+                        ON CONFLICT(shopify_id) DO UPDATE SET
+                          nombre=excluded.nombre, email=excluded.email, total=excluded.total,
+                          moneda=excluded.moneda, estado=excluded.estado,
+                          estado_pago=excluded.estado_pago, sku_items=excluded.sku_items,
+                          unidades_total=excluded.unidades_total, ciudad=excluded.ciudad,
+                          pais=excluded.pais, creado_en=excluded.creado_en,
+                          synced_at=excluded.synced_at, discount_codes=excluded.discount_codes,
+                          subtotal=excluded.subtotal, total_descuentos=excluded.total_descuentos""",
                         (str(o["id"]), o.get("name",""), o.get("email",""),
                          float(o.get("total_price") or 0),
                          o.get("currency","COP"),

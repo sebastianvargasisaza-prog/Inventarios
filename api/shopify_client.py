@@ -131,13 +131,34 @@ def sync_shopify_orders(conn, *, days: int = 90,
                          or {})
                 tags = o.get('tags', '') or ''
                 cust_tags = ((o.get('customer') or {}).get('tags', '')) or ''
+                # La marca de CONTRAENTREGA se escribe a mano al crear el pedido, y puede venir
+                # de tres lados según quién lo cargue: la NOTA del pedido (lo más común acá), una
+                # etiqueta, o el medio de pago. Se traen los tres y el detector mira los tres
+                # (`es_contraentrega`), porque depender de uno solo pierde pedidos en silencio.
+                nota = o.get('note') or ''
+                gateway = ', '.join(o.get('payment_gateway_names') or []) or (o.get('gateway') or '')
+                # UPSERT que toca SOLO las columnas de este sync (M20). Con `INSERT OR REPLACE`
+                # toda columna no listada vuelve a su default: éste borraba los descuentos y el
+                # flag `flujo_synced`, y el sync de marketing borraba a su vez estas etiquetas.
+                # Los tres sincronizadores se pisaban y ganaba el que corriera último.
                 conn.execute(
-                    """INSERT OR REPLACE INTO animus_shopify_orders
+                    """INSERT INTO animus_shopify_orders
                        (shopify_id, nombre, email, total, moneda, estado,
                         estado_pago, sku_items, unidades_total, ciudad,
-                        pais, creado_en, synced_at, tags, customer_tags)
+                        pais, creado_en, synced_at, tags, customer_tags,
+                        nota, gateway)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,
-                               datetime('now', '-5 hours'), ?, ?)""",
+                               datetime('now', '-5 hours'), ?, ?, ?, ?)
+                       ON CONFLICT(shopify_id) DO UPDATE SET
+                         nombre=excluded.nombre, email=excluded.email,
+                         total=excluded.total, moneda=excluded.moneda,
+                         estado=excluded.estado, estado_pago=excluded.estado_pago,
+                         sku_items=excluded.sku_items,
+                         unidades_total=excluded.unidades_total,
+                         ciudad=excluded.ciudad, pais=excluded.pais,
+                         creado_en=excluded.creado_en, synced_at=excluded.synced_at,
+                         tags=excluded.tags, customer_tags=excluded.customer_tags,
+                         nota=excluded.nota, gateway=excluded.gateway""",
                     (str(o['id']),
                      o.get('name', ''),
                      o.get('email', ''),
@@ -157,7 +178,9 @@ def sync_shopify_orders(conn, *, days: int = 90,
                      addr.get('country_code', 'CO'),
                      created_at_bogota(o.get('created_at', '')),
                      tags,
-                     cust_tags),
+                     cust_tags,
+                     nota,
+                     gateway),
                 )
                 synced += 1
             # Paginación cursor-based Link header rel=next
