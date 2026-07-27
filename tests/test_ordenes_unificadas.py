@@ -318,11 +318,14 @@ def test_despeje_checklist_13_items_y_registro(app, db_clean):
     cl = _login(app)
     d = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
     chk = d.get('despeje_checklist') or []
-    assert len(chk) == 13, f"checklist canónico de 13 verificaciones · {len(chk)}"
+    # 26-jul · Sebastián, comparando contra MyBatch: "tiene que quedar como dice MyBatch". La
+    # lista estaba al revés y tenía un ítem de más ("Temperatura menor a 30 grados", que MyBatch
+    # no trae). Ahora son 12 y la primera es la que de verdad va primero en el despeje.
+    assert len(chk) == 12, f"checklist canónico de 12 verificaciones (MyBatch) · {len(chk)}"
     assert chk[0]['cumple'] is None, "sin registro = pendiente (no inventa Sí)"
-    assert 'Temperatura' in chk[0]['texto']
+    assert 'libre de materias primas' in chk[0]['texto']
     # registrar CUMPLE del ítem 0
-    r = cl.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 1, 'observaciones': '28°C'}, headers=_h())
+    r = cl.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 1, 'observaciones': 'área despejada'}, headers=_h())
     assert r.status_code == 201, r.data
     # upsert: re-registrar el mismo ítem (No) no duplica
     r2 = cl.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 0}, headers=_h())
@@ -358,7 +361,7 @@ def test_despeje_dos_etapas_independientes(app, db_clean):
     fab = {x['idx']: x for x in d['despeje_checklist_fab']}
     assert disp[0]['cumple'] == 1, 'dispensación ítem 0 = Sí'
     assert fab[0]['cumple'] == 0, 'fabricación ítem 0 = No (independiente)'
-    assert len(d['despeje_checklist']) == 13 and len(d['despeje_checklist_fab']) == 13
+    assert len(d['despeje_checklist']) == 12 and len(d['despeje_checklist_fab']) == 12
     # no se duplican filas: una por (ebr, item, etapa)
     cc = _conn()
     n = cc.execute("SELECT COUNT(*) FROM ebr_despeje_items WHERE ebr_id=? AND item_idx=0", (ebr,)).fetchone()[0]
@@ -473,16 +476,19 @@ def _crear_ebr_iniciado(lote, numop, prod='PROD ROLE TEST'):
 
 def test_despeje_pdf_imprimible(app, db_clean):
     """6-jun · El ícono PDF junto al despeje abre el formato imprimible (registro
-    GMP) con las 13 verificaciones, encabezado del lote y líneas de firma."""
+    GMP) con las 12 verificaciones de MyBatch, encabezado del lote y líneas de firma."""
     ebr = _crear_ebr_iniciado('LOTE-PDF', 'OP-2026-6001', 'PROD PDF TEST')
     cl = _login(app)
     r = cl.get(f'/brd/despeje/{ebr}')
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert 'DESPEJE DE LÍNEA' in body
-    assert 'Temperatura menor a 30 grados' in body
+    # el ítem de temperatura se retiró el 26-jul (MyBatch no lo tiene); la primera verificación
+    # es la que de verdad abre el despeje
+    assert 'Temperatura menor a 30 grados' not in body
+    assert 'libre de materias primas' in body
     assert 'Aprobó (Calidad)' in body and 'Realizó (Operario)' in body
-    assert body.count('<tr>') >= 13, 'deben salir las 13 verificaciones'
+    assert body.count('<tr>') >= 12, 'deben salir las 12 verificaciones'
 
 
 def test_despeje_roles_operario_registra_calidad_corrige(app, db_clean):

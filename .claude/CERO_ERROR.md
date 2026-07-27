@@ -1182,6 +1182,57 @@ mi migrador no veía porque su regex exige un nombre de propiedad CSS estándar 
 porque una variable propia puede usarse como texto Y como fondo, y mapearla mal es peor que
 dejarla; (2) la cola larga de colores sin token (`#1e63a8`, `#a21caf`, `#c0392b`).
 
+## ⏱️ M105 · Un gate que tarda 8 minutos en ARMARSE deja de correrse · y el orden de un procedimiento no es cosmético · 26-jul
+
+Dos lecciones del mismo día, las dos con la misma raíz: **arreglar el síntoma con un martillazo**.
+
+**(a) El costo de un gate es parte de su diseño.** Para que `guardian.sh --pg` dejara de mentir por
+la basura acumulada (M103) lo puse a **recrear el esquema en cada corrida**. Funcionó… y volvió el
+gate inusable: el harness rearma el SQLite con las 381 migraciones y copia TODO a PG fila por fila
+= **~8 minutos de armado contra ~50 segundos de tests**. Sebastián, con razón: *"eso harta que
+comas muchos créditos, además de que hará más lento el trabajo · para eso tienes cerebro"*.
+**Un gate que cuesta 10 minutos y varios dólares por corrida se corre menos, y un gate que se
+corre menos no protege nada** — exactamente el problema que M95 ya había señalado por otra vía.
+Fix: **plantilla de PostgreSQL**. `CREATE DATABASE x TEMPLATE y` copia a nivel de archivos
+(segundos). Se construye UNA vez, se guarda como plantilla y cada corrida la restaura. La
+plantilla lleva el **hash de `database.py` + `pg_schema.sql` + `conftest.py`** en el COMMENT de la
+base: si el hash no coincide, se rearma sola, así que no puede quedar vieja. El harness se saltea
+la construcción con `EOS_PG_LISTA=1`. **Regla: antes de meter un paso caro en un gate, medí qué
+fracción del tiempo es SETUP y cuál es verificación real; si el setup domina, es cacheable — y
+la caché se invalida por hash del contenido, nunca a mano.**
+
+**(b) El ORDEN de un procedimiento es el procedimiento.** La lista de despeje de línea de EOS tenía
+los 12 textos idénticos a MyBatch pero **exactamente al revés**: arrancaba por "¿Cuenta con los
+EPP?" y terminaba por "El área está libre del producto anterior", que es lo PRIMERO que se
+verifica. El operario la leía de abajo hacia arriba y nadie lo había notado, porque cada ítem por
+separado estaba bien. **Comparar CONJUNTOS no alcanza: si el sistema de referencia define una
+secuencia, comparala como secuencia.**
+
+**La trampa que casi convierte ese arreglo en un delito regulatorio:** `ebr_despeje_items`
+referencia por `item_idx` y la pantalla armaba el texto desde la CONSTANTE por posición, ignorando
+el `item_texto` que la propia tabla ya guardaba. **Reordenar la lista le habría cambiado el texto a
+todo lo firmado** — un lote donde el operario firmó "Temperatura menor a 30 grados · Sí" pasaría a
+decir "El área está libre… · Sí". Eso es falsificar un registro Part 11, y ningún test lo cubría.
+**Reglas duras:**
+1. **Si una tabla guarda el texto de lo que se firmó, la vista MUESTRA ese texto**, no el que hoy
+   ocupe esa posición en el código. El snapshot existe justamente para esto (igual que
+   `ebr_pasos_ejecutados.descripcion`); tenerlo y no leerlo es peor que no tenerlo, porque da
+   sensación de seguridad.
+2. **Reordenar/editar una lista referenciada por ÍNDICE exige migrar los registros**, emparejando
+   **por texto** y en dos fases (todo a un rango libre y después a la posición final) para no
+   chocar el UNIQUE a mitad del UPDATE.
+3. **Un ítem retirado del procedimiento NO se borra de los lotes donde se registró**: se conserva,
+   se muestra al final y se marca como retirado. Un registro regulado no desaparece porque el
+   procedimiento cambie después.
+4. Verificá la migración **empíricamente con datos sembrados** (52 filas entran, 52 salen, cada
+   texto en su posición) antes de tocar nada. Ver mig 381 y `tests/test_despeje_orden_mybatch.py`.
+
+**(c) Cuando el usuario da un sistema de referencia, comparalo campo por campo y decí qué falta.**
+Comparar la pantalla de Envasado contra MyBatch destapó, además del orden: 4 sitios con el mismo
+código de despeje copiado (ahora un solo resolvedor `despeje_checklist`), y 4 datos que EOS no
+tiene — **densidad del granel** (0,916 g/mL · sin eso no se convierten los 17.000 g a los 13.658,95
+mL que se envasan), cantidad por envasar en mL, unidades finales y % de rendimiento.
+
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 
 Cosas que una auditoría marca como "inconsistencia" y NO lo son. Verificar acá antes de reportar:

@@ -68,6 +68,7 @@ CORAZON=(
   "tests/test_instructivo_por_fase.py"
   "tests/test_deuda_diseno_no_crece.py"
   "tests/test_envasado_lista_premium.py"
+  "tests/test_despeje_orden_mybatch.py"
   "tests/test_legajo_trazabilidad_responsables.py"
   "tests/test_inci_ambiguos.py"
   "tests/test_cron_mee_cuarentena.py"
@@ -136,10 +137,121 @@ if [ "$MODE" = "--pg" ] || [ "$MODE" = "pg" ]; then
     fi
   fi
   if [ -n "$PSQL_BIN" ]; then
-    echo "    esquema: recreando $PGDATABASE desde cero (evita basura de corridas anteriores)"
-    if ! "$PSQL_BIN" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -q \
-         -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1; then
-      echo "    ⚠ no se pudo recrear el esquema · el resultado puede traer basura acumulada"
+    # ── PLANTILLA (26-jul) · por qué existe ────────────────────────────────────────────────
+    # Recrear el esquema en cada corrida obliga al harness a rearmar TODO: el SQLite con las 381
+    # migraciones + copiar los datos a PG fila por fila. Son ~8 minutos por corrida, contra ~50
+    # segundos de tests. Sebastián: "eso harta que comas muchos créditos, además de que hará más
+    # lento el trabajo · para eso tienes cerebro".
+    #
+    # PostgreSQL ya resuelve esto: `CREATE DATABASE x TEMPLATE y` copia a nivel de archivos.
+    # Se construye la base UNA vez, se guarda como plantilla, y cada corrida la restaura en
+    # segundos. La plantilla se reconstruye sola cuando cambia el esquema (hash de database.py +
+    # pg_schema.sql + conftest.py), así que NO puede quedar vieja: si el hash no coincide, se
+    # rearma. Eso conserva la garantía de la limpieza (cada corrida arranca de una base idéntica
+    # y sin basura) y le saca los 8 minutos.
+    # ⚠ El atajo de la plantilla queda OPT-IN (`EOS_PG_PLANTILLA=1`) hasta terminar de depurarlo:
+    # saltear la construcción deja la base sin algo que el login necesita (345 pruebas caen con
+    # "login failed"). Y resultó que NO era lo que hacía lento al gate: los 8 minutos eran las
+    # conexiones huérfanas bloqueando el DROP SCHEMA. Con eso barrido, la corrida completa baja a
+    # ~3 minutos SIN plantilla. Primero lo correcto, después lo rápido.
+    if [ "${EOS_PG_PLANTILLA:-0}" != "1" ]; then
+      _matar_conexiones_simple() {
+        "$PSQL_BIN" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -q -t -A \
+          -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname LIKE 'eos_test%' AND pid<>pg_backend_pid()" >/dev/null 2>&1 || true
+      }
+      _matar_conexiones_simple
+      echo "    esquema: recreando $PGDATABASE desde cero (conexiones huérfanas barridas)"
+      "$PSQL_BIN" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -q \
+        -v ON_ERROR_STOP=1 -c "SET lock_timeout='30s'" \
+        -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1 \
+        || echo "    ⚠ no se pudo recrear el esquema (¿candado?) · el resultado puede traer basura"
+      TESTS=("tests/test_golden_paths.py" "${CORAZON[@]}")
+      # (se salta todo el bloque de plantilla de abajo)
+      PG_TPL=""
+    fi
+    if [ -n "${PG_TPL+x}" ] && [ "${EOS_PG_PLANTILLA:-0}" = "1" ]; then
+    PG_TPL="${PGDATABASE}_tpl"
+    _psql_adm() { "$PSQL_BIN" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -q -t -A "$@"; }
+    HASH_ACTUAL="$("$PYTHON_BIN" - <<'PYHASH'
+import hashlib, io, os
+h = hashlib.sha256()
+for f in ('api/database.py', 'api/pg_schema.sql', 'tests/conftest.py'):
+    try:
+        h.update(io.open(f, 'rb').read())
+    except OSError:
+        h.update(b'?')
+print(h.hexdigest()[:16])
+PYHASH
+)"
+    HASH_TPL="$(_psql_adm -c "SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname='$PG_TPL'" 2>/dev/null | tr -d '\r')"
+
+    _matar_conexiones() {
+      _psql_adm -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$1' AND pid<>pg_backend_pid()" >/dev/null 2>&1 || true
+    }
+
+    # ── ANTI-BLOQUEO (26-jul · me pasó y perdí más de una hora) ────────────────────────────────
+    # Matar un pytest a la fuerza deja su conexión `idle in transaction` reteniendo candados. El
+    # `DROP SCHEMA` de la corrida siguiente se queda esperando ESE candado **para siempre**, y
+    # desde afuera se ve idéntico a "todavía está corriendo": sin salida, sin CPU, sin error.
+    # Encontré cinco sesiones encoladas detrás de una huérfana de 69 minutos.
+    # Dos defensas, porque una sola no alcanza:
+    #   1. barrer las conexiones viejas ANTES de tocar el esquema (abajo);
+    #   2. `lock_timeout` en cada statement destructivo: si aun así hay un candado, el comando
+    #      FALLA en 30s con mensaje. **Un paso que puede colgarse indefinidamente es peor que uno
+    #      que falla: el silencio no se distingue del progreso.**
+    _matar_conexiones "$PGDATABASE"
+    _matar_conexiones "$PG_TPL"
+    _psql_ddl() {   # psql para DDL destructivo: nunca se cuelga
+      "$PSQL_BIN" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$1" -q \
+        -v ON_ERROR_STOP=1 -c "SET lock_timeout='30s'" -c "$2"
+    }
+
+    if [ -n "$HASH_TPL" ] && [ "$HASH_TPL" = "$HASH_ACTUAL" ]; then
+      echo "    esquema: restaurando $PGDATABASE desde la plantilla (segundos, no minutos)"
+      _matar_conexiones "$PGDATABASE"
+      _matar_conexiones "$PG_TPL"
+      if _psql_adm -c "DROP DATABASE IF EXISTS \"$PGDATABASE\"" >/dev/null 2>&1 &&
+         _psql_adm -c "CREATE DATABASE \"$PGDATABASE\" TEMPLATE \"$PG_TPL\"" >/dev/null 2>&1; then
+        export EOS_PG_LISTA=1     # el harness NO reconstruye: la base ya viene armada
+      else
+        echo "    ⚠ no se pudo restaurar la plantilla · se reconstruye desde cero"
+        _psql_ddl "$PGDATABASE" "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1 || true
+      fi
+    else
+      # Primera vez, o el esquema cambió: se arma una vez y se guarda como plantilla.
+      echo "    esquema: la plantilla no existe o quedó vieja · construyendo (una sola vez)"
+      _psql_ddl "$PGDATABASE" "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1 || true
+      # Un test que USA EL FIXTURE `app` fuerza al harness a construir la base entera. Ojo: tiene
+      # que ser uno que de verdad levante la app · con `test_pg_compat.py` (que no toca la BD) la
+      # plantilla salió VACÍA, se guardó igual, y las 441 pruebas siguientes reventaron. Fallar en
+      # silencio y parecer éxito es el peor resultado posible para un paso de infraestructura.
+      "$PYTHON_BIN" -m pytest tests/test_diag_solo_admin.py -q >/dev/null 2>&1 || true
+      N_TABLAS="$("$PSQL_BIN" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -q -t -A \
+        -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" \
+        2>/dev/null | tr -d '\r')"
+      # VERIFICAR antes de guardar: una plantilla vacía envenena TODAS las corridas siguientes.
+      if [ "${N_TABLAS:-0}" -gt 100 ]; then
+        echo "    base construida ($N_TABLAS tablas) · guardando plantilla"
+        _matar_conexiones "$PGDATABASE"
+        _matar_conexiones "$PG_TPL"
+        if _psql_adm -c "DROP DATABASE IF EXISTS \"$PG_TPL\"" >/dev/null 2>&1 &&
+           _psql_adm -c "CREATE DATABASE \"$PG_TPL\" TEMPLATE \"$PGDATABASE\"" >/dev/null 2>&1; then
+          _psql_adm -c "COMMENT ON DATABASE \"$PG_TPL\" IS '$HASH_ACTUAL'" >/dev/null 2>&1
+          echo "    plantilla guardada · las próximas corridas arrancan en segundos"
+          # la corrida real arranca de una copia limpia de la plantilla
+          _matar_conexiones "$PGDATABASE"
+          if _psql_adm -c "DROP DATABASE IF EXISTS \"$PGDATABASE\"" >/dev/null 2>&1 &&
+             _psql_adm -c "CREATE DATABASE \"$PGDATABASE\" TEMPLATE \"$PG_TPL\"" >/dev/null 2>&1; then
+            export EOS_PG_LISTA=1
+          fi
+        else
+          echo "    ⚠ no se pudo guardar la plantilla · esta corrida reconstruye igual"
+        fi
+      else
+        echo "    ⚠ la construcción dejó la base con ${N_TABLAS:-0} tablas · NO se guarda plantilla"
+        echo "      (guardar una vacía haría fallar todas las corridas siguientes)"
+      fi
+    fi
     fi
   else
     # Ruidoso a propósito: si no se pudo limpiar, quien lea el verde tiene que saber que el

@@ -127,25 +127,94 @@ def _gate_brd_pages():
         return None
     return Response(_BRD_OCULTO_HTML, mimetype='text/html; charset=utf-8')
 
-# Despeje de Línea · Dispensación (MyBatch estación ②) · checklist GMP canónico.
-# Sebastián 5-jun-2026: estas 13 verificaciones son el SOP de despeje de línea
-# (no son datos inventados, son los controles regulatorios estándar). El CUMPLE
-# por ítem se guarda en ebr_despeje_items con e-firma del responsable.
+# Despeje de Línea · checklist GMP canónico. El CUMPLE por ítem se guarda en
+# `ebr_despeje_items` con e-firma del responsable.
+#
+# ⚠ EL ORDEN ES PARTE DEL PROCEDIMIENTO, no es cosmético (Sebastián 26-jul-2026, comparando
+# contra MyBatch: *"tiene que quedar como dice MyBatch"*). La lista estaba EXACTAMENTE AL REVÉS:
+# arrancaba por los EPP y terminaba por "el área está libre del producto anterior", que es lo
+# PRIMERO que hay que verificar. El operario la leía de abajo hacia arriba. Los 12 textos ya
+# coincidían palabra por palabra con MyBatch; lo único mal era la secuencia (y un ítem de más,
+# "Temperatura menor a 30 grados", que MyBatch no tiene y se retiró · las condiciones ambientales
+# quedan cubiertas por los ítems 9 y 10).
+#
+# La secuencia sigue el orden real del despeje: primero que no quede NADA del producto anterior,
+# después que esté limpio, después que los formatos y rótulos lo respalden, y al final las
+# condiciones, los equipos y el EPP de quien va a trabajar.
+#
+# ⚠ SI ALGUNA VEZ REORDENÁS O EDITÁS ESTA LISTA: `ebr_despeje_items` referencia por `item_idx`, así
+# que mover un ítem le cambia el TEXTO a los registros históricos (un lote donde el operario firmó
+# "Temperatura menor a 30 grados · Sí" pasaría a decir otra cosa: eso es falsificar un registro
+# regulado). Por eso la lectura ahora prefiere el `item_texto` GUARDADO en cada fila, y hay una
+# migración que remapea los `item_idx` existentes emparejando POR TEXTO. Ver mig 380 y
+# `tests/test_despeje_orden_mybatch.py`.
 DESPEJE_LINEA_ITEMS = [
-    "Temperatura menor a 30 grados",
-    "¿Cuenta con los EPP requeridos para el proceso?",
-    "¿Los equipos requeridos se encuentran aptos para su uso? (mantenimiento y calibración al día)",
-    "¿El formato de registro de condiciones ambientales se encuentra diligenciado y al día?",
-    "¿Las condiciones ambientales son las idóneas para el proceso?",
-    "Las materias primas, material de envase y empaque, graneles, etiquetas y documentación corresponden al producto a trabajar.",
-    "El área se encuentra identificada con el producto en proceso",
-    "El área y sus equipos y/o utensilios se encuentran completamente limpios y con los respectivos rótulos de Limpieza Área / Equipo.",
-    "¿Se comprueba que todas las áreas están rotuladas como \"Área limpia\" y están listas para ser usadas?",
-    "¿Se comprueba que todos los equipos están rotulados como \"Equipo limpio\" y están listos para ser usados?",
-    "¿Los formatos de Limpieza de áreas se encuentran diligenciados y al día?",
-    "¿Se asegura que las áreas de producción estén limpias y desinfectadas antes de cada lote?",
     "El área está libre de materias primas, material de envase y empaque, gráneles, etiquetas, producto terminado y documentación del producto anterior.",
+    "¿Se asegura que las áreas de producción estén limpias y desinfectadas antes de cada lote?",
+    "¿Los formatos de Limpieza de áreas se encuentran diligenciados y al día?",
+    "¿Se comprueba que todos los equipos están rotulados como \"Equipo limpio\" y están listos para ser usados?",
+    "¿Se comprueba que todas las áreas están rotuladas como \"Área limpia\" y están listas para ser usadas?",
+    "El área y sus equipos y/o utensilios se encuentran completamente limpios y con los respectivos rótulos de Limpieza Área / Equipo.",
+    "El área se encuentra identificada con el producto en proceso",
+    "Las materias primas, material de envase y empaque, graneles, etiquetas y documentación corresponden al producto a trabajar.",
+    "¿Las condiciones ambientales son las idóneas para el proceso?",
+    "¿El formato de registro de condiciones ambientales se encuentra diligenciado y al día?",
+    "¿Los equipos requeridos se encuentran aptos para su uso? (mantenimiento y calibración al día)",
+    "¿Cuenta con los EPP requeridos para el proceso?",
 ]
+
+
+def despeje_checklist(conn, ebr_id, etapa='dispensacion'):
+    """Las verificaciones de despeje de un EBR, en el orden del procedimiento.
+
+    UN solo resolvedor para los 4 sitios que las muestran (pantalla, PDF del batch record,
+    endpoint de checklist e imprimible de despeje). Antes cada uno armaba el texto por su cuenta
+    desde la constante y por POSICIÓN, así que reordenar la lista le cambiaba el texto a lo ya
+    firmado.
+
+    Regla dura (Part 11): **el texto que se muestra de un ítem YA REGISTRADO es el que se guardó
+    con él** (`item_texto`), porque es lo que el operario tenía delante cuando firmó. La constante
+    sólo se usa para los ítems que todavía nadie tocó.
+
+    Un ítem retirado del procedimiento (p.ej. "Temperatura menor a 30 grados") NO desaparece de los
+    lotes donde se registró: se devuelve al final marcado como `historico`. Un registro regulado no
+    se borra porque el procedimiento haya cambiado después.
+    """
+    reg = {}
+    try:
+        for r in conn.execute(
+            "SELECT item_idx, cumple, COALESCE(observaciones,''), COALESCE(registrado_por,''), "
+            "COALESCE(registrado_at_utc,''), COALESCE(verificado_por,''), "
+            "COALESCE(verificado_at_utc,''), COALESCE(item_texto,'') "
+            "FROM ebr_despeje_items WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=?",
+            (ebr_id, etapa)).fetchall():
+            reg[int(r[0])] = r
+    except Exception as _e:            # nunca romper la vista del legajo por esto...
+        log.warning("despeje_checklist(%s, %s) fallo: %s", ebr_id, etapa, _e)
+        reg = {}                       # ...pero dejar rastro (un except mudo esconde el bug · M94)
+
+    def _fila(idx, texto_canonico, historico=False):
+        r = reg.get(idx)
+        guardado = (r[7] if (r and len(r) > 7) else '') or ''
+        return {
+            'idx': idx,
+            # el guardado manda: lo firmado no cambia de texto aunque la lista se reordene
+            'texto': (guardado.strip() or texto_canonico),
+            'cumple': (int(r[1]) if r and r[1] is not None else None),
+            'observaciones': (r[2] if r else ''),
+            'registrado_por': (r[3] if r else ''),
+            'fecha': (r[4] if r else ''),
+            'registrado_at': (r[4] if r else ''),
+            'verificado_por': (r[5] if r else ''),
+            'verificado_at': (r[6] if r else ''),
+            'historico': historico,
+        }
+
+    filas = [_fila(i, t) for i, t in enumerate(DESPEJE_LINEA_ITEMS)]
+    # ítems registrados que ya no están en el procedimiento vigente (se conservan, al final)
+    for idx in sorted(k for k in reg if k >= len(DESPEJE_LINEA_ITEMS)):
+        filas.append(_fila(idx, '', historico=True))
+    return filas
 
 # Controles en Proceso ESTÁNDAR · Sebastián 6-jun-2026. Se muestran SIEMPRE en
 # la sección 6 (aunque el MBR del producto no defina IPCs), y cada uno se puede
@@ -3494,28 +3563,7 @@ def ebr_vista_completa(ebr_id):
     # DOS etapas independientes con el mismo template: 'dispensacion' (sección 2)
     # y 'fabricacion' (sección 4). CUMPLE: 1=Sí, 0=No, None=pendiente.
     def _despeje_por_etapa(etapa):
-        reg = {}
-        try:
-            drows = conn.execute(
-                "SELECT item_idx, cumple, COALESCE(observaciones,''), "
-                "COALESCE(registrado_por,''), COALESCE(registrado_at_utc,'') "
-                "FROM ebr_despeje_items WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=?",
-                (ebr_id, etapa)).fetchall()
-            for dr in drows:
-                reg[int(dr[0])] = dr
-        except Exception:
-            reg = {}
-        chk = []
-        for i, texto in enumerate(DESPEJE_LINEA_ITEMS):
-            r = reg.get(i)
-            chk.append({
-                'idx': i, 'texto': texto,
-                'cumple': (int(r[1]) if r and r[1] is not None else None),
-                'observaciones': (r[2] if r else ''),
-                'registrado_por': (r[3] if r else ''),
-                'fecha': (r[4] if r else ''),
-            })
-        return chk
+        return despeje_checklist(conn, ebr_id, etapa)
     try:
         out['despeje_checklist'] = _despeje_por_etapa('dispensacion')
         out['despeje_checklist_fab'] = _despeje_por_etapa('fabricacion')
@@ -5674,17 +5722,10 @@ def pdf_ebr(ebr_id):
 
     # Despeje GRANULAR por ítem (13 verificaciones × 2 etapas · Realizó/Verificó · MyBatch §2/§4 · 25-jun)
     def _despeje_items_pdf(etapa):
-        reg = {}
-        for dr in _q("SELECT item_idx, cumple, COALESCE(registrado_por,''), "
-                     "COALESCE(verificado_por,'') FROM ebr_despeje_items "
-                     "WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=?", ebr_id, etapa):
-            reg[int(dr[0])] = dr
-        out = []
-        for i, texto in enumerate(DESPEJE_LINEA_ITEMS):
-            r = reg.get(i)
-            out.append((texto, (int(r[1]) if r and r[1] is not None else None),
-                        (r[2] if r else ''), (r[3] if r else '')))
-        return out
+        # el PDF es el documento que se archiva: usa el MISMO resolvedor que la pantalla, o el
+        # papel diría una cosa y el sistema otra
+        return [(f['texto'], f['cumple'], f['registrado_por'], f['verificado_por'])
+                for f in despeje_checklist(conn, ebr_id, etapa)]
     despeje_gran = [("Dispensación", _despeje_items_pdf("dispensacion")),
                     ("Fabricación", _despeje_items_pdf("fabricacion"))]
 
@@ -7081,27 +7122,7 @@ def listar_despeje_items_ebr(ebr_id):
     conn = get_db()
 
     def _chk(etapa):
-        reg = {}
-        try:
-            for dr in conn.execute(
-                "SELECT item_idx, cumple, COALESCE(observaciones,''), COALESCE(registrado_por,''), "
-                "COALESCE(registrado_at_utc,''), COALESCE(verificado_por,''), COALESCE(verificado_at_utc,'') "
-                "FROM ebr_despeje_items "
-                "WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=?", (ebr_id, etapa)).fetchall():
-                reg[int(dr[0])] = dr
-        except Exception:
-            reg = {}
-        out = []
-        for i, texto in enumerate(DESPEJE_LINEA_ITEMS):
-            r = reg.get(i)
-            out.append({'idx': i, 'texto': texto,
-                        'cumple': (int(r[1]) if r and r[1] is not None else None),
-                        'observaciones': (r[2] if r else ''),
-                        'registrado_por': (r[3] if r else ''),
-                        'registrado_at': (r[4] if r else ''),
-                        'verificado_por': (r[5] if r and len(r) > 5 else ''),
-                        'verificado_at': (r[6] if r and len(r) > 6 else '')})
-        return out
+        return despeje_checklist(conn, ebr_id, etapa)
 
     return jsonify({"dispensacion": _chk("dispensacion"), "fabricacion": _chk("fabricacion")})
 
@@ -7312,7 +7333,7 @@ def mi_trabajo_brd():
         "mbr_template_id, COALESCE(fase,'fabricacion') AS fase "
         "FROM ebr_ejecuciones WHERE estado IN ('iniciado','en_proceso') ORDER BY id DESC").fetchall()
     items = []
-    n_items = len(DESPEJE_LINEA_ITEMS) * 2  # 13 × 2 etapas
+    n_items = len(DESPEJE_LINEA_ITEMS) * 2  # 12 verificaciones x 2 etapas
     for e in ebrs:
         eid = e["id"]
         prod = ""
@@ -8682,12 +8703,14 @@ async function load(){
         '</h3>'+
         '<div style="font-size:13px;color:var(--cx-text-soft, #334155);margin-bottom:8px">Realizar despeje en el área de '+titulo.toLowerCase()+' de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'+
         '<table><thead><tr><th>Verificación</th><th style="text-align:center">Cumple</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
-        arr.map(function(it){
-          return '<tr><td>'+esc(it.texto)+'</td>'+
+        arr.map(function(it,n){
+          // items RETIRADOS del procedimiento: se conservan (Part 11) pero no se re-registran
+          var marca = it.historico ? ' <span style="font-size:11px;font-weight:700;color:var(--cx-warn-text,#b45309);background:var(--cx-warn-pale,#fffbeb);padding:2px 7px;border-radius:999px;white-space:nowrap">retirado del procedimiento</span>' : '';
+          return '<tr'+(it.historico?' style="opacity:.72"':'')+'><td><b style="color:var(--cx-text-mute,#6b6b74)">'+(it.historico?'·':(n+1))+'</b> '+esc(it.texto)+marca+'</td>'+
             '<td style="text-align:center">'+cumpleCell(it.cumple)+'</td>'+
             '<td style="text-align:center;white-space:nowrap">'+
               '<button class="b-i tip-r" data-tip="Detalles de la verificación: texto completo, si cumple, quién lo verificó y cuándo." onclick="infoDespeje('+it.idx+','+fab+')">i</button> '+
-              (editable?'<button class="b-e tip-r" data-tip="'+(it.cumple!=null?'Corregir Resultado · solo Calidad / Dirección Técnica puede cambiar un resultado ya registrado.':'Registrar verificación (operario): marca si cumple Sí/No + observación.')+'" onclick="editDespeje('+it.idx+','+fab+')">✏️</button>':'')+
+              ((editable&&!it.historico)?'<button class="b-e tip-r" data-tip="'+(it.cumple!=null?'Corregir Resultado · solo Calidad / Dirección Técnica puede cambiar un resultado ya registrado.':'Registrar verificación (operario): marca si cumple Sí/No + observación.')+'" onclick="editDespeje('+it.idx+','+fab+')">✏️</button>':'')+
             '</td></tr>';
         }).join('')+'</tbody></table>'+
         '<div style="font-size:11px;color:var(--cx-text-faint, #94a3b8);margin:6px 0 14px">Sí = cumple · No = no cumple · Pendiente = sin verificar. Cada verificación queda con responsable y hora.</div>';
@@ -9384,6 +9407,9 @@ a.back{color:var(--cx-primary-text,#6d28d9);font-size:13px;font-weight:600;text-
 .val{font-size:13.5px;color:var(--cx-text-mute,#71717a);line-height:1.45}
 .sectit{font-size:18px;font-weight:800;color:var(--cx-text,#18181b);letter-spacing:-.2px;margin:0 0 12px}
 .muted{color:var(--cx-text-faint,#a1a1aa)}
+.npaso{display:inline-block;min-width:20px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--cx-text-mute,#6b6b74)}
+.hist{font-size:11px;font-weight:700;color:var(--cx-warn-text,#b45309);background:var(--cx-warn-pale,#fffbeb);padding:2px 7px;border-radius:999px;white-space:nowrap}
+.fila-hist td{opacity:.72}
 .mono{font-family:var(--cx-font-mono,ui-monospace,monospace)}
 .sechead{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;margin-bottom:6px}
 .sechead .sectit{margin:0}
@@ -9471,7 +9497,15 @@ async function load(){
     html+='<div class="card"><div class="sectit">2. Despejes de Línea</div>'+
       '<div class="sechint">Realizar despeje en el área de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'+
       (dch.length?('<div class="tw"><table class="t"><thead><tr><th>Verificación</th><th>Cumple</th><th>Acciones</th></tr></thead><tbody>'+
-        dch.map(function(it){return '<tr><td>'+esc(it.texto||'')+'</td><td>'+cumpleCell(it.cumple)+'</td><td><div class="act"><button class="ab ab-i" onclick="infoDespeje('+it.idx+')" title="Detalle">i</button>'+(editable?'<button class="ab ab-ed" onclick="regDespeje('+it.idx+')" title="Registrar verificación">&#9998;</button>':'')+'</div></td></tr>';}).join('')+
+        dch.map(function(it,n){
+          // un item RETIRADO del procedimiento (registrado antes del cambio) se sigue mostrando:
+          // un registro regulado no desaparece porque el procedimiento cambie despues. Se marca y
+          // no se puede registrar de nuevo.
+          var marca = it.historico ? ' <span class="hist">retirado del procedimiento</span>' : '';
+          var acciones = '<button class="ab ab-i" onclick="infoDespeje('+it.idx+')" title="Detalle">i</button>'
+            + ((editable && !it.historico) ? '<button class="ab ab-ed" onclick="regDespeje('+it.idx+')" title="Registrar verificación">&#9998;</button>' : '');
+          return '<tr'+(it.historico?' class="fila-hist"':'')+'><td><span class="npaso">'+(it.historico?'·':(n+1))+'</span> '+esc(it.texto||'')+marca+'</td><td>'+cumpleCell(it.cumple)+'</td><td><div class="act">'+acciones+'</div></td></tr>';
+        }).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin verificaciones de despeje (se definen en el MBR).</div>')+
       '</div>';
     var mats=d.envasado_materiales||[];
@@ -10159,17 +10193,6 @@ def despeje_imprimible(ebr_id):
                 area = str(ar[0]) + ' (' + hdr['area_codigo'] + ')'
     except Exception:
         pass
-    # Items registrados
-    reg = {}
-    try:
-        for dr in conn.execute(
-            "SELECT item_idx, cumple, COALESCE(observaciones,''), COALESCE(registrado_por,''), "
-            "COALESCE(registrado_at_utc,'') FROM ebr_despeje_items "
-            "WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=?", (ebr_id, etapa)).fetchall():
-            reg[int(dr[0])] = dr
-    except Exception:
-        reg = {}
-
     def _cumple_txt(c):
         if c == 1:
             return '<span style="color:var(--cx-success-text, #166534);font-weight:800">Sí</span>'
@@ -10178,19 +10201,17 @@ def despeje_imprimible(ebr_id):
         return '<span style="color:var(--cx-text-faint, #94a3b8)">·</span>'
 
     filas = []
-    for i, texto in enumerate(DESPEJE_LINEA_ITEMS):
-        r = reg.get(i)
-        cumple = (int(r[1]) if r and r[1] is not None else None)
-        obs = _h.escape(r[2]) if r else ''
-        resp = _h.escape(r[3]) if r else ''
-        fecha = (r[4][:16].replace('T', ' ') if r and r[4] else '')
+    for n, f in enumerate(despeje_checklist(conn, ebr_id, etapa), start=1):
+        fecha = (f['fecha'][:16].replace('T', ' ') if f['fecha'] else '')
+        # un ítem retirado del procedimiento se imprime igual (el registro no se borra) y se marca
+        marca = ' <span class="hist">(retirado del procedimiento)</span>' if f['historico'] else ''
         filas.append(
-            '<tr><td class="n">' + str(i + 1) + '</td>'
-            '<td>' + _h.escape(texto) + '</td>'
-            '<td class="c">' + _cumple_txt(cumple) + '</td>'
-            '<td class="c">' + _h.escape(resp) + '</td>'
+            '<tr><td class="n">' + str(n) + '</td>'
+            '<td>' + _h.escape(f['texto']) + marca + '</td>'
+            '<td class="c">' + _cumple_txt(f['cumple']) + '</td>'
+            '<td class="c">' + _h.escape(f['registrado_por']) + '</td>'
             '<td class="c">' + _h.escape(fecha) + '</td>'
-            '<td>' + obs + '</td></tr>')
+            '<td>' + _h.escape(f['observaciones']) + '</td></tr>')
     filas_html = ''.join(filas)
     e = _h.escape
     html = (

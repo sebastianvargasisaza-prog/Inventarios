@@ -10376,6 +10376,29 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "UPDATE movimientos SET material_nombre='MEE-IMP-020' "
         "WHERE material_nombre LIKE '%MEE-IMP-020' AND material_nombre <> 'MEE-IMP-020'",
     ]),
+
+    (381, "Despeje de línea: la lista de 13 verificaciones estaba EXACTAMENTE AL REVÉS respecto de "
+          "MyBatch (arrancaba por los EPP y terminaba por 'el área está libre del producto "
+          "anterior', que es lo PRIMERO que se verifica), más un ítem extra que MyBatch no tiene "
+          "('Temperatura menor a 30 grados'). Sebastián 26-jul: 'tiene que quedar como dice "
+          "MyBatch'. El orden es parte del procedimiento, no cosmética: el operario la leía de "
+          "abajo hacia arriba. ⚠ `ebr_despeje_items` referencia por `item_idx`, así que reordenar "
+          "la constante SIN migrar le cambiaría el texto a lo ya firmado (falsificar un registro "
+          "Part 11). Acá se remapea cada fila existente a su nueva posición; el mapa es la "
+          "inversión exacta (nuevo = 12 - viejo) porque los 12 textos ya coincidían palabra por "
+          "palabra. El ítem retirado se manda al 100: NO se borra (un registro regulado no "
+          "desaparece porque el procedimiento cambie después) y la vista lo muestra al final "
+          "marcado como retirado. Además la lectura ahora prefiere el `item_texto` guardado en "
+          "cada fila, así el texto de lo firmado ya no depende del orden de la constante.", [
+        # Dos fases para no chocar el UNIQUE(ebr_id, item_idx, etapa) a mitad del remapeo:
+        # primero todo a un rango libre, después a la posición final.
+        "UPDATE ebr_despeje_items SET item_idx = item_idx + 1000 WHERE item_idx < 1000",
+        # 'Temperatura menor a 30 grados' (viejo 0) sale del procedimiento vigente
+        "UPDATE ebr_despeje_items SET item_idx = 100 WHERE item_idx = 1000",
+        # los 12 restantes se invierten: viejo 1 -> nuevo 11 ... viejo 12 -> nuevo 0
+        "UPDATE ebr_despeje_items SET item_idx = 1012 - item_idx "
+        "WHERE item_idx >= 1001 AND item_idx <= 1012",
+    ]),
 ]
 
 

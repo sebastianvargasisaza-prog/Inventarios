@@ -80,6 +80,24 @@ def _migrar_a_postgres(sqlite_path):
     from migrar_datos_a_postgres import cargar_esquema, copiar_datos
 
     with psycopg.connect(_conninfo(), autocommit=True) as pg:
+        # ── QUE UN TEST QUE SE OLVIDA DE CERRAR NO CUELGUE LA SUITE (26-jul) ───────────────────
+        # Un test que escribe y deja la transacción abierta retiene candados; el siguiente que
+        # toque esa fila espera PARA SIEMPRE. Pasó con `formula_headers`: una conexión quedó
+        # `idle in transaction` 587 segundos y el gate se veía "corriendo" sin avanzar. Desde
+        # afuera es indistinguible de estar trabajando: sin salida, sin CPU, sin error.
+        # Con estos dos timeouts el mismo caso se vuelve un FALLO CON NOMBRE en menos de un
+        # minuto, que es información. Un test que se cuelga esconde el bug; uno que falla lo
+        # señala. No cambia el resultado de ningún test sano.
+        try:
+            with pg.cursor() as _cur:
+                _cur.execute("SET idle_in_transaction_session_timeout = '45s'")
+                _cur.execute("SET lock_timeout = '60s'")
+                _cur.execute("ALTER DATABASE %s SET idle_in_transaction_session_timeout = '45s'"
+                             % os.environ.get('PGDATABASE', 'eos_test'))
+                _cur.execute("ALTER DATABASE %s SET lock_timeout = '60s'"
+                             % os.environ.get('PGDATABASE', 'eos_test'))
+        except Exception as _e_to:
+            print('[pg] no se pudieron fijar los timeouts anti-cuelgue: %s' % str(_e_to)[:120])
         cargar_esquema(pg)
         # AUTO-SANADO DE ESQUEMA (17-jun · gate PG confiable y que ESCALA): pg_schema.sql
         # es una foto base que puede quedar atrás de las migraciones (ej. mig 262 agregó
@@ -194,15 +212,28 @@ def app(test_workspace):
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api")
         if api_dir not in sys.path:
             sys.path.insert(0, api_dir)
-        # 1. Construir el SQLite (esquema + migraciones + seeds) corriendo
-        #    init_db en modo SQLite (con EOS_DB_BACKEND temporalmente fuera).
-        os.environ.pop("EOS_DB_BACKEND", None)
-        import database as _dbmod
-        _dbmod.init_db()
-        _dbmod.run_seed_rrhh()
-        os.environ["EOS_DB_BACKEND"] = "postgres"
-        # 2. Cargar el esquema PG y copiar los datos del SQLite.
-        _migrar_a_postgres(os.environ["DB_PATH"])
+        # 1 y 2 · CONSTRUIR la base de tests: armar el SQLite completo (esquema + las 381
+        #    migraciones + seeds) y después copiar TODO a PostgreSQL fila por fila.
+        #
+        #    Eso es lo que se lleva ~8 minutos de cada corrida del gate — los tests en sí son
+        #    ~50 segundos. Sebastián 26-jul: *"eso harta que comas muchos créditos, además de que
+        #    hará más lento el trabajo"*. Tenía razón: reconstruir todo en cada corrida fue un
+        #    martillazo para tapar que la base acumulaba basura entre corridas.
+        #
+        #    `guardian.sh --pg` ahora guarda la base ya construida como PLANTILLA de PostgreSQL y
+        #    la restaura con `CREATE DATABASE ... TEMPLATE ...`, que es una copia de archivos:
+        #    segundos en vez de minutos. Cuando lo hace, pasa EOS_PG_LISTA=1 y este bloque se
+        #    saltea entero. La plantilla se reconstruye sola cuando cambia el esquema (hash de
+        #    database.py + pg_schema.sql + este archivo), así que no puede quedar vieja.
+        if os.environ.get("EOS_PG_LISTA") == "1":
+            print("    [conftest] base restaurada desde la plantilla · no se reconstruye")
+        else:
+            os.environ.pop("EOS_DB_BACKEND", None)
+            import database as _dbmod
+            _dbmod.init_db()
+            _dbmod.run_seed_rrhh()
+            os.environ["EOS_DB_BACKEND"] = "postgres"
+            _migrar_a_postgres(os.environ["DB_PATH"])
         # 3. El harness (_exec/_query y ~40 sitios) abre la BD con
         #    sqlite3.connect(DB_PATH) directo · se redirige al adaptador
         #    Postgres (las conexiones a :memory: y temporales quedan en
