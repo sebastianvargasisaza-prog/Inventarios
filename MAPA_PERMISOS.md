@@ -8,10 +8,10 @@
 | Gate | Rutas | Quién entra |
 |---|---:|---|
 | `AUTENTICADO` | 1007 | cualquier usuario con sesión |
-| `ADMIN` | 486 | solo Sebastián y Alejandro |
+| `ADMIN` | 487 | solo Sebastián y Alejandro |
 | `COMPRAS` | 38 | Catalina, Mayra + Admin |
 | `PLANTA` | 33 | operarios de planta + Admin |
-| `EJECUTOR DE LOTE` | 25 | Planta ∪ Calidad ∪ Admin |
+| `EJECUTOR DE LOTE` | 27 | Planta ∪ Calidad ∪ Admin |
 | `FINANZAS` | 22 | contadora / compras + Admin |
 | `PÚBLICA` | 18 | sin sesión (a propósito) |
 | `CALIDAD+ADMIN` | 13 | Control de Calidad o Dirección |
@@ -595,6 +595,7 @@ _420 rutas en esta lista._
 | `/api/admin/debug-formulas-recientes` | GET | ADMIN | admin.py |
 | `/api/admin/debug-ocs-transito` | GET | ADMIN | admin.py |
 | `/api/admin/debug-solicitud/<numero>` | GET | ADMIN | admin.py |
+| `/api/admin/diag-envases-partes` | GET | ADMIN | admin.py |
 | `/api/admin/diag-login/<username>` | GET | ADMIN | admin.py |
 | `/api/admin/diag-produccion` | GET | ADMIN | admin.py |
 | `/api/admin/diagnosticar-formulas` | GET | ADMIN | admin.py |
@@ -1009,6 +1010,7 @@ _420 rutas en esta lista._
 | `/api/brd/ebr/<int:ebr_id>/precauciones` | GET | AUTENTICADO | brd.py |
 | `/api/brd/ebr/<int:ebr_id>/precauciones` | POST | EJECUTOR DE LOTE | brd.py |
 | `/api/brd/ebr/<int:ebr_id>/presentacion` | POST | EJECUTOR DE LOTE | brd.py |
+| `/api/brd/ebr/<int:ebr_id>/presentacion-no-envasada` | POST | EJECUTOR DE LOTE | brd.py |
 | `/api/brd/ebr/<int:ebr_id>/presentacion/<int:row_id>` | DELETE | EJECUTOR DE LOTE | brd.py |
 | `/api/brd/ebr/<int:ebr_id>/produccion-id` | GET | AUTENTICADO | brd.py |
 | `/api/brd/ebr/<int:ebr_id>/rechazar` | POST | CALIDAD+ADMIN | brd.py |
@@ -1019,6 +1021,7 @@ _420 rutas en esta lista._
 | `/api/brd/ebr/<int:ebr_id>/registros-fisicos/<int:rid>/pdf` | GET | AUTENTICADO | brd.py |
 | `/api/brd/ebr/<int:ebr_id>/vista-completa` | GET | ADMIN | brd.py |
 | `/api/brd/envase-opciones` | GET | AUTENTICADO | brd.py |
+| `/api/brd/envase/<path:codigo>/parte` | POST | EJECUTOR DE LOTE | brd.py |
 | `/api/brd/legajo-rapido` | POST | AUTENTICADO | brd.py |
 | `/api/brd/limpiar-demos` | POST | AUTENTICADO | brd.py |
 | `/api/brd/lote/<lote>/fases` | GET | AUTENTICADO | brd.py |
