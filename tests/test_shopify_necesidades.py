@@ -180,9 +180,20 @@ def test_mig300_recepcion_mee_columnas(app, db_clean):
 
 
 def test_mee_crear_con_partes(app, db_clean):
-    # el wizard "Material nuevo" crea el envase + sus partes (gotero/plegadiza) en mee_partes
+    """El envase se crea con sus partes (gotero/plegadiza), y la pieza tiene que EXISTIR.
+
+    Este test usaba códigos inventados ('GOT-X') y esperaba que se guardaran. Desde el 26-jul
+    las partes pasan por `agregar_parte_envase`, que exige que la pieza esté en `maestro_mee`:
+    un código mal tecleado creaba una pieza fantasma que el abastecimiento intentaba comprar y
+    el envasado descontar, sin que nadie pudiera reponerla. El rechazo es la invariante
+    funcionando, no un bug — así que el test ahora siembra las piezas de verdad y, además,
+    comprueba que una inexistente se rechace Y se reporte (M97).
+    """
     from .conftest import csrf_headers
     c = _login(app)
+    for cod, desc in (('GOT-X', 'gotero test'), ('CJA-X', 'caja test')):
+        _exec("INSERT INTO maestro_mee (codigo, descripcion, categoria, estado) "
+              "VALUES (?,?,'Otro','Activo') ON CONFLICT(codigo) DO NOTHING", (cod, desc))
     r = c.post('/api/mee', json={'codigo': 'FR-TESTPARTES-30', 'descripcion': 'test partes',
                                  'categoria': 'Frasco',
                                  'partes': [{'codigo': 'GOT-X', 'cantidad': 1},
@@ -195,6 +206,27 @@ def test_mee_crear_con_partes(app, db_clean):
     rp = c.get('/api/mee/partes?codigo=FR-TESTPARTES-30')
     assert rp.status_code == 200, rp.data
     assert len(rp.get_json().get('partes', [])) == 2, rp.data
+
+
+def test_mee_crear_rechaza_una_pieza_que_no_existe_y_lo_dice(app, db_clean):
+    """Una pieza fantasma no se declara en silencio: el alta sigue, pero el caller se entera.
+
+    Con dientes: si alguien afloja la validación, vuelven las piezas que el abastecimiento
+    intenta comprar y el envasado descontar sin que existan en ningún maestro.
+    """
+    from .conftest import csrf_headers
+    c = _login(app)
+    r = c.post('/api/mee', json={'codigo': 'FR-FANTASMA-30', 'descripcion': 'test fantasma',
+                                 'categoria': 'Frasco',
+                                 'partes': [{'codigo': 'NO-EXISTE-XYZ', 'cantidad': 1}]},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    assert _q1("SELECT COUNT(*) FROM mee_partes WHERE mee_codigo='FR-FANTASMA-30'")[0] == 0, \
+        'guardó una pieza que no está en el maestro'
+    rech = (r.get_json() or {}).get('partes_rechazadas') or []
+    assert any((x or {}).get('codigo') == 'NO-EXISTE-XYZ' for x in rech), (
+        'rechazó la pieza pero no lo reportó · el usuario creería que quedó declarada: %s'
+        % (r.get_json(),))
 
 
 def test_mee_cuarentena_calidad(app, db_clean):
