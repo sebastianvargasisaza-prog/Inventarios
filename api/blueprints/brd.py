@@ -6572,6 +6572,34 @@ def envases_plan_ebr(ebr_id):
             reg[r[0]] = {"unidades": r[1], "registrado_por": r[2]}
     except Exception:
         pass
+    # FOTO y PARTES del frasco (Sebastián 26-jul: *"quiero que allí sugiera con foto el envase"*).
+    # El operario tiene que RECONOCER el frasco en el estante; un código como MEE-ENV-012 no le
+    # dice nada. La foto ya existía en el modelo (`maestro_mee.imagen_url`, mig 298 · se llamaba
+    # "foto + partes" y pedía que se viera en bodega, dropdown y composición) pero nunca llegó
+    # acá. Las partes vienen de `mee_partes`, la MISMA tabla que usan el abastecimiento para
+    # comprarlas y el cierre para descontarlas.
+    _fotos, _desc_mee, _partes = {}, {}, {}
+    try:
+        for r in conn.execute(
+            "SELECT UPPER(TRIM(codigo)), COALESCE(imagen_url,''), COALESCE(descripcion,'') "
+            "FROM maestro_mee").fetchall():
+            if r[1]:
+                _fotos[r[0]] = r[1]
+            _desc_mee[r[0]] = r[2]
+        for r in conn.execute(
+            "SELECT UPPER(TRIM(mee_codigo)), UPPER(TRIM(COALESCE(parte_codigo,''))), "
+            "COALESCE(descripcion,''), COALESCE(cantidad,1) FROM mee_partes "
+            "WHERE COALESCE(parte_codigo,'')<>''").fetchall():
+            _partes.setdefault(r[0], []).append(
+                {"codigo": r[1], "descripcion": r[2], "cantidad": float(r[3] or 1)})
+    except Exception as _e:
+        log.warning("envases-plan: foto/partes no disponibles: %s", _e)
+
+    def _mee(cod):
+        c = (cod or "").strip().upper()
+        return {"codigo": (cod or "").strip(), "descripcion": _desc_mee.get(c, ""),
+                "foto": _fotos.get(c, "")} if c else None
+
     items = []
     try:
         for p in conn.execute(
@@ -6581,9 +6609,16 @@ def envases_plan_ebr(ebr_id):
             "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
             "ORDER BY volumen_ml", (producto,)).fetchall():
             pc = p[0]
+            _env = (p[3] or "").strip().upper()
+            # las partes que se van a descontar de verdad: las del frasco, sin repetir tapa/caja
+            _ya = {x for x in ((p[4] or "").strip().upper(), (p[5] or "").strip().upper()) if x}
+            _pt = [dict(x, foto=_fotos.get(x["codigo"], ""))
+                   for x in _partes.get(_env, []) if x["codigo"] not in _ya]
             items.append({
                 "presentacion_codigo": pc, "etiqueta": p[1], "volumen_ml": p[2],
                 "envase_codigo": p[3], "tapa_codigo": p[4], "caja_codigo": p[5],
+                "envase": _mee(p[3]), "tapa": _mee(p[4]), "caja": _mee(p[5]),
+                "partes": _pt,
                 "unidades": reg.get(pc, {}).get("unidades", 0),
                 "registrado_por": reg.get(pc, {}).get("registrado_por", ""),
             })

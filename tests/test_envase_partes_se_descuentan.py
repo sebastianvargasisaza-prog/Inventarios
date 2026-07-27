@@ -133,6 +133,37 @@ def test_no_descuenta_dos_veces_la_misma_parte(app):
     assert s.get(GOTERO) == 100, s
 
 
+def test_el_legajo_muestra_la_foto_y_las_piezas_del_frasco(app):
+    """Sebastián: *"quiero que allí sugiera con foto el envase"*. El operario tiene que RECONOCER
+    el frasco en el estante: `MEE-ENV-012` no le dice nada, la foto sí. Y tiene que ver qué piezas
+    se van a descontar además del frasco, que antes era un guion."""
+    from database import get_db
+    ebr = _sembrar(app)
+    with app.app_context():
+        conn = get_db()
+        conn.execute("UPDATE maestro_mee SET imagen_url=? WHERE codigo=?",
+                     ('data:image/png;base64,ZZFOTO', ENV))
+        conn.commit()
+    d = _admin(app).get('/api/brd/ebr/%d/envases-plan' % ebr).get_json()
+    it = [x for x in d['items'] if x['presentacion_codigo'] == 'V30'][0]
+    assert it['envase']['foto'] == 'data:image/png;base64,ZZFOTO', it['envase']
+    assert it['envase']['descripcion'] == 'Frasco 30 ml'
+    # las piezas que de verdad se van a descontar (gotero + tapa del frasco)
+    codigos = {p['codigo'] for p in it['partes']}
+    assert codigos == {GOTERO, TAPA}, it['partes']
+
+
+def test_no_repite_en_las_piezas_la_tapa_que_ya_declara_la_presentacion(app):
+    """Si la presentación ya declara la tapa, no puede aparecer DOS veces en la pantalla: el
+    operario contaría dos tapas por frasco. Espeja el guard del descuento."""
+    ebr = _sembrar(app, con_tapa_en_presentacion=True)
+    d = _admin(app).get('/api/brd/ebr/%d/envases-plan' % ebr).get_json()
+    it = [x for x in d['items'] if x['presentacion_codigo'] == 'V30'][0]
+    assert it['tapa']['codigo'] == TAPA
+    assert {p['codigo'] for p in it['partes']} == {GOTERO}, (
+        'la tapa aparece en tapa Y en partes: %s' % it['partes'])
+
+
 def test_el_candado_avisa_si_falta_una_parte(app):
     """"Envases listos" miraba sólo el frasco: se podía arrancar un envasado sin goteros y nadie
     decía nada. El operario se enteraba en el puesto."""

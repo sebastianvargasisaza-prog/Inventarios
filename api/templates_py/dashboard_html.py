@@ -10914,6 +10914,50 @@ async function cargarEnvasadoRunner(){
   }catch(e){ wrap.innerHTML='<div style="color:var(--cx-danger-text);padding:10px">Error cargando &oacute;rdenes de envasado.</div>'; }
 }
 // ENVASADO Fase 3 (26-jun) · sección de presentaciones en el runner: unidades por presentación + cerrar/descontar.
+// FOTO del envase en el legajo (26-jul · Sebastián: "quiero que allí sugiera con foto el envase").
+// El operario tiene que RECONOCER el frasco en el estante: un código como MEE-ENV-012 no le dice
+// nada, la foto sí. La imagen ya vivía en `maestro_mee.imagen_url` (mig 298, que se llamaba
+// "foto + partes") pero nunca había llegado a esta pantalla.
+function envMiniatura(m, grande){
+  var lado = grande ? 46 : 30;
+  var base = 'width:'+lado+'px;height:'+lado+'px;border-radius:7px;flex:0 0 auto;';
+  if(m && m.foto){
+    return '<img src="'+_escHTML(m.foto)+'" alt="'+_escHTML(m.descripcion||m.codigo||'')+'" '
+      +'title="'+_escHTML(m.descripcion||m.codigo||'')+'" loading="lazy" '
+      +'style="'+base+'object-fit:cover;border:1px solid var(--cx-border);background:var(--cx-card)">';
+  }
+  // sin foto: hueco explícito, no un espacio vacío · así se ve cuál falta cargar
+  return '<span title="Sin foto cargada" style="'+base+'display:inline-flex;align-items:center;'
+    +'justify-content:center;border:1px dashed var(--cx-border);color:var(--cx-text-faint);'
+    +'font-size:'+(grande?16:12)+'px">&#128247;</span>';
+}
+function envPieza(m, grande){
+  if(!m || !m.codigo) return '<span style="color:var(--cx-text-faint)">-</span>';
+  return '<div style="display:flex;align-items:center;gap:8px">'+envMiniatura(m, grande)
+    +'<div style="min-width:0"><div style="font-family:ui-monospace,monospace;font-size:10px;'
+    +'color:var(--cx-text-mute)">'+_escHTML(m.codigo)+'</div>'
+    +'<div style="font-size:11px;color:var(--cx-text);overflow:hidden;text-overflow:ellipsis">'
+    +_escHTML(m.descripcion||'')+'</div></div></div>';
+}
+// Todo lo que ADEMÁS del frasco va a bajar del kardex al cerrar: tapa, caja y las partes que el
+// frasco arrastra (gotero, inner cup…). Antes esta columna mostraba un guion y el operario no
+// tenía forma de saber qué se iba a descontar.
+function envPiezasSecundarias(it){
+  var piezas=[];
+  if(it.tapa && it.tapa.codigo) piezas.push(it.tapa);
+  if(it.caja && it.caja.codigo) piezas.push(it.caja);
+  (it.partes||[]).forEach(function(p){ piezas.push(p); });
+  if(!piezas.length){
+    return '<span style="font-size:11px;color:var(--cx-warn-text)">&#9888; Sólo el frasco &middot; '
+      +'este envase no tiene piezas cargadas</span>';
+  }
+  return '<div style="display:flex;gap:10px;flex-wrap:wrap">'+piezas.map(function(p){
+    var n = (p.cantidad && p.cantidad !== 1) ? (' &times;'+p.cantidad) : '';
+    return '<div style="display:flex;align-items:center;gap:5px">'+envMiniatura(p,false)
+      +'<span style="font-size:10px;font-family:ui-monospace,monospace;color:var(--cx-text-mute)">'
+      +_escHTML(p.codigo)+n+'</span></div>';
+  }).join('')+'</div>';
+}
 async function cargarEnvasesPlan(ebrId){
   var wrap=document.getElementById('env-pres-'+ebrId);
   if(!wrap) return;
@@ -10921,16 +10965,19 @@ async function cargarEnvasesPlan(ebrId){
     var d=await (await fetch('/api/brd/ebr/'+ebrId+'/envases-plan',{credentials:'same-origin'})).json();
     if(!d.ok||!d.items||!d.items.length){ wrap.innerHTML='<div style="color:var(--cx-text-faint)">Este producto no tiene presentaciones configuradas. Cargalas en <b>Planta &rsaquo; Presentaciones</b> (producto &rarr; 15/30/50ml &rarr; envase/tapa/caja).</div>'; return; }
     var desc=d.descontado;
-    var h='<table class="table" style="font-size:12px"><thead><tr><th>Presentaci&oacute;n</th><th>Vol</th><th>Envase</th><th>Tapa</th><th>Caja</th><th>Unidades</th><th></th></tr></thead><tbody>';
+    var h='<table class="table" style="font-size:12px"><thead><tr><th>Presentaci&oacute;n</th><th>Vol</th><th>Envase</th><th>Piezas que se descuentan</th><th>Unidades</th><th></th></tr></thead><tbody>';
     d.items.forEach(function(it){
       var pc=it.presentacion_codigo;
       var inp=desc?('<b>'+(it.unidades||0)+'</b>'):('<input id="eu-'+ebrId+'-'+pc+'" type="number" min="0" value="'+(it.unidades||0)+'" style="width:80px;padding:4px;border:1px solid var(--cx-border);border-radius:4px">');
       var btn=desc?'':('<button onclick="ebrRegistrarUnidades('+ebrId+',&#39;'+pc+'&#39;,'+(it.volumen_ml||0)+')" style="background:var(--cx-success);color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer">Guardar</button>');
-      h+='<tr><td>'+(it.etiqueta||pc)+'</td><td>'+(it.volumen_ml||0)+' ml</td><td style="font-family:monospace;font-size:10px">'+(it.envase_codigo||'-')+'</td><td style="font-family:monospace;font-size:10px">'+(it.tapa_codigo||'-')+'</td><td style="font-family:monospace;font-size:10px">'+(it.caja_codigo||'-')+'</td><td>'+inp+'</td><td>'+btn+'</td></tr>';
+      h+='<tr><td>'+_escHTML(it.etiqueta||pc)+'</td><td>'+(it.volumen_ml||0)+' ml</td>'
+        +'<td>'+envPieza(it.envase, true)+'</td>'
+        +'<td>'+envPiezasSecundarias(it)+'</td>'
+        +'<td>'+inp+'</td><td>'+btn+'</td></tr>';
     });
     h+='</tbody></table>';
     if(desc){ h+='<div style="margin-top:8px;color:var(--cx-success-text);font-weight:700">&#10003; Envases descontados (legajo cerrado).</div>'; }
-    else { h+='<button onclick="ebrCerrarEnvasado('+ebrId+')" style="margin-top:10px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer">&#128274; Cerrar envasado y descontar envases</button> <span style="color:var(--cx-text-faint);font-size:11px">descuenta envase+tapa+caja &times; unidades de cada presentaci&oacute;n</span>'; }
+    else { h+='<button onclick="ebrCerrarEnvasado('+ebrId+')" style="margin-top:10px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer">&#128274; Cerrar envasado y descontar envases</button> <span style="color:var(--cx-text-faint);font-size:11px">descuenta el frasco y TODAS sus piezas (tapa, caja, gotero&hellip;) &times; unidades de cada presentaci&oacute;n</span>'; }
     wrap.innerHTML=h;
   }catch(e){ wrap.innerHTML='<div style="color:var(--cx-danger-text)">Error cargando presentaciones.</div>'; }
 }
