@@ -41,7 +41,7 @@ TEMPLATES = os.path.join(RAIZ, 'api', 'templates_py')
 # renderizador (Envasado · Fabricación · Acondicionamiento):
 TECHO_COLORES_DASHBOARD = 2499
 TECHO_DISPLAY_NONE_DASHBOARD = 201
-TECHO_COLORES_TOTAL = 5014   # los 42 templates juntos
+TECHO_COLORES_TOTAL = 5005   # los 42 templates juntos
 TECHO_FONDO_OPACO = 0        # un fondo opaco sin token IGNORA el tema oscuro · debe quedar en 0
 TECHO_TEXTO_PALABRA = 28     # `color:gray|black|red…` · el blanco no cuenta (ver abajo)
 # Variables PROPIAS de cada página con color fijo (`--mut: #6b7280`). Eran 124; se enlazaron

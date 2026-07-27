@@ -160,7 +160,7 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 
       <div class="receptor-row">
         <label for="receptor-input">Recibido por:</label>
-        <input type="text" id="receptor-input" placeholder="Tu nombre">
+        <input type="text" id="receptor-input" placeholder="Tu nombre" value="__RECEPTOR__">
       </div>
 
       <div class="obs-row">
@@ -407,14 +407,21 @@ function renderOC(d) {
 
   // Advertencia si OC ya fue procesada (static div in HTML, no DOM insertion needed)
   var warnEl = document.getElementById('oc-estado-warn');
-  if (d.estado === 'Recibida' || d.estado === 'Pagada') {
-    warnEl.style.background = '#fef9c3'; warnEl.style.color = '#854d0e'; warnEl.style.border = '1px solid #fde047'; warnEl.style.display = 'block';
-    warnEl.textContent = '\u26a0 Esta OC ya fue recibida (' + d.estado + '). Puedes consultar pero el registro de recepcion esta completo.';
+  if (d.estado === 'Recibida') {
+    warnEl.style.background = 'var(--cx-warn-pale)'; warnEl.style.color = 'var(--cx-warn-text)'; warnEl.style.border = '1px solid var(--cx-warn)'; warnEl.style.display = 'block';
+    warnEl.textContent = '\u26a0 Esta OC ya fue recibida. Puedes consultar, pero el registro de recepcion esta completo.';
+  } else if (d.estado === 'Pagada') {
+    // PAGADA no es RECIBIDA. Con varios proveedores se paga por anticipado y la mercancia llega
+    // despues; el backend permite recibir una OC Pagada a proposito. El aviso decia "ya fue
+    // recibida, el registro esta completo" justo mientras se intentaba recibirla, asi que sonaba
+    // a que la pantalla estaba cerrada (Catalina, 27-jul).
+    warnEl.style.background = 'var(--cx-info-pale)'; warnEl.style.color = 'var(--cx-info-text)'; warnEl.style.border = '1px solid var(--cx-info)'; warnEl.style.display = 'block';
+    warnEl.textContent = '\u2139 OC ya pagada (pago anticipado). Todavia puedes registrar la recepcion cuando llegue la mercancia.';
   } else if (d.estado === 'Rechazada') {
-    warnEl.style.background = '#fee2e2'; warnEl.style.color = '#991b1b'; warnEl.style.border = '1px solid #fca5a5'; warnEl.style.display = 'block';
+    warnEl.style.background = 'var(--cx-danger-pale)'; warnEl.style.color = 'var(--cx-danger-text)'; warnEl.style.border = '1px solid var(--cx-danger)'; warnEl.style.display = 'block';
     warnEl.textContent = '\u274c Esta OC fue rechazada y no puede recibirse.';
   } else if (d.es_consumo) {
-    warnEl.style.background = '#eff6ff'; warnEl.style.color = '#1e40af'; warnEl.style.border = '1px solid #bfdbfe'; warnEl.style.display = 'block';
+    warnEl.style.background = 'var(--cx-info-pale)'; warnEl.style.color = 'var(--cx-info-text)'; warnEl.style.border = '1px solid var(--cx-info)'; warnEl.style.display = 'block';
     warnEl.textContent = '\u2139 Consumible / gasto general (' + (d.categoria || '') + '). Recepcion ADMINISTRATIVA: solo confirmas que llego lo pedido (cantidad, quien recibio). NO pasa por cuarentena ni bodega de MP.';
   } else {
     warnEl.style.display = 'none'; warnEl.textContent = '';
@@ -567,6 +574,10 @@ async function registrarRecepcion() {
     var d = await r.json();
     if (d.ok) {
       var discMsg = discrepancias ? ' \u26a0 Con discrepancias.' : '';
+      var sint = (d.lotes_sinteticos || d.lotes_sinteticos_advertencia || []);
+      if (sint.length) {
+        discMsg += ' \u26a0 ' + sint.length + ' item(s) quedaron con lote provisional; Calidad pone el real en el F01.';
+      }
       var parcialMsg = d.parcial ? ' \u26a1 Recepcion PARCIAL - OC sigue abierta para completar.' : '';
       showMsg('submit-msg', 'Recepcion registrada. ' + (d.ingresos||0) + ' item(s) ingresado(s).' + discMsg + parcialMsg, 'ok');
       var submitRow = document.querySelector('.submit-row');
@@ -580,12 +591,31 @@ async function registrarRecepcion() {
       document.getElementById('oc-section').style.display = 'none';
       currentOC = null;
       document.getElementById('oc-input').value = '';
-      document.getElementById('receptor-input').value = '';
+      // se conserva el nombre de quien recibe: suele registrar varias OC seguidas
       document.getElementById('obs-input').value = '';
       if (_submitBtn) { _submitBtn.disabled = false; _submitBtn.textContent = '\u2713 Registrar Recepcion'; }
       loadSeguimiento();
     } else {
-      showMsg('submit-msg', d.error || 'Error al registrar', 'err');
+      // Decir QUE hay que corregir, no solo que fallo. Antes mostraba 'Recepcion bloqueada por
+      // validaciones' a secas: quien recibe no tenia forma de saber cual item revisar y quedaba
+      // trabada sin informacion (Catalina, 27-jul).
+      var det = [];
+      (d.sobrerecepciones || []).forEach(function(x){
+        det.push('Recibiste mas de lo pedido en ' + (x.nombre || x.codigo_mp) + ': pediste '
+                 + Number(x.cantidad_pedida_g||0).toLocaleString() + ' y pusiste '
+                 + Number(x.cantidad_recibida_g||0).toLocaleString());
+      });
+      (d.vencimientos_pasados || []).forEach(function(x){
+        det.push('El vencimiento de ' + (x.nombre || x.codigo_mp) + ' ya paso ('
+                 + (x.fecha_vencimiento || '') + ')');
+      });
+      (d.sin_lote_proveedor || []).forEach(function(x){
+        det.push('Falta el lote de ' + (x.nombre || x.codigo_mp));
+      });
+      var msg = (d.error || 'Error al registrar');
+      if (det.length) { msg += ' \u2192 ' + det.join(' \u00b7 '); }
+      if (d.hint) { msg += ' \u00b7 ' + d.hint; }
+      showMsg('submit-msg', msg, 'err');
       if (_submitBtn) { _submitBtn.disabled = false; _submitBtn.textContent = '\u2713 Registrar Recepcion'; }
     }
   } catch(e) { showMsg('submit-msg', 'Error de red: ' + e.message, 'err'); if (_submitBtn) { _submitBtn.disabled = false; _submitBtn.textContent = '\u2713 Registrar Recepcion'; } }

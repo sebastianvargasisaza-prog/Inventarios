@@ -89,6 +89,13 @@ CORAZON=(
   # La plata de contraentrega: incluye el guard de que ningún sync de Shopify borre la
   # marca que escribe otro (era lo que se la comía en silencio).
   "tests/test_contraentrega_caja.py"
+  # La recepcion ADMINISTRATIVA no puede exigir datos que solo Calidad toma, y el control
+  # INVIMA vive en la liberacion (no se libera un lote con numero provisional).
+  "tests/test_recepcion_administrativa.py"
+  "tests/test_recepcion_audit.py"
+  # El F01 escribe al kardex lo que Calidad verifica contra el envase (si no, el rotulo
+  # sale con los datos viejos y el lote provisional nunca se puede liberar).
+  "tests/test_f01_escribe_kardex.py"
 )
 
 echo ""

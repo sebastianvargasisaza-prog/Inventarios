@@ -40,7 +40,13 @@ bp = Blueprint('despachos', __name__)
 def recepcion_panel():
     if 'compras_user' not in session:
         return redirect('/login?next=/recepcion')
-    return Response(RECEPCION_HTML, mimetype='text/html')
+    # "Recibido por" pre-llenado con quien está en sesión. Nacía vacío y la pantalla frena el
+    # registro si falta, así que era una traba silenciosa: el mensaje sale abajo del formulario,
+    # lejos de donde se está mirando. Queda editable porque a veces recibe físicamente otra
+    # persona. Se escapa: va dentro de un atributo HTML.
+    import html as _html
+    _receptor = _html.escape(str(session.get('compras_user') or ''), quote=True)
+    return Response(RECEPCION_HTML.replace('__RECEPTOR__', _receptor), mimetype='text/html')
 
 @bp.route('/api/recepcion/detalle/<numero_oc>')
 def recepcion_detalle_oc(numero_oc):
