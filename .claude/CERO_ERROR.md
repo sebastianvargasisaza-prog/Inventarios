@@ -1413,6 +1413,16 @@ producción.
    siguientes empieza a fallar. Hacela depender de `app` (M102: un test controla su universo, y
    sobre todo no ensucia el de los demás).
 
+**Segunda instancia el mismo día, peor: la pantalla ENTERA en blanco.** Sebastián: *"le tengo
+que dar click en la pestaña para que aparezca"*. Al quitar la pestaña Dashboard quedó vivo un
+bloque heredado que 100 ms después de cargar llamaba a `switchTab('dashboard')` — y `switchTab`
+le saca `active` a **todos** los paneles antes de buscar el destino, así que con un destino
+inexistente no se lo pone a ninguno: pantalla vacía, y encima `loadTab` nunca corría, así que
+tampoco se cargaban los datos. **Regla: un conmutador que primero APAGA todo y después enciende
+el destino deja la pantalla muerta si el destino no existe — al borrar una vista, `grep` quién
+navega hacia ella.** El chequeo cuesta dos líneas: cada `switchTab('X')` del JS tiene que tener
+su `id="tab-X"` en el HTML (`test_marketing_modales_vivos.py`).
+
 ## 🧮 M111 · Un agregado por FK NULEABLE subcuenta en silencio · y un error ya desplegado NO se arregla editando su migración · 27-jul
 
 Tres cosas del directorio de creadores, las tres de la familia "el número se ve bien y está mal".
