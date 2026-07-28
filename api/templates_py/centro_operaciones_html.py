@@ -77,8 +77,12 @@ HTML = r"""
   .cm-badge { min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--cx-danger,#dc2626); color:#fff;
               font-size:10px; font-weight:700; display:none; align-items:center; justify-content:center; line-height:1; }
   .cm-badge.on { display:inline-flex; }
-  /* Grid premium de decisiones (evita el vacío a la derecha en pantallas anchas) */
-  #decisiones { display:grid; grid-template-columns:repeat(auto-fill,minmax(430px,1fr)); gap:12px; }
+  /* Grid de decisiones. `auto-fill` reserva las columnas aunque no haya tarjetas que las
+     llenen: un grupo con 1 sola decisión dejaba dos huecos vacíos a la derecha y la pantalla
+     se veía a medio usar. `auto-fit` colapsa las columnas sobrantes, así una tarjeta sola
+     ocupa el ancho completo y tres se reparten parejo. */
+  #decisiones { display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:12px; }
+  .container { max-width:1800px; }
   /* El encabezado de tema ocupa la fila entera: sin eso las tarjetas se acomodan alrededor
      y el separador queda flotando en el medio de la grilla. */
   #decisiones .dec-sep { grid-column:1/-1; font-size:12px; font-weight:800; color:var(--cx-text);
@@ -171,16 +175,19 @@ HTML = r"""
         <button class="cm-subtab active" data-sub="influencers" onclick="showSubPago('influencers')">👥 Influencers <span id="pg-sub-n" style="opacity:.7"></span></button>
       </div>
 
-      <div id="pg-kpis" class="grid grid-6" style="margin-bottom:16px"></div>
-      <div id="pg-filtros" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
-        <div style="position:relative">
-          <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.5;pointer-events:none">🔍</span>
-          <input id="pg-buscar" type="search" placeholder="Buscar creador..." oninput="pintarPagos()"
-                 style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:999px;padding:8px 14px 8px 32px;color:var(--cx-text);font-size:12.5px;min-width:220px;outline:none">
+      <!-- Sebastián 28-jul: "aquí no es necesario los estados, que me salga así de una; todos
+           están aprobados, acá lo que hago es pagar o rechazar, fin". Así que no hay filtros
+           de estado: todo lo que está acá espera decisión, cada uno viene abierto con sus
+           datos, y las dos únicas acciones son Pagar y Rechazar. El buscador queda porque con
+           25 en pantalla llegar a uno por nombre sí hace falta. -->
+      <div id="pg-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+        <div style="position:relative;flex:1;min-width:240px;max-width:420px">
+          <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:14px;opacity:.5;pointer-events:none">🔍</span>
+          <input id="pg-buscar" type="search" placeholder="Buscar creador por nombre..." oninput="pintarPagos()"
+                 style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:999px;padding:10px 16px 10px 36px;color:var(--cx-text);font-size:13px;outline:none">
         </div>
-        <button id="pg-f-todos"  onclick="setFiltroPago('todos')"  class="pg-chip">Todos</button>
-        <button id="pg-f-alerta" onclick="setFiltroPago('alerta')" class="pg-chip">Revisar antes de pagar</button>
-        <button id="pg-f-ok"     onclick="setFiltroPago('ok')"     class="pg-chip">Sin novedad</button>
+        <span id="pg-conteo" style="font-size:12.5px;color:var(--cx-text-mute);font-weight:600"></span>
       </div>
       <div id="pg-lista"><div class="empty" style="padding:14px;color:var(--cx-text-mute)">Cargando pagos...</div></div>
     </div>
@@ -440,8 +447,7 @@ async function pagarCreador(ix){
 // deberia mostrarme el influencer con todos los datos: cuenta bancaria, nombre, monto a pagar,
 // que le estoy pagando, fecha de publicacion".
 window._PG_DATA = null;
-window._PG_FILTRO = 'todos';
-window._PG_ABIERTO = null;
+window._PG_CERRADOS = {};   // por id de pago · lo que el usuario plegó a mano
 
 function _pgMoneda(n){ return '$' + Math.round(Number(n||0)).toLocaleString('es-CO'); }
 
@@ -459,7 +465,6 @@ async function cargarPagos(){
   }
 }
 
-function setFiltroPago(f){ window._PG_FILTRO=f; pintarPagos(); }
 
 function pintarPagos(){
   var js=window._PG_DATA; if(!js) return;
@@ -473,24 +478,26 @@ function pintarPagos(){
   var k=document.getElementById('pg-kpis');
   if(k){
     k.innerHTML=''
-      +'<div class="card"><div class="label">Por pagar</div><div class="val">'+_pgMoneda(res.total)+'</div><div class="sub">'+(res.n||0)+' creador(es)</div></div>'
-      +'<div class="card"><div class="label">Para revisar antes</div><div class="val" style="color:'+((res.con_alerta||0)?'var(--cx-danger-text)':'var(--cx-text)')+'">'+(res.con_alerta||0)+'</div><div class="sub">cobro repetido o sin fecha de publicación</div></div>'
-      +'<div class="card"><div class="label">Listos para pagar</div><div class="val" style="color:var(--cx-success-text)">'+Math.max(0,(res.n||0)-(res.con_alerta||0))+'</div><div class="sub">sin novedad</div></div>';
+      +'<div class="card"><div class="label">Total por pagar</div><div class="val">'+_pgMoneda(res.total)+'</div><div class="sub">'+(res.n||0)+' creador(es) esperando</div></div>'
+      +'<div class="card"><div class="label">Revisar antes</div><div class="val" style="color:'+((res.con_alerta||0)?'var(--cx-danger-text)':'var(--cx-text-mute)')+'">'+(res.con_alerta||0)+'</div><div class="sub">cobro repetido o sin fecha de publicación</div></div>'
+      +'<div class="card"><div class="label">Sin novedad</div><div class="val" style="color:var(--cx-success-text)">'+Math.max(0,(res.n||0)-(res.con_alerta||0))+'</div><div class="sub">listos para pagar</div></div>';
   }
-
-  ['todos','alerta','ok'].forEach(function(f){
-    var b=document.getElementById('pg-f-'+f);
-    if(b) b.className='pg-chip'+(window._PG_FILTRO===f?' on':'');
-  });
 
   var q=((document.getElementById('pg-buscar')||{}).value||'').trim().toLowerCase();
   var lista=todos.filter(function(p){
-    if(q && (String(p.influencer_nombre||'')+' '+String(p.usuario_red||'')).toLowerCase().indexOf(q)<0) return false;
-    if(window._PG_FILTRO==='alerta') return (p.graves||[]).length>0;
-    if(window._PG_FILTRO==='ok')     return (p.graves||[]).length===0;
-    return true;
+    return !q || (String(p.influencer_nombre||'')+' '+String(p.usuario_red||'')).toLowerCase().indexOf(q)>=0;
+  });
+  // Lo que hay que revisar va PRIMERO: es la unica jerarquia que importa acá.
+  lista=lista.slice().sort(function(a,b){
+    var ga=(a.graves||[]).length?0:1, gb=(b.graves||[]).length?0:1;
+    if(ga!==gb) return ga-gb;
+    return String(a.vence_pago_at||a.fecha||'').localeCompare(String(b.vence_pago_at||b.fecha||''));
   });
   window._PG_VIS=lista;
+
+  var cnt=document.getElementById('pg-conteo');
+  if(cnt) cnt.textContent = lista.length===(todos.length)
+    ? '' : (lista.length+' de '+todos.length);
 
   var cont=document.getElementById('pg-lista');
   if(!lista.length){
@@ -508,7 +515,11 @@ function _pgDato(lbl,val){
 function _pgFila(p, ix){
   var grave=(p.graves||[]).length>0;
   var ini=String(p.influencer_nombre||'?').trim().charAt(0).toUpperCase();
-  var abierto=(window._PG_ABIERTO===ix);
+  // Todo viene ABIERTO: lo unico que se hace acá es pagar o rechazar, y para eso hay que ver
+  // la cuenta y que publico. Tener que abrir 25 tarjetas de a una no es trabajo, es fricción.
+  // Lo plegado se recuerda por ID del pago, no por posición: la lista se reordena al buscar
+  // y con el índice se plegaría la fila equivocada.
+  var abierto = !window._PG_CERRADOS[p.id];
   var sub = (p.fecha_publicacion? 'Publicó '+_esc(String(p.fecha_publicacion).slice(0,10)) : '⚠ sin fecha de publicación')
           + (p.entregable? ' · '+_esc(String(p.entregable).slice(0,60)) : '');
 
@@ -561,14 +572,18 @@ function _pgFila(p, ix){
         + '<div class="pg-sub" style="'+(grave?'color:var(--cx-danger-text)':'')+'">'+sub+'</div>'
       + '</div>'
       + '<div class="pg-monto">'+_pgMoneda(p.valor)+'</div>'
-      + '<span style="color:var(--cx-text-mute);font-size:12px;white-space:nowrap">'+(abierto?'▲ cerrar':'▼ ver')+'</span>'
+      + '<span style="color:var(--cx-text-mute);font-size:12px;white-space:nowrap">'+(abierto?'▲':'▼')+'</span>'
     + '</div>'
     + cuerpo
   + '</div>';
 }
 
 function pgToggle(ix){
-  window._PG_ABIERTO = (window._PG_ABIERTO===ix) ? null : ix;
+  // Abiertas por defecto: el toggle sirve para PLEGAR una que ya despaché de vista, no para
+  // tener que abrir cada una.
+  var p=(window._PG_VIS||[])[ix]; if(!p) return;
+  if(window._PG_CERRADOS[p.id]) delete window._PG_CERRADOS[p.id];
+  else window._PG_CERRADOS[p.id]=1;
   pintarPagos();
 }
 
@@ -588,7 +603,7 @@ async function rechazarDesdeBandeja(ix){
     });
     var js=await r.json();
     if(!r.ok||js.error){ alert('No se pudo rechazar: '+(js.error||('HTTP '+r.status))); return; }
-    window._PG_ABIERTO=null; window._PG_DATA=null;
+    window._PG_CERRADOS={}; window._PG_DATA=null;
     await cargarPagos();
     cargarDecisiones();
   }catch(e){ alert('Error de red: '+e.message); }
@@ -620,7 +635,7 @@ async function pagarDesdeBandeja(ix){
     });
     var js=await r.json();
     if(!r.ok||js.error){ alert('No se pudo pagar: '+(js.error||('HTTP '+r.status))); return; }
-    window._PG_ABIERTO=null; window._PG_DATA=null;
+    window._PG_CERRADOS={}; window._PG_DATA=null;
     await cargarPagos();
     cargarDecisiones();
   }catch(e){ alert('Error de red: '+e.message); }

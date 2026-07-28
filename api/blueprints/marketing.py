@@ -4069,7 +4069,21 @@ def mkt_influencers_panel():
                 pagos_by_name.setdefault(key, []).append(p)
 
         # 2b. Auto-crear influencers desde pagos_influencers (nombres sin perfil)
-        known_lower = {inf["nombre"].strip().lower() for inf in influencers}
+        #
+        # ⚠ ACÁ NACIERON LOS ~700 DUPLICADOS (Sebastián 28-jul: "aparecen mil veces Camila
+        # Correal"). Dos defectos que se multiplicaban:
+        #   (1) el set de "conocidos" se armaba con `influencers`, que es la lista FILTRADA
+        #       por el buscador → con `?q=juan` todos los demás parecían nuevos y se volvían
+        #       a insertar. Cada TECLA en el buscador creaba una copia de cada creador.
+        #   (2) el `INSERT OR IGNORE` no deduplicaba porque el UNIQUE index que el comentario
+        #       de abajo daba por hecho NUNCA se creó (sólo lo creaba el botón de fusionar,
+        #       si alguien lo apretaba).
+        # Ahora los conocidos salen de la tabla COMPLETA, y la mig 387 crea el UNIQUE de
+        # verdad. Regla: un set de "lo que ya existe" jamás se arma desde una consulta
+        # filtrada -- lo que el filtro esconde parece que no existe.
+        known_lower = {
+            (r[0] or '').strip().lower()
+            for r in c.execute("SELECT nombre FROM marketing_influencers").fetchall()}
         nuevos = []
         for p in pago_list:
             nm = (p["influencer_nombre"] or "").strip()
@@ -4078,9 +4092,8 @@ def mkt_influencers_panel():
                 nuevos.append(nm)
         if nuevos:
             for nm in nuevos:
-                # FIX 1-jun-2026: con UNIQUE index en LOWER(TRIM(nombre)) el OR IGNORE
-                # por fin deduplica · el try evita 500 si el index rechaza un race
-                # cross-worker (3 gunicorn workers creaban dups · 'todos juanito rebel').
+                # El UNIQUE de la mig 387 es el que hace que este OR IGNORE dedupe de verdad
+                # (con 3 workers, dos requests concurrentes creaban la misma fila dos veces).
                 try:
                     c.execute(
                         "INSERT OR IGNORE INTO marketing_influencers (nombre, red_social, estado) VALUES (?,?,?)",

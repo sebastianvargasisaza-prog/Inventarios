@@ -221,6 +221,11 @@ def app(test_workspace):
     """App Flask con env vars de test — instanciada UNA vez por sesión."""
     # Setup env vars ANTES de importar
     os.environ["DB_PATH"] = os.path.join(test_workspace, "inventario.db")
+    # La BD de la suite es un archivo temporal que se tira al terminar, así que forzar un
+    # fsync en cada commit (synchronous=FULL, que en producción es obligatorio porque el
+    # disco de Render es un volumen de red) sólo compra lentitud. Eran miles de fsync: la
+    # mitad del tiempo del gate. Producción no se entera -- lo lee sólo este flag.
+    os.environ["EOS_TEST_SQLITE_RAPIDO"] = "1"
     os.environ["BACKUPS_DIR"] = os.path.join(test_workspace, "backups")
     os.environ["SECRET_KEY"] = "test-secret-key-only-for-pytest"
     os.environ["BACKUP_RETENTION_DAYS"] = "7"

@@ -26,7 +26,15 @@ def _configure_conn(conn):
     """
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=DELETE")  # robusto en disco de red
-    conn.execute("PRAGMA synchronous=FULL")     # maxima durabilidad
+    # synchronous=FULL fuerza un fsync en CADA commit. Es lo correcto en produccion (el disco
+    # de Render es un volumen de red y ya corrompio la BD 4 veces), pero en la suite la base
+    # es un archivo temporal que se tira al terminar: ahi la durabilidad no compra nada y esos
+    # miles de fsync eran la mitad del tiempo del gate (medido: 307s -> ver abajo).
+    # El flag lo pone SOLO el conftest, nunca el entorno de la app.
+    if os.environ.get("EOS_TEST_SQLITE_RAPIDO") == "1":
+        conn.execute("PRAGMA synchronous=OFF")
+    else:
+        conn.execute("PRAGMA synchronous=FULL")  # maxima durabilidad
     conn.execute("PRAGMA cache_size=-20000")    # 20MB cache (negativo = KB)
     conn.execute("PRAGMA temp_store=MEMORY")
     conn.execute("PRAGMA busy_timeout=15000")   # 15s espera por lock — multi-worker
@@ -10495,6 +10503,64 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
               AND numero_oc IN (SELECT numero_oc FROM ordenes_compra
                                  WHERE estado IN ('Rechazada','Cancelada'))""",
         "CREATE INDEX IF NOT EXISTS idx_pagos_inf_estado ON pagos_influencers(estado)",
+    ]),
+    (387, "Los ~700 creadores duplicados ('aparecen mil veces Camila Correal'). El panel "
+          "auto-crea un influencer por cada nombre de pago que no reconoce, pero armaba el set "
+          "de conocidos con la lista FILTRADA por el buscador: con `?q=` puesto, todos los que "
+          "el filtro escondía parecían nuevos y se re-insertaban. Y el `INSERT OR IGNORE` no "
+          "deduplicaba porque el UNIQUE que el código daba por hecho nunca se creó. Cada tecla "
+          "en el buscador dejaba una copia de cada creador con pagos. "
+          "Se repuntan las referencias al creador que se conserva, se borran SOLO las cáscaras "
+          "(sin pagos, sin solicitudes y sin un solo dato cargado) y recién ahí entra el UNIQUE, "
+          "que es lo que lo vuelve imposible.", [
+        # 1) Repuntar pagos y solicitudes del duplicado al que se conserva. El que se conserva
+        #    es el de menor id dentro del mismo nombre normalizado: determinista en los dos
+        #    motores y estable entre corridas.
+        """UPDATE pagos_influencers SET influencer_id = (
+               SELECT MIN(m2.id) FROM marketing_influencers m2
+                WHERE LOWER(TRIM(m2.nombre)) = (
+                      SELECT LOWER(TRIM(m1.nombre)) FROM marketing_influencers m1
+                       WHERE m1.id = pagos_influencers.influencer_id))
+            WHERE influencer_id IS NOT NULL
+              AND influencer_id <> (
+               SELECT MIN(m2.id) FROM marketing_influencers m2
+                WHERE LOWER(TRIM(m2.nombre)) = (
+                      SELECT LOWER(TRIM(m1.nombre)) FROM marketing_influencers m1
+                       WHERE m1.id = pagos_influencers.influencer_id))""",
+        """UPDATE solicitudes_compra SET influencer_id = (
+               SELECT MIN(m2.id) FROM marketing_influencers m2
+                WHERE LOWER(TRIM(m2.nombre)) = (
+                      SELECT LOWER(TRIM(m1.nombre)) FROM marketing_influencers m1
+                       WHERE m1.id = solicitudes_compra.influencer_id))
+            WHERE influencer_id IS NOT NULL
+              AND influencer_id <> (
+               SELECT MIN(m2.id) FROM marketing_influencers m2
+                WHERE LOWER(TRIM(m2.nombre)) = (
+                      SELECT LOWER(TRIM(m1.nombre)) FROM marketing_influencers m1
+                       WHERE m1.id = solicitudes_compra.influencer_id))""",
+        # 2) Borrar SOLO las cáscaras que dejó el bug: comparten nombre con el que se conserva,
+        #    no las referencia nadie, y no tienen un solo dato cargado. Un duplicado con banco,
+        #    correo, cupón o cualquier cosa escrita a mano NO se toca: eso lo resuelve la
+        #    herramienta de fusionar, que muestra el plan antes de aplicarlo.
+        """DELETE FROM marketing_influencers
+            WHERE id <> (SELECT MIN(m2.id) FROM marketing_influencers m2
+                          WHERE LOWER(TRIM(m2.nombre)) = LOWER(TRIM(marketing_influencers.nombre)))
+              AND NOT EXISTS (SELECT 1 FROM pagos_influencers p
+                               WHERE p.influencer_id = marketing_influencers.id)
+              AND NOT EXISTS (SELECT 1 FROM solicitudes_compra s
+                               WHERE s.influencer_id = marketing_influencers.id)
+              AND COALESCE(usuario_red,'')='' AND COALESCE(email,'')='' AND COALESCE(telefono,'')=''
+              AND COALESCE(notas,'')='' AND COALESCE(nicho,'')='' AND COALESCE(banco,'')=''
+              AND COALESCE(cuenta_bancaria,'')='' AND COALESCE(cedula_nit,'')=''
+              AND COALESCE(discount_code,'')='' AND COALESCE(ciudad,'')=''
+              AND COALESCE(seguidores,0)=0 AND COALESCE(tarifa,0)=0""",
+    ]),
+    (388, "El UNIQUE sobre el nombre del creador, en su PROPIA migración: si quedara algún "
+          "duplicado con datos que la 387 no toca a propósito, este statement falla y no puede "
+          "arrastrar la limpieza (que sí es segura) al estado de pendiente. Lo que quede se "
+          "resuelve con el botón Fusionar duplicados, que muestra el plan antes de aplicar.", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_mktinf_nombre_unq "
+        "ON marketing_influencers(LOWER(TRIM(nombre)))",
     ]),
 ]
 

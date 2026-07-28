@@ -116,6 +116,10 @@ CORAZON=(
   # motivo, nunca la borra. Antes se borraba y por eso la bandeja de Rechazados salia en 0:
   # quien pidio el pago no tenia forma de saber por que no se lo pagaron.
   "tests/test_centro_pagos_bandeja.py"
+  # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
+  # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
+  # que no existe, y se re-inserta con cada tecla del buscador.
+  "tests/test_influencers_no_se_duplican.py"
 )
 
 echo ""
