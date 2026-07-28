@@ -7,6 +7,8 @@ import os
 import sqlite3, urllib.request
 import traceback
 import json
+import re
+import unicodedata
 from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify, session, Response
 
@@ -614,6 +616,128 @@ def mkt_influencer_generar_cupon(iid):
 # ──────────────────────────────────────────────────────────────────────────────
 # Flujo urgencia pagos influencers · "promesa 30 días desde contenido"
 # ──────────────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ANTI DOBLE-PAGO · la única red que queda cuando no hay paso de aprobación
+# ══════════════════════════════════════════════════════════════════════════════
+# Sebastián 27-jul: "Jefferson me va pidiendo pagos según quién publique... sin aprobación, es
+# solo para pago, porque ya publicaron toca pagarles. Pero necesito trazabilidad de lo que estoy
+# pagando, y siempre darme alertas del influencer que me reingresa sin justificación o que me
+# está pidiendo pagar lo mismo".
+#
+# Como NO hay un gate de aprobación (y está bien: ya publicaron, hay que pagar), lo único que
+# separa un pago legítimo de pagar dos veces el mismo contenido es esto. Por eso no alcanza con
+# marcar "sospechoso": cada alerta trae **el pago anterior concreto** para poder comparar los dos
+# de frente, que es como una persona decide de verdad.
+#
+# Las señales salen de datos que ya se capturan al pedir el pago:
+#   · misma FECHA DE PUBLICACIÓN  -> es literalmente el mismo contenido
+#   · mismo TEMA (normalizado)    -> el mismo trabajo descrito con otras palabras
+#   · ya tiene un pago ESTE MES   -> no es error, pero hay que verlo antes de sumar otro
+#   · mismo MONTO en pocos días   -> el patrón clásico del cobro repetido
+#   · REAPARECE tras estar de baja-> alguien lo volvió a meter sin decir por qué
+
+_VENTANA_MISMO_MONTO_DIAS = 15
+
+
+def _norm_tema(t):
+    """Compara temas ignorando mayúsculas, tildes y puntuación: 'Reel Niacinamida!' == 'reel
+    niacinamida'. Sin esto, el mismo trabajo escrito distinto pasa como nuevo."""
+    t = unicodedata.normalize('NFKD', str(t or ''))
+    t = ''.join(ch for ch in t if not unicodedata.combining(ch)).lower()
+    return re.sub(r'[^a-z0-9]+', ' ', t).strip()
+
+
+def alertas_pago_influencer(c, *, influencer_id, nombre, valor, fecha_publicacion,
+                            entregable, excluir_pago_id=None):
+    """Devuelve las razones por las que ESTE pago podría ser un doble-pago.
+
+    Read-only y nunca lanza: es un aviso para quien decide, no un bloqueo. Bloquear un pago
+    legítimo (un creador que publica dos veces el mismo día, un segundo contenido del mismo tema)
+    sería peor que mostrarlo con una advertencia.
+
+    Cada alerta trae `pago_previo` con el registro concreto contra el que chocó.
+    """
+    out = []
+    if not influencer_id:
+        return out
+    try:
+        prev = c.execute(
+            "SELECT id, valor, fecha, COALESCE(estado,''), COALESCE(concepto,''), "
+            "       COALESCE(fecha_publicacion,''), COALESCE(entregable,''), COALESCE(numero_oc,'') "
+            "FROM pagos_influencers "
+            "WHERE influencer_id=? AND COALESCE(estado,'') <> 'Anulada' "
+            "ORDER BY fecha DESC, id DESC LIMIT 60", (influencer_id,)).fetchall()
+    except Exception as e:
+        log.warning('alertas_pago_influencer: no se pudo leer el historial (%s): %s', nombre, e)
+        return out
+
+    def _ficha(r):
+        return {'id': r[0], 'valor': r[1], 'fecha': r[2], 'estado': r[3],
+                'concepto': (r[4] or '')[:120], 'fecha_publicacion': r[5],
+                'entregable': (r[6] or '')[:160], 'numero_oc': r[7]}
+
+    fp = (fecha_publicacion or '').strip()[:10]
+    tema = _norm_tema(entregable)
+    try:
+        val = float(valor or 0)
+    except (TypeError, ValueError):
+        val = 0.0
+    hoy = _hoy_col()
+
+    for r in prev:
+        if excluir_pago_id and r[0] == excluir_pago_id:
+            continue
+        # 1) MISMA publicación · la más fuerte: es el mismo contenido, no otro trabajo
+        if fp and (r[5] or '').strip()[:10] == fp:
+            out.append({'nivel': 'alto', 'codigo': 'MISMA_PUBLICACION',
+                        'mensaje': 'Ya hay un pago por una publicación de esa misma fecha (%s)' % fp,
+                        'pago_previo': _ficha(r)})
+            continue
+        # 2) MISMO tema · el mismo trabajo descrito con otras palabras
+        if tema and len(tema) >= 8 and _norm_tema(r[6]) == tema:
+            out.append({'nivel': 'alto', 'codigo': 'MISMO_TEMA',
+                        'mensaje': 'El mismo tema ya se pagó el %s' % (r[2] or '')[:10],
+                        'pago_previo': _ficha(r)})
+            continue
+        # 3) Mismo monto en pocos días · el patrón del cobro repetido
+        if val > 0 and abs(float(r[1] or 0) - val) < 1:
+            try:
+                d = (hoy - date.fromisoformat((r[2] or '')[:10])).days
+                if 0 <= d <= _VENTANA_MISMO_MONTO_DIAS:
+                    out.append({'nivel': 'medio', 'codigo': 'MISMO_MONTO_RECIENTE',
+                                'mensaje': 'Mismo monto que un pago de hace %d día(s)' % d,
+                                'pago_previo': _ficha(r)})
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+    # 4) Ya tiene pago ESTE MES · no es error, pero hay que verlo antes de sumar otro
+    mes = hoy.isoformat()[:7]
+    delmes = [r for r in prev if (r[2] or '')[:7] == mes and r[0] != (excluir_pago_id or -1)]
+    if delmes:
+        out.append({'nivel': 'info', 'codigo': 'YA_TIENE_ESTE_MES',
+                    'mensaje': 'Ya tiene %d pago(s) este mes por $%s' % (
+                        len(delmes), '{:,.0f}'.format(sum(float(r[1] or 0) for r in delmes))),
+                    'pago_previo': _ficha(delmes[0])})
+
+    # 5) Reapareció tras estar dado de baja · alguien lo volvió a meter sin decir por qué
+    try:
+        est = c.execute("SELECT COALESCE(estado,'') FROM marketing_influencers WHERE id=?",
+                        (influencer_id,)).fetchone()
+        if est and str(est[0]).strip().lower() not in ('activo', ''):
+            out.append({'nivel': 'alto', 'codigo': 'REINGRESA_DADO_DE_BAJA',
+                        'mensaje': 'Este creador está en estado "%s" y le están pidiendo un pago'
+                                   % est[0],
+                        'pago_previo': None})
+    except Exception as e:
+        log.warning('alertas_pago_influencer: no se pudo leer el estado de %s: %s', nombre, e)
+
+    # las más graves primero: son las que hay que mirar sí o sí
+    _orden = {'alto': 0, 'medio': 1, 'info': 2}
+    out.sort(key=lambda a: _orden.get(a['nivel'], 9))
+    return out
+
+
 @bp.route('/api/marketing/pagos-influencer/urgencias')
 def mkt_pagos_influencer_urgencias():
     """Lista pagos Pendientes con flag de urgencia según vence_pago_at.
@@ -1914,88 +2038,6 @@ def mkt_metas():
     conn.commit()
     return jsonify({"ok": True, "mes": mes})
 
-
-@bp.route('/api/marketing/meta-progreso')
-def mkt_meta_progreso():
-    """Devuelve meta del mes actual + progreso desde Shopify orders.
-
-    Útil para mostrar "% vs meta" en Dashboard. Si no hay meta, retorna
-    meta=null y advance=null para que la UI lo oculte.
-
-    Query: ?mes=YYYY-MM (default: mes actual)
-    """
-    u, err, code = _auth()
-    if err: return err, code
-    from datetime import datetime as _dt
-    mes = (request.args.get('mes') or _hoy_col().strftime('%Y-%m')).strip()   # M24
-    if not _re_atrib.match(r'^\d{4}-\d{2}$', mes):
-        return jsonify({"error": "mes inválido (YYYY-MM)"}), 400
-    conn = _db(); c = conn.cursor()
-    meta_row = c.execute("SELECT * FROM marketing_metas WHERE mes=?", (mes,)).fetchone()
-    if not meta_row:
-        return jsonify({"mes": mes, "meta": None, "avance": None,
-                         "hint": "Configurá la meta del mes vía POST /api/marketing/metas"})
-    meta = dict(meta_row)
-    # Avance real desde Shopify (mes calendario)
-    sh = c.execute("""
-        SELECT COALESCE(SUM(total),0) AS rev,
-               COUNT(*) AS pedidos,
-               COUNT(DISTINCT email) AS clientes
-        FROM animus_shopify_orders
-        WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND substr(creado_en,1,7)=?
-    """, (mes,)).fetchone()
-    nuevos = c.execute("""
-        SELECT COUNT(DISTINCT o.email) AS n FROM animus_shopify_orders o
-        WHERE LOWER(COALESCE(o.estado,'')) NOT IN ('cancelled','cancelado','voided') AND substr(o.creado_en,1,7)=?
-          AND (SELECT COUNT(*) FROM animus_shopify_orders o2
-                WHERE o2.email=o.email AND LOWER(COALESCE(o2.estado,'')) NOT IN ('cancelled','cancelado','voided') AND o2.creado_en < ?) = 0
-    """, (mes, mes + '-01')).fetchone()
-    revenue_real = float(sh['rev'] or 0)
-    pedidos_real = int(sh['pedidos'] or 0)
-    nuevos_real = int(nuevos['n'] or 0)
-    def _pct(real, meta_val):
-        if not meta_val or meta_val <= 0: return None
-        return round(real / meta_val * 100, 1)
-    # Días transcurridos del mes vs días totales · para proyección
-    hoy = _hoy_col()   # M24 · si acá corre el día del mes siguiente, la proyección se dispara
-    mes_year, mes_month = int(mes[:4]), int(mes[5:7])
-    if hoy.year == mes_year and hoy.month == mes_month:
-        dias_t = hoy.day
-        # Días del mes actual
-        import calendar as _cal
-        dias_mes = _cal.monthrange(mes_year, mes_month)[1]
-    else:
-        # Mes pasado/futuro → cobertura completa o ninguna
-        import calendar as _cal
-        dias_mes = _cal.monthrange(mes_year, mes_month)[1]
-        dias_t = dias_mes  # solo válido si ya pasó · si futuro lo dejamos así pero proyeccion es la real
-    proy_revenue = revenue_real / max(dias_t,1) * dias_mes if dias_t > 0 else 0
-    proy_pedidos = round(pedidos_real / max(dias_t,1) * dias_mes) if dias_t > 0 else 0
-    return jsonify({
-        "mes": mes,
-        "meta": {
-            "revenue": meta['revenue_meta'],
-            "pedidos": meta['pedidos_meta'],
-            "clientes_nuevos": meta['clientes_nuevos_meta'],
-        },
-        "avance": {
-            "revenue": revenue_real,
-            "revenue_pct": _pct(revenue_real, meta['revenue_meta']),
-            "pedidos": pedidos_real,
-            "pedidos_pct": _pct(pedidos_real, meta['pedidos_meta']),
-            "clientes_nuevos": nuevos_real,
-            "clientes_nuevos_pct": _pct(nuevos_real, meta['clientes_nuevos_meta']),
-        },
-        "proyeccion_fin_de_mes": {
-            "revenue": round(proy_revenue, 0),
-            "revenue_pct_meta": _pct(proy_revenue, meta['revenue_meta']),
-            "pedidos": proy_pedidos,
-        },
-        "dias_transcurridos": dias_t,
-        "dias_mes": dias_mes,
-    })
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # KPIs HOY — endpoint rápido para la pestaña Hoy (4 KPIs reales, sin Claude)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2102,288 +2144,6 @@ def mkt_kpis_hoy():
 # DASHBOARD
 # ──────────────────────────────────────────────────────────────────────────────
 _MKT_DASH_CACHE = {}   # {'d': {ts, payload}} · cache per-worker · dashboard = overview
-
-
-@bp.route("/api/marketing/dashboard")
-def mkt_dashboard():
-    u, err, code = _auth()
-    if err:
-        return err, code
-    # PERF (Sebastián 13-jul · "marketing muy lento"): el dashboard agrega ~20 queries
-    # sobre animus_shopify_orders (overview). Cache TTL 180s por-worker · ?force=1 salta.
-    import time as _time_md
-    _force_md = (request.args.get("force") or "") not in ("", "0", "false")
-    _hit_md = _MKT_DASH_CACHE.get("d")
-    if _hit_md and not _force_md and (_time_md.time() - _hit_md["ts"] < 600):
-        return jsonify(_hit_md["payload"])
-    conn = _db()
-    c = conn.cursor()
-    try:
-        # KPIs principales
-        total_campanas = c.execute("SELECT COUNT(*) FROM marketing_campanas").fetchone()[0]
-        activas = c.execute("SELECT COUNT(*) FROM marketing_campanas WHERE estado='Activa'").fetchone()[0]
-        presupuesto_total = c.execute("SELECT COALESCE(SUM(presupuesto),0) FROM marketing_campanas").fetchone()[0]
-        presupuesto_gastado = c.execute("SELECT COALESCE(SUM(presupuesto_gastado),0) FROM marketing_campanas").fetchone()[0]
-        total_influencers = c.execute("SELECT COUNT(*) FROM marketing_influencers WHERE estado='Activo'").fetchone()[0]
-        contenido_publicado = c.execute("SELECT COUNT(*) FROM marketing_contenido WHERE estado='Publicado'").fetchone()[0]
-        total_conversiones = c.execute("SELECT COALESCE(SUM(conversiones),0) FROM marketing_contenido").fetchone()[0]
-        total_alcance = c.execute("SELECT COALESCE(SUM(alcance),0) FROM marketing_contenido").fetchone()[0]
-        ventas_total = c.execute("SELECT COALESCE(SUM(resultado_ventas),0) FROM marketing_campanas").fetchone()[0]
-
-        # ROI global
-        roi = 0
-        if presupuesto_gastado > 0:
-            roi = round(((ventas_total - presupuesto_gastado) / presupuesto_gastado) * 100, 1)
-
-        # Top influencer por conversiones
-        top_inf = c.execute("""
-            SELECT i.nombre, i.red_social, COALESCE(SUM(ci.conversiones),0) as conv
-            FROM marketing_influencers i
-            LEFT JOIN marketing_campana_influencer ci ON ci.influencer_id=i.id
-            GROUP BY i.id ORDER BY conv DESC LIMIT 1
-        """).fetchone()
-
-        # Campañas activas
-        campanas_activas = _fmt_many(c.execute("""
-            SELECT id, nombre, tipo, estado, presupuesto, presupuesto_gastado,
-                   fecha_inicio, fecha_fin, resultado_ventas
-            FROM marketing_campanas
-            WHERE estado IN ('Activa','Planificada')
-            ORDER BY fecha_inicio DESC LIMIT 6
-        """).fetchall())
-
-        # Contenido reciente
-        contenido_reciente = _fmt_many(c.execute("""
-            SELECT mc.id, mc.tipo, mc.plataforma, mc.estado, mc.fecha_publicacion,
-                   mc.likes, mc.alcance, mc.conversiones,
-                   mc2.nombre as campana,
-                   mi.nombre as influencer
-            FROM marketing_contenido mc
-            LEFT JOIN marketing_campanas mc2 ON mc2.id=mc.campana_id
-            LEFT JOIN marketing_influencers mi ON mi.id=mc.influencer_id
-            ORDER BY mc.fecha_creacion DESC LIMIT 8
-        """).fetchall())
-
-        # Tendencias mensuales: liberaciones PT últimos 6 meses por SKU
-        seis_meses = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
-        tendencias = _fmt_many(c.execute("""
-            SELECT sku, COALESCE(SUM(unidades),0) as total_liberado,
-                   strftime('%Y-%m', creado_en) as mes
-            FROM liberaciones
-            WHERE creado_en >= ? AND sku IS NOT NULL AND sku != ''
-            GROUP BY sku, mes ORDER BY mes DESC, total_liberado DESC
-            LIMIT 30
-        """, (seis_meses,)).fetchall())
-
-        # Presupuesto por canal
-        por_canal = _fmt_many(c.execute("""
-            SELECT canal, COUNT(*) as campanas,
-                   COALESCE(SUM(presupuesto),0) as presupuesto_total,
-                   COALESCE(SUM(resultado_ventas),0) as ventas_total
-            FROM marketing_campanas
-            WHERE canal IS NOT NULL AND canal != ''
-            GROUP BY canal ORDER BY presupuesto_total DESC
-        """).fetchall())
-
-        # ── Shopify: datos reales ────────────────────────────────────────────
-        hace30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-        hace7  = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-
-        # FIX 7-jul (audit ultracode · M5/M45): EXCLUIR órdenes CANCELADAS de los KPIs (el filtro canónico que
-        # ya usan plan.py/auto_plan.py · la marca es estado='cancelled' vía cancelled_at). Sin esto los números
-        # de marketing salían inflados y no cuadraban con Ánimus.
-        sh_30 = c.execute("""
-            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos,
-                   COUNT(DISTINCT email) as clientes
-            FROM animus_shopify_orders
-            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?
-        """, (hace30,)).fetchone()
-
-        sh_7 = c.execute("""
-            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos
-            FROM animus_shopify_orders
-            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?
-        """, (hace7,)).fetchone()
-
-        sh_total = c.execute("""
-            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos,
-                   COUNT(DISTINCT email) as clientes
-            FROM animus_shopify_orders
-            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
-        """).fetchone()
-
-        sh_ticket = round(sh_30["rev"] / sh_30["pedidos"], 0) if sh_30["pedidos"] > 0 else 0
-
-        # Clientes nuevos vs recurrentes (30d)
-        sh_nuevos = c.execute("""
-            SELECT COUNT(DISTINCT o.email) as n FROM animus_shopify_orders o
-            WHERE LOWER(COALESCE(o.estado,'')) NOT IN ('cancelled','cancelado','voided') AND o.creado_en >= ?
-            AND (SELECT COUNT(*) FROM animus_shopify_orders o2
-                 WHERE o2.email=o.email AND LOWER(COALESCE(o2.estado,'')) NOT IN ('cancelled','cancelado','voided') AND o2.creado_en < ?) = 0
-        """, (hace30, hace30)).fetchone()["n"]
-
-        # FIX 7-jul (audit ultracode): quitada la query MUERTA sh_top_skus_raw (se computaba pero top_skus_combined
-        # sale solo de erp_rev · era trabajo desperdiciado por cada carga del dashboard).
-
-        # Agregar revenue ERP (liberaciones) · PERF 7-jul: pre-cargar el precio por SKU en 1 query (antes era
-        # N+1 · un SELECT MAX(precio_base) por CADA sku vendido → ~50 queries en cada carga del dashboard).
-        _precio_por_sku = {}
-        for _pr in c.execute("SELECT sku, MAX(precio_base) AS p FROM stock_pt "
-                             "WHERE sku IS NOT NULL GROUP BY sku").fetchall():
-            _precio_por_sku[_pr["sku"]] = _pr["p"] or 0
-        erp_rev = {}
-        for row in c.execute("""
-            SELECT sku, SUM(unidades) as uds FROM liberaciones
-            WHERE creado_en >= ? AND sku IS NOT NULL GROUP BY sku
-        """, (hace30,)).fetchall():
-            p = _precio_por_sku.get(row["sku"], 0) or 0
-            erp_rev[row["sku"]] = {"uds": row["uds"], "rev": round(row["uds"] * p, 0)}
-
-        top_skus_combined = sorted(erp_rev.items(), key=lambda x: -x[1]["rev"])[:6]
-        sh_top_skus = [{"sku": k, "total": v["rev"], "uds": v["uds"]} for k, v in top_skus_combined]
-
-        # Ventas mensuales Shopify (últimos 6 meses)
-        sh_mensual = _fmt_many(c.execute("""
-            SELECT strftime('%Y-%m', creado_en) as mes,
-                   COALESCE(SUM(total),0) as total,
-                   COUNT(*) as pedidos
-            FROM animus_shopify_orders
-            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
-            GROUP BY mes ORDER BY mes DESC LIMIT 6
-        """).fetchall())
-        sh_mensual.reverse()
-
-        # Liberaciones mensuales ERP (últimos 6 meses)
-        erp_mensual = _fmt_many(c.execute("""
-            SELECT strftime('%Y-%m', creado_en) as mes,
-                   COALESCE(SUM(unidades),0) as uds
-            FROM liberaciones WHERE sku IS NOT NULL
-            GROUP BY mes ORDER BY mes DESC LIMIT 6
-        """).fetchall())
-        erp_mensual.reverse()
-
-        # Top ciudades
-        sh_ciudades = _fmt_many(c.execute("""
-            SELECT ciudad, COUNT(*) as pedidos, COALESCE(SUM(total),0) as total
-            FROM animus_shopify_orders
-            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND ciudad != ''
-            GROUP BY ciudad ORDER BY total DESC LIMIT 5
-        """).fetchall())
-
-        # GHL: contactos y pipeline
-        ghl_total = c.execute("SELECT COUNT(*) as n FROM animus_ghl_contacts").fetchone()["n"]
-        ghl_nuevos = c.execute("""
-            SELECT COUNT(*) as n FROM animus_ghl_contacts WHERE creado_en >= ?
-        """, (hace30,)).fetchone()["n"]
-
-        # Instagram: metricas desde posts sincronizados
-        ig_total_posts  = c.execute("SELECT COUNT(*) as n FROM animus_instagram_posts").fetchone()["n"]
-        ig_posts_30d    = c.execute("SELECT COUNT(*) as n FROM animus_instagram_posts WHERE publicado_en >= ?", (hace30,)).fetchone()["n"]
-        ig_likes_30d    = c.execute("SELECT COALESCE(SUM(likes),0) as s FROM animus_instagram_posts WHERE publicado_en >= ?", (hace30,)).fetchone()["s"]
-        ig_comments_30d = c.execute("SELECT COALESCE(SUM(comentarios),0) as s FROM animus_instagram_posts WHERE publicado_en >= ?", (hace30,)).fetchone()["s"]
-        ig_avg_likes    = round(ig_likes_30d / ig_posts_30d, 1) if ig_posts_30d > 0 else 0
-        ig_top_posts    = _fmt_many(c.execute("""
-            SELECT instagram_id, tipo, descripcion, likes, comentarios, url_permalink, publicado_en
-            FROM animus_instagram_posts
-            ORDER BY (likes + comentarios*3) DESC LIMIT 5
-        """).fetchall())
-        ig_configured   = bool(_cfg(conn, "instagram_token") and _cfg(conn, "instagram_user_id"))
-        # Auto-refresh token si vence en < 10 dias (silencioso)
-        ig_token_status = _ig_check_refresh(conn, allow_network=False) if ig_configured else {"expiry_date": None, "days_left": 0, "near_expiry": False, "refreshed": False, "expired": False}
-
-        # AUDIT 26-may · KPIs pipeline GHL (mig 189 · si tabla vacía → 0)
-        ghl_block = {
-            "contactos_total": ghl_total,
-            "contactos_nuevos_30d": ghl_nuevos,
-            "opps_abiertas": 0,
-            "opps_ganadas_30d": 0,
-            "valor_pipeline_abierto": 0.0,
-            "valor_ganado_30d": 0.0,
-            "top_pipelines": [],
-        }
-        try:
-            ghl_block["opps_abiertas"] = int(c.execute(
-                "SELECT COUNT(*) AS n FROM animus_ghl_opportunities WHERE status='open'"
-            ).fetchone()["n"] or 0)
-            ghl_block["opps_ganadas_30d"] = int(c.execute(
-                "SELECT COUNT(*) AS n FROM animus_ghl_opportunities "
-                "WHERE status='won' AND date(ghl_updated_at)>=?",
-                (hace30,)).fetchone()["n"] or 0)
-            ghl_block["valor_pipeline_abierto"] = float(c.execute(
-                "SELECT COALESCE(SUM(monetary_value),0) AS v "
-                "FROM animus_ghl_opportunities WHERE status='open'"
-            ).fetchone()["v"] or 0)
-            ghl_block["valor_ganado_30d"] = float(c.execute(
-                "SELECT COALESCE(SUM(monetary_value),0) AS v "
-                "FROM animus_ghl_opportunities "
-                "WHERE status='won' AND date(ghl_updated_at)>=?",
-                (hace30,)).fetchone()["v"] or 0)
-            ghl_block["top_pipelines"] = [dict(r) for r in c.execute("""
-                SELECT pipeline_nombre, COUNT(*) AS opps,
-                       COALESCE(SUM(monetary_value),0) AS valor
-                FROM animus_ghl_opportunities
-                WHERE status='open' AND COALESCE(pipeline_nombre,'') != ''
-                GROUP BY pipeline_nombre ORDER BY valor DESC LIMIT 5
-            """).fetchall()]
-        except Exception as _ghl_e:
-            # Si la mig 189 aún no aplicó (tabla no existe), KPIs quedan en 0
-            log.warning("ghl KPIs dashboard fallback (mig 189 pending?): %s", _ghl_e)
-
-        _dash_payload = {
-            "kpis": {
-                "total_campanas": total_campanas,
-                "activas": activas,
-                "presupuesto_total": round(presupuesto_total, 0),
-                "presupuesto_gastado": round(presupuesto_gastado, 0),
-                "pct_ejecutado": round((presupuesto_gastado / presupuesto_total * 100) if presupuesto_total > 0 else 0, 1),
-                "total_influencers": total_influencers,
-                "contenido_publicado": contenido_publicado,
-                "total_conversiones": total_conversiones,
-                "total_alcance": total_alcance,
-                "ventas_total": round(ventas_total, 0),
-                "roi_global": roi,
-            },
-            "shopify": {
-                "revenue_30d": round(sh_30["rev"], 0),
-                "revenue_7d":  round(sh_7["rev"], 0),
-                "revenue_total": round(sh_total["rev"], 0),
-                "pedidos_30d": sh_30["pedidos"],
-                "pedidos_7d": sh_7["pedidos"],
-                "pedidos_total": sh_total["pedidos"],
-                "clientes_30d": sh_30["clientes"],
-                "clientes_total": sh_total["clientes"],
-                "clientes_nuevos_30d": sh_nuevos,
-                "clientes_recurrentes_30d": sh_30["clientes"] - sh_nuevos,
-                "ticket_promedio": sh_ticket,
-                "mensual": sh_mensual,
-                "top_skus": sh_top_skus,
-                "ciudades": sh_ciudades,
-            },
-            "ghl": ghl_block,
-            "instagram": {
-                "configurado": ig_configured,
-                "total_posts": ig_total_posts,
-                "posts_30d": ig_posts_30d,
-                "likes_30d": ig_likes_30d,
-                "comentarios_30d": ig_comments_30d,
-                "avg_likes": ig_avg_likes,
-                "top_posts": ig_top_posts,
-                "token_expiry_date":  ig_token_status["expiry_date"],
-                "token_days_left":    ig_token_status["days_left"],
-                "token_near_expiry":  ig_token_status["near_expiry"],
-                "token_refreshed":    ig_token_status["refreshed"],
-                "token_expired":      ig_token_status["expired"],
-            },
-            "top_influencer": _fmt(top_inf),
-            "campanas_activas": campanas_activas,
-            "contenido_reciente": contenido_reciente,
-            "tendencias": tendencias,
-            "por_canal": por_canal,
-        }
-        _MKT_DASH_CACHE["d"] = {"ts": _time_md.time(), "payload": _dash_payload}
-        return jsonify(_dash_payload)
-    finally:
-        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CAMPAÑAS
@@ -3280,196 +3040,6 @@ _LEGACY_ESTADO_MAP = {
     # Publicado se mantiene
 }
 
-
-@bp.route("/api/marketing/contenido", methods=["GET", "POST"])
-def mkt_contenido():
-    u, err, code = _auth()
-    if err:
-        return err, code
-    conn = _db()
-    c = conn.cursor()
-    try:
-        if request.method == "GET":
-            campana_id = request.args.get("campana_id", "")
-            estado = request.args.get("estado", "")
-            base = """
-                SELECT mc.*, c.nombre as campana_nombre, i.nombre as influencer_nombre,
-                       i.usuario_red as influencer_usuario, i.discount_code as influencer_code
-                FROM marketing_contenido mc
-                LEFT JOIN marketing_campanas c ON c.id=mc.campana_id
-                LEFT JOIN marketing_influencers i ON i.id=mc.influencer_id
-            """
-            conds, params = [], []
-            if campana_id:
-                conds.append("mc.campana_id=?")
-                params.append(campana_id)
-            if estado:
-                conds.append("mc.estado=?")
-                params.append(estado)
-            sql = base + (" WHERE " + " AND ".join(conds) if conds else "") + \
-                  " ORDER BY mc.fecha_programada DESC, mc.fecha_publicacion DESC, mc.fecha_creacion DESC LIMIT 200"
-            rows = [dict(r) for r in c.execute(sql, params).fetchall()]
-            # Normalizar estados legacy → Kanban
-            for r in rows:
-                est = r.get("estado") or "Brief"
-                r["estado_kanban"] = _LEGACY_ESTADO_MAP.get(est, est)
-            return jsonify(rows)
-
-        d = request.get_json() or {}
-        # Estado: si lo pasan se respeta, si no default 'Brief'
-        estado_in = d.get("estado", "Brief")
-        if estado_in in _LEGACY_ESTADO_MAP:
-            estado_in = _LEGACY_ESTADO_MAP[estado_in]
-        # FIX 7-jul (audit ultracode · M62/whitelist): validar el estado contra KANBAN_ESTADOS (no aceptar
-        # cualquier string · evita datos basura y filas que no caen en ninguna columna del kanban).
-        if estado_in not in KANBAN_ESTADOS:
-            estado_in = "Brief"
-        c.execute("""
-            INSERT INTO marketing_contenido
-            (campana_id, influencer_id, tipo, plataforma, fecha_publicacion,
-             fecha_programada, estado, caption, url_publicacion,
-             sku_objetivo, mensaje_principal,
-             likes, comentarios, shares,
-             guardados, alcance, impresiones, clicks, conversiones, notas, creado_por)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            d.get("campana_id"), d.get("influencer_id"),
-            d.get("tipo", "Post"), d.get("plataforma", "Instagram"),
-            d.get("fecha_publicacion"), d.get("fecha_programada", ""),
-            estado_in,
-            d.get("caption", ""), d.get("url_publicacion", ""),
-            d.get("sku_objetivo", ""), d.get("mensaje_principal", ""),
-            d.get("likes", 0), d.get("comentarios", 0), d.get("shares", 0),
-            d.get("guardados", 0), d.get("alcance", 0), d.get("impresiones", 0),
-            d.get("clicks", 0), d.get("conversiones", 0),
-            d.get("notas", ""), u
-        ))
-        conn.commit()
-        return jsonify({"ok": True, "id": c.lastrowid}), 201
-    finally:
-        pass
-
-
-@bp.route("/api/marketing/contenido/kanban", methods=["GET"])
-def mkt_contenido_kanban():
-    """Kanban view: contenido agrupado por estado con stats por columna.
-
-    Retorna {columnas: [{estado, count, items: [...]}]} con los 5 estados del
-    Kanban. Optimizado para la UI — un solo fetch que pinta toda la tabla.
-    """
-    u, err, code = _auth()
-    if err:
-        return err, code
-    conn = _db()
-    c = conn.cursor()
-    try:
-        # AUDIT 26-may · LEFT JOIN con animus_instagram_posts por url_publicacion
-        # ↔ url_permalink · trae métricas REALES de IG en lugar de las manuales.
-        # ig.likes/comentarios/alcance/impresiones/guardados son los del Graph
-        # API en el último sync · si no hay match (pieza no publicada o URL
-        # distinta), caemos a las columnas manuales de marketing_contenido.
-        rows = [dict(r) for r in c.execute("""
-            SELECT mc.id, mc.campana_id, mc.influencer_id, mc.tipo, mc.plataforma,
-                   mc.fecha_publicacion, mc.fecha_programada, mc.estado,
-                   mc.caption, mc.url_publicacion, mc.sku_objetivo,
-                   mc.mensaje_principal,
-                   mc.likes AS likes_manual,
-                   mc.comentarios AS comentarios_manual,
-                   mc.shares,
-                   mc.alcance AS alcance_manual,
-                   mc.conversiones,
-                   mc.fecha_creacion,
-                   c.nombre as campana_nombre,
-                   i.nombre as influencer_nombre,
-                   i.usuario_red as influencer_usuario,
-                   i.discount_code as influencer_code,
-                   ig.instagram_id AS ig_id,
-                   ig.likes AS ig_likes,
-                   ig.comentarios AS ig_comentarios,
-                   ig.alcance AS ig_alcance,
-                   ig.impresiones AS ig_impresiones,
-                   ig.guardados AS ig_guardados,
-                   ig.synced_at AS ig_synced_at
-            FROM marketing_contenido mc
-            LEFT JOIN marketing_campanas c ON c.id = mc.campana_id
-            LEFT JOIN marketing_influencers i ON i.id = mc.influencer_id
-            LEFT JOIN animus_instagram_posts ig
-              ON COALESCE(mc.url_publicacion,'') != ''
-             AND mc.url_publicacion = ig.url_permalink
-            ORDER BY COALESCE(mc.fecha_programada, mc.fecha_publicacion, mc.fecha_creacion) DESC
-            LIMIT 500
-        """).fetchall()]
-
-        # Bucket por estado_kanban (legacy → kanban)
-        buckets = {est: [] for est in KANBAN_ESTADOS}
-        for r in rows:
-            est = r.get("estado") or "Brief"
-            est_k = _LEGACY_ESTADO_MAP.get(est, est)
-            if est_k not in buckets:
-                # Estado raro → tirar a Brief para no perderlo
-                est_k = "Brief"
-            r["estado_kanban"] = est_k
-            # Mezclar IG live > manual · `likes`/`comentarios`/`alcance` finales
-            # son siempre los más altos disponibles entre ambas fuentes.
-            ig_id = r.get('ig_id')
-            r['fuente_metricas'] = 'instagram_live' if ig_id else 'manual'
-            r['likes']        = r.get('ig_likes')        if ig_id else (r.get('likes_manual') or 0)
-            r['comentarios']  = r.get('ig_comentarios')  if ig_id else (r.get('comentarios_manual') or 0)
-            r['alcance']      = r.get('ig_alcance')      if ig_id else (r.get('alcance_manual') or 0)
-            r['impresiones']  = r.get('ig_impresiones')  if ig_id else None
-            r['guardados']    = r.get('ig_guardados')    if ig_id else None
-            r['ig_match']     = bool(ig_id)
-            buckets[est_k].append(r)
-
-        columnas = []
-        for est in KANBAN_ESTADOS:
-            items = buckets[est]
-            columnas.append({
-                "estado": est,
-                "count": len(items),
-                "items": items,
-            })
-        total = sum(col["count"] for col in columnas)
-        return jsonify({"ok": True, "total": total, "columnas": columnas})
-    except Exception as e:
-        log.error("marketing columnas fallo: %s", traceback.format_exc())
-        return jsonify({"error": "Error interno"}), 500
-    finally:
-        pass
-
-
-@bp.route("/api/marketing/contenido/<int:cid>", methods=["PUT", "DELETE"])
-def mkt_contenido_detail(cid):
-    u, err, code = _auth()
-    if err:
-        return err, code
-    conn = _db()
-    c = conn.cursor()
-    try:
-        if request.method == "DELETE":
-            c.execute("DELETE FROM marketing_contenido WHERE id=?", (cid,))
-            conn.commit()
-            return jsonify({"ok": True})
-        d = request.get_json() or {}
-        campos = ["tipo", "plataforma", "fecha_publicacion", "fecha_programada",
-                  "estado", "caption", "url_publicacion", "sku_objetivo",
-                  "mensaje_principal", "likes", "comentarios", "shares",
-                  "guardados", "alcance", "impresiones", "clicks", "conversiones",
-                  "notas", "campana_id", "influencer_id"]
-        updates = {k: d[k] for k in campos if k in d}
-        # Normalizar estado legacy
-        if "estado" in updates and updates["estado"] in _LEGACY_ESTADO_MAP:
-            updates["estado"] = _LEGACY_ESTADO_MAP[updates["estado"]]
-        if not updates:
-            return jsonify({"error": "Nada que actualizar"}), 400
-        set_clause = ", ".join(f"{k}=?" for k in updates)
-        c.execute(f"UPDATE marketing_contenido SET {set_clause} WHERE id=?",
-                  list(updates.values()) + [cid])
-        conn.commit()
-        return jsonify({"ok": True})
-    finally:
-        pass
-
 # ──────────────────────────────────────────────────────────────────────────────
 # ANALYTICS
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3764,30 +3334,6 @@ def ghl_debug():
         except Exception as ex:
             results[label] = {"error": str(ex)}
     return jsonify({"key_preview": key[:12]+"..." if key else "VACÍA", "loc_id": loc, "tests": results})
-
-@bp.route("/api/marketing/connections")
-def mkt_connections():
-    u, err, code = _auth()
-    if err: return err, code
-    conn = _db()
-    try:
-        connected = {
-            "shopify":   bool(_cfg(conn, "shopify_token") and _cfg(conn, "shopify_shop")),
-            "ghl":       bool(_cfg(conn, "ghl_api_key")),
-            "instagram": bool(_cfg(conn, "instagram_token") and _cfg(conn, "instagram_user_id")),
-        }
-        last_sync = {}
-        tables = {"shopify": "animus_shopify_orders", "ghl": "animus_ghl_contacts", "instagram": "animus_instagram_posts"}
-        for plat, tbl in tables.items():
-            try:
-                row = conn.execute(f"SELECT MAX(synced_at) as ts FROM {tbl}").fetchone()
-                last_sync[plat] = row["ts"] if row else None
-            except Exception:
-                last_sync[plat] = None
-        return jsonify({"connected": connected, "last_sync": last_sync})
-    finally:
-        pass  # conexión cerrada automáticamente por teardown_appcontext
-
 @bp.route("/api/marketing/sync/<platform>", methods=["POST"])
 def mkt_sync(platform):
     u, err, code = _auth()
@@ -5144,6 +4690,34 @@ def mkt_pagos_influencers_list():
         rows = c.execute(sql, params).fetchall()
         pagos = [dict(r) for r in rows]
 
+        # ── Alertas anti doble-pago en los PENDIENTES ─────────────────────────
+        # Solo sobre los que todavia no se pagaron: sobre uno ya pagado la alerta no sirve para
+        # decidir nada, y calcularla para los 1000 del historico seria trabajo tirado.
+        # Cada pendiente trae `alertas` con el pago anterior concreto contra el que choco.
+        try:
+            for _p in pagos:
+                if str(_p.get('estado') or '') != 'Pendiente':
+                    continue
+                _p['alertas'] = alertas_pago_influencer(
+                    c,
+                    influencer_id=_p.get('influencer_id'),
+                    nombre=_p.get('influencer_nombre') or '',
+                    valor=_p.get('valor') or 0,
+                    fecha_publicacion=_p.get('fecha_publicacion') or '',
+                    entregable=_p.get('entregable') or '',
+                    excluir_pago_id=_p.get('id'),
+                )
+                # Sin fecha de publicacion no hay como verificar que el creador publico: es el
+                # caso en que se estaria pagando algo no entregado. Va como alerta propia.
+                if not str(_p.get('fecha_publicacion') or '').strip():
+                    _p.setdefault('alertas', []).insert(0, {
+                        'nivel': 'alto', 'codigo': 'SIN_FECHA_PUBLICACION',
+                        'mensaje': 'No tiene fecha de publicacion · no hay como verificar que se publico',
+                        'pago_previo': None})
+        except Exception as _ea:
+            # Nunca romper la lista de pagos por un aviso (M4: pero se loguea, no se traga mudo).
+            log.warning('alertas anti doble-pago no se pudieron calcular: %s', _ea)
+
         # FALLBACK CRÍTICO: si una OC se pagó (existe en pagos_oc) y la
         # categoría es Influencer/Marketing pero NO existe row en
         # pagos_influencers (sync falló), la traemos igual desde pagos_oc.
@@ -5322,11 +4896,36 @@ def mkt_solicitar_pago_influencer(iid):
         entregable = (d.get("entregable") or "").strip()
         if fecha_publicacion and not _re_atrib.match(r'^\d{4}-\d{2}-\d{2}$', fecha_publicacion):
             return jsonify({"error": "fecha_publicacion debe ser YYYY-MM-DD"}), 400
-        # La obligatoriedad se exige en el MODAL de Marketing (validación de cliente).
-        # El backend GUARDA lo que llegue sin bloquear: no queremos trabar un pago legítimo
-        # (adelanto, corrección) por un campo faltante. Si no vino fecha_publicacion, cae a
-        # fecha_contenido (que ya se resolvió a hoy si venía vacía) para no perder la referencia.
-        if not fecha_publicacion:
+        # OBLIGATORIOS desde el 27-jul (Sebastián: "que coloque fecha de publicación, qué tema
+        # publicó... necesito trazabilidad de lo que estoy pagando").
+        #
+        # Antes solo los pedía el modal y el backend dejaba pasar vacío. Eso volvía imposible las
+        # dos cosas que el módulo existe para dar: saber POR QUÉ se pagó, y detectar que están
+        # cobrando dos veces el mismo contenido (la detección compara justamente fecha de
+        # publicación y tema · ver `alertas_pago_influencer`). Un pago sin esos dos datos no es
+        # un pago trazable, es una transferencia.
+        #
+        # La excepción legítima (un adelanto, una corrección) NO se bloquea: se declara con
+        # `sin_publicacion_motivo` y queda escrita en el concepto y en la auditoría. El control
+        # no desaparece, se vuelve explícito (M39).
+        _motivo_sin_pub = (d.get("sin_publicacion_motivo") or "").strip()
+        if not _motivo_sin_pub:
+            if not fecha_publicacion:
+                return jsonify({
+                    "error": "Falta la fecha de publicación",
+                    "codigo": "FALTA_FECHA_PUBLICACION",
+                    "hint": ("Sin ella no se puede verificar que el creador publicó, ni detectar "
+                             "que ya se pagó ese mismo contenido. Si es un adelanto o una "
+                             "corrección, mandá `sin_publicacion_motivo` explicando por qué."),
+                }), 400
+            if len(entregable) < 4:
+                return jsonify({
+                    "error": "Falta decir qué publicó",
+                    "codigo": "FALTA_ENTREGABLE",
+                    "hint": ("El tema del contenido es lo que permite ver después por qué se pagó "
+                             "y notar si están cobrando dos veces lo mismo."),
+                }), 400
+        elif not fecha_publicacion:
             fecha_publicacion = fecha_contenido
         from datetime import datetime as _dt_fc, timedelta as _td_fc
         if fecha_contenido:
@@ -5372,6 +4971,11 @@ def mkt_solicitar_pago_influencer(iid):
             numero = f"{prefix}{seq:04d}"
             if _guard > 100000:
                 break
+
+        # El motivo del adelanto viaja en el concepto: quien vea el pago después entiende por
+        # qué no tenía publicación, sin tener que buscar en la auditoría.
+        if _motivo_sin_pub:
+            entregable = (('[SIN PUBLICACIÓN: %s] ' % _motivo_sin_pub[:120]) + entregable).strip()
 
         # Build observaciones in standard beneficiary format
         obs_parts = [f"BENEFICIARIO: {inf['nombre']}"]

@@ -232,10 +232,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 <div class="tabs-bar">
   <!-- Sebastián 13-jul · quitados Hoy + CMO IA (no se usaban) · Inteligencia fusionada
        dentro de Dashboard (sub-nav). Dashboard = inicio. -->
-  <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">&#x1F4CA; Dashboard</button>
-  <button class="tab-btn" data-tab="campanas" onclick="switchTab('campanas')">&#x1F4E2; Campañas</button>
-  <button class="tab-btn" data-tab="influencers" onclick="switchTab('influencers')">&#x1F465; Influencers &amp; Pagos</button>
-  <button class="tab-btn" data-tab="contenido" onclick="switchTab('contenido')">&#x1F4C5; Contenido</button>
+  <button class="tab-btn active" data-tab="influencers" onclick="switchTab('influencers')">&#x1F465; Influencers &amp; Pagos</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -244,138 +241,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- TAB: HOY - Centro de ejecución (Fase 2/4 marketing)             -->
 
-<div id="tab-dashboard" class="tab-panel active">
-  <!-- Inteligencia fusionada (Sebastián 13-jul): sub-nav a las 4 secciones · el top-tab
-       Dashboard vuelve al panorama. -->
-  <!-- Sebastián 13-jul · quitado el sub-nav de Análisis (Estrategia/Agentes IA/Score de
-       creadores/Histórico inversión): innecesario + rasgo de IA. Dashboard = solo lo esencial. -->
-
-  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
-    <div>
-      <div class="page-title" style="margin-bottom:2px;">&#x1F4CA; Marketing · Dashboard</div>
-      <div class="page-sub" id="dash-fecha">Cargando...</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <div id="pill-shopify" class="platform-pill pill-off">🛍️ Shopify</div>
-      <div id="pill-ghl" class="platform-pill pill-off">📋 GHL</div>
-      <div id="pill-ig" class="platform-pill pill-off">📸 Instagram</div>
-      <button id="btn-sync-shopify" class="btn btn-outline btn-sm" onclick="syncPlatform('shopify')">↻ Shopify</button>
-      <button class="btn btn-outline btn-sm" style="color:var(--cx-warn-text);border-color:var(--cx-warn);font-size:10px;" onclick="syncPlatform('shopify',true)" title="Trae todo el historial">📥 Histórico</button>
-      <button id="btn-sync-ghl" class="btn btn-outline btn-sm" onclick="syncPlatform('ghl')">↻ GHL</button>
-      <button id="btn-sync-instagram" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ IG</button>
-      <button class="btn btn-outline btn-sm" style="border-color:#e1306c;color:#e1306c;" onclick="refreshIgToken()">🔑 Renovar token IG</button>
-      <span id="ig-token-status" style="font-size:10px;padding:2px 8px;border-radius:10px;display:none;"></span>
-      <span id="sync-status" style="font-size:11px;color:var(--cx-text-mute);"></span>
-    </div>
-  </div>
-
-  <!-- KPIs Shopify -->
-  <div style="font-size:11px;font-weight:700;color:#d4af37;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">🛍️ Shopify · Ventas reales</div>
-  <div id="sh-cobertura-banner" style="display:none;background:var(--cx-accent-dark);color:#fde68a;border-radius:8px;padding:8px 14px;font-size:11px;margin-bottom:10px;"></div>
-<div class="kpi-grid" id="dash-shopify-kpis">
-    <div class="kpi-card yellow"><div class="kpi-label" id="sh-rev30-label">Revenue</div><div class="kpi-val" id="sh-rev30">-</div><div class="kpi-sub" id="sh-rev7">vs período ant.: -</div></div>
-    <div class="kpi-card blue"><div class="kpi-label" id="sh-ped30-label">Pedidos</div><div class="kpi-val" id="sh-ped30">-</div><div class="kpi-sub" id="sh-ped-total">Total: -</div></div>
-    <div class="kpi-card green"><div class="kpi-label">Ticket promedio</div><div class="kpi-val" id="sh-ticket">-</div><div class="kpi-sub" id="sh-clientes">Clientes: -</div></div>
-    <div class="kpi-card purple"><div class="kpi-label">Clientes nuevos 30d</div><div class="kpi-val" id="sh-nuevos">-</div><div class="kpi-sub" id="sh-recurrentes">Recurrentes: -</div></div>
-    <div class="kpi-card"><div class="kpi-label">Revenue total</div><div class="kpi-val" id="sh-rev-total" style="font-size:16px;">-</div><div class="kpi-sub">Histórico</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">Contactos GHL</div><div class="kpi-val" id="ghl-total">-</div><div class="kpi-sub" id="ghl-nuevos">Nuevos 30d: -</div></div>
-  </div>
-
-  <!-- AUDIT 26-may · Widget Meta del mes (#4 sprint marketing-superior) -->
-  <div style="font-size:11px;font-weight:700;color:var(--cx-success-text);text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;display:flex;align-items:center;gap:8px">
-    <span>🎯 Meta del mes</span>
-    <button class="btn btn-outline btn-sm" onclick="openMetaModal()" style="font-size:10px;padding:2px 8px">⚙ Editar meta</button>
-    <button class="btn btn-outline btn-sm" onclick="openCalendarioCosmeticoModal()" style="font-size:10px;padding:2px 8px">📅 Calendario cosmético</button>
-  </div>
-  <div id="dash-meta-progreso" style="background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:var(--cx-text-mute);font-size:12px">Cargando meta del mes…</div>
-
-  <!-- Sebastián 13-jul · quitado el widget "Sentiment de la comunidad (IA)" · rasgo de IA -->
-
-  <!-- Instagram KPIs -->
-  <div style="font-size:11px;font-weight:700;color:#e1306c;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">📸 Instagram · Engagement real</div>
-  <div class="kpi-grid" id="dash-ig-kpis">
-    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Posts 30d</div><div class="kpi-val" id="ig-posts30">-</div><div class="kpi-sub" id="ig-posts-total">Total: -</div></div>
-    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Likes 30d</div><div class="kpi-val" id="ig-likes30">-</div><div class="kpi-sub" id="ig-avg-likes">Promedio: -</div></div>
-    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Comentarios 30d</div><div class="kpi-val" id="ig-comments30">-</div><div class="kpi-sub">@animuslb</div></div>
-  </div>
-
-  <!-- Gráfica de ventas + Top SKUs -->
-  <div class="grid2" style="margin:20px 0;">
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">📈 Ventas mensuales Shopify</span></div>
-      <div class="card-body" id="dash-chart" style="min-height:160px;">Cargando...</div>
-    </div>
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">🏆 Top SKUs por revenue (30d)</span></div>
-      <div class="card-body" id="dash-top-skus">Cargando...</div>
-    </div>
-  </div>
-
-  <!-- Sebastián 13-jul · quitado "Campañas activas" del dashboard (ya está su tab) ·
-       ids ocultos para no romper loadDashboard. -->
-  <div style="display:none;"><div id="dash-kpis"></div><table><tbody id="dash-campanas"></tbody></table></div>
-  <div class="card" style="margin-bottom:20px;">
-    <div class="card-hdr"><span class="card-title">🌎 Top ciudades Shopify</span></div>
-    <div class="card-body" id="dash-ciudades">Cargando...</div>
-  </div>
-
-  <!-- Instagram token update form -->
-  <div id="ig-token-form" style="background:var(--cx-bg-alt);border:1px solid #e1306c44;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:none;">
-    <div style="font-size:11px;color:#e1306c;font-weight:700;margin-bottom:8px;">🔑 Token expirado - pega un nuevo token de Graph API Explorer</div>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <input id="ig-token-input" type="text" placeholder="EAANXh..." 
-        style="flex:1;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);padding:7px 10px;border-radius:6px;font-size:11px;font-family:monospace;">
-      <button onclick="saveIgToken()" class="btn btn-sm" style="background:#e1306c;color:#fff;border:none;white-space:nowrap;">Guardar y activar</button>
-      <button onclick="document.getElementById('ig-token-form').style.display='none'" class="btn btn-outline btn-sm">✕</button>
-    </div>
-    <div style="font-size:10px;color:var(--cx-text-mute);margin-top:6px;">
-      Ve a <a href="https://developers.facebook.com/tools/explorer" target="_blank" style="color:#6366f1;">Graph API Explorer</a> → selecciona "Inventario ÁNIMUS" → Generate Access Token → pega aquí
-    </div>
-  </div>
-
-  <!-- Sebastián 13-jul · quitados del dashboard: Top posts IG, Contenido reciente (ya está
-       su tab) y Presupuesto por canal · innecesarios. ids ocultos para no romper el JS. -->
-  <div style="display:none;" id="dash-ig-posts-section">
-    <div id="dash-ig-posts"></div>
-    <table><tbody id="dash-contenido"></tbody></table>
-    <div id="dash-canales"></div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: CAMPAÑAS -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<div id="tab-campanas" class="tab-panel">
-  <div class="actions-bar">
-    <div>
-      <div class="page-title">&#x1F4E2; Campañas</div>
-    </div>
-    <div style="display:flex;gap:10px;">
-      <select id="camp-filtro-estado" onchange="loadCampanas()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:7px 12px;color:var(--cx-text);font-size:13px;">
-        <option value="">Todos los estados</option>
-        <option value="Planificada">Planificada</option>
-        <option value="Activa">Activa</option>
-        <option value="Pausada">Pausada</option>
-        <option value="Finalizada">Finalizada</option>
-      </select>
-      <button class="btn btn-primary" onclick="openCampanaModal()">+ Nueva Campaña</button>
-    </div>
-  </div>
-  <div id="camp-alert" style="display:none;"></div>
-  <div class="card">
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th class="mob-hide">#</th><th>Nombre</th><th class="mob-hide">Tipo</th><th class="mob-hide">Canal</th><th>Estado</th><th class="mob-hide">Presupuesto</th><th class="mob-hide">Gastado</th><th>Ventas</th><th>ROI</th><th class="mob-hide">Infls</th><th>Acciones</th></tr></thead>
-        <tbody id="camp-body"><tr class="empty-row"><td colspan="11"><span class="spin"></span></td></tr></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: INFLUENCERS & PAGOS (fusionado) -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<div id="tab-influencers" class="tab-panel">
+<div id="tab-influencers" class="tab-panel active">
   <div class="actions-bar">
     <div>
       <div class="page-title">&#x1F465; Influencers &amp; Pagos</div>
@@ -553,426 +419,6 @@ window.addEventListener('unhandledrejection', function(ev) {
 .kanban-add-btn:hover{color:var(--cx-primary-text);border-color:var(--cx-primary);}
 </style>
 
-<div id="tab-contenido" class="tab-panel">
-  <div class="actions-bar">
-    <div>
-      <div class="page-title">&#x1F4C5; Calendario de Contenido</div>
-      <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px;">Pipeline visual del contenido - desde el brief hasta el performance medido.</div>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center;">
-      <button class="btn btn-outline btn-sm" onclick="loadContenido()" title="Refrescar">&#x21BB;</button>
-      <button class="btn btn-outline btn-sm" onclick="openABTestsModal()" title="A/B testing de creatividades" style="border-color:var(--cx-primary);color:var(--cx-primary-text)">&#x1F52C; A/B Tests</button>
-      <button class="btn btn-primary btn-sm" onclick="openContenidoModal()">+ Nueva pieza</button>
-    </div>
-  </div>
-  <div id="cont-alert" style="display:none;"></div>
-
-  <div class="kanban-wrap" id="kanban-wrap">
-    <div class="kanban-col" data-estado="Brief">
-      <div class="kanban-col-hdr"><span class="name">&#x1F4DD; Brief</span><span class="count" id="kb-c-Brief">0</span></div>
-      <div class="kanban-items" id="kb-Brief"></div>
-      <button class="kanban-add-btn" onclick="openContenidoModal('Brief')">+ Agregar</button>
-    </div>
-    <div class="kanban-col" data-estado="Produccion">
-      <div class="kanban-col-hdr"><span class="name">&#x1F3AC; Producción</span><span class="count" id="kb-c-Produccion">0</span></div>
-      <div class="kanban-items" id="kb-Produccion"></div>
-      <button class="kanban-add-btn" onclick="openContenidoModal('Produccion')">+ Agregar</button>
-    </div>
-    <div class="kanban-col" data-estado="Pendiente">
-      <div class="kanban-col-hdr"><span class="name">&#x23F0; Pendiente</span><span class="count" id="kb-c-Pendiente">0</span></div>
-      <div class="kanban-items" id="kb-Pendiente"></div>
-      <button class="kanban-add-btn" onclick="openContenidoModal('Pendiente')">+ Agregar</button>
-    </div>
-    <div class="kanban-col" data-estado="Publicado">
-      <div class="kanban-col-hdr"><span class="name">&#x2705; Publicado</span><span class="count" id="kb-c-Publicado">0</span></div>
-      <div class="kanban-items" id="kb-Publicado"></div>
-      <button class="kanban-add-btn" onclick="openContenidoModal('Publicado')">+ Agregar</button>
-    </div>
-    <div class="kanban-col" data-estado="Performance">
-      <div class="kanban-col-hdr"><span class="name">&#x1F4CA; Performance</span><span class="count" id="kb-c-Performance">0</span></div>
-      <div class="kanban-items" id="kb-Performance"></div>
-      <button class="kanban-add-btn" onclick="openContenidoModal('Performance')">+ Agregar</button>
-    </div>
-  </div>
-</div>
-
-<style>
-.intel-subnav{display:flex;gap:4px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap;}
-.intel-subnav button{flex:1;min-width:130px;padding:9px 16px;background:transparent;color:var(--cx-text-mute);border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
-.intel-subnav button:hover{color:var(--cx-text);background:var(--cx-card);}
-.intel-subnav button.intel-active{background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;}
-</style>
-
-<!-- Sub-tab dedicada para el resultado de Estrategia (agente master).
-     Persiste el último output para que el jefe pueda volver y accionar
-     sin tener que regenerar. Si nunca se generó, invita a generarlo. -->
-
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: ANALYTICS -->
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- MODALS - DEBEN VIVIR FUERA de cualquier tab-panel.               -->
-<!-- Bug previo: tab-analytics no cerraba antes de los modales, así    -->
-<!-- que cuando esa tab era display:none, todos los modales también.   -->
-<!-- El user veía: 'el botón editar solo abre el modal cuando estoy    -->
-<!-- en la pestaña Histórico de inversión'.                            -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-
-<!-- Modal: Historial Influencer -->
-<div class="modal-bg" id="modal-historial">
-  <div class="modal" style="max-width:680px;max-height:85vh;overflow-y:auto;">
-    <div class="modal-title" id="hist-title">Historial</div>
-    <button class="modal-close" onclick="closeModal('modal-historial')">&times;</button>
-    <div id="hist-content" style="margin-top:8px;"></div>
-  </div>
-</div>
-
-<!-- Modal: Nueva Campaña -->
-<div class="modal-bg" id="modal-campana">
-  <div class="modal">
-    <div class="modal-hdr">
-      <div class="modal-title" id="modal-campana-title">Nueva Campaña</div>
-      <button class="modal-close" onclick="closeModal('modal-campana')">&times;</button>
-    </div>
-    <input type="hidden" id="camp-edit-id">
-    <div class="form-row">
-      <div class="form-group"><label>Nombre *</label><input id="camp-nombre" placeholder="Ej: Lanzamiento Crema Vitamina C"></div>
-      <div class="form-group"><label>Tipo</label>
-        <select id="camp-tipo">
-          <option>Digital</option><option>Influencer</option><option>Email</option><option>OOH</option><option>Mixta</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Canal</label><input id="camp-canal" placeholder="Ej: Instagram, TikTok, Email..."></div>
-      <div class="form-group"><label>Estado</label>
-        <select id="camp-estado">
-          <option>Planificada</option><option>Activa</option><option>Pausada</option><option>Finalizada</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Fecha Inicio</label><input type="date" id="camp-inicio"></div>
-      <div class="form-group"><label>Fecha Fin</label><input type="date" id="camp-fin"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Presupuesto (COP)</label><input type="number" id="camp-presupuesto" placeholder="0"></div>
-      <div class="form-group"><label>SKU Objetivo</label><input id="camp-sku" placeholder="Ej: LBHA-30, NIAC-50"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Objetivo Unidades</label><input type="number" id="camp-obj-uds" placeholder="0"></div>
-      <div class="form-group"><label>Resultado Unidades</label><input type="number" id="camp-res-uds" placeholder="0"></div>
-    </div>
-    <div class="form-row full">
-      <div class="form-group"><label>Resultado Ventas (COP)</label><input type="number" id="camp-res-ventas" placeholder="0"></div>
-    </div>
-    <div class="form-row full">
-      <div class="form-group"><label>Notas</label><textarea id="camp-notas" placeholder="Observaciones..."></textarea></div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
-      <button class="btn btn-outline" onclick="closeModal('modal-campana')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveCampana()">Guardar</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Nuevo Influencer -->
-<div class="modal-bg" id="modal-influencer">
-  <div class="modal">
-    <div class="modal-hdr">
-      <div class="modal-title" id="modal-inf-title">Nuevo Influencer</div>
-      <button class="modal-close" onclick="closeModal('modal-influencer')">&times;</button>
-    </div>
-    <input type="hidden" id="inf-edit-id">
-    <div class="form-row">
-      <div class="form-group"><label>Nombre *</label><input id="inf-nombre" placeholder="Nombre completo"></div>
-      <div class="form-group"><label>Red Social</label>
-        <select id="inf-red">
-          <option>Instagram</option><option>TikTok</option><option>YouTube</option><option>Twitter</option><option>Otro</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>@Usuario</label><input id="inf-usuario" placeholder="@handle"></div>
-      <div class="form-group"><label>Seguidores</label><input type="number" id="inf-seguidores" placeholder="0"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Engagement Rate %</label><input type="number" step="0.1" id="inf-er" placeholder="0.0"></div>
-      <div class="form-group"><label>Nicho</label><input id="inf-nicho" placeholder="Skincare, Lifestyle..."></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Tarifa por post (COP)</label><input type="number" id="inf-tarifa" placeholder="0"></div>
-      <div class="form-group"><label>Estado</label>
-        <select id="inf-estado"><option>Activo</option><option>Inactivo</option><option>Bloqueado</option></select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Email <span style="color:var(--cx-danger-text);">*</span> <span style="font-weight:400;color:var(--cx-text-mute);font-size:11px;">· para enviarle la factura cuando se le pague</span></label><input type="email" id="inf-email" placeholder="correo@ejemplo.com"></div>
-      <div class="form-group"><label>Teléfono</label><input id="inf-tel" placeholder="+57..."></div>
-    </div>
-    <div class="form-row full">
-      <div class="form-group"><label>Notas</label><textarea id="inf-notas" placeholder="Observaciones..."></textarea></div>
-    </div>
-    <div style="border-top:1px solid var(--cx-border);margin:10px 0 6px;padding-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:var(--cx-primary-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏦 Datos Bancarios</div>
-      <div class="form-row">
-        <div class="form-group"><label>Banco</label><input id="inf-banco" placeholder="Bancolombia, Nequi, Daviplata..."></div>
-        <div class="form-group"><label>Tipo de cuenta</label>
-          <select id="inf-tipo-cta">
-            <option>Ahorros</option><option>Corriente</option><option>Nequi</option><option>Daviplata</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Número cuenta / Cel</label><input id="inf-cuenta" placeholder="3114902203 / 0123456789"></div>
-        <div class="form-group"><label>Cédula / NIT</label><input id="inf-cedula" placeholder="1234567890"></div>
-      </div>
-    </div>
-    <div style="border-top:1px solid var(--cx-border);margin:10px 0 6px;padding-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:var(--cx-warn-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">⏰ Ciclo de pago</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Frecuencia con la que se le paga</label>
-          <select id="inf-ciclo-pago" style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid var(--cx-border);border-radius:6px;padding:8px;width:100%;">
-            <option value="Mensual">Mensual (cada 30 días)</option>
-            <option value="Bimensual">Bimensual (cada 60 días)</option>
-            <option value="Trimestral">Trimestral (cada 90 días)</option>
-            <option value="Único">Único (no recurrente)</option>
-            <option value="Sin ciclo">Sin ciclo definido</option>
-          </select>
-          <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;">
-            Cuando se cumple el ciclo y no hay solicitud activa, el panel muestra <span style="color:#fde047;">⏰ Toca pagar</span>.
-          </div>
-        </div>
-      </div>
-    </div>
-    <div style="border-top:1px solid var(--cx-border);margin:10px 0 6px;padding-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:var(--cx-success-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🎟️ Atribución de ventas</div>
-      <div class="form-row full">
-        <div class="form-group">
-          <label>Discount code de Shopify</label>
-          <input id="inf-discount-code" placeholder="ANIMUS_LAURA10" style="text-transform:uppercase;font-family:monospace;">
-          <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;line-height:1.4;">
-            Cuando un cliente use este código en Shopify, la venta se atribuye automáticamente a este influencer.
-            Convención: <code style="background:var(--cx-bg-alt);padding:1px 6px;border-radius:4px;color:var(--cx-success-text);">ANIMUS_NOMBRE_PCT</code> (ej: ANIMUS_LAURA10).
-          </div>
-        </div>
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
-      <button class="btn btn-outline" onclick="closeModal('modal-influencer')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveInfluencer()">Guardar</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Solicitar Pago Influencer -->
-<!-- Modal · Gestionar pagos influencer (Jefferson · 27-may-2026 PM) -->
-<div class="modal-bg" id="modal-gestionar-pagos">
-  <div class="modal" style="max-width:780px;max-height:88vh;overflow-y:auto;">
-    <div class="modal-hdr">
-      <div class="modal-title">⚙ Gestionar pagos · <span id="gp-inf-nombre" style="color:var(--cx-primary-text);"></span></div>
-      <button class="modal-close" onclick="closeModal('modal-gestionar-pagos')">&times;</button>
-    </div>
-    <input type="hidden" id="gp-inf-id">
-    <div style="color:var(--cx-text-mute);font-size:12px;line-height:1.5;margin-bottom:12px;background:var(--cx-primary-soft);border:1px solid #4338ca;border-radius:8px;padding:10px 12px;">
-      💡 <b>Si un pago está mal</b> (ya se pagó pero aparece pendiente, o aparece pendiente uno que no aplica) podés corregirlo acá. Todo cambio queda registrado en audit_log con motivo (INVIMA · Habeas Data).
-    </div>
-    <div id="gp-tabla-container" style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <thead>
-          <tr style="background:var(--cx-bg-alt);color:var(--cx-text-mute);font-size:10px;text-transform:uppercase;letter-spacing:.4px;">
-            <th style="text-align:left;padding:8px;">Fecha</th>
-            <th style="text-align:left;padding:8px;">Estado</th>
-            <th style="text-align:right;padding:8px;">Valor</th>
-            <th style="text-align:left;padding:8px;">Concepto</th>
-            <th style="text-align:left;padding:8px;">OC</th>
-            <th style="text-align:center;padding:8px;">Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="gp-tbody"></tbody>
-      </table>
-    </div>
-    <div id="gp-alert" style="display:none;margin-top:10px;padding:10px;border-radius:6px;font-size:12px;"></div>
-    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;border-top:1px solid var(--cx-border);padding-top:12px;">
-      <button class="btn btn-outline" onclick="closeModal('modal-gestionar-pagos')">Cerrar</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-bg" id="modal-inf-pago">
-  <div class="modal" style="max-width:460px;">
-    <div class="modal-hdr">
-      <div class="modal-title">&#x1F4B8; Solicitar Pago</div>
-      <button class="modal-close" onclick="closeModal('modal-inf-pago')">&times;</button>
-    </div>
-    <input type="hidden" id="pago-inf-id">
-    <div style="margin-bottom:14px;">
-      <div style="font-size:13px;color:var(--cx-text-mute);margin-bottom:4px;">Influencer</div>
-      <div id="pago-inf-nombre" style="font-weight:700;font-size:15px;color:var(--cx-text);"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Valor a pagar (COP) *</label><input type="number" id="pago-valor" placeholder="0"></div>
-      <div class="form-group"><label>Concepto</label><input id="pago-concepto" placeholder="Post + Story / Reel..."></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>&#128226; Fecha de publicaci&oacute;n <span style="color:var(--cx-danger-text);">*</span></label>
-        <input type="date" id="pago-fecha-contenido" onchange="recalcularVencePagoInf()" title="Día real en que el creador publicó el contenido. La promesa de pago (30 días) se cuenta desde esta fecha.">
-      </div>
-      <div class="form-group">
-        <label>Vence pago (auto)</label>
-        <input id="pago-vence" disabled style="background:var(--cx-primary-soft);color:#c7d2fe;font-weight:700;" placeholder="-">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group" style="flex:1;"><label>&#128221; De qu&eacute; trat&oacute; el contenido <span style="color:var(--cx-danger-text);">*</span></label><input id="pago-entregable" placeholder="Ej: 1 Reel + 2 Stories del s&eacute;rum vitamina C"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group" style="flex:1;"><label>&#128279; Link al post (opcional)</label><input id="pago-link-post" placeholder="https://instagram.com/p/..."></div>
-    </div>
-    <div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:var(--cx-text-mute);">
-      <div style="font-weight:700;color:var(--cx-primary-text);margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
-      <div id="pago-banco-preview" style="line-height:1.8;"></div>
-    </div>
-    <!-- Linea explicativa: que pasa despues de crear la solicitud -->
-    <div style="background:var(--cx-primary-soft);border:1px solid #4338ca;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:11px;color:#c7d2fe;line-height:1.5;">
-      <b style="color:#a5b4fc;">📌 Qué pasa después:</b><br>
-      Esta solicitud va a <b>Sebastián</b> en /compras → tab Influencers para autorizar y pagar.
-      Recibirás <b>email automático</b> cuando se haga el pago. Catalina no participa en este flujo.
-    </div>
-    <div id="pago-inf-alert" style="display:none;margin-bottom:8px;"></div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
-      <button class="btn btn-outline" onclick="closeModal('modal-inf-pago')">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarPagoInf()">💸 Enviar a Sebastián</button>
-    </div>
-  </div>
-</div>
-
-
-<!-- Modal: Dar de Baja Influencer -->
-<div class="modal-bg" id="modal-dar-baja">
-  <div class="modal" style="max-width:420px;">
-    <div class="modal-hdr">
-      <div class="modal-title">&#x26D4; Dar de Baja Influencer</div>
-      <button class="modal-close" onclick="closeModal('modal-dar-baja')">&times;</button>
-    </div>
-    <input type="hidden" id="baja-inf-id">
-    <div style="margin-bottom:14px;">
-      <div style="font-size:13px;color:var(--cx-text-mute);margin-bottom:4px;">Influencer</div>
-      <div id="baja-inf-nombre" style="font-weight:700;font-size:15px;color:var(--cx-text);"></div>
-    </div>
-    <div class="form-group" style="margin-bottom:12px;">
-      <label>Motivo de baja *</label>
-      <select id="baja-motivo-tipo" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:8px;color:var(--cx-text);">
-        <option value="Pausa temporal">Pausa temporal</option>
-        <option value="No cumplió métricas">No cumplió métricas</option>
-        <option value="Conflicto de marca">Conflicto de marca</option>
-        <option value="Presupuesto">Presupuesto</option>
-        <option value="Solicitud del influencer">Solicitud del influencer</option>
-        <option value="Otro">Otro</option>
-      </select>
-    </div>
-    <div class="form-group" style="margin-bottom:12px;">
-      <label>Observación (opcional)</label>
-      <textarea id="baja-observacion" rows="3" placeholder="Detalles adicionales..." style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:8px;color:var(--cx-text);resize:vertical;"></textarea>
-    </div>
-    <div style="background:var(--cx-warn-pale);border:1px solid var(--cx-hairline);border-radius:8px;padding:10px;font-size:12px;color:var(--cx-warn-text);margin-bottom:12px;">
-      &#x26A0;&#xFE0F; El influencer quedará en estado <b>Baja</b> y visible en el historial. Podrá reactivarse en cualquier momento.
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
-      <button class="btn btn-outline" onclick="closeModal('modal-dar-baja')">Cancelar</button>
-      <button class="btn btn-danger" onclick="confirmarDarDeBaja()">Dar de Baja</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Nuevo Contenido -->
-<div class="modal-bg" id="modal-contenido">
-  <div class="modal">
-    <div class="modal-hdr">
-      <div class="modal-title" id="modal-cont-title">Nueva Pieza de Contenido</div>
-      <button class="modal-close" onclick="closeModal('modal-contenido')">&times;</button>
-    </div>
-    <input type="hidden" id="cont-edit-id">
-    <div class="form-row">
-      <div class="form-group"><label>Tipo</label>
-        <select id="cont-tipo"><option>Post</option><option>Story</option><option>Reel</option><option>Video</option><option>Email</option><option>Banner</option></select>
-      </div>
-      <div class="form-group"><label>Plataforma</label>
-        <select id="cont-plataforma"><option>Instagram</option><option>TikTok</option><option>YouTube</option><option>Email</option><option>Web</option><option>Otro</option></select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Campaña</label>
-        <select id="cont-campana-sel"><option value="">Sin campaña</option></select>
-      </div>
-      <div class="form-group"><label>Influencer</label>
-        <select id="cont-influencer-sel"><option value="">Sin influencer (interno)</option></select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Fecha programada</label><input type="date" id="cont-fecha-prog"></div>
-      <div class="form-group"><label>Fecha publicación real</label><input type="date" id="cont-fecha"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Estado (Kanban)</label>
-        <select id="cont-estado">
-          <option value="Brief">📝 Brief</option>
-          <option value="Produccion">🎬 Producción</option>
-          <option value="Pendiente">⏰ Pendiente publicación</option>
-          <option value="Publicado">✅ Publicado</option>
-          <option value="Performance">📊 Performance</option>
-        </select>
-      </div>
-      <div class="form-group"><label>SKU objetivo</label><input id="cont-sku" placeholder="Ej: LBHA-30" style="text-transform:uppercase;font-family:monospace;"></div>
-    </div>
-    <div class="form-row full">
-      <div class="form-group"><label>Mensaje principal (claim)</label><input id="cont-mensaje" placeholder="Lo que el creador debe transmitir en una frase"></div>
-    </div>
-    <div class="form-row full">
-      <div class="form-group"><label>URL Publicación (cuando ya se publicó)</label><input id="cont-url" placeholder="https://instagram.com/p/..."></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Likes</label><input type="number" id="cont-likes" value="0"></div>
-      <div class="form-group"><label>Comentarios</label><input type="number" id="cont-comentarios" value="0"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Alcance</label><input type="number" id="cont-alcance" value="0"></div>
-      <div class="form-group"><label>Conversiones</label><input type="number" id="cont-conversiones" value="0"></div>
-    </div>
-    <div class="form-row full">
-      <div class="form-group"><label>Caption / Descripción completa</label><textarea id="cont-caption"></textarea></div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
-      <button class="btn btn-outline" onclick="closeModal('modal-contenido')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveContenido()">Guardar</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Ver resultado agente -->
-<div class="modal-bg" id="modal-agente-result">
-  <div class="modal" style="max-width:700px;">
-    <div class="modal-hdr">
-      <div class="modal-title" id="modal-agent-title">Resultado</div>
-      <button class="modal-close" onclick="closeModal('modal-agente-result')">&times;</button>
-    </div>
-    <div id="modal-agent-content" style="font-size:13px;color:var(--cx-text);white-space:pre-wrap;max-height:500px;overflow-y:auto;background:var(--cx-bg-alt);border-radius:8px;padding:16px;font-family:'Segoe UI',sans-serif;"></div>
-  </div>
-</div>
-<!-- /MODALS -->
-
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: AGENCIA                                                   -->
-
-<!-- Tab "Agencia Ads" eliminado: no se usaba data HHA y se solapaba con
-     el agente master Estrategia (que sí cruza Shopify + IG + stock + calendar
-     + influencers). El skill genérico ads_skill.py se conserva en backend
-     por si se necesita en el futuro (reusable). -->
-
-
 <script>
 // ──────────────────────────────────────────────────────────────────────────────
 // UTILS
@@ -1029,11 +475,11 @@ function switchTab(name) {
 
 
 function loadTab(name) {
-  if(name==='dashboard') loadDashboard();
-  else if(name==='campanas') loadCampanas();
-  else if(name==='influencers') loadInfluencers();
+  // Marketing quedo SOLO para subir pagos (Sebastian 27-jul): se quitaron las pestanas
+  // Dashboard, Campanas y Contenido. Lo pesado era que abrir el modulo disparaba
+  // /api/marketing/dashboard (25 consultas) aunque nadie mirara esos numeros.
+  if(name==='influencers') loadInfluencers();
   else if(name==='pagos') loadPagosInfluencers();
-  else if(name==='contenido') loadContenido();
 }
 
 
@@ -1087,251 +533,7 @@ async function refreshIgToken() {
   }
 }
 
-async function loadDashboard() {
-  loadConnections();
-  loadMetaProgreso();  // AUDIT 26-may · widget meta del mes
-  let _dashResp;
-  try { _dashResp = await fetch('/api/marketing/dashboard'); }
-  catch(e) { showToast('Error red dashboard: '+e.message,'error'); return; }
-  if(!_dashResp.ok){
-    if(_dashResp.status===401){ location.reload(); return; }
-    showToast('Dashboard HTTP '+_dashResp.status,'error');
-    // Mostrar guardas en KPIs para no engañar al user
-    ['sh-rev30','sh-ped30','sh-ticket','sh-nuevos','sh-rev-total','ghl-total',
-     'ig-posts30','ig-likes30','ig-comments30'].forEach(id=>{
-      const el=document.getElementById(id); if(el){ el.textContent='?'; el.title='Error '+_dashResp.status; }
-    });
-    return;
-  }
-  const data = await _dashResp.json().catch(()=>null);
-  if(!data){ showToast('Dashboard: respuesta inválida','error'); return; }
-  const k = data.kpis || {};
-  const sh = data.shopify || {};
-  const ghl = data.ghl || {};
 
-  document.getElementById('dash-fecha').textContent = 'Actualizado: '+new Date().toLocaleString('es-CO');
-
-  // ── Shopify KPIs ──────────────────────────────────────────────────────────
-  const fmt2 = v => v==null?'-':String(v);
-  const fmtCOP = v => v==null?'-':'$'+Number(v).toLocaleString('es-CO');
-  // Cobertura real de datos Shopify
-  var shBanner = document.getElementById('sh-cobertura-banner');
-  if(sh.datos_desde){
-    var dias = sh.cobertura_dias || 0;
-    var lRev = dias < 25 ? 'Revenue ('+dias+'d)' : 'Revenue 30d';
-    var lPed = dias < 25 ? 'Pedidos ('+dias+'d)' : 'Pedidos 30d';
-    if(document.getElementById('sh-rev30-label')) document.getElementById('sh-rev30-label').textContent = lRev;
-    if(document.getElementById('sh-ped30-label')) document.getElementById('sh-ped30-label').textContent = lPed;
-    if(sh.cobertura_parcial && shBanner){
-      shBanner.style.display='block';
-      shBanner.innerHTML = '⚠️ Datos Shopify disponibles desde <strong>'+esc(sh.datos_desde||'')+'</strong> ('+esc(String(dias))+' días). '+'Usa <strong>Sync histórico</strong> para traer el historial completo.';
-    } else if(shBanner){ shBanner.style.display='none'; }
-  }
-  document.getElementById('sh-rev30').textContent    = fmtCOP(sh.revenue_30d);
-  document.getElementById('sh-rev7').textContent     = 'Últimos 7d: '+fmtCOP(sh.revenue_7d);
-  document.getElementById('sh-ped30').textContent    = fmt2(sh.pedidos_30d);
-  document.getElementById('sh-ped-total').textContent= 'Total: '+fmt2(sh.pedidos_total);
-  document.getElementById('sh-ticket').textContent   = fmtCOP(sh.ticket_promedio);
-  document.getElementById('sh-clientes').textContent = 'Clientes: '+fmt2(sh.clientes_total);
-  document.getElementById('sh-nuevos').textContent   = fmt2(sh.clientes_nuevos_30d);
-  document.getElementById('sh-recurrentes').textContent = 'Recurrentes: '+fmt2(sh.clientes_recurrentes_30d);
-  document.getElementById('sh-rev-total').textContent = fmtCOP(sh.revenue_total);
-  document.getElementById('ghl-total').textContent   = fmt2(ghl.contactos_total);
-  document.getElementById('ghl-nuevos').textContent  = 'Nuevos 30d: '+fmt2(ghl.contactos_nuevos_30d);
-
-  // ── Gráfica ventas mensuales (SVG bar chart) ──────────────────────────────
-  const mensual = sh.mensual || [];
-  const chartEl = document.getElementById('dash-chart');
-  if (!mensual.length) {
-    chartEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:32px;">Sin datos de ventas</div>';
-  } else {
-    const W=560, H=140, PAD_L=52, PAD_B=32, PAD_T=10, PAD_R=10;
-    const plotW = W-PAD_L-PAD_R;
-    const plotH = H-PAD_T-PAD_B;
-    const maxV = Math.max(...mensual.map(m=>m.total||0), 1);
-    const barW = Math.max(6, Math.floor(plotW/mensual.length)-4);
-    const scale = v => plotH - Math.round((v/maxV)*plotH);
-    const fmtK = v => v>=1000000 ? (v/1000000).toFixed(1)+'M' : v>=1000 ? Math.round(v/1000)+'k' : String(v);
-    const bars = mensual.map((m,i)=>{
-      const x = PAD_L + Math.round(i*(plotW/mensual.length)) + Math.round((plotW/mensual.length-barW)/2);
-      const y = PAD_T + scale(m.total||0);
-      const bH = plotH - scale(m.total||0);
-      const label = (m.mes||'').slice(5,7)+'/'+((m.mes||'').slice(2,4));
-      return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(2,bH)}" fill="#d4af37" rx="2" opacity="0.85"/>
-<text x="${x+barW/2}" y="${PAD_T+plotH+16}" text-anchor="middle" font-size="9" fill="#94a3b8">${label}</text>`;
-    }).join('\n');
-    // Y axis labels
-    const yLabels = [0,0.25,0.5,0.75,1].map(pct=>{
-      const val = Math.round(maxV*pct);
-      const y = PAD_T + plotH - Math.round(pct*plotH);
-      return `<line x1="${PAD_L-4}" y1="${y}" x2="${PAD_L+plotW}" y2="${y}" stroke="#1e293b" stroke-width="1"/>
-<text x="${PAD_L-6}" y="${y+3}" text-anchor="end" font-size="9" fill="#64748b">${fmtK(val)}</text>`;
-    }).join('\n');
-    chartEl.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;display:block;">
-${yLabels}
-${bars}
-</svg>`;
-  }
-
-  // ── Top SKUs ──────────────────────────────────────────────────────────────
-  const skuEl = document.getElementById('dash-top-skus');
-  const topSkus = sh.top_skus || [];
-  if (!topSkus.length) {
-    skuEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:32px;">Sin datos de SKUs</div>';
-  } else {
-    const maxSku = topSkus[0].total || 1;
-    skuEl.innerHTML = topSkus.map((s,i)=>`
-      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--cx-hairline);">
-        <span style="color:#d4af37;font-weight:700;min-width:18px;">#${i+1}</span>
-        <span style="flex:1;font-weight:600;font-size:12px;">${esc(s.sku||'-')}</span>
-        <div style="flex:2;">
-          <div style="background:var(--cx-card);border-radius:3px;height:6px;">
-            <div style="background:#d4af37;height:6px;border-radius:3px;width:${Math.round((s.total/maxSku)*100)}%;"></div>
-          </div>
-        </div>
-        <span style="color:var(--cx-success-text);font-size:11px;min-width:72px;text-align:right;">${fmtCOP(s.total)}</span>
-        <span style="color:var(--cx-text-mute);font-size:11px;min-width:36px;text-align:right;">${fmt2(s.uds)} uds</span>
-      </div>`).join('');
-  }
-
-  // ── Ciudades ──────────────────────────────────────────────────────────────
-  const ciudEl = document.getElementById('dash-ciudades');
-  const ciudades = sh.ciudades || [];
-  if (!ciudades.length) {
-    ciudEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:32px;">Sin datos de ciudades</div>';
-  } else {
-    const maxCiud = ciudades[0].pedidos || 1;
-    ciudEl.innerHTML = ciudades.map((c,i)=>`
-      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--cx-hairline);">
-        <span style="color:var(--cx-text-mute);min-width:18px;font-size:11px;">${i+1}</span>
-        <span style="flex:1;font-size:12px;">${esc(c.ciudad||'-')}</span>
-        <div style="flex:2;">
-          <div style="background:var(--cx-card);border-radius:3px;height:6px;">
-            <div style="background:#6366f1;height:6px;border-radius:3px;width:${Math.round((c.pedidos/maxCiud)*100)}%;"></div>
-          </div>
-        </div>
-        <span style="color:var(--cx-text-mute);font-size:11px;min-width:54px;text-align:right;">${fmt2(c.pedidos)} pedidos</span>
-      </div>`).join('');
-  }
-
-  // ── Campañas activas ──────────────────────────────────────────────────────
-  const cBody = document.getElementById('dash-campanas');
-  if (!data.campanas_activas || !data.campanas_activas.length) {
-    cBody.innerHTML = '<tr class="empty-row"><td colspan="5">Sin campañas</td></tr>';
-  } else {
-    cBody.innerHTML = data.campanas_activas.map(c=>`
-      <tr>
-        <td style="font-weight:700;">${esc(c.nombre)}</td>
-        <td><span class="badge badge-gray">${esc(c.canal||'-')}</span></td>
-        <td>${badgeEstadoCamp(c.estado)}</td>
-        <td>${fmtM(c.presupuesto)}</td>
-        <td style="color:var(--cx-success-text);">${fmtM(c.resultado_ventas)}</td>
-      </tr>`).join('');
-  }
-
-  // ── Contenido reciente ────────────────────────────────────────────────────
-  const coBody = document.getElementById('dash-contenido');
-  if (!data.contenido_reciente || !data.contenido_reciente.length) {
-    coBody.innerHTML = '<tr class="empty-row"><td colspan="4">Sin contenido</td></tr>';
-  } else {
-    coBody.innerHTML = data.contenido_reciente.map(c=>`
-      <tr><td>${esc(c.tipo)}</td><td>${esc(c.plataforma)}</td><td>${badgeEstadoCont(c.estado)}</td><td>${fmt(c.alcance)}</td></tr>`).join('');
-  }
-
-  // ── Instagram KPIs ───────────────────────────────────────────────────────
-  const ig = data.instagram || {};
-  document.getElementById('ig-posts30').textContent    = fmt2(ig.posts_30d);
-  document.getElementById('ig-posts-total').textContent = 'Total: '+fmt2(ig.total_posts);
-  document.getElementById('ig-likes30').textContent    = fmt2(ig.likes_30d);
-  document.getElementById('ig-avg-likes').textContent  = 'Promedio: '+fmt2(ig.avg_likes)+' ♥/post';
-  document.getElementById('ig-comments30').textContent = fmt2(ig.comentarios_30d);
-
-  // ── Instagram Top Posts ───────────────────────────────────────────────────
-  const igEl = document.getElementById('dash-ig-posts');
-  const topPosts = ig.top_posts || [];
-  // ── Token status badge ───────────────────────────────────────────────────
-  const igStatusEl = document.getElementById('ig-token-status');
-  if (igStatusEl && ig.configurado) {
-    const daysLeft = ig.token_days_left || 0;
-    const expired  = ig.token_expired;
-    const refreshed = ig.token_refreshed;
-    const nearExp  = ig.token_near_expiry;
-    if (expired) {
-      igStatusEl.style.display = '';
-      igStatusEl.style.background = '#7f1d1d';
-      igStatusEl.style.color = '#fca5a5';
-      igStatusEl.textContent = '⚠️ Token expirado - renovar manualmente';
-    } else if (refreshed) {
-      igStatusEl.style.display = '';
-      igStatusEl.style.background = '#14532d';
-      igStatusEl.style.color = '#86efac';
-      igStatusEl.textContent = '🔄 Token renovado automáticamente (' + daysLeft + 'd)';
-    } else if (nearExp) {
-      igStatusEl.style.display = '';
-      igStatusEl.style.background = '#78350f';
-      igStatusEl.style.color = '#fde68a';
-      igStatusEl.textContent = '⚠️ Token vence en ' + daysLeft + ' días';
-    } else if (daysLeft > 0) {
-      igStatusEl.style.display = '';
-      igStatusEl.style.background = '#0f2d1a';
-      igStatusEl.style.color = '#4ade80';
-      igStatusEl.textContent = '🔑 Token válido - ' + daysLeft + 'd restantes';
-    } else {
-      igStatusEl.style.display = 'none';
-    }
-    // Si se auto-renovó silenciosamente, notificar una vez
-    if (refreshed && !window._igRefreshToastShown) {
-      window._igRefreshToastShown = true;
-      showToast('🔄 Token de Instagram renovado automáticamente por 60 días', 'success');
-    }
-  }
-
-  if (!ig.configurado) {
-    igEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">⚠️ Instagram no configurado - agrega INSTAGRAM_TOKEN en Render</div>';
-  } else if (!topPosts.length) {
-    igEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">Sin posts - haz clic en ↻ IG para sincronizar</div>';
-  } else {
-    igEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:12px;">' +
-      topPosts.map(p => {
-        const eng = (p.likes||0) + (p.comentarios||0)*3;
-        const desc = (p.descripcion||'').slice(0,80) + ((p.descripcion||'').length>80?'…':'');
-        const date = (p.publicado_en||'').slice(0,10);
-        const tipo = p.tipo||'IMAGE';
-        const icon = tipo==='VIDEO'?'🎬':tipo==='CAROUSEL_ALBUM'?'🗂️':'📸';
-        return `<div style="flex:1;min-width:200px;max-width:260px;background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:8px;padding:12px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-            <span style="font-size:11px;color:var(--cx-text-mute);">${icon} ${tipo}</span>
-            <span style="font-size:10px;color:var(--cx-text-mute);">${date}</span>
-          </div>
-          <div style="font-size:11px;color:var(--cx-text-soft);margin-bottom:8px;line-height:1.4;">${esc(desc||'(sin caption)')}</div>
-          <div style="display:flex;gap:12px;font-size:11px;">
-            <span style="color:#e1306c;">♥ ${p.likes||0}</span>
-            <span style="color:var(--cx-text-mute);">💬 ${p.comentarios||0}</span>
-            <span style="color:#d4af37;margin-left:auto;">eng ${eng}</span>
-          </div>
-          ${p.url_permalink?`<a href="${escUrl(p.url_permalink)}" target="_blank" rel="noopener noreferrer" style="display:block;margin-top:6px;font-size:10px;color:#6366f1;">Ver en IG →</a>`:''}
-        </div>`;
-      }).join('') +
-    '</div>';
-  }
-
-  // ── Por canal ─────────────────────────────────────────────────────────────
-  const chEl = document.getElementById('dash-canales');
-  if (!data.por_canal || !data.por_canal.length) {
-    chEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">Sin datos de campañas por canal</div>';
-  } else {
-    chEl.innerHTML = data.por_canal.map(ch=>`
-      <div style="padding:10px 0;border-bottom:1px solid var(--cx-hairline);">
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-weight:700;">${esc(ch.canal)}</span>
-          <span style="color:var(--cx-success-text);">${fmtM(ch.ventas_total)} ventas</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--cx-text-mute);">
-          <span>${ch.campanas} campaña${ch.campanas!=1?'s':''} · ${fmtM(ch.presupuesto_total)} invertido</span>
-        </div>
-      </div>`).join('');
-  }
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // CAMPAÑAS
@@ -1736,6 +938,75 @@ function infSubView(v){
   if(bc){ bc.style.color=(v==='creadores')?'#6d28d9':'var(--cx-text-mute)'; bc.style.borderBottomColor=(v==='creadores')?'#6d28d9':'transparent'; }
   if(v==='pagos') renderCentroPagos();
 }
+async function pagarDesdeMarketing(idx){
+  // Pagar SIN salir del modulo (Sebastian 27-jul: "asi no tengo que entrar alli").
+  //
+  // Llama al MISMO endpoint canonico que usa Compras (PATCH /api/ordenes-compra/<oc>/pagar).
+  // No se reimplementa el pago aca: seria una segunda via para mover plata, y las dos
+  // terminarian divergiendo (el espejo a egresos, el comprobante, la auditoria, el guard de
+  // sobre-pago). Esta pantalla decide; Compras sigue siendo quien ejecuta.
+  var p = (window._PAGOS_VISIBLES||[])[idx];
+  if(!p) return;
+  if(!p.numero_oc){ showToast('Este pago no tiene orden asociada · no se puede pagar desde aca','error'); return; }
+
+  // Si hay sospecha de cobro repetido, se pone DELANTE antes de dejar confirmar. Ese es el
+  // punto de todo esto: que no se pueda pagar de corrido por encima de una alerta.
+  var graves=(p.alertas||[]).filter(function(a){return a.nivel==='alto';});
+  if(graves.length){
+    var det=graves.map(function(a){
+      var pv=a.pago_previo;
+      return '• '+a.mensaje+(pv?('\n   anterior: '+fmtM(pv.valor||0)+' del '+(pv.fecha||'').slice(0,10)+(pv.entregable?' · '+pv.entregable:'')):'');
+    }).join('\n');
+    if(!confirm('OJO con este pago:\n\n'+det+'\n\n¿Pagar igual a '+(p.influencer_nombre||'')+' '+fmtM(p.valor||0)+'?')) return;
+  } else {
+    if(!confirm('Pagar '+fmtM(p.valor||0)+' a '+(p.influencer_nombre||'')+'?')) return;
+  }
+
+  // La referencia bancaria ancla el pago al movimiento real del banco: sin eso, despues no hay
+  // como cruzar lo que dice EOS con lo que salio de la cuenta.
+  var ref = prompt('Referencia de la transferencia (numero de transaccion del banco):','');
+  if(ref===null) return;
+  if(!String(ref).trim()){ showToast('La referencia es obligatoria para poder cruzar el pago con el banco','error'); return; }
+  var medio = prompt('Medio de pago:','Transferencia') || 'Transferencia';
+
+  try{
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(p.numero_oc)+'/pagar',
+      _fetchOpts('PATCH', {monto: p.valor||0, medio: medio,
+                           numero_transaccion: String(ref).trim(),
+                           observaciones: 'Pagado desde Marketing · '+(p.entregable||'')}));
+    var d = await r.json();
+    if(!r.ok || d.error){ showToast('No se pudo pagar: '+(d.error||('HTTP '+r.status)),'error'); return; }
+    showToast('Pagado '+fmtM(p.valor||0)+' a '+(p.influencer_nombre||''),'success');
+    loadPagosInfluencers();
+  }catch(e){ showToast('Error de red: '+e.message,'error'); }
+}
+
+function _pagoAlertas(p){
+  // Sin paso de aprobacion, estas alertas son LO UNICO que separa un pago legitimo de pagar dos
+  // veces el mismo contenido. Por eso cada una muestra el PAGO ANTERIOR concreto al lado: se
+  // decide comparando los dos de frente, no de memoria.
+  var A=(p.alertas||[]); if(!A.length) return '';
+  var C={alto:{bg:'var(--cx-danger-pale)',bd:'var(--cx-danger)',fg:'var(--cx-danger-text)',ic:'&#9888;'},
+         medio:{bg:'var(--cx-warn-pale)',bd:'var(--cx-warn)',fg:'var(--cx-warn-text)',ic:'&#9888;'},
+         info:{bg:'var(--cx-info-pale)',bd:'var(--cx-info)',fg:'var(--cx-info-text)',ic:'&#8505;'}};
+  return '<div style="flex-basis:100%;margin-top:8px;display:flex;flex-direction:column;gap:6px">'
+    + A.map(function(a){
+        var c=C[a.nivel]||C.info;
+        var prev=a.pago_previo;
+        var det = prev
+          ? '<div style="font-size:11px;opacity:.85;margin-top:3px">Pago anterior: <b>'
+            + fmtM(prev.valor||0) + '</b> del ' + _escHtml((prev.fecha||'').slice(0,10))
+            + (prev.fecha_publicacion ? ' &middot; public&oacute; ' + _escHtml(prev.fecha_publicacion.slice(0,10)) : '')
+            + (prev.entregable ? ' &middot; ' + _escHtml(prev.entregable) : '')
+            + (prev.numero_oc ? ' &middot; ' + _escHtml(prev.numero_oc) : '')
+            + '</div>'
+          : '';
+        return '<div style="background:'+c.bg+';border-left:3px solid '+c.bd+';color:'+c.fg
+          + ';border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600">'
+          + c.ic + ' ' + _escHtml(a.mensaje||'') + det + '</div>';
+      }).join('')
+    + '</div>';
+}
 function _pagoEstadoCat(p){
   var oc=(p.oc_estado||'').toLowerCase(), est=(p.estado||'').toLowerCase();
   if(est==='pagada'||oc==='pagada'||p.comprobante_id) return 'pagado';
@@ -1788,8 +1059,19 @@ function renderCentroPagos(){
   var _alertMail=_nSinMail>0
     ? '<div style="background:var(--cx-warn-pale);border:1px solid #fde68a;border-left:4px solid var(--cx-warn);border-radius:10px;padding:11px 16px;margin-bottom:14px;font-size:13px;color:var(--cx-warn-text);font-weight:600">⚠ '+_nSinMail+' creador'+(_nSinMail>1?'es':'')+' con pagos y <b>sin correo</b> · no recibirán la factura de pagado. Agregales el correo en <b>Creadores</b>.</div>'
     : '';
+  // Cuantos pendientes vienen con una alerta ALTA. Va arriba porque es lo que hay que mirar
+  // antes de despachar la cola, no algo que se descubra tarjeta por tarjeta.
+  var _nAlta=0;
+  pagos.forEach(function(p){ if((p.alertas||[]).some(function(a){return a.nivel==='alto';})) _nAlta++; });
+  var _alertDup=_nAlta>0
+    ? '<div style="background:var(--cx-danger-pale);border:1px solid #fca5a5;border-left:4px solid var(--cx-danger);border-radius:10px;padding:11px 16px;margin-bottom:14px;font-size:13px;color:var(--cx-danger-text);font-weight:700">&#9888; '+_nAlta+' pago'+(_nAlta>1?'s':'')+' con posible cobro repetido &middot; revisalos antes de pagar.</div>'
+    : '';
+  _alertMail = _alertDup + _alertMail;
   if(!list.length){ lst.innerHTML=_alertMail+'<div style="text-align:center;color:var(--cx-text-mute);padding:30px;">Sin pagos en este estado.</div>'; return; }
-  lst.innerHTML=_alertMail+list.slice(0,300).map(function(p){
+  // Las filas quedan accesibles por INDICE: el boton pasa el indice, no el id ni el nombre,
+  // asi no hay texto del usuario interpolado dentro del onclick (nada que escapar).
+  window._PAGOS_VISIBLES = list.slice(0,300);
+  lst.innerHTML=_alertMail+window._PAGOS_VISIBLES.map(function(p,_ix){
     var e=_pagoEstadoCat(p); var s=ST[e];
     var ent=(p.entregable||'').trim();
     var hi=ent.indexOf('http'); var link=''; if(hi>=0){ link=ent.slice(hi).split(' ')[0].split('·')[0].trim(); }
@@ -1806,6 +1088,10 @@ function renderCentroPagos(){
         +'<span style="display:inline-block;margin-top:3px;background:'+s.bg+';color:'+s.fg+';padding:3px 11px;border-radius:999px;font-size:11px;font-weight:700">'+s.emoji+' '+s.one+'</span>'
         +(p.numero_ce?' <div style="font-size:10px;color:var(--cx-success-text);font-family:monospace;margin-top:2px">'+_escHtml(p.numero_ce)+'</div>':'')
       +'</div>'
+      // El boton de pagar NO va aca: Marketing es el modulo de Jefferson y el pago lo decide el
+      // CEO desde Centro de Mando. Ademas el backend lo rechazaria (no esta en OC_AUTORIZA_USERS),
+      // asi que seria un boton que falla. Jefferson SI ve el estado de lo que pidio.
+      +_pagoAlertas(p)
     +'</div>';
   }).join('');
 }
@@ -3719,7 +3005,7 @@ let ADS_STATE = { platform: 'meta', action: 'audit', running: false };
 // ──────────────────────────────────────────────────────────────────────────────
 // INIT
 // ──────────────────────────────────────────────────────────────────────────────
-loadDashboard();
+loadInfluencers();   // el modulo abre directo en lo unico que se usa: pagos
 </script>
 
 <!-- Widget "Mi contraseña" removido 24-may-2026 · vive en /modulos y /hub -->

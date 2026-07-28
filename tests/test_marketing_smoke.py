@@ -230,46 +230,6 @@ def test_metas_inexistente_devuelve_null(app, db_clean):
     assert j["meta"] is None
 
 
-def test_metas_upsert_y_progreso(app, db_clean):
-    """POST upsert meta + GET meta-progreso devuelve avance/proyección."""
-    c = _login(app)
-    r1 = c.post("/api/marketing/metas",
-                 headers=csrf_headers(),
-                 json={"mes": "2030-06", "revenue_meta": 50_000_000,
-                        "pedidos_meta": 200, "clientes_nuevos_meta": 80})
-    assert r1.status_code == 200
-    assert r1.get_json().get("ok") is True
-    r2 = c.get("/api/marketing/meta-progreso?mes=2030-06")
-    assert r2.status_code == 200
-    j = r2.get_json()
-    assert j["meta"]["revenue"] == 50_000_000
-    assert j["avance"]["pedidos"] == 0  # mes futuro, sin órdenes
-    assert "proyeccion_fin_de_mes" in j
-
-
-def test_meta_progreso_mes_invalido(app, db_clean):
-    """Mes con formato inválido → 400."""
-    c = _login(app)
-    r = c.get("/api/marketing/meta-progreso?mes=mayo")
-    assert r.status_code == 400
-
-
-def test_kanban_devuelve_fuente_metricas(app, db_clean):
-    """AUDIT 26-may · cada item del kanban tiene flag ig_match + fuente_metricas.
-    Sin posts sincronizados todavía, todos deben tener fuente_metricas='manual'."""
-    c = _login(app)
-    r = c.get("/api/marketing/contenido/kanban")
-    assert r.status_code == 200
-    j = r.get_json()
-    assert j.get("ok") is True
-    for col in j.get("columnas", []):
-        for it in col.get("items", []):
-            assert "fuente_metricas" in it, "campo fuente_metricas obligatorio"
-            assert it["fuente_metricas"] in ("instagram_live", "manual")
-            assert "ig_match" in it, "campo ig_match obligatorio"
-            assert isinstance(it["ig_match"], bool)
-
-
 def test_marketing_kpis_hoy(app, db_clean):
     """Audit 25-may-2026 PM · pestaña Hoy mostraba KPIs siempre 0 porque el
     frontend leía keys que no existían en /api/marketing/dashboard. Este
@@ -380,42 +340,6 @@ def test_atribucion_influencers_endpoint(app, db_clean):
     assert m["unidades"] == 3
 
 
-def test_kanban_contenido_endpoint(app, db_clean):
-    """Endpoint kanban devuelve 5 columnas con la estructura correcta
-    aunque no haya contenido cargado."""
-    c = _login(app)
-    r = c.get("/api/marketing/contenido/kanban")
-    assert r.status_code == 200
-    j = r.get_json()
-    assert j.get("ok") is True
-    assert "columnas" in j
-    estados = [col["estado"] for col in j["columnas"]]
-    assert estados == ["Brief", "Produccion", "Pendiente", "Publicado", "Performance"]
-
-
-def test_kanban_legacy_estado_se_mapea(app, db_clean):
-    """Contenido viejo con estado='Borrador' debe aparecer en columna 'Brief'."""
-    import os
-    import sqlite3
-    db_path = os.environ["DB_PATH"]
-    conn = sqlite3.connect(db_path)
-    conn.execute("""INSERT INTO marketing_contenido
-        (tipo, estado, caption) VALUES ('Post', 'Borrador', 'Test legacy')""")
-    conn.execute("""INSERT INTO marketing_contenido
-        (tipo, estado, caption) VALUES ('Reel', 'Programado', 'Test programado')""")
-    conn.commit()
-    conn.close()
-
-    c = _login(app)
-    r = c.get("/api/marketing/contenido/kanban")
-    j = r.get_json()
-    cols = {col["estado"]: col for col in j["columnas"]}
-    # 'Borrador' legacy → Brief
-    assert any("Test legacy" in (it.get("caption") or "") for it in cols["Brief"]["items"])
-    # 'Programado' legacy → Pendiente
-    assert any("Test programado" in (it.get("caption") or "") for it in cols["Pendiente"]["items"])
-
-
 def test_marketing_modals_outside_tab_panels(app, db_clean):
     """Cada div .modal-bg debe vivir FUERA de cualquier .tab-panel.
 
@@ -505,3 +429,10 @@ def test_marketing_html_js_parses():
         import os as _os
         try: _os.unlink(tmp)
         except OSError: pass
+
+
+# ── Quitados el 27-jul ────────────────────────────────────────────────────────
+# Cubrian los endpoints de Meta del mes y Kanban de Contenido, que se BORRARON: Sebastian
+# ("no usa nada de eso, solo influencers para pagos") dejo Marketing como una sola pantalla de
+# pagos. No son tests rotos: probaban algo que ya no existe. Lo que SI se sigue probando abajo es
+# la costura que importa -> pedir pago crea SOL + OC y Compras la paga.
