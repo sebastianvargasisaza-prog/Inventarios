@@ -108,6 +108,10 @@ CORAZON=(
   # numeros tienen que significar lo mismo que en el centro de pagos, y el historico sin
   # influencer_id tiene que seguir contando (si no, subestima lo que se le lleva pagado).
   "tests/test_directorio_creadores.py"
+  # Un boton vivo no puede abrir un modal que ya no existe: al recortar Marketing borre los
+  # 8 modales y deje los botones, y "Solicitar pago" -- lo unico que ese modulo tiene que
+  # hacer -- quedo sin hacer nada. Ningun test lo cazo porque el endpoint estaba bien.
+  "tests/test_marketing_modales_vivos.py"
 )
 
 echo ""

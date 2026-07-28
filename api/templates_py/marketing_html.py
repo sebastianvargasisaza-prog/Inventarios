@@ -477,6 +477,241 @@ window.addEventListener('unhandledrejection', function(ev) {
 .kanban-add-btn:hover{color:var(--cx-primary-text);border-color:var(--cx-primary);}
 </style>
 
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     MODALES
+     RESTAURADOS 27-jul. Al reducir Marketing a pagos (f977be35) me llevé por
+     delante los 8 modales de la página, pero dejé vivos los botones que los
+     abren: "+ Nuevo Influencer", "Solicitar pago", "Dar de baja", "Gestionar
+     pagos" y el historial quedaron tirando `getElementById(...) es null` -- o
+     sea, botones que desde afuera "no hacen nada". Solicitar pago es JUSTO el
+     único flujo que Sebastián dijo que este módulo tiene que tener.
+     Vuelven los 5 que pertenecen a pagos y creadores; los de campañas,
+     contenido y agentes IA NO vuelven (esas features sí se retiraron).
+     ══════════════════════════════════════════════════════════════════════ -->
+<div class="modal-bg" id="modal-historial">
+  <div class="modal" style="max-width:680px;max-height:85vh;overflow-y:auto;">
+    <div class="modal-title" id="hist-title">Historial</div>
+    <button class="modal-close" onclick="closeModal('modal-historial')">&times;</button>
+    <div id="hist-content" style="margin-top:8px;"></div>
+  </div>
+</div>
+
+<!-- Modal: Nueva Campaña -->
+
+<div class="modal-bg" id="modal-influencer">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="modal-inf-title">Nuevo Influencer</div>
+      <button class="modal-close" onclick="closeModal('modal-influencer')">&times;</button>
+    </div>
+    <input type="hidden" id="inf-edit-id">
+    <div class="form-row">
+      <div class="form-group"><label>Nombre *</label><input id="inf-nombre" placeholder="Nombre completo"></div>
+      <div class="form-group"><label>Red Social</label>
+        <select id="inf-red">
+          <option>Instagram</option><option>TikTok</option><option>YouTube</option><option>Twitter</option><option>Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>@Usuario</label><input id="inf-usuario" placeholder="@handle"></div>
+      <div class="form-group"><label>Seguidores</label><input type="number" id="inf-seguidores" placeholder="0"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Engagement Rate %</label><input type="number" step="0.1" id="inf-er" placeholder="0.0"></div>
+      <div class="form-group"><label>Nicho</label><input id="inf-nicho" placeholder="Skincare, Lifestyle..."></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Tarifa por post (COP)</label><input type="number" id="inf-tarifa" placeholder="0"></div>
+      <div class="form-group"><label>Estado</label>
+        <select id="inf-estado"><option>Activo</option><option>Inactivo</option><option>Bloqueado</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Email <span style="color:var(--cx-danger-text);">*</span> <span style="font-weight:400;color:var(--cx-text-mute);font-size:11px;">· para enviarle la factura cuando se le pague</span></label><input type="email" id="inf-email" placeholder="correo@ejemplo.com"></div>
+      <div class="form-group"><label>Teléfono</label><input id="inf-tel" placeholder="+57..."></div>
+    </div>
+    <div class="form-row full">
+      <div class="form-group"><label>Notas</label><textarea id="inf-notas" placeholder="Observaciones..."></textarea></div>
+    </div>
+    <div style="border-top:1px solid var(--cx-border);margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--cx-primary-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏦 Datos Bancarios</div>
+      <div class="form-row">
+        <div class="form-group"><label>Banco</label><input id="inf-banco" placeholder="Bancolombia, Nequi, Daviplata..."></div>
+        <div class="form-group"><label>Tipo de cuenta</label>
+          <select id="inf-tipo-cta">
+            <option>Ahorros</option><option>Corriente</option><option>Nequi</option><option>Daviplata</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Número cuenta / Cel</label><input id="inf-cuenta" placeholder="3114902203 / 0123456789"></div>
+        <div class="form-group"><label>Cédula / NIT</label><input id="inf-cedula" placeholder="1234567890"></div>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--cx-border);margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--cx-warn-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">⏰ Ciclo de pago</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Frecuencia con la que se le paga</label>
+          <select id="inf-ciclo-pago" style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid var(--cx-border);border-radius:6px;padding:8px;width:100%;">
+            <option value="Mensual">Mensual (cada 30 días)</option>
+            <option value="Bimensual">Bimensual (cada 60 días)</option>
+            <option value="Trimestral">Trimestral (cada 90 días)</option>
+            <option value="Único">Único (no recurrente)</option>
+            <option value="Sin ciclo">Sin ciclo definido</option>
+          </select>
+          <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;">
+            Cuando se cumple el ciclo y no hay solicitud activa, el panel muestra <span style="color:#fde047;">⏰ Toca pagar</span>.
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--cx-border);margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--cx-success-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🎟️ Atribución de ventas</div>
+      <div class="form-row full">
+        <div class="form-group">
+          <label>Discount code de Shopify</label>
+          <input id="inf-discount-code" placeholder="ANIMUS_LAURA10" style="text-transform:uppercase;font-family:monospace;">
+          <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;line-height:1.4;">
+            Cuando un cliente use este código en Shopify, la venta se atribuye automáticamente a este influencer.
+            Convención: <code style="background:var(--cx-bg-alt);padding:1px 6px;border-radius:4px;color:var(--cx-success-text);">ANIMUS_NOMBRE_PCT</code> (ej: ANIMUS_LAURA10).
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-influencer')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveInfluencer()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Solicitar Pago Influencer -->
+<!-- Modal · Gestionar pagos influencer (Jefferson · 27-may-2026 PM) -->
+
+<div class="modal-bg" id="modal-gestionar-pagos">
+  <div class="modal" style="max-width:780px;max-height:88vh;overflow-y:auto;">
+    <div class="modal-hdr">
+      <div class="modal-title">⚙ Gestionar pagos · <span id="gp-inf-nombre" style="color:var(--cx-primary-text);"></span></div>
+      <button class="modal-close" onclick="closeModal('modal-gestionar-pagos')">&times;</button>
+    </div>
+    <input type="hidden" id="gp-inf-id">
+    <div style="color:var(--cx-text-mute);font-size:12px;line-height:1.5;margin-bottom:12px;background:var(--cx-primary-soft);border:1px solid #4338ca;border-radius:8px;padding:10px 12px;">
+      💡 <b>Si un pago está mal</b> (ya se pagó pero aparece pendiente, o aparece pendiente uno que no aplica) podés corregirlo acá. Todo cambio queda registrado en audit_log con motivo (INVIMA · Habeas Data).
+    </div>
+    <div id="gp-tabla-container" style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:var(--cx-bg-alt);color:var(--cx-text-mute);font-size:10px;text-transform:uppercase;letter-spacing:.4px;">
+            <th style="text-align:left;padding:8px;">Fecha</th>
+            <th style="text-align:left;padding:8px;">Estado</th>
+            <th style="text-align:right;padding:8px;">Valor</th>
+            <th style="text-align:left;padding:8px;">Concepto</th>
+            <th style="text-align:left;padding:8px;">OC</th>
+            <th style="text-align:center;padding:8px;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="gp-tbody"></tbody>
+      </table>
+    </div>
+    <div id="gp-alert" style="display:none;margin-top:10px;padding:10px;border-radius:6px;font-size:12px;"></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;border-top:1px solid var(--cx-border);padding-top:12px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-gestionar-pagos')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-inf-pago">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-hdr">
+      <div class="modal-title">&#x1F4B8; Solicitar Pago</div>
+      <button class="modal-close" onclick="closeModal('modal-inf-pago')">&times;</button>
+    </div>
+    <input type="hidden" id="pago-inf-id">
+    <div style="margin-bottom:14px;">
+      <div style="font-size:13px;color:var(--cx-text-mute);margin-bottom:4px;">Influencer</div>
+      <div id="pago-inf-nombre" style="font-weight:700;font-size:15px;color:var(--cx-text);"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Valor a pagar (COP) *</label><input type="number" id="pago-valor" placeholder="0"></div>
+      <div class="form-group"><label>Concepto</label><input id="pago-concepto" placeholder="Post + Story / Reel..."></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>&#128226; Fecha de publicaci&oacute;n <span style="color:var(--cx-danger-text);">*</span></label>
+        <input type="date" id="pago-fecha-contenido" onchange="recalcularVencePagoInf()" title="Día real en que el creador publicó el contenido. La promesa de pago (30 días) se cuenta desde esta fecha.">
+      </div>
+      <div class="form-group">
+        <label>Vence pago (auto)</label>
+        <input id="pago-vence" disabled style="background:var(--cx-primary-soft);color:#c7d2fe;font-weight:700;" placeholder="-">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label>&#128221; De qu&eacute; trat&oacute; el contenido <span style="color:var(--cx-danger-text);">*</span></label><input id="pago-entregable" placeholder="Ej: 1 Reel + 2 Stories del s&eacute;rum vitamina C"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label>&#128279; Link al post (opcional)</label><input id="pago-link-post" placeholder="https://instagram.com/p/..."></div>
+    </div>
+    <div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:var(--cx-text-mute);">
+      <div style="font-weight:700;color:var(--cx-primary-text);margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
+      <div id="pago-banco-preview" style="line-height:1.8;"></div>
+    </div>
+    <!-- Linea explicativa: que pasa despues de crear la solicitud -->
+    <div style="background:var(--cx-primary-soft);border:1px solid #4338ca;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:11px;color:#c7d2fe;line-height:1.5;">
+      <b style="color:#a5b4fc;">📌 Qué pasa después:</b><br>
+      Esta solicitud va a <b>Sebastián</b> en /compras → tab Influencers para autorizar y pagar.
+      Recibirás <b>email automático</b> cuando se haga el pago. Catalina no participa en este flujo.
+    </div>
+    <div id="pago-inf-alert" style="display:none;margin-bottom:8px;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-inf-pago')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarPagoInf()">💸 Enviar a Sebastián</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Modal: Dar de Baja Influencer -->
+
+<div class="modal-bg" id="modal-dar-baja">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-hdr">
+      <div class="modal-title">&#x26D4; Dar de Baja Influencer</div>
+      <button class="modal-close" onclick="closeModal('modal-dar-baja')">&times;</button>
+    </div>
+    <input type="hidden" id="baja-inf-id">
+    <div style="margin-bottom:14px;">
+      <div style="font-size:13px;color:var(--cx-text-mute);margin-bottom:4px;">Influencer</div>
+      <div id="baja-inf-nombre" style="font-weight:700;font-size:15px;color:var(--cx-text);"></div>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Motivo de baja *</label>
+      <select id="baja-motivo-tipo" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:8px;color:var(--cx-text);">
+        <option value="Pausa temporal">Pausa temporal</option>
+        <option value="No cumplió métricas">No cumplió métricas</option>
+        <option value="Conflicto de marca">Conflicto de marca</option>
+        <option value="Presupuesto">Presupuesto</option>
+        <option value="Solicitud del influencer">Solicitud del influencer</option>
+        <option value="Otro">Otro</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Observación (opcional)</label>
+      <textarea id="baja-observacion" rows="3" placeholder="Detalles adicionales..." style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:8px;color:var(--cx-text);resize:vertical;"></textarea>
+    </div>
+    <div style="background:var(--cx-warn-pale);border:1px solid var(--cx-hairline);border-radius:8px;padding:10px;font-size:12px;color:var(--cx-warn-text);margin-bottom:12px;">
+      &#x26A0;&#xFE0F; El influencer quedará en estado <b>Baja</b> y visible en el historial. Podrá reactivarse en cualquier momento.
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('modal-dar-baja')">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmarDarDeBaja()">Dar de Baja</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Nuevo Contenido -->
+
 <script>
 // ──────────────────────────────────────────────────────────────────────────────
 // UTILS
@@ -553,197 +788,16 @@ function _escHtml(s) {
 }
 
 
-// ──────────────────────────────────────────────────────────────────────────────
-// DASHBOARD
-// ──────────────────────────────────────────────────────────────────────────────
-async function saveIgToken() {
-  const token = document.getElementById('ig-token-input').value.trim();
-  if (!token || !token.startsWith('EAA')) { showToast('Token invalido', 'error'); return; }
-  try {
-    const r = await fetch('/api/marketing/ig-update-token', _fetchOpts('POST', {token}));
-    const d = await r.json();
-    if (d.ok) {
-      showToast('✅ Token guardado - sincronizando...', 'success');
-      document.getElementById('ig-token-form').style.display = 'none';
-      document.getElementById('ig-token-input').value = '';
-      setTimeout(() => syncPlatform('instagram'), 800);
-    } else {
-      showToast('❌ ' + (d.error||'Error'), 'error');
-    }
-  } catch(e) { showToast('❌ Error de conexion', 'error'); }
-}
-
-async function refreshIgToken() {
-  const btn = event.target;
-  btn.disabled = true; btn.textContent = '⏳ Renovando...';
-  try {
-    const r = await fetch('/api/marketing/ig-refresh', _fetchOpts('POST'));
-    const d = await r.json();
-    if (d.ok) {
-      showToast('✅ ' + d.msg, 'success');
-    } else {
-      showToast('❌ ' + (d.error||'Error al renovar'), 'error');
-    }
-  } catch(e) {
-    showToast('❌ Error de conexion', 'error');
-  } finally {
-    btn.disabled = false; btn.textContent = '🔑 Renovar token IG';
-  }
-}
 
 
 
-// ──────────────────────────────────────────────────────────────────────────────
-// CAMPAÑAS
-// ──────────────────────────────────────────────────────────────────────────────
-async function loadCampanas() {
-  const estado = document.getElementById('camp-filtro-estado').value;
-  const url = '/api/marketing/campanas'+(estado?'?estado='+estado:'');
-  const body = document.getElementById('camp-body');
-  let rows;
-  try {
-    const r = await fetch(url, {credentials:'same-origin'});
-    if(!r.ok){
-      body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:var(--cx-danger-text)">Error '+r.status+' cargando campañas</td></tr>';
-      return;
-    }
-    rows = await r.json();
-  } catch(e){
-    body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:var(--cx-danger-text)">Error red: '+esc(e.message)+'</td></tr>';
-    return;
-  }
-  if(!Array.isArray(rows)){
-    body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:var(--cx-danger-text)">Respuesta inválida: '+esc(JSON.stringify(rows).slice(0,200))+'</td></tr>';
-    return;
-  }
-  if(!rows.length) { body.innerHTML='<tr class="empty-row"><td colspan="11">Sin campañas. Crea la primera.</td></tr>'; return; }
-  // AUDIT 26-may · cache campañas para que generarCuponCampana lea discount_code actual
-  CAMPANAS_LIST = rows;
-  body.innerHTML = rows.map(r=>{
-    const roi = r.presupuesto_gastado>0 ? ((r.resultado_ventas-r.presupuesto_gastado)/r.presupuesto_gastado*100).toFixed(1) : null;
-    // Sebastián 25-may-2026 PM · audit P0 · XSS · escape de campos del backend
-    const cuponChip = r.discount_code
-      ? `<div style="margin-top:3px;font-size:10px"><span style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="Atribución activa">${esc(r.discount_code)}</span></div>`
-      : '';
-    return `<tr>
-      <td class="mob-hide" style="color:var(--cx-text-mute);">${esc(r.id)}</td>
-      <td style="font-weight:700;">${esc(r.nombre)}${cuponChip}</td>
-      <td class="mob-hide"><span class="badge badge-gray">${esc(r.tipo)}</span></td>
-      <td class="mob-hide">${esc(r.canal||'-')}</td>
-      <td>${badgeEstadoCamp(r.estado)}</td>
-      <td class="mob-hide">${fmtM(r.presupuesto)}</td>
-      <td class="mob-hide">${fmtM(r.presupuesto_gastado)}</td>
-      <td style="color:var(--cx-success-text);">${fmtM(r.resultado_ventas)}</td>
-      <td>${roiBadge(roi)}</td>
-      <td class="mob-hide"><span class="badge badge-purple">${esc(r.num_influencers)}</span></td>
-      <td>
-        <button class="btn btn-outline btn-sm" onclick="editCampana(${r.id})" title="Editar">✏️</button>
-        <button class="btn btn-outline btn-sm" onclick="generarCuponCampana(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cupón Shopify" style="border-color:var(--cx-primary);color:var(--cx-primary-text)">🎟️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteCampana(${r.id},'${String(r.nombre||'').replace(/[\\\\']/g,'\\\\$&')}')" title="Eliminar">🗑</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
+
 // AUDIT 26-may · cache global de campañas
 var CAMPANAS_LIST = [];
 
-function openCampanaModal(data) {
-  document.getElementById('camp-edit-id').value = '';
-  document.getElementById('modal-campana-title').textContent = 'Nueva Campaña';
-  ['nombre','canal','sku','notas'].forEach(f=>document.getElementById('camp-'+f).value='');
-  ['presupuesto','obj-uds','res-uds','res-ventas'].forEach(f=>document.getElementById('camp-'+f).value=0);
-  document.getElementById('camp-inicio').value='';
-  document.getElementById('camp-fin').value='';
-  document.getElementById('camp-tipo').value='Digital';
-  document.getElementById('camp-estado').value='Planificada';
-  document.getElementById('modal-campana').classList.add('open');
-}
 
-async function editCampana(id) {
-  let r;
-  try {
-    const resp = await fetch(`/api/marketing/campanas/${id}`, {credentials:'same-origin'});
-    if(!resp.ok){ showToast('Campaña HTTP '+resp.status,'error'); return; }
-    r = await resp.json();
-  } catch(e){ showToast('Error red editar campaña: '+e.message,'error'); return; }
-  if(!r || r.error){ showToast('Error: '+(r&&r.error||'sin respuesta'),'error'); return; }
-  document.getElementById('camp-edit-id').value = id;
-  document.getElementById('modal-campana-title').textContent = 'Editar Campaña';
-  document.getElementById('camp-nombre').value = r.nombre||'';
-  document.getElementById('camp-canal').value = r.canal||'';
-  document.getElementById('camp-sku').value = r.sku_objetivo||'';
-  document.getElementById('camp-notas').value = r.notas||'';
-  document.getElementById('camp-presupuesto').value = r.presupuesto||0;
-  document.getElementById('camp-obj-uds').value = r.objetivo_unidades||0;
-  document.getElementById('camp-res-uds').value = r.resultado_unidades||0;
-  document.getElementById('camp-res-ventas').value = r.resultado_ventas||0;
-  document.getElementById('camp-inicio').value = r.fecha_inicio||'';
-  document.getElementById('camp-fin').value = r.fecha_fin||'';
-  document.getElementById('camp-tipo').value = r.tipo||'Digital';
-  document.getElementById('camp-estado').value = r.estado||'Planificada';
-  document.getElementById('modal-campana').classList.add('open');
-}
 
-async function saveCampana() {
-  const id = document.getElementById('camp-edit-id').value;
-  const body = {
-    nombre: document.getElementById('camp-nombre').value.trim(),
-    tipo: document.getElementById('camp-tipo').value,
-    estado: document.getElementById('camp-estado').value,
-    canal: document.getElementById('camp-canal').value.trim(),
-    presupuesto: parseFloat(document.getElementById('camp-presupuesto').value)||0,
-    fecha_inicio: document.getElementById('camp-inicio').value||null,
-    fecha_fin: document.getElementById('camp-fin').value||null,
-    sku_objetivo: document.getElementById('camp-sku').value.trim(),
-    objetivo_unidades: parseInt(document.getElementById('camp-obj-uds').value)||0,
-    resultado_unidades: parseInt(document.getElementById('camp-res-uds').value)||0,
-    resultado_ventas: parseFloat(document.getElementById('camp-res-ventas').value)||0,
-    notas: document.getElementById('camp-notas').value.trim()
-  };
-  if(!body.nombre) { showAlert('camp-alert','El nombre es obligatorio','error'); return; }
-  // Validaciones cliente · audit 25-may PM
-  if(body.fecha_inicio && body.fecha_fin && body.fecha_inicio > body.fecha_fin){
-    if(!confirm('La fecha de inicio ('+body.fecha_inicio+') es posterior a la fecha fin ('+body.fecha_fin+'). ¿Continuar?')) return;
-  }
-  if(body.presupuesto < 0 || body.objetivo_unidades < 0 || body.resultado_unidades < 0 || body.resultado_ventas < 0){
-    showAlert('camp-alert','Los valores no pueden ser negativos','error'); return;
-  }
-  const url = id ? `/api/marketing/campanas/${id}` : '/api/marketing/campanas';
-  const method = id ? 'PUT' : 'POST';
-  let resp, data;
-  try {
-    resp = await fetch(url,{method, headers:_csrfHdr(), credentials:'same-origin', body:JSON.stringify(body)});
-    data = await resp.json().catch(()=>({error:'Respuesta no es JSON ('+resp.status+')'}));
-  } catch(e){
-    showAlert('camp-alert','Error red: '+e.message,'error'); return;
-  }
-  if(resp.ok && (data.ok || data.id)) {
-    closeModal('modal-campana');
-    const msg = id?'Campaña actualizada':'Campaña creada exitosamente';
-    showAlert('camp-alert', data.warning ? msg+' ⚠ '+data.warning : msg);
-    loadCampanas();
-  } else { showAlert('camp-alert', data.error||('Error HTTP '+resp.status),'error'); }
-}
 
-async function deleteCampana(id, nombre) {
-  if(!confirm(`¿Eliminar campaña "${nombre}"? Se borrarán todas las asignaciones y contenido relacionado.`)) return;
-  let resp, data;
-  try {
-    resp = await fetch(`/api/marketing/campanas/${id}`,_fetchOpts('DELETE'));
-    data = await resp.json().catch(()=>({error:'Respuesta no es JSON'}));
-  } catch(e){ showAlert('camp-alert','Error red: '+e.message,'error'); return; }
-  // 409 · backend pide confirmación porque hay gasto/ventas registradas
-  if(resp.status === 409 && (data.presupuesto_gastado>0 || data.resultado_ventas>0)){
-    const fmtN = v => '$'+Number(v||0).toLocaleString('es-CO');
-    if(!confirm(`⚠ Esta campaña tiene:\n  • Gastado: ${fmtN(data.presupuesto_gastado)}\n  • Ventas: ${fmtN(data.resultado_ventas)}\n\nBorrarla destruirá ese histórico financiero. ¿Confirmar?`)) return;
-    try {
-      resp = await fetch(`/api/marketing/campanas/${id}?force=1`,_fetchOpts('DELETE'));
-      data = await resp.json().catch(()=>({error:'Respuesta no es JSON'}));
-    } catch(e){ showAlert('camp-alert','Error red (force): '+e.message,'error'); return; }
-  }
-  if(resp.ok && data.ok) { showAlert('camp-alert','Campaña eliminada'); loadCampanas(); }
-  else showAlert('camp-alert',data.error||('Error HTTP '+resp.status),'error');
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // INFLUENCERS
@@ -929,61 +983,6 @@ async function loadPagosInfluencers() {
   }
 }
 
-function renderPagos() {
-  const body = document.getElementById('pag-body');
-  if (!body) return;
-  const q = (document.getElementById('pag-search')||{value:''}).value.toLowerCase();
-  const mes = (document.getElementById('pag-mes')||{value:''}).value;
-  const estado = (document.getElementById('pag-estado')||{value:''}).value;
-  const list = _PAGOS_INF_CACHE.filter(p => {
-    if (estado && p.estado !== estado) return false;
-    if (mes && (p.fecha||'').slice(0,7) !== mes) return false;
-    if (q) {
-      const hay = ((p.influencer_nombre||'')+(p.concepto||'')+(p.numero_oc||'')).toLowerCase();
-      if (hay.indexOf(q) < 0) return false;
-    }
-    return true;
-  });
-  if (!list.length) {
-    body.innerHTML = '<tr class="empty-row"><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin pagos para los filtros seleccionados.</td></tr>';
-    return;
-  }
-  body.innerHTML = list.map(p => {
-    const fecha = (p.fecha || '').slice(0,10);
-    const estadoBadge = p.estado === 'Pagada'
-      ? '<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x2713; Pagada</span>'
-      : '<span style="background:var(--cx-accent-dark);color:var(--cx-warn-text);padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x23F3; Pendiente</span>';
-    let comprobante = '<span style="color:var(--cx-text-faint);font-size:11px;">-</span>';
-    if (p.comprobante_id && p.numero_ce) {
-      comprobante = '<a href="/api/comprobantes-pago/'+p.comprobante_id+'/pdf" target="_blank" '
-        + 'style="color:#1F5F5B;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px;background:#f0fdfa;padding:3px 10px;border-radius:6px;font-size:12px;">'
-        + '&#x1F4C4; '+p.numero_ce+'</a>';
-    } else if (p.estado === 'Pagada') {
-      comprobante = '<span style="color:var(--cx-danger-text);font-size:11px;font-style:italic;" title="Pago hecho antes del feature de comprobantes">sin CE</span>';
-    }
-    // Botón regenerar siempre visible junto al comprobante (corrige PDFs viejos)
-    if (p.comprobante_id) {
-      comprobante += ' <button onclick="regenerarCE('+p.comprobante_id+',\''+(p.numero_ce||'')+'\')" '
-        + 'title="Re-generar PDF (corrige empresa, banco, monto)" '
-        + 'style="background:none;border:none;cursor:pointer;font-size:13px;padding:0 2px;opacity:0.55;" '
-        + '>&#x1F504;</button>';
-    }
-    const ocStr = p.numero_oc
-      ? '<span style="font-family:monospace;font-size:11px;color:var(--cx-text-mute);">'+p.numero_oc+'</span>'
-      : '-';
-    return '<tr>'
-      + '<td style="font-size:12px;color:var(--cx-text-soft);">'+fecha+'</td>'
-      + '<td style="font-weight:700;">'+(p.influencer_nombre||'-')
-        + (p.inf_email ? '<div style="font-size:11px;color:var(--cx-text-mute);font-weight:400;">'+p.inf_email+'</div>' : '')
-      + '</td>'
-      + '<td style="font-size:12px;color:var(--cx-text-mute);">'+(p.concepto||'-')+'</td>'
-      + '<td style="text-align:right;font-weight:700;color:#1F5F5B;">'+fmtM(p.valor||0)+'</td>'
-      + '<td>'+ocStr+'</td>'
-      + '<td>'+comprobante+'</td>'
-      + '<td>'+estadoBadge+'</td>'
-      + '</tr>';
-  }).join('');
-}
 
 // ─── Centro de pagos por estados (Sebastián 13-jul) ───────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2377,238 +2376,14 @@ function _mostrarPagoSolicitadoOk(d){
 }
 
 
-// ──────────────────────────────────────────────────────────────────────────────
-// CONTENIDO
-// ──────────────────────────────────────────────────────────────────────────────
-// ─── Kanban de Contenido ───────────────────────────────────────────────
-async function loadContenido() {
-  try {
-    const r = await fetch('/api/marketing/contenido/kanban');
-    const d = await r.json();
-    if (!d.ok) {
-      showAlert('cont-alert', 'Error: ' + (d.error||'desconocido'), 'error');
-      return;
-    }
-    const cols = d.columnas || [];
-    cols.forEach(col => {
-      const target = document.getElementById('kb-' + col.estado);
-      const counter = document.getElementById('kb-c-' + col.estado);
-      if (counter) counter.textContent = col.count;
-      if (!target) return;
-      if (!col.items.length) {
-        target.innerHTML = '<div class="kanban-empty">Sin contenido</div>';
-        return;
-      }
-      target.innerHTML = col.items.map(it => renderKanbanCard(it)).join('');
-    });
-  } catch (e) {
-    showAlert('cont-alert', 'Error de red: ' + e.message, 'error');
-  }
-}
 
-function renderKanbanCard(it) {
-  const sku = it.sku_objetivo ? `<div class="sku">${esc(it.sku_objetivo)}</div>` : '';
-  const titulo = it.mensaje_principal || it.caption || '(sin mensaje)';
-  const tituloShort = titulo.length > 90 ? titulo.slice(0,90)+'…' : titulo;
-  const meta = [];
-  if (it.tipo) meta.push(`<span>${esc(it.tipo)}</span>`);
-  if (it.plataforma && it.plataforma !== 'Instagram') meta.push(`<span>${esc(it.plataforma)}</span>`);
-  if (it.influencer_nombre) {
-    const code = it.influencer_code ? ` · <code style="color:var(--cx-success-text);">${esc(it.influencer_code)}</code>` : '';
-    meta.push(`<span>👤 ${esc(it.influencer_nombre)}${code}</span>`);
-  }
-  if (it.campana_nombre) meta.push(`<span>📢 ${esc(it.campana_nombre)}</span>`);
-  if (it.fecha_programada) meta.push(`<span>📅 ${esc(it.fecha_programada)}</span>`);
-  if (it.fecha_publicacion && it.estado === 'Publicado') meta.push(`<span>✅ ${esc(it.fecha_publicacion)}</span>`);
 
-  let perf = '';
-  if (it.estado === 'Performance' || it.estado === 'Publicado') {
-    const stats = [];
-    if (it.likes) stats.push(`❤️ <b>${fmt(it.likes)}</b>`);
-    if (it.comentarios) stats.push(`💬 <b>${fmt(it.comentarios)}</b>`);
-    if (it.alcance) stats.push(`👁 <b>${fmt(it.alcance)}</b>`);
-    if (it.impresiones) stats.push(`📊 <b>${fmt(it.impresiones)}</b>`);
-    if (it.guardados) stats.push(`🔖 <b>${fmt(it.guardados)}</b>`);
-    // AUDIT 26-may · marca de origen métricas · IG live = automático del Graph API
-    const fuenteBadge = it.ig_match
-      ? `<span style="background:var(--cx-info-pale);color:var(--cx-info-text);padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Métricas auto-sincronizadas desde Instagram Graph API${it.ig_synced_at?' · sync '+esc(it.ig_synced_at):''}">📡 IG LIVE</span>`
-      : (it.url_publicacion && it.estado === 'Publicado'
-          ? `<span style="background:#7c2d12;color:#fdba74;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Esta pieza tiene URL pero no hay match en posts IG sincronizados · refresca IG en Dashboard ↻">⚠ sin sync IG</span>`
-          : '');
-    if (stats.length || fuenteBadge) perf = `<div class="perf">${fuenteBadge}${stats.join(' · ')}</div>`;
-  }
 
-  let urlBtn = '';
-  if (it.url_publicacion) {
-    urlBtn = `<a href="${escUrl(it.url_publicacion)}" target="_blank" rel="noopener noreferrer" style="color:var(--cx-info-text);font-size:11px;text-decoration:none;margin-right:8px;" onclick="event.stopPropagation();">🔗 Ver post</a>`;
-  }
 
-  return `<div class="kanban-card" onclick="editContenido(${it.id})">
-    ${sku}
-    <div class="titulo">${esc(tituloShort)}</div>
-    <div class="meta">${meta.join('')}</div>
-    ${perf}
-    <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center;">
-      ${urlBtn}
-      <span style="margin-left:auto;">${kanbanMoveButtons(it)}</span>
-    </div>
-  </div>`;
-}
 
-function kanbanMoveButtons(it) {
-  const seq = ['Brief','Produccion','Pendiente','Publicado','Performance'];
-  const idx = seq.indexOf(it.estado_kanban || it.estado);
-  let html = '';
-  if (idx > 0) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx-1]}')" title="← ${seq[idx-1]}" style="background:none;border:none;color:var(--cx-text-mute);cursor:pointer;padding:2px 4px;font-size:13px;">←</button>`;
-  if (idx >= 0 && idx < seq.length-1) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx+1]}')" title="→ ${seq[idx+1]}" style="background:none;border:none;color:var(--cx-primary-text);cursor:pointer;padding:2px 4px;font-size:13px;">→</button>`;
-  return html;
-}
 
-async function moveContenido(id, nuevoEstado) {
-  try {
-    const r = await fetch(`/api/marketing/contenido/${id}`, _fetchOpts('PUT', {estado: nuevoEstado}));
-    const d = await r.json();
-    if (d.ok) {
-      loadContenido();
-    } else {
-      showAlert('cont-alert', 'Error: ' + (d.error||'no se pudo mover'), 'error');
-    }
-  } catch (e) {
-    showAlert('cont-alert', 'Error de red: ' + e.message, 'error');
-  }
-}
 
-async function openContenidoModal(estadoInicial) {
-  document.getElementById('cont-edit-id').value='';
-  document.getElementById('modal-cont-title').textContent='Nueva pieza de contenido';
-  ['url','caption','sku','mensaje'].forEach(f=>{const el=document.getElementById('cont-'+f);if(el)el.value='';});
-  ['likes','comentarios','alcance','conversiones'].forEach(f=>document.getElementById('cont-'+f).value=0);
-  document.getElementById('cont-fecha').value='';
-  const fp = document.getElementById('cont-fecha-prog'); if(fp) fp.value='';
-  document.getElementById('cont-tipo').value='Reel';
-  document.getElementById('cont-plataforma').value='Instagram';
-  document.getElementById('cont-estado').value = (typeof estadoInicial === 'string' ? estadoInicial : 'Brief');
-  await loadCampanasForSelect('cont-campana-sel');
-  await loadInfluencersForSelect('cont-influencer-sel');
-  document.getElementById('modal-contenido').classList.add('open');
-}
 
-async function editContenido(id) {
-  const r_ = await fetch('/api/marketing/contenido/kanban').then(r=>r.json());
-  let r = null;
-  for (const col of (r_.columnas||[])) {
-    const found = (col.items||[]).find(x=>x.id===id);
-    if (found) { r = found; break; }
-  }
-  if(!r) return;
-  document.getElementById('cont-edit-id').value=id;
-  document.getElementById('modal-cont-title').textContent='Editar contenido';
-  document.getElementById('cont-url').value=r.url_publicacion||'';
-  document.getElementById('cont-caption').value=r.caption||'';
-  const sku = document.getElementById('cont-sku'); if(sku) sku.value = r.sku_objetivo||'';
-  const mens = document.getElementById('cont-mensaje'); if(mens) mens.value = r.mensaje_principal||'';
-  const fp = document.getElementById('cont-fecha-prog'); if(fp) fp.value = r.fecha_programada||'';
-  document.getElementById('cont-likes').value=r.likes||0;
-  document.getElementById('cont-comentarios').value=r.comentarios||0;
-  document.getElementById('cont-alcance').value=r.alcance||0;
-  document.getElementById('cont-conversiones').value=r.conversiones||0;
-  document.getElementById('cont-fecha').value=r.fecha_publicacion||'';
-  document.getElementById('cont-tipo').value=r.tipo||'Reel';
-  document.getElementById('cont-plataforma').value=r.plataforma||'Instagram';
-  document.getElementById('cont-estado').value=(r.estado_kanban||r.estado||'Brief');
-  await loadCampanasForSelect('cont-campana-sel');
-  await loadInfluencersForSelect('cont-influencer-sel');
-  if(r.campana_id) document.getElementById('cont-campana-sel').value=r.campana_id;
-  if(r.influencer_id) document.getElementById('cont-influencer-sel').value=r.influencer_id;
-  document.getElementById('modal-contenido').classList.add('open');
-}
-
-async function saveContenido() {
-  const id = document.getElementById('cont-edit-id').value;
-  const campSel = document.getElementById('cont-campana-sel').value;
-  const infSel = document.getElementById('cont-influencer-sel').value;
-  const body = {
-    tipo: document.getElementById('cont-tipo').value,
-    plataforma: document.getElementById('cont-plataforma').value,
-    campana_id: campSel ? parseInt(campSel) : null,
-    influencer_id: infSel ? parseInt(infSel) : null,
-    fecha_publicacion: document.getElementById('cont-fecha').value||null,
-    fecha_programada: (document.getElementById('cont-fecha-prog')||{value:''}).value||'',
-    estado: document.getElementById('cont-estado').value,
-    sku_objetivo: ((document.getElementById('cont-sku')||{value:''}).value||'').trim().toUpperCase(),
-    mensaje_principal: ((document.getElementById('cont-mensaje')||{value:''}).value||'').trim(),
-    url_publicacion: document.getElementById('cont-url').value.trim(),
-    caption: document.getElementById('cont-caption').value.trim(),
-    likes: parseInt(document.getElementById('cont-likes').value)||0,
-    comentarios: parseInt(document.getElementById('cont-comentarios').value)||0,
-    alcance: parseInt(document.getElementById('cont-alcance').value)||0,
-    conversiones: parseInt(document.getElementById('cont-conversiones').value)||0,
-  };
-  // Validación cliente · URL no puede ser javascript:/data:
-  if(body.url_publicacion){
-    const lo = body.url_publicacion.toLowerCase();
-    if(lo.startsWith('javascript:') || lo.startsWith('data:') || lo.startsWith('vbscript:')){
-      showAlert('cont-alert','URL inválida','error'); return;
-    }
-  }
-  const url = id ? `/api/marketing/contenido/${id}` : '/api/marketing/contenido';
-  const method = id?'PUT':'POST';
-  // Fix audit 25-may: usar _csrfHdr() consistente con campañas e influencers
-  let resp, data;
-  try {
-    resp = await fetch(url,{method, headers:_csrfHdr(), credentials:'same-origin', body:JSON.stringify(body)});
-    data = await resp.json().catch(()=>({error:'Respuesta no es JSON ('+resp.status+')'}));
-  } catch(e){
-    showAlert('cont-alert','Error red: '+e.message,'error'); return;
-  }
-  if(resp.ok && (data.ok||data.id)) { closeModal('modal-contenido'); showAlert('cont-alert',id?'Contenido actualizado':'Contenido registrado'); loadContenido(); }
-  else showAlert('cont-alert',data.error||('Error HTTP '+resp.status),'error');
-}
-
-async function deleteContenido(id) {
-  if(!confirm('¿Eliminar esta pieza de contenido?')) return;
-  let resp, data;
-  try {
-    resp = await fetch(`/api/marketing/contenido/${id}`,_fetchOpts('DELETE'));
-    data = await resp.json().catch(()=>({error:'Respuesta no es JSON ('+resp.status+')'}));
-  } catch(e){
-    showAlert('cont-alert','Error red: '+e.message,'error'); return;
-  }
-  if(resp.ok && data.ok) { showAlert('cont-alert','Contenido eliminado'); loadContenido(); }
-  else showAlert('cont-alert', data.error||('Error HTTP '+resp.status), 'error');
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// HELPERS - SELECT POPULATES
-// ──────────────────────────────────────────────────────────────────────────────
-async function loadCampanasForSelect(selId='brief-campana-sel') {
-  let camps = [];
-  try {
-    const r = await fetch('/api/marketing/campanas', {credentials:'same-origin'});
-    if(r.ok) camps = await r.json();
-  } catch(_){}
-  if(!Array.isArray(camps)) camps = [];
-  const sel = document.getElementById(selId);
-  if(!sel) return;
-  const current = sel.value;
-  sel.innerHTML = '<option value="">Sin campaña</option>' +
-    camps.map(c=>`<option value="${parseInt(c.id)||0}">${esc(c.nombre||'')}</option>`).join('');
-  if(current) sel.value=current;
-}
-async function loadInfluencersForSelect(selId) {
-  let infs = [];
-  try {
-    const r = await fetch('/api/marketing/influencers', {credentials:'same-origin'});
-    if(r.ok) infs = await r.json();
-  } catch(_){}
-  if(!Array.isArray(infs)) infs = [];
-  const sel = document.getElementById(selId);
-  if(!sel) return;
-  const current = sel.value;
-  sel.innerHTML = '<option value="">Sin influencer (interno)</option>' +
-    infs.map(i=>`<option value="${parseInt(i.id)||0}">${esc(i.nombre||'')} (${esc(i.red_social||'')})</option>`).join('');
-  if(current) sel.value=current;
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // AGENTES IA
@@ -2622,456 +2397,26 @@ const AGENT_LABELS = {
   estrategia: 'Generar estrategia del mes'
 };
 
-async function syncPlatform(platform, full) {
-  const btn = document.getElementById('btn-sync-'+platform);
-  const status = document.getElementById('sync-status');
-  btn.disabled = true; btn.textContent = 'Sincronizando...';
-  status.textContent = '';
-  try {
-    const resp = await fetch(`/api/marketing/sync/${platform}${full?'?full=1':''}`, _fetchOpts('POST'));
-    const data = await resp.json();
-    if(data.ok) {
-      status.style.color = '#34d399';
-      status.textContent = `✓ ${platform}: ${data.synced} registros sincronizados`;
-      loadConnections();
-      setTimeout(loadDashboard, 600);
-    } else {
-      status.style.color = '#f87171';
-      let errMsg = data.error || 'Error al sincronizar';
-      let det = data.detalle || '';
-      // Detectar token Meta expirado (code 190) y mostrar mensaje claro
-      if(det.includes('190') || det.includes('Session has expired') || det.includes('OAuthException')){
-        errMsg = '🔑 Token de Instagram expirado - genera uno nuevo en developers.facebook.com/tools/explorer y pégalo abajo';
-        det = '';
-      } else if(det.includes('400') || det.includes('401')){
-        errMsg = '🔑 Error de autenticación Meta - token inválido';
-        det = '';
-      } else if(det.length > 120){
-        det = ' → ' + det.slice(0,120) + '...';
-      } else if(det){
-        det = ' → ' + det;
-      }
-      status.textContent = errMsg + det;
-      // Si falla Instagram por auth, mostrar formulario de token
-      if (platform === 'instagram') {
-        document.getElementById('ig-token-form').style.display = 'block';
-      }
-    }
-  } catch(e) {
-    status.style.color = '#f87171';
-    let msg = e.message || 'Error desconocido';
-    if(msg.includes('<!DOCTYPE') || msg.includes('JSON')){
-      msg = 'La sesión expiró - recarga la página (F5)';
-    }
-    status.textContent = '⚠️ ' + msg;
-  } finally {
-    btn.disabled = false; btn.textContent = '↻ Sync ' + (platform==='instagram'?'IG':platform.charAt(0).toUpperCase()+platform.slice(1));
-  }
-}
 
-async function loadConnections() {
-  try {
-    const data = await fetch('/api/marketing/connections').then(r=>r.json());
-    const conn = data.connected || {};
-    [['shopify','shopify'],['ghl','ghl'],['instagram','ig']].forEach(([k,pid])=>{
-      const el = document.getElementById('pill-'+pid);
-      if(!el) return;
-      el.className = 'platform-pill ' + (conn[k] ? 'pill-'+pid : 'pill-off');
-    });
-  } catch(e) {}
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // AUDIT 26-may · Meta del mes + Calendario cosmético (sprint #4)
 // ═══════════════════════════════════════════════════════════════════════
 
-function _mesActual(){ return new Date().toISOString().substr(0,7); }
-
-function _fmtPctBar(pct, color){
-  if(pct == null) return '<span style="color:var(--cx-text-mute)">sin meta</span>';
-  const cap = Math.min(pct, 100);
-  const col = pct >= 100 ? '#10b981' : pct >= 70 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444';
-  return `<div style="display:flex;align-items:center;gap:8px">
-    <div style="flex:1;background:var(--cx-card);border-radius:4px;height:8px;overflow:hidden;min-width:60px">
-      <div style="background:${col};height:100%;width:${cap}%;transition:width .3s"></div>
-    </div>
-    <span style="color:${col};font-weight:700;font-size:11px;min-width:46px;text-align:right">${pct}%</span>
-  </div>`;
-}
-
-// AUDIT 27-may · A/B testing UI
-async function openABTestsModal(){
-  let modalEl = document.getElementById('modal-ab-tests');
-  if(!modalEl){
-    modalEl = document.createElement('div');
-    modalEl.id = 'modal-ab-tests';
-    modalEl.className = 'modal';
-    document.body.appendChild(modalEl);
-  }
-  modalEl.innerHTML = `<div class="modal-content" style="max-width:880px;max-height:88vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div class="modal-title">🔬 A/B Tests · creatividades</div>
-      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-ab-tests')">✕</button>
-    </div>
-    <p style="color:var(--cx-text-mute);font-size:12px;margin-bottom:14px">
-      Compará 2 piezas del Kanban para descubrir cuál convierte mejor. Score con métricas IG live (likes + comentarios×3 + alcance÷10).
-    </p>
-    <button class="btn btn-primary btn-sm" onclick="openABTestCrear()" style="margin-bottom:12px">+ Nuevo A/B test</button>
-    <div id="ab-tests-list" style="margin-top:8px">Cargando…</div>
-  </div>`;
-  modalEl.classList.add('open');
-  await loadABTests();
-}
-
-async function loadABTests(){
-  const list = document.getElementById('ab-tests-list');
-  if(!list) return;
-  try {
-    const r = await fetch('/api/marketing/ab-tests', {credentials:'same-origin'});
-    if(!r.ok){ list.innerHTML = '<div style="color:var(--cx-danger-text)">Error '+r.status+'</div>'; return; }
-    const d = await r.json();
-    const tests = d.tests || [];
-    if(!tests.length){
-      list.innerHTML = '<div style="color:var(--cx-text-mute);padding:14px;text-align:center;background:var(--cx-bg-alt);border-radius:8px">Sin tests · creá el primero arriba</div>';
-      return;
-    }
-    list.innerHTML = tests.map(t => {
-      const gan = t.ganadora;
-      const ganChip = gan === 'a'
-        ? `<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 A gana · ${t.ganadora_diff_pct}%</span>`
-        : gan === 'b'
-        ? `<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 B gana · ${t.ganadora_diff_pct}%</span>`
-        : gan === 'tie'
-        ? `<span style="background:#3f3f46;color:var(--cx-text-faint);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">⚖ Empate técnico</span>`
-        : gan === 'indeterminado'
-        ? `<span style="background:#7c2d12;color:#fdba74;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">❓ Sin data</span>`
-        : `<span style="background:var(--cx-info-pale);color:var(--cx-info-text);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🟡 Activo</span>`;
-      const aScore = (parseInt(t.a_likes)||0)+(parseInt(t.a_com)||0)*3+(parseInt(t.a_alc)||0)/10;
-      const bScore = (parseInt(t.b_likes)||0)+(parseInt(t.b_com)||0)*3+(parseInt(t.b_alc)||0)/10;
-      return `<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:10px;padding:14px;margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">
-          <div>
-            <div style="font-size:14px;font-weight:700;color:var(--cx-text)">${esc(t.nombre||'')}</div>
-            ${t.hipotesis?'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">'+esc(t.hipotesis)+'</div>':''}
-            <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px">Métrica: <b>${esc(t.metrica_objetivo||'engagement')}</b> · creado ${esc((t.fecha_creacion||'').slice(0,10))}</div>
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-            ${ganChip}
-            <button class="btn btn-outline btn-sm" onclick="calcularGanadorAB(${t.id})" style="font-size:10px;padding:2px 8px">🔄 Recalcular</button>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
-          <div style="background:${gan==='a'?'#064e3b':'#f1f5f9'};padding:10px;border-radius:8px;border:${gan==='a'?'2px solid #10b981':'1px solid #e7e5e4'}">
-            <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Pieza A · #${t.contenido_a_id}</div>
-            <div style="display:flex;gap:8px;font-size:11px;margin-top:4px"><span>❤️ ${parseInt(t.a_likes)||0}</span><span>💬 ${parseInt(t.a_com)||0}</span><span>👁 ${parseInt(t.a_alc)||0}</span></div>
-            <div style="font-size:11px;color:${gan==='a'?'#34d399':'#94a3b8'};margin-top:4px;font-weight:700">Score: ${Math.round(aScore)}</div>
-          </div>
-          <div style="background:${gan==='b'?'#064e3b':'#f1f5f9'};padding:10px;border-radius:8px;border:${gan==='b'?'2px solid #10b981':'1px solid #e7e5e4'}">
-            <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Pieza B · #${t.contenido_b_id}</div>
-            <div style="display:flex;gap:8px;font-size:11px;margin-top:4px"><span>❤️ ${parseInt(t.b_likes)||0}</span><span>💬 ${parseInt(t.b_com)||0}</span><span>👁 ${parseInt(t.b_alc)||0}</span></div>
-            <div style="font-size:11px;color:${gan==='b'?'#34d399':'#94a3b8'};margin-top:4px;font-weight:700">Score: ${Math.round(bScore)}</div>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-  } catch(e){ list.innerHTML = '<div style="color:var(--cx-danger-text)">Error: '+esc(e.message)+'</div>'; }
-}
-
-function openABTestCrear(){
-  // Modal compacto que pide los IDs y campos
-  const html = `
-    <div style="background:var(--cx-card);padding:14px;border-radius:8px;margin-top:12px">
-      <h4 style="font-size:13px;color:var(--cx-text);margin:0 0 10px">Crear nuevo A/B test</h4>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <input id="ab-nombre" placeholder="Nombre del test (ej. Reel rutina vs antes/después)" style="width:100%;padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
-        <input id="ab-hipotesis" placeholder="Hipótesis · qué esperás (opcional)" style="width:100%;padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-          <input id="ab-a-id" type="number" placeholder="ID pieza A" style="padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
-          <input id="ab-b-id" type="number" placeholder="ID pieza B" style="padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
-          <select id="ab-metrica" style="padding:8px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px">
-            <option value="engagement">Engagement</option>
-            <option value="alcance">Alcance</option>
-            <option value="conversiones">Conversiones</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
-          <button class="btn btn-primary btn-sm" onclick="saveABTest()">✓ Crear</button>
-          <span id="ab-crear-status" style="font-size:11px;color:var(--cx-success-text)"></span>
-        </div>
-        <div style="font-size:10px;color:var(--cx-text-mute);margin-top:6px">
-          💡 Los IDs de las piezas los ves en la URL al hacer click en una card del Kanban, o en el botón "✏️ Editar"
-        </div>
-      </div>
-    </div>`;
-  const list = document.getElementById('ab-tests-list');
-  if(list) list.insertAdjacentHTML('afterbegin', html);
-}
-
-async function saveABTest(){
-  const body = {
-    nombre: document.getElementById('ab-nombre').value.trim(),
-    hipotesis: document.getElementById('ab-hipotesis').value.trim(),
-    contenido_a_id: parseInt(document.getElementById('ab-a-id').value)||0,
-    contenido_b_id: parseInt(document.getElementById('ab-b-id').value)||0,
-    metrica_objetivo: document.getElementById('ab-metrica').value,
-  };
-  const status = document.getElementById('ab-crear-status');
-  if(!body.nombre || !body.contenido_a_id || !body.contenido_b_id){
-    status.style.color = '#ef4444';
-    status.textContent = 'Nombre + ambos IDs obligatorios';
-    return;
-  }
-  try {
-    const r = await fetch('/api/marketing/ab-tests', _fetchOpts('POST', body));
-    const d = await r.json();
-    if(!r.ok){
-      status.style.color = '#ef4444';
-      status.textContent = 'Error: '+esc(d.error||r.status);
-      return;
-    }
-    status.style.color = '#10b981';
-    status.textContent = '✓ Test creado · refrescando…';
-    setTimeout(()=>{ openABTestsModal(); }, 800);
-  } catch(e){
-    status.style.color = '#ef4444';
-    status.textContent = 'Error red: '+e.message;
-  }
-}
-
-async function calcularGanadorAB(tid){
-  try {
-    const r = await fetch('/api/marketing/ab-tests/'+tid+'/calcular-ganador', _fetchOpts('POST', {}));
-    const d = await r.json();
-    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
-    alert(d.mensaje + '\n\nConfianza: ' + d.confianza + '\nMétrica: ' + d.metrica_usada);
-    loadABTests();
-  } catch(e){ alert('Error red: '+e.message); }
-}
 
 
-async function loadMetaProgreso(){
-  const el = document.getElementById('dash-meta-progreso');
-  if(!el) return;
-  try {
-    const r = await fetch('/api/marketing/meta-progreso?mes='+_mesActual(), {credentials:'same-origin'});
-    if(!r.ok){
-      el.innerHTML = '<span style="color:var(--cx-danger-text)">Error HTTP '+r.status+'</span>';
-      return;
-    }
-    const d = await r.json();
-    if(!d.meta){
-      el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-        <span style="color:var(--cx-text-mute)">No hay meta configurada para ${esc(d.mes)} · click "⚙ Editar meta" para crearla.</span>
-        <button class="btn btn-primary btn-sm" onclick="openMetaModal()">⚙ Configurar meta</button>
-      </div>`;
-      return;
-    }
-    const fmtCOP = v => '$'+Number(v||0).toLocaleString('es-CO');
-    const av = d.avance || {};
-    const py = d.proyeccion_fin_de_mes || {};
-    el.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-size:12px;color:var(--cx-text-mute)">${esc(d.mes)} · ${d.dias_transcurridos}/${d.dias_mes} días</div>
-        <div style="font-size:10px;color:var(--cx-text-mute)">Proyección fin de mes: <b style="color:var(--cx-primary-text)">${fmtCOP(py.revenue||0)}</b> (${py.revenue_pct_meta||0}% meta)</div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
-        <div>
-          <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">💰 Revenue · ${fmtCOP(av.revenue)} / ${fmtCOP(d.meta.revenue)}</div>
-          ${_fmtPctBar(av.revenue_pct)}
-        </div>
-        <div>
-          <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">📦 Pedidos · ${av.pedidos||0} / ${d.meta.pedidos||0}</div>
-          ${_fmtPctBar(av.pedidos_pct)}
-        </div>
-        <div>
-          <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">🆕 Clientes nuevos · ${av.clientes_nuevos||0} / ${d.meta.clientes_nuevos||0}</div>
-          ${_fmtPctBar(av.clientes_nuevos_pct)}
-        </div>
-      </div>`;
-  } catch(e){
-    el.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+esc(e.message)+'</span>';
-  }
-}
 
-async function openMetaModal(){
-  const mes = _mesActual();
-  let actual = null;
-  try {
-    const r = await fetch('/api/marketing/metas?mes='+mes, {credentials:'same-origin'});
-    if(r.ok){ const d = await r.json(); actual = d.meta; }
-  } catch(_){}
-  const cur = actual || {revenue_meta:0, pedidos_meta:0, clientes_nuevos_meta:0, notas:''};
-  let modalEl = document.getElementById('modal-meta-mensual');
-  if(!modalEl){
-    modalEl = document.createElement('div');
-    modalEl.id = 'modal-meta-mensual';
-    modalEl.className = 'modal';
-    document.body.appendChild(modalEl);
-  }
-  modalEl.innerHTML = `<div class="modal-content" style="max-width:520px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div class="modal-title">🎯 Meta del mes · ${esc(mes)}</div>
-      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-meta-mensual')">✕</button>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div>
-        <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">💰 Revenue meta (COP)</label>
-        <input id="meta-rev" type="number" min="0" step="100000" value="${cur.revenue_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">📦 Pedidos meta</label>
-        <input id="meta-ped" type="number" min="0" step="10" value="${cur.pedidos_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">🆕 Clientes nuevos meta</label>
-        <input id="meta-cln" type="number" min="0" step="5" value="${cur.clientes_nuevos_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">📝 Notas (opcional)</label>
-        <textarea id="meta-notas" rows="2" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;resize:vertical">${esc(cur.notas||'')}</textarea>
-      </div>
-      <div id="meta-alert" style="display:none"></div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
-        <button class="btn btn-outline" onclick="closeModal('modal-meta-mensual')">Cancelar</button>
-        <button class="btn btn-primary" onclick="saveMetaMensual()">${actual?'Actualizar':'Crear'}</button>
-      </div>
-    </div>
-  </div>`;
-  modalEl.classList.add('open');
-}
 
-async function saveMetaMensual(){
-  const mes = _mesActual();
-  const body = {
-    mes: mes,
-    revenue_meta: parseFloat(document.getElementById('meta-rev').value)||0,
-    pedidos_meta: parseInt(document.getElementById('meta-ped').value)||0,
-    clientes_nuevos_meta: parseInt(document.getElementById('meta-cln').value)||0,
-    notas: document.getElementById('meta-notas').value||'',
-  };
-  if(body.revenue_meta < 0 || body.pedidos_meta < 0 || body.clientes_nuevos_meta < 0){
-    document.getElementById('meta-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Valores no pueden ser negativos</div>';
-    document.getElementById('meta-alert').style.display = 'block';
-    return;
-  }
-  try {
-    const r = await fetch('/api/marketing/metas', _fetchOpts('POST', body));
-    const d = await r.json().catch(()=>({}));
-    if(r.ok && d.ok){
-      closeModal('modal-meta-mensual');
-      showToast('Meta de '+mes+' guardada','success');
-      loadMetaProgreso();
-    } else {
-      document.getElementById('meta-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error: '+esc(d.error||('HTTP '+r.status))+'</div>';
-      document.getElementById('meta-alert').style.display = 'block';
-    }
-  } catch(e){
-    document.getElementById('meta-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error red: '+esc(e.message)+'</div>';
-    document.getElementById('meta-alert').style.display = 'block';
-  }
-}
 
-async function openCalendarioCosmeticoModal(){
-  let modalEl = document.getElementById('modal-cal-cosm');
-  if(!modalEl){
-    modalEl = document.createElement('div');
-    modalEl.id = 'modal-cal-cosm';
-    modalEl.className = 'modal';
-    document.body.appendChild(modalEl);
-  }
-  modalEl.innerHTML = `<div class="modal-content" style="max-width:760px;max-height:85vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div class="modal-title">📅 Calendario cosmético editable</div>
-      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-cal-cosm')">✕</button>
-    </div>
-    <div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:10px">
-      Eventos cosméticos que los agentes IA usan para calcular demanda proyectada · multiplicador = factor vs día normal (Black Friday típico 3.5).
-    </div>
-    <div id="cal-cosm-list" style="margin-bottom:14px">Cargando…</div>
-    <div style="border-top:1px solid var(--cx-border);padding-top:12px">
-      <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">➕ Agregar evento</div>
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end">
-        <div><label style="font-size:10px;color:var(--cx-text-mute)">Evento</label><input id="cal-nuevo-evento" placeholder="Ej. Black Friday Animus" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px"></div>
-        <div><label style="font-size:10px;color:var(--cx-text-mute)">Fecha</label><input id="cal-nuevo-fecha" type="date" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px"></div>
-        <div><label style="font-size:10px;color:var(--cx-text-mute)">Multiplicador</label><input id="cal-nuevo-mult" type="number" step="0.1" min="0.1" max="10" value="2.0" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:6px;font-size:12px"></div>
-        <div><label style="font-size:10px;color:var(--cx-text-mute)">Color</label><input id="cal-nuevo-color" type="color" value="#a78bfa" style="width:100%;height:32px;padding:0;border:1px solid var(--cx-border);border-radius:6px;background:var(--cx-card)"></div>
-        <button class="btn btn-primary btn-sm" onclick="addEventoCalendario()">+ Agregar</button>
-      </div>
-      <div id="cal-cosm-alert" style="margin-top:8px"></div>
-    </div>
-  </div>`;
-  modalEl.classList.add('open');
-  await loadEventosCalendario();
-}
 
-async function loadEventosCalendario(){
-  const list = document.getElementById('cal-cosm-list');
-  if(!list) return;
-  try {
-    const r = await fetch('/api/marketing/eventos-calendario?incluir_inactivos=1', {credentials:'same-origin'});
-    if(!r.ok){ list.innerHTML = '<span style="color:var(--cx-danger-text)">Error '+r.status+'</span>'; return; }
-    const d = await r.json();
-    const evs = d.eventos || [];
-    if(!evs.length){ list.innerHTML = '<div style="color:var(--cx-text-mute);padding:14px;text-align:center">Sin eventos · agrega el primero abajo</div>'; return; }
-    list.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--cx-text-mute);font-weight:700;text-align:left"><th style="padding:6px;border-bottom:1px solid var(--cx-border)">Evento</th><th style="padding:6px;border-bottom:1px solid var(--cx-border)">Fecha</th><th style="padding:6px;border-bottom:1px solid var(--cx-border)">×Mult.</th><th style="padding:6px;border-bottom:1px solid var(--cx-border)">Color</th><th style="padding:6px;border-bottom:1px solid var(--cx-border);text-align:center">Activo</th><th style="padding:6px;border-bottom:1px solid var(--cx-border);text-align:right">Acción</th></tr></thead><tbody>'
-      + evs.map(e => `<tr style="border-bottom:1px solid var(--cx-hairline);${e.activo?'':'opacity:.45'}">
-        <td style="padding:6px">${esc(e.evento)}</td>
-        <td style="padding:6px;font-family:monospace;color:var(--cx-text-mute)">${esc(e.fecha)}</td>
-        <td style="padding:6px"><span style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:1px 6px;border-radius:6px;font-weight:700">${e.multiplicador}×</span></td>
-        <td style="padding:6px"><div style="width:24px;height:18px;background:${esc(e.color||'#94a3b8')};border-radius:3px;border:1px solid var(--cx-border)"></div></td>
-        <td style="padding:6px;text-align:center">${e.activo?'✓':'-'}</td>
-        <td style="padding:6px;text-align:right">
-          ${e.activo
-            ? `<button class="btn btn-danger btn-sm" onclick="toggleEventoCal(${parseInt(e.id)||0}, 0)" style="font-size:10px;padding:2px 8px" title="Desactivar">🗑</button>`
-            : `<button class="btn btn-outline btn-sm" onclick="toggleEventoCal(${parseInt(e.id)||0}, 1)" style="font-size:10px;padding:2px 8px" title="Reactivar">↻</button>`}
-        </td>
-      </tr>`).join('')
-      + '</tbody></table>';
-  } catch(e){ list.innerHTML = '<span style="color:var(--cx-danger-text)">Error: '+esc(e.message)+'</span>'; }
-}
 
-async function toggleEventoCal(id, activo){
-  if(activo === 0 && !confirm('¿Desactivar este evento? Los agentes ya no lo considerarán.')) return;
-  try {
-    const r = activo === 0
-      ? await fetch('/api/marketing/eventos-calendario/'+id, _fetchOpts('DELETE'))
-      : await fetch('/api/marketing/eventos-calendario/'+id, _fetchOpts('PUT', {activo: true}));
-    const d = await r.json().catch(()=>({}));
-    if(!r.ok){
-      document.getElementById('cal-cosm-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error: '+esc(d.error||r.status)+'</div>';
-      return;
-    }
-    loadEventosCalendario();
-  } catch(e){
-    document.getElementById('cal-cosm-alert').innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error red: '+esc(e.message)+'</div>';
-  }
-}
 
-async function addEventoCalendario(){
-  const ev = document.getElementById('cal-nuevo-evento').value.trim();
-  const fc = document.getElementById('cal-nuevo-fecha').value;
-  const mult = parseFloat(document.getElementById('cal-nuevo-mult').value)||1;
-  const col = document.getElementById('cal-nuevo-color').value;
-  const alert = document.getElementById('cal-cosm-alert');
-  if(!ev || !fc){ alert.innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Evento y fecha obligatorios</div>'; return; }
-  try {
-    const r = await fetch('/api/marketing/eventos-calendario', _fetchOpts('POST', {
-      evento: ev, fecha: fc, multiplicador: mult, color: col
-    }));
-    const d = await r.json().catch(()=>({}));
-    if(!r.ok){
-      alert.innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error: '+esc(d.error||r.status)+'</div>';
-      return;
-    }
-    alert.innerHTML = '<div style="color:var(--cx-success-text);font-size:12px">✓ Evento agregado</div>';
-    document.getElementById('cal-nuevo-evento').value = '';
-    document.getElementById('cal-nuevo-fecha').value = '';
-    loadEventosCalendario();
-    setTimeout(()=>{ alert.innerHTML = ''; }, 2000);
-  } catch(e){
-    alert.innerHTML = '<div style="color:var(--cx-danger-text);font-size:12px">Error red: '+esc(e.message)+'</div>';
-  }
-}
+
+
+
+
+
+
 
 // ─── Feedback loop sobre agentes IA ────────────────────────────────────
 let _AGENT_FEEDBACK_STATS = {};

@@ -41,9 +41,9 @@ TEMPLATES = os.path.join(RAIZ, 'api', 'templates_py')
 # renderizador (Envasado · Fabricación · Acondicionamiento):
 TECHO_COLORES_DASHBOARD = 2499
 TECHO_DISPLAY_NONE_DASHBOARD = 201
-TECHO_COLORES_TOTAL = 4984   # los 42 templates juntos (27-jul: el directorio de creadores
-                             # nació con tokens y se llevó por delante el JS muerto de pagar
-                             # desde Marketing · 5005 → 4984)
+TECHO_COLORES_TOTAL = 4957   # los 42 templates juntos (27-jul: el directorio de creadores
+                             # nació con tokens, y salieron 52 KB de JS inalcanzable de las
+                             # features retiradas de Marketing · 5005 → 4957)
 TECHO_FONDO_OPACO = 0        # un fondo opaco sin token IGNORA el tema oscuro · debe quedar en 0
 TECHO_TEXTO_PALABRA = 28     # `color:gray|black|red…` · el blanco no cuenta (ver abajo)
 # Variables PROPIAS de cada página con color fijo (`--mut: #6b7280`). Eran 124; se enlazaron
