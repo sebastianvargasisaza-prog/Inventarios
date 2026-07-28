@@ -362,3 +362,30 @@ receptor** — justo los datos con los que se le reclama al proveedor.
 (`'column' | 'no such' | 'no existe la columna'`), y queda un `log.warning`. Cualquier otro error
 se **re-lanza**. Para saber si una columna existe se detecta una vez y se ramifica; el `except` de
 una mutación nunca es el detector.
+
+---
+
+### INV-14 · La OC guarda la UNIDAD de cada ítem, no gramos por defecto (28-jul)
+
+Catalina: *"le está colocando gramos a cosas que son cantidades"*. En la bandeja, un `Servicio
+de Calibración por laboratorio acreditado` aparecía como **"1 g"** y la serigrafía de 810
+envases como **"810 g"**.
+
+La unidad **sí se capturaba**: `solicitudes_compra_items.unidad` existe desde el principio.
+Pero `ordenes_compra_items` sólo tenía `cantidad_g`, así que **el dato se perdía en el INSERT
+que crea la OC desde las solicitudes** — y la pantalla, sin nada que mostrar, concatenaba `' g'`
+a toda cantidad.
+
+**Reglas:**
+1. `ordenes_compra_items.unidad` (mig 390) se llena **desde la solicitud** al crear la OC. Un
+   INSERT que traspasa una fila de una tabla a otra copia todas las columnas que importan.
+2. La vista usa la unidad real. **Cuando no se sabe, no se inventa ninguna**: se muestra el
+   número solo. Un número con la unidad equivocada es peor que uno sin unidad, porque se lee
+   como si fuera cierto (M5).
+3. Sólo **materia prima y empaque** se miden en gramos. El backfill de la mig 390 deduce el
+   resto por la `categoria` de la OC.
+4. El déficit de MP (Centro de Programación) **sí** va en gramos: ahí la unidad es correcta y no
+   se toca.
+
+Test: `tests/test_oc_unidad_real.py` (en el gate · incluye el guard de que nadie vuelva a
+concatenar `' g'` a la cantidad de la bandeja).
