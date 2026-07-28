@@ -248,7 +248,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       <div style="color:var(--cx-text-mute);font-size:13px;margin-top:2px;">Catálogo + historial de pagos por influencer · click en una fila para expandir su historial.</div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <input class="search-box" id="inf-search" placeholder="Buscar nombre, @usuario, nicho..." oninput="loadInfluencers()">
+      <input class="search-box" id="inf-search" placeholder="Buscar nombre, @usuario, nicho..." oninput="infBuscar()">
       <button class="btn btn-outline" onclick="abrirDuplicados()" title="Detectar creadores duplicados (mismo nombre o mismos datos bancarios)">&#x1F50D; Duplicados</button>
       <button class="btn btn-primary" onclick="openInfluencerModal()">+ Nuevo Influencer</button>
     </div>
@@ -276,6 +276,62 @@ window.addEventListener('unhandledrejection', function(ev) {
 
   <!-- VISTA · Catálogo de creadores (oculta por defecto) -->
   <div id="inf-view-creadores" style="display:none;">
+
+  <!-- ── DIRECTORIO DE CREADORES ────────────────────────────────────────────────
+       Sebastián 27-jul: "cada influencer puede ser cada mes un pago diferente,
+       entonces debería haber un directorio perfecto y premium". El centro de pagos
+       ordena por FECHA (qué pago sigue); esto ordena por PERSONA: cuánto le llevamos
+       puesto, con qué ritmo mes a mes, y qué devolvió. -->
+  <style>
+    .dir-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;}
+    .dir-card{background:var(--cx-card,#fff);border:1px solid var(--cx-border,#ececf1);border-radius:16px;padding:16px 18px 14px;box-shadow:0 2px 14px rgba(15,23,42,.05);transition:box-shadow .18s,transform .18s;position:relative;overflow:hidden;}
+    .dir-card:hover{box-shadow:0 8px 28px rgba(15,23,42,.11);transform:translateY(-2px);}
+    .dir-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--dir-ac,var(--cx-primary));}
+    .dir-top{display:flex;align-items:center;gap:11px;margin-bottom:12px;}
+    .dir-ini{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;background:var(--cx-primary-grad,var(--cx-primary));flex:0 0 auto;letter-spacing:-.02em;}
+    .dir-nom{font-weight:800;font-size:15px;color:var(--cx-text);letter-spacing:-.01em;line-height:1.2;}
+    .dir-sub{font-size:11px;color:var(--cx-text-mute);margin-top:2px;}
+    .dir-chip{display:inline-block;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;letter-spacing:.02em;}
+    .dir-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+    .dir-k{background:var(--cx-bg-alt,#f8f8fb);border-radius:10px;padding:8px 9px;}
+    .dir-k .lbl{font-size:9.5px;color:var(--cx-text-mute);font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+    .dir-k .val{font-size:15px;font-weight:800;color:var(--cx-text);margin-top:2px;letter-spacing:-.02em;}
+    .dir-bars{display:flex;align-items:flex-end;gap:3px;height:42px;margin:2px 0 8px;}
+    .dir-bar{flex:1;border-radius:3px 3px 0 0;min-height:2px;background:var(--cx-border,#e6e6ee);position:relative;}
+    .dir-bar.on{background:var(--cx-primary);}
+    .dir-bar.pend{background:var(--cx-warn,#f59e0b);}
+    .dir-meses{display:flex;gap:3px;font-size:8.5px;color:var(--cx-text-mute);margin-bottom:10px;}
+    .dir-meses span{flex:1;text-align:center;}
+    .dir-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--cx-text-mute);border-top:1px solid var(--cx-hairline,#f0f0f5);padding-top:9px;}
+    .dir-det{margin-top:12px;border-top:1px dashed var(--cx-border,#e6e6ee);padding-top:10px;}
+    .dir-det table{width:100%;font-size:11.5px;border-collapse:collapse;}
+    .dir-det td{padding:5px 4px;border-bottom:1px solid var(--cx-hairline,#f4f4f8);vertical-align:top;}
+    @media (max-width:768px){ .dir-grid{grid-template-columns:1fr;} }
+  </style>
+
+  <div class="card" style="margin-bottom:16px;padding:18px 20px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+      <div>
+        <div style="font-size:16px;font-weight:800;color:var(--cx-text);letter-spacing:-.01em;">&#x1F4D2; Directorio de creadores</div>
+        <div style="font-size:12px;color:var(--cx-text-mute);margin-top:3px;">Cuánto le llevamos puesto a cada uno, con qué ritmo mes a mes, y qué devolvió. Click en una tarjeta para ver pago por pago.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="dir-meses" onchange="loadDirectorio()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:7px 11px;color:var(--cx-text);font-size:12px;font-weight:600;">
+          <option value="6">Últimos 6 meses</option>
+          <option value="12" selected>Últimos 12 meses</option>
+          <option value="24">Últimos 24 meses</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="loadDirectorio()" title="Refrescar directorio">&#x21BB;</button>
+      </div>
+    </div>
+    <div id="dir-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;"></div>
+    <div id="dir-filtros" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
+    <div id="dir-grid" class="dir-grid"><div style="grid-column:1/-1;text-align:center;color:var(--cx-text-mute);padding:26px;"><span class="spin"></span></div></div>
+  </div>
+
+  <details class="card" style="margin-bottom:16px;">
+    <summary style="cursor:pointer;list-style:none;font-size:13px;font-weight:700;color:var(--cx-text);">&#x2699; Catálogo y edición <span style="font-weight:500;color:var(--cx-text-mute);font-size:11.5px;">- datos de contacto, banco, cupón, alta y baja</span></summary>
+    <div style="margin-top:14px;">
 
   <!-- Sebastián 13-jul · quitado el bloque "Mi semana · vista community manager"
        (Top engagement / Dormidos / Top ROI) · sobrecargaba el centro de pagos.
@@ -382,6 +438,8 @@ window.addEventListener('unhandledrejection', function(ev) {
       </table>
     </div>
   </div>
+    </div>
+  </details><!-- /Catálogo y edición -->
   </div><!-- /inf-view-creadores -->
 </div>
 
@@ -928,6 +986,225 @@ function renderPagos() {
 }
 
 // ─── Centro de pagos por estados (Sebastián 13-jul) ───────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// DIRECTORIO DE CREADORES
+// Sebastian 27-jul: "cada influencer puede ser cada mes un pago diferente, entonces
+// deberia haber un directorio perfecto y premium". Todo lo que se ve aca esta DERIVADO
+// de los pagos y de las ventas: no hay ningun campo que alguien tenga que acordarse de
+// actualizar, asi que no puede quedar viejo.
+window._DIR_DATA = null;
+window._DIR_FILTRO = 'todos';
+
+function _dirMoneda(n){
+  n = Number(n||0);
+  if(n >= 1000000) return '$' + (n/1000000).toFixed(n >= 10000000 ? 0 : 1) + 'M';
+  if(n >= 1000)    return '$' + Math.round(n/1000) + 'k';
+  return '$' + n.toLocaleString('es-CO');
+}
+function _dirMesCorto(m){
+  var M=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  var p=(m||'').split('-'); if(p.length<2) return m||'';
+  return M[parseInt(p[1],10)-1] || '';
+}
+
+function infBuscar(){
+  // La busqueda alimenta el catalogo Y el directorio. El directorio recorre 12 meses de
+  // pagos, asi que va con espera: disparar un fetch por tecla lo convertiria en el
+  // endpoint mas llamado de la app sin que nadie lo pidiera.
+  loadInfluencers();
+  clearTimeout(window._DIR_BUSCA_T);
+  window._DIR_BUSCA_T=setTimeout(function(){
+    if(window._DIR_DATA) loadDirectorio();
+  }, 400);
+}
+
+async function loadDirectorio(){
+  var grid=document.getElementById('dir-grid'); if(!grid) return;
+  var meses=(document.getElementById('dir-meses')||{}).value || '12';
+  var q=((document.getElementById('inf-search')||{}).value || '').trim();
+  grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:var(--cx-text-mute);padding:26px;"><span class="spin"></span></div>';
+  try{
+    var r=await fetch('/api/marketing/directorio-creadores?meses='+encodeURIComponent(meses)
+                      +'&q='+encodeURIComponent(q), {credentials:'same-origin'});
+    var js=await r.json();
+    if(!r.ok || js.error){ throw new Error(js.error || ('HTTP '+r.status)); }
+    window._DIR_DATA=js;
+    renderDirectorio();
+  }catch(e){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:var(--cx-danger-text);padding:22px;font-size:13px;">No se pudo cargar el directorio: '+_escHtml(e.message)+'</div>';
+  }
+}
+
+function dirFiltro(f){ window._DIR_FILTRO=f; renderDirectorio(); }
+
+function renderDirectorio(){
+  var js=window._DIR_DATA; if(!js) return;
+  var k=js.kpis||{};
+  var kw=document.getElementById('dir-kpis');
+  if(kw){
+    // El ROI global va en gris cuando no hay con que calcularlo: un "0%" ahi se leeria
+    // como "no rindio", que es distinto de "todavia no se midio".
+    var roi = (k.roi_global_pct===null || k.roi_global_pct===undefined)
+      ? '<span style="color:var(--cx-text-mute)">sin dato</span>'
+      : (k.roi_global_pct>=0?'+':'') + k.roi_global_pct + '%';
+    var tarjetas=[
+      ['Creadores con pago', (k.con_pago||0)+' <span style="font-size:12px;font-weight:600;color:var(--cx-text-mute)">de '+(k.creadores||0)+'</span>', 'var(--cx-primary-text)'],
+      ['Pagado en el periodo', _dirMoneda(k.pagado_total), 'var(--cx-text)'],
+      ['Por pagar', _dirMoneda(k.pendiente_total)+' <span style="font-size:12px;font-weight:600;color:var(--cx-text-mute)">('+(k.n_pendientes||0)+')</span>', (k.pendiente_total>0?'var(--cx-warn-text)':'var(--cx-text-mute)')],
+      ['Venta atribuida', _dirMoneda(k.revenue_total), 'var(--cx-success-text)'],
+      ['Retorno global', roi, 'var(--cx-success-text)'],
+      ['Sin fecha de publicacion', (k.sin_publicacion||0), (k.sin_publicacion>0?'var(--cx-danger-text)':'var(--cx-text-mute)')]
+    ];
+    kw.innerHTML=tarjetas.map(function(t){
+      return '<div style="background:var(--cx-bg-alt,#f8f8fb);border-radius:12px;padding:11px 13px;">'
+        +'<div style="font-size:10px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.04em;">'+t[0]+'</div>'
+        +'<div style="font-size:19px;font-weight:800;margin-top:3px;letter-spacing:-.02em;color:'+t[2]+'">'+t[1]+'</div>'
+      +'</div>';
+    }).join('');
+  }
+
+  var todos=js.creadores||[];
+  var conts={
+    todos:      todos.length,
+    con_pago:   todos.filter(function(x){return x.n_pagos>0;}).length,
+    pendiente:  todos.filter(function(x){return x.n_pendientes>0;}).length,
+    revisar:    todos.filter(function(x){return x.sin_publicacion>0;}).length,
+    baja:       todos.filter(function(x){return (x.estado||'').toLowerCase()==='baja';}).length
+  };
+  var fw=document.getElementById('dir-filtros');
+  if(fw){
+    var defs=[['todos','Todos'],['con_pago','Con pago'],['pendiente','Con pendiente'],
+              ['revisar','Sin fecha de publicacion'],['baja','Dados de baja']];
+    fw.innerHTML=defs.map(function(d){
+      var on=(window._DIR_FILTRO===d[0]);
+      return '<button onclick="dirFiltro(\''+d[0]+'\')" style="border:1px solid '+(on?'var(--cx-primary)':'var(--cx-border)')
+        +';background:'+(on?'var(--cx-primary)':'transparent')+';color:'+(on?'#fff':'var(--cx-text-mute)')
+        +';border-radius:999px;padding:5px 13px;font-size:11.5px;font-weight:700;cursor:pointer;">'
+        +d[1]+' <span style="opacity:.75">'+(conts[d[0]]||0)+'</span></button>';
+    }).join('');
+  }
+
+  var f=window._DIR_FILTRO;
+  var lista=todos.filter(function(x){
+    if(f==='con_pago')  return x.n_pagos>0;
+    if(f==='pendiente') return x.n_pendientes>0;
+    if(f==='revisar')   return x.sin_publicacion>0;
+    if(f==='baja')      return (x.estado||'').toLowerCase()==='baja';
+    return true;
+  });
+  window._DIR_VIS=lista;
+
+  var grid=document.getElementById('dir-grid');
+  if(!lista.length){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:var(--cx-text-mute);padding:26px;font-size:13px;">No hay creadores con ese filtro.</div>';
+    return;
+  }
+  // Escala comun para las barras de TODAS las tarjetas: si cada una se normalizara
+  // a su propio maximo, un creador de $100k y uno de $3M se verian iguales.
+  var tope=1;
+  lista.forEach(function(x){ (x.serie||[]).forEach(function(s){
+    var v=(s.pagado||0)+(s.pendiente||0); if(v>tope) tope=v; }); });
+
+  grid.innerHTML=lista.map(function(x,ix){ return _dirCard(x,ix,tope); }).join('');
+}
+
+function _dirCard(x, ix, tope){
+  var esBaja=((x.estado||'').toLowerCase()==='baja');
+  var ac = esBaja ? 'var(--cx-text-mute)'
+         : (x.n_pendientes>0 ? 'var(--cx-warn)'
+         : (x.n_pagos>0 ? 'var(--cx-primary)' : 'var(--cx-border)'));
+  var ini=(x.nombre||'?').trim().charAt(0).toUpperCase();
+  var chips='';
+  if(esBaja){
+    chips+='<span class="dir-chip" style="background:var(--cx-danger-pale,#fee2e2);color:var(--cx-danger-text);">Dado de baja</span> ';
+  }
+  if(x.n_pendientes>0){
+    chips+='<span class="dir-chip" style="background:var(--cx-warn-pale,#fef3c7);color:var(--cx-warn-text);">'+x.n_pendientes+' por pagar</span> ';
+  }
+  if(x.sin_publicacion>0){
+    chips+='<span class="dir-chip" style="background:var(--cx-danger-pale,#fee2e2);color:var(--cx-danger-text);" title="Pagos sin fecha de publicacion: no se pueden verificar">'+x.sin_publicacion+' sin publicacion</span> ';
+  }
+  if(x.discount_code){
+    chips+='<span class="dir-chip" style="background:var(--cx-success-pale,#d1fae5);color:var(--cx-success-text);">'+_escHtml(x.discount_code)+'</span>';
+  }
+
+  // Retorno: sin codigo de descuento NO hay como atribuir venta -> "sin dato", no 0%.
+  var retorno = (x.roi_pct===null || x.roi_pct===undefined)
+    ? '<span style="color:var(--cx-text-mute);font-size:13px;">sin dato</span>'
+    : '<span style="color:'+(x.roi_pct>=0?'var(--cx-success-text)':'var(--cx-danger-text)')+'">'
+      +(x.roi_pct>=0?'+':'')+x.roi_pct+'%</span>';
+
+  var barras=(x.serie||[]).map(function(s){
+    var tot=(s.pagado||0)+(s.pendiente||0);
+    var h=tot>0 ? Math.max(3, Math.round(tot/tope*40)) : 2;
+    var cls=(s.pendiente>0 && !s.pagado) ? 'dir-bar pend' : (tot>0 ? 'dir-bar on' : 'dir-bar');
+    return '<div class="'+cls+'" style="height:'+h+'px" title="'+s.mes+': '+_dirMoneda(tot)+'"></div>';
+  }).join('');
+  // Sólo se rotula 1 de cada 3 meses: con 12 barras las etiquetas se pisan.
+  var rotulos=(x.serie||[]).map(function(s,i){
+    return '<span>'+(((x.serie.length-1-i)%3===0)?_dirMesCorto(s.mes):'')+'</span>';
+  }).join('');
+
+  var ult = x.ultimo_pago
+    ? ('Ultimo pago '+_escHtml((x.ultimo_pago.fecha||'').slice(0,10))
+        + (x.dias_sin_pago!==null && x.dias_sin_pago!==undefined ? ' ('+x.dias_sin_pago+'d)' : '')
+        + (x.ultimo_pago.entregable ? ' &middot; '+_escHtml(x.ultimo_pago.entregable.slice(0,42)) : ''))
+    : 'Sin pagos en el periodo';
+
+  return '<div class="dir-card" style="--dir-ac:'+ac+'">'
+    +'<div class="dir-top">'
+      +'<div class="dir-ini" style="'+(esBaja?'filter:grayscale(1);opacity:.6;':'')+'">'+_escHtml(ini)+'</div>'
+      +'<div style="min-width:0;flex:1;">'
+        +'<div class="dir-nom">'+_escHtml(x.nombre||'-')+'</div>'
+        +'<div class="dir-sub">'+_escHtml(x.usuario_red? '@'+x.usuario_red : (x.red_social||''))
+          +(x.ciudad? ' &middot; '+_escHtml(x.ciudad):'')+'</div>'
+      +'</div>'
+    +'</div>'
+    +(chips? '<div style="margin-bottom:11px;display:flex;gap:5px;flex-wrap:wrap;">'+chips+'</div>' : '')
+    +'<div class="dir-kpis">'
+      +'<div class="dir-k"><div class="lbl">Pagado</div><div class="val">'+_dirMoneda(x.pagado)+'</div></div>'
+      +'<div class="dir-k"><div class="lbl">Pagos</div><div class="val">'+(x.n_pagos||0)
+        +(x.ticket_prom? '<span style="font-size:10px;font-weight:600;color:var(--cx-text-mute)"> &middot; '+_dirMoneda(x.ticket_prom)+' c/u</span>':'')+'</div></div>'
+      +'<div class="dir-k"><div class="lbl">Retorno</div><div class="val">'+retorno+'</div></div>'
+    +'</div>'
+    +'<div class="dir-bars">'+barras+'</div>'
+    +'<div class="dir-meses">'+rotulos+'</div>'
+    +'<div class="dir-foot">'
+      +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+ult+'</span>'
+      +'<button onclick="dirToggle('+ix+')" style="border:1px solid var(--cx-border);background:transparent;color:var(--cx-primary-text);border-radius:8px;padding:4px 11px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">Ver pagos</button>'
+    +'</div>'
+    +'<div class="dir-det" id="dir-det-'+ix+'" style="display:none"></div>'
+  +'</div>';
+}
+
+function dirToggle(ix){
+  var box=document.getElementById('dir-det-'+ix);
+  var x=(window._DIR_VIS||[])[ix];
+  if(!box || !x) return;
+  if(box.style.display!=='none'){ box.style.display='none'; box.innerHTML=''; return; }
+  var det=x.detalle||[];
+  if(!det.length){
+    box.innerHTML='<div style="color:var(--cx-text-mute);font-size:12px;padding:4px 0;">Sin pagos registrados en el periodo.</div>';
+  }else{
+    box.innerHTML='<table>'+det.map(function(d){
+      var pagado=(d.estado==='Pagada');
+      return '<tr>'
+        +'<td style="white-space:nowrap;color:var(--cx-text-mute);">'+_escHtml((d.fecha||'').slice(0,10))+'</td>'
+        +'<td style="font-weight:700;white-space:nowrap;">$'+Number(d.valor||0).toLocaleString('es-CO')+'</td>'
+        +'<td><span class="dir-chip" style="background:'+(pagado?'var(--cx-success-pale,#d1fae5)':'var(--cx-warn-pale,#fef3c7)')
+          +';color:'+(pagado?'var(--cx-success-text)':'var(--cx-warn-text)')+'">'+_escHtml(d.estado||'')+'</span></td>'
+        +'<td>'+(d.fecha_publicacion
+            ? '<span style="color:var(--cx-text-mute);">publico '+_escHtml(d.fecha_publicacion.slice(0,10))+'</span>'
+            : '<span style="color:var(--cx-danger-text);font-weight:700;" title="Sin fecha de publicacion no se puede verificar que se entrego">sin fecha</span>')
+          +(d.entregable? '<div style="color:var(--cx-text);">'+_escHtml(d.entregable)+'</div>':'')
+          +(d.numero_oc? '<div style="font-size:10px;color:var(--cx-text-mute);">'+_escHtml(d.numero_oc)+'</div>':'')
+        +'</td>'
+      +'</tr>';
+    }).join('')+'</table>';
+  }
+  box.style.display='';
+}
+
 function infSubView(v){
   window._INF_SUBVIEW=v;
   var vp=document.getElementById('inf-view-pagos'), vc=document.getElementById('inf-view-creadores');
@@ -937,49 +1214,15 @@ function infSubView(v){
   if(bp){ bp.style.color=(v==='pagos')?'#6d28d9':'var(--cx-text-mute)'; bp.style.borderBottomColor=(v==='pagos')?'#6d28d9':'transparent'; }
   if(bc){ bc.style.color=(v==='creadores')?'#6d28d9':'var(--cx-text-mute)'; bc.style.borderBottomColor=(v==='creadores')?'#6d28d9':'transparent'; }
   if(v==='pagos') renderCentroPagos();
+  // El directorio se pide SOLO al abrir su vista, y una vez: recorre 12 meses de pagos
+  // y las ventas del periodo, y no tiene por que pagarse en la carga de la pantalla (M43).
+  if(v==='creadores' && !window._DIR_DATA) loadDirectorio();
 }
-async function pagarDesdeMarketing(idx){
-  // Pagar SIN salir del modulo (Sebastian 27-jul: "asi no tengo que entrar alli").
-  //
-  // Llama al MISMO endpoint canonico que usa Compras (PATCH /api/ordenes-compra/<oc>/pagar).
-  // No se reimplementa el pago aca: seria una segunda via para mover plata, y las dos
-  // terminarian divergiendo (el espejo a egresos, el comprobante, la auditoria, el guard de
-  // sobre-pago). Esta pantalla decide; Compras sigue siendo quien ejecuta.
-  var p = (window._PAGOS_VISIBLES||[])[idx];
-  if(!p) return;
-  if(!p.numero_oc){ showToast('Este pago no tiene orden asociada · no se puede pagar desde aca','error'); return; }
-
-  // Si hay sospecha de cobro repetido, se pone DELANTE antes de dejar confirmar. Ese es el
-  // punto de todo esto: que no se pueda pagar de corrido por encima de una alerta.
-  var graves=(p.alertas||[]).filter(function(a){return a.nivel==='alto';});
-  if(graves.length){
-    var det=graves.map(function(a){
-      var pv=a.pago_previo;
-      return '• '+a.mensaje+(pv?('\n   anterior: '+fmtM(pv.valor||0)+' del '+(pv.fecha||'').slice(0,10)+(pv.entregable?' · '+pv.entregable:'')):'');
-    }).join('\n');
-    if(!confirm('OJO con este pago:\n\n'+det+'\n\n¿Pagar igual a '+(p.influencer_nombre||'')+' '+fmtM(p.valor||0)+'?')) return;
-  } else {
-    if(!confirm('Pagar '+fmtM(p.valor||0)+' a '+(p.influencer_nombre||'')+'?')) return;
-  }
-
-  // La referencia bancaria ancla el pago al movimiento real del banco: sin eso, despues no hay
-  // como cruzar lo que dice EOS con lo que salio de la cuenta.
-  var ref = prompt('Referencia de la transferencia (numero de transaccion del banco):','');
-  if(ref===null) return;
-  if(!String(ref).trim()){ showToast('La referencia es obligatoria para poder cruzar el pago con el banco','error'); return; }
-  var medio = prompt('Medio de pago:','Transferencia') || 'Transferencia';
-
-  try{
-    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(p.numero_oc)+'/pagar',
-      _fetchOpts('PATCH', {monto: p.valor||0, medio: medio,
-                           numero_transaccion: String(ref).trim(),
-                           observaciones: 'Pagado desde Marketing · '+(p.entregable||'')}));
-    var d = await r.json();
-    if(!r.ok || d.error){ showToast('No se pudo pagar: '+(d.error||('HTTP '+r.status)),'error'); return; }
-    showToast('Pagado '+fmtM(p.valor||0)+' a '+(p.influencer_nombre||''),'success');
-    loadPagosInfluencers();
-  }catch(e){ showToast('Error de red: '+e.message,'error'); }
-}
+// `pagarDesdeMarketing` se retiro el 27-jul junto con su boton. Quedaba la funcion sin
+// llamador: codigo muerto que mueve PLATA, que es peor que codigo muerto a secas (una
+// pantalla futura podria engancharla sin saber que el backend la rechaza). El pago lo
+// decide y ejecuta el CEO en Centro de Mando, contra el endpoint canonico de Compras.
+// Jefferson pide desde aca y ve el estado de lo que pidio.
 
 function _pagoAlertas(p){
   // Sin paso de aprobacion, estas alertas son LO UNICO que separa un pago legitimo de pagar dos

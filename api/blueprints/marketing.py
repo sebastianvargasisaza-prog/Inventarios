@@ -4252,6 +4252,96 @@ def mkt_influencers_panel():
 _ATRIB_CACHE = {}   # {desde: {ts, payload}} · cache per-worker · atribución = overview 90d
 
 
+def atribucion_por_influencer(c, desde):
+    """Ventas Shopify atribuidas a cada creador por su discount_code, desde una fecha.
+
+    Devuelve `{influencer_id: {...}}`. Es el ÚNICO motor de atribución (M1): lo usan la
+    tabla de atribución y el directorio de creadores, así que el revenue y el ROI que ve
+    el CEO en los dos lugares salen del mismo cálculo y no pueden divergir (M5).
+
+    Una sola pasada por las órdenes del período agregando en Python -- NO una query por
+    creador (eso era un full-scan por cada uno: ~1 minuto de carga · M43).
+    """
+    infs = c.execute("""
+        SELECT id, nombre, usuario_red, red_social, discount_code, estado
+        FROM marketing_influencers
+        WHERE COALESCE(discount_code,'') != ''
+        ORDER BY nombre
+    """).fetchall()
+    code2id, infmap, agg = {}, {}, {}
+    for r in infs:
+        cv = (r["discount_code"] or "").upper().strip()
+        if not cv:
+            continue
+        code2id[cv] = r["id"]
+        infmap[r["id"]] = r
+        agg[r["id"]] = {"n": 0, "rev": 0.0, "sub": 0.0, "desc": 0.0,
+                        "uds": 0, "emails": set(), "ult": ""}
+    if code2id:
+        for o in c.execute("""
+            SELECT COALESCE(discount_codes,'') dc, COALESCE(total,0) total,
+                   COALESCE(subtotal,0) subtotal, COALESCE(total_descuentos,0) tdesc,
+                   COALESCE(unidades_total,0) uds, COALESCE(email,'') email,
+                   COALESCE(creado_en,'') creado_en
+            FROM animus_shopify_orders
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+              AND creado_en >= ?
+        """, (desde,)).fetchall():
+            dc = (o["dc"] or "").upper()
+            if not dc:
+                continue
+            for cod in set(x.strip() for x in dc.split(',') if x.strip()):
+                iid = code2id.get(cod)
+                if iid is None:
+                    continue
+                a = agg[iid]
+                a["n"] += 1
+                a["rev"] += float(o["total"] or 0)
+                a["sub"] += float(o["subtotal"] or 0)
+                a["desc"] += float(o["tdesc"] or 0)
+                a["uds"] += int(o["uds"] or 0)
+                if o["email"]:
+                    a["emails"].add(o["email"])
+                if o["creado_en"] and o["creado_en"] > a["ult"]:
+                    a["ult"] = o["creado_en"]
+    # Inversión pagada por creador · UNA query agrupada (antes: 1 por influencer)
+    inv_map = {}
+    for pr in c.execute("""
+        SELECT influencer_id, COALESCE(SUM(valor),0) t
+        FROM pagos_influencers
+        WHERE estado = 'Pagada' AND fecha >= ?
+        GROUP BY influencer_id
+    """, (desde,)).fetchall():
+        inv_map[pr["influencer_id"]] = pr["t"] or 0
+
+    salida = {}
+    for iid, r in infmap.items():
+        a = agg[iid]
+        revenue = a["rev"]
+        invertido = inv_map.get(iid, 0) or 0
+        # Sin inversión no hay ROI: va en None (gris), NUNCA 0 -- un creador al que
+        # todavía no se le pagó no "rinde 0%", simplemente no tiene el dato (M33).
+        roi_pct = round((revenue - invertido) / invertido * 100, 1) if invertido > 0 else None
+        salida[iid] = {
+            "influencer_id":   iid,
+            "nombre":          r["nombre"],
+            "usuario_red":     r["usuario_red"] or "",
+            "red_social":      r["red_social"] or "",
+            "discount_code":   (r["discount_code"] or "").upper().strip(),
+            "estado":          r["estado"] or "",
+            "n_pedidos":       a["n"],
+            "revenue_total":   round(revenue, 0),
+            "subtotal_total":  round(a["sub"], 0),
+            "descuento_total": round(a["desc"], 0),
+            "unidades":        a["uds"],
+            "clientes_unicos": len(a["emails"]),
+            "ultimo_pedido":   a["ult"],
+            "invertido":       round(invertido, 0),
+            "roi_pct":         roi_pct,
+        }
+    return salida
+
+
 @bp.route("/api/marketing/atribucion-influencers", methods=["GET"])
 def mkt_atribucion_influencers():
     """Atribución de ventas Shopify por influencer via discount_code.
@@ -4287,86 +4377,7 @@ def mkt_atribucion_influencers():
     conn = _db()
     c = conn.cursor()
     try:
-        infs = c.execute("""
-            SELECT id, nombre, usuario_red, red_social, discount_code, estado
-            FROM marketing_influencers
-            WHERE COALESCE(discount_code,'') != ''
-            ORDER BY nombre
-        """).fetchall()
-        # PERF FIX (antes: N+1 · 1 escaneo de animus_shopify_orders POR influencer con
-        # LIKE '%,code,%' sin índice = ~72 full-scans = 1 min). Ahora: UNA sola pasada por
-        # las órdenes del período, agregando por discount_code en Python.
-        code2id = {}
-        infmap = {}
-        agg = {}
-        for r in infs:
-            cv = (r["discount_code"] or "").upper().strip()
-            if not cv:
-                continue
-            code2id[cv] = r["id"]
-            infmap[r["id"]] = r
-            agg[r["id"]] = {"n": 0, "rev": 0.0, "sub": 0.0, "desc": 0.0,
-                            "uds": 0, "emails": set(), "ult": ""}
-        if code2id:
-            for o in c.execute("""
-                SELECT COALESCE(discount_codes,'') dc, COALESCE(total,0) total,
-                       COALESCE(subtotal,0) subtotal, COALESCE(total_descuentos,0) tdesc,
-                       COALESCE(unidades_total,0) uds, COALESCE(email,'') email,
-                       COALESCE(creado_en,'') creado_en
-                FROM animus_shopify_orders
-                WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
-                  AND creado_en >= ?
-            """, (desde,)).fetchall():
-                dc = (o["dc"] or "").upper()
-                if not dc:
-                    continue
-                for cod in set(x.strip() for x in dc.split(',') if x.strip()):
-                    iid = code2id.get(cod)
-                    if iid is None:
-                        continue
-                    a = agg[iid]
-                    a["n"] += 1
-                    a["rev"] += float(o["total"] or 0)
-                    a["sub"] += float(o["subtotal"] or 0)
-                    a["desc"] += float(o["tdesc"] or 0)
-                    a["uds"] += int(o["uds"] or 0)
-                    if o["email"]:
-                        a["emails"].add(o["email"])
-                    if o["creado_en"] and o["creado_en"] > a["ult"]:
-                        a["ult"] = o["creado_en"]
-        # Inversión pagada por influencer · UNA query agrupada (antes: 1 por influencer)
-        inv_map = {}
-        for pr in c.execute("""
-            SELECT influencer_id, COALESCE(SUM(valor),0) t
-            FROM pagos_influencers
-            WHERE estado = 'Pagada' AND fecha >= ?
-            GROUP BY influencer_id
-        """, (desde,)).fetchall():
-            inv_map[pr["influencer_id"]] = pr["t"] or 0
-
-        resultado = []
-        for iid, r in infmap.items():
-            a = agg[iid]
-            revenue = a["rev"]
-            invertido = inv_map.get(iid, 0) or 0
-            roi_pct = round((revenue - invertido) / invertido * 100, 1) if invertido > 0 else None
-            resultado.append({
-                "influencer_id":   iid,
-                "nombre":          r["nombre"],
-                "usuario_red":     r["usuario_red"] or "",
-                "red_social":      r["red_social"] or "",
-                "discount_code":   (r["discount_code"] or "").upper().strip(),
-                "estado":          r["estado"] or "",
-                "n_pedidos":       a["n"],
-                "revenue_total":   round(revenue, 0),
-                "subtotal_total":  round(a["sub"], 0),
-                "descuento_total": round(a["desc"], 0),
-                "unidades":        a["uds"],
-                "clientes_unicos": len(a["emails"]),
-                "ultimo_pedido":   a["ult"],
-                "invertido":       round(invertido, 0),
-                "roi_pct":         roi_pct,
-            })
+        resultado = list(atribucion_por_influencer(c, desde).values())
 
         # Ordenar: revenue desc → ranking de influencers más rentables
         resultado.sort(key=lambda x: -x["revenue_total"])
@@ -4399,6 +4410,226 @@ def mkt_atribucion_influencers():
         return jsonify({"error": "Error procesando atribución de influencers"}), 500
     finally:
         pass
+
+
+def _clave_creador(influencer_id, nombre):
+    """Llave con la que un pago se atribuye a un creador.
+
+    Los pagos históricos importados quedaron con `influencer_id` en NULL y sólo el
+    nombre, así que agrupar únicamente por id perdería plata real del creador. Se usa
+    el id cuando está, y el nombre normalizado cuando no -- la misma doble indexación
+    que ya hace `influencers-panel` (M2: la normalización de la clave y la del lookup
+    tienen que ser la misma función).
+    """
+    if influencer_id:
+        return ('id', int(influencer_id))
+    return ('nom', (nombre or '').strip().lower())
+
+
+@bp.route("/api/marketing/directorio-creadores", methods=["GET"])
+def mkt_directorio_creadores():
+    """Directorio de creadores: qué le pagamos a cada uno, mes por mes, y qué devolvió.
+
+    Sebastián 27-jul: *"cada influencer puede ser cada mes un pago diferente, entonces
+    debería haber un directorio perfecto y premium"*. La lista de pagos ordena por FECHA
+    y responde "¿qué pago sigue?"; esto ordena por PERSONA y responde "¿cuánto le
+    llevamos puesto a este creador y qué nos devolvió?" -- que es la pregunta del CEO
+    cuando Jefferson pide el pago del mes.
+
+    Todo se DERIVA de los pagos y de las ventas; no hay ningún campo que alguien tenga
+    que acordarse de actualizar (M109: un indicador que se teclea termina viejo).
+
+    Por creador: pagado y número de pagos en la ventana, ticket promedio, pendiente,
+    último pago, la serie MES A MES (para ver el ritmo real, que es lo que cambia), y
+    -- si tiene código de descuento -- las ventas atribuidas y el ROI.
+
+    Query params: `meses` (default 12, tope 36) · `q` (busca nombre/@usuario/código).
+    """
+    u, err, code = _auth()
+    if err:
+        return err, code
+    try:
+        meses_n = int(request.args.get("meses") or 12)
+    except (TypeError, ValueError):
+        meses_n = 12
+    meses_n = max(1, min(36, meses_n))
+    q = (request.args.get("q") or "").strip().lower()
+
+    # La ventana se ancla en el "hoy" de Colombia, no en el UTC de Render (M24): de
+    # noche, `now()` en UTC ya es mañana y el mes en curso saldría corrido.
+    hoy = _hoy_col()
+    primer_mes = (hoy.replace(day=1) - timedelta(days=31 * (meses_n - 1))).replace(day=1)
+    desde = primer_mes.isoformat()
+    # Etiquetas de los meses de la ventana, del más viejo al más nuevo. Van SIEMPRE
+    # todos, incluso los vacíos: un mes sin pago es información (el creador paró).
+    etiquetas, _cur = [], primer_mes
+    while _cur <= hoy.replace(day=1):
+        etiquetas.append(_cur.strftime("%Y-%m"))
+        _cur = (_cur.replace(day=28) + timedelta(days=7)).replace(day=1)
+
+    conn = _db()
+    c = conn.cursor()
+    try:
+        creadores = [dict(r) for r in c.execute(
+            "SELECT id, nombre, usuario_red, red_social, estado, nicho, ciudad, "
+            "       COALESCE(discount_code,'') discount_code, "
+            "       COALESCE(motivo_baja,'') motivo_baja, COALESCE(fecha_baja,'') fecha_baja "
+            "FROM marketing_influencers ORDER BY nombre").fetchall()]
+
+        # El estado del pago se deriva del estado REAL de la OC, exactamente igual que
+        # en el centro de pagos: si el directorio dedujera "pendiente" de otra forma,
+        # los dos tableros mostrarían números distintos de la misma plata (M5).
+        pagos = c.execute("""
+            SELECT pi.id, pi.influencer_id, pi.influencer_nombre,
+                   COALESCE(pi.valor,0) valor, COALESCE(pi.fecha,'') fecha,
+                   CASE
+                     WHEN COALESCE(oc.estado,'') = 'Pagada' THEN 'Pagada'
+                     WHEN cp.id IS NOT NULL THEN 'Pagada'
+                     ELSE pi.estado
+                   END as estado_real,
+                   COALESCE(pi.fecha_publicacion,'') fecha_publicacion,
+                   COALESCE(pi.entregable,'') entregable,
+                   COALESCE(pi.numero_oc,'') numero_oc
+            FROM pagos_influencers pi
+            LEFT JOIN ordenes_compra oc ON oc.numero_oc = pi.numero_oc
+            LEFT JOIN comprobantes_pago cp
+                   ON cp.numero_oc = pi.numero_oc
+                  AND cp.id = (SELECT MAX(id) FROM comprobantes_pago
+                                WHERE numero_oc = pi.numero_oc)
+            WHERE COALESCE(pi.fecha,'') >= ?
+            ORDER BY pi.fecha DESC, pi.id DESC
+        """, (desde,)).fetchall()
+
+        acum = {}
+        for p in pagos:
+            k = _clave_creador(p["influencer_id"], p["influencer_nombre"])
+            a = acum.setdefault(k, {
+                "pagado": 0.0, "n_pagos": 0, "pendiente": 0.0, "n_pendientes": 0,
+                "sin_publicacion": 0, "meses": {}, "ultimo": None, "detalle": [],
+            })
+            est = (p["estado_real"] or "").strip()
+            val = float(p["valor"] or 0)
+            mes = (p["fecha"] or "")[:7]
+            m = a["meses"].setdefault(mes, {"pagado": 0.0, "pendiente": 0.0, "n": 0})
+            if est == "Pagada":
+                a["pagado"] += val
+                a["n_pagos"] += 1
+                m["pagado"] += val
+                m["n"] += 1
+                if a["ultimo"] is None:
+                    # Los pagos vienen ordenados por fecha desc, así que el primero
+                    # que pasa por acá es el último pagado.
+                    a["ultimo"] = {"fecha": p["fecha"], "valor": val,
+                                   "entregable": (p["entregable"] or "")[:120],
+                                   "fecha_publicacion": p["fecha_publicacion"]}
+            elif est == "Pendiente":
+                a["pendiente"] += val
+                a["n_pendientes"] += 1
+                m["pendiente"] += val
+                m["n"] += 1
+            else:
+                continue   # Anulada u otro estado: no es plata de este creador
+            if not (p["fecha_publicacion"] or "").strip():
+                a["sin_publicacion"] += 1
+            if len(a["detalle"]) < 60:
+                a["detalle"].append({
+                    "id": p["id"], "fecha": p["fecha"], "valor": round(val),
+                    "estado": est, "entregable": (p["entregable"] or "")[:120],
+                    "fecha_publicacion": p["fecha_publicacion"],
+                    "numero_oc": p["numero_oc"],
+                })
+
+        atrib = atribucion_por_influencer(c, desde)
+
+        salida = []
+        for cr in creadores:
+            k_id = ('id', int(cr["id"]))
+            k_nom = ('nom', (cr["nombre"] or "").strip().lower())
+            # Un creador puede tener pagos viejos sin id y pagos nuevos con id: se
+            # suman las dos llaves, o el histórico quedaría fuera de su total.
+            partes = [acum[k] for k in (k_id, k_nom) if k in acum]
+            pagado = sum(p["pagado"] for p in partes)
+            n_pagos = sum(p["n_pagos"] for p in partes)
+            pendiente = sum(p["pendiente"] for p in partes)
+            n_pend = sum(p["n_pendientes"] for p in partes)
+            sin_pub = sum(p["sin_publicacion"] for p in partes)
+            ultimos = [p["ultimo"] for p in partes if p["ultimo"]]
+            ultimo = max(ultimos, key=lambda x: x["fecha"]) if ultimos else None
+            serie = []
+            for et in etiquetas:
+                pg = sum((p["meses"].get(et) or {}).get("pagado", 0.0) for p in partes)
+                pn = sum((p["meses"].get(et) or {}).get("pendiente", 0.0) for p in partes)
+                serie.append({"mes": et, "pagado": round(pg), "pendiente": round(pn)})
+            detalle = sorted(
+                [d for p in partes for d in p["detalle"]],
+                key=lambda x: (x["fecha"], x["id"]), reverse=True)[:60]
+
+            at = atrib.get(cr["id"]) or {}
+            dias_ult = None
+            if ultimo and ultimo["fecha"]:
+                try:
+                    dias_ult = (hoy - date.fromisoformat(ultimo["fecha"][:10])).days
+                except ValueError:
+                    dias_ult = None
+
+            salida.append({
+                "influencer_id": cr["id"],
+                "nombre":        cr["nombre"],
+                "usuario_red":   cr["usuario_red"] or "",
+                "red_social":    cr["red_social"] or "",
+                "nicho":         cr["nicho"] or "",
+                "ciudad":        cr["ciudad"] or "",
+                "estado":        cr["estado"] or "",
+                "motivo_baja":   cr["motivo_baja"],
+                "fecha_baja":    cr["fecha_baja"],
+                "discount_code": cr["discount_code"].upper().strip(),
+                "pagado":        round(pagado),
+                "n_pagos":       n_pagos,
+                "ticket_prom":   round(pagado / n_pagos) if n_pagos else 0,
+                "pendiente":     round(pendiente),
+                "n_pendientes":  n_pend,
+                "sin_publicacion": sin_pub,
+                "ultimo_pago":   ultimo,
+                "dias_sin_pago": dias_ult,
+                "serie":         serie,
+                "detalle":       detalle,
+                # Sin código de descuento no se puede atribuir venta: va en None
+                # (sin dato), NUNCA en 0 -- 0 se leería como "no vendió nada" (M33).
+                "revenue":       at.get("revenue_total") if at else None,
+                "n_pedidos":     at.get("n_pedidos") if at else None,
+                "roi_pct":       at.get("roi_pct") if at else None,
+            })
+
+        if q:
+            salida = [x for x in salida
+                      if q in (x["nombre"] or "").lower()
+                      or q in (x["usuario_red"] or "").lower()
+                      or q in (x["discount_code"] or "").lower()]
+
+        # Se ordena por plata puesta en la ventana: el directorio abre mostrando en
+        # quién se está invirtiendo de verdad, no el alfabético.
+        salida.sort(key=lambda x: (-x["pagado"], -x["pendiente"], x["nombre"].lower()))
+
+        activos = [x for x in salida if (x["estado"] or "").lower() != 'baja']
+        kpis = {
+            "creadores":        len(salida),
+            "con_pago":         sum(1 for x in salida if x["n_pagos"] > 0),
+            "activos":          len(activos),
+            "pagado_total":     sum(x["pagado"] for x in salida),
+            "pendiente_total":  sum(x["pendiente"] for x in salida),
+            "n_pendientes":     sum(x["n_pendientes"] for x in salida),
+            "sin_publicacion":  sum(x["sin_publicacion"] for x in salida),
+            "revenue_total":    sum(x["revenue"] or 0 for x in salida),
+        }
+        kpis["roi_global_pct"] = (
+            round((kpis["revenue_total"] - kpis["pagado_total"]) / kpis["pagado_total"] * 100, 1)
+            if kpis["pagado_total"] > 0 else None)
+
+        return jsonify({"ok": True, "desde": desde, "meses": etiquetas,
+                        "kpis": kpis, "creadores": salida})
+    except Exception:
+        log.error("mkt_directorio_creadores falló: %s", traceback.format_exc())
+        return jsonify({"error": "Error armando el directorio de creadores"}), 500
 
 
 @bp.route("/api/marketing/pagos-historico-cleanup", methods=["POST"])
@@ -5056,8 +5287,12 @@ def mkt_solicitar_pago_influencer(iid):
         # FEATURE 27-may PM · fecha_contenido + vence_pago_at (30d desde contenido)
         # SAVEPOINT: si pagos_influencers falla (no crítico · la SOL+OC ya quedaron),
         # NO debe abortar la transacción entera en PG. INSERT dinámico por columnas.
+        # SIN savepoint manual: el pg_adapter YA envuelve cada execute() en el suyo (`_eos_sp`) y
+        # su RELEASE destruye los savepoints creados despues -> el `sp_pi` de aca desaparecia y
+        # el RELEASE siguiente tiraba "savepoint no existe" (verificado: era cosmetico, la fila
+        # igual quedaba, pero es ruido que esconde errores reales). Un try/except plano ya da la
+        # semantica que se buscaba: si esto falla, la SOL y la OC siguen en pie.
         try:
-            c.execute("SAVEPOINT sp_pi")
             _insert_dyn('pagos_influencers', [
                 ('influencer_id', iid), ('influencer_nombre', inf["nombre"]),
                 ('valor', int(monto)), ('fecha', _fecha_hoy), ('estado', 'Pendiente'),
@@ -5065,12 +5300,10 @@ def mkt_solicitar_pago_influencer(iid):
                 ('fecha_contenido', fecha_contenido), ('vence_pago_at', vence_pago_at),
                 ('fecha_publicacion', fecha_publicacion), ('entregable', entregable),
             ], core=('influencer_nombre', 'valor', 'estado'))
-            c.execute("RELEASE SAVEPOINT sp_pi")
-        except Exception:
-            try:
-                c.execute("ROLLBACK TO SAVEPOINT sp_pi")
-            except Exception:
-                pass
+        except Exception as _e_pi:
+            # No se traga mudo (M4): la SOL+OC ya quedaron, pero si el registro del panel falla
+            # hay que poder verlo en el log.
+            log.warning('pagos_influencers no se pudo registrar para %s: %s', inf.get("nombre"), _e_pi)
 
         # Sebastián 25-may-2026 PM · audit P0 · mutación financiera SIN
         # audit_log antes era el bug más sensible (dinero real · SOL+OC+pago

@@ -10467,9 +10467,15 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_cod_cobros_shopify "
         "ON animus_cod_cobros(shopify_id)",
         "CREATE INDEX IF NOT EXISTS idx_cod_cobros_estado ON animus_cod_cobros(estado)",
-        # Buscar la marca en nota/etiquetas recorre la tabla entera; con el índice por fecha
-        # la vista se acota al rango que se está mirando.
-        "CREATE INDEX IF NOT EXISTS idx_shopify_orders_creado ON animus_shopify_orders(creado_en)",
+    ]),
+    (385, "`animus_shopify_orders(creado_en)` tenía TRES índices idénticos con nombres distintos "
+          "(`idx_shopify_creado_en`, `idx_aso_creado`, y el `idx_shopify_orders_creado` que agregué "
+          "el 27-jul sin revisar si ya existía). Tres índices iguales no aceleran ninguna consulta "
+          "-- el planificador usa uno -- y en cambio hacen más lenta CADA escritura del sync de "
+          "Shopify, que inserta miles de pedidos. Se deja uno. "
+          "Regla que salió de acá: antes de agregar un índice, `grep` la columna (M110).", [
+        "DROP INDEX IF EXISTS idx_shopify_orders_creado",
+        "DROP INDEX IF EXISTS idx_aso_creado",
     ]),
 ]
 

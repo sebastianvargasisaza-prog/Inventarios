@@ -104,6 +104,10 @@ CORAZON=(
   "tests/test_pago_influencer_antidup.py"
   "tests/test_solicitar_pago_influencer.py"
   "tests/test_influencer_pago_e2e.py"
+  # Directorio de creadores: es la vista con la que el CEO decide el pago del mes. Sus
+  # numeros tienen que significar lo mismo que en el centro de pagos, y el historico sin
+  # influencer_id tiene que seguir contando (si no, subestima lo que se le lleva pagado).
+  "tests/test_directorio_creadores.py"
 )
 
 echo ""
