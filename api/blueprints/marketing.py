@@ -4473,8 +4473,27 @@ def mkt_directorio_creadores():
         creadores = [dict(r) for r in c.execute(
             "SELECT id, nombre, usuario_red, red_social, estado, nicho, ciudad, "
             "       COALESCE(discount_code,'') discount_code, "
-            "       COALESCE(motivo_baja,'') motivo_baja, COALESCE(fecha_baja,'') fecha_baja "
+            "       COALESCE(motivo_baja,'') motivo_baja, COALESCE(fecha_baja,'') fecha_baja, "
+            "       COALESCE(email,'') email, COALESCE(telefono,'') telefono, "
+            "       COALESCE(seguidores,0) seguidores, COALESCE(engagement_rate,0) engagement_rate, "
+            "       COALESCE(tarifa,0) tarifa, COALESCE(ciclo_pago,'') ciclo_pago, "
+            "       COALESCE(notas,'') notas, COALESCE(fecha_registro,'') fecha_registro, "
+            "       COALESCE(banco,'') banco, COALESCE(cuenta_bancaria,'') cuenta_bancaria, "
+            "       COALESCE(tipo_cuenta,'') tipo_cuenta, COALESCE(cedula_nit,'') cedula_nit "
             "FROM marketing_influencers ORDER BY nombre").fetchall()]
+
+        # Habeas Data (Ley 1581): los datos bancarios sólo para admin y contadora. El resto
+        # del equipo ve la ficha completa menos la cuenta -- mismo criterio que el panel.
+        try:
+            _puede_ver_banco = (u or '').lower() in {
+                x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
+        except Exception:
+            _puede_ver_banco = False
+        if not _puede_ver_banco:
+            for _cr in creadores:
+                for _campo in ('banco', 'cuenta_bancaria', 'tipo_cuenta', 'cedula_nit'):
+                    if _cr.get(_campo):
+                        _cr[_campo] = '***'
 
         # El estado del pago se deriva del estado REAL de la OC, exactamente igual que
         # en el centro de pagos: si el directorio dedujera "pendiente" de otra forma,
@@ -4583,6 +4602,19 @@ def mkt_directorio_creadores():
                 "motivo_baja":   cr["motivo_baja"],
                 "fecha_baja":    cr["fecha_baja"],
                 "discount_code": cr["discount_code"].upper().strip(),
+                # Ficha completa: al abrir un creador se ve TODO sin ir a otra pantalla.
+                "email":         cr["email"],
+                "telefono":      cr["telefono"],
+                "seguidores":    int(cr["seguidores"] or 0),
+                "engagement_rate": float(cr["engagement_rate"] or 0),
+                "tarifa":        float(cr["tarifa"] or 0),
+                "ciclo_pago":    cr["ciclo_pago"],
+                "notas":         cr["notas"],
+                "fecha_registro": (cr["fecha_registro"] or "")[:10],
+                "banco":         cr["banco"],
+                "cuenta_bancaria": cr["cuenta_bancaria"],
+                "tipo_cuenta":   cr["tipo_cuenta"],
+                "cedula_nit":    cr["cedula_nit"],
                 "pagado":        round(pagado),
                 "n_pagos":       n_pagos,
                 "ticket_prom":   round(pagado / n_pagos) if n_pagos else 0,

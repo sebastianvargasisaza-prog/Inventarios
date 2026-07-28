@@ -79,6 +79,11 @@ HTML = r"""
   .cm-badge.on { display:inline-flex; }
   /* Grid premium de decisiones (evita el vacío a la derecha en pantallas anchas) */
   #decisiones { display:grid; grid-template-columns:repeat(auto-fill,minmax(430px,1fr)); gap:12px; }
+  /* El encabezado de tema ocupa la fila entera: sin eso las tarjetas se acomodan alrededor
+     y el separador queda flotando en el medio de la grilla. */
+  #decisiones .dec-sep { grid-column:1/-1; font-size:12px; font-weight:800; color:var(--cx-text);
+    text-transform:uppercase; letter-spacing:.06em; padding:10px 2px 2px; display:flex; align-items:center; gap:7px; }
+  #decisiones .dec-sep:first-child { padding-top:0; }
   #decisiones .dec-card { display:flex; align-items:center; gap:14px; text-decoration:none;
             background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:14px;
             padding:15px 18px; transition:box-shadow .18s, transform .12s, border-color .18s; box-shadow:var(--cx-sh-sm); }
@@ -86,7 +91,7 @@ HTML = r"""
   #decisiones .dec-ico { width:38px; height:38px; border-radius:11px; display:flex; align-items:center;
             justify-content:center; font-size:19px; line-height:1; flex:0 0 auto; }
   #decisiones .dec-body { flex:1; min-width:0; }
-  #decisiones .dec-tit { font-weight:700; color:var(--cx-text,#1c1917); font-size:14.5px; letter-spacing:-.01em; }
+  #decisiones .dec-tit { font-weight:700; color:var(--cx-text); font-size:14.5px; letter-spacing:-.01em; }
   #decisiones .dec-det { color:var(--cx-text-mute,#78716c); font-size:12.5px; margin-top:3px; line-height:1.4; }
   #decisiones .dec-badge { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.7px;
             color:var(--cx-text-mute,#a8a29e); background:transparent; white-space:nowrap; flex:0 0 auto; }
@@ -138,7 +143,10 @@ HTML = r"""
     <div class="area-title" style="border:none;padding-bottom:2px"><span class="area-title-icon">🎯</span>Lo que podés atacar hoy
       <span id="dec-resumen" style="margin-left:auto;font-size:12px;font-weight:600;color:var(--cx-text-mute)"></span>
     </div>
-    <div id="dec-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px 0"></div>
+    <div id="dec-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px 0"></div>
+    <!-- Segundo eje: POR TEMA. 45 tarjetas de 6 tipos distintos en una sola pared no se
+         pueden atacar; agrupadas, cada tema se resuelve de una sentada. -->
+    <div id="dec-grupos" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px 0;padding-top:8px;border-top:1px solid var(--cx-hairline)"></div>
     <div id="decisiones"><div class="empty" style="padding:14px;color:var(--cx-text-mute)">Cargando decisiones...</div></div>
     </div>
 
@@ -331,7 +339,11 @@ async function cargar(forzado) {
 // ── DECISIONES: cola priorizada de lo que puedo atacar hoy ──
 var _DEC = [];
 var _DEC_FILTRO = 'todas';
-var _GRP_META = {compras:['🛒','Compras'], discrepancia:['📊','Discrepancias'], inventario:['📦','Inventario'], calidad:['🧪','Calidad'], equipo:['👥','Equipo']};
+var _DEC_GRUPO = 'todos';
+// `pagos` faltaba y por eso esas tarjetas salian con un punto gris en vez de su icono.
+// El ORDEN de esta tabla es el orden en que se muestran los temas: primero la plata.
+var _GRP_META = {pagos:['💸','Pagos'], compras:['🛒','Compras'], discrepancia:['📊','Discrepancias'],
+                 inventario:['📦','Inventario'], calidad:['🧪','Calidad'], equipo:['👥','Equipo']};
 function _decColor(n){ return n==='critico' ? '#dc2626' : (n==='atencion' ? '#d97706' : '#0891b2'); }
 async function pagarCreador(ix){
   // Paga SIN salir del Centro de Mando. Usa el endpoint CANONICO de Compras: reimplementar el
@@ -371,16 +383,44 @@ async function pagarCreador(ix){
 function pintarDecisiones(){
   var cont = document.getElementById('decisiones');
   var lista = _DEC_FILTRO==='todas' ? _DEC : _DEC.filter(function(d){return d.nivel===_DEC_FILTRO;});
+  if(_DEC_GRUPO!=='todos') lista = lista.filter(function(d){return (d.grupo||'')===_DEC_GRUPO;});
   if(!lista.length){
     cont.innerHTML = '<div class="empty" style="padding:16px;color:var(--cx-success-text);font-weight:600">✓ Nada urgente que atacar ahora mismo.</div>';
     return;
   }
   // Las decisiones quedan accesibles por INDICE: el boton pasa el indice y no el texto, asi no
   // hay dato del usuario interpolado dentro de un onclick.
+  // Y se ordenan POR TEMA (en el orden de _GRP_META, plata primero) y dentro de cada tema por
+  // gravedad: asi el indice que ve el boton coincide con lo que se pinta.
+  var orden = Object.keys(_GRP_META);
+  var peso = {critico:0, atencion:1};
+  lista = lista.slice().sort(function(a,b){
+    var ga=orden.indexOf(a.grupo||''), gb=orden.indexOf(b.grupo||'');
+    if(ga<0) ga=99; if(gb<0) gb=99;
+    if(ga!==gb) return ga-gb;
+    var pa=(peso[a.nivel]===undefined?9:peso[a.nivel]), pb=(peso[b.nivel]===undefined?9:peso[b.nivel]);
+    if(pa!==pb) return pa-pb;
+    return (b.valor||0)-(a.valor||0);
+  });
   window._DEC_VIS = lista;
+  var _grpPrev = null;
   cont.innerHTML = lista.map(function(d, _ix){
     var col = _decColor(d.nivel);
     var gm = _GRP_META[d.grupo] || ['•', d.grupo||''];
+    // Encabezado cada vez que cambia el tema (sólo cuando se ven todos mezclados).
+    var sep = '';
+    if(_DEC_GRUPO==='todos' && d.grupo!==_grpPrev){
+      _grpPrev = d.grupo;
+      var n = lista.filter(function(z){return z.grupo===d.grupo;}).length;
+      sep = '<div class="dec-sep">'+gm[0]+' '+_esc(gm[1])
+          + '<span style="font-weight:600;color:var(--cx-text-mute);font-size:11.5px"> · '+n+'</span></div>';
+    }
+    return sep + _decCard(d, _ix, col, gm);
+  }).join('');
+}
+
+function _decCard(d, _ix, col, gm){
+  {
     // Un pago se RESUELVE aca mismo: el CEO no tiene que irse a otro modulo para ejecutarlo.
     if(d.pago && d.pago.numero_oc){
       return '<div class="dec-card" style="border-left:4px solid '+col+';cursor:default">'+
@@ -401,10 +441,11 @@ function pintarDecisiones(){
       '<span class="dec-badge">'+_esc(gm[1])+'</span>'+
       '<span class="dec-arrow"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>'+
     '</a>';
-  }).join('');
+  }
 }
 var _DEC_RES = {};
 function setFiltroDec(f){ _DEC_FILTRO = f; pintarChips(); pintarDecisiones(); }
+function setGrupoDec(g){ _DEC_GRUPO = g; pintarChips(); pintarDecisiones(); }
 function pintarChips(){
   var res = _DEC_RES || {};
   var c = document.getElementById('dec-chips');
@@ -413,8 +454,31 @@ function pintarChips(){
     var act = _DEC_FILTRO===x[0];
     var col = x[0]==='critico' ? '#dc2626' : (x[0]==='atencion' ? '#d97706' : '#6d28d9');
     return '<button onclick="setFiltroDec(\''+x[0]+'\')" '+
-      'style="border:1px solid '+(act?col:'#d6d3d1')+';background:'+(act?col:'transparent')+';color:'+(act?'#fff':'#57534e')+';'+
+      'style="border:1px solid '+(act?col:'var(--cx-border)')+';background:'+(act?col:'transparent')+';color:'+(act?'#fff':'var(--cx-text-mute)')+';'+
       'border-radius:20px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer">'+x[1]+' ('+x[2]+')</button>';
+  }).join('');
+  pintarGrupos();
+}
+
+function pintarGrupos(){
+  // Los contadores se cuentan sobre lo que YA filtro la gravedad: si estoy en "Criticas",
+  // el chip de Pagos tiene que decir cuantos pagos criticos hay, no el total (M5).
+  var cg = document.getElementById('dec-grupos'); if(!cg) return;
+  var base = _DEC_FILTRO==='todas' ? _DEC : _DEC.filter(function(d){return d.nivel===_DEC_FILTRO;});
+  var cuenta = {};
+  base.forEach(function(d){ var g=d.grupo||'otros'; cuenta[g]=(cuenta[g]||0)+1; });
+  var defs = [['todos','🎯','Todo', base.length]];
+  Object.keys(_GRP_META).forEach(function(g){
+    if(cuenta[g]) defs.push([g, _GRP_META[g][0], _GRP_META[g][1], cuenta[g]]);
+  });
+  // Un tema que hoy no tiene nada NO se muestra: un chip en 0 es ruido.
+  cg.innerHTML = defs.map(function(x){
+    var act = _DEC_GRUPO===x[0];
+    return '<button onclick="setGrupoDec(\''+x[0]+'\')" '+
+      'style="border:1px solid '+(act?'var(--cx-primary)':'var(--cx-border)')+';'+
+      'background:'+(act?'var(--cx-primary)':'transparent')+';color:'+(act?'#fff':'var(--cx-text-mute)')+';'+
+      'border-radius:20px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer">'+
+      x[1]+' '+x[2]+' <span style="opacity:.75">'+x[3]+'</span></button>';
   }).join('');
 }
 async function cargarDecisiones(){

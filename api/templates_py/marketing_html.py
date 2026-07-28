@@ -316,11 +316,17 @@ window.addEventListener('unhandledrejection', function(ev) {
         <div style="font-size:12px;color:var(--cx-text-mute);margin-top:3px;">Cuánto le llevamos puesto a cada uno, con qué ritmo mes a mes, y qué devolvió. Click en una tarjeta para ver pago por pago.</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div style="position:relative;">
+          <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.5;pointer-events:none;">&#x1F50D;</span>
+          <input id="dir-buscar" type="search" placeholder="Buscar creador por nombre..." oninput="dirBuscarLocal()"
+                 style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:999px;padding:8px 14px 8px 32px;color:var(--cx-text);font-size:12.5px;min-width:230px;outline:none;">
+        </div>
         <select id="dir-meses" onchange="loadDirectorio()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:7px 11px;color:var(--cx-text);font-size:12px;font-weight:600;">
           <option value="6">Últimos 6 meses</option>
           <option value="12" selected>Últimos 12 meses</option>
           <option value="24">Últimos 24 meses</option>
         </select>
+        <button class="btn btn-primary btn-sm" onclick="openInfluencerModal()">+ Creador</button>
         <button class="btn btn-outline btn-sm" onclick="loadDirectorio()" title="Refrescar directorio">&#x21BB;</button>
       </div>
     </div>
@@ -443,12 +449,18 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div><!-- /inf-view-creadores -->
 </div>
 
-<!-- Tab "tab-pagos" eliminado - fusionado al de Influencers (Sebastian 30-abr-2026) -->
-<div id="tab-pagos" class="tab-panel" style="display:none">
-  <!-- LEGACY: por compatibilidad si algún link viejo apunta a este tab,
-       redirige al de Influencers. -->
-  <script>setTimeout(function(){ if(typeof switchTab==='function') switchTab(location.hash==='#pagos'?'influencers':'dashboard'); }, 100);</script>
-</div>
+<!-- ARRANQUE DE LA PÁGINA
+     Acá vivía un bloque de JS heredado que 100 ms después de cargar llamaba a
+     `switchTab('dashboard')`. Cuando saqué la pestaña Dashboard, ese tab dejó de
+     existir: switchTab le quitaba `active` a TODOS los paneles, no encontraba
+     `tab-dashboard`, y la pantalla se quedaba EN BLANCO hasta que uno hacía click
+     en la pestaña. Además, como loadTab nunca corría, tampoco se cargaban los datos.
+     Ahora la única pestaña se abre sola. -->
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  if(typeof switchTab === 'function') switchTab('influencers');
+});
+</script>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- TAB: CONTENIDO (Kanban Brief→Producción→Pendiente→Publicado→Performance) -->
@@ -1084,7 +1096,15 @@ function renderDirectorio(){
   }
 
   var f=window._DIR_FILTRO;
+  // La busqueda es LOCAL (sobre lo ya traido): filtrar mientras se escribe no puede costar
+  // un viaje al servidor por tecla, y el directorio entero ya esta en memoria.
+  var q=((document.getElementById('dir-buscar')||{}).value||'').trim().toLowerCase();
   var lista=todos.filter(function(x){
+    if(q){
+      var heno=((x.nombre||'')+' '+(x.usuario_red||'')+' '+(x.discount_code||'')+' '
+                +(x.ciudad||'')+' '+(x.nicho||'')).toLowerCase();
+      if(heno.indexOf(q)<0) return false;
+    }
     if(f==='con_pago')  return x.n_pagos>0;
     if(f==='pendiente') return x.n_pendientes>0;
     if(f==='revisar')   return x.sin_publicacion>0;
@@ -1170,38 +1190,122 @@ function _dirCard(x, ix, tope){
     +'<div class="dir-meses">'+rotulos+'</div>'
     +'<div class="dir-foot">'
       +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+ult+'</span>'
-      +'<button onclick="dirToggle('+ix+')" style="border:1px solid var(--cx-border);background:transparent;color:var(--cx-primary-text);border-radius:8px;padding:4px 11px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">Ver pagos</button>'
+      +'<button onclick="dirToggle('+ix+')" id="dir-btn-'+ix+'" style="border:1px solid var(--cx-border);background:transparent;color:var(--cx-primary-text);border-radius:8px;padding:4px 11px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">Ver ficha</button>'
     +'</div>'
     +'<div class="dir-det" id="dir-det-'+ix+'" style="display:none"></div>'
   +'</div>';
 }
 
+function _dirDato(lbl, val, resalta){
+  if(val===null || val===undefined || val==='' || val===0) return '';
+  return '<div style="min-width:0;">'
+    +'<div style="font-size:9.5px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.04em;">'+lbl+'</div>'
+    +'<div style="font-size:12.5px;color:'+(resalta?'var(--cx-primary-text)':'var(--cx-text)')+';margin-top:1px;overflow:hidden;text-overflow:ellipsis;">'+_escHtml(String(val))+'</div>'
+  +'</div>';
+}
+
 function dirToggle(ix){
+  // Un click abre la FICHA COMPLETA del creador: quien es, como se le paga, y cada pago.
+  // La idea es no tener que salir de aca ni cruzar dos pantallas para decidir.
   var box=document.getElementById('dir-det-'+ix);
+  var btn=document.getElementById('dir-btn-'+ix);
   var x=(window._DIR_VIS||[])[ix];
   if(!box || !x) return;
-  if(box.style.display!=='none'){ box.style.display='none'; box.innerHTML=''; return; }
-  var det=x.detalle||[];
-  if(!det.length){
-    box.innerHTML='<div style="color:var(--cx-text-mute);font-size:12px;padding:4px 0;">Sin pagos registrados en el periodo.</div>';
-  }else{
-    box.innerHTML='<table>'+det.map(function(d){
-      var pagado=(d.estado==='Pagada');
-      return '<tr>'
-        +'<td style="white-space:nowrap;color:var(--cx-text-mute);">'+_escHtml((d.fecha||'').slice(0,10))+'</td>'
-        +'<td style="font-weight:700;white-space:nowrap;">$'+Number(d.valor||0).toLocaleString('es-CO')+'</td>'
-        +'<td><span class="dir-chip" style="background:'+(pagado?'var(--cx-success-pale,#d1fae5)':'var(--cx-warn-pale,#fef3c7)')
-          +';color:'+(pagado?'var(--cx-success-text)':'var(--cx-warn-text)')+'">'+_escHtml(d.estado||'')+'</span></td>'
-        +'<td>'+(d.fecha_publicacion
-            ? '<span style="color:var(--cx-text-mute);">publico '+_escHtml(d.fecha_publicacion.slice(0,10))+'</span>'
-            : '<span style="color:var(--cx-danger-text);font-weight:700;" title="Sin fecha de publicacion no se puede verificar que se entrego">sin fecha</span>')
-          +(d.entregable? '<div style="color:var(--cx-text);">'+_escHtml(d.entregable)+'</div>':'')
-          +(d.numero_oc? '<div style="font-size:10px;color:var(--cx-text-mute);">'+_escHtml(d.numero_oc)+'</div>':'')
-        +'</td>'
-      +'</tr>';
-    }).join('')+'</table>';
+  if(box.style.display!=='none'){
+    box.style.display='none'; box.innerHTML='';
+    if(btn) btn.textContent='Ver ficha';
+    return;
   }
+  if(btn) btn.textContent='Cerrar';
+
+  var esBaja=((x.estado||'').toLowerCase()==='baja');
+  var datos=[
+    _dirDato('Red',        (x.usuario_red? '@'+x.usuario_red : '') || x.red_social),
+    _dirDato('Seguidores', x.seguidores? Number(x.seguidores).toLocaleString('es-CO') : ''),
+    _dirDato('Engagement', x.engagement_rate? (x.engagement_rate+'%') : ''),
+    _dirDato('Nicho',      x.nicho),
+    _dirDato('Ciudad',     x.ciudad),
+    _dirDato('Email',      x.email),
+    _dirDato('Telefono',   x.telefono),
+    _dirDato('Cupon',      x.discount_code, true),
+    _dirDato('Tarifa',     x.tarifa? ('$'+Number(x.tarifa).toLocaleString('es-CO')) : ''),
+    _dirDato('Ciclo',      x.ciclo_pago),
+    _dirDato('Banco',      x.banco),
+    _dirDato('Cuenta',     x.cuenta_bancaria),
+    _dirDato('Tipo cuenta',x.tipo_cuenta),
+    _dirDato('Cedula/NIT', x.cedula_nit),
+    _dirDato('Venta atribuida', (x.revenue===null||x.revenue===undefined)? '' : ('$'+Number(x.revenue).toLocaleString('es-CO'))),
+    _dirDato('Pedidos con su cupon', x.n_pedidos),
+    _dirDato('Registrado', x.fecha_registro)
+  ].filter(Boolean).join('');
+
+  // Las acciones van por INDICE, no interpolando el nombre dentro del onclick: un creador
+  // que se llame "D'Angelo" rompería el atributo (y peor, es dato de usuario dentro de HTML).
+  var bot=function(accion,txt,estilo){
+    return '<button onclick="event.stopPropagation();dirAccion('+ix+',\''+accion+'\')" style="'+estilo+'">'+txt+'</button>';
+  };
+  var neutro='border:1px solid var(--cx-border);background:transparent;color:var(--cx-text);border-radius:8px;padding:6px 13px;font-size:11.5px;font-weight:700;cursor:pointer;';
+  var acciones='<div style="display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 4px;">'
+    + bot('editar','&#9998; Editar', neutro)
+    + (esBaja? '' : bot('pago','&#128176; Solicitar pago',
+        'border:none;background:var(--cx-primary-grad,var(--cx-primary));color:#fff;border-radius:8px;padding:6px 13px;font-size:11.5px;font-weight:700;cursor:pointer;'))
+    + bot('gestionar','Gestionar pagos', neutro)
+    + (esBaja? '' : bot('baja','Dar de baja',
+        'border:1px solid var(--cx-danger);background:transparent;color:var(--cx-danger-text);border-radius:8px;padding:6px 13px;font-size:11.5px;font-weight:700;cursor:pointer;'))
+  +'</div>';
+
+  var motivo = esBaja && x.motivo_baja
+    ? '<div style="background:var(--cx-danger-pale,#fee2e2);color:var(--cx-danger-text);border-radius:9px;padding:8px 11px;font-size:11.5px;margin-bottom:10px;">Baja'
+        +(x.fecha_baja? ' el '+_escHtml(x.fecha_baja.slice(0,10)) : '')+': '+_escHtml(x.motivo_baja)+'</div>'
+    : '';
+
+  var det=x.detalle||[];
+  var tabla = det.length
+    ? '<div style="font-size:10px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Pagos del periodo ('+det.length+')</div>'
+      +'<table>'+det.map(function(d){
+        var pagado=(d.estado==='Pagada');
+        return '<tr>'
+          +'<td style="white-space:nowrap;color:var(--cx-text-mute);">'+_escHtml((d.fecha||'').slice(0,10))+'</td>'
+          +'<td style="font-weight:700;white-space:nowrap;">$'+Number(d.valor||0).toLocaleString('es-CO')+'</td>'
+          +'<td><span class="dir-chip" style="background:'+(pagado?'var(--cx-success-pale,#d1fae5)':'var(--cx-warn-pale,#fef3c7)')
+            +';color:'+(pagado?'var(--cx-success-text)':'var(--cx-warn-text)')+'">'+_escHtml(d.estado||'')+'</span></td>'
+          +'<td>'+(d.fecha_publicacion
+              ? '<span style="color:var(--cx-text-mute);">publico '+_escHtml(d.fecha_publicacion.slice(0,10))+'</span>'
+              : '<span style="color:var(--cx-danger-text);font-weight:700;" title="Sin fecha de publicacion no se puede verificar que se entrego">sin fecha</span>')
+            +(d.entregable? '<div style="color:var(--cx-text);">'+_escHtml(d.entregable)+'</div>':'')
+            +(d.numero_oc? '<div style="font-size:10px;color:var(--cx-text-mute);">'+_escHtml(d.numero_oc)+'</div>':'')
+          +'</td>'
+        +'</tr>';
+      }).join('')+'</table>'
+    : '<div style="color:var(--cx-text-mute);font-size:12px;padding:6px 0;">Sin pagos registrados en el periodo.</div>';
+
+  box.innerHTML = motivo
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:10px 14px;">'+datos+'</div>'
+    + acciones
+    + (x.notas? '<div style="background:var(--cx-bg-alt);border-radius:9px;padding:8px 11px;font-size:11.5px;color:var(--cx-text-mute);margin-bottom:6px;">'+_escHtml(x.notas)+'</div>' : '')
+    + tabla;
   box.style.display='';
+}
+
+function dirAccion(ix, accion){
+  // Reusa los MISMOS flujos del catalogo (M3: una sola via por accion, no una segunda copia
+  // que despues diverja). El directorio solo los invoca con los datos que ya tiene.
+  var x=(window._DIR_VIS||[])[ix]; if(!x) return;
+  var id=x.influencer_id, nom=x.nombre||'';
+  if(accion==='editar')    return editInfluencer(id);
+  if(accion==='gestionar') return abrirGestionarPagos(id, nom);
+  if(accion==='baja')      return abrirDarDeBaja(id, nom);
+  if(accion==='pago'){
+    // La ficha ya trae banco/cuenta (enmascarados si el usuario no puede verlos), asi que
+    // el modal se llena sin depender del cache que arma la tabla del catalogo.
+    return solicitarPagoInf(id, nom, x.tarifa||'', x.banco||'', x.cuenta_bancaria||'',
+                            x.cedula_nit||'', x.tipo_cuenta||'');
+  }
+}
+
+function dirBuscarLocal(){
+  clearTimeout(window._DIR_Q_T);
+  window._DIR_Q_T=setTimeout(renderDirectorio, 120);
 }
 
 function infSubView(v){

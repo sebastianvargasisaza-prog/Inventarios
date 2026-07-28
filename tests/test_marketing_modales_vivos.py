@@ -96,6 +96,33 @@ def test_todo_modal_que_abre_un_boton_vivo_existe_en_la_pagina(pagina):
         'no hace nada):\n  - ' + '\n  - '.join(rotos))
 
 
+def test_nadie_cambia_a_una_pestana_que_no_existe(pagina):
+    """Sebastián: *"le tengo que dar click en la pestaña para que aparezca"*.
+
+    La causa era un bloque heredado que 100 ms después de cargar llamaba a
+    `switchTab('dashboard')`. Al quitar la pestaña Dashboard ese tab dejó de existir, así que
+    switchTab le sacaba `active` a TODOS los paneles, no encontraba a cuál ponérselo, y la
+    pantalla quedaba en blanco hasta que uno hacía click. Mismo patrón que los modales
+    borrados: un disparador vivo apuntando a algo que ya no está.
+    """
+    js, solo_html = _partes(pagina)
+    paneles = set(re.findall(r'id="tab-([\w-]+)"', solo_html))
+    destinos = set(re.findall(r"switchTab\(\s*'([\w-]+)'\s*\)", js))
+    faltan = sorted(d for d in destinos if d not in paneles)
+    assert not faltan, (
+        'switchTab apunta a pestañas que no existen %s · eso deja la pantalla en blanco '
+        '(quita `active` de todos los paneles y no se lo pone a ninguno). Paneles reales: %s'
+        % (faltan, sorted(paneles)))
+
+
+def test_la_pantalla_se_abre_sola_sin_tener_que_hacer_click(pagina):
+    """Con una sola pestaña, entrar al módulo tiene que mostrarla ya cargada."""
+    js, _ = _partes(pagina)
+    assert 'DOMContentLoaded' in js and "switchTab('influencers')" in js, (
+        'no hay arranque: el panel queda oculto y loadTab nunca corre, así que además de '
+        'verse vacío tampoco carga los datos')
+
+
 @pytest.mark.parametrize('modal', [
     'modal-influencer',        # + Nuevo Influencer / editar
     'modal-inf-pago',          # Solicitar pago  <- el flujo que el módulo existe para tener
