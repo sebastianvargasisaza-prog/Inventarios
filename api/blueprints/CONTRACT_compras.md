@@ -321,3 +321,44 @@ Sebastián). La contadora **sí** entra: REGISTRAR un pago es su trabajo; lo que
 ella es AUTORIZAR una OC, que tiene su propio gate más estricto. Test:
 `tests/test_facturas_proveedor_rol.py` (verifica las dos direcciones: quien no tiene rol recibe
 403 y quien hace el trabajo sigue pudiendo).
+
+---
+
+### INV-12 · Una factura de proveedor con pagos NO se anula (28-jul)
+
+`fp_editar` con `{anular:true}` leía el estado de la factura y **no lo usaba para nada**:
+`SELECT estado` y a continuación `UPDATE ... SET estado='anulada' WHERE id=?`. Con eso se podía
+anular una factura **ya pagada**, y las filas de `pagos_oc` quedaban apuntando a un registro
+anulado: el libro de cuentas por pagar decía "anulada" mientras la plata ya había salido del
+banco.
+
+Es el patrón M45 otra vez, y en el mismo par de hermanos que INV-9: **`fp_pagar` sí rechaza pagar
+una factura anulada desde el 31-may**. Cuando se endurece un guard de dinero, uno de los dos
+hermanos queda sin endurecer, y la asimetría es la firma.
+
+**Reglas:**
+1. Anular exige que la factura **no tenga ningún pago registrado**
+   (`SUM(pagos_oc.monto WHERE factura_proveedor_id=?) = 0`). Con pagos → **409
+   `FACTURA_CON_PAGOS`**, con el monto en el mensaje. Para anularla hay que revertir el pago
+   primero, que es el orden correcto: la plata se devuelve antes que el papel.
+2. La anulación va con **CAS** (`WHERE id=? AND estado != 'anulada'` + `rowcount`): dos
+   anulaciones concurrentes no pueden pasar las dos (409 `YA_ANULADA`).
+3. El `audit_log` guarda **de qué estado venía** (`antes`), no sólo que se anuló.
+
+Test: `tests/test_factura_proveedor_anular.py` (en el gate · incluye el caso legítimo —una
+factura mal cargada SÍ se anula— para que el arreglo no mate la función).
+
+### INV-13 · El `except` de la recepción no es una sonda de esquema (28-jul)
+
+El `UPDATE` que cierra una recepción escribe estado, fecha, observaciones, **discrepancias**,
+quién recibió y el flag de parcial. Estaba envuelto en un `except Exception` que reintentaba un
+UPDATE mínimo, asumiendo que cualquier fallo era "faltan las columnas de la migración de mayo".
+
+Eso es M69: con esa forma, un fallo **real** (constraint, trigger, transacción abortada en PG) se
+disfraza de drift de esquema y la recepción se guarda **perdiendo las discrepancias y el
+receptor** — justo los datos con los que se le reclama al proveedor.
+
+**Regla:** el fallback al UPDATE mínimo aplica **sólo si el error es de columna**
+(`'column' | 'no such' | 'no existe la columna'`), y queda un `log.warning`. Cualquier otro error
+se **re-lanza**. Para saber si una columna existe se detecta una vez y se ramifica; el `except` de
+una mutación nunca es el detector.
