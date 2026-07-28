@@ -5,14 +5,116 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-07-27** (M109 · un formulario NO puede exigir un dato que su dueño no tiene en ese momento: la recepción administrativa pedía el lote del proveedor, que sólo se lee del envase y lo hace Calidad después → el control se MUEVE a la liberación, no se borra · una llave con dos nombres (`lote` vs `lote_proveedor`) descartaba el dato en silencio y daba 422 imposible de pasar · un dato capturado que no llega al consumidor no existe (el F01 guardaba el lote real sólo en su documento y el RÓTULO se imprime del kardex) · el mensaje de error es parte del control · un INDICADOR se DERIVA de los hechos, no se teclea, y promedia sólo las dimensiones CON dato · M108 · TRES sincronizadores sobre `animus_shopify_orders` con `INSERT OR REPLACE` y columnas distintas se borraban datos entre ellos: el de marketing borraba las `tags` donde vive la marca de CONTRAENTREGA, los otros los descuentos, y los tres el flag `flujo_synced` · si N procesos escriben la misma tabla ninguno puede usar INSERT OR REPLACE, va ON CONFLICT DO UPDATE con SOLO sus columnas · corolario: el estado OPERATIVO no vive en una tabla que un sync reescribe (el "ya entró la plata" va en tabla propia) · cuando la marca la escribe una PERSONA se miran las 3 señales (nota/etiqueta/medio de pago), el detector dice CUÁL matcheó y el patrón se ajusta sin deploy · M107 · una variable CSS que vale algo DISTINTO en cada uso NO es un color, es un PARÁMETRO: `--gm-ac` se declara 7 veces con 7 acentos y mapearla a un token dejaba las 7 secciones violetas · antes de mapear, contá cuántos valores distintos toma; si son varios, enrutá cada uno al token de SU familia de tono y verificá que ningún token junte un rojo con un verde · el trinquete NO lo caza (un color aplanado sigue "usando tokens") · lo cacé revisando mi propio diff antes de commitear · M106 · el módulo de caja nació incumpliendo su motivo: se pidió para reemplazar los recibos SIN numeración y guardaba el movimiento sin número, con borrado duro — un correlativo del que se pueden arrancar hojas no prueba nada, el valor de numerar es que el hueco se vea → recibo `RC-año-NNNN` UNIQUE + anular conserva la fila · el PERÍODO contable sale del HECHO (fecha del pago), no de `now()`: la misma fila tenía dos meses distintos · M24 llevaba escrita desde junio con **28 violaciones vivas en 6 módulos de dinero** y el guard nuevo encontró 2 más que se me pasaron: una regla es una intención hasta que algo la mide (igual que el trinquete M104) · la proyección del mes dividía por 1 día la noche de cierre · `new Date().toISOString()` en el front también es UTC · ⚠ `substr(x,-4)` para paddear es SQLite-only, usá `printf('%04d',n)` que sí está en el compat) · **2026-07-26** (M104 · un color de RELLENO y el mismo color como TEXTO no pueden ser el mismo token: al invertir el tema tiran en direcciones opuestas → el violeta como texto daba 2,06:1 sobre la tarjeta oscura · mapear `color:#fff` a `--cx-card` habría dejado 1.107 botones con texto oscuro sobre relleno oscuro: preguntá qué SIGNIFICA el color en ese lugar, no a qué valor es igual · el tema oscuro estaba a MEDIO construir (sólo neutros y pálidos, nunca los semánticos) y nadie lo notó porque casi nada usaba tokens · `var()` NO resuelve en atributos SVG ni en theme-color ni en canvas · en blueprints va con respaldo `var(--tok, #hex)` porque ahí viven los rótulos imprimibles · una regla que nadie verifica es una intención, no un blindaje: el trinquete va con techo EXACTO y hay que probar que MUERDE) · **2026-07-25** (M100 · abastecimiento MP: el motor trataba el stock como NÚMERO PLANO sin mirar cuándo vence → una MP que vence en 30d cubría un consumo del día 90 y el déficit salía corto (53 MPs) · un TABULADOR pegado a un código = clave distinta = 1000 envases invisibles en el kardex, normalizá toda clave con .strip() en el punto de escritura · un endpoint de diagnóstico con un chequeo caído DEBE declararlo, si no su lista vacía miente · M99 · una MISMA regla de negocio en DOS constantes distintas diverge en silencio: `DIAS_HABILES`=L-V validaba y `DIAS_PRODUCCION`=L/M/V ubicaba → el calendario aceptaba martes que los generadores nunca elegían (2 rutas, 2 calendarios) y la capacidad del mes caía de 44 a 26 cupos, comiéndose el colchón de 20d · el ➕ del calendario era el ÚNICO de 3 caminos sin validar día hábil/festivo · si N caminos hacen lo mismo, comparar sus GUARDS no solo su lógica · test que agenda a `hoy+N` cae siempre en el mismo día de semana · M98 · un campo con nombre de MÉTRICA que en realidad es una ETIQUETA de texto: `tendencia` ('aceleracion_fuerte') se convertía con float() → 500 en prod, y en JS se comparaba >= 0.08 → alerta muerta que nunca apareció · leé el `return` del productor antes de comparar/convertir · el número va en un campo APARTE (`tendencia_pct`), no se reinterpreta la etiqueta · un except alrededor del float() tapa el 500 pero deja la decisión con el default · M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
+Última actualización: **2026-07-27** · ⭐ **LEER las reglas 0.4 / 0.5 / 0.7 del inicio ANTES de actuar** (el método, qué nunca se hace, y el radio de explosión de cada tabla) · (M110 · PRODUCCIÓN NO ES UN BANCO DE PRUEBAS: medir el dashboard contra prod saturó los 3 workers y tumbó la app · una medición sobre un sistema que YO saturé mide COLA, no el endpoint · ante saturación ESPERAR (se recupera sola en 2 min), desplegar la alarga · el Deploy Hook NO va tras un push (Auto-Deploy ya arranca en 1 min → el hook duplica la ventana de caída) · el gate UNA vez por tanda · antes de agregar índice/columna/constante, grep si ya existe · las cinco estaban escritas y las pisé igual · M109 · un formulario NO puede exigir un dato que su dueño no tiene en ese momento: la recepción administrativa pedía el lote del proveedor, que sólo se lee del envase y lo hace Calidad después → el control se MUEVE a la liberación, no se borra · una llave con dos nombres (`lote` vs `lote_proveedor`) descartaba el dato en silencio y daba 422 imposible de pasar · un dato capturado que no llega al consumidor no existe (el F01 guardaba el lote real sólo en su documento y el RÓTULO se imprime del kardex) · el mensaje de error es parte del control · un INDICADOR se DERIVA de los hechos, no se teclea, y promedia sólo las dimensiones CON dato · M108 · TRES sincronizadores sobre `animus_shopify_orders` con `INSERT OR REPLACE` y columnas distintas se borraban datos entre ellos: el de marketing borraba las `tags` donde vive la marca de CONTRAENTREGA, los otros los descuentos, y los tres el flag `flujo_synced` · si N procesos escriben la misma tabla ninguno puede usar INSERT OR REPLACE, va ON CONFLICT DO UPDATE con SOLO sus columnas · corolario: el estado OPERATIVO no vive en una tabla que un sync reescribe (el "ya entró la plata" va en tabla propia) · cuando la marca la escribe una PERSONA se miran las 3 señales (nota/etiqueta/medio de pago), el detector dice CUÁL matcheó y el patrón se ajusta sin deploy · M107 · una variable CSS que vale algo DISTINTO en cada uso NO es un color, es un PARÁMETRO: `--gm-ac` se declara 7 veces con 7 acentos y mapearla a un token dejaba las 7 secciones violetas · antes de mapear, contá cuántos valores distintos toma; si son varios, enrutá cada uno al token de SU familia de tono y verificá que ningún token junte un rojo con un verde · el trinquete NO lo caza (un color aplanado sigue "usando tokens") · lo cacé revisando mi propio diff antes de commitear · M106 · el módulo de caja nació incumpliendo su motivo: se pidió para reemplazar los recibos SIN numeración y guardaba el movimiento sin número, con borrado duro — un correlativo del que se pueden arrancar hojas no prueba nada, el valor de numerar es que el hueco se vea → recibo `RC-año-NNNN` UNIQUE + anular conserva la fila · el PERÍODO contable sale del HECHO (fecha del pago), no de `now()`: la misma fila tenía dos meses distintos · M24 llevaba escrita desde junio con **28 violaciones vivas en 6 módulos de dinero** y el guard nuevo encontró 2 más que se me pasaron: una regla es una intención hasta que algo la mide (igual que el trinquete M104) · la proyección del mes dividía por 1 día la noche de cierre · `new Date().toISOString()` en el front también es UTC · ⚠ `substr(x,-4)` para paddear es SQLite-only, usá `printf('%04d',n)` que sí está en el compat) · **2026-07-26** (M104 · un color de RELLENO y el mismo color como TEXTO no pueden ser el mismo token: al invertir el tema tiran en direcciones opuestas → el violeta como texto daba 2,06:1 sobre la tarjeta oscura · mapear `color:#fff` a `--cx-card` habría dejado 1.107 botones con texto oscuro sobre relleno oscuro: preguntá qué SIGNIFICA el color en ese lugar, no a qué valor es igual · el tema oscuro estaba a MEDIO construir (sólo neutros y pálidos, nunca los semánticos) y nadie lo notó porque casi nada usaba tokens · `var()` NO resuelve en atributos SVG ni en theme-color ni en canvas · en blueprints va con respaldo `var(--tok, #hex)` porque ahí viven los rótulos imprimibles · una regla que nadie verifica es una intención, no un blindaje: el trinquete va con techo EXACTO y hay que probar que MUERDE) · **2026-07-25** (M100 · abastecimiento MP: el motor trataba el stock como NÚMERO PLANO sin mirar cuándo vence → una MP que vence en 30d cubría un consumo del día 90 y el déficit salía corto (53 MPs) · un TABULADOR pegado a un código = clave distinta = 1000 envases invisibles en el kardex, normalizá toda clave con .strip() en el punto de escritura · un endpoint de diagnóstico con un chequeo caído DEBE declararlo, si no su lista vacía miente · M99 · una MISMA regla de negocio en DOS constantes distintas diverge en silencio: `DIAS_HABILES`=L-V validaba y `DIAS_PRODUCCION`=L/M/V ubicaba → el calendario aceptaba martes que los generadores nunca elegían (2 rutas, 2 calendarios) y la capacidad del mes caía de 44 a 26 cupos, comiéndose el colchón de 20d · el ➕ del calendario era el ÚNICO de 3 caminos sin validar día hábil/festivo · si N caminos hacen lo mismo, comparar sus GUARDS no solo su lógica · test que agenda a `hoy+N` cae siempre en el mismo día de semana · M98 · un campo con nombre de MÉTRICA que en realidad es una ETIQUETA de texto: `tendencia` ('aceleracion_fuerte') se convertía con float() → 500 en prod, y en JS se comparaba >= 0.08 → alerta muerta que nunca apareció · leé el `return` del productor antes de comparar/convertir · el número va en un campo APARTE (`tendencia_pct`), no se reinterpreta la etiqueta · un except alrededor del float() tapa el 500 pero deja la decisión con el default · M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
 
 ---
 
-## ⭐ Las 6 reglas que más errores evitan (LEE PRIMERO)
+## ⭐ LEE PRIMERO · las reglas que más errores evitan
+
+> Las tres primeras (0.4 · 0.5 · 0.7) son de **cómo trabajar**; las demás, de **cómo escribir
+> código**. Se agregaron el 27-jul después de un día en que sabía todas las reglas técnicas y
+> aun así dejé la app caída 40 minutos: lo que falló no fue el conocimiento, fue el método.
+> **Consultarlas ANTES de actuar, no después.**
 
 0. **TODA UI que toco sale PREMIUM y SIN rastro de IA (Sebastián lo exige · revisar SIEMPRE antes de dar por hecho).** (a) **PREMIUM por defecto:** usar el sistema de diseño `cortex.css` (tokens `var(--cx-*)` → respeta tema claro/oscuro), nunca una tabla/form plano con estilos por defecto. Toda vista nueva o tocada lleva jerarquía tipográfica, hero/encabezado con intención, KPIs con color, chips de estado, botones con gradiente violeta (`--cx-primary-grad`), hover, full-width y modales grandes. Antes de decir "listo", MIRÁ la pantalla (o pedí verla) y preguntá "¿esto se ve premium?" — si es plano, rehacer. (b) **CERO rastro de IA:** el em-dash `—` DELATA IA → reemplazar SIEMPRE por `-`/`·`/`:`/`(...)` en TODO texto de UI (incl. placeholders tipo `'—'`, PDFs, comentarios visibles). Es funcionalmente seguro (`—` nunca es sintaxis) PERO node-check obligatorio tras la purga (M86). Nada de "Pregúntale a la IA", asistentes/chatbots visibles, ni frases que suenen a bot. Ver [[feedback_premium_siempre]] [[feedback_sin_rastros_ia]] [[feedback_fullwidth_popups_grandes]].
-1. **VERIFICAR contra código real antes de aplicar cualquier fix.** Los hallazgos de agentes/memoria alucinan (~50%): inventan funciones, reportan bugs ya arreglados, confunden conceptos. NUNCA apliques un hallazgo sin leer el código que cita y confirmar que el bug es real. La memoria es punto-en-el-tiempo: verifica file:line antes de afirmar.
+0.4. **🎯 EL MÉTODO · pocos pasos, seguros, sin devolverse (Sebastián 27-jul).**
+   *"Necesito una técnica de pocos seguros, menos consumo, hacer perfecto... y siempre evitá
+   errores así no tenemos que devolvernos de cada cosa."*
+
+   El día que se escribió esto: un cambio de 20 minutos tomó 90, con la app caída 40, por hacer
+   los pasos en el orden equivocado. No fue falta de conocimiento — fue falta de método.
+
+   **El orden. No se saltea ninguno, y cada uno evita el reproceso del siguiente:**
+
+   1. **LEER antes de tocar.** El código real, no la memoria ni el nombre de la función. Medir
+      cuántos lo usan (regla 0.7). El 80% de las preguntas se contestan acá, gratis y sin riesgo.
+   2. **REPRODUCIR antes de arreglar.** Un test que falla ANTES. Si no se puede reproducir, no se
+      entendió el problema, y "arreglar" a ciegas es cambiar código al azar. El 422 de Catalina se
+      reprodujo en 5 minutos y eso convirtió una teoría en un hecho.
+   3. **VERIFICAR antes de afirmar.** Una hipótesis no verificada NO se comunica como diagnóstico:
+      se dice *"no sé todavía, esto es lo que voy a mirar"*. Tres diagnósticos falsos en un día
+      salieron de saltarse este paso.
+   4. **JUNTAR el trabajo del tema.** Mientras se itera: sólo los tests de eso (30 s). El gate
+      completo (~14 min) **una vez, al final**. Correrlo tras cada edición fueron 80 minutos
+      perdidos sin ninguna seguridad adicional.
+   5. **UN gate → UN commit → UN deploy.**
+
+   **Los tres desperdicios que más costaron, para reconocerlos:**
+   - **Medir donde no se debe.** Producción es para desplegar y leer, nunca para averiguar
+     (regla 0.5). Lo único que sirvió del análisis del dashboard salió de leer el código y medir
+     en local: 525 ms → 6,2 ms.
+   - **Arreglar el síntoma.** Ante la app saturada, desplegar para "recuperar" alargó la caída.
+     Se recupera sola en 2 minutos. **Ante algo caído: esperar y leer el log.**
+   - **Repetir la verificación cara.** Si el setup domina el costo, es cacheable; si igual hay que
+     pagarlo, se paga UNA vez (M105).
+
+   **La prueba de que el método funcionó:** las tandas donde se siguió salieron verdes a la
+   primera — 12 tests de contraentrega, 9 de desempeño de proveedores, 15 de pago a influencers.
+   Las que no, terminaron con la app caída.
+
+   **Y la regla que resume todo:** *el paso barato va antes que el caro.* Leer < reproducir <
+   probar local < gate < deploy. Saltarse uno para "ir más rápido" siempre cuesta el doble.
+
+0.5. **⛔ CÓMO OPERAR · lo que NUNCA se hace y lo que SIEMPRE se hace (27-jul · tumbé la app).**
+   Las reglas de abajo son para escribir código. Ésta es para *actuar*, y el 27-jul me costó dejar
+   la app caída ~40 min midiendo el dashboard de Marketing **contra producción**.
+
+   **NUNCA:**
+   - **Medir rendimiento contra producción.** Ni cronometrar, ni repetir llamadas, ni "probar si
+     tarda". Un endpoint pesado llamado 3 veces satura los 3 workers y tumba TODO (M43).
+   - **Presentar una hipótesis como diagnóstico.** Ese día di tres explicaciones seguidas con tono
+     de certeza y las tres eran falsas. Si no está verificado se dice *"no sé todavía; esto es lo
+     que voy a mirar"*.
+   - **Explicar algo con un dato del cerebro sin confirmarlo.** Estas notas son una FOTO del día que
+     se escribieron. M91 decía "el servicio tiene disco persistente" y ya no lo tiene: construí una
+     explicación entera sobre eso. Abrí Render/el código y confirmá ANTES de razonar.
+   - **Desplegar para "recuperar" una app saturada.** Se recupera sola (Gunicorn mata al worker a
+     los 120 s y lo relanza). Desplegar encima la alarga.
+   - **Proponerle a Sebastián correr algo contra la base de producción** por una corazonada. Casi
+     le hago ejecutar SQL por una teoría que el log de Render desmentía a un clic.
+   - **Correr el gate después de cada edición.** Son ~14 min cada vez; 6 corridas en un cambio son
+     80 minutos de nada.
+   - **Agregar índice/columna/constante sin `grep` previo.** Agregué un tercer índice sobre una
+     columna que ya tenía dos.
+
+   **SIEMPRE:**
+   - **Diagnóstico con el CÓDIGO y datos LOCALES.** Si hace falta un número, se siembra el volumen
+     real en local y se mide ahí. Así salió lo único que sirvió ese día: 525 ms → 6,2 ms.
+   - **Producción se toca para (a) desplegar lo ya verificado y (b) LEER.** Nada más.
+   - **Verificar el efecto antes de afirmarlo.** Casi reporto "la página pide todo dos veces" y los
+     duplicados los había generado yo navegando dos veces.
+   - **Una tanda = un gate = un deploy.** Se itera con los tests del tema (30 s).
+   - **Si algo se cae: esperar y mirar el log**, no actuar encima.
+
+0.7. **🗺️ RADIO DE EXPLOSIÓN · qué se puede tocar y qué no (medido, 27-jul).**
+   Antes de borrar o cambiar algo "de un módulo", medí **cuántos blueprints lo leen**. Lo que
+   parece local casi nunca lo es, y ese fue el riesgo más grande del día en que había que podar
+   Marketing: quitar "cosas de marketing" habría tumbado la planeación de planta.
+
+   | Tabla | La leen | Si la rompés… |
+   |---|---|---|
+   | `audit_log` | **29** | se pierde el rastro Part 11 de TODO |
+   | `movimientos` | **17** | es el kardex · stock, FEFO, trazabilidad INVIMA |
+   | `maestro_mps` | **16** | identidad de toda materia prima |
+   | `produccion_programada` | **15** | calendario, necesidades, abastecimiento |
+   | `ordenes_compra` | **15** | compras, recepción, pagos, egresos |
+   | `animus_shopify_orders` | **10** | **la velocidad de venta** → Necesidades y el plan |
+   | `formula_items` | **9** | descuento de producción y demanda de MP |
+   | `pagos_influencers` | **6** | la costura Marketing → Compras → Financiero |
+   | `ventas_diarias` | **5** | el fast-path que evita re-escanear Shopify |
+
+   **Cómo se usa esto en la práctica:**
+   - **Podar la INTERFAZ es barato; podar DATOS es caro.** Al reducir Marketing a pagos se
+     borraron pantallas y endpoints, y no se tocó una sola tabla: `animus_shopify_orders` sigue
+     alimentando la planeación aunque Marketing ya no la muestre.
+   - **Antes de borrar, `grep` quién lo referencia FUERA de su módulo.** Si aparece alguien más,
+     es infraestructura compartida disfrazada de feature local.
+   - **La única tabla realmente aislada de Marketing era `marketing_contenido`** (0 lectores
+     externos). Esa se pudo borrar entera; el resto no.
+   - **Un endpoint sin llamadores externos se puede borrar; una TABLA con lectores, no.** Si el
+     dato ya no se muestra pero alguien lo lee, se deja de mostrar y se conserva el dato.
+
+1. **VERIFICAR contra código real antes de aplicar cualquier fix.** Los hallazgos de agentes/memoria alucinan (~50%): inventan funciones, reportan bugs ya arreglados, confunden conceptos. NUNCA apliques un hallazgo sin leer el código que cita y confirmar que el bug es real. La memoria es punto-en-el-tiempo: verifica file:line antes de afirmar. **Y eso incluye los datos de INFRAESTRUCTURA** (plan de la instancia, si hay disco, región, qué base usa `DATABASE_URL`): cambian sin que nadie actualice la nota, y explicar con uno viejo produce un diagnóstico falso con tono de certeza.
 2. **Suite golden ANTES de cada push.** `pytest tests/test_golden_paths.py -q` debe dar verde (232 al 8-jun-2026). El guardian pre-push la corre; si es roja, el push se bloquea. No usar `--no-verify` salvo autorización explícita.
 3. **No tocar lo FIJO.** `produccion_programada.origen IN ('eos_plan','eos_b2b','eos_retroactivo')` es decisión deliberada del usuario. Ningún DELETE/UPDATE masivo lo toca: siempre `AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')`.
 4. **Stock = SUM(movimientos) canónico**, vía `_get_mp_stock(conn)`. El CASE cuenta Ajuste como entrada: `CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END`. Nunca `WHEN tipo='Entrada' THEN cantidad ELSE -cantidad` (resta los Ajuste). Excluir siempre `estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO')`.
@@ -810,6 +912,11 @@ Sebastián: "la app se cae nuevamente, revisá si es la migración". NO era la m
 
 Tras aplicar M88/M89/M90, la app "se volvió a caer" → verificación Fable dedicada. **Hallazgos duros:**
 - **M88 está CORRECTO** (verificado ejecutando el adapter real: el `INSERT ... ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor` pasa limpio, `es_insert_or` no lo toca, `app_settings.clave` es PK). El hash se guarda y de ahí en más se saltea. **La "caída después del fix" fue la ventana del deploy del PROPIO fix**: en el primer boot el hash aún no existía → los 3 workers (sin --preload) cargaron los 48 triggers a la vez. Una sola vez; luego el hash queda en BD.
+- **⚠ CORRECCIÓN 27-jul: el servicio YA NO TIENE DISCO PERSISTENTE** (verificado en Render →
+  Disks dice "Add Disk"). Todo lo que sigue sobre "disco = sin zero-downtime" quedó VIEJO y
+  me hizo construir una explicación falsa de un deploy fallido. **Antes de explicar algo con un
+  dato de infraestructura que está en el cerebro, ABRÍ Render y confirmalo**: estas notas son
+  una foto del día que se escribieron, no el estado actual.
 - **CAUSA DOMINANTE real = yo deployé 28 commits en 36h** (17 entre 22h-2h) · cada push dispara deploy · **el web service tiene DISCO PERSISTENTE (`render.yaml` mountPath /var/data) → Render NO hace zero-downtime deploy** (apaga la instancia vieja antes de arrancar la nueva) → **cada deploy = downtime duro de minutos**. Deploy cada ~15min por horas = app cayéndose por mis pushes, NO por un bug. **REGLA DURA: batchear commits · máximo 1-2 deploys/día en horario valle · NUNCA una ráfaga de deploys. El deploy hook por push = cada push es una caída de minutos mientras haya disco.**
 - **El boot del código NO es lento** (import ~1s, RSS ~91MB/worker · no OOM). Los ~8min son el pipeline de Render + el swap-con-disco, no el código.
 - **⚠ El disco /var/data NO es solo backups: tiene `/var/data/coa/` (certificados COA · INVIMA regulados) + `/var/data/inventario.db` (SQLite legacy · DB_PATH apunta ahí).** Quitarlo (para zero-downtime) EXIGE reubicar los COA a storage externo primero · NO es un toggle · es mini-proyecto con cuidado (no perder docs regulados). Decisión Sebastián 24-jul: quitarlo, pero planificado aparte.
@@ -1269,6 +1376,70 @@ cosa y el sistema anotaba otra.**
 
 Ver mig 383 · `tests/test_caja_recibo_numerado.py` + `tests/test_hoy_colombia_dinero.py` (los dos
 en el gate) · [[project_tesoreria_control_caja_pendiente]].
+
+## 🚫 M110 · PRODUCCIÓN NO ES UN BANCO DE PRUEBAS · las 5 reglas operativas que tumbaron la app · 27-jul
+
+Sebastián pidió revisar si el dashboard de Marketing era pesado. En vez de leerlo del código, lo
+**medí contra producción**: disparé `/api/marketing/dashboard` varias veces seguidas. Cada llamada
+retiene un worker; con 3 workers, en tres llamadas **dejé la app entera sin atender** (`/api/health`
+y `/login` devolviendo 000). Después disparé un deploy "para recuperar" y **alargué la caída**.
+
+Ninguna de estas cinco reglas es nueva: **todas estaban escritas y las pisé igual.** Por eso van
+juntas y arriba.
+
+1. **NUNCA medir rendimiento contra producción.** Si hay que saber cuánto pesa algo: se lee el
+   código, y si hace falta un número, se siembra el volumen real en LOCAL y se mide ahí (M43 ya
+   decía que un endpoint pesado llamado N veces satura los 3 workers). Un GET de diagnóstico
+   read-only, UNA vez, es aceptable. Repetirlo o cronometrarlo, no.
+2. **Una medición hecha sobre un sistema que YO saturé no mide nada.** Medí "123 s" y era tiempo
+   de COLA, no del endpoint — casi lo reporto como hallazgo. Si la herramienta y la carga son la
+   misma cosa, el número miente.
+3. **Ante saturación: ESPERAR, no desplegar.** Gunicorn mata al worker a los 120 s y lo relanza:
+   se recupera solo en ~2 min. Un deploy con disco persistente NO tiene zero-downtime (M91) y
+   tarda mucho más. Desplegar para "arreglar" una saturación empeora exactamente lo que se quiere
+   arreglar.
+4. **El Deploy Hook NO se usa tras un push.** El Auto-Deploy de Render ya arranca en un minuto, así
+   que el hook lanza un SEGUNDO deploy del mismo commit = doble ventana de caída por cada subida.
+   Verificado en el panel el 27-jul. Ver [[reference_render_deploy_hook]].
+5. **El gate UNA vez por tanda.** Se itera con los tests del tema (30 s) y se corre el gate completo
+   antes de subir. Correrlo tras cada edición (6 veces en un cambio) son ~80 minutos de espera y
+   un montón de tokens, sin ninguna seguridad adicional: el trinquete caza lo mismo en la corrida
+   final.
+
+**Corolario para cualquier "agregar":** antes de sumar un índice, una columna o una constante,
+`grep` si ya existe. El mismo día agregué un tercer índice sobre `animus_shopify_orders(creado_en)`
+que ya estaba indexado dos veces con otros nombres — no acelera nada y hace más lenta cada
+escritura del sync.
+
+**Por qué el deploy de recuperación FALLÓ (log de Render, verificado):** el build salió bien, el
+proceso arrancó, cargó `config.py` (Python puro, sin disco)… y **nunca abrió el puerto**:
+`No open ports detected` ×5 → `Timed Out`. Lo siguiente que toca el arranque es `/var/data`, y la
+instancia vieja —colgada por la saturación— **no había soltado el disco persistente**. O sea:
+**con disco persistente, una instancia colgada BLOQUEA el deploy de recuperación.** Recién cuando
+Render la mató de verdad, el siguiente deploy tomó el disco y levantó. Es M91 (sin zero-downtime)
+en su forma peor: no sólo el deploy causa caída, sino que la caída impide el deploy.
+
+⚠ **Hipótesis que casi le hago ejecutar a Sebastián y era FALSA:** supuse conexiones
+`idle in transaction` bloqueando el arranque (M105 en local) y estuve a un paso de mandarlo a
+correr SQL contra la base de producción. El log lo desmintió. **Antes de proponer una acción sobre
+producción, buscá la evidencia que la confirme — el log de Render estaba a un clic.**
+
+**En el mismo log, dos cosas que valía la pena leer:** `PLAINTEXT_PASSWORDS` (una clave sin hashear
+en las env vars) y `Setting WEB_CONCURRENCY=1 by default, based on available CPUs` mientras se
+corre `--workers 3` → la instancia no tiene margen, por eso tres peticiones lentas la voltean.
+
+**⚠ Y LA QUE MÁS DUELE (Sebastián: "siento que no usas cerebro, estás pescando, inventando"):**
+el mismo día di TRES explicaciones seguidas y las tres eran falsas — conexiones zombis en PG,
+la instancia vieja reteniendo el disco (¡no hay disco!), y una base subdimensionada donde
+encima estaba mirando **otra base** (`proa-iass-db` en vez de `eos-postgres`). Las tres las
+presenté con seguridad y ninguna estaba verificada. **Una hipótesis no verificada no se
+comunica como diagnóstico.** Si hay que decir algo, se dice "no sé todavía, esto es lo que
+voy a mirar". Y antes de explicar con un dato del cerebro, se confirma el dato: el cerebro
+guarda lo que era cierto el día que se escribió.
+
+**Y la regla de fondo, que es la que da sentido a las cinco:** el trabajo de diagnóstico se hace
+con el código y con datos locales. Producción se toca para **desplegar algo verificado** y para
+**leer** — nunca para averiguar.
 
 ## 📋 M109 · La recepción es DOS pasos con dueños distintos · y un indicador se DERIVA, no se teclea · 27-jul
 

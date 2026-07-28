@@ -197,3 +197,45 @@ def test_animus_pqr_crud(app, db_clean):
     upd = c.patch('/api/animus/pqr/%d' % pid, json={'estado': 'resuelto', 'respuesta': 'reenviado'},
                   headers=csrf_headers())
     assert upd.status_code == 200, upd.data[:300]
+
+
+def test_el_diagnostico_avisa_si_la_integracion_se_quedo_muda(app, db_clean):
+    """Una integración que se queda MUDA es peor que una que nunca funcionó.
+
+    27-jul: el buzón tenía 113 PQR y se veía sano, pero el último había entrado el 15-jun — seis
+    semanas sin recibir nada, con un volumen normal de varios por día. Nadie lo notó porque el
+    diagnóstico mostraba el total y las últimas 30, sin decir CUÁNDO. El silencio no es "no hay
+    quejas".
+    """
+    import sqlite3
+    import os
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c = app.test_client()
+    r = c.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+
+    # El aviso mira el MÁS RECIENTE de TODA la tabla, así que el test tiene que controlar el
+    # universo entero: si quedan filas de otros tests con fecha de hoy, MAX() toma esa y el
+    # escenario no se puede reproducir (M102).
+    def _solo(fecha):
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM pqr_inbox")
+        conn.execute(
+            "INSERT INTO pqr_inbox (ghl_message_id, canal, contacto_nombre, mensaje, "
+            "recibido_en, estado) VALUES (?,'email','ZZ MUDO','x',?,'pendiente')",
+            ('zz-mudo-' + fecha, fecha))
+        conn.commit(); conn.close()
+
+    from tz_colombia import hoy_colombia
+    _solo('2026-01-01')
+    d = c.get('/api/aseguramiento/pqr-inbox/diagnostico').get_json()
+    assert d.get('dias_sin_recibir') is not None, 'no dice hace cuánto que no entra nada'
+    assert d['dias_sin_recibir'] > 7, d['dias_sin_recibir']
+    assert d.get('integracion_muda') is True, 'no marcó la integración como muda'
+    assert 'GHL' in (d.get('aviso') or ''), d.get('aviso')
+
+    # Y con un PQR de hoy NO avisa: una alerta que salta siempre deja de mirarse.
+    _solo(hoy_colombia().isoformat())
+    d = c.get('/api/aseguramiento/pqr-inbox/diagnostico').get_json()
+    assert d['dias_sin_recibir'] == 0 and d['integracion_muda'] is False, d

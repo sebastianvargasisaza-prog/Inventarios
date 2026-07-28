@@ -4356,7 +4356,30 @@ def pqr_inbox_diagnostico():
             'ia_confianza', 'ia_fuente', 'estado', 'destino_empresa', 'destino_tabla', 'destino_id', 'mensaje']
     items = [dict(zip(cols, r)) for r in rows]
     tot = c.execute("SELECT COUNT(*) FROM pqr_inbox").fetchone()[0]
-    return jsonify({'total': tot, 'ultimas': items})
+
+    # ── ¿Hace cuánto que no entra un PQR? ─────────────────────────────────────
+    # Una integración que se queda MUDA es peor que una que nunca funcionó: el buzón se ve lleno
+    # (113 mensajes) y nadie nota que el último llegó hace seis semanas. Pasó exactamente eso:
+    # llegó un lote el 15-jun y GHL no volvió a enviar (27-jul). El silencio no es "no hay quejas"
+    # cuando el volumen normal es diario.
+    _ult = c.execute("SELECT MAX(substr(COALESCE(recibido_en,''),1,10)) FROM pqr_inbox").fetchone()
+    _ult = (_ult[0] if _ult else '') or ''
+    _dias = None
+    if _ult:
+        try:
+            _dias = (_hoy_col() - date.fromisoformat(_ult[:10])).days
+        except (ValueError, TypeError):
+            _dias = None
+    # 7 días sin un solo PQR con el volumen de Ánimus significa que el webhook dejó de recibir,
+    # no que los clientes dejaron de escribir.
+    _mudo = (_dias is not None and _dias >= 7) or (_dias is None and tot > 0)
+    return jsonify({
+        'total': tot, 'ultimas': items,
+        'ultimo_recibido': _ult, 'dias_sin_recibir': _dias, 'integracion_muda': _mudo,
+        'aviso': ('Hace %d días que no entra un PQR. Revisá el workflow de GHL: el webhook de EOS '
+                  'responde bien, así que lo que se cortó es el envío.' % _dias) if _mudo and _dias
+                 else '',
+    })
 
 
 @bp.route('/api/aseguramiento/pqr-inbox/<int:iid>/enrutar', methods=['POST'])

@@ -99,6 +99,11 @@ CORAZON=(
   # El desempeno del proveedor se DERIVA de las recepciones · incluye la regla de que una
   # dimension sin dato va en gris y no en cero (si no, califica injusto).
   "tests/test_proveedor_desempeno.py"
+  # Pago a influencers: sin paso de aprobacion, las alertas anti doble-pago son LO UNICO que
+  # separa un pago legitimo de pagar dos veces el mismo contenido. Y son de dinero real.
+  "tests/test_pago_influencer_antidup.py"
+  "tests/test_solicitar_pago_influencer.py"
+  "tests/test_influencer_pago_e2e.py"
 )
 
 echo ""

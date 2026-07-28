@@ -1376,19 +1376,40 @@ def animus_cod_diagnostico():
         "  AND LOWER(COALESCE(estado,'')) <> 'cancelled'", (desde,)).fetchall()
     por_señal = {'nota': 0, 'etiqueta': 0, 'medio de pago': 0}
     sin_match, con_texto = [], 0
+    # Contar por separado CUÁNTOS traen nota, etiqueta y medio de pago. La primera versión sólo
+    # decía "con nota o etiqueta", y como casi todos los pedidos traen etiquetas de transportadora
+    # ('CM: ENTREGADA', 'Facturado'), ese número daba 7.233 y no permitía ver que las NOTAS eran
+    # otra cosa. Un diagnóstico que agrega dos señales distintas en un solo contador no sirve para
+    # decidir cuál de las dos está fallando.
+    con_nota = con_tags = con_gw = 0
+    notas_reales = []      # muestra de notas NO vacías, matcheen o no: acá se ve cómo la escriben
     for nota, tags, gw, nombre in filas:
-        if (nota or '').strip() or (tags or '').strip():
+        _n, _t, _g = (nota or '').strip(), (tags or '').strip(), (gw or '').strip()
+        if _n:
+            con_nota += 1
+            if len(notas_reales) < 30:
+                notas_reales.append({'pedido': nombre or '', 'nota': _n[:160]})
+        if _t:
+            con_tags += 1
+        if _g:
+            con_gw += 1
+        if _n or _t:
             con_texto += 1
         ok, donde = es_contraentrega(nota, tags, gw, patron)
         if ok:
             por_señal[donde] += 1
-        elif ((nota or '').strip() or (tags or '').strip()) and len(sin_match) < 25:
-            sin_match.append({'pedido': nombre or '', 'nota': (nota or '')[:120],
-                              'etiquetas': (tags or '')[:120], 'medio_pago': (gw or '')[:60]})
+        elif (_n or _t) and len(sin_match) < 25:
+            sin_match.append({'pedido': nombre or '', 'nota': _n[:120],
+                              'etiquetas': _t[:120], 'medio_pago': _g[:60]})
     return jsonify({
         "ok": True, "patron": patron, "desde": desde,
         "pedidos_en_rango": len(filas),
         "con_nota_o_etiqueta": con_texto,
+        # Desglosado: sin esto no se distingue "no escriben la nota" de "la escriben distinto".
+        "con_nota": con_nota,
+        "con_etiquetas": con_tags,
+        "con_medio_pago": con_gw,
+        "muestra_notas_reales": notas_reales,
         "detectados": sum(por_señal.values()),
         "por_señal": por_señal,
         # Si `detectados` es 0 pero `con_nota_o_etiqueta` no lo es, la respuesta está acá:
