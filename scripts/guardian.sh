@@ -136,6 +136,10 @@ CORAZON=(
   # como "1 g"). La unidad se capturaba en la SOL y se perdia al crear la OC; la pantalla,
   # sin dato, le pegaba una g a todo. Un numero con la unidad equivocada se lee como cierto.
   "tests/test_oc_unidad_real.py"
+  # Material de envase del legajo: cuanto ENTREGARON de verdad y quien lo recibio. Sin eso,
+  # si llegan 95 de 100 la conciliacion cierra igual y el faltante se lo come "utilizada":
+  # el reclamo al proveedor y la merma real quedan indistinguibles.
+  "tests/test_envase_material_recibido.py"
 )
 
 echo ""

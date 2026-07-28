@@ -10607,6 +10607,15 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
                                  WHERE COALESCE(categoria,'') IN
                                        ('Materia Prima','Empaque','Material de Empaque'))""",
     ]),
+    (391, "Material de envase del legajo · falta la RECEPCIÓN en línea. La conciliación ya estaba "
+          "(requerida/devuelta/utilizada/averiada) pero no el momento anterior: cuánto le "
+          "ENTREGARON de verdad al operario y quién lo recibió. Sin eso, si llegan 95 de 100 la "
+          "conciliación cierra igual y el faltante se lo come 'utilizada'. Es la sección 3 del "
+          "envasado de MyBatch (MATERIAL | LOTE | CANT. REQUERIDA | CANT. RECIBIDA | RECIBIDO POR).", [
+        "ALTER TABLE ebr_envase_materiales ADD COLUMN recibida REAL",
+        "ALTER TABLE ebr_envase_materiales ADD COLUMN recibido_por TEXT DEFAULT ''",
+        "ALTER TABLE ebr_envase_materiales ADD COLUMN recibido_at_utc TEXT DEFAULT ''",
+    ]),
 ]
 
 

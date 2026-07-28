@@ -4923,26 +4923,39 @@ def brd_material_envase_upsert(ebr_id):
         except Exception:
             nom = ""
     requerida = _num("requerida") or 0
+    # Quién recibió y cuándo se sellan en el momento en que se declara la cantidad
+    # RECIBIDA (sección 3 del envasado de MyBatch). Si no se declara, no se inventa
+    # un receptor: un nombre puesto por defecto en un registro regulado es peor que
+    # el campo vacío.
+    from datetime import datetime as _dt_rec
+    _hay_recibida = _num("recibida") is not None
+    _recibido_por = user if _hay_recibida else ""
+    _recibido_at = (_dt_rec.utcnow().replace(microsecond=0).isoformat()
+                    if _hay_recibida else "")
     lote_mat = (body.get("lote_material") or "").strip()
     lote_env = (body.get("lote_envasado") or ebr["lote"] or "").strip()
     row_id = body.get("id")
     if row_id:
         cur.execute(
             "UPDATE ebr_envase_materiales SET material_codigo=?, material_nombre=?, "
-            "lote_material=?, requerida=?, devuelta=?, utilizada=?, averiada=?, lote_envasado=? "
+            "lote_material=?, requerida=?, recibida=?, devuelta=?, utilizada=?, averiada=?, "
+            "lote_envasado=?, recibido_por=?, recibido_at_utc=? "
             "WHERE id=? AND ebr_id=?",
-            (cod, nom, lote_mat, requerida, _num("devuelta"), _num("utilizada"),
-             _num("averiada"), lote_env, int(row_id), ebr_id))
+            (cod, nom, lote_mat, requerida, _num("recibida"), _num("devuelta"),
+             _num("utilizada"), _num("averiada"), lote_env,
+             _recibido_por, _recibido_at, int(row_id), ebr_id))
         if cur.rowcount != 1:
             return jsonify({"error": "fila no encontrada"}), 404
         nuevo_id = int(row_id); accion = "EDITAR_MATERIAL_ENVASE_EBR"
     else:
         cur.execute(
             "INSERT INTO ebr_envase_materiales (ebr_id, lote_envasado, material_codigo, "
-            "material_nombre, lote_material, requerida, devuelta, utilizada, averiada, creado_por) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (ebr_id, lote_env, cod, nom, lote_mat, requerida, _num("devuelta"),
-             _num("utilizada"), _num("averiada"), user))
+            "material_nombre, lote_material, requerida, recibida, devuelta, utilizada, "
+            "averiada, creado_por, recibido_por, recibido_at_utc) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (ebr_id, lote_env, cod, nom, lote_mat, requerida, _num("recibida"),
+             _num("devuelta"), _num("utilizada"), _num("averiada"), user,
+             _recibido_por, _recibido_at))
         nuevo_id = cur.lastrowid; accion = "AGREGAR_MATERIAL_ENVASE_EBR"
     audit_log(cur, usuario=user, accion=accion, tabla="ebr_envase_materiales",
               registro_id=nuevo_id, despues={"material": cod, "requerida": requerida})

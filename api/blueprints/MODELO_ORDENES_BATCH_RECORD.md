@@ -83,19 +83,36 @@ Mismas secciones que envasado, con dos diferencias:
 
 ---
 
-## Qué hay que contrastar contra EOS antes de construir
+## CONTRASTE CONTRA EOS · medido el 28-jul, no estimado
 
-Esto es la foto de MyBatch. **Antes de tocar nada** hay que medir, contra el código real,
-cuánto de esto ya existe (M28: la mitad de los "faltantes" suelen estar hechos):
+**6 de los 8 puntos ya estaban construidos.** Es M28 en su forma más pura: la lista de arriba
+se armó mirando MyBatch, y al medirla contra el código real casi todo existía. Si se hubiera
+construido "lo que falta" sin medir, se habrían reescrito cinco cosas que ya funcionan — en
+datos regulados, que es donde reescribir es más caro.
 
-- [ ] ¿La ORDEN existe como objeto propio en las tres fases, o hoy sólo hay legajo?
-- [ ] ¿Guardamos `densidad` y `cantidad por envasar en mL`? (M105 ya lo marcó como faltante)
-- [ ] ¿El despeje tiene sub-fase inicial/final y su imprimible?
-- [ ] ¿Recepción de material de envase por lote, con requerida vs recibida?
-- [ ] ¿Los pasos tienen DOS firmas (realizado / verificado)?
-- [ ] ¿Existe la conciliación de empaque (devuelta / utilizada / averiada / diferencia)?
-- [ ] ¿Existe la aprobación de artes por Calidad?
-- [ ] ¿Las observaciones del proceso admiten registrar una pausa con fecha y hora?
+| # | Punto | Estado real | Dónde vive |
+|---|---|---|---|
+| 1 | La ORDEN como objeto propio (1 orden → N lotes) | **FALTA** | hoy el legajo `ebr_ejecuciones` ES la unidad, con la llave sufijada `-OF`/`-OA` (M10) |
+| 2 | Densidad del granel + cantidad en mL | **YA ESTÁ** | `densidad_g_ml` + puente OP→OF (`mL = real_g / densidad`) · test en el gate |
+| 3 | Despeje con sub-fase e imprimible | **YA ESTÁ** | `ebr_despeje_items.etapa` + `verificado_por` / `verificado_at_utc` (mig 222) |
+| 4 | Recepción de material de envase (requerida vs **recibida**) | **cerrado el 28-jul** | faltaban `recibida` / `recibido_por` · mig 391 |
+| 5 | Dos firmas por paso (realizado / verificado) | **YA ESTÁ** | `operario_username` + `qc_username` + `qc_e_sign_id` + `requiere_qc` |
+| 6 | Conciliación de empaque | **YA ESTÁ** | `ebr_envase_materiales`: `devuelta` / `utilizada` / `averiada` · la *diferencia* se DERIVA, no se guarda (M71) |
+| 7 | Aprobación de artes / codificación | **YA ESTÁ** | `ebr_artes_codificacion` (mig 211) + gate que bloquea liberar sin arte aprobada |
+| 8 | Observaciones del proceso con fecha y hora | **YA ESTÁ** | `ebr_observaciones` (`descripcion`, `registrado_por`, `registrado_at_utc`) |
 
-⚠ Nada de esto se construye a ciegas: cada punto se verifica contra el código y se hace **de a
-uno**, con su test. Es batch record — dato regulado INVIMA (ver `CONTRACT_brd.md`).
+### Lo único grande que falta, y por qué no se construyó solo
+
+**La ORDEN como objeto propio.** Hoy EOS modela el legajo por LOTE; MyBatch modela una orden
+que agrupa N lotes. Los dos representan lo mismo, pero la orden agrega tres cosas que el legajo
+por lote no tiene:
+
+1. Un encabezado que se **aprueba una vez** para todos los lotes (en acondicionamiento, la firma
+   del jefe de calidad va en la ORDEN, no en cada lote).
+2. El botón **"Adicionar lote"**: hoy cada legajo nace suelto y se ata por el sufijo de la llave.
+3. Un **número de orden** que es lo que se le entrega impreso al operario.
+
+**No se construyó todavía a propósito.** Cambia la unidad de trabajo de un registro regulado
+(INVIMA / Part 11): los legajos existentes tendrían que colgarse de una orden retroactiva, y eso
+es una decisión de Sebastián, no una inferencia mía. Cuando se haga, va de a una fase y con la
+migración probada contra PG con datos sembrados, como el resto.
