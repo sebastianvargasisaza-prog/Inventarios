@@ -403,7 +403,10 @@ def centro_decisiones():
                 _det += ' · %d con algo para revisar antes de pagar' % len(_con_alerta)
             _add('critico' if _con_alerta else 'atencion', 'pagos',
                  'Pagos a creadores', _det, '/hoy#pagos', _total,
-                 extra={'ir_a_pagos': True})
+                 # El contador viaja acá para que la pestaña Pagos muestre su badge SIN que
+                 # haya que abrirla: un badge que sólo aparece al entrar no avisa de nada.
+                 extra={'ir_a_pagos': True, 'n_pagos': len(_pend),
+                        'n_con_alerta': len(_con_alerta)})
     except Exception as _e_pi:
         log.warning('centro · pagos a creadores no se pudieron listar: %s', _e_pi)
         try: conn.rollback()

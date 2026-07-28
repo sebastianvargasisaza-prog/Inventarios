@@ -738,6 +738,14 @@ async function cargarDecisiones(){
     rz.style.color = (_DEC_RES.critico>0) ? '#dc2626' : '#78716c';
     var bd = document.getElementById('cm-badge-dec');
     if(bd){ var nc=(_DEC_RES.critico||0); if(nc>0){ bd.textContent=nc; bd.classList.add('on'); } else { bd.classList.remove('on'); } }
+    // El badge de Pagos sale del resumen que ya vino en las decisiones: si sólo se llenara
+    // al abrir la pestaña, no avisaria de nada (que es justo para lo que sirve un badge).
+    var _rp=_DEC.filter(function(x){return x.ir_a_pagos;})[0];
+    var bp=document.getElementById('cm-badge-pagos');
+    if(bp){
+      var np=(_rp && _rp.n_pagos)||0;
+      if(np>0){ bp.textContent=np; bp.classList.add('on'); } else { bp.classList.remove('on'); }
+    }
     pintarChips();
     pintarDecisiones();
   }catch(e){ console.error('Decisiones error:', e); }
