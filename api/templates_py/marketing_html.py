@@ -321,6 +321,12 @@ window.addEventListener('unhandledrejection', function(ev) {
           <input id="dir-buscar" type="search" placeholder="Buscar creador por nombre..." oninput="dirBuscarLocal()"
                  style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:999px;padding:8px 14px 8px 32px;color:var(--cx-text);font-size:12.5px;min-width:230px;outline:none;">
         </div>
+        <select id="dir-orden" onchange="renderDirectorio()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:7px 11px;color:var(--cx-text);font-size:12px;font-weight:600;">
+          <option value="alfa" selected>Orden alfabético</option>
+          <option value="plata">Más pagado primero</option>
+          <option value="pendiente">Con pendiente primero</option>
+          <option value="reciente">Pago más reciente</option>
+        </select>
         <select id="dir-meses" onchange="loadDirectorio()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:8px;padding:7px 11px;color:var(--cx-text);font-size:12px;font-weight:600;">
           <option value="6">Últimos 6 meses</option>
           <option value="12" selected>Últimos 12 meses</option>
@@ -509,6 +515,18 @@ document.addEventListener('DOMContentLoaded', function(){
 </div>
 
 <!-- Modal: Nueva Campaña -->
+
+<!-- Ficha del creador · en pop-up, no dentro de la tarjeta: apretada en una columna de
+     340px no se podía leer y empujaba toda la grilla hacia abajo. -->
+<div class="modal-bg" id="modal-ficha-creador" onclick="if(event.target===this)dirCerrarFicha()">
+  <div class="modal" style="max-width:780px;max-height:88vh;overflow:auto;">
+    <div class="modal-hdr" style="position:sticky;top:0;background:var(--cx-card,#fff);z-index:2;">
+      <div class="modal-title">&#x1F464; Ficha del creador</div>
+      <button class="modal-close" onclick="dirCerrarFicha()">&times;</button>
+    </div>
+    <div id="dir-ficha-body"></div>
+  </div>
+</div>
 
 <div class="modal-bg" id="modal-influencer">
   <div class="modal">
@@ -1111,6 +1129,18 @@ function renderDirectorio(){
     if(f==='baja')      return (x.estado||'').toLowerCase()==='baja';
     return true;
   });
+  // El backend ordena por plata puesta; el orden que se VE lo elige el usuario. Alfabetico
+  // es el default: con 751 creadores, buscar a alguien por nombre es lo mas frecuente.
+  var ord=((document.getElementById('dir-orden')||{}).value)||'alfa';
+  var _cmpNom=function(a,b){ return String(a.nombre||'').localeCompare(String(b.nombre||''),'es',{sensitivity:'base'}); };
+  lista=lista.slice();
+  if(ord==='alfa')          lista.sort(_cmpNom);
+  else if(ord==='plata')    lista.sort(function(a,b){ return (b.pagado-a.pagado)||_cmpNom(a,b); });
+  else if(ord==='pendiente')lista.sort(function(a,b){ return (b.pendiente-a.pendiente)||_cmpNom(a,b); });
+  else if(ord==='reciente') lista.sort(function(a,b){
+    var fa=(a.ultimo_pago&&a.ultimo_pago.fecha)||'', fb=(b.ultimo_pago&&b.ultimo_pago.fecha)||'';
+    return fb.localeCompare(fa)||_cmpNom(a,b);
+  });
   window._DIR_VIS=lista;
 
   var grid=document.getElementById('dir-grid');
@@ -1192,7 +1222,6 @@ function _dirCard(x, ix, tope){
       +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+ult+'</span>'
       +'<button onclick="dirToggle('+ix+')" id="dir-btn-'+ix+'" style="border:1px solid var(--cx-border);background:transparent;color:var(--cx-primary-text);border-radius:8px;padding:4px 11px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">Ver ficha</button>'
     +'</div>'
-    +'<div class="dir-det" id="dir-det-'+ix+'" style="display:none"></div>'
   +'</div>';
 }
 
@@ -1204,19 +1233,19 @@ function _dirDato(lbl, val, resalta){
   +'</div>';
 }
 
+function dirCerrarFicha(){
+  var m=document.getElementById('modal-ficha-creador');
+  if(m) m.classList.remove('open');
+}
+
 function dirToggle(ix){
-  // Un click abre la FICHA COMPLETA del creador: quien es, como se le paga, y cada pago.
-  // La idea es no tener que salir de aca ni cruzar dos pantallas para decidir.
-  var box=document.getElementById('dir-det-'+ix);
-  var btn=document.getElementById('dir-btn-'+ix);
+  // La ficha se abre en POP-UP, no dentro de la tarjeta: metida en una columna de 340px
+  // quedaba apretada y empujaba toda la grilla (Sebastian 27-jul: "esto se ve horrible,
+  // deberia abrirse como un pop up"). En el modal cabe la ficha completa y se lee.
   var x=(window._DIR_VIS||[])[ix];
-  if(!box || !x) return;
-  if(box.style.display!=='none'){
-    box.style.display='none'; box.innerHTML='';
-    if(btn) btn.textContent='Ver ficha';
-    return;
-  }
-  if(btn) btn.textContent='Cerrar';
+  var box=document.getElementById('dir-ficha-body');
+  var modal=document.getElementById('modal-ficha-creador');
+  if(!x || !box || !modal) return;
 
   var esBaja=((x.estado||'').toLowerCase()==='baja');
   var datos=[
@@ -1279,12 +1308,35 @@ function dirToggle(ix){
       }).join('')+'</table>'
     : '<div style="color:var(--cx-text-mute);font-size:12px;padding:6px 0;">Sin pagos registrados en el periodo.</div>';
 
-  box.innerHTML = motivo
-    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:10px 14px;">'+datos+'</div>'
+  // Encabezado del pop-up: quien es, de un vistazo, con sus tres numeros.
+  var ini=(x.nombre||'?').trim().charAt(0).toUpperCase();
+  var retorno = (x.roi_pct===null||x.roi_pct===undefined)
+    ? '<span style="color:var(--cx-text-mute)">sin dato</span>'
+    : '<span style="color:'+(x.roi_pct>=0?'var(--cx-success-text)':'var(--cx-danger-text)')+'">'+(x.roi_pct>=0?'+':'')+x.roi_pct+'%</span>';
+  var cabeza='<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">'
+    +'<div style="width:52px;height:52px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;background:var(--cx-primary-grad,var(--cx-primary));flex:0 0 auto;'+(esBaja?'filter:grayscale(1);opacity:.6;':'')+'">'+_escHtml(ini)+'</div>'
+    +'<div style="min-width:0;flex:1;">'
+      +'<div style="font-size:19px;font-weight:800;color:var(--cx-text);letter-spacing:-.02em;line-height:1.15;">'+_escHtml(x.nombre||'-')+'</div>'
+      +'<div style="font-size:12.5px;color:var(--cx-text-mute);margin-top:2px;">'
+        +_escHtml(x.usuario_red? '@'+x.usuario_red : (x.red_social||''))
+        +(x.ciudad? ' &middot; '+_escHtml(x.ciudad):'')
+        +(x.discount_code? ' &middot; cupón '+_escHtml(x.discount_code):'')+'</div>'
+    +'</div>'
+  +'</div>'
+  +'<div class="dir-kpis" style="margin-bottom:14px;">'
+    +'<div class="dir-k"><div class="lbl">Pagado</div><div class="val">'+_dirMoneda(x.pagado)+'</div></div>'
+    +'<div class="dir-k"><div class="lbl">Pagos</div><div class="val">'+(x.n_pagos||0)+(x.ticket_prom?'<span style="font-size:10px;font-weight:600;color:var(--cx-text-mute)"> &middot; '+_dirMoneda(x.ticket_prom)+' c/u</span>':'')+'</div></div>'
+    +'<div class="dir-k"><div class="lbl">Por pagar</div><div class="val" style="color:'+((x.pendiente>0)?'var(--cx-warn-text)':'var(--cx-text-mute)')+'">'+_dirMoneda(x.pendiente)+'</div></div>'
+    +'<div class="dir-k"><div class="lbl">Retorno</div><div class="val">'+retorno+'</div></div>'
+  +'</div>';
+
+  box.innerHTML = cabeza
+    + motivo
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px 18px;">'+datos+'</div>'
     + acciones
-    + (x.notas? '<div style="background:var(--cx-bg-alt);border-radius:9px;padding:8px 11px;font-size:11.5px;color:var(--cx-text-mute);margin-bottom:6px;">'+_escHtml(x.notas)+'</div>' : '')
+    + (x.notas? '<div style="background:var(--cx-bg-alt);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--cx-text-mute);margin-bottom:8px;">'+_escHtml(x.notas)+'</div>' : '')
     + tabla;
-  box.style.display='';
+  modal.classList.add('open');
 }
 
 function dirAccion(ix, accion){
@@ -1292,6 +1344,8 @@ function dirAccion(ix, accion){
   // que despues diverja). El directorio solo los invoca con los datos que ya tiene.
   var x=(window._DIR_VIS||[])[ix]; if(!x) return;
   var id=x.influencer_id, nom=x.nombre||'';
+  // La ficha se cierra antes: dos modales apilados no se entienden.
+  dirCerrarFicha();
   if(accion==='editar')    return editInfluencer(id);
   if(accion==='gestionar') return abrirGestionarPagos(id, nom);
   if(accion==='baja')      return abrirDarDeBaja(id, nom);
@@ -1437,6 +1491,17 @@ function renderCentroPagos(){
       // El boton de pagar NO va aca: Marketing es el modulo de Jefferson y el pago lo decide el
       // CEO desde Centro de Mando. Ademas el backend lo rechazaria (no esta en OC_AUTORIZA_USERS),
       // asi que seria un boton que falla. Jefferson SI ve el estado de lo que pidio.
+      // Y si lo RECHAZARON, ve por que: sin eso vuelve a pedir lo mismo la semana siguiente.
+      +(e==='rechazado'
+          ? '<div style="flex-basis:100%;background:var(--cx-danger-pale);border-left:3px solid var(--cx-danger);border-radius:9px;padding:9px 13px;margin-top:8px;font-size:12.5px;color:var(--cx-danger-text);line-height:1.45">'
+              +'<b>Rechazado</b>'
+              +(p.rechazado_por? ' por '+_escHtml(p.rechazado_por) : '')
+              +(p.rechazado_at? ' el '+_escHtml(String(p.rechazado_at).slice(0,10)) : '')
+              +(p.motivo_rechazo
+                  ? '<div style="margin-top:3px;font-weight:600">'+_escHtml(p.motivo_rechazo)+'</div>'
+                  : '<div style="margin-top:3px;opacity:.85">Sin motivo registrado (rechazo anterior a que se guardara el motivo).</div>')
+            +'</div>'
+          : '')
       +_pagoAlertas(p)
     +'</div>';
   }).join('');

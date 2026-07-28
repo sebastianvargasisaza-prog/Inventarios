@@ -84,6 +84,32 @@ HTML = r"""
   #decisiones .dec-sep { grid-column:1/-1; font-size:12px; font-weight:800; color:var(--cx-text);
     text-transform:uppercase; letter-spacing:.06em; padding:10px 2px 2px; display:flex; align-items:center; gap:7px; }
   #decisiones .dec-sep:first-child { padding-top:0; }
+  /* Sub-pestañas dentro de una sección (Pagos › Influencers) */
+  .cm-subtabs { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 16px; border-bottom:1px solid var(--cx-hairline); }
+  .cm-subtab { appearance:none; border:none; background:transparent; cursor:pointer; font-size:13px; font-weight:700;
+    color:var(--cx-text-mute); padding:9px 16px; border-bottom:3px solid transparent; display:inline-flex; align-items:center; gap:7px; }
+  .cm-subtab.active { color:var(--cx-primary-text); border-bottom-color:var(--cx-primary); }
+  .pg-chip { border:1px solid var(--cx-border); background:transparent; color:var(--cx-text-mute);
+    border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; }
+  .pg-chip.on { border-color:var(--cx-primary); background:var(--cx-primary); color:#fff; }
+  /* Fila de pago: cerrada muestra lo mínimo para reconocerla; abierta, todo para decidir. */
+  .pg-row { background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:14px;
+    margin-bottom:10px; box-shadow:var(--cx-sh-sm); overflow:hidden; border-left:4px solid var(--cx-border); }
+  .pg-row.alerta { border-left-color:var(--cx-danger); }
+  .pg-row.ok     { border-left-color:var(--cx-success); }
+  .pg-head { display:flex; align-items:center; gap:14px; padding:14px 18px; cursor:pointer; }
+  .pg-head:hover { background:var(--cx-bg-alt); }
+  .pg-ini { width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:15px; color:#fff; background:var(--cx-primary-grad,var(--cx-primary)); flex:0 0 auto; }
+  .pg-nom { font-weight:800; font-size:15px; color:var(--cx-text); letter-spacing:-.01em; }
+  .pg-sub { font-size:12px; color:var(--cx-text-mute); margin-top:2px; }
+  .pg-monto { font-size:17px; font-weight:800; color:var(--cx-text); white-space:nowrap; letter-spacing:-.02em; }
+  .pg-body { padding:0 18px 16px; border-top:1px dashed var(--cx-border); }
+  .pg-ficha { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px 16px; margin:14px 0; }
+  .pg-ficha .lbl { font-size:9.5px; font-weight:700; color:var(--cx-text-mute); text-transform:uppercase; letter-spacing:.05em; }
+  .pg-ficha .val { font-size:13px; color:var(--cx-text); margin-top:2px; word-break:break-word; }
+  .pg-alerta { background:var(--cx-danger-pale); color:var(--cx-danger-text); border-radius:10px;
+    padding:10px 13px; font-size:12.5px; margin-bottom:9px; line-height:1.45; }
   #decisiones .dec-card { display:flex; align-items:center; gap:14px; text-decoration:none;
             background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:14px;
             padding:15px 18px; transition:box-shadow .18s, transform .12s, border-color .18s; box-shadow:var(--cx-sh-sm); }
@@ -134,8 +160,29 @@ HTML = r"""
     <!-- NAV DE PESTAÑAS -->
     <div class="cm-tabs" id="cm-tabs">
       <button class="cm-tab active" data-pane="dec" onclick="showPane('dec')">🎯 Decisiones <span class="cm-badge" id="cm-badge-dec"></span></button>
+      <button class="cm-tab" data-pane="pagos" onclick="showPane('pagos')">💸 Pagos <span class="cm-badge" id="cm-badge-pagos"></span></button>
       <button class="cm-tab" data-pane="pulso" onclick="showPane('pulso')">📊 Pulso del día</button>
       <button class="cm-tab" data-pane="fin" onclick="showPane('fin')">💳 Finanzas & Equipo</button>
+    </div>
+
+    <!-- PANE: PAGOS · lo que hay que pagar, con la ficha completa para decidirlo acá -->
+    <div class="pane" id="pane-pagos" style="display:none">
+      <div class="cm-subtabs" id="pg-subtabs">
+        <button class="cm-subtab active" data-sub="influencers" onclick="showSubPago('influencers')">👥 Influencers <span id="pg-sub-n" style="opacity:.7"></span></button>
+      </div>
+
+      <div id="pg-kpis" class="grid grid-6" style="margin-bottom:16px"></div>
+      <div id="pg-filtros" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+        <div style="position:relative">
+          <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.5;pointer-events:none">🔍</span>
+          <input id="pg-buscar" type="search" placeholder="Buscar creador..." oninput="pintarPagos()"
+                 style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:999px;padding:8px 14px 8px 32px;color:var(--cx-text);font-size:12.5px;min-width:220px;outline:none">
+        </div>
+        <button id="pg-f-todos"  onclick="setFiltroPago('todos')"  class="pg-chip">Todos</button>
+        <button id="pg-f-alerta" onclick="setFiltroPago('alerta')" class="pg-chip">Revisar antes de pagar</button>
+        <button id="pg-f-ok"     onclick="setFiltroPago('ok')"     class="pg-chip">Sin novedad</button>
+      </div>
+      <div id="pg-lista"><div class="empty" style="padding:14px;color:var(--cx-text-mute)">Cargando pagos...</div></div>
     </div>
 
     <!-- PANE: DECISIONES (lo que puedo atacar HOY) -->
@@ -240,10 +287,18 @@ HTML = r"""
 
 <script>
 function showPane(p){
-  var panes=['dec','pulso','fin'];
+  var panes=['dec','pagos','pulso','fin'];
   panes.forEach(function(x){ var el=document.getElementById('pane-'+x); if(el) el.style.display = (x===p)?'':'none'; });
   var tabs=document.querySelectorAll('#cm-tabs .cm-tab');
   tabs.forEach(function(t){ if(t.getAttribute('data-pane')===p) t.classList.add('active'); else t.classList.remove('active'); });
+  // La bandeja de pagos se pide al ABRIR su pestaña, no en la carga del tablero: recorre
+  // los pagos pendientes y calcula alertas de cada uno, y eso no va en la ruta critica (M43).
+  if(p==='pagos' && !window._PG_DATA) cargarPagos();
+}
+function showSubPago(s){
+  window._PG_SUB=s;
+  var b=document.querySelectorAll('#pg-subtabs .cm-subtab');
+  b.forEach(function(t){ if(t.getAttribute('data-sub')===s) t.classList.add('active'); else t.classList.remove('active'); });
 }
 function fmtM(n) { n = parseFloat(n||0); if(n>=1e6) return '$'+(n/1e6).toFixed(1)+'M'; if(n>=1e3) return '$'+(n/1e3).toFixed(0)+'K'; return '$'+Math.round(n).toLocaleString('es-CO'); }
 function fmtN(n) { return (n||0).toLocaleString('es-CO'); }
@@ -376,6 +431,197 @@ async function pagarCreador(ix){
     });
     var js = await r.json();
     if(!r.ok || js.error){ alert('No se pudo pagar: '+(js.error||('HTTP '+r.status))); return; }
+    cargarDecisiones();
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+
+// ── PAGOS · la bandeja de creadores, con la ficha completa para decidir sin salir ──────
+// Sebastian 27-jul: "cuando le doy click al influencer me lleva a Marketing, no deberia ser;
+// deberia mostrarme el influencer con todos los datos: cuenta bancaria, nombre, monto a pagar,
+// que le estoy pagando, fecha de publicacion".
+window._PG_DATA = null;
+window._PG_FILTRO = 'todos';
+window._PG_ABIERTO = null;
+
+function _pgMoneda(n){ return '$' + Math.round(Number(n||0)).toLocaleString('es-CO'); }
+
+async function cargarPagos(){
+  var cont=document.getElementById('pg-lista'); if(!cont) return;
+  cont.innerHTML='<div class="empty" style="padding:14px;color:var(--cx-text-mute)">Cargando pagos...</div>';
+  try{
+    var r=await fetch('/api/centro/pagos-influencers',{credentials:'same-origin'});
+    var js=await r.json();
+    if(!r.ok||js.error) throw new Error(js.error||('HTTP '+r.status));
+    window._PG_DATA=js;
+    pintarPagos();
+  }catch(e){
+    cont.innerHTML='<div class="empty" style="padding:14px;color:var(--cx-danger-text)">No se pudo cargar: '+_esc(e.message)+'</div>';
+  }
+}
+
+function setFiltroPago(f){ window._PG_FILTRO=f; pintarPagos(); }
+
+function pintarPagos(){
+  var js=window._PG_DATA; if(!js) return;
+  var todos=js.pagos||[];
+  var res=js.resumen||{};
+
+  var badge=document.getElementById('cm-badge-pagos');
+  if(badge){ badge.textContent=res.n||0; badge.className='cm-badge'+((res.n||0)?' on':''); }
+  var subn=document.getElementById('pg-sub-n'); if(subn) subn.textContent='('+(res.n||0)+')';
+
+  var k=document.getElementById('pg-kpis');
+  if(k){
+    k.innerHTML=''
+      +'<div class="card"><div class="label">Por pagar</div><div class="val">'+_pgMoneda(res.total)+'</div><div class="sub">'+(res.n||0)+' creador(es)</div></div>'
+      +'<div class="card"><div class="label">Para revisar antes</div><div class="val" style="color:'+((res.con_alerta||0)?'var(--cx-danger-text)':'var(--cx-text)')+'">'+(res.con_alerta||0)+'</div><div class="sub">cobro repetido o sin fecha de publicación</div></div>'
+      +'<div class="card"><div class="label">Listos para pagar</div><div class="val" style="color:var(--cx-success-text)">'+Math.max(0,(res.n||0)-(res.con_alerta||0))+'</div><div class="sub">sin novedad</div></div>';
+  }
+
+  ['todos','alerta','ok'].forEach(function(f){
+    var b=document.getElementById('pg-f-'+f);
+    if(b) b.className='pg-chip'+(window._PG_FILTRO===f?' on':'');
+  });
+
+  var q=((document.getElementById('pg-buscar')||{}).value||'').trim().toLowerCase();
+  var lista=todos.filter(function(p){
+    if(q && (String(p.influencer_nombre||'')+' '+String(p.usuario_red||'')).toLowerCase().indexOf(q)<0) return false;
+    if(window._PG_FILTRO==='alerta') return (p.graves||[]).length>0;
+    if(window._PG_FILTRO==='ok')     return (p.graves||[]).length===0;
+    return true;
+  });
+  window._PG_VIS=lista;
+
+  var cont=document.getElementById('pg-lista');
+  if(!lista.length){
+    cont.innerHTML='<div class="empty" style="padding:18px;color:var(--cx-success-text);font-weight:600">✓ No hay pagos esperando.</div>';
+    return;
+  }
+  cont.innerHTML=lista.map(function(p,ix){ return _pgFila(p,ix); }).join('');
+}
+
+function _pgDato(lbl,val){
+  if(val===null||val===undefined||val==='') return '';
+  return '<div><div class="lbl">'+lbl+'</div><div class="val">'+_esc(String(val))+'</div></div>';
+}
+
+function _pgFila(p, ix){
+  var grave=(p.graves||[]).length>0;
+  var ini=String(p.influencer_nombre||'?').trim().charAt(0).toUpperCase();
+  var abierto=(window._PG_ABIERTO===ix);
+  var sub = (p.fecha_publicacion? 'Publicó '+_esc(String(p.fecha_publicacion).slice(0,10)) : '⚠ sin fecha de publicación')
+          + (p.entregable? ' · '+_esc(String(p.entregable).slice(0,60)) : '');
+
+  var cuerpo='';
+  if(abierto){
+    var alertas=(p.alertas||[]).filter(function(a){return a.nivel==='alto';}).map(function(a){
+      var pv=a.pago_previo;
+      return '<div class="pg-alerta"><b>⚠ '+_esc(a.mensaje||'')+'</b>'
+        +(pv? '<div style="margin-top:4px;opacity:.9">Pago anterior: '+_pgMoneda(pv.valor||0)
+              +' del '+_esc(String(pv.fecha||'').slice(0,10))
+              +(pv.entregable? ' · '+_esc(pv.entregable) : '')+'</div>' : '')
+      +'</div>';
+    }).join('');
+
+    var banco = (window._PG_DATA && window._PG_DATA.ve_datos_bancarios)
+      ? [_pgDato('Banco',p.banco), _pgDato('Tipo de cuenta',p.tipo_cuenta),
+         _pgDato('Número de cuenta',p.cuenta_bancaria), _pgDato('Cédula / NIT',p.cedula_nit)].join('')
+      : '<div style="grid-column:1/-1;font-size:12px;color:var(--cx-text-mute)">Los datos bancarios sólo los ve un administrador o la contadora.</div>';
+
+    cuerpo='<div class="pg-body">'
+      + alertas
+      + '<div class="pg-ficha">'
+        + _pgDato('Creador', p.influencer_nombre)
+        + _pgDato('Red', p.usuario_red? '@'+p.usuario_red : p.red_social)
+        + _pgDato('Ciudad', p.ciudad)
+        + _pgDato('Monto a pagar', _pgMoneda(p.valor))
+        + _pgDato('Qué se le paga', p.entregable || p.concepto)
+        + _pgDato('Fecha de publicación', p.fecha_publicacion || 'sin fecha')
+        + _pgDato('Solicitado', String(p.fecha||'').slice(0,10))
+        + _pgDato('Vence', p.vence_pago_at)
+        + _pgDato('Orden', p.numero_oc)
+        + _pgDato('Email', p.email)
+        + _pgDato('Teléfono', p.telefono)
+        + banco
+      + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        + (p.numero_oc
+            ? '<button onclick="event.stopPropagation();pagarDesdeBandeja('+ix+')" style="background:var(--cx-primary);color:#fff;border:none;border-radius:9px;padding:9px 20px;font-size:13px;font-weight:800;cursor:pointer">Pagar '+_pgMoneda(p.valor)+'</button>'
+            : '<span style="font-size:12px;color:var(--cx-text-mute);align-self:center">Este pago no tiene orden asociada · no se puede pagar desde acá</span>')
+        + '<button onclick="event.stopPropagation();rechazarDesdeBandeja('+ix+')" style="background:transparent;color:var(--cx-danger-text);border:1px solid var(--cx-danger);border-radius:9px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">Rechazar</button>'
+      + '</div>'
+    + '</div>';
+  }
+
+  return '<div class="pg-row '+(grave?'alerta':'ok')+'">'
+    + '<div class="pg-head" onclick="pgToggle('+ix+')">'
+      + '<div class="pg-ini">'+_esc(ini)+'</div>'
+      + '<div style="flex:1;min-width:0">'
+        + '<div class="pg-nom">'+_esc(p.influencer_nombre||'-')+'</div>'
+        + '<div class="pg-sub" style="'+(grave?'color:var(--cx-danger-text)':'')+'">'+sub+'</div>'
+      + '</div>'
+      + '<div class="pg-monto">'+_pgMoneda(p.valor)+'</div>'
+      + '<span style="color:var(--cx-text-mute);font-size:12px;white-space:nowrap">'+(abierto?'▲ cerrar':'▼ ver')+'</span>'
+    + '</div>'
+    + cuerpo
+  + '</div>';
+}
+
+function pgToggle(ix){
+  window._PG_ABIERTO = (window._PG_ABIERTO===ix) ? null : ix;
+  pintarPagos();
+}
+
+async function rechazarDesdeBandeja(ix){
+  // El motivo es OBLIGATORIO: es lo que va a ver Jefferson cuando pregunte por que no le
+  // pagaron. Un rechazo sin razon escrita lo deja pidiendo lo mismo la semana que viene.
+  var p=(window._PG_VIS||[])[ix]; if(!p) return;
+  var motivo=prompt('¿Por qué se rechaza el pago a '+p.influencer_nombre+'?\n(lo va a ver quien lo pidió)','');
+  if(motivo===null) return;
+  if(String(motivo).trim().length<5){ alert('Escribí el motivo · con eso queda el rastro de por qué no se pagó'); return; }
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/centro/pagos-influencers/'+p.id+'/rechazar',{
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':(t.csrf_token||t.token||'')},
+      body: JSON.stringify({motivo:String(motivo).trim()})
+    });
+    var js=await r.json();
+    if(!r.ok||js.error){ alert('No se pudo rechazar: '+(js.error||('HTTP '+r.status))); return; }
+    window._PG_ABIERTO=null; window._PG_DATA=null;
+    await cargarPagos();
+    cargarDecisiones();
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+
+async function pagarDesdeBandeja(ix){
+  // Mismo endpoint canonico de Compras que usa el resto del sistema: no se abre una segunda
+  // via para mover plata (el espejo a egresos, el comprobante y la auditoria viven ahi).
+  var p=(window._PG_VIS||[])[ix]; if(!p || !p.numero_oc) return;
+  var graves=(p.alertas||[]).filter(function(a){return a.nivel==='alto';});
+  var txt = graves.length
+    ? 'OJO con este pago:\n\n' + graves.map(function(a){
+        var pv=a.pago_previo;
+        return '• '+a.mensaje+(pv?('\n   anterior: $'+Number(pv.valor||0).toLocaleString('es-CO')+' del '+String(pv.fecha||'').slice(0,10)+(pv.entregable?' · '+pv.entregable:'')):'');
+      }).join('\n') + '\n\n¿Pagar igual a '+p.influencer_nombre+'?'
+    : 'Pagar '+_pgMoneda(p.valor)+' a '+p.influencer_nombre+'?';
+  if(!confirm(txt)) return;
+  var ref=prompt('Referencia de la transferencia (numero del banco):','');
+  if(ref===null) return;
+  if(!String(ref).trim()){ alert('La referencia es obligatoria para poder cruzar el pago con el banco'); return; }
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(p.numero_oc)+'/pagar',{
+      method:'PATCH', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':(t.csrf_token||t.token||'')},
+      body: JSON.stringify({monto:p.valor||0, medio:'Transferencia',
+                            numero_transaccion:String(ref).trim(),
+                            observaciones:'Pagado desde Centro de Mando · '+(p.entregable||'')})
+    });
+    var js=await r.json();
+    if(!r.ok||js.error){ alert('No se pudo pagar: '+(js.error||('HTTP '+r.status))); return; }
+    window._PG_ABIERTO=null; window._PG_DATA=null;
+    await cargarPagos();
     cargarDecisiones();
   }catch(e){ alert('Error de red: '+e.message); }
 }

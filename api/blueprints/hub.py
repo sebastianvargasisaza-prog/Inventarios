@@ -179,6 +179,171 @@ def hub_alertas():
     return jsonify({'alertas': alertas[:15], 'resumen': resumen})
 
 
+def _pagos_influencer_pendientes(c, *, con_banco=False, limite=200):
+    """Pagos a creadores que esperan decisión del CEO, con todo lo necesario para decidirla.
+
+    Sebastián 27-jul: *"cuando le doy click al influencer me lleva a Marketing, no debería ser;
+    debería mostrarme el influencer con todos los datos: cuenta bancaria, nombre, monto a pagar,
+    qué le estoy pagando, fecha de publicación"*.
+
+    ÚNICO origen de esa lista (M1): lo usan el resumen de la cola de decisiones y la pestaña
+    Pagos. Si fueran dos consultas, el contador del tablero y la lista terminarían diciendo
+    números distintos de la misma plata (M5).
+
+    `con_banco` sólo lo pasa quien puede ver datos bancarios (Habeas Data, Ley 1581).
+    """
+    try:
+        from blueprints.marketing import alertas_pago_influencer as _alertas_pi
+    except Exception:
+        _alertas_pi = None
+
+    filas = c.execute(
+        "SELECT pi.id, pi.influencer_id, pi.influencer_nombre, COALESCE(pi.valor,0) valor, "
+        "       COALESCE(pi.fecha,'') fecha, COALESCE(pi.fecha_publicacion,'') fecha_publicacion, "
+        "       COALESCE(pi.entregable,'') entregable, COALESCE(pi.numero_oc,'') numero_oc, "
+        "       COALESCE(pi.vence_pago_at,'') vence_pago_at, COALESCE(pi.concepto,'') concepto, "
+        "       COALESCE(mi.banco,'') banco, COALESCE(mi.cuenta_bancaria,'') cuenta_bancaria, "
+        "       COALESCE(mi.tipo_cuenta,'') tipo_cuenta, COALESCE(mi.cedula_nit,'') cedula_nit, "
+        "       COALESCE(mi.usuario_red,'') usuario_red, COALESCE(mi.red_social,'') red_social, "
+        "       COALESCE(mi.ciudad,'') ciudad, COALESCE(mi.email,'') email, "
+        "       COALESCE(mi.telefono,'') telefono, COALESCE(mi.estado,'') inf_estado "
+        "FROM pagos_influencers pi "
+        "LEFT JOIN marketing_influencers mi ON mi.id = pi.influencer_id "
+        "WHERE pi.estado='Pendiente' "
+        "  AND COALESCE(pi.numero_oc,'') NOT IN ("
+        "        SELECT numero_oc FROM ordenes_compra "
+        "        WHERE estado='Pagada' AND COALESCE(numero_oc,'')!='' ) "
+        "ORDER BY COALESCE(NULLIF(pi.vence_pago_at,''), pi.fecha) ASC LIMIT ?",
+        (int(limite),)).fetchall()
+
+    salida = []
+    for r in filas:
+        d = dict(r)
+        alertas = []
+        if _alertas_pi:
+            try:
+                alertas = _alertas_pi(c, influencer_id=d['influencer_id'],
+                                      nombre=d['influencer_nombre'] or '',
+                                      valor=d['valor'] or 0,
+                                      fecha_publicacion=d['fecha_publicacion'],
+                                      entregable=d['entregable'], excluir_pago_id=d['id'])
+            except Exception as e:
+                log.warning('centro · alertas no calculadas para %s: %s', d['influencer_nombre'], e)
+        # Un pago sin fecha de publicación no se puede verificar: es el caso en que se estaría
+        # pagando algo que quizá no se entregó. Va como alerta alta, igual que un doble cobro.
+        if not (d['fecha_publicacion'] or '').strip():
+            alertas = list(alertas) + [{
+                'nivel': 'alto', 'codigo': 'SIN_FECHA_PUBLICACION',
+                'mensaje': 'sin fecha de publicación · no se puede verificar', 'pago_previo': None}]
+        d['alertas'] = alertas
+        d['graves'] = [a for a in alertas if a.get('nivel') == 'alto']
+        if not con_banco:
+            for campo in ('banco', 'cuenta_bancaria', 'tipo_cuenta', 'cedula_nit'):
+                if d.get(campo):
+                    d[campo] = '***'
+        salida.append(d)
+    return salida
+
+
+@bp.route('/api/centro/pagos-influencers')
+def centro_pagos_influencers():
+    """La bandeja de pagos a creadores, dentro del Centro de Mando.
+
+    Trae la ficha completa por pago para poder decidirlo sin salir: quién es, a qué cuenta se
+    le consigna, cuánto, qué publicó y cuándo, y qué alertas tiene ese cobro.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    u = (session.get('compras_user') or '').lower()
+    # Los datos bancarios sólo para admin y contadora (Habeas Data, Ley 1581).
+    puede_banco = u in {x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        pagos = _pagos_influencer_pendientes(c, con_banco=puede_banco)
+        return jsonify({
+            'ok': True,
+            've_datos_bancarios': puede_banco,
+            'resumen': {
+                'n': len(pagos),
+                'total': sum(float(p['valor'] or 0) for p in pagos),
+                'con_alerta': sum(1 for p in pagos if p['graves']),
+            },
+            'pagos': pagos,
+        })
+    except Exception:
+        import traceback
+        log.error('centro_pagos_influencers falló: %s', traceback.format_exc())
+        return jsonify({'error': 'No se pudo armar la bandeja de pagos'}), 500
+
+
+@bp.route('/api/centro/pagos-influencers/<int:pid>/rechazar', methods=['POST'])
+def centro_rechazar_pago_influencer(pid):
+    """Rechazar un pago a creador, dejando escrito POR QUÉ.
+
+    Sebastián: *"si lo rechazo él debe ver"* y *"en rechazadas debería salir por qué la
+    rechacé"*. Por eso el motivo es OBLIGATORIO y la fila se MARCA, nunca se borra: un
+    rechazo sin rastro deja a Jefferson pidiendo lo mismo la semana siguiente.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user') or ''
+    if u.lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'Solo un administrador puede rechazar un pago'}), 403
+
+    d = request.get_json(silent=True) or {}
+    motivo = (d.get('motivo') or '').strip()
+    if len(motivo) < 5:
+        return jsonify({'error': 'Escribí el motivo del rechazo · es lo que va a ver quien lo pidió',
+                        'codigo': 'MOTIVO_REQUERIDO'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        prev = c.execute(
+            "SELECT id, influencer_nombre, valor, estado, COALESCE(numero_oc,'') numero_oc "
+            "FROM pagos_influencers WHERE id=?", (pid,)).fetchone()
+        if not prev:
+            return jsonify({'error': 'Ese pago ya no existe'}), 404
+        prev = dict(prev)
+        if (prev['estado'] or '') == 'Pagada':
+            return jsonify({'error': 'Ese pago ya fue pagado · no se puede rechazar',
+                            'codigo': 'YA_PAGADO'}), 409
+
+        ahora = (datetime.utcnow() - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')  # M24
+        # CAS: sólo lo reclama quien lo encuentre todavía pendiente. Dos rechazos concurrentes
+        # (o rechazar algo que se acaba de pagar) no pueden pisarse (M27).
+        c.execute("UPDATE pagos_influencers "
+                  "SET estado='Rechazada', motivo_rechazo=?, rechazado_por=?, rechazado_at=? "
+                  "WHERE id=? AND estado='Pendiente'",
+                  (motivo[:400], u, ahora, pid))
+        if not c.rowcount:
+            conn.rollback()
+            return jsonify({'error': 'Ese pago ya cambió de estado · recargá la bandeja',
+                            'codigo': 'ESTADO_CAMBIO'}), 409
+
+        # La OC ligada también se cierra: si quedara viva, el pago volvería a aparecer como
+        # pendiente por el otro lado (el auto-backfill lo re-abriría).
+        if prev['numero_oc']:
+            c.execute("UPDATE ordenes_compra SET estado='Rechazada' "
+                      "WHERE numero_oc=? AND estado NOT IN ('Pagada','Recibida')",
+                      (prev['numero_oc'],))
+        try:
+            from audit_helpers import audit_log as _alog
+            _alog(c, usuario=u, accion='RECHAZAR_PAGO_INFLUENCER',
+                  tabla='pagos_influencers', registro_id=str(pid),
+                  antes=prev, despues={'estado': 'Rechazada', 'motivo': motivo})
+        except Exception as e:
+            log.warning('audit del rechazo de pago %s no se pudo escribir: %s', pid, e)
+        conn.commit()
+        return jsonify({'ok': True, 'id': pid, 'estado': 'Rechazada', 'motivo': motivo})
+    except Exception:
+        import traceback
+        conn.rollback()
+        log.error('centro_rechazar_pago_influencer falló: %s', traceback.format_exc())
+        return jsonify({'error': 'No se pudo rechazar el pago'}), 500
+
+
 @bp.route('/api/centro/decisiones')
 def centro_decisiones():
     """Cola priorizada de DECISIONES del Centro de Mando (Sebastián 19-jul): todo lo que el
@@ -223,46 +388,22 @@ def centro_decisiones():
     # Jefferson PIDE (en Marketing, con fecha de publicación y tema); la decisión de pagar es del
     # CEO y por eso aparece en su cola. Las alertas anti doble-pago viajan con cada decisión: sin
     # paso de aprobación, son lo único que separa un pago legítimo de pagar dos veces lo mismo.
+    # Los pagos NO se listan uno por uno acá: 25 tarjetas de pago inundaban la cola y tapaban
+    # todo lo demás (Sebastián 27-jul: "así se ve desordenado"). Van en su propia pestaña
+    # Pagos › Influencers, donde cada uno se abre con la ficha completa y se paga ahí mismo.
+    # Acá queda UNA tarjeta de resumen para que nada quede escondido.
     try:
-        from blueprints.marketing import alertas_pago_influencer as _alertas_pi
-        _pend = c.execute(
-            "SELECT pi.id, pi.influencer_id, pi.influencer_nombre, pi.valor, "
-            "       COALESCE(pi.fecha_publicacion,''), COALESCE(pi.entregable,''), "
-            "       COALESCE(pi.numero_oc,''), COALESCE(pi.vence_pago_at,'') "
-            "FROM pagos_influencers pi "
-            "WHERE pi.estado='Pendiente' "
-            "  AND COALESCE(pi.numero_oc,'') NOT IN ("
-            "        SELECT numero_oc FROM ordenes_compra "
-            "        WHERE estado='Pagada' AND COALESCE(numero_oc,'')!='' ) "
-            "ORDER BY COALESCE(NULLIF(pi.vence_pago_at,''), pi.fecha) ASC LIMIT 25").fetchall()
-        for _p in _pend:
-            _al = []
-            try:
-                _al = _alertas_pi(c, influencer_id=_p[1], nombre=_p[2] or '', valor=_p[3] or 0,
-                                  fecha_publicacion=_p[4], entregable=_p[5], excluir_pago_id=_p[0])
-            except Exception as _e_al:
-                log.warning('centro · alertas de pago no calculadas para %s: %s', _p[2], _e_al)
-            _grave = [a for a in _al if a.get('nivel') == 'alto']
-            # Un pago sin fecha de publicación no se puede verificar: es el caso en que se
-            # estaría pagando algo que quizá no se entregó.
-            if not (_p[4] or '').strip():
-                _grave = _grave + [{'mensaje': 'sin fecha de publicación · no se puede verificar'}]
-            _det = (_p[2] or 'creador')
-            if (_p[4] or '').strip():
-                _det += ' · publicó ' + _p[4][:10]
-            if (_p[5] or '').strip():
-                _det += ' · ' + (_p[5] or '')[:60]
-            if _grave:
-                _det += ' · ⚠ ' + _grave[0].get('mensaje', '')
-            _add('critico' if _grave else 'atencion', 'pagos',
-                 ('Revisar antes de pagar' if _grave else 'Pago a creador'),
-                 _det, '/marketing', float(_p[3] or 0),
-                 extra={'pago': {
-                     'id': _p[0], 'nombre': _p[2] or '', 'valor': float(_p[3] or 0),
-                     'numero_oc': _p[6], 'fecha_publicacion': _p[4],
-                     'entregable': (_p[5] or '')[:160],
-                     'alertas': _al,
-                 }})
+        _pend = _pagos_influencer_pendientes(c, con_banco=False)
+        if _pend:
+            _con_alerta = [p for p in _pend if p['graves']]
+            _total = sum(float(p['valor'] or 0) for p in _pend)
+            _det = ('%d creador%s esperando · $%s'
+                    % (len(_pend), '' if len(_pend) == 1 else 'es', f'{_total:,.0f}'.replace(',', '.')))
+            if _con_alerta:
+                _det += ' · %d con algo para revisar antes de pagar' % len(_con_alerta)
+            _add('critico' if _con_alerta else 'atencion', 'pagos',
+                 'Pagos a creadores', _det, '/hoy#pagos', _total,
+                 extra={'ir_a_pagos': True})
     except Exception as _e_pi:
         log.warning('centro · pagos a creadores no se pudieron listar: %s', _e_pi)
         try: conn.rollback()

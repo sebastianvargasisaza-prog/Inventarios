@@ -244,12 +244,21 @@ def test_la_pantalla_pinta_las_alertas(app, db_clean):
     assert 'posible cobro repetido' in html, 'falta el resumen de alertas graves arriba'
 
 
+# ── Los pagos en el Centro de Mando · CAMBIÓ el 27-jul, y por qué ─────────────────────
+# Estos tres tests exigían que cada pago llegara como una TARJETA en la cola de decisiones.
+# Funcionaba, pero con 25 pendientes la cola quedaba tapada de pagos y no se podía leer nada
+# más (Sebastián: "así se ve desordenado... quisiera que hubiera arriba que dijera Pagos, y
+# allí una subpestaña que diga Influencers"). Ahora los pagos viven en su propia pestaña y en
+# la cola queda UNA tarjeta de resumen, para que nada quede escondido.
+#
+# O sea: lo que cambió es una DECISIÓN de producto, no un bug -- por eso se ajustan los tests
+# y no el código (M97). Lo que antes verificaban acá (que llegue, que un cobro repetido salga
+# marcado, que se pueda pagar sin salir del módulo) se sigue verificando, pero contra la
+# bandeja real, en `tests/test_centro_pagos_bandeja.py`.
+
 def test_el_pago_llega_al_centro_de_mando_del_CEO(app, db_clean):
     """Sebastián: "Marketing es de Jefferson, el que paga soy yo como CEO... mejor que me llegue
-    aquí, para ir centralizando mi módulo y no ir a otros". Antes tenía que entrar a
-    Compras → Bandeja → Influencers.
-
-    Va como un tipo de DECISIÓN más en la cola que ya existe, no como pantalla nueva (M1).
+    aquí". Sigue llegando: ahora como resumen que lleva a la pestaña Pagos.
     """
     iid = _influencer(app, 'ZZ CENTRO')
     _pago_previo(app, iid, 'ZZ CENTRO', valor=640000, fecha='2026-07-20',
@@ -260,14 +269,20 @@ def test_el_pago_llega_al_centro_de_mando_del_CEO(app, db_clean):
     pagos = [x for x in (d.get('decisiones') or []) if x.get('grupo') == 'pagos']
     assert pagos, 'los pagos a creadores no llegan al Centro de Mando: %s' % (
         sorted({x.get('grupo') for x in (d.get('decisiones') or [])}))
-    mio = [x for x in pagos if 'ZZ CENTRO' in (x.get('detalle') or '')]
-    assert mio, 'el pendiente no aparece en la cola: %s' % pagos[:3]
-    assert 'publicó' in mio[0]['detalle'], 'la decisión no muestra cuándo publicó'
-    assert mio[0]['valor'] == 640000, mio[0]
+    assert len(pagos) == 1, 'la cola volvió a inundarse con una tarjeta por pago'
+    assert pagos[0].get('ir_a_pagos') is True, 'el resumen no lleva a la pestaña Pagos'
+    assert 'esperando' in (pagos[0].get('detalle') or ''), pagos[0]
+
+    # Y el pago concreto, con su fecha de publicación, está en la bandeja.
+    mio = [p for p in c.get('/api/centro/pagos-influencers').get_json()['pagos']
+           if p['influencer_nombre'] == 'ZZ CENTRO']
+    assert mio and mio[0]['valor'] == 640000
+    assert mio[0]['fecha_publicacion'] == '2026-07-18'
 
 
 def test_un_pago_sospechoso_llega_como_CRITICO(app, db_clean):
-    """La cola del CEO tiene que distinguir "pagá esto" de "mirá esto antes de pagar"."""
+    """La cola tiene que distinguir "pagá esto" de "mirá esto antes de pagar": si hay aunque
+    sea uno con sospecha de cobro repetido, el resumen sube a crítico y lo dice."""
     iid = _influencer(app, 'ZZ CENTRO DUP')
     _pago_previo(app, iid, 'ZZ CENTRO DUP', valor=500000, fecha='2026-07-10',
                  fecha_pub='2026-07-05', tema='reel x', estado='Pagada')
@@ -276,18 +291,22 @@ def test_un_pago_sospechoso_llega_como_CRITICO(app, db_clean):
                  vence='2001-01-02')
     c = _login(app)
     d = c.get('/api/centro/decisiones').get_json()
-    mio = [x for x in (d.get('decisiones') or [])
-           if x.get('grupo') == 'pagos' and 'ZZ CENTRO DUP' in (x.get('detalle') or '')]
-    assert mio, 'no llegó a la cola'
-    assert mio[0]['nivel'] == 'critico', 'un posible cobro repetido no salió como crítico: %s' % mio[0]
-    assert 'Revisar antes de pagar' in mio[0]['titulo'], mio[0]['titulo']
+    resumen = [x for x in (d.get('decisiones') or []) if x.get('grupo') == 'pagos']
+    assert resumen, 'no llegó a la cola'
+    assert resumen[0]['nivel'] == 'critico', 'un posible cobro repetido no elevó el resumen'
+    assert 'revisar antes de pagar' in (resumen[0].get('detalle') or ''), resumen[0]
+
+    # Y en la bandeja, ESE pago viene marcado con el pago anterior al lado.
+    mio = [p for p in c.get('/api/centro/pagos-influencers').get_json()['pagos']
+           if p['influencer_nombre'] == 'ZZ CENTRO DUP']
+    assert mio and mio[0]['graves'], 'el pago sospechoso no viene marcado en la bandeja'
 
 
 def test_el_pago_se_resuelve_desde_el_centro_de_mando(app, db_clean):
     """Sebastián: "la idea es que no me salga de mi módulo, que en mi módulo de CEO haga todo".
 
-    La decisión no solo AVISA: viaja con lo necesario para ejecutarla ahí mismo (la OC, el monto,
-    las alertas). Si sólo avisara, el CEO tendría que irse igual a otro módulo.
+    La bandeja no sólo AVISA: trae la OC, el monto y las alertas, así que el pago se ejecuta
+    ahí mismo. Si sólo avisara, habría que irse igual a otro módulo.
     """
     iid = _influencer(app, 'ZZ RESUELVE')
     _pago_previo(app, iid, 'ZZ RESUELVE', valor=450000, fecha='2026-07-21',
@@ -301,14 +320,12 @@ def test_el_pago_se_resuelve_desde_el_centro_de_mando(app, db_clean):
                    ('OC-ZZ-RESUELVE', iid, 'Pendiente'))
         conn.commit()
     c = _login(app)
-    d = c.get('/api/centro/decisiones').get_json()
-    mio = [x for x in (d.get('decisiones') or [])
-           if x.get('grupo') == 'pagos' and 'ZZ RESUELVE' in (x.get('detalle') or '')]
-    assert mio, 'no llegó a la cola del CEO'
-    pago = mio[0].get('pago')
-    assert pago, 'la decisión no trae con qué pagarla · el CEO tendría que irse a otro módulo'
-    assert pago['numero_oc'] == 'OC-ZZ-RESUELVE' and pago['valor'] == 450000, pago
-    assert 'alertas' in pago, 'no viajan las alertas con la decisión'
+    mio = [p for p in c.get('/api/centro/pagos-influencers').get_json()['pagos']
+           if p['influencer_nombre'] == 'ZZ RESUELVE']
+    assert mio, 'no llegó a la bandeja del CEO'
+    p = mio[0]
+    assert p['numero_oc'] == 'OC-ZZ-RESUELVE' and p['valor'] == 450000, p
+    assert 'alertas' in p, 'no viajan las alertas con el pago'
 
 
 def test_el_centro_de_mando_tiene_el_boton_y_usa_el_endpoint_canonico(app, db_clean):

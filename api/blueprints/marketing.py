@@ -3978,11 +3978,18 @@ def mkt_influencers_panel():
                   )
             """)
             _tot_bf += c.rowcount or 0
+            # Un pago cuya OC quedó rechazada/cancelada se MARCA, no se borra (mig 386).
+            # Antes esto era un DELETE y por eso la bandeja de Rechazados salía siempre en 0:
+            # Jefferson pedía, el pago no iba, y el registro desaparecía sin que nadie pudiera
+            # ver por qué. Ese rastro es el motivo por el que existe el módulo.
             _del_ids_bf = [r[0] for r in c.execute(
                 "SELECT id FROM pagos_influencers WHERE estado='Pendiente' AND numero_oc IN "
                 "(SELECT numero_oc FROM ordenes_compra WHERE estado IN ('Rechazada','Cancelada'))").fetchall()]
             c.execute("""
-                DELETE FROM pagos_influencers
+                UPDATE pagos_influencers
+                SET estado='Rechazada',
+                    motivo_rechazo=COALESCE(NULLIF(motivo_rechazo,''),
+                                            'La orden de compra fue rechazada o cancelada')
                 WHERE estado='Pendiente'
                   AND numero_oc IN (
                     SELECT numero_oc FROM ordenes_compra
@@ -4915,6 +4922,9 @@ def mkt_pagos_influencers_list():
                    pi.concepto, pi.numero_oc,
                    COALESCE(pi.fecha_publicacion,'') as fecha_publicacion,
                    COALESCE(pi.entregable,'') as entregable,
+                   COALESCE(pi.motivo_rechazo,'') as motivo_rechazo,
+                   COALESCE(pi.rechazado_por,'')  as rechazado_por,
+                   COALESCE(pi.rechazado_at,'')   as rechazado_at,
                    COALESCE(oc.estado,'') as oc_estado,
                    cp.id          as comprobante_id,
                    cp.numero_ce   as numero_ce,

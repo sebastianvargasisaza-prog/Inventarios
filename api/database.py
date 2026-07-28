@@ -10477,6 +10477,25 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "DROP INDEX IF EXISTS idx_shopify_orders_creado",
         "DROP INDEX IF EXISTS idx_aso_creado",
     ]),
+    (386, "Rechazar un pago a creador deja RASTRO, no borra la fila. Sebastián 27-jul: "
+          "\"en rechazadas debería salir por qué la rechacé\" -- y el contador marcaba 0 porque "
+          "el auto-backfill BORRABA (DELETE) las solicitudes cuya OC quedaba Rechazada/Cancelada. "
+          "Eso destruye justo la trazabilidad para la que existe el módulo: Jefferson pide, y si "
+          "el pago no va, tiene que poder ver POR QUÉ. Ahora la fila se marca 'Rechazada' con el "
+          "motivo, quién y cuándo (mismo criterio que anular en vez de borrar, M106).", [
+        "ALTER TABLE pagos_influencers ADD COLUMN motivo_rechazo TEXT DEFAULT ''",
+        "ALTER TABLE pagos_influencers ADD COLUMN rechazado_por TEXT DEFAULT ''",
+        "ALTER TABLE pagos_influencers ADD COLUMN rechazado_at TEXT DEFAULT ''",
+        # Las que ya estaban ligadas a una OC muerta y sobrevivieron al borrado quedan
+        # marcadas, para que la bandeja de Rechazados diga la verdad desde el primer día.
+        """UPDATE pagos_influencers SET estado='Rechazada',
+                  motivo_rechazo=COALESCE(NULLIF(motivo_rechazo,''),'La orden de compra fue rechazada o cancelada')
+            WHERE estado='Pendiente'
+              AND COALESCE(numero_oc,'') != ''
+              AND numero_oc IN (SELECT numero_oc FROM ordenes_compra
+                                 WHERE estado IN ('Rechazada','Cancelada'))""",
+        "CREATE INDEX IF NOT EXISTS idx_pagos_inf_estado ON pagos_influencers(estado)",
+    ]),
 ]
 
 

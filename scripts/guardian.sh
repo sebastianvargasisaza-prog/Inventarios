@@ -112,6 +112,10 @@ CORAZON=(
   # 8 modales y deje los botones, y "Solicitar pago" -- lo unico que ese modulo tiene que
   # hacer -- quedo sin hacer nada. Ningun test lo cazo porque el endpoint estaba bien.
   "tests/test_marketing_modales_vivos.py"
+  # Pagos › Influencers en el Centro de Mando · y sobre todo: rechazar MARCA la fila con el
+  # motivo, nunca la borra. Antes se borraba y por eso la bandeja de Rechazados salia en 0:
+  # quien pidio el pago no tenia forma de saber por que no se lo pagaron.
+  "tests/test_centro_pagos_bandeja.py"
 )
 
 echo ""
