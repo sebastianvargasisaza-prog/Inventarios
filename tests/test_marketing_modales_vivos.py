@@ -115,6 +115,25 @@ def test_nadie_cambia_a_una_pestana_que_no_existe(pagina):
         % (faltan, sorted(paneles)))
 
 
+def test_no_manda_al_usuario_a_una_pantalla_que_ya_no_existe(pagina):
+    """La sub-vista de Influencers salió de Compras el 27-jul, pero tres textos seguían
+    diciendo "va a /compras → tab Influencers para autorizar y pagar".
+
+    Una instrucción que manda a un lugar que ya no está es peor que no tener instrucción:
+    Jefferson iba, no encontraba nada, y quedaba sin saber dónde se decide su pago. Es el
+    mismo patrón que el botón sin modal y el switchTab sin panel, pero en el texto.
+    """
+    import re as _re
+    # Se mira sólo lo que el usuario LEE: los comentarios del código pueden mencionarlo
+    # justamente para explicar por qué ya no va.
+    visible = _re.sub(r'<!--.*?-->', '', pagina, flags=_re.S)
+    visible = _re.sub(r'^\s*//.*$', '', visible, flags=_re.M)
+    for muerto in ('/compras → tab Influencers', 'compras -> tab Influencers'):
+        assert muerto not in visible, (
+            'un texto sigue mandando a "%s", que se retiró · el pago se decide en '
+            'Centro de Mando → Pagos' % muerto)
+
+
 def test_la_pantalla_se_abre_sola_sin_tener_que_hacer_click(pagina):
     """Con una sola pestaña, entrar al módulo tiene que mostrarla ya cargada."""
     js, _ = _partes(pagina)

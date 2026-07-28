@@ -653,15 +653,18 @@ document.addEventListener('DOMContentLoaded', function(){
 </div>
 
 <div class="modal-bg" id="modal-inf-pago">
-  <div class="modal" style="max-width:460px;">
+  <div class="modal" style="max-width:580px;">
     <div class="modal-hdr">
       <div class="modal-title">&#x1F4B8; Solicitar Pago</div>
       <button class="modal-close" onclick="closeModal('modal-inf-pago')">&times;</button>
     </div>
     <input type="hidden" id="pago-inf-id">
-    <div style="margin-bottom:14px;">
-      <div style="font-size:13px;color:var(--cx-text-mute);margin-bottom:4px;">Influencer</div>
-      <div id="pago-inf-nombre" style="font-weight:700;font-size:15px;color:var(--cx-text);"></div>
+    <div style="display:flex;align-items:center;gap:12px;background:var(--cx-bg-alt);border-radius:12px;padding:12px 14px;margin-bottom:16px;">
+      <div style="width:40px;height:40px;border-radius:12px;background:var(--cx-primary-grad,var(--cx-primary));flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:18px;">&#x1F4B8;</div>
+      <div style="min-width:0;">
+        <div style="font-size:10px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.05em;">Se le va a pagar a</div>
+        <div id="pago-inf-nombre" style="font-weight:800;font-size:16px;color:var(--cx-text);letter-spacing:-.01em;margin-top:1px;"></div>
+      </div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Valor a pagar (COP) *</label><input type="number" id="pago-valor" placeholder="0"></div>
@@ -674,7 +677,9 @@ document.addEventListener('DOMContentLoaded', function(){
       </div>
       <div class="form-group">
         <label>Vence pago (auto)</label>
-        <input id="pago-vence" disabled style="background:var(--cx-primary-soft);color:#c7d2fe;font-weight:700;" placeholder="-">
+        <!-- El color del texto era `#c7d2fe`, pensado para caja OSCURA; sobre el lavanda
+             claro quedaba lavanda-sobre-lavanda, ilegible (M104). -->
+        <input id="pago-vence" disabled style="background:var(--cx-primary-soft);color:var(--cx-primary-text);font-weight:700;" placeholder="-">
       </div>
     </div>
     <div class="form-row">
@@ -687,11 +692,16 @@ document.addEventListener('DOMContentLoaded', function(){
       <div style="font-weight:700;color:var(--cx-primary-text);margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
       <div id="pago-banco-preview" style="line-height:1.8;"></div>
     </div>
-    <!-- Linea explicativa: que pasa despues de crear la solicitud -->
-    <div style="background:var(--cx-primary-soft);border:1px solid #4338ca;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:11px;color:#c7d2fe;line-height:1.5;">
-      <b style="color:#a5b4fc;">📌 Qué pasa después:</b><br>
-      Esta solicitud va a <b>Sebastián</b> en /compras → tab Influencers para autorizar y pagar.
-      Recibirás <b>email automático</b> cuando se haga el pago. Catalina no participa en este flujo.
+    <!-- Qué pasa después de enviar la solicitud.
+         El texto decía "/compras → tab Influencers": esa sub-vista se retiró el 27-jul y el
+         pago pasó a decidirse en Centro de Mando. Una instrucción que manda a un lugar que ya
+         no existe es peor que no tenerla. Y los colores (#c7d2fe sobre lavanda claro) venían
+         de una caja oscura: quedaban lavanda sobre lavanda, ilegibles (M104). -->
+    <div style="background:var(--cx-primary-soft);border:1px solid var(--cx-primary);border-radius:10px;padding:11px 13px;margin:10px 0;font-size:11.5px;color:var(--cx-text);line-height:1.55;">
+      <b style="color:var(--cx-primary-text);">📌 Qué pasa después</b><br>
+      La solicitud le llega a <b>Sebastián</b> en su Centro de Mando &rarr; pestaña <b>Pagos</b>,
+      donde la paga o la rechaza. Si la rechaza, acá vas a ver el motivo.
+      Cuando se pague recibís <b>email automático</b>. Catalina no participa en este flujo.
     </div>
     <div id="pago-inf-alert" style="display:none;margin-bottom:8px;"></div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
@@ -1588,7 +1598,7 @@ async function loadInfluencers() {
         + (conPendiente.length>1?'es':'') + ' esperando pago</b> · '
         + 'Total: <b>' + fmtM(totalPend) + '</b>'
         + '<br><span style="font-size:11px;color:var(--cx-text-mute);">'
-        + 'Sebastián las autoriza y paga desde /compras → tab Influencers. '
+        + 'Sebastián las paga o rechaza desde su Centro de Mando &rarr; Pagos. '
         + 'Cuando se paguen recibirás email automático.</span>';
     } else {
       banner.style.display = 'none';
@@ -2529,8 +2539,8 @@ function _mostrarPagoSolicitadoOk(d){
       + '<div><b style="color:var(--cx-text-mute)">Monto:</b> <span id="mpo-monto" style="color:var(--cx-warn-text);font-weight:700"></span></div>'
       + '<div><b style="color:var(--cx-text-mute)">Concepto:</b> <span id="mpo-concepto"></span></div>'
       + '<div style="margin-top:8px;border-top:1px solid var(--cx-border);padding-top:8px;color:var(--cx-primary-text)">'
-      + '📌 Ya quedó visible para Sebastián en <b>/compras → tab Influencers</b>. '
-      + 'Cuando pague vas a recibir notificación in-app. También aparece ahora en tu tabla con el badge ⏳.'
+      + '📌 Ya le quedó visible a Sebastián en su <b>Centro de Mando &rarr; Pagos</b>. '
+      + 'Cuando pague vas a recibir notificación in-app. Si lo rechaza, acá vas a ver el motivo.'
       + '</div></div>'
       + '<div style="display:flex;gap:10px;justify-content:center;margin:8px 14px 14px">'
       + '<button class="btn btn-primary" onclick="closeModal(\'modal-pago-ok\')" style="min-width:140px">OK, entendido</button>'
