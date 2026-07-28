@@ -21,7 +21,9 @@ def test_solicitar_pago_influencer(app, db_clean):
         iid = cu.execute("SELECT id FROM marketing_influencers WHERE nombre='TestInfluencer'").fetchone()[0]
         conn.commit()
     r = c.post(f"/api/marketing/influencers/{iid}/solicitar-pago",
-               data=json.dumps({"valor": 500000, "concepto": "Pago test junio"}), headers=_h())
+               data=json.dumps({"valor": 500000, "concepto": "Pago test junio",
+                                "fecha_publicacion": "2026-06-10",
+                                "entregable": "Reel de niacinamida"}), headers=_h())
     print("STATUS", r.status_code, "BODY", r.data[:400])
     assert r.status_code == 200, r.data
     assert r.get_json().get("ok") is True
@@ -43,7 +45,9 @@ def test_solicitar_pago_no_colisiona_con_numero_existente(app, db_clean):
         cu.execute("INSERT INTO solicitudes_compra (numero, fecha, estado) VALUES ('SOL-2026-ZZZ','2026-06-01','Aprobada')")
         conn.commit()
     r = c.post(f"/api/marketing/influencers/{iid}/solicitar-pago",
-               data=json.dumps({"valor": 250000, "concepto": "anti-colisión"}), headers=_h())
+               data=json.dumps({"valor": 250000, "concepto": "anti-colisión",
+                                "fecha_publicacion": "2026-06-11",
+                                "entregable": "Historia producto"}), headers=_h())
     assert r.status_code == 200, r.data            # ya NO 500
     d = r.get_json()
     assert d.get("ok") is True, d

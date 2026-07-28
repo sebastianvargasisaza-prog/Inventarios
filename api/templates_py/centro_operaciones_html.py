@@ -333,6 +333,41 @@ var _DEC = [];
 var _DEC_FILTRO = 'todas';
 var _GRP_META = {compras:['🛒','Compras'], discrepancia:['📊','Discrepancias'], inventario:['📦','Inventario'], calidad:['🧪','Calidad'], equipo:['👥','Equipo']};
 function _decColor(n){ return n==='critico' ? '#dc2626' : (n==='atencion' ? '#d97706' : '#0891b2'); }
+async function pagarCreador(ix){
+  // Paga SIN salir del Centro de Mando. Usa el endpoint CANONICO de Compras: reimplementar el
+  // pago aca seria una segunda via para mover plata y las dos divergirian (espejo a egresos,
+  // comprobante, auditoria, guard de sobre-pago). El CEO decide aca; Compras ejecuta.
+  var d = (window._DEC_VIS||[])[ix]; if(!d || !d.pago) return;
+  var p = d.pago;
+  var graves = (p.alertas||[]).filter(function(a){return a.nivel==='alto';});
+  var txt;
+  if(graves.length){
+    txt = 'OJO con este pago:\n\n' + graves.map(function(a){
+      var pv=a.pago_previo;
+      return '• '+a.mensaje+(pv?('\n   anterior: $'+Number(pv.valor||0).toLocaleString('es-CO')+' del '+(pv.fecha||'').slice(0,10)+(pv.entregable?' · '+pv.entregable:'')):'');
+    }).join('\n') + '\n\n¿Pagar igual a '+p.nombre+'?';
+  } else {
+    txt = 'Pagar $'+Number(p.valor||0).toLocaleString('es-CO')+' a '+p.nombre+'?';
+  }
+  if(!confirm(txt)) return;
+  var ref = prompt('Referencia de la transferencia (numero del banco):','');
+  if(ref===null) return;
+  if(!String(ref).trim()){ alert('La referencia es obligatoria para poder cruzar el pago con el banco'); return; }
+  try{
+    var t = await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(p.numero_oc)+'/pagar', {
+      method:'PATCH', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':(t.csrf_token||t.token||'')},
+      body: JSON.stringify({monto: p.valor||0, medio:'Transferencia',
+                            numero_transaccion: String(ref).trim(),
+                            observaciones: 'Pagado desde Centro de Mando · '+(p.entregable||'')})
+    });
+    var js = await r.json();
+    if(!r.ok || js.error){ alert('No se pudo pagar: '+(js.error||('HTTP '+r.status))); return; }
+    cargarDecisiones();
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+
 function pintarDecisiones(){
   var cont = document.getElementById('decisiones');
   var lista = _DEC_FILTRO==='todas' ? _DEC : _DEC.filter(function(d){return d.nivel===_DEC_FILTRO;});
@@ -340,9 +375,23 @@ function pintarDecisiones(){
     cont.innerHTML = '<div class="empty" style="padding:16px;color:var(--cx-success-text);font-weight:600">✓ Nada urgente que atacar ahora mismo.</div>';
     return;
   }
-  cont.innerHTML = lista.map(function(d){
+  // Las decisiones quedan accesibles por INDICE: el boton pasa el indice y no el texto, asi no
+  // hay dato del usuario interpolado dentro de un onclick.
+  window._DEC_VIS = lista;
+  cont.innerHTML = lista.map(function(d, _ix){
     var col = _decColor(d.nivel);
     var gm = _GRP_META[d.grupo] || ['•', d.grupo||''];
+    // Un pago se RESUELVE aca mismo: el CEO no tiene que irse a otro modulo para ejecutarlo.
+    if(d.pago && d.pago.numero_oc){
+      return '<div class="dec-card" style="border-left:4px solid '+col+';cursor:default">'+
+        '<span class="dec-ico" style="background:'+col+'14;color:'+col+'">'+gm[0]+'</span>'+
+        '<div class="dec-body">'+
+          '<div class="dec-tit">'+_esc(d.titulo||'-')+'</div>'+
+          '<div class="dec-det">'+_esc(d.detalle||'')+'</div>'+
+        '</div>'+
+        '<button onclick="pagarCreador('+_ix+')" style="background:var(--cx-primary);color:#fff;border:none;border-radius:9px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">Pagar</button>'+
+      '</div>';
+    }
     return '<a class="dec-card" href="'+_esc(d.accion||'#')+'" style="border-left:4px solid '+col+'">'+
       '<span class="dec-ico" style="background:'+col+'14;color:'+col+'">'+gm[0]+'</span>'+
       '<div class="dec-body">'+

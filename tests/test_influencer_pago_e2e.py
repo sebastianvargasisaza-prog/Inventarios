@@ -41,7 +41,11 @@ def test_cadena_pago_influencer_e2e(app, db_clean):
     cm = _login(app, 'jefferson')
     cm.patch('/api/identidad/jefferson', json={'cedula': '88888888'}, headers=_h())
     r = cm.post(f'/api/marketing/influencers/{iid}/solicitar-pago',
-                json={'valor': 250000, 'concepto': 'Reel colaboración'}, headers=_h())
+                json={'valor': 250000, 'concepto': 'Reel colaboración',
+                      # obligatorios desde el 27-jul: sin esto no hay trazabilidad de
+                      # QUE se esta pagando ni con que comparar para detectar repetidos
+                      'fecha_publicacion': '2026-07-15',
+                      'entregable': 'Reel colaboracion producto'}, headers=_h())
     assert r.status_code == 200, f'CREAR pago influencer falló: {r.status_code} {r.data}'
     d = r.get_json()
     assert d.get('ok'), d

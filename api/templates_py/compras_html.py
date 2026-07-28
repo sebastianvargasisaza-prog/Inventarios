@@ -393,7 +393,6 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   <!-- Sub-nav Gerencia: Cargos Fijos (Catalina+admin) · Influencers (solo admin) -->
   <div style="display:flex;gap:6px;margin:2px 0 16px;border-bottom:1px solid #ececf1;">
     <button type="button" class="sp-tab sp-on" id="gtn-cargos" onclick="showGerencia('cargos')">🏛️ Cargos fijos</button>
-    <button type="button" class="sp-tab" id="gtn-influencer" data-admin-only="1" style="display:none" onclick="showGerencia('influencer')">💸 Influencers <span style="font-size:9px;background:var(--cx-danger);color:#fff;padding:1px 5px;border-radius:6px;font-weight:700">admin</span></button>
   </div>
   <!-- VISTA · Cargos fijos -->
   <div id="gv-cargos">
@@ -5732,20 +5731,18 @@ window.limpiarSolsPlantaLegacy = async function(){
 
 // ═══════════ GERENCIA · Cargos fijos (Sebastián 14-jul) ═══════════
 function showGerencia(v){
+  // Gerencia quedó con Cargos fijos nada más. La sub-vista de Influencers salió el 27-jul:
+  // el pago a creadores lo pide Jefferson en Marketing y lo decide/ejecuta el CEO en Centro de
+  // Mando ("que no me salga de mi módulo"). En Compras no pinta.
   var vc=document.getElementById('gv-cargos'), vi=document.getElementById('gv-influencer');
-  var bc=document.getElementById('gtn-cargos'), bi=document.getElementById('gtn-influencer');
-  var isInf=(v==='influencer' && (typeof ES_ADMIN!=='undefined' && ES_ADMIN));
-  if(vc) vc.style.display=isInf?'none':'';
-  if(vi) vi.style.display=isInf?'':'none';
-  if(bc) bc.className='sp-tab'+(isInf?'':' sp-on');
-  if(bi) bi.className='sp-tab'+(isInf?' sp-on':'');
-  window._gerView=isInf?'influencer':'cargos';
-  if(isInf) loadInfluencers(); else loadCargosFijos();
+  if(vc) vc.style.display='';
+  if(vi) vi.style.display='none';
+  var bc=document.getElementById('gtn-cargos');
+  if(bc) bc.className='sp-tab sp-on';
+  window._gerView='cargos';
+  loadCargosFijos();
 }
-function loadGerencia(){
-  // Catalina → Cargos fijos (Influencers es admin). Admin → recuerda la última o Influencers.
-  showGerencia((typeof ES_ADMIN!=='undefined' && ES_ADMIN) ? (window._gerView||'influencer') : 'cargos');
-}
+function loadGerencia(){ showGerencia('cargos'); }
 var _CARGOS_CACHE={pagos:[],plantillas:[],alertas:{},periodo:''};
 async function loadCargosFijos(){
   var body=document.getElementById('cargos-body');

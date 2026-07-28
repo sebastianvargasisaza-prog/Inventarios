@@ -1,4 +1,5 @@
 # blueprints/hub.py — extraído de index.py (Fase C)
+import logging
 import os
 import json
 import sqlite3
@@ -9,6 +10,8 @@ from flask import Blueprint, jsonify, request, Response, session, redirect, url_
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, FINANZAS_ACCESS
 from database import get_db
+
+log = logging.getLogger('hub')
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -192,9 +195,14 @@ def centro_decisiones():
     hoy = datetime.now().strftime('%Y-%m-%d')
     dec = []
 
-    def _add(nivel, grupo, titulo, detalle, accion, valor=0):
-        dec.append({'nivel': nivel, 'grupo': grupo, 'titulo': titulo,
-                    'detalle': detalle, 'accion': accion, 'valor': valor})
+    def _add(nivel, grupo, titulo, detalle, accion, valor=0, extra=None):
+        _d = {'nivel': nivel, 'grupo': grupo, 'titulo': titulo,
+              'detalle': detalle, 'accion': accion, 'valor': valor}
+        # `extra` deja que una decisión traiga lo necesario para RESOLVERSE desde acá, en vez de
+        # mandar al CEO a otro módulo (Sebastián 27-jul: "que no me salga de mi módulo").
+        if extra:
+            _d.update(extra)
+        dec.append(_d)
 
     # ── COMPRAS: OCs por autorizar, pagos, lotes por vencer (núcleo compartido) ──
     try:
@@ -204,6 +212,59 @@ def centro_decisiones():
             _add(a['nivel'], _grp, a['titulo'], a['detalle'], a.get('accion', '/compras'),
                  a.get('valor', 0) or 0)
     except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
+    # ── PAGOS A CREADORES · la decisión llega acá, no hay que ir a Marketing ──────
+    # Sebastián 27-jul: "Marketing es de Jefferson, el que paga soy yo como CEO... mejor que me
+    # llegue aquí, para ir centralizando mi módulo y no ir a otros". Hoy tenía que entrar a
+    # Compras → Bandeja → Influencers para verlos.
+    #
+    # Jefferson PIDE (en Marketing, con fecha de publicación y tema); la decisión de pagar es del
+    # CEO y por eso aparece en su cola. Las alertas anti doble-pago viajan con cada decisión: sin
+    # paso de aprobación, son lo único que separa un pago legítimo de pagar dos veces lo mismo.
+    try:
+        from blueprints.marketing import alertas_pago_influencer as _alertas_pi
+        _pend = c.execute(
+            "SELECT pi.id, pi.influencer_id, pi.influencer_nombre, pi.valor, "
+            "       COALESCE(pi.fecha_publicacion,''), COALESCE(pi.entregable,''), "
+            "       COALESCE(pi.numero_oc,''), COALESCE(pi.vence_pago_at,'') "
+            "FROM pagos_influencers pi "
+            "WHERE pi.estado='Pendiente' "
+            "  AND COALESCE(pi.numero_oc,'') NOT IN ("
+            "        SELECT numero_oc FROM ordenes_compra "
+            "        WHERE estado='Pagada' AND COALESCE(numero_oc,'')!='' ) "
+            "ORDER BY COALESCE(NULLIF(pi.vence_pago_at,''), pi.fecha) ASC LIMIT 25").fetchall()
+        for _p in _pend:
+            _al = []
+            try:
+                _al = _alertas_pi(c, influencer_id=_p[1], nombre=_p[2] or '', valor=_p[3] or 0,
+                                  fecha_publicacion=_p[4], entregable=_p[5], excluir_pago_id=_p[0])
+            except Exception as _e_al:
+                log.warning('centro · alertas de pago no calculadas para %s: %s', _p[2], _e_al)
+            _grave = [a for a in _al if a.get('nivel') == 'alto']
+            # Un pago sin fecha de publicación no se puede verificar: es el caso en que se
+            # estaría pagando algo que quizá no se entregó.
+            if not (_p[4] or '').strip():
+                _grave = _grave + [{'mensaje': 'sin fecha de publicación · no se puede verificar'}]
+            _det = (_p[2] or 'creador')
+            if (_p[4] or '').strip():
+                _det += ' · publicó ' + _p[4][:10]
+            if (_p[5] or '').strip():
+                _det += ' · ' + (_p[5] or '')[:60]
+            if _grave:
+                _det += ' · ⚠ ' + _grave[0].get('mensaje', '')
+            _add('critico' if _grave else 'atencion', 'pagos',
+                 ('Revisar antes de pagar' if _grave else 'Pago a creador'),
+                 _det, '/marketing', float(_p[3] or 0),
+                 extra={'pago': {
+                     'id': _p[0], 'nombre': _p[2] or '', 'valor': float(_p[3] or 0),
+                     'numero_oc': _p[6], 'fecha_publicacion': _p[4],
+                     'entregable': (_p[5] or '')[:160],
+                     'alertas': _al,
+                 }})
+    except Exception as _e_pi:
+        log.warning('centro · pagos a creadores no se pudieron listar: %s', _e_pi)
         try: conn.rollback()
         except Exception: pass
 
