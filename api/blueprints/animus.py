@@ -1308,8 +1308,27 @@ def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
             'cobrado_at': f[14] or '', 'observaciones': f[15] or '',
             'caja_mov_id': f[16],
             'diferencia': round(recibido - esperado, 2) if cobrado else 0.0,
+            # Cuántos días lleva esa plata en la calle. Sin esto, "esperado pendiente" es un
+            # bulto: no distingue un pedido de ayer (normal) de uno de hace 45 días (esa plata
+            # probablemente no vuelve, o la transportadora ya la consignó y nadie la registró).
+            # Se deriva de la fecha del pedido, que ya está -- no hace falta ningún dato nuevo.
+            'dias_en_calle': _dias_desde(f[3]) if not cobrado else None,
         })
     return out
+
+
+def _dias_desde(fecha_txt):
+    """Días entre una fecha ISO y hoy en Colombia (el server corre en UTC · M24).
+
+    `date` NO está importado a nivel de módulo en este archivo (sólo `datetime` y
+    `timedelta`), así que va local -- igual que el otro uso del archivo. Verificarlo antes
+    de escribirlo es M78: un nombre que no está en scope es un NameError en producción.
+    """
+    from datetime import date as _date
+    try:
+        return (_hoy_col() - _date.fromisoformat((fecha_txt or '')[:10])).days
+    except (ValueError, TypeError):
+        return None
 
 
 @bp.route("/api/animus/contraentrega", methods=["GET"])
@@ -1339,6 +1358,14 @@ def animus_cod_listar():
         # Descuadre = lo que se recibió de menos (o de más) respecto de lo que decía el pedido.
         'descuadre':          round(sum(p['diferencia'] for p in pedidos if p['cobrado']), 2),
         'n_descuadres':       sum(1 for p in pedidos if p['cobrado'] and abs(p['diferencia']) >= 1),
+        # Plata VIEJA en la calle: más de 21 días sin entrar. Un contraentrega normal se cobra
+        # en días; a las tres semanas, o la transportadora ya consignó y nadie lo registró, o
+        # esa plata no vuelve. Sin separarlo, el total "pendiente" mezcla lo de ayer con lo
+        # perdido y no se puede actuar sobre ninguno de los dos.
+        'anejo_21d':          round(sum(p['valor_esperado'] for p in pedidos
+                                        if not p['cobrado'] and (p.get('dias_en_calle') or 0) >= 21), 2),
+        'n_anejos_21d':       sum(1 for p in pedidos
+                                  if not p['cobrado'] and (p.get('dias_en_calle') or 0) >= 21),
     }
     if filtro == 'pendiente':
         pedidos = [p for p in pedidos if not p['cobrado']]

@@ -8,14 +8,14 @@ COMPRAS_HTML = """<!DOCTYPE html>
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);font-size:14px;}
+body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--cx-text);font-size:14px;}
 .topbar{background:var(--cx-text);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
 .topbar h1{font-size:17px;font-weight:600;flex:1;}
 .topbar a{color:var(--cx-border);text-decoration:none;font-size:13px;}
 .topbar a:hover{color:#fff;}
 .tab-nav{background:var(--cx-card);border-bottom:2px solid var(--cx-border);display:flex;gap:0;overflow-x:auto;white-space:nowrap;}
 .tn{padding:11px 14px;font-size:13px;font-weight:500;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
-.tn:hover{color:var(--cx-primary-text);background:#faf7ff;}
+.tn:hover{color:var(--cx-primary-text);background:var(--cx-bg-alt);}
 .tn.on{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);font-weight:700;}
 .sp-tab{padding:9px 18px;font-size:13px;font-weight:600;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
 .sp-tab:hover{color:var(--cx-text);}
@@ -48,19 +48,19 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);f
 .cxt-wrap{background:var(--cx-card);border:1px solid #eef0f2;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);overflow:hidden;}
 .cxt-wrap.scroll{overflow-x:auto;}
 .cxt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;}
-.cxt thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--cx-text-mute);font-weight:700;padding:11px 14px;background:#faf7ff;border-bottom:1px solid #ece9f6;white-space:nowrap;}
+.cxt thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--cx-text-mute);font-weight:700;padding:11px 14px;background:var(--cx-bg-alt);border-bottom:1px solid #ece9f6;white-space:nowrap;}
 .cxt tbody td{padding:11px 14px;border-bottom:1px solid #f5f4f2;color:var(--cx-text-soft);vertical-align:middle;}
 .cxt tbody tr{transition:background .12s;}
-.cxt tbody tr:hover{background:#faf7ff;}
+.cxt tbody tr:hover{background:var(--cx-bg-alt);}
 .cxt tbody tr:last-child td{border-bottom:none;}
 .cxt-mono{font-family:ui-monospace,'SF Mono',monospace;font-variant-numeric:tabular-nums;}
 .cxt-chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap;}
 .cxt-chip.ok{background:var(--cx-success-pale);color:var(--cx-success-text);} .cxt-chip.no{background:var(--cx-danger-pale);color:var(--cx-danger-text);}
 .cxt-chip.wait{background:var(--cx-warn-pale);color:var(--cx-warn-text);} .cxt-chip.info{background:var(--cx-info-pale);color:#1d4ed8;}
-.cxt-chip.mute{background:#f5f4f2;color:var(--cx-text-mute);}
+.cxt-chip.mute{background:var(--cx-bg-alt);color:var(--cx-text-mute);}
 .cxt-btnp{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px -4px rgba(109,40,217,.5);}
 .cxt-btnp:hover{filter:brightness(1.06);}
-.cxt-hint{font-size:11px;color:var(--cx-text-mute);padding:10px 14px;background:#faf7ff;border-top:1px solid #ece9f6;line-height:1.5;}
+.cxt-hint{font-size:11px;color:var(--cx-text-mute);padding:10px 14px;background:var(--cx-bg-alt);border-top:1px solid #ece9f6;line-height:1.5;}
 /* Cards */
 .bar{background:var(--cx-card);border:1px solid #eef0f2;border-radius:12px;padding:11px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;box-shadow:0 1px 3px rgba(15,23,42,.04);}
 .bar input,.bar select{padding:9px 12px;border:1px solid var(--cx-border);border-radius:9px;font-size:13px;color:var(--cx-text);transition:border-color .15s,box-shadow .15s;}
@@ -70,7 +70,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);f
 .mb input:not([type=checkbox]):not([type=radio]):not([type=date]),.mb select,.mb textarea{border:1px solid var(--cx-border);border-radius:9px;padding:9px 11px;font-size:13px;color:var(--cx-text);transition:border-color .15s,box-shadow .15s;}
 .mb input:not([type=checkbox]):not([type=radio]):focus,.mb select:focus,.mb textarea:focus{outline:none;border-color:var(--cx-primary);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
 .pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
-.pill{padding:3px 11px;border-radius:12px;font-size:11px;font-weight:600;background:#f3f4f6;color:#374151;}
+.pill{padding:3px 11px;border-radius:12px;font-size:11px;font-weight:600;background:var(--cx-bg-alt);color:#374151;}
 .pill.y{background:var(--cx-warn-pale);color:var(--cx-warn-text);} .pill.b{background:var(--cx-info-pale);color:var(--cx-info-text);} .pill.g{background:var(--cx-success-pale);color:var(--cx-success-text);}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
 .card{background:var(--cx-card);border:1px solid #eef0f2;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:7px;box-shadow:0 1px 3px rgba(15,23,42,.04);transition:box-shadow .15s,transform .1s,border-color .15s;}
@@ -79,7 +79,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);f
 .cnum{font-weight:700;font-size:13px;} .cprov{font-size:13px;color:var(--cx-text);font-weight:600;margin-top:2px;}
 .cprov-label{font-size:9px;color:var(--cx-text-faint);text-transform:uppercase;letter-spacing:0.05em;display:block;}
 .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;box-shadow:0 1px 2px rgba(15,23,42,.06);}
-.b-bor{background:#f3f4f6;color:var(--cx-text-mute);} .b-rev{background:var(--cx-warn-pale);color:var(--cx-warn-text);}
+.b-bor{background:var(--cx-bg-alt);color:var(--cx-text-mute);} .b-rev{background:var(--cx-warn-pale);color:var(--cx-warn-text);}
 .b-aut{background:var(--cx-info-pale);color:var(--cx-info-text);} .b-pag{background:var(--cx-success-pale);color:var(--cx-success-text);}
 .b-rec{background:var(--cx-success-pale);color:#14532d;border:1px solid #bbf7d0;}
 .cmeta{font-size:11px;color:var(--cx-text-mute);display:flex;gap:10px;flex-wrap:wrap;}
@@ -93,7 +93,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);f
 .bg{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;} .bg:hover{filter:brightness(1.06);}
 .bw{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;} .bw:hover{filter:brightness(1.06);}
 .bi{background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;} .bi:hover{filter:brightness(1.06);}
-.bo{background:var(--cx-card);color:var(--cx-text);border:1px solid var(--cx-border);box-shadow:0 1px 2px rgba(15,23,42,.05);} .bo:hover{background:#faf9fb;border-color:#ddd6fe;}
+.bo{background:var(--cx-card);color:var(--cx-text);border:1px solid var(--cx-border);box-shadow:0 1px 2px rgba(15,23,42,.05);} .bo:hover{background:var(--cx-bg-alt);border-color:#ddd6fe;}
 .bs{padding:4px 10px;font-size:11px;}
 .empty{text-align:center;padding:36px;color:var(--cx-text-mute);font-size:13px;}
 .err{text-align:center;padding:20px;color:var(--cx-danger-text);font-size:13px;}
@@ -136,10 +136,10 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);f
 .fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--cx-primary);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
 .fg textarea{min-height:65px;resize:vertical;}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.ibox{background:#f9f8f7;border:1px solid var(--cx-border);border-radius:6px;padding:10px;font-size:12px;color:var(--cx-text-soft);display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-top:4px;}
+.ibox{background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:10px;font-size:12px;color:var(--cx-text-soft);display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-top:4px;}
 .ibox .lbl{color:var(--cx-text-mute);font-weight:600;white-space:nowrap;}
 .itbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;}
-.itbl th{background:#f5f4f2;padding:5px 7px;text-align:left;font-size:11px;font-weight:700;color:var(--cx-text-soft);}
+.itbl th{background:var(--cx-bg-alt);padding:5px 7px;text-align:left;font-size:11px;font-weight:700;color:var(--cx-text-soft);}
 .itbl td{padding:5px 7px;border-bottom:1px solid #f3f4f6;}
 .itbl input{width:100%;border:1px solid var(--cx-border);border-radius:7px;padding:5px 8px;font-size:12px;transition:border-color .15s,box-shadow .15s;}
 .itbl input:focus{outline:none;border-color:var(--cx-primary);box-shadow:0 0 0 3px rgba(124,58,237,.1);}
@@ -168,7 +168,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);f
 #m-noc .itbl th{background:var(--cx-primary-pale);color:var(--cx-primary-text);padding:11px 13px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;border-bottom:2px solid #e9d5ff;}
 #m-noc .itbl td{padding:9px 13px;border-bottom:1px solid #f1eefb;}
 #m-noc .itbl input{padding:10px 12px;font-size:13.5px;border-radius:10px;background:var(--cx-card);}
-#m-noc .itbl tbody tr:hover td{background:#faf7ff;}
+#m-noc .itbl tbody tr:hover td{background:var(--cx-bg-alt);}
 #m-noc .itbl tbody tr:last-child td{border-bottom:none;}
 #m-noc .total-row{font-size:19px;color:var(--cx-primary-text);}
 /* Premium · tarjetas de OC de la lista OCs Activas (Sebastián 15-jul · "premium todo") */
@@ -182,14 +182,14 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);f
 .consol-body thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#a78bda;font-weight:800;padding:6px 10px;border-bottom:1px solid #f0eef8;}
 .consol-body tbody td{padding:8px 10px;border-bottom:1px solid #f6f5fb;}
 .consol-body tbody tr:last-child td{border-bottom:none;}
-.consol-body tbody tr:hover td{background:#faf8ff;}
+.consol-body tbody tr:hover td{background:var(--cx-bg-alt);}
 .btn.br{background:var(--cx-danger);color:#fff;border:1px solid var(--cx-danger);}
 .btn.br:hover{background:var(--cx-danger);}
 .ocs-cpill{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid var(--cx-border);background:var(--cx-card);color:var(--cx-text-soft);cursor:pointer;transition:all .15s;white-space:nowrap;}
 .ocs-cpill:hover{background:var(--cx-bg-alt);border-color:var(--cx-text-faint);}
 .ocs-cpill.on{background:#ea580c;border-color:#ea580c;color:#fff;}
 .ptbl{width:100%;border-collapse:collapse;font-size:13px;}
-.ptbl th{background:#fbfbfd;color:var(--cx-text-mute);font-weight:800;font-size:10px;text-transform:uppercase;letter-spacing:.4px;padding:9px 11px;text-align:left;border-bottom:1px solid #eef0f2;}
+.ptbl th{background:var(--cx-bg-alt);color:var(--cx-text-mute);font-weight:800;font-size:10px;text-transform:uppercase;letter-spacing:.4px;padding:9px 11px;text-align:left;border-bottom:1px solid #eef0f2;}
 .ptbl td{padding:10px 11px;border-bottom:1px solid #f4f4f8;vertical-align:middle;}
 .ptbl tr:hover td{background:#faf9ff;}
 .pgrp-card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:8px;margin-bottom:14px;overflow:hidden;}
@@ -378,8 +378,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <option value="Parcial">Parciales (deben)</option>
     </select>
     <button onclick="abrirOCRFactura()" style="padding:7px 14px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subí foto de factura · la IA extrae items, totales · auto-match con OC pendiente">📤 Subir factura</button>
-    <a href="/tesoreria" target="_blank" style="padding:7px 14px;background:#faf7ff;color:var(--cx-primary-text);border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Tesorería · vista de gerencia: por-pagar + precios que se elevan + rechazos">&#127974; Tesorería</a>
-    <a href="/compras/discrepancias" target="_blank" style="padding:7px 14px;background:#faf7ff;color:var(--cx-primary-text);border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Discrepancias de compra por artículo · ¿subió por precio o por cantidad? (MP, envases y consumibles)">&#128202; Discrepancias</a>
+    <a href="/tesoreria" target="_blank" style="padding:7px 14px;background:var(--cx-bg-alt);color:var(--cx-primary-text);border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Tesorería · vista de gerencia: por-pagar + precios que se elevan + rechazos">&#127974; Tesorería</a>
+    <a href="/compras/discrepancias" target="_blank" style="padding:7px 14px;background:var(--cx-bg-alt);color:var(--cx-primary-text);border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Discrepancias de compra por artículo · ¿subió por precio o por cantidad? (MP, envases y consumibles)">&#128202; Discrepancias</a>
   </div>
   <div id="pagos-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px;"></div>
   <div id="pagos-saldos-panel" style="display:none;background:var(--cx-success-pale);border:1px solid #bbf7d0;border-radius:12px;padding:14px 16px;margin-bottom:14px;"></div>
@@ -423,7 +423,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <option value="Pagada">✅ Pagadas</option>
       <option value="Rechazada">❌ Rechazadas</option>
     </select>
-    <select id="order-influencer" onchange="renderInfluencers()" title="Ordenar por" style="background:#faf5ff;border:1px solid var(--cx-primary-light);color:var(--cx-primary-text);font-weight:600;">
+    <select id="order-influencer" onchange="renderInfluencers()" title="Ordenar por" style="background:var(--cx-bg-alt);border:1px solid var(--cx-primary-light);color:var(--cx-primary-text);font-weight:600;">
       <option value="urgente">⏰ Más urgente arriba (default · vence antes)</option>
       <option value="estado_fecha">📌 Por pagar primero (estado + fecha)</option>
       <option value="valor_desc">💰 Mayor valor primero</option>
@@ -457,7 +457,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
         <label>Motivo del rechazo <span style="color:var(--cx-danger-text);">*</span> <span style="font-weight:400;color:var(--cx-text-mute);">(visible para el solicitante)</span></label>
         <textarea id="motivo-rechazo-inf" rows="4" placeholder="Ej: Falta información de cuenta, monto incorrecto, valor no coincide..."></textarea>
       </div>
-      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:10px 12px;font-size:12px;color:#854d0e;">
+      <div style="background:var(--cx-warn-pale);border:1px solid #fde047;border-radius:6px;padding:10px 12px;font-size:12px;color:#854d0e;">
         ⚠️ El solicitante recibirá un correo con este motivo. Sé específico para evitar reenvíos innecesarios.
       </div>
     </div>
@@ -526,8 +526,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <input type="text" id="q-prov" placeholder="&#128269; Buscar proveedor por nombre o NIT..." oninput="renderProv()" style="flex:1;min-width:240px;padding:10px 16px;border:1px solid var(--cx-border);border-radius:999px;font-size:13px;color:var(--cx-text);background:var(--cx-card)">
     <button onclick="openModal('m-nprov')" style="padding:10px 18px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px -6px rgba(109,40,217,.5);white-space:nowrap">&#10133; Nuevo proveedor</button>
     <span style="width:1px;height:24px;background:var(--cx-border)"></span>
-    <button onclick="abrirROIProveedores()" style="padding:8px 12px;background:#faf7ff;color:var(--cx-text-mute);border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="ROI 12 meses · cumplimiento · top por monto">&#128202; ROI</button>
-    <button onclick="abrirProvDuplicados()" style="padding:8px 12px;background:#faf7ff;color:var(--cx-text-mute);border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="Detectar y fusionar proveedores duplicados (case-insensitive)">&#128279; Duplicados</button>
+    <button onclick="abrirROIProveedores()" style="padding:8px 12px;background:var(--cx-bg-alt);color:var(--cx-text-mute);border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="ROI 12 meses · cumplimiento · top por monto">&#128202; ROI</button>
+    <button onclick="abrirProvDuplicados()" style="padding:8px 12px;background:var(--cx-bg-alt);color:var(--cx-text-mute);border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="Detectar y fusionar proveedores duplicados (case-insensitive)">&#128279; Duplicados</button>
     <button onclick="toggleProvCalidad()" style="padding:8px 12px;background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid #bbf7d0;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap" title="Ranking de calidad de despacho por proveedor (tasa de discrepancia en recepciones)">&#127942; Ranking calidad</button>
   </div>
   <div id="prov-calidad-panel" style="display:none;background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(15,23,42,.04)"></div>
@@ -1022,7 +1022,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <input type="checkbox" id="noc-iva-chk" onchange="calcTot()" style="width:16px;height:16px;cursor:pointer;">
       <label for="noc-iva-chk" style="cursor:pointer;font-weight:600;font-size:13px;">Aplica IVA (19%)</label>
     </div>
-    <div id="noc-iva-row" style="display:none;background:#fefce8;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:4px;">
+    <div id="noc-iva-row" style="display:none;background:var(--cx-warn-pale);border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:4px;">
       <div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span>Subtotal sin IVA</span><span id="noc-sub">$0</span></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:var(--cx-warn-text);"><span>IVA 19%</span><span id="noc-iva-monto">$0</span></div>
       <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #fde047;padding-top:4px;"><span>Total con IVA</span><span id="noc-iva-total">$0</span></div>
@@ -1044,7 +1044,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div class="mdl">
   <div class="mh"><h3>&#x270F; Revisar &amp; Asignar</h3><button class="mx" onclick="closeModal('m-rev')">&times;</button></div>
   <div class="mb">
-    <div id="rev-info" style="background:#f9f8f7;border:1px solid var(--cx-border);border-radius:6px;padding:10px;font-size:13px;"></div>
+    <div id="rev-info" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:6px;padding:10px;font-size:13px;"></div>
     <div class="fg">
       <label>Proveedor / Beneficiario</label>
       <select id="rev-prov" onchange="fillProv('rev-prov','rev-ibox')"><option value="">-- Seleccionar --</option></select>
@@ -1058,7 +1058,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <input type="checkbox" id="rev-iva-chk" onchange="calcRevIva()" style="width:16px;height:16px;cursor:pointer;">
       <label for="rev-iva-chk" style="cursor:pointer;font-weight:600;font-size:13px;">Aplica IVA (19%)</label>
     </div>
-    <div id="rev-iva-breakdown" style="display:none;background:#fefce8;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:4px;">
+    <div id="rev-iva-breakdown" style="display:none;background:var(--cx-warn-pale);border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:4px;">
       <div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span>Subtotal</span><span id="rev-iva-sub">$0</span></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:var(--cx-warn-text);"><span>IVA 19%</span><span id="rev-iva-monto">$0</span></div>
       <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #fde047;padding-top:4px;"><span>Total con IVA</span><span id="rev-iva-total">$0</span></div>
@@ -1244,7 +1244,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <button onclick="closeModal('m-edit-prov-mp')" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;">&times;</button>
   </div>
   <div class="mb" style="padding:18px;">
-    <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
+    <div style="background:var(--cx-success-pale);border:1px solid #99f6e4;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
       <div style="font-size:11px;color:var(--cx-info-text);font-weight:700;text-transform:uppercase;letter-spacing:.5px;">MP</div>
       <div id="epm-info" style="font-weight:700;color:var(--cx-text);font-size:14px;">-</div>
       <div id="epm-prov-actual" style="color:var(--cx-text-mute);font-size:12px;margin-top:2px;">-</div>
@@ -1332,7 +1332,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <div class="mdl">
   <div class="mh"><h3>&#x1F195; Nueva Materia Prima</h3><button class="mx" onclick="closeModal('m-nueva-mp')">&times;</button></div>
   <div class="mb">
-    <div style="background:#f0f9ff;border-left:4px solid var(--cx-info);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--cx-info-text);">
+    <div style="background:var(--cx-info-pale);border-left:4px solid var(--cx-info);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--cx-info-text);">
       💡 Crea una MP nueva sin salir del form de OC. Los precios y stock que ingreses despues quedaran cargados en planta.
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
@@ -1764,7 +1764,7 @@ async function loadFacturasProv(){
       html+='<td style="white-space:nowrap">';
       if(it.estado!=='anulada'){
         if(it.saldo>0.5) html+='<button class="cxt-btnp" onclick="fpPagarModal('+it.id+')" style="margin-right:4px">Pagar</button>';
-        html+='<button onclick="fpDetalle('+it.id+')" style="background:#f5f4f2;color:var(--cx-text-soft);border:1px solid var(--cx-border);padding:5px 11px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;margin-right:4px">Ver</button>';
+        html+='<button onclick="fpDetalle('+it.id+')" style="background:var(--cx-bg-alt);color:var(--cx-text-soft);border:1px solid var(--cx-border);padding:5px 11px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;margin-right:4px">Ver</button>';
         html+='<button onclick="fpAnular('+it.id+')" style="background:var(--cx-card);color:var(--cx-danger-text);border:1px solid #fca5a5;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Anular</button>';
       } else { html+='<span style="color:var(--cx-text-faint);font-size:11px">-</span>'; }
       html+='</td></tr>';
@@ -1979,7 +1979,7 @@ async function loadPreparacionEnvases(){
           return '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;align-items:center">'+
                  '<span style="'+atr+'">'+_esc(p.fecha_produccion||'')+' &rarr; '+(p.uds||0).toLocaleString('es-CO')+'</span>'+
                  '<span style="color:var(--cx-text-mute)">&sum; '+(p.uds_acumulado||0).toLocaleString('es-CO')+'</span>'+
-                 '<button onclick="prepSetUds('+i+','+(p.uds_acumulado||0)+')" style="background:#e0f2fe;color:#0369a1;border:none;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">preparar '+(j+1)+'</button></div>';
+                 '<button onclick="prepSetUds('+i+','+(p.uds_acumulado||0)+')" style="background:var(--cx-info-pale);color:#0369a1;border:none;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">preparar '+(j+1)+'</button></div>';
         }).join('');
         proxHtml = '<details style="margin-top:4px"><summary style="cursor:pointer;color:var(--cx-primary-text);font-size:10px;font-weight:700">&#9656; próximas '+prods.length+' producciones · consolidar</summary>'+
                    '<div style="font-size:10px;color:var(--cx-text-soft);padding:4px 0 0 8px;border-left:2px solid #ddd6fe;margin-top:2px">'+prows+
@@ -2767,13 +2767,13 @@ async function renderDash(){
   // cada modal: items, observaciones completas, justificacion, total estimado.
   // Footer cuando hay influencer items ocultos: link al tab Influencers (admin only).
   var _hintInflSol = (solicPendInfl>0)
-    ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:var(--cx-primary-text);">'
+    ? '<div style="margin-top:8px;padding:8px 10px;background:var(--cx-primary-soft);border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:var(--cx-primary-text);">'
       +'+ '+solicPendInfl+' SOL de influencers ocultas - ver tab '
       +'<button onclick="document.querySelector(&quot;[data-tab=influencer]&quot;).click()" '
       +'style="background:none;border:none;color:var(--cx-primary-text);text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
       +'</div>' : '';
   var _hintInflOC = (ocsPorPagarInfl>0)
-    ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:var(--cx-primary-text);">'
+    ? '<div style="margin-top:8px;padding:8px 10px;background:var(--cx-primary-soft);border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:var(--cx-primary-text);">'
       +'+ '+ocsPorPagarInfl+' OC de influencers ocultas - ver tab '
       +'<button onclick="document.querySelector(&quot;[data-tab=influencer]&quot;).click()" '
       +'style="background:none;border:none;color:var(--cx-primary-text);text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
@@ -3059,7 +3059,7 @@ function renderPagos(){
     var imgBtn=p.tiene_comprobante?'<button class="btn bo bs" data-oc="'+esc(p.numero_oc)+'" onclick="verComprobante(this.dataset.oc)" title="Ver comprobante">📸</button>':'';
     var regenBtn=p.comprobante_id?'<button class="btn bs" style="background:var(--cx-primary);color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-cid="'+p.comprobante_id+'" data-oc="'+esc(p.numero_oc)+'" onclick="regenerarCEInline(this.dataset.cid, this.dataset.oc)" title="Regenerar PDF CE">🔄</button>':'';
     var revBtn=(typeof ES_ADMIN!=='undefined' && ES_ADMIN)?'<button class="btn bs" style="background:var(--cx-danger);color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-oc="'+esc(p.numero_oc)+'" onclick="revertirPagoOC(this.dataset.oc)" title="Revertir pago">↩️</button>':'';
-    var abonosBtn=(p.n_abonos>1)?'<button class="btn bs" style="background:#e0f2fe;color:#0369a1;font-size:10px;padding:3px 7px;margin-right:3px" data-oc="'+esc(p.numero_oc)+'" data-i="'+i+'" onclick="toggleAbonos(this.dataset.oc,this.dataset.i)" title="Ver abonos parciales">&#9656; '+p.n_abonos+' abonos</button>':'';
+    var abonosBtn=(p.n_abonos>1)?'<button class="btn bs" style="background:var(--cx-info-pale);color:#0369a1;font-size:10px;padding:3px 7px;margin-right:3px" data-oc="'+esc(p.numero_oc)+'" data-i="'+i+'" onclick="toggleAbonos(this.dataset.oc,this.dataset.i)" title="Ver abonos parciales">&#9656; '+p.n_abonos+' abonos</button>':'';
     // 💵 Abonar el saldo pendiente directo desde Pagos (Sebastián 21-jul) · el modal ya aplica saldo a favor
     var pagarBtn=(p.estado==='Parcial')?'<button class="btn bs" style="background:var(--cx-success);color:#fff;font-size:10px;padding:3px 10px;margin-right:3px;font-weight:800" data-oc="'+esc(p.numero_oc)+'" onclick="payOC(this.dataset.oc)" title="Registrar el pago pendiente de esta OC · podés aplicar saldo a favor del proveedor">&#128181; Abonar</button>':'';
     return '<tr>'
@@ -5193,7 +5193,7 @@ async function openOCDetail(num){
     h+='<div><div style="font-weight:800;font-size:16px;font-family:monospace;">'+esc(o.numero_oc||num)+'</div>';
     h+='<div style="color:var(--cx-text-soft);font-size:13px;">'+esc(o.proveedor||'-')+'</div></div>';
     h+='<span class="badge" style="background:'+estColor+'22;color:'+estColor+';font-size:12px;">'+esc(o.estado||'')+'</span></div>';
-    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:12px;background:#f9f8f7;border-radius:6px;padding:10px;">';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:12px;background:var(--cx-bg-alt);border-radius:6px;padding:10px;">';
     h+='<div><span style="color:var(--cx-text-mute);">Fecha:</span> '+fdate(o.fecha)+'</div>';
     h+='<div><span style="color:var(--cx-text-mute);">Entrega est.:</span> '+(o.fecha_entrega_est?fdate(o.fecha_entrega_est):'-')+'</div>';
     h+='<div><span style="color:var(--cx-text-mute);">Creado por:</span> '+esc(o.creado_por||'-')+'</div>';
@@ -5769,7 +5769,7 @@ function renderCargosAlert(a){
 }
 function _cargoEstadoPill(est){
   if(est==='pagado') return '<span class="badge" style="background:var(--cx-success-pale);color:var(--cx-success-text);">✓ Pagado</span>';
-  if(est==='por_pagar') return '<span class="badge" style="background:#fef9c3;color:#854d0e;">💰 Por pagar</span>';
+  if(est==='por_pagar') return '<span class="badge" style="background:var(--cx-warn-pale);color:#854d0e;">💰 Por pagar</span>';
   return '<span class="badge" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);">⚠ Falta monto</span>';
 }
 function renderCargos(){
@@ -6133,7 +6133,7 @@ function renderInfluencers(){
     if(s.estado==='Aprobada'){
       btns='<button class="btn inf-pagar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;border:none;border-radius:8px;box-shadow:0 2px 8px rgba(124,58,237,.3);">💸 Pagar ahora</button>'
           +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca;padding:7px 14px;font-size:13px;">✕ Rechazar</button>'
-          +'<button class="btn inf-eliminar" data-sol="'+esc(s.numero)+'" data-nombre="'+esc((b.nombre||s.solicitante||s.numero))+'" style="background:#f3f4f6;color:var(--cx-text-mute);border:1px solid var(--cx-border);padding:7px 12px;font-size:12px;" title="Eliminar definitivamente esta solicitud (no genera comprobante)">🗑 Eliminar</button>';
+          +'<button class="btn inf-eliminar" data-sol="'+esc(s.numero)+'" data-nombre="'+esc((b.nombre||s.solicitante||s.numero))+'" style="background:var(--cx-bg-alt);color:var(--cx-text-mute);border:1px solid var(--cx-border);padding:7px 12px;font-size:12px;" title="Eliminar definitivamente esta solicitud (no genera comprobante)">🗑 Eliminar</button>';
     } else if(s.estado==='Pendiente'){
       // Sebastian (29-abr-2026): si la SOL ya viene con valor desde Marketing
       // (Jefferson cargo todo), boton directo "Pagar". Si valor=0 (form
@@ -6144,7 +6144,7 @@ function renderInfluencers(){
         : '<button class="btn inf-pagar-pendiente" data-sol="'+esc(s.numero)+'" data-val="0" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;padding:8px 14px;font-size:12px;font-weight:700;border:none;border-radius:8px;box-shadow:0 2px 8px rgba(8,145,178,.28);">✏️ Definir valor &amp; pagar</button>';
       btns = btnPagar
           +'<button class="btn inf-rechazar-pendiente" data-sol="'+esc(s.numero)+'" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca;font-size:12px;">✕ Rechazar</button>'
-          +'<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#f3f4f6;color:var(--cx-text-mute);border:1px solid var(--cx-border);font-size:11px;">🗑 Eliminar</button>';
+          +'<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:var(--cx-bg-alt);color:var(--cx-text-mute);border:1px solid var(--cx-border);font-size:11px;">🗑 Eliminar</button>';
     } else if(s.estado==='Rechazada'){
       btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca;font-size:11px;padding:3px 8px;">🗑</button>';
     }
@@ -6159,7 +6159,7 @@ function renderInfluencers(){
     if(_entTxt.charAt(_entTxt.length-1)==='·') _entTxt=_entTxt.slice(0,-1).trim();
     var pubRow='';
     if(_fp || _ent){
-      pubRow='<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:9px 12px;margin:8px 0;font-size:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+      pubRow='<div style="background:var(--cx-bg-alt);border:1px solid #e9d5ff;border-radius:8px;padding:9px 12px;margin:8px 0;font-size:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
         +(_fp?'<span style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:3px 10px;border-radius:6px;font-weight:700;white-space:nowrap">📢 Publicó: '+fdate(_fp)+'</span>':'<span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:3px 10px;border-radius:6px;font-weight:700">⚠ Sin fecha de publicación</span>')
         +(_entTxt?'<span style="color:var(--cx-text-soft)">📝 '+esc(_entTxt)+'</span>':'')
         +(_okLink?'<a href="'+esc(_linkUrl)+'" target="_blank" rel="noopener" style="margin-left:auto;color:var(--cx-primary-text);font-weight:700;text-decoration:none;white-space:nowrap">🔗 Ver post</a>':'')
@@ -6446,7 +6446,7 @@ function renderSolicitudes(){
   if(pend) pills+='<span class="pill y">Pendiente: '+pend+'</span>';
   if(apro) pills+='<span class="pill g">Aprobada: '+apro+'</span>';
   if(rech) pills+='<span class="pill" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);">Rechazada: '+rech+'</span>';
-  if(paga) pills+='<span class="pill" style="background:#e0f2fe;color:#075985;">Pagada: '+paga+'</span>';
+  if(paga) pills+='<span class="pill" style="background:var(--cx-info-pale);color:#075985;">Pagada: '+paga+'</span>';
   document.getElementById('pills-solic').innerHTML=pills;
 
   if(!list.length){
@@ -6471,7 +6471,7 @@ function renderSolicitudes(){
       var ocStFg={'Revisada':'#92400e','Autorizada':'#065f46','Pagada':'#075985','Recibida':'#6b21a8'}[oc.estado]||'#374151';
       ocBadge='<span style="font-family:monospace;font-size:10px;background:'+ocStBg+';color:'+ocStFg+';border-radius:4px;padding:1px 6px;margin-left:6px;" title="Orden de Compra vinculada">'+esc(oc.numero_oc)+'</span>';
     } else if(s.numero_oc){
-      ocBadge='<span style="font-family:monospace;font-size:10px;background:#f3f4f6;color:#9ca3af;border-radius:4px;padding:1px 6px;margin-left:6px;">'+esc(s.numero_oc)+'</span>';
+      ocBadge='<span style="font-family:monospace;font-size:10px;background:var(--cx-bg-alt);color:#9ca3af;border-radius:4px;padding:1px 6px;margin-left:6px;">'+esc(s.numero_oc)+'</span>';
     }
     return '<div class="card" data-num="'+esc(s.numero)+'" style="border-left:3px solid '+urgC+'">'
       +'<div class="ch"><div style="min-width:0">'
@@ -6616,7 +6616,7 @@ function _renderGrupoCard(g, gi){
     '<div id="grpBody'+gi+'" style="display:none;padding:10px 16px;">'+
       '<div style="font-size:11px;color:var(--cx-text-mute);font-weight:600;margin-bottom:6px;">MATERIAS PRIMAS A COMPRAR (consolidadas):</div>'+
       '<table style="width:100%;font-size:12px;border-collapse:collapse;">'+
-        '<thead><tr style="background:#f5f4f2;"><th style="text-align:left;padding:6px 8px;">Codigo</th><th style="text-align:left;padding:6px 8px;">Nombre</th><th style="text-align:right;padding:6px 8px;">Cantidad</th><th style="text-align:right;padding:6px 8px;">Valor est.</th><th style="text-align:center;padding:6px 8px;">Solicitudes</th></tr></thead>'+
+        '<thead><tr style="background:var(--cx-bg-alt);"><th style="text-align:left;padding:6px 8px;">Codigo</th><th style="text-align:left;padding:6px 8px;">Nombre</th><th style="text-align:right;padding:6px 8px;">Cantidad</th><th style="text-align:right;padding:6px 8px;">Valor est.</th><th style="text-align:center;padding:6px 8px;">Solicitudes</th></tr></thead>'+
         '<tbody>'+
         (g.items_consolidados||[]).map(function(it){
           var origenes = (it.solicitudes_origen||[]);
@@ -6845,7 +6845,7 @@ function abrirOCRFactura(){
   m.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;padding:20px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:var(--cx-primary-text)">📤 Subir factura del proveedor</h3>'+
     '<button id="ocr-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div style="background:#faf5ff;border:1px solid var(--cx-primary);padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--cx-primary-text)">La IA Vision (Claude 4.6) extraerá automáticamente: proveedor · NIT · número factura · items · totales · IVA. Después sugiere match con OC pendiente.</div>'+
+    '<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-primary);padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--cx-primary-text)">La IA Vision (Claude 4.6) extraerá automáticamente: proveedor · NIT · número factura · items · totales · IVA. Después sugiere match con OC pendiente.</div>'+
     '<input type="file" id="ocr-file" accept="image/jpeg,image/png" style="margin-bottom:12px">'+
     '<button id="ocr-process" style="background:var(--cx-primary);color:#fff;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">🔍 Procesar factura</button>'+
     '<div id="ocr-result" style="margin-top:16px"></div>'+
@@ -6957,7 +6957,7 @@ async function abrirPedirCotizacion(gi){
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
   m.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;padding:20px;max-width:600px;width:100%;max-height:90vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:var(--cx-info-text)">💬 Pedir cotización · 3 proveedores</h3><button id="cot-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div style="background:#f0f9ff;border:1px solid var(--cx-info);padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--cx-info-text)">La IA detecta los top 3 proveedores históricos que han vendido los MPs del grupo · creará una ronda y vos enviás manualmente (email/WhatsApp) y registrás las respuestas cuando vuelvan.</div>'+
+    '<div style="background:var(--cx-info-pale);border:1px solid var(--cx-info);padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--cx-info-text)">La IA detecta los top 3 proveedores históricos que han vendido los MPs del grupo · creará una ronda y vos enviás manualmente (email/WhatsApp) y registrás las respuestas cuando vuelvan.</div>'+
     '<div style="background:var(--cx-bg-alt);padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px">'+
       '<b style="color:var(--cx-text-soft)">Grupo: '+esc(g.proveedor)+'</b><br>'+
       g.solicitudes_count+' SOLs · '+g.items_count+' MPs · '+items.length+' productos'+
@@ -7051,7 +7051,7 @@ async function abrirCrearOCDesdeGrupo(gi){
   m.innerHTML = '<div style="background:var(--cx-card);border-radius:12px;padding:20px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:var(--cx-info-text)">🛒 Confirmar OC · '+esc(g.proveedor)+'</h3>'+
     '<button id="oc-prev-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
-    '<div style="background:#f0f9ff;border:1px solid var(--cx-info);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--cx-info-text)">'+
+    '<div style="background:var(--cx-info-pale);border:1px solid var(--cx-info);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--cx-info-text)">'+
       '<b>'+g.solicitudes_count+' SOLs</b> · <b>'+g.items_count+' MPs</b> · vincular y aprobar'+
     '</div>'+
     '<table style="width:100%;border-collapse:collapse">'+
@@ -7378,7 +7378,7 @@ async function openSolicitudDetail(num){
       });
       // Fila de total - colspan 3 para cubrir CÓDIGO + MATERIAL + PROVEEDOR
       var colspanTotal = 3;
-      h+='<tr style="background:#f0fdfa;border-top:2px solid #1F5F5B;">';
+      h+='<tr style="background:var(--cx-success-pale);border-top:2px solid #1F5F5B;">';
       h+='<td colspan="'+colspanTotal+'" style="padding:12px 14px;font-weight:700;color:var(--cx-info-text);text-transform:uppercase;font-size:11px;letter-spacing:.5px;">📊 Total: '+items.length+' items</td>';
       h+='<td style="padding:12px 14px;text-align:right;color:var(--cx-info-text);font-size:11px;text-transform:uppercase;font-weight:700;">cantidad total</td>';
       h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+fmtCant(totalCantPedir,'g')+'</td>';
@@ -7569,7 +7569,7 @@ async function loadSolicitudesProduccion(){
       var stockTxt = (it.stock_actual||0).toLocaleString('es-CO');
       var cantTxt = Math.round(it.cantidad_unidades||0).toLocaleString('es-CO');
       var fechaObj = it.fecha_objetivo ? '<span style="color:var(--cx-danger-text);font-size:11px;font-weight:600">📅 '+it.fecha_objetivo+'</span>' : '';
-      var decoBadge = it.decoracion_tipo ? '<span style="background:#f3e8ff;color:var(--cx-primary-text);font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px">'+it.decoracion_tipo+'</span>' : '';
+      var decoBadge = it.decoracion_tipo ? '<span style="background:var(--cx-primary-soft);color:var(--cx-primary-text);font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px">'+it.decoracion_tipo+'</span>' : '';
       var estadoBadge = '';
       if(it.estado==='pendiente') estadoBadge = '<span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">PENDIENTE</span>';
       else if(it.estado==='decidida') estadoBadge = '<span style="background:var(--cx-info-pale);color:var(--cx-info-text);font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">DECIDIDA: '+_esc(it.decision||'')+'</span>';
@@ -8013,7 +8013,7 @@ function renderConsolCardEdit(p, idx){
 
   return '<div id="'+pid+'" data-prov-idx="'+idx+'" '
     +'style="background:var(--cx-card);border:2px solid var(--cx-primary);border-radius:12px;margin-bottom:16px;overflow:hidden;">'
-    +'<div style="background:#faf5ff;padding:14px 18px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #e9d5ff;">'
+    +'<div style="background:var(--cx-bg-alt);padding:14px 18px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #e9d5ff;">'
       +'<span style="font-size:22px;margin-top:2px;">&#x270F;&#xFE0F;</span>'
       +'<div style="flex:1;min-width:0;">'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
@@ -8387,7 +8387,7 @@ table.items td.r{text-align:right;}
 .tot-val{font-weight:700;text-align:right;padding:4px 10px;border:1px solid var(--cx-border);}
 .tot-bold{font-size:13px;font-weight:900;background:#1a1a1a;color:#fff;}
 /* Info pago */
-.info-row td{background:#e8f0fb;font-size:10px;padding:4px 7px;border:1px solid #bbb;}
+.info-row td{background:var(--cx-info-pale);font-size:10px;padding:4px 7px;border:1px solid #bbb;}
 /* Firma */
 .firma-row td{padding:6px 8px;border:1px solid var(--cx-border);font-size:10px;font-weight:700;}
 .firma-val{height:28px;}
@@ -8429,7 +8429,7 @@ table.items td.r{text-align:right;}
 <table class="main" style="margin-bottom:2px;">
   <tr>
     <td colspan="4" class="hdr-company">ESPAGIRIA LABORATORIO S.A.S</td>
-    <td colspan="2" class="blue" style="text-align:center;background:#e8f0fb;">FECHA</td>
+    <td colspan="2" class="blue" style="text-align:center;background:var(--cx-info-pale);">FECHA</td>
   </tr>
   <tr>
     <td class="label-cell">NIT:</td>
@@ -8439,13 +8439,13 @@ table.items td.r{text-align:right;}
   <tr>
     <td class="label-cell">DIRECCIÓN:</td>
     <td colspan="3">CARRERA 1 #32-46  SAN FRANCISCO, Cali</td>
-    <td class="blue" style="text-align:center;background:#e8f0fb;">NÚMERO DE ORDEN</td>
+    <td class="blue" style="text-align:center;background:var(--cx-info-pale);">NÚMERO DE ORDEN</td>
     <td style="text-align:center;font-weight:700;">${numDoc}</td>
   </tr>
   <tr>
     <td class="label-cell">TELÉFONO:</td>
     <td colspan="3">3235180113</td>
-    <td class="blue" style="text-align:center;background:#e8f0fb;"># PROVEEDOR</td>
+    <td class="blue" style="text-align:center;background:var(--cx-info-pale);"># PROVEEDOR</td>
     <td style="text-align:center;">${escConH(p.nit||'-')}</td>
   </tr>
   <tr>
@@ -8459,7 +8459,7 @@ table.items td.r{text-align:right;}
 <table class="main" style="margin-bottom:2px;">
   <tr>
     <td colspan="4" class="hdr-company">${escConH(p.proveedor)}</td>
-    <td colspan="2" class="blue" style="text-align:center;background:#e8f0fb;">SOLICITADO POR:</td>
+    <td colspan="2" class="blue" style="text-align:center;background:var(--cx-info-pale);">SOLICITADO POR:</td>
   </tr>
   <tr>
     <td class="label-cell">DIRECCIÓN</td>
@@ -8469,7 +8469,7 @@ table.items td.r{text-align:right;}
   <tr>
     <td class="label-cell">CORREO</td>
     <td colspan="3">${escConH(p.email||'')}</td>
-    <td class="blue" style="text-align:center;background:#e8f0fb;">FECHA LÍMITE PAGO</td>
+    <td class="blue" style="text-align:center;background:var(--cx-info-pale);">FECHA LÍMITE PAGO</td>
     <td style="text-align:center;">${escConH(p.condiciones_pago||'')}</td>
   </tr>
   <tr>
@@ -8527,15 +8527,15 @@ table.items td.r{text-align:right;}
 <!-- INFORMACIÓN DE PAGO -->
 <table class="main" style="margin-top:2px;">
   <tr>
-    <td class="label-cell blue" style="background:#d0e4fa;width:140px;">INFORMACIÓN DE PAGO</td>
+    <td class="label-cell blue" style="background:var(--cx-info-pale);width:140px;">INFORMACIÓN DE PAGO</td>
     <td colspan="4" style="font-size:11px;">${infoPago}</td>
   </tr>
   <tr>
-    <td class="label-cell blue" style="background:#d0e4fa;">CONDICIONES DE ENTREGA</td>
+    <td class="label-cell blue" style="background:var(--cx-info-pale);">CONDICIONES DE ENTREGA</td>
     <td colspan="4"></td>
   </tr>
   <tr>
-    <td class="label-cell blue" style="background:#d0e4fa;">TIEMPO DE LLEGADA DESPUÉS PAGO</td>
+    <td class="label-cell blue" style="background:var(--cx-info-pale);">TIEMPO DE LLEGADA DESPUÉS PAGO</td>
     <td colspan="4"></td>
   </tr>
 </table>
@@ -9027,7 +9027,7 @@ function _renderCotCands(){
   var CAP=48;
   var shown=filt.slice(0,CAP);
   var chips=shown.map(function(o){
-    return '<button onclick="_cotDesdeCandidato('+o.idx+')" style="background:#faf7ff;border:1px solid #ede9f6;color:var(--cx-primary-text);border-radius:999px;cursor:pointer;padding:6px 12px;font-size:12px;font-weight:600;transition:all .12s" onmouseover="this.style.background=\\'#f0e9ff\\'" onmouseout="this.style.background=\\'#faf7ff\\'" title="Abrir ronda de cotización para este material">&#128172; '+esc(o.it.nombre||o.it.codigo||'')+'</button>';
+    return '<button onclick="_cotDesdeCandidato('+o.idx+')" style="background:var(--cx-bg-alt);border:1px solid #ede9f6;color:var(--cx-primary-text);border-radius:999px;cursor:pointer;padding:6px 12px;font-size:12px;font-weight:600;transition:all .12s" onmouseover="this.style.background=\\'#f0e9ff\\'" onmouseout="this.style.background=\\'#faf7ff\\'" title="Abrir ronda de cotización para este material">&#128172; '+esc(o.it.nombre||o.it.codigo||'')+'</button>';
   }).join('');
   if(filt.length>CAP){ chips+='<span style="align-self:center;font-size:11px;color:var(--cx-text-faint);padding:0 6px">+'+(filt.length-CAP)+' m&aacute;s &middot; afin&aacute; el filtro</span>'; }
   if(!filt.length){ chips='<span style="font-size:12px;color:var(--cx-text-faint);padding:4px 0">Sin candidatos que coincidan con "'+esc(q)+'".</span>'; }

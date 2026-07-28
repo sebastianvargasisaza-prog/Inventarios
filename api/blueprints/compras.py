@@ -2369,11 +2369,33 @@ def fp_editar(fid):
     if not r:
         return jsonify({'error': 'no existe'}), 404
     if d.get('anular'):
-        c.execute("UPDATE facturas_proveedor SET estado='anulada' WHERE id=?", (fid,))
+        # FIX 28-jul (auditoría de Compras · M45 otra vez): esto leía el estado y NO lo usaba
+        # para nada, así que se podía anular una factura YA PAGADA -- los pagos de `pagos_oc`
+        # quedaban colgando de un registro anulado y el libro de cuentas por pagar decía
+        # "anulada" mientras la plata ya había salido. El hermano `fp_pagar` sí rechaza pagar
+        # una factura anulada desde el 31-may: la asimetría es la firma del patrón (cuando se
+        # endurece un guard de dinero, uno de los hermanos queda sin endurecer).
+        _pagado = c.execute(
+            "SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE factura_proveedor_id=?",
+            (fid,)).fetchone()[0] or 0
+        if float(_pagado) > 0:
+            return jsonify({
+                'error': ('Esta factura ya tiene $%s pagados · revertí el pago antes de '
+                          'anularla, o el libro va a decir "anulada" con la plata afuera.'
+                          % f'{float(_pagado):,.0f}'.replace(',', '.')),
+                'codigo': 'FACTURA_CON_PAGOS'}), 409
+        # CAS: dos anulaciones concurrentes no pueden pasar las dos (M27).
+        c.execute("UPDATE facturas_proveedor SET estado='anulada' "
+                  "WHERE id=? AND COALESCE(estado,'') != 'anulada'", (fid,))
+        if not c.rowcount:
+            conn.rollback()
+            return jsonify({'error': 'Esa factura ya estaba anulada',
+                            'codigo': 'YA_ANULADA'}), 409
         try:
             audit_log(c, usuario=user, accion='ANULAR_FACTURA_PROVEEDOR',
                       tabla='facturas_proveedor', registro_id=str(fid),
-                      despues={'motivo': (d.get('motivo') or '')})
+                      antes={'estado': r[0]},
+                      despues={'estado': 'anulada', 'motivo': (d.get('motivo') or '')})
         except Exception:
             pass
         conn.commit()
@@ -6591,7 +6613,20 @@ def recibir_oc(numero_oc):
             " recepcion_parcial=? WHERE numero_oc=?",
             (nuevo_estado, fecha, obs_r, disc_r, receptor_nombre,
              recepcion_parcial_flag, numero_oc))
-    except Exception:
+    except Exception as _e_upd:
+        # M69/M81 · el `except` amplio acá era una SONDA DE ESQUEMA: suponía que cualquier
+        # fallo era "faltan las columnas de la mig de mayo" y reintentaba sin ellas. Con eso,
+        # un fallo REAL (constraint, trigger, tx abortada en PG) se disfrazaba de drift y la
+        # recepción se guardaba PERDIENDO las discrepancias, quién recibió y el flag de
+        # parcial -- justo lo que hace falta para reclamarle al proveedor.
+        # Ahora sólo se cae al UPDATE viejo si el error ES de columna; cualquier otro se
+        # re-lanza para que se vea.
+        _msg = str(_e_upd).lower()
+        if not any(p in _msg for p in ('column', 'no such', 'no existe la columna')):
+            raise
+        __import__('logging').getLogger('compras').warning(
+            'recepcion %s · UPDATE completo falló por esquema, guardando el mínimo: %s',
+            numero_oc, _e_upd)
         cur.execute("UPDATE ordenes_compra SET estado=?, fecha_recepcion=? WHERE numero_oc=?", (nuevo_estado, fecha, numero_oc))
     # Fix #7 · 21-may-2026 · lead_time real aprende del histórico (EWMA 0.7/0.3)
     # Antes: mp_lead_time_config quedaba con 14d default eternamente · auto_plan

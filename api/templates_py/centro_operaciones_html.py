@@ -12,7 +12,12 @@ HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f5f4f0; color:var(--cx-text); }
+  /* El fondo estaba FIJO en claro mientras el color del texto sí era token: al invertir el
+     tema el texto se aclaraba y el fondo no, y el contraste caía a 1.0 -- o sea, texto
+     invisible en la pantalla principal del CEO. Es M104 en su forma más cara: un par
+     (fondo, texto) donde sólo uno de los dos sigue al tema. Medido con los tokens: 16.1 en
+     claro y 16.3 en oscuro. */
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--cx-bg); color:var(--cx-text); }
   .header { background:linear-gradient(135deg,#4c1d95 0%,#6d28d9 100%); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; color:#fff; }
   .header h1 { margin:0; font-size:1.4em; font-weight:700; color:#fff; }
   .header a { color:#ddd6fe; font-size:0.85em; text-decoration:none; }
@@ -404,8 +409,11 @@ var _DEC_FILTRO = 'todas';
 var _DEC_GRUPO = 'todos';
 // `pagos` faltaba y por eso esas tarjetas salian con un punto gris en vez de su icono.
 // El ORDEN de esta tabla es el orden en que se muestran los temas: primero la plata.
-var _GRP_META = {pagos:['💸','Pagos'], compras:['🛒','Compras'], discrepancia:['📊','Discrepancias'],
-                 inventario:['📦','Inventario'], calidad:['🧪','Calidad'], equipo:['👥','Equipo']};
+// `cobros` es plata que ENTRA (contraentrega sin cobrar); `pagos` es plata que sale. Van
+// separados a proposito: mezclarlas en un monton hace que ninguna de las dos se pueda atacar.
+var _GRP_META = {pagos:['💸','Pagos'], cobros:['💵','Por cobrar'], compras:['🛒','Compras'],
+                 discrepancia:['📊','Discrepancias'], inventario:['📦','Inventario'],
+                 calidad:['🧪','Calidad'], equipo:['👥','Equipo']};
 function _decColor(n){ return n==='critico' ? '#dc2626' : (n==='atencion' ? '#d97706' : '#0891b2'); }
 async function pagarCreador(ix){
   // Paga SIN salir del Centro de Mando. Usa el endpoint CANONICO de Compras: reimplementar el

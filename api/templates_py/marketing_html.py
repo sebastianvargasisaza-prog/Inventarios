@@ -65,7 +65,7 @@ tr:hover td{background:#faf9ff;}
 .badge-green{background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid var(--cx-hairline);}
 .badge-blue{background:var(--cx-info-pale);color:var(--cx-info-text);border:1px solid var(--cx-hairline);}
 .badge-yellow{background:var(--cx-warn-pale);color:var(--cx-warn-text);border:1px solid var(--cx-hairline);}
-.badge-red{background:#2d0000;color:var(--cx-danger-text);border:1px solid var(--cx-danger);}
+.badge-red{background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid var(--cx-danger);}
 .badge-gray{background:var(--cx-card);color:var(--cx-text-mute);border:1px solid var(--cx-border);}
 .badge-purple{background:var(--cx-primary-soft);color:var(--cx-primary-text);border:1px solid var(--cx-primary-dark);}
 
@@ -117,7 +117,7 @@ textarea{resize:vertical;min-height:80px;}
 /* ─── Alert ─── */
 .alert{padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:16px;}
 .alert-success{background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid var(--cx-hairline);}
-.alert-error{background:#2d0000;color:var(--cx-danger-text);border:1px solid var(--cx-danger);}
+.alert-error{background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid var(--cx-danger);}
 .alert-info{background:var(--cx-info-pale);color:var(--cx-info-text);border:1px solid var(--cx-hairline);}
 
 /* ─── Spinner ─── */
@@ -150,8 +150,8 @@ textarea{resize:vertical;min-height:80px;}
 .cal-item.scheduled{background:var(--cx-info-pale);color:var(--cx-info-text);}
 .platform-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:default;transition:all .2s;}
 .pill-off{background:var(--cx-card);color:var(--cx-text-faint);border:1px solid var(--cx-border);}
-.pill-shopify{background:#0d2e1a;color:var(--cx-success-text);border:1px solid var(--cx-hairline);}
-.pill-ghl{background:#1a1033;color:var(--cx-primary-text);border:1px solid var(--cx-primary-dark);}
+.pill-shopify{background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid var(--cx-hairline);}
+.pill-ghl{background:var(--cx-primary-soft);color:var(--cx-primary-text);border:1px solid var(--cx-primary-dark);}
 .pill-ig{background:#2d1520;color:#f9a8d4;border:1px solid #831843;}
 </style>
 </head>

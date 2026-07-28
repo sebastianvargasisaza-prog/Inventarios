@@ -120,6 +120,10 @@ CORAZON=(
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.
   "tests/test_influencers_no_se_duplican.py"
+  # Anular una factura de proveedor YA PAGADA dejaba los pagos colgando de un registro
+  # anulado: el libro decia "anulada" con la plata afuera. El hermano fp_pagar si rechazaba
+  # pagar una anulada -- la asimetria es la firma de M45.
+  "tests/test_factura_proveedor_anular.py"
 )
 
 echo ""

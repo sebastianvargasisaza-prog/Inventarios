@@ -238,3 +238,49 @@ def test_el_centro_de_mando_tiene_la_pestana_pagos_con_su_subpestana(app, db_cle
     assert 'rechazarDesdeBandeja' in html, 'no se puede rechazar desde la bandeja'
     # Y la ficha se abre ahí mismo: no puede mandar a Marketing (era la queja).
     assert 'pagarDesdeBandeja' in html
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PQR MUDO · el silencio tiene que verse donde el CEO mira, no en un endpoint aparte
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_si_PQR_lleva_semanas_sin_recibir_nada_llega_al_centro_de_mando(app, db_clean):
+    """GHL dejó de enviar el 15-jun y se descubrió el 27-jul, de casualidad.
+
+    El diagnóstico ya lo detectaba, pero sólo si alguien abría ESE endpoint. Un aviso que hay
+    que ir a buscar no avisa: una integración muda se ve igual que "no hay quejas".
+    """
+    from database import get_db
+    from datetime import date, timedelta
+    viejo = (date.today() - timedelta(days=40)).isoformat() + ' 10:00:00'
+    with app.app_context():
+        conn = get_db(); cu = conn.cursor()
+        cu.execute("DELETE FROM pqr_inbox WHERE ghl_message_id LIKE 'ZZ-MUDO%'")
+        cu.execute("DELETE FROM pqr_inbox")   # el MAX() mira toda la tabla (M102)
+        cu.execute("INSERT INTO pqr_inbox (ghl_message_id, recibido_en, canal, mensaje, estado) "
+                   "VALUES (?,?,?,?,?)",
+                   ('ZZ-MUDO-1', viejo, 'whatsapp', 'hola, consulta', 'pendiente'))
+        conn.commit()
+
+    c = _login(app)
+    dec = c.get('/api/centro/decisiones').get_json().get('decisiones') or []
+    pqr = [d for d in dec if 'PQR' in (d.get('titulo') or '')]
+    assert pqr, 'el silencio de PQR no llega a la cola del CEO'
+    assert 'días que no entra' in (pqr[0].get('detalle') or '')
+    assert 'GHL' in (pqr[0].get('detalle') or ''), 'no dice de qué lado se cortó'
+
+
+def test_si_PQR_recibio_hoy_no_molesta(app, db_clean):
+    """Una alerta que sale siempre deja de mirarse."""
+    from database import get_db
+    from datetime import date
+    with app.app_context():
+        conn = get_db(); cu = conn.cursor()
+        cu.execute("DELETE FROM pqr_inbox")
+        cu.execute("INSERT INTO pqr_inbox (ghl_message_id, recibido_en, canal, mensaje, estado) "
+                   "VALUES (?,?,?,?,?)",
+                   ('ZZ-VIVO-1', date.today().isoformat() + ' 09:00:00', 'whatsapp', 'hola', 'pendiente'))
+        conn.commit()
+    c = _login(app)
+    dec = c.get('/api/centro/decisiones').get_json().get('decisiones') or []
+    assert not [d for d in dec if 'PQR' in (d.get('titulo') or '')]

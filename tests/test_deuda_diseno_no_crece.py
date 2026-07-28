@@ -41,10 +41,12 @@ TEMPLATES = os.path.join(RAIZ, 'api', 'templates_py')
 # renderizador (Envasado · Fabricación · Acondicionamiento):
 TECHO_COLORES_DASHBOARD = 2499
 TECHO_DISPLAY_NONE_DASHBOARD = 201
-TECHO_COLORES_TOTAL = 4957   # los 42 templates juntos (27-jul: el directorio de creadores
-                             # nació con tokens, y salieron 52 KB de JS inalcanzable de las
-                             # features retiradas de Marketing · 5005 → 4957)
+TECHO_COLORES_TOTAL = 4901   # los 42 templates juntos (28-jul: 54 fondos opacos de Compras
+                             # migrados a tokens · eran los que ignoraban el tema oscuro en la
+                             # pantalla que Catalina usa todo el día · 5005 → 4957 → 4901)
 TECHO_FONDO_OPACO = 0        # un fondo opaco sin token IGNORA el tema oscuro · debe quedar en 0
+TECHO_FONDO_HEX = 514        # `background:#hex` · lo mismo pero escrito en hex (28-jul: eran
+                             # 568 y se migraron los 54 de Compras) · BAJARLO al migrar
 TECHO_TEXTO_PALABRA = 28     # `color:gray|black|red…` · el blanco no cuenta (ver abajo)
 # Variables PROPIAS de cada página con color fijo (`--mut: #6b7280`). Eran 124; se enlazaron
 # al sistema las 69 inequívocas. Las 55 restantes son de páginas ya oscuras o de uso mixto.
@@ -64,6 +66,11 @@ _NONE = re.compile(r'display\s*:\s*none')
 _FONDO_OPACO = re.compile(
     r'background[a-z-]*\s*:\s*(?:white|black|whitesmoke|ghostwhite|ivory|snow'
     r'|rgb\([0-9., ]+\)|rgba\([0-9., ]+,\s*1(?:\.0+)?\s*\))(?![-\w])', re.I)
+# Fondo escrito en HEX. Va aparte del de arriba porque aquel sólo caza la forma en PALABRA, y
+# un `background:#faf7ff` es igual de ciego al tema. Se exige el hex PEGADO a los dos puntos:
+# así los gradientes (que llevan más de un color) quedan afuera solos.
+_FONDO_HEX = re.compile(
+    r'\bbackground(?:-color)?\s*:\s*#[0-9a-fA-F]{3,8}(?![0-9a-fA-F])')
 # `color:white` NO entra: el texto blanco sobre un relleno de color es correcto y NO depende del
 # tema (por eso 1.107 de ellos se devolvieron a literal). Lo que sí es deuda es todo el resto.
 _TEXTO_PALABRA = re.compile(
@@ -126,6 +133,33 @@ def test_ningun_fondo_opaco_ignora_el_tema():
         'hay %d fondo(s) opaco(s) sin token: %s. Un `background:white`/`rgb(255,255,255)` se '
         'queda blanco en tema oscuro. Usá var(--cx-card) o var(--cx-bg-alt).'
         % (total, ', '.join(donde)))
+
+
+def test_los_fondos_HEX_no_crecen():
+    """El trinquete de arriba sólo caza `background:white` (la forma en PALABRA). Un
+    `background:#faf7ff` es igual de ciego al tema oscuro y no lo veía nadie.
+
+    Lo destapó el caso más caro posible (28-jul): el `body` del Centro de Mando tenía el fondo
+    FIJO en claro mientras el color del texto sí era token -- al invertir el tema el texto se
+    aclaraba, el fondo no, y el contraste medido daba **1.0**: texto invisible en la pantalla
+    principal del CEO. Un par (fondo, texto) donde sólo uno de los dos sigue al tema siempre
+    termina así.
+
+    El techo NO es cero a propósito: quedan fondos hex legítimos (bloques `[data-theme=dark]`,
+    rellenos de acento, gradientes). Es un trinquete para bajarlo, no una prohibición.
+    """
+    total, donde = 0, []
+    for f in sorted(os.listdir(TEMPLATES)):
+        if f.endswith('.py'):
+            n = len(_FONDO_HEX.findall(_leer(f)))
+            if n:
+                total += n
+                donde.append('%s (%d)' % (f, n))
+    assert total <= TECHO_FONDO_HEX, (
+        'subió a %d fondos `background:#hex` (techo %d): %s. Un fondo fijo con texto en token '
+        'invierte sólo la mitad al cambiar de tema. Mandá el hex al token de SU familia de '
+        'tono y verificá el contraste en los DOS temas.'
+        % (total, TECHO_FONDO_HEX, ', '.join(donde[:6])))
 
 
 def test_el_color_por_palabra_no_crece():

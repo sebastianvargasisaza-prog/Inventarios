@@ -412,6 +412,67 @@ def centro_decisiones():
         try: conn.rollback()
         except Exception: pass
 
+    # ── CONTRAENTREGA: plata vieja en la calle ───────────────────────────────────
+    # Un contraentrega normal se cobra en días. A las tres semanas, o la transportadora ya
+    # consignó y nadie lo registró en EOS, o esa plata no vuelve. En los dos casos hay que
+    # ir a buscarla, y no aparece sola: el total "pendiente" mezcla lo de ayer con lo viejo.
+    try:
+        from blueprints.animus import _cod_pedidos as _cod
+        _viejos = [p for p in _cod(conn, None, None)
+                   if not p['cobrado'] and (p.get('dias_en_calle') or 0) >= 21]
+        if _viejos:
+            _plata = sum(p['valor_esperado'] for p in _viejos)
+            _mas = max((p.get('dias_en_calle') or 0) for p in _viejos)
+            # Grupo propio: esto es plata que ENTRA, no un pago que sale. Meterlo en 'pagos'
+            # mezclaba dos cosas opuestas en el mismo montón (y lo cazó el test que exige que
+            # la cola no vuelva a llenarse de tarjetas de pago).
+            _add('critico' if _mas >= 45 else 'atencion', 'cobros',
+                 'Contraentrega sin cobrar',
+                 ('%d pedido%s con más de 21 días en la calle · $%s sin entrar '
+                  '(el más viejo, %d días)'
+                  % (len(_viejos), '' if len(_viejos) == 1 else 's',
+                     f'{_plata:,.0f}'.replace(',', '.'), _mas)),
+                 '/animus', float(_plata))
+    except Exception as _e_cod:
+        log.warning('centro · contraentrega añeja no se pudo calcular: %s', _e_cod)
+        try: conn.rollback()
+        except Exception: pass
+
+    # ── PQR: la integración se quedó MUDA ────────────────────────────────────────
+    # Una integración muda es peor que una que nunca anduvo: el buzón se ve lleno y nadie
+    # nota que el último mensaje entró hace seis semanas. Pasó exactamente eso -- GHL dejó
+    # de enviar el 15-jun y se descubrió el 27-jul, de casualidad.
+    # El diagnóstico ya lo detectaba, pero sólo si alguien abría ESE endpoint: un aviso que
+    # hay que ir a buscar no avisa. Por eso sube a la cola de decisiones.
+    try:
+        _up = c.execute(
+            "SELECT MAX(substr(COALESCE(recibido_en,''),1,10)), COUNT(*) FROM pqr_inbox").fetchone()
+        _ult_pqr, _tot_pqr = ((_up[0] or ''), (_up[1] or 0)) if _up else ('', 0)
+        if _tot_pqr:
+            _d_pqr = None
+            if _ult_pqr:
+                try:
+                    from datetime import date as _date_pqr
+                    # `hoy` en esta función es un STRING (no una fecha), así que la resta se
+                    # hace con una fecha propia -- y anclada a Colombia, porque el server
+                    # corre en UTC y de noche ya es mañana (M24).
+                    _hoy_pqr = (datetime.utcnow() - timedelta(hours=5)).date()
+                    _d_pqr = (_hoy_pqr - _date_pqr.fromisoformat(_ult_pqr[:10])).days
+                except (ValueError, TypeError):
+                    _d_pqr = None
+            # 7 días sin un solo PQR, con el volumen normal de Ánimus, significa que el envío
+            # se cortó -- no que los clientes dejaron de escribir.
+            if _d_pqr is not None and _d_pqr >= 7:
+                _add('critico' if _d_pqr >= 21 else 'atencion', 'calidad',
+                     'PQR sin recibir nada',
+                     ('Hace %d días que no entra un PQR (último: %s). El webhook de EOS responde, '
+                      'así que lo que se cortó es el envío desde GHL.' % (_d_pqr, _ult_pqr)),
+                     '/aseguramiento', 0)
+    except Exception as _e_pqr:
+        log.warning('centro · chequeo de PQR mudo falló: %s', _e_pqr)
+        try: conn.rollback()
+        except Exception: pass
+
     # ── DISCREPANCIAS de precio/consumo (motor reutilizado · M1) ──
     try:
         from blueprints.compras import _discrepancias_core

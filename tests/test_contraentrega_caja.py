@@ -262,3 +262,59 @@ def test_la_pantalla_de_animus_tiene_la_pestana_y_carga(app, db_clean):
     assert 'data-tab="cod"' in html, 'desapareció la pestaña de Contraentrega'
     assert 'loadCod' in html and 'codCobrar' in html, 'la pestaña quedó sin su carga o sin el botón'
     assert "if (name === 'cod') loadCod();" in html, 'la pestaña no está enrutada · abriría vacía'
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLATA VIEJA EN LA CALLE (28-jul)
+# Un contraentrega normal se cobra en dias. A las tres semanas, o la transportadora ya
+# consigno y nadie lo registro, o esa plata no vuelve -- en los dos casos hay que ir a
+# buscarla, y mezclada en el total "pendiente" no se ve.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_un_contraentrega_viejo_se_separa_del_pendiente_normal(app, db_clean):
+    from database import get_db
+    from datetime import date, timedelta
+    viejo = (date.today() - timedelta(days=40)).isoformat()
+    nuevo = date.today().isoformat()
+    with app.app_context():
+        conn = get_db(); cu = conn.cursor()
+        for sid in ('ZZ-COD-VIEJO', 'ZZ-COD-NUEVO'):
+            cu.execute("DELETE FROM animus_cod_cobros WHERE shopify_id=?", (sid,))
+            cu.execute("DELETE FROM animus_shopify_orders WHERE shopify_id=?", (sid,))
+        cu.execute("INSERT INTO animus_shopify_orders (shopify_id, nombre, total, creado_en, nota) "
+                   "VALUES (?,?,?,?,?)", ('ZZ-COD-VIEJO', '#9001', 150000, viejo + ' 10:00', 'CONTRAENTREGA'))
+        cu.execute("INSERT INTO animus_shopify_orders (shopify_id, nombre, total, creado_en, nota) "
+                   "VALUES (?,?,?,?,?)", ('ZZ-COD-NUEVO', '#9002', 90000, nuevo + ' 10:00', 'CONTRAENTREGA'))
+        conn.commit()
+
+    c = _admin(app)
+    js = c.get('/api/animus/contraentrega').get_json()
+    k = js['kpis']
+    assert k['anejo_21d'] >= 150000, 'el viejo no entró en la plata añeja: %s' % k
+    assert k['n_anejos_21d'] >= 1
+    # El de hoy NO puede contar como añejo.
+    mios = {p['pedido']: p for p in js['pedidos']}
+    assert mios['#9001']['dias_en_calle'] >= 21
+    assert mios['#9002']['dias_en_calle'] < 21
+
+
+def test_la_plata_vieja_en_la_calle_llega_al_centro_de_mando(app, db_clean):
+    """Igual que el resto: un dato que hay que ir a buscar no avisa."""
+    from database import get_db
+    from datetime import date, timedelta
+    viejo = (date.today() - timedelta(days=50)).isoformat()
+    with app.app_context():
+        conn = get_db(); cu = conn.cursor()
+        cu.execute("DELETE FROM animus_cod_cobros WHERE shopify_id=?", ('ZZ-COD-CENTRO',))
+        cu.execute("DELETE FROM animus_shopify_orders WHERE shopify_id=?", ('ZZ-COD-CENTRO',))
+        cu.execute("INSERT INTO animus_shopify_orders (shopify_id, nombre, total, creado_en, nota) "
+                   "VALUES (?,?,?,?,?)", ('ZZ-COD-CENTRO', '#9003', 400000, viejo + ' 10:00', 'contraentrega'))
+        conn.commit()
+    c = _admin(app)
+    dec = c.get('/api/centro/decisiones').get_json().get('decisiones') or []
+    cod = [d for d in dec if 'Contraentrega' in (d.get('titulo') or '')]
+    assert cod, 'la plata vieja en la calle no llega a la cola del CEO'
+    assert 'días en la calle' in (cod[0].get('detalle') or '')
+    # Grupo PROPIO: esto es plata que ENTRA. Si cayera en 'pagos' se mezclaría con lo que
+    # hay que pagar, que es lo opuesto -- y ademas volveria a inundar esa seccion.
+    assert cod[0].get('grupo') == 'cobros', cod[0].get('grupo')
