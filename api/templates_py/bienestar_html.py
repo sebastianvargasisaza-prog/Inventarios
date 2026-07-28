@@ -15,7 +15,7 @@ HTML = r"""<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);font-size:14px}
+body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--cx-text);font-size:14px}
 .topbar{background:linear-gradient(90deg,#1a4a7a,#6d28d9);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:14px}
 .topbar h1{font-size:18px;font-weight:700;flex:1}
 .topbar a{color:var(--cx-border);text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,0.1)}

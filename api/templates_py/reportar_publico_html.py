@@ -58,7 +58,7 @@ HTML = r"""<!DOCTYPE html>
   .tipo-btn .icon { font-size: 26px; }
   .tipo-btn:active { transform: scale(0.97); }
   .tipo-btn.active {
-    border-color: var(--cx-info); background: #ecfeff; color: var(--cx-info-text);
+    border-color: var(--cx-info); background:var(--cx-info-pale); color:var(--cx-info-text);
     box-shadow: 0 4px 12px rgba(14,116,144,.2);
   }
   .submit {

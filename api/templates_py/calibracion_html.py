@@ -47,7 +47,7 @@ code{background:var(--cx-bg-alt,#f1f5f9);padding:1px 6px;border-radius:5px;font-
 .c-vigente{background:var(--cx-success-pale);color:var(--cx-success-text)}
 .c-proximo{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
 .c-vencido{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
-.c-sin_calibrar{background:#eef2f7;color:var(--cx-text-mute)}
+.c-sin_calibrar{background:var(--cx-bg-alt);color:var(--cx-text-mute)}
 tr.r-vencido{background:rgba(220,38,38,.05)}
 tr.r-proximo{background:rgba(217,119,6,.045)}
 .acts{display:flex;gap:7px;justify-content:flex-end}

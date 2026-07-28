@@ -16,7 +16,7 @@ HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f5f4f0; color:var(--cx-text); }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--cx-bg-alt); color:var(--cx-text); }
   .header { background:linear-gradient(135deg,#0f3a1f 0%,#15803d 100%); color:#fff; padding:18px 28px; display:flex; align-items:center; justify-content:space-between; }
   .header h1 { margin:0; font-size:1.4em; font-weight:700; }
   .header a { color:#bbf7d0; font-size:0.85em; text-decoration:none; }

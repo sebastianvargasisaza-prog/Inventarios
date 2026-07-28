@@ -114,7 +114,7 @@ body { font-family:var(--cx-font); background:var(--cx-bg); color:var(--cx-text)
 .tabs { display:flex; background:var(--cx-card); border-bottom:1px solid #ececf1; overflow-x:auto; }
 .tab-button { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:14px 12px; background:none; border:none; border-bottom:3px solid transparent; cursor:pointer; font-size:0.9em; font-weight:600; color:var(--cx-text-mute); white-space:nowrap; min-width:90px; letter-spacing:-.1px; transition:color var(--cx-tr-base), background var(--cx-tr-base), border-color var(--cx-tr-base); }
 .tab-button svg { width:17px; height:17px; opacity:.75; transition:opacity var(--cx-tr-base); }
-.tab-button:hover { background:#faf9fc; color:var(--cx-primary-text); }
+.tab-button:hover { background:var(--cx-bg-alt); color:var(--cx-primary-text); }
 .tab-button:hover svg { opacity:1; }
 .tab-button.active { color:var(--cx-primary-text); font-weight:700; border-bottom-color:var(--cx-primary); background:linear-gradient(180deg,#faf7ff,#fff 65%); }
 .tab-button.active svg { opacity:1; }
@@ -216,7 +216,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div style="padding:18px 22px;overflow-y:auto;">
     <div class="gm-sec" style="--gm-ac:var(--cx-primary-text, #6d28d9);">
       <div class="gm-t">&#128203; Conteo f&#237;sico</div>
-      <div class="form-group"><label>Stock en sistema (g)</label><input type="number" id="ajuste-sistema" readonly style="background:#f5f5f5;color:var(--cx-text-mute);"></div>
+      <div class="form-group"><label>Stock en sistema (g)</label><input type="number" id="ajuste-sistema" readonly style="background:var(--cx-bg-alt);color:var(--cx-text-mute);"></div>
       <div class="form-group"><label style="color:var(--cx-primary-text);font-weight:700;">Cantidad f&#237;sica real (g) *</label><input type="number" id="ajuste-fisico" placeholder="Lo que tienes f&#237;sicamente" step="0.01" min="0" style="border:2px solid var(--cx-primary);"></div>
       <div class="form-group"><label>Observaci&#243;n</label><input type="text" id="ajuste-obs" placeholder="Ej: Conteo del 15/04"></div>
       <div style="display:flex;gap:8px;margin-top:10px;">
@@ -744,7 +744,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       #stock .mp-btn-violet{background:linear-gradient(135deg,#7c3aed,#8b5cf6)}
       #stock .mp-btn-green{background:linear-gradient(135deg,#15803d,#22c55e)}
       #stock .mp-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--cx-card);border:1px solid #eef0f4;border-radius:12px;padding:10px 12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-      #stock .mp-toolbar input[type=text]{border:1px solid #e5e7ef;border-radius:9px;padding:8px 11px;font-size:13px;background:#fbfbfd;color:var(--cx-text-soft);margin-top:0}
+      #stock .mp-toolbar input[type=text]{border:1px solid #e5e7ef;border-radius:9px;padding:8px 11px;font-size:13px;background:var(--cx-bg-alt);color:var(--cx-text-soft);margin-top:0}
       #stock .mp-toolbar input[type=text]:focus{outline:none;border-color:var(--cx-primary-light);box-shadow:0 0 0 3px rgba(167,139,250,.18)}
       #stock .mp-card{background:var(--cx-card);border:1px solid #eef0f4;border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(0,0,0,.05),0 10px 26px rgba(0,0,0,.045)}
       #stock .mp-card table.table{margin:0}
@@ -1837,7 +1837,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div style="background:#f8f9ff;border-radius:8px;padding:14px;margin-bottom:20px;">
           <p style="font-size:0.88em;color:var(--cx-text-soft);margin-bottom:10px;"><strong>Decision final:</strong> Se determina automaticamente por el resultado AQL y solubilidad. Firmante: <strong id="cc-firmante"></strong></p>
           <div style="display:flex;gap:10px;justify-content:flex-end;">
-            <button onclick="cerrarCCModal()" style="padding:10px 20px;background:#f0f0f0;color:var(--cx-text-soft);border:none;border-radius:8px;font-weight:600;cursor:pointer;">Cancelar</button>
+            <button onclick="cerrarCCModal()" style="padding:10px 20px;background:var(--cx-bg-alt);color:var(--cx-text-soft);border:none;border-radius:8px;font-weight:600;cursor:pointer;">Cancelar</button>
             <button onclick="enviarRevisionCC()" id="cc-submit-btn" style="padding:10px 28px;background:var(--cx-primary);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:0.95em;">Firmar y Registrar</button>
           </div>
         </div>
@@ -2002,7 +2002,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       #empaque .mee-btn-violet{background:linear-gradient(135deg,#7c3aed,#8b5cf6)}
       #empaque .mee-btn-green{background:linear-gradient(135deg,#15803d,#22c55e)}
       #empaque .mee-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--cx-card);border:1px solid #eef0f4;border-radius:12px;padding:10px 12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-      #empaque .mee-toolbar select,#empaque .mee-toolbar input[type=text]{border:1px solid #e5e7ef;border-radius:9px;padding:8px 11px;font-size:13px;background:#fbfbfd;color:var(--cx-text-soft)}
+      #empaque .mee-toolbar select,#empaque .mee-toolbar input[type=text]{border:1px solid #e5e7ef;border-radius:9px;padding:8px 11px;font-size:13px;background:var(--cx-bg-alt);color:var(--cx-text-soft)}
       #empaque .mee-toolbar input[type=text]:focus,#empaque .mee-toolbar select:focus{outline:none;border-color:var(--cx-primary-light);box-shadow:0 0 0 3px rgba(167,139,250,.18)}
       #empaque .mee-card{background:var(--cx-card);border:1px solid #eef0f4;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05),0 10px 26px rgba(0,0,0,.045)}
       #empaque #mee-tabla-estandar{width:100%;border-collapse:collapse;margin:0}
@@ -2128,7 +2128,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <div class="form-group" style="margin:0"><label>Zona</label><input type="text" id="mee-zona" placeholder="Ej: Zona A"></div>
           <div class="form-group" style="margin:0"><label>Fecha de vencimiento</label><input type="date" id="mee-fecha-venc"></div>
           <div class="form-group" style="margin:0"><label>Precio por unidad (COP)</label><input type="number" id="mee-precio" min="0" step="any" placeholder="Ej: 1200" oninput="meeCalcValor()"></div>
-          <div class="form-group" style="margin:0"><label>Valor total estimado (COP)</label><input type="text" id="mee-valor" readonly placeholder="Se calcula" style="background:#ecfdf5;color:var(--cx-success-text);font-weight:700"></div>
+          <div class="form-group" style="margin:0"><label>Valor total estimado (COP)</label><input type="text" id="mee-valor" readonly placeholder="Se calcula" style="background:var(--cx-success-pale);color:var(--cx-success-text);font-weight:700"></div>
         </div>
         <div id="mee-stock-preview" style="display:none;background:#e8f4fd;border-radius:6px;padding:7px 12px;margin:12px 0;font-size:0.88em;color:#1a4a6b;"></div>
         <div class="form-group" style="margin:12px 0 0"><label>Observaciones</label><textarea id="mee-obs" rows="2" placeholder="Opcional..."></textarea></div>
@@ -2944,7 +2944,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div id="prog-tabla-wrap" style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
-          <tr style="background:#f5f7fa;color:var(--cx-text-soft)">
+          <tr style="background:var(--cx-bg-alt);color:var(--cx-text-soft)">
             <th style="padding:10px;text-align:left;border-bottom:1px solid var(--cx-border-soft)">Producto / SKU</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid var(--cx-border-soft)">Stock (uds)</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid var(--cx-border-soft)">Venta/mes</th>
@@ -9311,7 +9311,7 @@ async function cargarProgramacionCiclica(){
       var badge = '';
       if(s.conteo_estado === 'Abierto') badge = '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:10px;font-size:0.82em;">En Curso</span>';
       else if(s.conteo_estado === 'Cerrado') badge = '<span style="background:#d1f2d1;color:#1a6b1a;padding:2px 8px;border-radius:10px;font-size:0.82em;">Completado</span>';
-      else badge = '<span style="background:#f0f0f0;color:var(--cx-text-mute);padding:2px 8px;border-radius:10px;font-size:0.82em;">Pendiente</span>';
+      else badge = '<span style="background:var(--cx-bg-alt);color:var(--cx-text-mute);padding:2px 8px;border-radius:10px;font-size:0.82em;">Pendiente</span>';
       var semLabel = s.es_actual ? 'Sem. '+s.semana+' (Esta semana)' : 'Sem. '+s.semana;
       var accion = '';
       if(s.es_actual && s.conteo_estado !== 'Cerrado'){
@@ -9970,7 +9970,7 @@ async function cargarMeeStock(){
       h+='<td style="font-size:0.9em;line-height:1.35;">'+'<div style="font-weight:600;color:var(--cx-text);display:flex;align-items:center;flex-wrap:wrap">'+_escHTML(m.descripcion)+_medChip+'</div>'+(_chips?'<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+_cliChip(m)+ob+'</div>':'')+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
       h+='<td style="font-weight:700;text-align:right;">'+m.stock_actual+' <span style="color:var(--cx-text-faint);font-size:0.8em;font-weight:400">'+_escHTML(m.unidad||'und')+'</span></td>';
-      h+='<td style="text-align:center;">'+(_loc?'<span style="background:#ecfeff;color:var(--cx-info-text);border:1px solid #a5f3fc;border-radius:999px;padding:2px 9px;font-size:0.72em;font-weight:700;white-space:nowrap" title="Ubicación en bodega (zona/estante/posición)">&#128205; '+_escHTML(_loc)+'</span>':'<span style="color:var(--cx-border)">-</span>')+'</td>';
+      h+='<td style="text-align:center;">'+(_loc?'<span style="background:var(--cx-info-pale);color:var(--cx-info-text);border:1px solid #a5f3fc;border-radius:999px;padding:2px 9px;font-size:0.72em;font-weight:700;white-space:nowrap" title="Ubicación en bodega (zona/estante/posición)">&#128205; '+_escHTML(_loc)+'</span>':'<span style="color:var(--cx-border)">-</span>')+'</td>';
       h+='<td style="color:var(--cx-text-faint);font-size:0.88em;text-align:right;">'+(m.stock_minimo||'-')+'</td>';
       h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
       h+='<td style="font-size:0.78em;color:var(--cx-text-mute);max-width:120px;overflow:hidden;text-overflow:ellipsis">'+_escHTML(m.proveedor||'-')+'</td>';
@@ -9978,7 +9978,7 @@ async function cargarMeeStock(){
       var _bs='padding:5px 10px;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;line-height:1;';
       h+='<td><div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">';
       h+='<button onclick="meeAjustar(&quot;'+_mc+'&quot;)" title="Ajustar stock, mínimo, proveedor, ubicación + rótulo" style="'+_bs+'background:var(--cx-primary-pale);color:var(--cx-primary-text);border:1px solid #ddd6fe">&#9878; Ajustar</button>';
-      h+='<button onclick="meeRotulo(&quot;'+_mc+'&quot;)" title="Imprimir rótulo del envase" style="'+_bs+'background:#ecfeff;color:var(--cx-info-text);border:1px solid #a5f3fc">&#128424;&#65039; R&oacute;tulo</button>';
+      h+='<button onclick="meeRotulo(&quot;'+_mc+'&quot;)" title="Imprimir rótulo del envase" style="'+_bs+'background:var(--cx-info-pale);color:var(--cx-info-text);border:1px solid #a5f3fc">&#128424;&#65039; R&oacute;tulo</button>';
       h+='<button onclick="meeKit(&quot;'+_mc+'&quot;)" title="Kit: partes que van juntas (gotero/tapa/etiqueta/plegadiza)" style="'+_bs+'background:#fdf2f8;color:#be185d;border:1px solid #fbcfe8">&#129513; Kit</button>';
       h+='<button onclick="meeHistorico(&quot;'+_mc+'&quot;)" title="Histórico de movimientos" style="'+_bs+'background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid #bbf7d0">&#128202; Hist</button>';
       h+='<button onclick="meeArchivar(&quot;'+_mc+'&quot;)" title="Archivar (eliminar)" style="'+_bs+'background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca">&#128465; Borrar</button>';
@@ -14669,7 +14669,7 @@ async function ckMarcar(itemId, estado){
         </div>
       </details>
       <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button onclick="cerrarModalProgramar()" style="background:#f0f0f0;color:var(--cx-text-soft);border:none;border-radius:6px;padding:9px 20px;font-size:14px;cursor:pointer">Cancelar</button>
+        <button onclick="cerrarModalProgramar()" style="background:var(--cx-bg-alt);color:var(--cx-text-soft);border:none;border-radius:6px;padding:9px 20px;font-size:14px;cursor:pointer">Cancelar</button>
         <button onclick="guardarProgramacion()" style="background:#0d6efd;color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:14px;font-weight:600;cursor:pointer">💾 Guardar</button>
       </div>
       <!-- Upcoming events list for this product -->
@@ -21956,7 +21956,7 @@ async function ckMarcar(itemId, estado){
           +'<span style="background:var(--cx-info-pale);color:var(--cx-info-text);padding:3px 10px;border-radius:12px"><b>'+(rs.total_tareas||0)+'</b> tareas</span>'
           +'<span style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:3px 10px;border-radius:12px"><b>'+(rs.kg_total_semana||0)+'kg</b> a producir</span>'
           +'<span style="background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:3px 10px;border-radius:12px"><b>'+(rs.dias_con_actividad||0)+'</b> días activos</span>'
-          +'<span style="background:#f3f4f6;color:var(--cx-text-soft);padding:3px 10px;border-radius:12px">Rol: '+(op.rol_predeterminado||'-')+'</span>'
+          +'<span style="background:var(--cx-bg-alt);color:var(--cx-text-soft);padding:3px 10px;border-radius:12px">Rol: '+(op.rol_predeterminado||'-')+'</span>'
           +'</div>';
       }
       // Cards por día
@@ -22823,7 +22823,7 @@ async function ckMarcar(itemId, estado){
       Object.keys(byMes).sort().forEach(function(mes){
         html+='<div style="margin-bottom:8px;width:100%"><span style="font-size:11px;font-weight:700;color:var(--cx-primary-text);text-transform:uppercase;letter-spacing:1px">'+mes+'</span><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">';
         byMes[mes].forEach(function(p){
-          html+='<span style="background:#e8f0fe;color:var(--cx-primary-text);border-radius:5px;padding:3px 10px;font-size:12px;font-weight:600">'+p.producto+' ('+p.kg+' kg)</span>';
+          html+='<span style="background:var(--cx-info-pale);color:var(--cx-primary-text);border-radius:5px;padding:3px 10px;font-size:12px;font-weight:600">'+p.producto+' ('+p.kg+' kg)</span>';
         });
         html+='</div></div>';
       });
@@ -22899,7 +22899,7 @@ async function ckMarcar(itemId, estado){
           +'<td style="padding:8px;text-align:right;font-size:12px;color:'+(mp.stock_g<mp.total_g?'#dc3545':'#28a745')+'">'+_fmtG(mp.stock_g)+'</td>'
           +'<td style="padding:8px;text-align:right;font-weight:700;color:var(--cx-danger-text);font-size:12px">'+_fmtG(mp.deficit_g)+'</td>'
           +'<td style="padding:8px;text-align:center"><div style="display:inline-block;background:#f0f0f0;border-radius:10px;overflow:hidden;width:80px;height:12px;margin-bottom:2px"><div style="background:'+pctColor+';width:'+pct+'%;height:100%"></div></div><div style="font-size:11px;color:'+pctColor+';font-weight:700">'+pct+'%</div></td>'
-          +'<td style="padding:8px;text-align:center"><span style="background:#e8f0fe;color:var(--cx-primary-text);border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">'+mp.n_meses+'m</span></td>'
+          +'<td style="padding:8px;text-align:center"><span style="background:var(--cx-info-pale);color:var(--cx-primary-text);border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">'+mp.n_meses+'m</span></td>'
           +'<td style="padding:8px;font-size:11px;color:var(--cx-text-soft);max-width:160px">'+mp.productos.join(', ')+'</td>'
           +'</tr>';
       }).join('');

@@ -20,7 +20,7 @@ MODULOS_HTML = (
     "<link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/static/icons/apple-touch-icon-180.png?v=eos11\">\n"
     "<style>\n"
     "*{box-sizing:border-box;margin:0;padding:0;}\n"
-    "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f4f0;color:var(--cx-text);min-height:100vh;}\n"
+    "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--cx-text);min-height:100vh;}\n"
     ".header{background:var(--cx-hero-grad);border-bottom:1px solid var(--cx-hairline);padding:18px 28px;display:flex;align-items:center;justify-content:space-between;}\n"
     ".header-logo{font-size:18px;font-weight:800;color:var(--cx-primary-text);}\n"
     ".header-sub{font-size:11px;color:var(--cx-text-mute);margin-top:2px;}\n"

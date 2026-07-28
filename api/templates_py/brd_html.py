@@ -47,7 +47,7 @@ tr:hover{background:#fafafa}
 .estado-draft{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
 .estado-en_revision{background:var(--cx-info-pale);color:var(--cx-info-text)}
 .estado-aprobado{background:var(--cx-success-pale);color:var(--cx-success-text)}
-.estado-obsoleto{background:#f3f4f6;color:var(--cx-text-mute)}
+.estado-obsoleto{background:var(--cx-bg-alt);color:var(--cx-text-mute)}
 .estado-iniciado,.estado-en_proceso{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
 .estado-completado{background:var(--cx-info-pale);color:var(--cx-info-text)}
 .estado-liberado{background:var(--cx-success-pale);color:var(--cx-success-text)}

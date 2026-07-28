@@ -20,7 +20,7 @@ HOME_HTML = """<!DOCTYPE html>
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=eos11">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:var(--cx-text);min-height:100vh;}
+body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--cx-text);min-height:100vh;}
 .hdr{background:var(--cx-text);color:#fff;padding:18px 28px;display:flex;align-items:center;gap:16px;}
 .hdr-logo{font-size:22px;font-weight:900;}
 .hdr-sub{font-size:12px;color:var(--cx-text-faint);margin-top:2px;}

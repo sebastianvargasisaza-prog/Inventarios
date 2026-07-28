@@ -11,7 +11,7 @@ RRHH_HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#f5f4f0;color:var(--cx-text);font-size:14px;}
+body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--cx-text);font-size:14px;}
 header{background:var(--cx-card);border-bottom:1px solid #e5e3e0;padding:0 24px;position:sticky;top:0;z-index:100;}
 .header-top{display:flex;align-items:center;gap:12px;padding:12px 0 0;}
 .header-top h1{font-size:17px;font-weight:700;color:var(--cx-text);flex:1;}
@@ -85,7 +85,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid var(--cx-borde
 .modal-hd h3{font-size:15px;font-weight:700;}
 .modal-body{padding:22px;}
 .close-btn{background:none;border:none;font-size:20px;cursor:pointer;color:var(--cx-text-mute);padding:4px 8px;border-radius:6px;}
-.close-btn:hover{background:#f0ede8;color:var(--cx-text);}
+.close-btn:hover{background:var(--cx-bg-alt);color:var(--cx-text);}
 /* Nomina */
 .nomina-summary{background:#f9f8f7;border:1px solid var(--cx-border);border-radius:10px;padding:16px;margin-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}
 .sum-item .sum-lbl{font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px;}
@@ -961,7 +961,7 @@ async function cargarCompromisos(){
       var estCol = c.estado==='completado'?'#16a34a':c.estado==='vencido'?'#dc2626':c.estado==='en_progreso'?'#d97706':'#64748b';
       return '<div style="background:var(--cx-card);border:1px solid #e8e5e0;border-left:4px solid '+estCol+';border-radius:10px;padding:14px 18px;margin-bottom:10px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">'+
-          '<div><b style="font-size:14px">'+esc(c.titulo||'')+'</b> <span style="background:#f3f4f6;color:var(--cx-text-soft);font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;margin-left:8px">'+esc(c.tipo||'')+'</span></div>'+
+          '<div><b style="font-size:14px">'+esc(c.titulo||'')+'</b> <span style="background:var(--cx-bg-alt);color:var(--cx-text-soft);font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;margin-left:8px">'+esc(c.tipo||'')+'</span></div>'+
           '<span style="background:'+estCol+'22;color:'+estCol+';padding:2px 10px;border-radius:8px;font-size:11px;font-weight:700;text-transform:uppercase">'+esc(c.estado||'')+'</span>'+
         '</div>'+
         '<div style="font-size:12px;color:var(--cx-text-soft);margin-top:4px">Empleado #'+(parseInt(c.empleado_id)||0)+' · Jefe: '+esc(c.jefe_responsable||'-')+' · Objetivo: '+esc(c.fecha_objetivo||'-')+'</div>'+

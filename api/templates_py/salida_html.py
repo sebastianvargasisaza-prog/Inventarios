@@ -10,7 +10,7 @@ SALIDA_HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:var(--cx-text);font-size:14px;}
+body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--cx-text);font-size:14px;}
 .topbar{background:var(--cx-text);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
 .topbar h1{font-size:18px;font-weight:600;}
 .topbar a{color:var(--cx-text-faint);text-decoration:none;font-size:13px;}

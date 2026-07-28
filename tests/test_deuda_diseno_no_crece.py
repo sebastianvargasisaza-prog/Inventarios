@@ -41,12 +41,12 @@ TEMPLATES = os.path.join(RAIZ, 'api', 'templates_py')
 # renderizador (Envasado · Fabricación · Acondicionamiento):
 TECHO_COLORES_DASHBOARD = 2499
 TECHO_DISPLAY_NONE_DASHBOARD = 201
-TECHO_COLORES_TOTAL = 4901   # los 42 templates juntos (28-jul: 54 fondos opacos de Compras
-                             # migrados a tokens · eran los que ignoraban el tema oscuro en la
-                             # pantalla que Catalina usa todo el día · 5005 → 4957 → 4901)
+TECHO_COLORES_TOTAL = 4862   # los 42 templates juntos · 5005 → 4957 → 4901 → 4862 (28-jul:
+                             # 34 pares (fondo fijo + texto en token) migrados con el contraste
+                             # MEDIDO en los dos temas antes de aplicar)
 TECHO_FONDO_OPACO = 0        # un fondo opaco sin token IGNORA el tema oscuro · debe quedar en 0
-TECHO_FONDO_HEX = 514        # `background:#hex` · lo mismo pero escrito en hex (28-jul: eran
-                             # 568 y se migraron los 54 de Compras) · BAJARLO al migrar
+TECHO_FONDO_HEX = 480        # `background:#hex` · lo mismo pero escrito en hex · 568 → 514 → 480
+                             # (28-jul: Compras + los 34 pares rotos) · BAJARLO al migrar
 TECHO_TEXTO_PALABRA = 28     # `color:gray|black|red…` · el blanco no cuenta (ver abajo)
 # Variables PROPIAS de cada página con color fijo (`--mut: #6b7280`). Eran 124; se enlazaron
 # al sistema las 69 inequívocas. Las 55 restantes son de páginas ya oscuras o de uso mixto.

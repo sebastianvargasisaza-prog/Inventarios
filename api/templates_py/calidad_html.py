@@ -2486,7 +2486,7 @@ var _RCM_CSS='<style id="rcm-css">'
   +'#rc-ov .rcm-hd .tt{font-size:17px;font-weight:800;color:#1e1b2e;letter-spacing:-.01em}'
   +'#rc-ov .rcm-hd .cd{font-size:10.5px;color:#8b8b9e;font-weight:600;letter-spacing:.04em;margin-top:1px}'
   +'#rc-ov .rcm-x{background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0;line-height:1;padding:4px 8px;border-radius:8px}'
-  +'#rc-ov .rcm-x:hover{background:#f1f0f7;color:var(--cx-primary-text)}'
+  +'#rc-ov .rcm-x:hover{background:var(--cx-bg-alt);color:var(--cx-primary-text)}'
   +'#rc-ov .rcm-bd{padding:20px 24px 24px}'
   +'#rc-ov .rcm label.fl{font-size:10.5px;color:#78788a;text-transform:uppercase;letter-spacing:.03em;font-weight:600;display:block;margin-bottom:3px}'
   +'#rc-ov .rcm .fg{margin-bottom:2px}'
@@ -2656,7 +2656,7 @@ async function openF01(mov_id, origen){
       +'</div>'
       +'<div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="rcm-save" style="flex:1;min-width:180px" onclick="guardarF01('+mov_id+',&quot;'+org+'&quot;)">&#128190; Guardar F01</button>'
       +(f.id?'<button type="button" onclick="window.open(\'/api/calidad/recepcion-tecnica/imprimible?mov_id='+mov_id+'&origen='+org+'\',\'_blank\')" title="Imprimir el F01" style="background:var(--cx-info-pale);color:var(--cx-info-text);border:1px solid #bfdbfe;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">&#128424;&#65039; Imprimir F01</button>':'')
-      +'<button type="button" onclick="abrirRotuloF01()" title="Imprime el rótulo con el código, lote y cantidad de este insumo (editable)" style="background:#faf5ff;color:var(--cx-primary-text);border:1px solid #e9d5ff;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">&#128424;&#65039; Rótulo</button></div>'
+      +'<button type="button" onclick="abrirRotuloF01()" title="Imprime el rótulo con el código, lote y cantidad de este insumo (editable)" style="background:var(--cx-bg-alt);color:var(--cx-primary-text);border:1px solid #e9d5ff;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">&#128424;&#65039; Rótulo</button></div>'
       +'</div>';
     _rcOverlay(html);
     // Llenar el autocompletado de estanterías DESPUÉS de montar el formulario: la lista sale
