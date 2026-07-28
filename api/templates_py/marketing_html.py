@@ -2169,10 +2169,19 @@ async function dedupMergeInfluencers() {
     dry = await r.json();
     if(!r.ok || !dry.ok){ alert('Error: '+((dry&&dry.error)||r.status)); return; }
   } catch(e){ alert('Error red: '+e.message); return; }
-  if(!dry.duplicados_a_eliminar){ alert('No hay duplicados por nombre para fusionar.'); return; }
-  if(!confirm('Se fusionarán '+dry.grupos_n+' grupo(s) de nombre · se eliminarán '
-      +dry.duplicados_a_eliminar+' duplicado(s).\n\nSe conserva el de MÁS pagos y se repuntan'
-      +' los pagos/solicitudes al conservado. Acción irreversible (queda en auditoría).\n\n¿Continuar?')) return;
+  if(!dry.duplicados_a_eliminar){ alert('No hay duplicados para fusionar.'); return; }
+  // El confirm dice EXACTAMENTE lo que va a pasar, separando los dos criterios: fusionar
+  // por cédula es juntar fichas de la MISMA PERSONA cargada con nombres distintos, y eso
+  // hay que verlo antes de aceptar. La cuenta bancaria a secas no fusiona nada (dos
+  // personas pueden cobrar en la misma cuenta).
+  var det = 'Se van a fusionar '+dry.grupos_n+' grupo(s):\n'
+    + '  · '+(dry.grupos_por_nombre||0)+' por nombre repetido\n'
+    + '  · '+(dry.grupos_por_cedula||0)+' por MISMA CÉDULA (misma persona, nombres distintos)\n\n'
+    + 'Se eliminan '+dry.duplicados_a_eliminar+' ficha(s) duplicada(s).\n'
+    + 'Se MUEVEN '+(dry.pagos_que_se_mueven||0)+' pago(s) a la ficha que se conserva '
+    + '(la de más pagos). Ningún pago se borra: si se perdiera alguno, la operación se cancela sola.\n\n'
+    + 'Queda en auditoría, pero no hay botón de deshacer.\n\n¿Continuar?';
+  if(!confirm(det)) return;
   try {
     const r2 = await fetch('/api/marketing/influencers/dedup-merge', {
       method:'POST', credentials:'same-origin',
@@ -2181,10 +2190,15 @@ async function dedupMergeInfluencers() {
     });
     const d2 = await r2.json();
     if(!r2.ok || !d2.ok){ alert('Error: '+((d2&&d2.error)||r2.status)); return; }
-    alert('✅ '+d2.duplicados_eliminados+' duplicados fusionados · '+d2.pagos_repuntados
-      +' pago(s) repuntado(s)'+(d2.unique_index?' · protección anti-duplicados ACTIVADA':''));
+    alert('✅ '+d2.duplicados_eliminados+' ficha(s) fusionada(s) · '
+      +(d2.por_nombre||0)+' por nombre, '+(d2.por_cedula||0)+' por cédula\n'
+      +d2.pagos_repuntados+' pago(s) movido(s) a la ficha que se conserva'
+      +(d2.unique_index?'\n\n🔒 Protección anti-duplicados ACTIVADA: el panel ya no puede volver a crearlos.'
+                       :'\n\n⚠ La protección anti-duplicados NO se pudo activar · quedan fichas con el mismo nombre. Volvé a abrir Duplicados.'));
     closeModal('modal-duplicados');
     if(typeof loadInfluencers==='function') loadInfluencers();
+    // El directorio también cambió: se recarga para que no muestre las fichas ya fusionadas.
+    if(typeof loadDirectorio==='function' && window._DIR_DATA) loadDirectorio();
   } catch(e){ alert('Error red: '+e.message); }
 }
 

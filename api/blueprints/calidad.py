@@ -1348,6 +1348,9 @@ def _urlq(s):
 
 _F01_COLS = ['mov_id', 'numero_oc', 'lote', 'tipo_insumo', 'codigo_insumo', 'nombre_insumo', 'lote_proveedor',
              'cantidad_recibida', 'proveedor', 'fecha_recepcion', 'numero_remision', 'area_almacenamiento',
+             # Ubicación ESTRUCTURADA (mig 389). `area_almacenamiento` se conserva porque es lo
+             # que se imprime en el F01 firmado, pero se DERIVA de estas tres: una sola fuente.
+             'ubic_tipo', 'ubic_estanteria', 'ubic_posicion',
              'crit_rotulado', 'crit_empaque', 'crit_hoja_seguridad', 'crit_ficha_tecnica', 'crit_coa',
              'crit_doc_coincide', 'observaciones', 'resultado', 'fecha_vencimiento',
              'realiza_por', 'realiza_fecha', 'aprueba_por', 'aprueba_fecha']
@@ -1413,6 +1416,33 @@ def calidad_recepcion_tecnica():
     vals = {k: (str(b.get(k) or '')) for k in _F01_COLS}
     vals['mov_id'] = mov_id
     vals['resultado'] = resultado  # guardar NORMALIZADO (no crudo) · el conteo/dispo filtra exacto (M2/M23 · revisor 19-jul)
+
+    # ── UBICACIÓN ────────────────────────────────────────────────────────────────────
+    # Sebastián 28-jul: "la lógica del inventario es que hay estanterías y posiciones, y
+    # nevera; debería pedir esos datos, y al guardar traducirse a trazabilidad y aparecer en
+    # todo lado -- me dicen que no se refleja en inventario".
+    #
+    # Antes era UN texto libre que sólo alimentaba `movimientos.estanteria`; `posicion` quedaba
+    # vacía aunque la vista de inventario, el rótulo y el conteo cíclico la leen. Y como era
+    # libre, 'A3' / 'Estante 3' / 'estanteria A-3' eran tres estantes distintos para el sistema
+    # (el conteo agrupa POR estantería, así que cada variante inventaba uno).
+    #
+    # `area_almacenamiento` se DERIVA de los campos estructurados: es el texto que se imprime
+    # en el F01 firmado, y así no puede decir una cosa distinta de lo que fue al kardex (M5).
+    _u_tipo = (vals.get('ubic_tipo') or '').strip().lower()
+    _u_est = (vals.get('ubic_estanteria') or '').strip()
+    _u_pos = (vals.get('ubic_posicion') or '').strip()
+    if _u_tipo == 'nevera':
+        # Una sola nevera por ahora y sin posiciones adentro (decisión de Sebastián 28-jul).
+        # Si algún día hay más de una, el tipo ya está separado del nombre y sólo cambia acá.
+        _u_est, _u_pos = 'NEVERA', ''
+        vals['ubic_estanteria'], vals['ubic_posicion'] = _u_est, _u_pos
+        vals['area_almacenamiento'] = 'Nevera (refrigerado)'
+    elif _u_tipo == 'estanteria' and _u_est:
+        vals['area_almacenamiento'] = (
+            'Estantería %s · Posición %s' % (_u_est, _u_pos) if _u_pos else 'Estantería %s' % _u_est)
+    # Si no vino nada estructurado (F01 viejo o edición de uno anterior) se respeta el texto
+    # libre tal cual: es un registro regulado ya firmado, no se reescribe.
     conn = get_db(); cur = conn.cursor()
     # E-firma Part 11 para DISPONER el envase (conforme=libera / no_conforme=rechaza) · idéntico al F02 de MP
     # (Sebastián 19-jul). Solo MEE: para MP el F01 es documental (la disposición la hace el F02).
@@ -1497,14 +1527,23 @@ def calidad_recepcion_tecnica():
                                 (_fv_f01, _k_mat, _lote_key))
                     _kardex_corr.append('FVenc:%s' % _fv_f01[:10])
 
-                # 4) UBICACIÓN (área de almacenamiento del F01) → va al rótulo.
-                _area = (vals.get('area_almacenamiento') or '').strip()
-                if _area:
+                # 4) UBICACIÓN → al kardex, que es de donde la leen el inventario, el rótulo y
+                #    el conteo cíclico. Se escriben las DOS columnas: antes sólo iba
+                #    `estanteria` y `posicion` quedaba vacía para siempre, así que en inventario
+                #    se veía media ubicación (era el "no se refleja" que reportó Laura).
+                _ubic_est = (vals.get('ubic_estanteria') or '').strip()
+                _ubic_pos = (vals.get('ubic_posicion') or '').strip()
+                if not _ubic_est:
+                    # F01 viejo (texto libre): se respeta lo que se escribió, en estantería.
+                    _ubic_est = (vals.get('area_almacenamiento') or '').strip()
+                if _ubic_est:
                     try:
-                        cur.execute("UPDATE movimientos SET estanteria=? "
-                                    "WHERE material_id=? AND lote=?", (_area[:50], _k_mat, _lote_key))
+                        cur.execute("UPDATE movimientos SET estanteria=?, posicion=? "
+                                    "WHERE material_id=? AND lote=?",
+                                    (_ubic_est[:50], _ubic_pos[:50], _k_mat, _lote_key))
+                        _kardex_corr.append('Ubic:%s%s' % (_ubic_est, ('/' + _ubic_pos) if _ubic_pos else ''))
                     except Exception as _e_ar:
-                        log.warning('F01 area no se pudo escribir (mov %s): %s', mov_id, _e_ar)
+                        log.warning('F01 ubicación no se pudo escribir (mov %s): %s', mov_id, _e_ar)
 
                 if _kardex_corr:
                     # Un cambio de lote/cantidad en un registro regulado NO puede quedar sin

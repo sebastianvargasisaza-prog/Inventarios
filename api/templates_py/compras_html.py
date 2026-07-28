@@ -7846,7 +7846,7 @@ function renderConsolCard(p, idx){
   var contenidoHtml;
   if(p.items && p.items.length > 0){
     var rows = p.items.map(function(it){
-      var cant = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
+      var cant = _cantUnidad(it.cantidad_total_g, it.unidad);
       var sub = it.subtotal_total > 0
         ? '$'+Number(it.subtotal_total).toLocaleString('es-CO',{maximumFractionDigits:0})
         : '-';
@@ -8212,7 +8212,7 @@ async function copiarPedido(idx){
   lines.push('');
   if(p.items && p.items.length > 0){
     p.items.forEach(function(it){
-      var cant = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
+      var cant = _cantUnidad(it.cantidad_total_g, it.unidad);
       var sub = it.subtotal_total > 0
         ? '  ($'+Number(it.subtotal_total).toLocaleString('es-CO',{maximumFractionDigits:0})+')'
         : '';
@@ -8309,7 +8309,7 @@ function _pedidoDocHtml(idx){
   var detalleRows = '';
   if(p.items && p.items.length > 0){
     p.items.forEach(function(it){
-      var cant = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
+      var cant = _cantUnidad(it.cantidad_total_g, it.unidad);
       detalleRows += '<tr>'
         +'<td>'+escConH(it.codigo_mp||'')+'</td>'
         +'<td>'+escConH(it.nombre_inci||it.nombre_mp)+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:var(--cx-text-faint);font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
@@ -8350,7 +8350,7 @@ function _pedidoDocHtml(idx){
   var justifItemsHtml = '';
   (p.items||[]).forEach(function(it){
     if(it.justificacion){
-      var cantTxt = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
+      var cantTxt = _cantUnidad(it.cantidad_total_g, it.unidad);
       justifItemsHtml += '<div style="margin-bottom:3px;">&bull; <b>'+escConH(it.nombre_inci||it.nombre_mp)+'</b> ('+cantTxt+'): '+escConH(it.justificacion)+'</div>';
     }
   });
@@ -8641,6 +8641,18 @@ function imprimirTodas(){
   _abrirImpresion(html);
 }
 
+
+// La unidad la manda el backend (mig 390). Antes se pegaba ' g' a TODO: un "Servicio de
+// Calibracion" salia como "1 g" y la serigrafia de 810 envases como "810 g" (Catalina 28-jul).
+// Un numero con la unidad equivocada se lee como si fuera cierto, asi que cuando no se sabe
+// la unidad NO se inventa ninguna: se muestra el numero solo.
+function _cantUnidad(valor, unidad){
+  var n = Math.round(Number(valor||0)).toLocaleString('es-CO');
+  var u = String(unidad||'').trim();
+  if(!u) return n;
+  if(u.toLowerCase()==='servicio') return n==='1' ? 'servicio' : (n+' servicios');
+  return n+' '+u;
+}
 
 function escConH(s){
   var d = document.createElement('div');

@@ -4379,12 +4379,16 @@ def crear_oc_desde_solicitudes():
             pu = float(it.get('precio_unitario') or 0)
             subt = round(cant_g * pu, 2)
             valor_total += subt
+            # La unidad viaja desde la SOL (mig 390). Antes se perdía acá y la pantalla le
+            # pegaba una "g" a todo: un servicio de calibración salía como "1 g" y la
+            # serigrafía de 810 envases como "810 g" (Catalina 28-jul). Un número con la
+            # unidad equivocada se lee como si fuera cierto.
             c.execute(
                 """INSERT INTO ordenes_compra_items
-                   (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal)
-                   VALUES (?,?,?,?,?,?)""",
+                   (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal, unidad)
+                   VALUES (?,?,?,?,?,?,?)""",
                 (numero_oc, it.get('codigo_mp', ''), it.get('nombre_mp', ''),
-                 cant_g, pu, subt),
+                 cant_g, pu, subt, (it.get('unidad') or '').strip()),
             )
             # Historico de precios + ref maestro_mps
             cod_mp = it.get('codigo_mp', '')
@@ -10304,6 +10308,7 @@ def consolidado_por_proveedor():
             i.cantidad_g,
             i.precio_unitario,
             i.subtotal,
+            COALESCE(i.unidad,'') AS unidad,
             pv.nit,
             pv.contacto,
             pv.telefono,
@@ -10332,7 +10337,7 @@ def consolidado_por_proveedor():
 
     for row in rows:
         (prov, oc, estado, fecha, valor_total_oc, cat, obs,
-         item_id, cod_mp, nom_mp, cant, precio_u, subtotal,
+         item_id, cod_mp, nom_mp, cant, precio_u, subtotal, unidad_it,
          nit, contacto, telefono, email,
          con_iva, valor_sin_iva, nom_inci,
          creado_por, direccion, condiciones_pago, banco, num_cuenta, tipo_cuenta) = row
@@ -10392,6 +10397,7 @@ def consolidado_por_proveedor():
                 'nombre_mp': nom_mp or cod_mp or '',
                 'nombre_inci': nom_inci or '',
                 'cantidad_g': cant or 0,
+                'unidad': unidad_it or '',
                 'precio_unitario': precio_u or 0,
                 'subtotal': subtotal or 0,
             })
@@ -10404,6 +10410,9 @@ def consolidado_por_proveedor():
                     'nombre_mp': nom_mp or cod_mp,
                     'nombre_inci': nom_inci or '',
                     'cantidad_total_g': 0.0,
+                    # La unidad REAL del item (mig 390). Sin esto la pantalla le pegaba una
+                    # "g" a todo, y un servicio de calibracion salia como "1 g".
+                    'unidad': unidad_it or '',
                     'precio_unitario': precio_u or 0,
                     'subtotal_total': 0.0,
                     'ocs_origen': [],

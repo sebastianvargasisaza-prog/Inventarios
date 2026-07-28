@@ -10562,6 +10562,51 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_mktinf_nombre_unq "
         "ON marketing_influencers(LOWER(TRIM(nombre)))",
     ]),
+    (389, "El F01 capturaba la ubicación como UN texto libre ('área de almacenamiento'), y de ahí "
+          "sólo salía `movimientos.estanteria` -- `posicion` quedaba siempre vacía aunque la vista "
+          "de inventario, el rótulo y el conteo cíclico la leen. Encima, siendo texto libre, 'A3' / "
+          "'Estante 3' / 'estanteria A-3' son tres lugares distintos para el sistema: el conteo "
+          "cíclico agrupa POR estantería, así que cada variante inventaba un estante. Y la NEVERA no "
+          "existía en ningún lado, aunque hay materia prima que va refrigerada. "
+          "Ahora la ubicación se guarda estructurada en el propio registro regulado.", [
+        "ALTER TABLE recepcion_tecnica_doc ADD COLUMN ubic_tipo TEXT DEFAULT ''",
+        "ALTER TABLE recepcion_tecnica_doc ADD COLUMN ubic_estanteria TEXT DEFAULT ''",
+        "ALTER TABLE recepcion_tecnica_doc ADD COLUMN ubic_posicion TEXT DEFAULT ''",
+        # Lo ya cargado en texto libre se conserva tal cual en `area_almacenamiento` (es un
+        # registro regulado: no se reescribe lo que alguien firmó). Sólo se marca de dónde
+        # viene, para poder distinguir después lo viejo de lo capturado con el formulario nuevo.
+        """UPDATE recepcion_tecnica_doc SET ubic_tipo='legacy'
+            WHERE COALESCE(ubic_tipo,'')='' AND COALESCE(area_almacenamiento,'')!=''""",
+    ]),
+    (390, "La OC decía GRAMOS de cosas que no se miden en gramos (Catalina 28-jul: un 'Servicio de "
+          "Calibración' aparecía como '1 g', y la serigrafía de 810 envases como '810 g'). La "
+          "unidad SÍ se captura -- `solicitudes_compra_items.unidad` existe -- pero se perdía al "
+          "crear la OC, porque `ordenes_compra_items` sólo tenía `cantidad_g`; y la pantalla, sin "
+          "dato, pegaba una 'g' a todo. Un número con la unidad equivocada es peor que sin unidad: "
+          "se lee como si fuera cierto (M5).", [
+        "ALTER TABLE ordenes_compra_items ADD COLUMN unidad TEXT DEFAULT ''",
+        # Backfill desde la SOL vinculada: la unidad ya estaba ahí, sólo hay que traerla.
+        """UPDATE ordenes_compra_items SET unidad = COALESCE((
+               SELECT sci.unidad FROM solicitudes_compra_items sci
+                JOIN solicitudes_compra sc ON sc.numero = sci.numero
+                WHERE sc.numero_oc = ordenes_compra_items.numero_oc
+                  AND UPPER(TRIM(sci.codigo_mp)) = UPPER(TRIM(ordenes_compra_items.codigo_mp))
+                  AND COALESCE(sci.unidad,'') != ''
+                LIMIT 1), '')
+            WHERE COALESCE(unidad,'') = ''""",
+        # Lo que no cruzó con una SOL se deduce de la categoría de la OC, que es un dato que
+        # ya existe: sólo la materia prima y el empaque se miden en gramos.
+        """UPDATE ordenes_compra_items SET unidad='und'
+            WHERE COALESCE(unidad,'')=''
+              AND numero_oc IN (SELECT numero_oc FROM ordenes_compra
+                                 WHERE COALESCE(categoria,'') NOT IN
+                                       ('Materia Prima','Empaque','Material de Empaque'))""",
+        """UPDATE ordenes_compra_items SET unidad='g'
+            WHERE COALESCE(unidad,'')=''
+              AND numero_oc IN (SELECT numero_oc FROM ordenes_compra
+                                 WHERE COALESCE(categoria,'') IN
+                                       ('Materia Prima','Empaque','Material de Empaque'))""",
+    ]),
 ]
 
 

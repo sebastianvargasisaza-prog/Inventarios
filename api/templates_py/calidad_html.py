@@ -2539,6 +2539,77 @@ function _rcCrit(name,val){
 }
 function _rcRadioVal(name){ var el=document.querySelector('input[name="'+name+'"]:checked'); return el?el.value:''; }
 function _rcFld(lbl,inner){ return '<div class="fg"><label class="fl">'+lbl+'</label>'+inner+'</div>'; }
+
+// ── UBICACION ESTRUCTURADA (28-jul) ────────────────────────────────────────────────
+// Antes era UN texto libre. Con texto libre, 'A3' / 'Estante 3' / 'estanteria A-3' son tres
+// estantes distintos para el sistema -- y el conteo ciclico agrupa POR estanteria, asi que
+// cada variante inventaba un estante. Ademas solo llenaba `estanteria`: `posicion` quedaba
+// vacia para siempre, aunque inventario, el rotulo y el conteo la leen. Eso era el
+// "no se refleja en inventario" que reporto Laura.
+//
+// La lista de estanterias sale de las que YA EXISTEN en el kardex: se autocompleta con lo
+// que la bodega usa de verdad, sin inventar una nomenclatura que no es la de ellos.
+window._RC_ESTANTERIAS = [];
+async function _rcCargarEstanterias(){
+  try{
+    var r = await fetch('/api/conteo/estanterias', {credentials:'same-origin'});
+    if(!r.ok) return;
+    var d = await r.json();
+    window._RC_ESTANTERIAS = (d||[])
+      .map(function(x){ return x.estanteria; })
+      .filter(function(e){ return e && e!=='Sin estanteria' && e!=='NEVERA'; });
+    var dl = document.getElementById('f01-estanterias-dl');
+    if(dl) dl.innerHTML = window._RC_ESTANTERIAS.map(function(e){
+      return '<option value="'+esc(e)+'">'; }).join('');
+  }catch(e){ /* sin lista, el campo sigue siendo escribible */ }
+}
+
+function _rcUbicacion(g){
+  // Se deduce el estado inicial: si el F01 ya tiene ubicacion estructurada se usa; si es uno
+  // viejo (texto libre) se muestra ese texto y se deja re-capturar sin perderlo.
+  var tipo = (g('ubic_tipo')||'').toLowerCase();
+  var est  = g('ubic_estanteria')||'';
+  var pos  = g('ubic_posicion')||'';
+  var viejo = g('area_almacenamiento')||'';
+  if(!tipo && viejo) tipo = 'legacy';
+  var esNevera = (tipo==='nevera') || (est||'').toUpperCase()==='NEVERA';
+  return '<div class="fg">'
+    +'<label class="fl">Ubicación en bodega <span style="color:var(--cx-danger-text)">*</span></label>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">'
+      +'<select id="f01_ubic_tipo" class="rcm-in" style="max-width:170px" onchange="_rcUbicTipo()">'
+        +'<option value="estanteria"'+(esNevera?'':' selected')+'>Estantería</option>'
+        +'<option value="nevera"'+(esNevera?' selected':'')+'>Nevera (refrigerado)</option>'
+      +'</select>'
+      +'<div id="f01_ubic_est_wrap" style="display:'+(esNevera?'none':'flex')+';gap:8px;flex:1;min-width:220px">'
+        +'<input id="f01_ubic_estanteria" class="rcm-in" list="f01-estanterias-dl" style="flex:1"'
+          +' value="'+esc(esNevera?'':est)+'" placeholder="Estantería (ej: A3)">'
+        +'<input id="f01_ubic_posicion" class="rcm-in" style="flex:1"'
+          +' value="'+esc(esNevera?'':pos)+'" placeholder="Posición (ej: 2)">'
+      +'</div>'
+      +'<datalist id="f01-estanterias-dl"></datalist>'
+    +'</div>'
+    +(tipo==='legacy' && viejo
+        ? '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:5px">Registrado antes como texto libre: <b>'+esc(viejo)+'</b> · al guardar queda estructurado.</div>'
+        : '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:5px">Va al kardex: se ve en inventario, en el rótulo y en el conteo cíclico.</div>')
+  +'</div>';
+}
+
+function _rcUbicTexto(){
+  // UN solo lugar arma el texto de la ubicacion: lo usan el rotulo y el guardado. Si cada uno
+  // lo compusiera por su lado, el rotulo podria decir algo distinto de lo que quedo guardado.
+  var t = (document.getElementById('f01_ubic_tipo')||{}).value || '';
+  if(t === 'nevera') return 'Nevera (refrigerado)';
+  var e = ((document.getElementById('f01_ubic_estanteria')||{}).value || '').trim();
+  var p = ((document.getElementById('f01_ubic_posicion')||{}).value || '').trim();
+  if(!e) return '';
+  return p ? ('Estanteria ' + e + ' · Posicion ' + p) : ('Estanteria ' + e);
+}
+
+function _rcUbicTipo(){
+  var t = (document.getElementById('f01_ubic_tipo')||{}).value;
+  var w = document.getElementById('f01_ubic_est_wrap');
+  if(w) w.style.display = (t==='nevera') ? 'none' : 'flex';
+}
 function _rcSeg(name,val,pairs){
   var h='<div class="rcm-seg">';
   for(var i=0;i<pairs.length;i++){ h+='<label><input type="radio" name="'+name+'" value="'+pairs[i][0]+'"'+(val===pairs[i][0]?' checked':'')+'><span>'+pairs[i][1]+'</span></label>'; }
@@ -2571,7 +2642,7 @@ async function openF01(mov_id, origen){
       +_rcFld('Proveedor',_rcInput('f01_proveedor',g('proveedor')))
       +_rcFld('Fecha de recepción',_rcDate('f01_fecha_recepcion',g('fecha_recepcion')))
       +_rcFld('No. remisión / factura',_rcInput('f01_numero_remision',g('numero_remision')))
-      +'<div style="grid-column:1/3">'+_rcFld('Área de almacenamiento asignada',_rcInput('f01_area_almacenamiento',g('area_almacenamiento')))+'</div>'
+      +'<div style="grid-column:1/3">'+_rcUbicacion(g)+'</div>'
       +'</div>'
       +'<div class="rcm-sec">Verificación técnica y documental</div>'
       +'<table class="crt">'+critRows+'</table>'
@@ -2588,6 +2659,10 @@ async function openF01(mov_id, origen){
       +'<button type="button" onclick="abrirRotuloF01()" title="Imprime el rótulo con el código, lote y cantidad de este insumo (editable)" style="background:#faf5ff;color:var(--cx-primary-text);border:1px solid #e9d5ff;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">&#128424;&#65039; Rótulo</button></div>'
       +'</div>';
     _rcOverlay(html);
+    // Llenar el autocompletado de estanterías DESPUÉS de montar el formulario: la lista sale
+    // de las estanterías que ya existen en el kardex, así Laura elige las que la bodega usa
+    // de verdad en vez de re-escribirlas distinto cada vez.
+    _rcCargarEstanterias();
   }catch(e){ alert('Error abriendo F01: '+e.message); }
 }
 // Rótulo de recepción desde el F01 · lee los campos en vivo (editable como el de cuarentena) · Laura 21-jul
@@ -2601,7 +2676,7 @@ function abrirRotuloF01(){
   // Pasar al rótulo lo que el F01 capturó (para que NO salga en '-'): vencimiento, ubicación, fecha, nombre
   var qs=[];
   var venc=v('f01_fecha_vencimiento'); if(venc){ qs.push('venc='+encodeURIComponent(venc)); }
-  var ubic=v('f01_area_almacenamiento'); if(ubic){ qs.push('ubic='+encodeURIComponent(ubic)); }
+  var ubic=_rcUbicTexto(); if(ubic){ qs.push('ubic='+encodeURIComponent(ubic)); }
   var frec=v('f01_fecha_recepcion'); if(frec){ qs.push('frec='+encodeURIComponent(frec)); }
   var nom=v('f01_nombre_insumo'); if(nom){ qs.push('nombre='+encodeURIComponent(nom)); }
   var q=qs.length?('?'+qs.join('&')):'';
@@ -2616,7 +2691,9 @@ async function guardarF01(mov_id, origen){
   var body={mov_id:mov_id, origen:org, tipo_insumo:_rcRadioVal('f01tipo'), nombre_insumo:v('f01_nombre_insumo'),
     codigo_insumo:((window._F01ctx&&window._F01ctx.codigo)||v('f01_codigo_insumo')||''),
     lote_proveedor:v('f01_lote_proveedor'), cantidad_recibida:v('f01_cantidad_recibida'), proveedor:v('f01_proveedor'),
-    fecha_recepcion:v('f01_fecha_recepcion'), numero_remision:v('f01_numero_remision'), area_almacenamiento:v('f01_area_almacenamiento'),
+    fecha_recepcion:v('f01_fecha_recepcion'), numero_remision:v('f01_numero_remision'),
+    area_almacenamiento:_rcUbicTexto(),
+    ubic_tipo:v('f01_ubic_tipo'), ubic_estanteria:v('f01_ubic_estanteria'), ubic_posicion:v('f01_ubic_posicion'),
     crit_rotulado:_rcRadioVal('crit_rotulado'), crit_empaque:_rcRadioVal('crit_empaque'), crit_hoja_seguridad:_rcRadioVal('crit_hoja_seguridad'),
     crit_ficha_tecnica:_rcRadioVal('crit_ficha_tecnica'), crit_coa:_rcRadioVal('crit_coa'), crit_doc_coincide:_rcRadioVal('crit_doc_coincide'),
     observaciones:v('f01_observaciones'), resultado:_rcRadioVal('f01res'), fecha_vencimiento:v('f01_fecha_vencimiento'),

@@ -2703,41 +2703,102 @@ def mkt_influencers_dedup_merge():
         "(SELECT COUNT(*) FROM pagos_influencers WHERE influencer_id=marketing_influencers.id) "
         "FROM marketing_influencers ORDER BY id"
     ).fetchall()
+    # ── Agrupar ────────────────────────────────────────────────────────────────────────
+    # Dos criterios, y la diferencia entre ellos NO es un detalle:
+    #
+    #   · NOMBRE normalizado → el caso clásico ("juanito rebel" ×5).
+    #   · CÉDULA/NIT         → la MISMA PERSONA cargada con nombres distintos. Sebastián
+    #     28-jul: sus duplicados reales eran éstos ("Valentina Hernandez", "Valentina Peña",
+    #     "Valentina Sierra Bernal" y "Val sierra", todas con cédula 1144064620). La fusión
+    #     por nombre no los tocaba, y borrarlos a mano habría perdido sus 11 pagos.
+    #
+    # La CUENTA BANCARIA a secas NO se fusiona: dos personas distintas pueden cobrar en la
+    # misma cuenta (un familiar, un mánager). Sólo cuenta como refuerzo cuando ADEMÁS
+    # comparten cédula. Fusionar por cuenta sería juntar a dos personas reales en una sola
+    # ficha, y eso no se deshace con un botón.
+    def _norm_ced(v):
+        return ''.join(ch for ch in str(v or '') if ch.isalnum()).lower()
+
     grupos = {}
     for r in rows:
         k = ' '.join((r[1] or '').strip().split()).lower()
         if not k:
             continue
-        grupos.setdefault(k, []).append(r)
+        grupos.setdefault(('nombre', k), []).append(r)
+    for r in rows:
+        ced = _norm_ced(r[6])
+        # 6 dígitos es el piso de una cédula colombiana; menos que eso suele ser basura.
+        if len(ced) >= 6:
+            grupos.setdefault(('cedula', ced), []).append(r)
+
+    # Un mismo creador puede caer en el grupo de nombre Y en el de cédula. Se resuelve de a
+    # un grupo, saltando lo ya fusionado: si no, el segundo grupo intentaría repuntar a un
+    # id que el primero acaba de borrar.
     plan = []
-    for k, lst in grupos.items():
-        if len(lst) < 2:
+    ya_dado_de_baja = set()
+    for (tipo, k), lst in sorted(grupos.items(), key=lambda kv: kv[0]):
+        lst = [x for x in lst if x[0] not in ya_dado_de_baja]
+        # Deduplicar por id: el mismo creador puede venir dos veces en la lista del grupo.
+        vistos, limpio = set(), []
+        for x in lst:
+            if x[0] not in vistos:
+                vistos.add(x[0]); limpio.append(x)
+        if len(limpio) < 2:
             continue
-        ordered = sorted(lst, key=lambda x: (-_score_inf_dedup(x), x[0]))
+        ordered = sorted(limpio, key=lambda x: (-_score_inf_dedup(x), x[0]))
         keeper = ordered[0]
+        bajas = [x[0] for x in ordered[1:]]
+        ya_dado_de_baja.update(bajas)
         plan.append({'nombre': keeper[1], 'keeper_id': keeper[0],
-                     'baja_ids': [x[0] for x in ordered[1:]],
+                     'criterio': tipo, 'clave': k if tipo == 'nombre' else ('***' + k[-3:]),
+                     'nombres_absorbidos': [x[1] for x in ordered[1:]],
+                     'pagos_que_se_mueven': sum((x[7] or 0) for x in ordered[1:]),
+                     'baja_ids': bajas,
                      'duplicados': len(ordered) - 1})
     total_dups = sum(p['duplicados'] for p in plan)
     if not apply:
         return jsonify({'ok': True, 'dry_run': True, 'grupos': plan,
                         'grupos_n': len(plan), 'duplicados_a_eliminar': total_dups,
+                        'grupos_por_nombre': sum(1 for p in plan if p['criterio'] == 'nombre'),
+                        'grupos_por_cedula': sum(1 for p in plan if p['criterio'] == 'cedula'),
+                        'pagos_que_se_mueven': sum(p['pagos_que_se_mueven'] for p in plan),
                         'total_influencers': len(rows)})
+    # Cuántos pagos hay ANTES. La fusión sólo mueve filas de un dueño a otro, así que el
+    # total tiene que quedar idéntico. Si cambia, algo se borró y hay que abortar: es plata,
+    # y un pago perdido no se nota hasta que alguien reclama meses después.
+    _pagos_antes = c.execute("SELECT COUNT(*) FROM pagos_influencers").fetchone()[0] or 0
+
     refs_pagos = 0; refs_sols = 0; eliminados = 0
     for p in plan:
         for bid in p['baja_ids']:
-            try:
-                cur1 = c.execute("UPDATE pagos_influencers SET influencer_id=? WHERE influencer_id=?",
-                                 (p['keeper_id'], bid)); refs_pagos += (cur1.rowcount or 0)
-            except Exception:
-                pass
-            try:
-                cur2 = c.execute("UPDATE solicitudes_compra SET influencer_id=? WHERE influencer_id=?",
-                                 (p['keeper_id'], bid)); refs_sols += (cur2.rowcount or 0)
-            except Exception:
-                pass
+            # SIN try/except mudo (M4): si repuntar un pago falla, la fusión NO puede seguir
+            # y borrar igual el creador -- ahí es donde se pierde el historial. Que reviente
+            # y quede todo como estaba es infinitamente mejor.
+            cur1 = c.execute("UPDATE pagos_influencers SET influencer_id=? WHERE influencer_id=?",
+                             (p['keeper_id'], bid))
+            refs_pagos += (cur1.rowcount or 0)
+            cur2 = c.execute("UPDATE solicitudes_compra SET influencer_id=? WHERE influencer_id=?",
+                             (p['keeper_id'], bid))
+            refs_sols += (cur2.rowcount or 0)
+            # Ya no puede quedar ningún pago apuntando al que se da de baja.
+            _huerfanos = c.execute(
+                "SELECT COUNT(*) FROM pagos_influencers WHERE influencer_id=?", (bid,)).fetchone()[0] or 0
+            if _huerfanos:
+                conn.rollback()
+                return jsonify({
+                    'error': ('Abortado: al creador #%d le quedaron %d pago(s) sin mover. '
+                              'No se borró nada.' % (bid, _huerfanos)),
+                    'codigo': 'PAGOS_SIN_REPUNTAR'}), 500
             c.execute("DELETE FROM marketing_influencers WHERE id=?", (bid,))
             eliminados += 1
+
+    _pagos_despues = c.execute("SELECT COUNT(*) FROM pagos_influencers").fetchone()[0] or 0
+    if _pagos_despues != _pagos_antes:
+        conn.rollback()
+        return jsonify({
+            'error': ('Abortado: había %d pagos y quedaron %d. La fusión mueve, nunca borra. '
+                      'No se aplicó nada.' % (_pagos_antes, _pagos_despues)),
+            'codigo': 'SE_PERDIERON_PAGOS'}), 500
     idx_ok = True
     try:
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mktinf_nombre_unq "
@@ -2749,13 +2810,20 @@ def mkt_influencers_dedup_merge():
     try:
         audit_log(c, usuario=u, accion='DEDUP_INFLUENCERS',
                   tabla='marketing_influencers', registro_id='',
+                  # El plan completo va al rastro: sin esto no hay forma de saber DESPUÉS
+                  # qué ficha absorbió a cuál, que es justo lo que se pregunta cuando algo
+                  # no cuadra tres meses más tarde.
+                  antes={'plan': plan},
                   despues={'eliminados': eliminados, 'refs_pagos': refs_pagos,
-                           'refs_sols': refs_sols, 'unique_index': idx_ok})
+                           'refs_sols': refs_sols, 'unique_index': idx_ok,
+                           'pagos_totales': _pagos_despues})
     except Exception:
         pass
     conn.commit()
     return jsonify({'ok': True, 'aplicado': True, 'duplicados_eliminados': eliminados,
                     'pagos_repuntados': refs_pagos, 'sols_repuntadas': refs_sols,
+                    'por_nombre': sum(1 for p in plan if p['criterio'] == 'nombre'),
+                    'por_cedula': sum(1 for p in plan if p['criterio'] == 'cedula'),
                     'unique_index': idx_ok})
 
 

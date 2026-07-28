@@ -124,6 +124,18 @@ CORAZON=(
   # anulado: el libro decia "anulada" con la plata afuera. El hermano fp_pagar si rechazaba
   # pagar una anulada -- la asimetria es la firma de M45.
   "tests/test_factura_proveedor_anular.py"
+  # Fusionar creadores duplicados MUEVE los pagos, nunca los borra. Los duplicados reales de
+  # Sebastian eran la misma persona con nombres distintos (misma cedula), y borrarlos a mano
+  # habria perdido sus pagos. Incluye el guard de que la cuenta bancaria compartida NO fusiona.
+  "tests/test_dedup_por_cedula.py"
+  # La ubicacion del F01 llega COMPLETA al kardex (estanteria Y posicion). Antes solo escribia
+  # estanteria: la mitad de la ubicacion se perdia en cada recepcion, y en inventario se veia
+  # incompleta. Incluye la nevera, que no existia en el sistema.
+  "tests/test_f01_ubicacion_estructurada.py"
+  # La OC decia GRAMOS de cosas que no se miden en gramos (un servicio de calibracion salia
+  # como "1 g"). La unidad se capturaba en la SOL y se perdia al crear la OC; la pantalla,
+  # sin dato, le pegaba una g a todo. Un numero con la unidad equivocada se lee como cierto.
+  "tests/test_oc_unidad_real.py"
 )
 
 echo ""
