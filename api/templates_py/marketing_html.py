@@ -2194,9 +2194,16 @@ async function abrirDuplicados() {
   if(!modal) {
     modal = document.createElement('div');
     modal.id = modalId;
-    modal.className = 'modal';
+    // El contrato de modales de ESTA página es `.modal-bg` (la capa oscura, que es la que
+    // tiene `display:none` y se muestra con `.open`) conteniendo un `.modal` (la caja).
+    // Acá estaba al revés: la capa se creaba con class "modal" y adentro un "modal-content"
+    // que no existe en el CSS. Resultado: la ventana SÍ se creaba y el fetch SÍ corría, pero
+    // se dibujaba pegada al final del body en vez de encima -- desde afuera, "no se abre nada".
+    // Es el mismo patrón de M112: código escrito contra un sistema de modales distinto del
+    // que la página usa hoy.
+    modal.className = 'modal-bg';
     modal.innerHTML = ''
-      +'<div class="modal-content" style="max-width:900px;">'
+      +'<div class="modal" style="max-width:900px;width:min(900px,95vw);">'
       +'  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
       +'    <div class="modal-title">\u{1F50D} Posibles influencers duplicados</div>'
       +'    <div style="display:flex;gap:6px;">'

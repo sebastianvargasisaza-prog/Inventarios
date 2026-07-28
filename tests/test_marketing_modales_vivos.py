@@ -115,6 +115,30 @@ def test_nadie_cambia_a_una_pestana_que_no_existe(pagina):
         % (faltan, sorted(paneles)))
 
 
+def test_los_modales_que_el_JS_CREA_usan_el_contrato_de_la_pagina(pagina):
+    """Sebastián, al ir a fusionar los duplicados: *"no se abre nada"*.
+
+    El botón funcionaba: creaba la ventana y hacía el fetch. Pero la creaba con las clases de
+    OTRO sistema de modales (`.modal` como capa + `.modal-content` adentro), y el de esta
+    página es `.modal-bg` (la capa, que es la que tiene `display:none` y se muestra con
+    `.open`) conteniendo un `.modal`. Como `.modal` no está oculto, la ventana se dibujaba
+    pegada al final del body en vez de encima -- invisible en la práctica.
+
+    Mismo patrón que el botón sin modal y el switchTab sin panel: código escrito contra un
+    contrato que la página ya no usa.
+    """
+    js, _ = _partes(pagina)
+    # Toda capa de modal creada al vuelo tiene que ser `.modal-bg`.
+    malos = re.findall(r"\.className\s*=\s*'modal'\s*;", js)
+    assert not malos, (
+        'un modal dinámico se crea con class "modal" (la CAJA) en vez de "modal-bg" (la CAPA): '
+        'no tiene display:none, así que aparece al final del body en vez de encima')
+    # Y `.modal-content` no existe en el CSS de esta página: si alguien lo usa, no estiliza nada.
+    if '.modal-content{' not in pagina:
+        assert 'class="modal-content"' not in pagina, (
+            'se usa .modal-content pero esa clase no existe en el CSS de la página')
+
+
 def test_no_manda_al_usuario_a_una_pantalla_que_ya_no_existe(pagina):
     """La sub-vista de Influencers salió de Compras el 27-jul, pero tres textos seguían
     diciendo "va a /compras → tab Influencers para autorizar y pagar".
