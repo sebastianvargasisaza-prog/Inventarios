@@ -50,6 +50,14 @@ CHALLENGE_TTL_SECONDS = 300  # 5 minutos · suficiente para llenar comment + con
 VALID_MEANINGS = {
     "autoriza", "revisa", "aprueba", "libera", "rechaza", "reabre",
     "ejecuta", "supervisa", "ack",
+    # FIX 28-jul · `aprueba_dt` FALTABA acá desde que se creó (mig 286, 25-jun): la
+    # pantalla firma con ese meaning y `/api/sign` lo rechazaba con 400 "meaning
+    # inválido", así que el visto bueno del Director Técnico -la 3ª firma del cierre
+    # de lote- NUNCA se pudo dar desde la UI. El backend que la valida existía y
+    # estaba bien; el hueco vivía en la whitelist del firmador. Misma clase que M94:
+    # una pieza construida entera que nadie podía ejecutar.
+    "aprueba_dt",       # visto bueno del Director Técnico al cerrar el lote
+    "aprueba_orden",    # autorización para ARRANCAR la orden (mig 393)
 }
 
 
@@ -346,7 +354,11 @@ def sign_record():
     # INVIMA-FIX · 21-may-2026 · 21 CFR Part 11 §11.200 · MFA obligatorio
     # para meanings críticos (libera/rechaza/aprueba) en admin/QC.
     # Si user es admin y meaning crítico → exigir auth_factor='totp' (MFA real)
-    _MEANINGS_CRITICOS = {'libera', 'rechaza', 'aprueba', 'autoriza'}
+    # `aprueba_dt` y `aprueba_orden` son aprobaciones de un lote regulado (cierre y
+    # arranque) · van al mismo nivel que 'aprueba'. No endurece la operación: el gate
+    # de abajo sólo exige el TOTP a quien YA tiene MFA enrolado.
+    _MEANINGS_CRITICOS = {'libera', 'rechaza', 'aprueba', 'autoriza',
+                          'aprueba_dt', 'aprueba_orden'}
     if meaning in _MEANINGS_CRITICOS:
         try:
             from config import ADMIN_USERS as _ADM, CALIDAD_USERS as _QC

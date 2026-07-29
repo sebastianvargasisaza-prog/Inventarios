@@ -21918,6 +21918,23 @@ def admin_seguridad_planta():
                  'BETA: carga producción sin exigir limpieza (igual bloquea área ocupada). '
                  'Volvé a EXIGE cuando esté pulido.'),
         'at': _exi_s['at'], 'por': _exi_s['por']})
+    # 3.6) Exigir orden APROBADA antes de arrancar (mig 393 · Sebastián 28-jul)
+    # Nace en beta a propósito (M68): la firma se registra y se muestra desde el día
+    # uno; frenar al piso es una decisión aparte, que se toma cuando planta ya trabaje
+    # con la orden aprobada de rutina.
+    _apo_s = _setting('exigir_aprobacion_orden')
+    _apo = str(_apo_s['valor'] or '0').strip() in ('1', 'true', 'True')
+    controles.append({
+        'clave': 'exigir_aprobacion_orden',
+        'nombre': 'Exigir orden aprobada antes de arrancar',
+        'estado': 'EXIGE (estricto)' if _apo else 'BETA · no exige',
+        'ok': _apo, 'critico': False, 'toggle_off': False, 'toggle_aprob_orden': True,
+        'invima': 'EXIGE = ningún lote arranca sin que Producción autorice la orden (firma Part 11)',
+        'nota': ('Un legajo sin aprobar no deja ejecutar el proceso. La bitácora, las '
+                 'correcciones y la aprobación misma quedan siempre abiertas.' if _apo else
+                 'BETA: la aprobación se registra y se ve en la orden, pero no frena a planta. '
+                 'Encendelo cuando el piso ya trabaje con la orden aprobada de rutina.'),
+        'at': _apo_s['at'], 'por': _apo_s['por']})
     # 4) FORMULA_PIN
     try:
         import config as _cfg
@@ -22056,6 +22073,30 @@ def admin_set_exigir_area_limpia():
                   registro_id='exigir_area_limpia', despues={'activo': activo})
     except Exception:
         pass
+    conn.commit()
+    return jsonify({'ok': True, 'activo': activo})
+
+
+@bp.route("/api/admin/exigir-aprobacion-orden", methods=["POST"])
+def admin_set_exigir_aprobacion_orden():
+    """Toggle 'la orden se aprueba antes de arrancar' (mig 393 · efecto inmediato, sin
+    redeploy). Solo Admin. activo=true → estricto · false → beta (NO-OP total · M68).
+    Auditado (Part 11): encender o apagar un control GMP deja rastro."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from database import get_db
+    d = request.get_json(silent=True) or {}
+    activo = bool(d.get('activo'))
+    conn = get_db(); c = conn.cursor()
+    c.execute(
+        "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+        "VALUES ('exigir_aprobacion_orden',?,?,datetime('now'),?) ON CONFLICT(clave) DO UPDATE SET "
+        "valor=excluded.valor, actualizado_at_utc=excluded.actualizado_at_utc, "
+        "actualizado_por=excluded.actualizado_por",
+        ('1' if activo else '0', 'Arrancar un lote exige la orden aprobada (1) o beta (0)', u))
+    audit_log(c, usuario=u, accion='SET_EXIGIR_APROBACION_ORDEN', tabla='app_settings',
+              registro_id='exigir_aprobacion_orden', despues={'activo': activo})
     conn.commit()
     return jsonify({'ok': True, 'activo': activo})
 
@@ -22962,6 +23003,9 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
      if(c.toggle_limpia){ btn = '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'+
         '<button onclick="setLimpia(true)" style="background:var(--cx-success, #16a34a)">EXIGE (estricto)</button>'+
         '<button onclick="setLimpia(false)" style="background:var(--cx-warn, #f59e0b)">BETA (no exige)</button></div>'; }
+     if(c.toggle_aprob_orden){ btn = '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'+
+        '<button onclick="setAprobOrden(true)" style="background:var(--cx-success, #16a34a)">EXIGE (estricto)</button>'+
+        '<button onclick="setAprobOrden(false)" style="background:var(--cx-warn, #f59e0b)">BETA (no exige)</button></div>'; }
      h+='<div class="ctrl '+cls+'"><div><b>'+ESC(c.nombre)+'</b> - <span class="estado '+et+'">'+ESC(c.estado)+'</span></div>'+
         '<div class="muted" style="margin-top:3px">'+ESC(c.nota)+'</div>'+
         '<div class="muted" style="font-size:11px;margin-top:2px">Posici&oacute;n INVIMA: '+ESC(c.invima)+'</div>'+quien+btn+'</div>';
@@ -22989,6 +23033,15 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
    var j=await r.json();
    if(!r.ok){alert('Error: '+ESC(j.error||r.status));return;}
    alert(j.activo?'Ahora EXIGE area limpia para producir':'BETA: produce sin exigir area limpia');
+   cargar();
+ }
+ async function setAprobOrden(activo){
+   if(!confirm(activo?'Exigir que la ORDEN este aprobada antes de arrancar el lote (estricto INVIMA)? Un legajo sin aprobar no podra ejecutar el proceso.':'BETA: la aprobacion se registra y se ve, pero NO frena a planta?'))return;
+   var t=await csrf();
+   var r=await fetch('/api/admin/exigir-aprobacion-orden',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({activo:activo})});
+   var j=await r.json();
+   if(!r.ok){alert('Error: '+ESC(j.error||r.status));return;}
+   alert(j.activo?'Ahora ningun lote arranca sin la orden aprobada':'BETA: la aprobacion se registra pero no frena');
    cargar();
  }
  async function setEbr(modo){

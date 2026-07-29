@@ -10616,6 +10616,35 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE ebr_envase_materiales ADD COLUMN recibido_por TEXT DEFAULT ''",
         "ALTER TABLE ebr_envase_materiales ADD COLUMN recibido_at_utc TEXT DEFAULT ''",
     ]),
+    (392, "CONCILIACIÓN DEL GRANEL en el legajo de envasado. Hoy el legajo dice cuánto granel había "
+          "(`ml_envasable`) y cuántas unidades salieron, pero nadie cierra la resta: en la OF-2026-77 "
+          "entraron 12.658,95 mL y se envasaron 1.000 (100 uds × 10 mL) -- los otros 11.658,95 mL no "
+          "los explica ningún registro. Puede ser perfectamente legítimo (quedó remanente para otra "
+          "orden), pero el legajo no lo dice, y es exactamente lo que una auditoría INVIMA pregunta: "
+          "el granel que entró, ¿en qué terminó? "
+          "Se captura el REMANENTE pesado (que es como se mide en piso) y el resto se DERIVA: "
+          "mL = g / densidad, y la diferencia sin explicar = disponible - envasado - remanente.", [
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN remanente_g REAL",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN remanente_destino TEXT DEFAULT ''",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN remanente_observaciones TEXT DEFAULT ''",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN remanente_por TEXT DEFAULT ''",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN remanente_at_utc TEXT DEFAULT ''",
+    ]),
+    (393, "APROBACIÓN DE LA ORDEN antes de arrancar. El legajo guarda quién lo INICIÓ, quién lo LIBERÓ "
+          "y el visto bueno final del Director Técnico (mig 286), pero NO quién autorizó que empezara. "
+          "En MyBatch esa firma existe y en acondicionamiento son dos (producción y calidad): la orden "
+          "OA-2026-102 muestra 'Supervisado por: Jefe de producción' Y 'Aprobado por: Laura González, "
+          "Jefe de calidad'. Son momentos distintos: uno es el permiso para empezar, el otro el visto "
+          "bueno del producto terminado. "
+          "El toggle arranca en OFF (M68: un modo beta es NO-OP total, nunca un bloqueo condicional): "
+          "se registra y se muestra, pero no frena a planta hasta que Sebastián lo prenda.", [
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN aprobada_orden_por TEXT DEFAULT ''",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN aprobada_orden_at_utc TEXT DEFAULT ''",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN aprobada_orden_signature_id INTEGER DEFAULT NULL",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN aprobada_orden_rol TEXT DEFAULT ''",
+        """INSERT INTO app_settings (clave, valor) VALUES ('exigir_aprobacion_orden','0')
+           ON CONFLICT (clave) DO NOTHING""",
+    ]),
 ]
 
 

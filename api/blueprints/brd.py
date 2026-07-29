@@ -341,16 +341,204 @@ def _require_qa_or_admin():
     return None
 
 
+# Endpoints EXENTOS del gate "la orden se aprueba antes de arrancar".
+#
+# El diseño es DEFAULT-DENY (M45: un guard aplicado a mano deja hermanos sin blindar):
+# el gate corre dentro de `_require_brd_ejecutor`, así que TODO endpoint de ejecución
+# -incluidos los que se escriban mañana- lo hereda sin que nadie se acuerde. Lo que se
+# enumera acá es lo contrario: lo que NUNCA se puede frenar por falta de aprobación,
+# porque o es la aprobación misma, o es DOCUMENTAR/CORREGIR algo que ya pasó (un
+# registro regulado no se puede dejar sin anotar por un permiso administrativo).
+_APROBACION_ORDEN_EXENTOS = frozenset({
+    "brd.aprobar_orden_ebr",             # la aprobación en sí (si no, se muerde la cola)
+    "brd.aprobar_dt_ebr",                # visto bueno del DT al CERRAR (mig 286)
+    "brd.remanente_granel_ebr",          # conciliación del granel (mig 392)
+    "brd.registrar_observacion_ebr",     # bitácora del proceso
+    "brd.agregar_correccion_ebr",        # corrección de un dato ya asentado
+    "brd.registrar_registro_fisico_ebr",  # adjuntar el PDF firmado
+    "brd.registrar_precaucion_ebr",      # equipos/precauciones
+})
+# Los nombres de arriba son ENDPOINTS de Flask, no rutas: uno mal escrito no falla, queda
+# de peso muerto y el endpoint que creías eximido se frena. `test_aprobacion_orden.py`
+# los contrasta contra el `url_map` real (fue así como se cazó uno inventado).
+
+
+def _exige_aprobacion_orden(conn) -> bool:
+    """Toggle de `app_settings` · default OFF (M68: un modo beta es NO-OP TOTAL).
+
+    Se prende desde /admin/seguridad-planta cuando planta ya trabaje con la orden
+    aprobada de rutina; hasta entonces la firma se REGISTRA y se MUESTRA, pero no
+    frena a nadie. Encenderlo a ciegas trabaría el piso el mismo día."""
+    try:
+        r = conn.execute("SELECT valor FROM app_settings WHERE clave='exigir_aprobacion_orden'").fetchone()
+        return bool(r) and str(r[0]).strip() in ("1", "true", "True")
+    except Exception as _e:                       # tabla ausente = beta (nunca frenar por esto)
+        log.warning("exigir_aprobacion_orden no legible: %s", _e)
+        return False
+
+
+def _gate_aprobacion_orden():
+    """Si el toggle está ON, un legajo SIN aprobar no deja ejecutar el proceso.
+
+    Devuelve None (sigue) o la respuesta 409. Lee el `ebr_id` de la ruta, así que
+    los endpoints que no lo llevan quedan fuera por construcción."""
+    # Sólo lo que ESCRIBE: un control de ARRANQUE frena la ejecución, nunca la consulta.
+    # Hoy ningún endpoint gateado lee (`ipc-estandar` sirve GET y POST con la misma
+    # función, pero su rama GET retorna antes de llamar al guard · verificado, no
+    # supuesto). Va igual porque el guard es DEFAULT-DENY y lo hereda todo lo que se
+    # escriba después: el día que alguien ponga el guard arriba de un GET+POST
+    # compartido, planta perdería una lectura por un permiso administrativo.
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return None
+    ebr_id = (request.view_args or {}).get("ebr_id")
+    if not ebr_id or request.endpoint in _APROBACION_ORDEN_EXENTOS:
+        return None
+    conn = get_db()
+    if not _exige_aprobacion_orden(conn):
+        return None
+    row = conn.execute(
+        "SELECT COALESCE(aprobada_orden_por,''), COALESCE(lote_codigo, lote, '') "
+        "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+    if not row or (row[0] or "").strip():
+        return None
+    if str(row[1] or "").upper().startswith("DEMO-"):   # el legajo demo no firma nada
+        return None
+    return jsonify({
+        "error": "La orden todavía no está aprobada · Producción debe autorizarla antes de arrancar",
+        "codigo": "ORDEN_SIN_APROBAR"}), 409
+
+
 def _require_brd_ejecutor():
     """Solo personal que ejecuta lotes: Planta, Calidad o Admin. Evita que
     un usuario de otra área (compras, marketing, RRHH...) ejecute pasos de
-    un registro de lote regulado (INVIMA · escalada de privilegios)."""
+    un registro de lote regulado (INVIMA · escalada de privilegios).
+
+    Además aplica el gate de aprobación de la orden (default OFF · ver arriba)."""
     u = session.get("compras_user", "")
     if not u:
         return jsonify({"error": "No autorizado"}), 401
     if u not in (PLANTA_USERS | CALIDAD_USERS | ADMIN_USERS):
         return jsonify({"error": "Solo Planta/Calidad/Admin pueden ejecutar pasos del registro de lote"}), 403
-    return None
+    return _gate_aprobacion_orden()
+
+
+# Tolerancia por defecto de la conciliación del granel. Configurable en app_settings
+# porque el % razonable depende del producto (un suero deja más en la tolva que una
+# crema); 2% es el arranque conservador acordado, NO una constante de dominio.
+_TOLERANCIA_GRANEL_PCT = 2.0
+
+
+def _conciliacion_granel(conn, ebr_id, header=None):
+    """Cierra la cuenta del granel de un legajo de ENVASADO: ¿en qué terminó?
+
+        entró (mL) = envasado (Σ unidades × mL) + remanente + diferencia sin explicar
+
+    Es la pregunta que hace una auditoría INVIMA y que el legajo hoy no contesta: en la
+    OF-2026-77 entraron 12.658,95 mL y salieron 1.000 en unidades; los otros 11.658,95
+    no los explicaba ningún registro (puede ser perfectamente legítimo -quedó granel
+    para otra orden- pero nadie lo había escrito).
+
+    Todo se DERIVA de datos que ya existen (M71: lo derivado no se guarda). Lo único
+    que hay que ir a medir es el REMANENTE, y se captura en GRAMOS porque así se mide
+    en piso -con balanza-; los mL salen de la densidad, igual que el granel de entrada.
+    """
+    h = header or {}
+    row = None
+    if not h:
+        row = conn.execute(
+            "SELECT COALESCE(fase,'fabricacion'), ml_envasable, densidad_g_ml, remanente_g, "
+            "COALESCE(remanente_destino,''), COALESCE(remanente_observaciones,''), "
+            "COALESCE(remanente_por,''), COALESCE(remanente_at_utc,'') "
+            "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        if not row:
+            return None
+        h = {"fase": row[0], "ml_envasable": row[1], "densidad_g_ml": row[2],
+             "remanente_g": row[3], "remanente_destino": row[4],
+             "remanente_observaciones": row[5], "remanente_por": row[6],
+             "remanente_at_utc": row[7]}
+    if str(h.get("fase") or "").strip().lower() != "envasado":
+        return None                      # la conciliación de granel es del envasado
+
+    def _f(v):
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    disponible = _f(h.get("ml_envasable"))
+    densidad = _f(h.get("densidad_g_ml"))
+    remanente_g = _f(h.get("remanente_g"))
+
+    presentaciones, envasado_ml, sin_volumen = [], 0.0, 0
+    for r in conn.execute(
+        "SELECT COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), COALESCE(volumen_ml,0), "
+        "COALESCE(unidades,0), COALESCE(no_envasada,0) "
+        "FROM ebr_envasado_unidades WHERE ebr_id=? ORDER BY presentacion_codigo", (ebr_id,)).fetchall():
+        uds, vol = float(r[3] or 0), float(r[2] or 0)
+        if r[4] or uds <= 0:
+            continue
+        if vol <= 0:
+            sin_volumen += 1             # sin volumen no se puede pesar la cuenta (se declara)
+            continue
+        sub = round(uds * vol, 2)
+        envasado_ml += sub
+        presentaciones.append({"codigo": r[0], "etiqueta": r[1], "volumen_ml": vol,
+                               "unidades": uds, "subtotal_ml": sub})
+    envasado_ml = round(envasado_ml, 2)
+
+    # El remanente se PESA; los mL se derivan. Sin densidad no hay conversión posible:
+    # se declara el gramaje y la cuenta queda abierta (M109: sin dato no se inventa).
+    remanente_ml = round(remanente_g / densidad, 2) if (remanente_g is not None and densidad) else None
+
+    try:
+        _t = conn.execute(
+            "SELECT valor FROM app_settings WHERE clave='conciliacion_granel_tolerancia_pct'").fetchone()
+        tolerancia = float(_t[0]) if _t and str(_t[0]).strip() else _TOLERANCIA_GRANEL_PCT
+    except Exception:
+        tolerancia = _TOLERANCIA_GRANEL_PCT
+
+    diferencia = pct = None
+    if disponible is not None:
+        diferencia = round(disponible - envasado_ml - (remanente_ml or 0.0), 2)
+        pct = round(diferencia / disponible * 100, 2) if disponible else None
+
+    # `cuadra` sólo puede ser True cuando la cuenta está COMPLETA: sin remanente
+    # declarado, un 0 de diferencia sería casualidad, no conciliación.
+    completa = disponible is not None and remanente_ml is not None and not sin_volumen
+    cuadra = bool(completa and pct is not None and abs(pct) <= tolerancia)
+    return {
+        "aplica": True,
+        "disponible_ml": disponible,
+        "envasado_ml": envasado_ml,
+        "remanente_g": remanente_g,
+        "remanente_ml": remanente_ml,
+        "remanente_destino": h.get("remanente_destino") or "",
+        "remanente_observaciones": h.get("remanente_observaciones") or "",
+        "remanente_por": h.get("remanente_por") or "",
+        "remanente_at_utc": h.get("remanente_at_utc") or "",
+        "diferencia_ml": diferencia,
+        "diferencia_pct": pct,
+        "tolerancia_pct": tolerancia,
+        "densidad_g_ml": densidad,
+        "presentaciones": presentaciones,
+        "presentaciones_sin_volumen": sin_volumen,
+        "falta_densidad": bool(remanente_g is not None and not densidad),
+        "falta_remanente": remanente_g is None,
+        "completa": completa,
+        "cuadra": cuadra,
+    }
+
+
+# Destinos válidos del remanente. Whitelist explícita (regla: un campo de estado se
+# valida contra una lista, no acepta cualquier string) · el texto libre va en las
+# observaciones, que es donde puede ir cualquier cosa sin romper una agrupación (M115).
+_REMANENTE_DESTINOS = {
+    "otra_orden": "Queda en bodega para otra orden",
+    "devuelto_granel": "Devuelto al granel del lote",
+    "muestra_retenida": "Muestra de retención / contramuestra",
+    "descartado": "Descartado (merma)",
+    "sin_remanente": "No quedó remanente",
+}
 
 
 # ── helpers data ────────────────────────────────────────────────────────────
@@ -3156,6 +3344,25 @@ def ebr_vista_completa(ebr_id):
             'densidad_g_ml': (float(row[20]) if row[20] else None),
             'ml_envasable': (float(row[21]) if row[21] else None),
         }
+        # Columnas de las migs 392/393 en su PROPIO SELECT: si una instancia todavía no
+        # migró, se pierde el bloque nuevo y NO el legajo entero (que es el documento
+        # regulado). El except loguea, nunca calla (M94).
+        try:
+            _rr = conn.execute(
+                "SELECT remanente_g, COALESCE(remanente_destino,''), COALESCE(remanente_observaciones,''), "
+                "COALESCE(remanente_por,''), COALESCE(remanente_at_utc,''), "
+                "COALESCE(aprobada_orden_por,''), COALESCE(aprobada_orden_at_utc,''), "
+                "COALESCE(aprobada_orden_rol,'') FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+            if _rr:
+                out['header'].update({
+                    'remanente_g': (float(_rr[0]) if _rr[0] is not None else None),
+                    'remanente_destino': _rr[1], 'remanente_observaciones': _rr[2],
+                    'remanente_por': _rr[3], 'remanente_at_utc': _rr[4],
+                    'aprobada_orden_por': _rr[5], 'aprobada_orden_at_utc': _rr[6],
+                    'aprobada_orden_rol': _rr[7],
+                })
+        except Exception as _e:
+            log.warning("columnas mig 392/393 no disponibles en ebr=%s: %s", ebr_id, _e)
         # Objetivo EN VIVO (M67 punto 4): mientras el EBR NO esté liberado/completado/rechazado,
         # la magnitud del lote la manda la fuente de verdad produccion_programada.cantidad_kg · no
         # el cantidad_objetivo_g congelado (que pudo nacer con el default del MBR o quedar stale si
@@ -3471,6 +3678,14 @@ def ebr_vista_completa(ebr_id):
             out['header']['cantidad_disponible_ml'] = max(0.0, round(float(prod_ml) - consumido, 2))
     except Exception:
         pass
+    # Conciliación del granel (mig 392) · sólo envasado. Es DERIVADA salvo el remanente,
+    # así que se calcula acá y no se guarda (M71). El except loguea: un except mudo
+    # convierte un bug en "no hay datos", que es indistinguible de la realidad (M94).
+    try:
+        out['conciliacion_granel'] = _conciliacion_granel(conn, ebr_id, out['header'])
+    except Exception as _e:
+        log.warning("conciliacion_granel ebr=%s no disponible: %s", ebr_id, _e)
+        out['conciliacion_granel'] = None
     # 2. Pesajes MP
     # Resolver username → "Nombre, Cargo (user)" para Realizado/Verificado por
     # (MyBatch "Detalle del Pesaje"). Cache por request · solo lectura.
@@ -5827,6 +6042,27 @@ def pdf_ebr(ebr_id):
     pdf.cell(0, 7, _safe_pdf("1. Identificación del lote"),
              new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
+    # Aprobación de la ORDEN (mig 393) · va PRIMERO porque es lo primero que pasa:
+    # se autoriza, se le entrega al operario, y recién ahí empieza el proceso. Que
+    # falte se imprime igual: un renglón vacío en el legajo archivado es el hallazgo.
+    try:
+        _ap_por = ebr["aprobada_orden_por"] or ""
+        _ap_at = ebr["aprobada_orden_at_utc"] or ""
+        _ap_rol = ebr["aprobada_orden_rol"] or ""
+        _ap_sig = ebr["aprobada_orden_signature_id"]
+    except Exception:
+        _ap_por = _ap_at = _ap_rol = ""
+        _ap_sig = None
+    if _ap_por:
+        pdf.cell(0, 5, _safe_pdf(
+            f"Orden aprobada por: {_ap_por}"
+            + (f" ({_ap_rol})" if _ap_rol else "")
+            + f"  ·  {_ap_at} UTC"
+            + (f"  ·  firma e-sig #{_ap_sig}" if _ap_sig else "")),
+                 new_x="LMARGIN", new_y="NEXT")
+    else:
+        pdf.cell(0, 5, _safe_pdf("Orden aprobada por: SIN APROBAR"),
+                 new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 5, _safe_pdf(f"Iniciado por: {ebr['iniciado_por']}  ·  {ebr['iniciado_at_utc']} UTC"),
              new_x="LMARGIN", new_y="NEXT")
     if ebr["completado_at_utc"]:
@@ -5850,10 +6086,17 @@ def pdf_ebr(ebr_id):
     obj = ebr["cantidad_objetivo_g"]
     real = ebr["cantidad_real_g"]
     yld = ebr["yield_pct"]
+    # FIX 28-jul · esto daba 500 en el PDF -el documento regulado- cuando había
+    # cantidad real SIN yield: `yield_pct` queda en NULL si el objetivo es 0
+    # (brd.py:4304 `... if ebr["cantidad_objetivo_g"] else None`), y formatear None
+    # con `:.2f` revienta. Un dato faltante se imprime como faltante, no tumba el
+    # legajo entero (M12a: formatear None es un 500 seguro, no un caso raro).
+    def _num(v, suf=""):
+        return f"{v:,.2f}{suf}" if v is not None else "-"
+
     pdf.cell(0, 5, _safe_pdf(
-        f"Objetivo: {obj:,.2f} g   ·   Real: {real:,.2f} g   ·   Yield: {yld:.2f} %"
-        if real is not None else
-        f"Objetivo: {obj:,.2f} g   ·   Real: pendiente"),
+        f"Objetivo: {_num(obj, ' g')}   ·   Real: "
+        + (f"{_num(real, ' g')}   ·   Yield: {_num(yld, ' %')}" if real is not None else "pendiente")),
         new_x="LMARGIN", new_y="NEXT")
     # Batch C · rendimiento por unidades (Envasado/Acondicionamiento)
     try:
@@ -5948,6 +6191,45 @@ def pdf_ebr(ebr_id):
                 f"devuelta {m['cant_devuelta']} · utilizada {m['cant_utilizada']}  ·  "
                 f"{m['registrado_por'] or '-'}",
                 h=5, font_size=9)
+        pdf.ln(2)
+
+    # Conciliación del GRANEL (mig 392) · sólo envasado. Es la sección que contesta
+    # "el granel que entró, ¿en qué terminó?" · si no está en el imprimible, no está
+    # en el legajo que se archiva, que es el que ve la auditoría.
+    try:
+        _cg = _conciliacion_granel(conn, ebr_id)
+    except Exception as _e:
+        log.warning("PDF ebr=%s sin conciliación de granel: %s", ebr_id, _e)
+        _cg = None
+    if _cg and _cg.get("aplica"):
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf("4c-bis. Conciliación del granel"),
+                 new_x="LMARGIN", new_y="NEXT")
+
+        def _ml(v):
+            return f"{v:,.2f} mL" if v is not None else "-"
+
+        _line(f"Granel disponible: {_ml(_cg['disponible_ml'])}", h=5, font_size=9)
+        _det = " · ".join(
+            f"{p['codigo']} {p['unidades']:,.0f} x {p['volumen_ml']:,.2f} mL"
+            for p in _cg["presentaciones"]) or "sin unidades registradas"
+        _line(f"Envasado: {_ml(_cg['envasado_ml'])}  ({_det})", h=5, font_size=9)
+        if _cg["remanente_g"] is not None:
+            _line(
+                f"Remanente: {_ml(_cg['remanente_ml'])}  "
+                f"({_cg['remanente_g']:,.1f} g pesados · "
+                f"{_REMANENTE_DESTINOS.get(_cg['remanente_destino'], _cg['remanente_destino'] or '-')})"
+                + (f" · declarado por {_cg['remanente_por']}" if _cg["remanente_por"] else ""),
+                h=5, font_size=9)
+            if _cg["remanente_observaciones"]:
+                _line(f"   Obs.: {_cg['remanente_observaciones']}", h=5, font_size=9, italic=True)
+        else:
+            _line("Remanente: SIN DECLARAR", h=5, font_size=9)
+        _dif = _ml(_cg["diferencia_ml"])
+        if _cg["diferencia_pct"] is not None:
+            _dif += f" ({_cg['diferencia_pct']:,.2f} %)"
+        _line(f"Diferencia sin explicar: {_dif}   ·   tolerancia {_cg['tolerancia_pct']:,.2f} %"
+              + ("   [CONCILIADO]" if _cg["cuadra"] else "   [SIN CONCILIAR]"), h=5, font_size=9)
         pdf.ln(2)
 
     # Artes / codificación (acondicionamiento)
@@ -6824,6 +7106,115 @@ def registrar_unidades_envasado(ebr_id):
               despues={"presentacion": pc, "unidades": unidades})
     conn.commit()
     return jsonify({"ok": True, "presentacion_codigo": pc, "unidades": unidades})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/remanente-granel", methods=["POST"])
+def remanente_granel_ebr(ebr_id):
+    """Cierra la conciliación del granel: cuánto SOBRÓ y en qué terminó.
+
+    Es el único dato de la cuenta que hay que ir a medir; el resto se deriva
+    (ver `_conciliacion_granel`). Se pesa en gramos porque así se mide en piso.
+    """
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    destino = (body.get("destino") or "").strip()
+    if destino not in _REMANENTE_DESTINOS:
+        return jsonify({"error": "destino inválido · " + ", ".join(sorted(_REMANENTE_DESTINOS)),
+                        "codigo": "DESTINO_INVALIDO"}), 400
+    try:
+        remanente_g = float(body.get("remanente_g") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "remanente_g inválido"}), 400
+    if remanente_g < 0:
+        return jsonify({"error": "el remanente no puede ser negativo"}), 400
+    if destino == "sin_remanente" and remanente_g > 0:
+        return jsonify({"error": "declaraste 'no quedó remanente' pero cargaste un peso · corregí uno de los dos",
+                        "codigo": "DESTINO_CONTRADICE_PESO"}), 400
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute(
+        "SELECT COALESCE(fase,'fabricacion'), estado, COALESCE(remanente_g,-1) "
+        "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if str(row[0]).strip().lower() != "envasado":
+        return jsonify({"error": "la conciliación de granel es de los legajos de envasado"}), 400
+    if str(row[1] or "").lower() in ("liberado", "rechazado"):
+        return jsonify({"error": "el legajo ya está liberado/rechazado · es inmutable (Part 11)",
+                        "codigo": "LEGAJO_INMUTABLE"}), 409
+    _antes = {"remanente_g": (None if float(row[2]) < 0 else float(row[2]))}
+    cur.execute(
+        "UPDATE ebr_ejecuciones SET remanente_g=?, remanente_destino=?, remanente_observaciones=?, "
+        "remanente_por=?, remanente_at_utc=datetime('now','utc') "
+        "WHERE id=? AND LOWER(COALESCE(estado,'')) NOT IN ('liberado','rechazado')",
+        (remanente_g, destino, (body.get("observaciones") or "").strip()[:500], user, ebr_id))
+    if cur.rowcount == 0:                     # CAS: el estado cambió mientras tanto (M27)
+        conn.rollback()
+        return jsonify({"error": "el legajo cambió de estado · refrescá", "codigo": "ESTADO_CAMBIO"}), 409
+    conc = _conciliacion_granel(conn, ebr_id)
+    audit_log(cur, usuario=user, accion="CONCILIAR_GRANEL_ENVASADO",
+              tabla="ebr_ejecuciones", registro_id=ebr_id, antes=_antes,
+              despues={"remanente_g": remanente_g, "destino": destino,
+                       "diferencia_ml": (conc or {}).get("diferencia_ml"),
+                       "diferencia_pct": (conc or {}).get("diferencia_pct")})
+    conn.commit()
+    return jsonify({"ok": True, "conciliacion": conc})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/aprobar-orden", methods=["POST"])
+def aprobar_orden_ebr(ebr_id):
+    """Aprobación de la ORDEN antes de arrancar (Part 11 §11.50 · e-firma).
+
+    Es la firma que faltaba: el legajo ya guardaba quién lo INICIÓ, quién lo LIBERÓ y
+    el visto bueno final del DT (mig 286), pero no quién AUTORIZÓ que empezara -que en
+    MyBatch es una firma propia de la orden, y en acondicionamiento son dos (producción
+    y calidad)-. Sólo Producción/Calidad/Admin, y nunca uno se aprueba a sí mismo el
+    arranque sin dejar rastro: va con firma validada y audit_log.
+    """
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    signature_id = body.get("signature_id")
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute(
+        "SELECT estado, COALESCE(aprobada_orden_por,''), COALESCE(lote_codigo, lote, ''), "
+        "COALESCE(fase,'fabricacion') FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if (row[1] or "").strip():
+        return jsonify({"error": "la orden ya fue aprobada por " + row[1], "codigo": "YA_APROBADA"}), 409
+    if str(row[0] or "").lower() in ("liberado", "rechazado"):
+        return jsonify({"error": "el legajo ya está cerrado", "codigo": "LEGAJO_INMUTABLE"}), 409
+    _es_demo = str(row[2] or "").upper().startswith("DEMO-")
+    if not signature_id and not _es_demo:
+        return jsonify({"error": "signature_id requerido · meaning='aprueba_orden' "
+                                 "record_table='ebr_ejecuciones'"}), 400
+    if not _es_demo and not _validar_signature(
+            cur, signature_id, record_table="ebr_ejecuciones", record_id=ebr_id,
+            meaning="aprueba_orden", signer_username=user):
+        return jsonify({"error": "signature_id no corresponde a una firma 'aprueba_orden' "
+                                 "de este legajo por vos"}), 400
+    # El ROL con el que firma queda en el registro: en acondicionamiento la orden lleva
+    # la de producción Y la de calidad, y sin el rol las dos firmas serían indistinguibles.
+    rol = "calidad" if user in CALIDAD_USERS and user not in PLANTA_USERS else "produccion"
+    cur.execute(
+        "UPDATE ebr_ejecuciones SET aprobada_orden_por=?, aprobada_orden_at_utc=datetime('now','utc'), "
+        "aprobada_orden_signature_id=?, aprobada_orden_rol=? "
+        "WHERE id=? AND COALESCE(aprobada_orden_por,'')=''",
+        (user, signature_id, rol, ebr_id))
+    if cur.rowcount == 0:                     # CAS: otro worker la aprobó primero (M27)
+        conn.rollback()
+        return jsonify({"error": "la orden ya fue aprobada · refrescá", "codigo": "YA_APROBADA"}), 409
+    audit_log(cur, usuario=user, accion="APROBAR_ORDEN",
+              tabla="ebr_ejecuciones", registro_id=ebr_id,
+              despues={"aprobada_por": user, "rol": rol, "fase": row[3],
+                       "signature_id": signature_id})
+    conn.commit()
+    return jsonify({"ok": True, "aprobada_por": user, "rol": rol})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/cerrar-envasado", methods=["POST"])
@@ -8883,6 +9274,7 @@ async function load(){
         '</div>'+
         '<span class="estado-badge" style="background:'+estadoBg(estado)+';color:'+estadoColor(estado)+'">'+esc(estado)+'</span>'+
       '</div>'+
+      bandaAprobacion(h,d.mi_rol)+
       '<div class="grid">'+
         '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'·')+'</div></div>'+
         '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+gfmt(h.lote_size_g)+'</div></div>'+
@@ -9203,6 +9595,7 @@ async function load(){
       '<div class="ortit">ORDEN DE ENVASADO N°: '+esc(h.numero_op||('OF-'+EBR_ID))+'</div>'+
       '<div class="prod">'+esc(h.producto||h.titulo||'·')+'</div>'+
       '<div style="margin:-10px 0 18px"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary-text,#6d28d9);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid var(--cx-primary-light,#a78bfa)">&#128100; '+esc((d.mi_rol&&d.mi_rol.rol)||'Usuario')+'</span></div>'+
+      bandaAprobacion(h,d.mi_rol)+
       '<div class="grid">'+
         fld('N° Lote Bulk','<span class="mono">'+esc(h.lote_codigo||'·')+'</span>')+
         fld('Tamaño Bulk',esc(tamBulk))+
@@ -9288,8 +9681,96 @@ async function load(){
         '<th>N° lote envasado'+ar()+'</th><th>Material de envase'+ar()+'</th><th>N° de lote material'+ar()+'</th><th>Cant. requerida'+ar()+'</th><th>Cant. devuelta'+ar()+'</th><th>Cant. utilizada'+ar()+'</th><th>Cant. averiada'+ar()+'</th><th>Diferencia'+ar()+'</th><th>Acciones</th>'+
       '</tr></thead><tbody>'+matRows+'</tbody></table></div>'+
       '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
-    document.getElementById('cuerpo').innerHTML = presCard + matCard;
+    // ── Conciliación del granel · ¿en qué terminó el bulk que entró? ────────────
+    // entró = envasado (Σ uds × mL) + remanente + diferencia sin explicar.
+    // Todo derivado salvo el remanente, que es lo único que se va a pesar.
+    var cg=d.conciliacion_granel; window._cg=cg;
+    var concCard='';
+    if(cg&&cg.aplica){
+      var puedeConc=(estado!=='liberado'&&estado!=='rechazado')&&!!(d.mi_rol&&d.mi_rol.puede_ejecutar);
+      var okCol='var(--cx-success-text,#166534)', maCol='var(--cx-danger-text,#b91c1c)', avCol='var(--cx-warn-text,#b45309)';
+      var difCol=cg.cuadra?okCol:(cg.completa?maCol:avCol);
+      var chip, chipBg, chipTx;
+      if(cg.cuadra){chip='&#10003; Conciliado';chipBg='var(--cx-success-pale,#f0fdf4)';chipTx=okCol;}
+      else if(cg.falta_remanente){chip='&#9888; Falta declarar el remanente';chipBg='var(--cx-warn-pale,#fffbeb)';chipTx=avCol;}
+      else if(cg.falta_densidad){chip='&#9888; Falta la densidad del granel';chipBg='var(--cx-warn-pale,#fffbeb)';chipTx=avCol;}
+      else if(cg.presentaciones_sin_volumen){chip='&#9888; Hay presentaciones sin volumen';chipBg='var(--cx-warn-pale,#fffbeb)';chipTx=avCol;}
+      else {chip='&#9888; Granel sin explicar';chipBg='var(--cx-danger-pale,#fef2f2)';chipTx=maCol;}
+      function lin(et,val,col,sub,neg){
+        return '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:11px 0;border-bottom:1px solid var(--cx-border-soft,#f1f5f9)">'+
+          '<div><div style="font-size:13px;font-weight:600;color:var(--cx-text,#0f172a)">'+(neg?'&#8722; ':'')+et+'</div>'+
+          (sub?('<div style="font-size:11px;color:var(--cx-text-faint,#94a3b8);margin-top:2px">'+sub+'</div>'):'')+'</div>'+
+          '<div style="font-size:16px;font-weight:800;white-space:nowrap;color:'+(col||'var(--cx-text,#0f172a)')+'">'+val+'</div></div>';
+      }
+      var detPres=cg.presentaciones.map(function(p){
+        return esc(p.codigo)+' &#183; '+Number(p.unidades).toLocaleString('es-CO')+' &#215; '+mlf(p.volumen_ml);}).join(' &#183; ');
+      var remSub=(cg.remanente_g!=null)
+        ? (Number(cg.remanente_g).toLocaleString('es-CO',{maximumFractionDigits:1})+' g pesados'+
+           (cg.densidad_g_ml?(' &#247; '+Number(cg.densidad_g_ml).toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'')+
+           (cg.remanente_destino?(' &#183; '+esc((window._DEST_REM||{})[cg.remanente_destino]||cg.remanente_destino)):''))
+        : 'Sin declarar &#183; hay que pesar lo que sobró';
+      concCard='<div class="card"><div class="sechead" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'+
+          '<div class="sectit">Conciliación del Granel</div>'+
+          '<div style="display:flex;gap:8px;align-items:center">'+
+            '<span style="background:'+chipBg+';color:'+chipTx+';font-size:12px;font-weight:800;padding:5px 13px;border-radius:20px;white-space:nowrap">'+chip+'</span>'+
+            (puedeConc?'<button class="bt bt-pdf" onclick="concModal()" title="Registrá cuánto granel sobró y en qué terminó (queda firmado y auditado)">'+(cg.falta_remanente?'+ Declarar remanente':'&#9998; Corregir remanente')+'</button>':'')+
+          '</div></div>'+
+        '<div style="padding:4px 18px 16px">'+
+          '<div style="font-size:12.5px;color:var(--cx-text-soft,#475569);margin:2px 0 10px">El granel que entró a la orden tiene que terminar explicado: lo que se envasó, lo que sobró, y lo que no cuadra.</div>'+
+          lin('Granel disponible',mlf(cg.disponible_ml),null,'Bulk de la orden',false)+
+          lin('Envasado',mlf(cg.envasado_ml),null,(detPres||'Sin unidades registradas todavía'),true)+
+          lin('Remanente',(cg.remanente_ml!=null?mlf(cg.remanente_ml):'&#183;'),null,remSub,true)+
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:13px 0 2px">'+
+            '<div><div style="font-size:13.5px;font-weight:800;color:'+difCol+'">Diferencia sin explicar</div>'+
+            '<div style="font-size:11px;color:var(--cx-text-faint,#94a3b8);margin-top:2px">Tolerancia '+Number(cg.tolerancia_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%</div></div>'+
+            '<div style="text-align:right"><div style="font-size:20px;font-weight:800;color:'+difCol+';white-space:nowrap">'+(cg.diferencia_ml!=null?mlf(cg.diferencia_ml):'&#183;')+'</div>'+
+            (cg.diferencia_pct!=null?('<div style="font-size:12px;font-weight:700;color:'+difCol+'">'+Number(cg.diferencia_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%</div>'):'')+'</div></div>'+
+          (cg.remanente_observaciones?('<div style="margin-top:12px;background:var(--cx-bg-alt,#f8fafc);border-radius:10px;padding:10px 13px;font-size:12.5px;color:var(--cx-text-soft,#475569)"><b>Observaciones:</b> '+esc(cg.remanente_observaciones)+'</div>'):'')+
+          (cg.remanente_por?('<div style="margin-top:10px;font-size:11.5px;color:var(--cx-text-faint,#94a3b8)">Declarado por <b>'+esc(cg.remanente_por)+'</b>'+(cg.remanente_at_utc?(' &#183; '+esc(String(cg.remanente_at_utc).substring(0,16).replace("T"," "))):'')+'</div>'):'')+
+        '</div></div>';
+    }
+    document.getElementById('cuerpo').innerHTML = presCard + concCard + matCard;
   }catch(e){document.getElementById('cab').innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">Error de red: '+esc(e.message)+'</span>';}
+}
+window._DEST_REM={otra_orden:'Queda en bodega para otra orden',devuelto_granel:'Devuelto al granel del lote',muestra_retenida:'Muestra de retención / contramuestra',descartado:'Descartado (merma)',sin_remanente:'No quedó remanente'};
+function concModal(){
+  var cg=window._cg||{};
+  var ov=document.getElementById('concov');
+  if(!ov){ov=document.createElement('div');ov.id='concov';ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999';document.body.appendChild(ov);}
+  var opts='';
+  for(var k in window._DEST_REM){
+    opts+='<option value="'+k+'"'+((cg.remanente_destino===k)?' selected':'')+'>'+esc(window._DEST_REM[k])+'</option>';}
+  var falta=(cg.disponible_ml!=null)?(Number(cg.disponible_ml)-Number(cg.envasado_ml||0)):null;
+  var sug=(falta!=null&&cg.densidad_g_ml)?(falta*Number(cg.densidad_g_ml)):null;
+  ov.innerHTML='<div style="background:var(--cx-card, #fff);border-radius:14px;padding:24px;max-width:560px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)">'+
+    '<div style="font-weight:800;font-size:18px;margin-bottom:4px">Remanente de granel</div>'+
+    '<div style="font-size:12.5px;color:var(--cx-text-soft,#475569);margin-bottom:16px">Pesá lo que quedó sin envasar y decí en qué terminó. Los mL se calculan solos con la densidad del lote.</div>'+
+    (sug!=null?('<div style="background:var(--cx-info-pale,#eff6ff);border-radius:10px;padding:10px 13px;font-size:12.5px;color:var(--cx-info-text,#1e40af);margin-bottom:14px">Sin explicar hoy: <b>'+mlf(falta)+'</b>. Si todo eso quedó como remanente, serían <b>'+Number(sug).toLocaleString('es-CO',{maximumFractionDigits:1})+' g</b> en balanza.</div>'):'')+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Remanente pesado (g) *</label><input id="cg_g" type="number" step="0.1" value="'+(cg.remanente_g!=null?cg.remanente_g:'')+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">¿En qué terminó? *</label><select id="cg_dest" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px">'+opts+'</select></div>'+
+      '<div style="grid-column:1/-1"><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Observaciones</label><input id="cg_obs" value="'+esc(cg.remanente_observaciones||'')+'" placeholder="ej. queda en bodega para la siguiente orden del mismo lote" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">'+
+      '<button onclick="cerrarConc()" style="padding:9px 16px;border:1px solid var(--cx-border, #cbd5e1);background:var(--cx-border-soft, #f1f5f9);border-radius:8px;cursor:pointer">Cancelar</button>'+
+      '<button id="cg_ok" onclick="guardarConc()" style="padding:9px 16px;border:0;background:var(--cx-primary, #7c3aed);color:#fff;border-radius:8px;cursor:pointer;font-weight:700">Guardar</button>'+
+    '</div></div>';
+  ov.style.display='flex';
+}
+function cerrarConc(){var ov=document.getElementById('concov');if(ov)ov.style.display='none';}
+async function guardarConc(){
+  if(window._cgBusy)return; window._cgBusy=true;                 // doble-click crea/mueve datos (M63)
+  var b=document.getElementById('cg_ok'); if(b){b.disabled=true;}
+  try{
+    var g=document.getElementById('cg_g').value;
+    var body={remanente_g:(g===''?0:parseFloat(g)),destino:document.getElementById('cg_dest').value,
+              observaciones:document.getElementById('cg_obs').value};
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/remanente-granel',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
+    var dd=await r.json();
+    if(!r.ok||!dd.ok){alert('No se pudo guardar: '+((dd&&dd.error)||r.status));return;}
+    cerrarConc();load();
+  }catch(e){alert('Error: '+(e.message||e));}
+  finally{window._cgBusy=false; if(b){b.disabled=false;}}
 }
 function adicionarLote(){alert('“Adicionar Lote” lo construimos en el siguiente paso.');}
 async function regenerarMBR(){
@@ -9514,6 +9995,7 @@ async function load(){
       '<div class="ortit">ORDEN DE ACONDICIONAMIENTO N°: '+esc(h.numero_op||('OA-'+EBR_ID))+'</div>'+
       '<div class="prod">'+esc(h.producto||h.titulo||'·')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
       '<div style="margin:-10px 0 18px"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary-text,#6d28d9);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid var(--cx-primary-light,#a78bfa)">&#128100; '+esc((d.mi_rol&&d.mi_rol.rol)||'Usuario')+'</span></div>'+
+      bandaAprobacion(h,d.mi_rol)+
       '<div class="grid">'+
         fld('N° Lote','<span class="mono">'+esc(h.lote_codigo||'·')+'</span>')+
         fld('Unidades acondicionadas',ufmt(totUds))+
@@ -9631,6 +10113,84 @@ def legajo_acondicionamiento_page(ebr_id):
             mimetype="text/html")
     return Response(_ACOND_LEGAJO_HTML.replace("__EBR_ID__", str(ebr_id)),
                     mimetype="text/html")
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Aprobación de la ORDEN · una sola copia para las TRES fases (mig 393)
+#
+# Sebastián: *"tanto fabricación, envasado como acondicionamiento, todas inician con
+# una ORDEN; esa orden se le entrega al operario, y después empieza el proceso"*. La
+# firma es la misma en las tres, así que el JS vive UNA vez y se inyecta (M1: tres
+# copias divergen; la de acondicionamiento sería la que se quede vieja).
+# ──────────────────────────────────────────────────────────────────────────
+
+_JS_APROBACION_ORDEN = r"""
+/* Firma electrónica Part 11 (§11.100/11.200): reto con contraseña -y TOTP si el
+   usuario tiene MFA- y después la firma sobre ESTE legajo. Devuelve {signature_id}. */
+async function _firmarOrden(meaning){
+  var pwd=prompt('Firma electrónica (21 CFR Part 11) · tu contraseña para firmar:');
+  if(!pwd)return null;
+  var totp=prompt('Código MFA de 6 dígitos (si no usás MFA, dejalo vacío y aceptá):')||'';
+  try{
+    var rc=await fetch('/api/sign/challenge',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:pwd,totp_token:totp})});
+    var dc=await rc.json();
+    if(!rc.ok)return {error:(dc&&dc.error)||'Credenciales inválidas'};
+    var rs=await fetch('/api/sign',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({record_table:'ebr_ejecuciones',record_id:String(EBR_ID),meaning:meaning,challenge_token:dc.token})});
+    var ds=await rs.json();
+    if(!rs.ok)return {error:(ds&&ds.error)||'No se pudo firmar'};
+    return {signature_id:ds.signature_id};
+  }catch(e){return {error:'Error de red al firmar'};}
+}
+/* Banda de estado de la orden. Se muestra SIEMPRE (aprobada o no): que falte la
+   autorización tiene que verse en la orden que se le entrega al operario, no en un log. */
+function bandaAprobacion(h,rol){
+  h=h||{}; var ap=(h.aprobada_orden_por||'');
+  var est=(h.estado||'').toLowerCase();
+  if(ap){
+    var quien=esc(ap)+(h.aprobada_orden_rol?(' &#183; '+esc(h.aprobada_orden_rol)):'');
+    var cuando=h.aprobada_orden_at_utc?(' &#183; '+esc(String(h.aprobada_orden_at_utc).substring(0,16).replace("T"," "))):'';
+    return '<div style="display:flex;align-items:center;gap:9px;background:var(--cx-success-pale,#f0fdf4);border:1px solid var(--cx-success-light,#86efac);color:var(--cx-success-text,#166534);border-radius:11px;padding:10px 15px;margin:0 0 16px;font-size:13px">'+
+      '<span style="font-size:15px">&#10003;</span><div><b>Orden aprobada para arrancar</b> &#183; '+quien+cuando+'</div></div>';
+  }
+  var puede=!!(rol&&rol.puede_ejecutar)&&est!=='liberado'&&est!=='rechazado';
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--cx-warn-pale,#fffbeb);border:1px solid var(--cx-warn-light,#fcd34d);color:var(--cx-warn-text,#b45309);border-radius:11px;padding:10px 15px;margin:0 0 16px;font-size:13px">'+
+    '<div style="display:flex;align-items:center;gap:9px"><span style="font-size:15px">&#9888;</span>'+
+    '<div><b>Orden sin aprobar</b> &#183; nadie autorizó todavía que este lote arranque</div></div>'+
+    (puede?'<button onclick="aprobarOrden()" style="padding:7px 15px;border:0;background:var(--cx-primary,#7c3aed);color:#fff;border-radius:8px;cursor:pointer;font-weight:700;font-size:12.5px;white-space:nowrap">&#9998; Aprobar orden</button>':'')+
+  '</div>';
+}
+async function aprobarOrden(){
+  if(window._apBusy)return; window._apBusy=true;                 /* doble-click = doble firma */
+  try{
+    if(!confirm('Vas a APROBAR esta orden para que arranque. Queda firmada con tu identidad y auditada (21 CFR Part 11). ¿Confirmás?')){return;}
+    var f=await _firmarOrden('aprueba_orden');
+    if(!f)return;
+    if(f.error){alert('No se pudo firmar: '+f.error);return;}
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/aprobar-orden',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({signature_id:f.signature_id})});
+    var dd=await r.json();
+    if(!r.ok||!dd.ok){alert('No se pudo aprobar: '+((dd&&dd.error)||r.status));return;}
+    load();
+  }catch(e){alert('Error: '+(e.message||e));}
+  finally{window._apBusy=false;}
+}
+"""
+
+
+def _inyectar_aprobacion_orden(nombre, plantilla):
+    """Mete el bloque compartido al FINAL del último <script> de la página.
+
+    El assert no es decoración: un `.replace`/`rfind` que no matchea no falla, deja el
+    original y la pantalla queda con un botón que llama a una función inexistente
+    (M96/M111/M112 · es exactamente así como se desplegó Marketing con los modales
+    borrados y los botones vivos)."""
+    i = plantilla.rfind("</script>")
+    assert i > 0, "no encontré el <script> principal de " + nombre
+    return plantilla[:i] + _JS_APROBACION_ORDEN + plantilla[i:]
+
+
+_ORDEN_DETALLE_HTML = _inyectar_aprobacion_orden("_ORDEN_DETALLE_HTML", _ORDEN_DETALLE_HTML)
+_ENVASADO_LEGAJO_HTML = _inyectar_aprobacion_orden("_ENVASADO_LEGAJO_HTML", _ENVASADO_LEGAJO_HTML)
+_ACOND_LEGAJO_HTML = _inyectar_aprobacion_orden("_ACOND_LEGAJO_HTML", _ACOND_LEGAJO_HTML)
 
 
 _INSTRUCCIONES_ENVASADO_HTML = """<!DOCTYPE html>

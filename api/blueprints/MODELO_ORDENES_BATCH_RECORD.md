@@ -101,6 +101,68 @@ datos regulados, que es donde reescribir es más caro.
 | 7 | Aprobación de artes / codificación | **YA ESTÁ** | `ebr_artes_codificacion` (mig 211) + gate que bloquea liberar sin arte aprobada |
 | 8 | Observaciones del proceso con fecha y hora | **YA ESTÁ** | `ebr_observaciones` (`descripcion`, `registrado_por`, `registrado_at_utc`) |
 
+---
+
+## El mapa REAL de MyBatch (28-jul · leído del sistema, no de capturas)
+
+Sebastián dio acceso al MyBatch de Espagiria. La ruta `/filling/` devuelve el 404 de Django con
+**el mapa completo de URLs**, así que la arquitectura se leyó entera sin hacer un solo click
+dentro de un registro regulado.
+
+**Las tres fases tienen exactamente la misma forma.** Eso es lo importante: no son tres flujos
+distintos, es un patrón repetido.
+
+| Paso | Fabricación `productionorder` | Envasado `filling` | Acondicionamiento `packing` |
+|---|---|---|---|
+| Crear la orden | `add/` | `add/` · `add_bulk/` | `add/` |
+| Aprobar la orden | `approval/<pk>` | `approved/<pk>` | `approved/<pk>` **+ `approved_quality/<pk>`** |
+| **Agregar un lote** | — (1 OP = 1 lote) | `add_batch/<pk>` | `add_batch/<pk>` |
+| Material **de la orden** | `add_mp/<pk>` | `add_material/<pk>` | `add_pack/<pk>` |
+| **Recibir** material (por lote) | `register_reception_material/<pk>` | `material_received/<pk>` | `material_received/<pk>` |
+| **Verificar** lo recibido | `verified_reception_material/<pk>` | `material_verified/<pk>` | `material_verified/<pk>` |
+| Devolver material | — | `returned_material/<pk>` | `material_returned/<pk>` |
+| Corregir la devolución | — | `correction_returned_material/<pk>` | `material_returned_correction/<pk>` |
+| Poner en proceso | `in_process/<pk>` | `in_process_batch/<pk>` | `in_process/<pk>` |
+| Unidades finales | — | `batch_unit_end/<pk>` | `batch_units_end/<pk>` |
+| Liberar | `release_qa/` · `release_mfg/` | — | `batch_approved/` · `mass_release/` |
+| PDF | `pdf/<pk>` | `pdf/<pk>` | `pdf/<pk>` |
+
+### Lo que confirma (y ya no hace falta suponer)
+
+1. **La ORDEN es un objeto propio en las tres fases**, con su `detail`, `update`, `pdf` y su
+   aprobación. No es una etiqueta del legajo.
+2. **`add_batch/<pk>` existe en envasado y acondicionamiento**: una orden agrupa N lotes.
+   En fabricación NO existe — una OP es un lote. Por eso el botón "Adicionar lote" sólo
+   aparece en las dos últimas fases.
+3. **Acondicionamiento tiene DOS aprobaciones separadas**: `approved` (producción) y
+   `approved_quality` (calidad). Coincide con la captura de la OA-2026-102, que muestra
+   "Supervisado por: Jefe de producción" **y** "Aprobado por: Laura González, Jefe de calidad".
+4. **El material se define en la ORDEN y se recibe en el LOTE** — que es exactamente el modelo
+   que se implementó el 28-jul (`recibida` / `recibido_por` por lote). Lo que falta es el paso
+   siguiente: **`material_verified`**, la segunda firma sobre lo recibido.
+
+### Lo que apareció y no estaba en el radar
+
+- `filling/density_bulk/<pk>` — la densidad se registra como una **acción sobre la orden**, no
+  como un campo suelto.
+- `filling/remainder/<pk>` — el **remanente** de granel: lo que sobró sin envasar.
+- `productionorder/add_premix`, `list_premix`, `discount_premix` — **premezclas** como objeto
+  propio, con descuento de inventario.
+- `productionorder/adjust_mopo*` — ajustar la orden **con aprobación** (`adjust_mopo_approved`).
+- `productionorder/register_weight` · `verified_weight` · `comment_weight` · `weight_pdf` —
+  pesaje con **verificación**, comentario y rótulo imprimible.
+- `productionorder/correction_lot_size` — corregir el tamaño de lote (con su variante líquidos).
+- `productionorder/add_equipment_mfg` — equipos asignados a la orden.
+- `packing/generate-barcode-pdf` · `ticket/print` — **tickets de código de barras**.
+- `packing/mass_release` — liberación masiva de lotes de acondicionamiento.
+- Módulos **compartidos** por las tres fases: `lineclearance` (despejes), `precautions`,
+  `instructions`, `controlprocess`. En EOS esas piezas están adentro del EBR; en MyBatch son
+  módulos propios que las tres fases consumen.
+- `operationsrecord`, `changecontrol`, `assurance`, `audit`, `document`.
+
+⚠ **Este mapa dice QUÉ existe, no que todo haga falta.** Antes de construir cualquiera de
+estos, se mide contra EOS (M28): la mitad ya está.
+
 ### Lo único grande que falta, y por qué no se construyó solo
 
 **La ORDEN como objeto propio.** Hoy EOS modela el legajo por LOTE; MyBatch modela una orden

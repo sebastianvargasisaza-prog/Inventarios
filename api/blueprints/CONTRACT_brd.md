@@ -375,3 +375,69 @@ mezcla. Tests: `tests/test_instructivo_por_fase.py` (en el gate · verificados 3
 ⚠ Los pasos genéricos de envasado (5) y acondicionamiento (3) que siembra
 `_generar_mbr_desde_formula` son iguales para TODO producto. Sirven de esqueleto; el instructivo
 real por producto (o por familia) entra por este endpoint.
+
+---
+
+## INV-12 · La ORDEN se aprueba antes de arrancar (mig 393)
+
+Sebastián (28-jul, describiendo MyBatch): *"tanto fabricación, envasado como acondicionamiento,
+todas inician con una ORDEN; esa orden se le entrega al operario, y después empieza el proceso"*.
+
+El legajo ya guardaba quién lo **inició**, quién lo **liberó** y el visto bueno final del Director
+Técnico (mig 286) — pero no quién **autorizó que empezara**. En MyBatch esa firma es propia de la
+orden (`approved/<pk>`), y en acondicionamiento son dos (`approved` de producción y
+`approved_quality` de calidad), lo que coincide con la OA-2026-102 real: *"Supervisado por: Jefe de
+producción"* **y** *"Aprobado por: Laura González, Jefe de calidad"*.
+
+- `POST /api/brd/ebr/<id>/aprobar-orden` · e-firma `meaning='aprueba_orden'` validada contra
+  `e_signatures` (este legajo, este usuario), CAS sobre `aprobada_orden_por` (no se aprueba dos
+  veces), `audit_log`. Guarda además el **rol** con el que se firmó: sin eso, en acondicionamiento
+  las dos firmas serían indistinguibles.
+- El gate vive **dentro de `_require_brd_ejecutor`** (default-deny), no pegado endpoint por
+  endpoint: así todo endpoint de ejecución —incluidos los que se escriban después— lo hereda sin
+  que nadie se acuerde (M45). Lo que se enumera es lo **exento**: `_APROBACION_ORDEN_EXENTOS`,
+  que es la aprobación misma más lo que **documenta o corrige** (bitácora, correcciones, registros
+  físicos, precauciones, conciliación de granel, visto bueno del DT). Un registro regulado no se
+  puede quedar sin anotar por un permiso administrativo.
+- **Toggle `app_settings.exigir_aprobacion_orden`, default `0`** → NO-OP TOTAL (M68: un beta que
+  igual bloquea en un caso es una traba fantasma esperando a aparecer). Se enciende desde
+  `/admin/seguridad-planta`, con efecto inmediato y auditado.
+- La banda de estado se pinta en las **tres** páginas de orden desde una sola copia del JS
+  (`_JS_APROBACION_ORDEN`, inyectado con assert): tres copias divergen y la de acondicionamiento
+  sería la que quede vieja.
+
+⚠ **`aprueba_dt` faltaba en `firmas.VALID_MEANINGS` desde que se creó (mig 286, 25-jun).** La
+pantalla firmaba con ese meaning y `/api/sign` devolvía 400 → **el visto bueno del Director Técnico
+nunca se pudo dar desde la UI**. El backend que lo valida estaba bien; el hueco vivía en la
+whitelist del firmador. Fijado en `test_aprobacion_orden.py`.
+
+Tests: `tests/test_aprobacion_orden.py` (en el gate).
+
+## INV-13 · Conciliación del granel en el envasado (mig 392)
+
+    granel disponible (mL) = envasado (Σ unidades × mL) + remanente + diferencia sin explicar
+
+Es la pregunta que hace una auditoría INVIMA y que el legajo no contestaba: en la **OF-2026-77**
+entraron 12.658,95 mL y se envasaron 100 unidades de 10 mL = 1.000 mL; los otros **11.658,95 mL**
+no los explicaba ningún registro. Puede ser perfectamente legítimo (queda granel para otra orden),
+pero eso hay que **escribirlo**.
+
+- Resolver canónico único: `_conciliacion_granel(conn, ebr_id, header=None)` (M1). Lo consumen la
+  vista (`vista-completa` → `conciliacion_granel`) y el PDF; no hay una segunda cuenta que pueda
+  divergir de la que se muestra (M5).
+- **Todo se DERIVA salvo el remanente** (M71): lo único que hay que ir a medir. Se captura en
+  **gramos**, que es como se pesa en piso, y los mL salen de `densidad_g_ml` — igual que el granel
+  de entrada. Sin densidad **no se inventa la conversión**: se declara `falta_densidad` (M109).
+- `cuadra` sólo puede ser `True` con la cuenta **completa** (remanente declarado, densidad, y
+  ninguna presentación sin volumen). Sin remanente, un 0 de diferencia sería casualidad, no
+  conciliación.
+- `POST /api/brd/ebr/<id>/remanente-granel` · destino contra whitelist (`_REMANENTE_DESTINOS`; el
+  texto libre va en observaciones, que es donde no rompe una agrupación · M115), rechaza la
+  contradicción "no quedó remanente" + peso > 0, CAS contra liberado/rechazado, `audit_log` con la
+  diferencia declarada.
+- **Va en el PDF** (sección 4c-bis). Un bloque que sólo vive en la pantalla no es un registro: el
+  legajo que se archiva es el que ve la auditoría.
+- Tolerancia en `app_settings.conciliacion_granel_tolerancia_pct` (default 2%), porque el %
+  razonable depende del producto — no es una constante de dominio.
+
+Tests: `tests/test_conciliacion_granel.py` (en el gate).

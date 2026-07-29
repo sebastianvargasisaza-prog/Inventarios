@@ -140,6 +140,14 @@ CORAZON=(
   # si llegan 95 de 100 la conciliacion cierra igual y el faltante se lo come "utilizada":
   # el reclamo al proveedor y la merma real quedan indistinguibles.
   "tests/test_envase_material_recibido.py"
+  # Conciliacion del granel: el bulk que entro a la orden tiene que terminar EXPLICADO
+  # (envasado + remanente + diferencia). En la OF-2026-77 entraron 12.658,95 mL, salieron
+  # 1.000 envasados y los otros 11.658,95 no los explicaba ningun registro del legajo.
+  "tests/test_conciliacion_granel.py"
+  # La ORDEN se aprueba antes de arrancar (firma Part 11) + el gate default-deny que
+  # heredan todos los endpoints de ejecucion. Incluye el guard de que 'aprueba_dt' siga
+  # en la whitelist del firmador: faltaba, y por eso esa firma nunca se pudo dar.
+  "tests/test_aprobacion_orden.py"
 )
 
 echo ""
