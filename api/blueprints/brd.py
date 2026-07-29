@@ -10008,12 +10008,72 @@ table.t tfoot td{font-weight:800;color:var(--cx-text,#18181b);border-top:2px sol
 .ab{width:32px;height:32px;border-radius:8px;border:none;cursor:pointer;color:#fff;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;transition:filter .15s ease}.ab:hover{filter:brightness(1.08)}
 .ab-play{background:var(--cx-success,#15803d)}.ab-plus{background:var(--cx-primary,#6d28d9)}.ab-x{background:var(--cx-danger,#dc2626)}.ab-ed{background:var(--cx-warn,#f59e0b)}.ab-ed2{background:var(--cx-success,#15803d)}.ab-i{background:var(--cx-info,#2563eb)}
 @media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}}
+
+/* ── Instrucciones de Envasado EMBEBIDAS · CSS encapsulado bajo .ie-emb para que
+   no pise al legajo: las dos pantallas comparten 18 clases y 6 estan definidas
+   distinto (.grid 4 vs 5 columnas, .bt otro padding). ── */
+.ie-emb{margin-top:4px}
+.ie-emb{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.ie-emb .wrap{max-width:1180px;margin:0 auto}
+.ie-emb .card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f1f4);border-radius:14px;padding:28px 32px;box-shadow:0 1px 3px rgba(24,24,27,.04),0 8px 24px -14px rgba(24,24,27,.10);margin-bottom:18px}
+.ie-emb a.back{color:var(--cx-primary-text,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
+.ie-emb .htop{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.ie-emb .htit{font-size:25px;font-weight:800;color:var(--cx-text,#18181b);letter-spacing:-.4px}
+.ie-emb .btns{display:flex;gap:10px;flex-wrap:wrap}
+.ie-emb .bt{padding:10px 16px;border-radius:10px;font-size:12px;font-weight:600;border:1px solid var(--cx-border,#e6e6ea);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:var(--cx-bg-alt,#fbfbfd);color:var(--cx-text-soft,#3f3f46);transition:all .15s ease}
+.ie-emb .bt:hover{border-color:var(--cx-primary,#6d28d9);color:var(--cx-primary-text,#6d28d9)}
+.ie-emb .bt-up{background:var(--cx-primary,#6d28d9);color:#fff;border-color:transparent}
+.ie-emb .bt-up:hover{background:var(--cx-primary-dark,#4c1d95);color:#fff}
+.ie-emb .subl{font-size:16px;color:var(--cx-text-soft,#3f3f46);font-weight:600;margin:2px 0 4px}
+.ie-emb .prod{font-size:17px;color:var(--cx-text,#18181b);font-weight:700;margin-bottom:22px}
+.ie-emb .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:20px}
+.ie-emb .lbl{font-size:12.5px;font-weight:700;color:var(--cx-text-soft,#3f3f46);margin-bottom:5px}
+.ie-emb .val{font-size:13.5px;color:var(--cx-text-mute,#71717a);line-height:1.45}
+.ie-emb .sectit{font-size:18px;font-weight:800;color:var(--cx-text,#18181b);letter-spacing:-.2px;margin:0 0 12px}
+.ie-emb .muted{color:var(--cx-text-faint,#a1a1aa)}
+.ie-emb .npaso{display:inline-block;min-width:20px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--cx-text-mute,#6b6b74)}
+.ie-emb .hist{font-size:11px;font-weight:700;color:var(--cx-warn-text,#b45309);background:var(--cx-warn-pale,#fffbeb);padding:2px 7px;border-radius:999px;white-space:nowrap}
+.ie-emb .fila-hist td{opacity:.72}
+.ie-emb .mono{font-family:var(--cx-font-mono,ui-monospace,monospace)}
+.ie-emb .sechead{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;margin-bottom:6px}
+.ie-emb .sechead .sectit{margin:0}
+.ie-emb .sechint{font-size:13.5px;color:var(--cx-text-mute,#71717a);margin:6px 0 14px;line-height:1.5}
+.ie-emb .btreg{padding:9px 15px;border-radius:9px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--cx-primary,#6d28d9);color:#fff;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+.ie-emb .btreg:hover{background:var(--cx-primary-dark,#4c1d95)}
+.ie-emb .tw{overflow-x:auto}
+.ie-emb table.t{width:100%;border-collapse:collapse;font-size:13.5px}
+.ie-emb table.t th, .ie-emb table.t td{padding:12px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--cx-border-soft,#f1f1f4)}
+.ie-emb table.t thead th{color:var(--cx-text-mute,#71717a);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;border-bottom:1px solid var(--cx-border,#e6e6ea)}
+.ie-emb table.t tbody td{color:var(--cx-text-soft,#3f3f46)}
+.ie-emb table.t tbody tr:hover td{background:var(--cx-primary-pale,#f5f3ff)}
+.ie-emb .regfoot{color:var(--cx-text-faint,#a1a1aa);font-size:12.5px;margin-top:14px}
+.ie-emb .ok{color:var(--cx-success-text,#15803d);font-weight:700}
+.ie-emb .no{color:var(--cx-danger-text,#dc2626);font-weight:700}
+.ie-emb .pend{color:var(--cx-text-faint,#a1a1aa)}
+.ie-emb .bdg{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px}
+.ie-emb .bdg-ok{background:var(--cx-success-pale,#f0fdf4);color:var(--cx-success-text,#15803d)}
+.ie-emb .bdg-no{background:var(--cx-danger-pale,#fef2f2);color:var(--cx-danger-text,#dc2626)}
+.ie-emb .pasonum{font-weight:700;color:var(--cx-primary-text,#6d28d9);margin-right:5px}
+.ie-emb .act{display:inline-flex;gap:6px}
+.ie-emb .ab{width:30px;height:30px;border-radius:7px;border:none;cursor:pointer;color:#fff;font-size:13px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;transition:filter .15s ease}
+.ie-emb .ab:hover{filter:brightness(1.08)}
+.ie-emb .ab-i{background:var(--cx-info,#2563eb)}
+.ie-emb .ab-ed{background:var(--cx-warn,#f59e0b)}
+.ie-emb .ab-pdf{background:var(--cx-danger,#dc2626)}
+.ie-emb .grid{grid-template-columns:repeat(2,1fr)}
 </style></head>
 <body>
 <div class="wrap">
   <a class="back" href="/inventarios#envasado">&larr; Envasado</a>
   <div class="card" id="cab"><div class="muted">Cargando…</div></div>
   <div id="cuerpo"></div>
+<div id="seccion-instrucciones" class="ie-emb">
+<div class="wrap">
+  <a class="back" href="/planta/legajo-envasado/__EBR_ID__">&larr; Orden de Envasado</a>
+  <div class="card" id="ie_cab"><div class="muted">Cargando…</div></div>
+  <div id="ie_cuerpo"></div>
+</div>
+</div>
 </div>
 <script>
 var EBR_ID=__EBR_ID__;
@@ -10050,7 +10110,7 @@ async function load(){
         fld('Supervisado por',esc(h.supervisado_por||'·'))+
       '</div>'+
       '<div class="btnrow">'+
-        '<a class="bt bt-add" href="/planta/instrucciones-envasado/'+EBR_ID+'">&#9654; Instrucciones de Envasado</a>'+
+        '<a class="bt bt-add" href="#seccion-instrucciones">&#9654; Ir a las Instrucciones</a>'+
         ((d.mi_rol&&d.mi_rol.puede_ejecutar&&(estado==='iniciado'||estado==='en_proceso'))?'<button class="bt bt-pdf" onclick="terminarLote()" title="Operario: termina el lote (cantidad real · todos los pasos completos)">&#10003; Terminar lote</button>':'')+
         ((d.mi_rol&&d.mi_rol.puede_liberar&&(estado==='completado'||estado==='en_revision_qc'))?'<button class="bt bt-add" onclick="liberarLote()" style="background:var(--cx-success,#15803d)" title="Calidad/Aseguramiento: libera el lote con e-firma (cierra el batch record)">&#128275; Liberar lote</button>':'')+
         '<button class="bt bt-pdf" onclick="adicionarLote()">+ Adicionar Lote</button>'+
@@ -10393,6 +10453,164 @@ async function borrarPres(id){
 }
 function prox(){alert('Esta acción la construimos en el siguiente paso.');}
 load();
+
+/* ── Instrucciones de Envasado embebidas · sus 5 funciones que chocaban
+   (esc/estCol/fld/load/prox) van con prefijo ie_ · se RENOMBRAN y no se
+   borran porque no son identicas: su estCol trata completado distinto. ── */
+
+function ie_esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function dt(s){return s?ie_esc(String(s).substring(0,16).replace('T',' ')):'·';}
+function ie_estCol(e){e=(e||'').toLowerCase();if(e.indexOf('aprob')>=0||e.indexOf('liber')>=0||e.indexOf('complet')>=0)return '#166534';if(e.indexOf('proceso')>=0)return '#0d9488';if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)return '#b91c1c';return '#475569';}
+function ie_fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
+async function ie_load(){
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok){document.getElementById('ie_cab').innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">Error: '+ie_esc(d.error||r.status)+'</span>';return;}
+    var h=d.header||{};
+    var estado=h.estado||'·';
+    var pres=d.envasado_presentaciones||[];
+    var uds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
+    document.getElementById('ie_cab').innerHTML=
+      '<div class="htop">'+
+        '<div><div class="htit">INSTRUCCIONES DE ENVASADO</div>'+
+          '<div style="margin-top:7px"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary-text,#6d28d9);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid var(--cx-primary-light,#a78bfa)">&#128100; '+ie_esc((d.mi_rol&&d.mi_rol.rol)||'Usuario')+'</span></div></div>'+
+        '<div class="btns">'+
+          '<a class="bt bt-tl" href="/brd/timeline/'+EBR_ID+'">&#9198; Timeline Batch Record</a>'+
+          '<a class="bt bt-oe" href="/planta/legajo-envasado/'+EBR_ID+'">&#128196; Orden de Envase</a>'+
+          '<a class="bt bt-dl" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
+          '<button class="bt bt-up" onclick="location.reload()">&#8635; Actualizar</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="subl">'+ie_esc(h.numero_op||('OF-'+EBR_ID))+'. Lote N°: '+ie_esc(h.lote_codigo||'·')+'</div>'+
+      '<div class="prod">'+ie_esc(h.producto||h.titulo||'·')+(pres.length&&pres[0].presentacion?(', '+ie_esc(pres[0].presentacion)):'')+'</div>'+
+      '<div class="grid">'+
+        ie_fld('Programado por',ie_esc(h.operario||'·'))+
+        ie_fld('Unidades',uds?uds.toLocaleString('es-CO'):'·')+
+        ie_fld('N° de Lote Bulk','<span style="font-family:ui-monospace,monospace">'+ie_esc(h.lote_codigo||'·')+'</span>')+
+        ie_fld('Fecha Inicio',dt(h.iniciado_at_utc))+
+        ie_fld('Fecha Final',dt(h.completado_at_utc))+
+        ie_fld('Estado Actual','<b style="color:'+ie_estCol(estado)+'">'+ie_esc(estado)+'</b>')+
+      '</div>';
+    var editable=(estado==='iniciado'||estado==='en_proceso') && !!(d.mi_rol && d.mi_rol.puede_ejecutar);
+    function cumpleCell(c){if(c===1)return '<span class="ok">Sí &#10003;</span>';if(c===0)return '<span class="no">No &#10007;</span>';return '<span class="pend">Pendiente</span>';}
+    function regBtn(t){return editable?('<button class="btreg" onclick="ie_prox()">+ '+t+'</button>'):'';}
+    function abI(){return '<button class="ab ab-i" onclick="ie_prox()" title="Detalle">i</button>';}
+    function abEd(){return editable?'<button class="ab ab-ed" onclick="ie_prox()" title="Registrar">&#9998;</button>':'';}
+    function bdgC(c){if(c===1)return ' <span class="bdg bdg-ok">Cumple</span>';if(c===0)return ' <span class="bdg bdg-no">No cumple</span>';return '';}
+    var html='';
+    // Leyenda de responsabilidades (segregación de funciones GMP · diseño por roles).
+    html+='<div class="card" style="padding:15px 20px"><div style="font-size:13px;color:var(--cx-text-soft,#3f3f46);line-height:1.7">'+
+      '<b>Responsabilidades:</b> &nbsp;'+
+      '<span style="color:var(--cx-primary-text,#6d28d9);font-weight:800">●</span> <b>Operario</b> ejecuta y registra (precauciones, despeje, recepción, envasado). &nbsp;'+
+      '<span style="color:var(--cx-success-text,#15803d);font-weight:800">●</span> <b>Calidad / Aseguramiento</b> verifica los controles, corrige resultados y <b>libera el lote</b>. &nbsp;'+
+      '<span style="color:var(--cx-warn-text,#f59e0b);font-weight:800">●</span> <b>Dirección Técnica</b> aprueba el MBR.'+
+      '</div></div>';
+    var prec=d.precauciones||[];
+    html+='<div class="card"><div class="sectit">1. Precauciones</div>'+
+      '<div class="sechint">Tenga en cuenta las siguientes precauciones antes de iniciar el proceso de envasado:</div>'+
+      (prec.length?('<ul style="margin:0;padding-left:18px;color:var(--cx-text-soft);font-size:13.5px;line-height:1.95">'+prec.map(function(p){return '<li><b>'+(p.tipo==='equipo'?'&#128296; Equipo':'&#9888; Precaución')+':</b> '+ie_esc(p.descripcion||'')+'</li>';}).join('')+'</ul>'):'<div class="muted">Sin precauciones registradas (se definen en el MBR).</div>')+
+      '</div>';
+    var dch=d.despeje_checklist||[]; window._dch=dch;
+    html+='<div class="card"><div class="sectit">2. Despejes de Línea</div>'+
+      '<div class="sechint">Realizar despeje en el área de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'+
+      (dch.length?('<div class="tw"><table class="t"><thead><tr><th>Verificación</th><th>Cumple</th><th>Acciones</th></tr></thead><tbody>'+
+        dch.map(function(it,n){
+          // un item RETIRADO del procedimiento (registrado antes del cambio) se sigue mostrando:
+          // un registro regulado no desaparece porque el procedimiento cambie despues. Se marca y
+          // no se puede registrar de nuevo.
+          var marca = it.historico ? ' <span class="hist">retirado del procedimiento</span>' : '';
+          var acciones = '<button class="ab ab-i" onclick="infoDespeje('+it.idx+')" title="Detalle">i</button>'
+            + ((editable && !it.historico) ? '<button class="ab ab-ed" onclick="regDespeje('+it.idx+')" title="Registrar verificación">&#9998;</button>' : '');
+          return '<tr'+(it.historico?' class="fila-hist"':'')+'><td><span class="npaso">'+(it.historico?'·':(n+1))+'</span> '+ie_esc(it.texto||'')+marca+'</td><td>'+cumpleCell(it.cumple)+'</td><td><div class="act">'+acciones+'</div></td></tr>';
+        }).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin verificaciones de despeje (se definen en el MBR).</div>')+
+      '</div>';
+    var mats=d.envasado_materiales||[];
+    html+='<div class="card"><div class="sectit">3. Recepción de Material de Envase</div>'+
+      '<div class="sechint">Verificar contra la orden de envasado y la etiqueta o rótulo de identificación de los siguientes materiales de envase:</div>'+
+      '<div class="tw"><table class="t"><thead><tr><th>Material</th><th>N° lote</th><th>Cant. requerida</th><th>Cant. recibida</th><th>Acciones</th></tr></thead><tbody>'+
+      (mats.length?mats.map(function(m){return '<tr><td>'+ie_esc(m.material||'·')+'</td><td class="mono">'+ie_esc(m.lote_material||m.lote_envasado||'·')+'</td><td>'+(m.requerida!=null?Number(m.requerida).toLocaleString('es-CO'):'')+'</td><td>'+(m.recibida!=null?Number(m.recibida).toLocaleString('es-CO'):'<span class="pend">pendiente</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')
+        :'<tr><td colspan="5" class="muted" style="text-align:center">Sin materiales registrados.</td></tr>')+
+      '</tbody></table></div>'+
+      '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
+    var pasos=d.pasos||[]; window._pasos=pasos;
+    html+='<div class="card"><div class="sechead"><div class="sectit">4. Envasado</div>'+(editable?'<button class="btreg" onclick="registrarActividades()">&#10003; Registrar Actividades</button>':'')+'</div>'+
+      '<div class="sechint">Realizar las siguientes actividades de acuerdo al orden establecido:</div>'+
+      (pasos.length?('<div class="tw"><table class="t"><thead><tr><th>Actividad</th><th>Realizado por</th><th>Verificado por</th><th>Acciones</th></tr></thead><tbody>'+
+        pasos.map(function(p,i){var ts=p.completado?('<br><span class="muted" style="font-size:11.5px">'+dt(p.completado)+'</span>'):'';return '<tr><td><span class="pasonum">Paso '+(i+1)+'.</span>'+ie_esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?(ie_esc(p.realizado_por_full)+ts):'<span class="pend">·</span>')+'</td><td>'+(p.verificado_por_full?(ie_esc(p.verificado_por_full)+ts):'<span class="pend">·</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin pasos de envasado (se definen en el MBR).</div>')+
+      '</div>';
+    var ipc=d.ipc||[];
+    html+='<div class="card"><div class="sechead"><div class="sectit">5. Controles en Proceso</div>'+(editable?'<button class="btreg" onclick="ie_prox()">+ Control de Volumen</button>':'')+'</div>'+
+      '<div class="sechint">Realizar muestreo y registrar control en proceso:</div>'+
+      (ipc.length?('<div class="tw"><table class="t"><thead><tr><th>Control</th><th>Resultado</th><th>Observaciones</th><th>Realizado por</th><th>Acciones</th></tr></thead><tbody>'+
+        ipc.map(function(c){var res=c.conforme===2?'<span class="bdg" style="background:var(--cx-bg-alt);color:var(--cx-text-mute)">No aplica</span>':(c.resultado?(ie_esc(c.resultado)+bdgC(c.conforme)):'<span class="pend">pendiente</span>');return '<tr><td>'+ie_esc(c.control||'')+(c.rango?' <span class="muted" style="font-size:11px">('+ie_esc(c.rango)+')</span>':'')+'</td><td>'+res+'</td><td>'+ie_esc(c.observaciones||'No aplica')+'</td><td>'+(c.realizado_por?ie_esc(c.realizado_por_full||c.realizado_por):'<span class="pend">·</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin controles en proceso (se definen en el MBR).</div>')+
+      '</div>';
+    var obs=d.observaciones_proceso||[];
+    html+='<div class="card"><div class="sechead"><div class="sectit">6. Observaciones Generales del Proceso</div>'+regBtn('Registrar')+'</div>'+
+      (obs.length?('<div class="tw"><table class="t"><thead><tr><th>Descripción de la observación</th><th>Realizada por</th><th>Fecha y hora</th></tr></thead><tbody>'+
+        obs.map(function(o){return '<tr><td>'+ie_esc(o.descripcion||'')+'</td><td>'+ie_esc(o.registrado_por_full||o.registrado_por||'·')+'</td><td class="muted">'+dt(o.fecha)+'</td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin observaciones registradas.</div>')+
+      '</div>';
+    var regs=d.registros_fisicos||[];
+    html+='<div class="card"><div class="sectit">7. Registros Físicos del Proceso de Envasado</div>'+
+      (regs.length?('<div class="tw"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th>Documento</th></tr></thead><tbody>'+
+        regs.map(function(g){return '<tr><td class="mono">'+ie_esc(g.id)+'</td><td>'+ie_esc(g.descripcion||'')+'</td><td>'+(g.tiene_pdf?('<a class="ab ab-pdf" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" title="Ver">&#128196;</a>'):'<span class="pend">·</span>')+'</td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin registros físicos adjuntos.</div>')+
+      '</div>';
+    document.getElementById('ie_cuerpo').innerHTML=html;
+  }catch(e){document.getElementById('ie_cab').innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">Error de red: '+ie_esc(e.message)+'</span>';}
+}
+function ie_prox(){alert('Esta acción la construimos en el siguiente paso.');}
+async function regDespeje(idx){
+  // Registrar la verificación de despeje (operario) · Cumple Sí/No + observación.
+  // Mismo endpoint GMP que producción (e-firma/audit en el backend).
+  var it=(window._dch||[]).find(function(x){return x.idx===idx;}); if(!it)return;
+  var esCorr=(it.cumple!=null);
+  var titulo=esCorr?'CORREGIR RESULTADO (solo Calidad / Dirección Técnica)':'REGISTRAR VERIFICACIÓN (operario)';
+  var c=confirm(titulo+'\\n\\n'+it.texto+'\\n\\n¿CUMPLE? (Aceptar = Sí · Cancelar = No)');
+  var obs=prompt('Observación'+(esCorr?' / motivo de la corrección':' (opcional)')+':', it.observaciones||'')||'';
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({item_idx:idx,cumple:c?1:0,observaciones:obs,etapa:'dispensacion'})});
+    var d=await r.json();
+    if(!r.ok){alert((r.status===403?'🔒 ':'Error: ')+(d.error||r.status));return;}
+    ie_load();
+  }catch(e){alert('Error de red: '+(e.message||e));}
+}
+function infoDespeje(idx){
+  var it=(window._dch||[]).find(function(x){return x.idx===idx;}); if(!it)return;
+  var res=it.cumple===1?'Sí cumple':(it.cumple===0?'No cumple':'Pendiente');
+  alert('VERIFICACIÓN DE DESPEJE\\n\\n'+it.texto+'\\n\\nResultado: '+res+(it.observaciones?('\\nObservación: '+it.observaciones):'')+(it.registrado_por?('\\nRegistrado por: '+it.registrado_por):''));
+}
+function infoPaso(orden){
+  // Detalles de la Verificación (sección 4 · read-only). Numera 1..N dentro de la fase.
+  var pasos=(window._pasos||[]);
+  var i=pasos.findIndex(function(x){return x.orden===orden;}); if(i<0)return;
+  var p=pasos[i];
+  var est=p.completado_flag?'Completado':(p.iniciado?'En proceso':'Pendiente');
+  alert('DETALLES DE LA VERIFICACIÓN\\n\\nPaso '+(i+1)+': '+p.descripcion+'\\n\\nEstado: '+est+'\\nRealizado por: '+(p.realizado_por_full||'·')+'\\nVerificado por: '+(p.verificado_por_full||'·')+(p.observaciones?('\\nObservaciones: '+p.observaciones):''));
+}
+async function registrarActividades(){
+  // Registra (completa) la siguiente actividad pendiente · endpoint GMP con audit/e-firma.
+  var pend=(window._pasos||[]).filter(function(p){return !p.completado_flag;});
+  if(!pend.length){alert('Todas las actividades ya están registradas.');return;}
+  var p=pend[0];
+  var _i=(window._pasos||[]).findIndex(function(x){return x.orden===p.orden;});
+  var obs=prompt('Registrar Paso '+(_i+1)+':\\n'+p.descripcion+'\\n\\nResultado / observación:', p.observaciones||'');
+  if(obs===null)return;
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/pasos/'+p.orden+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({observaciones:obs||''})});
+    var d=await r.json();
+    if(!r.ok){alert((r.status===403?'🔒 ':'Error: ')+(d.error||r.status));return;}
+    ie_load();
+  }catch(e){alert('Error de red: '+(e.message||e));}
+}
+ie_load();
+
+ie_load();
 </script>
 </body></html>"""
 

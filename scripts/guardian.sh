@@ -157,6 +157,11 @@ CORAZON=(
   # El test que mas importa es el ADITIVO: un legajo SIN orden madre (todos los anteriores
   # a la mig 395) tiene que seguir abriendo y ejecutando exactamente igual.
   "tests/test_orden_produccion.py"
+  # El legajo de envasado es UNA vista continua (las 7 secciones seguidas, como MyBatch).
+  # Unir dos pantallas que comparten 18 clases CSS -6 definidas DISTINTO- se rompe en
+  # silencio: una seccion que desaparece, una funcion que se pisa, un boton que apunta
+  # a la nada. Nada de eso lanza un error ni lo caza el node-check.
+  "tests/test_legajo_vista_continua.py"
 )
 
 echo ""
