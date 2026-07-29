@@ -10690,6 +10690,41 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_ebr_ejec_orden ON ebr_ejecuciones(orden_id)",
         "CREATE INDEX IF NOT EXISTS idx_ordenes_prod_fase_estado ON ordenes_produccion(fase, estado)",
     ]),
+    (396, "CERRAR EL CICLO DEL KARDEX dentro del lote (Sebastián 29-jul). El kardex no sabía "
+          "lo que pasa ADENTRO del lote: la MP sale al inicio por FEFO y ahí se acaba la "
+          "conversación. Lo que sobra, lo que se agrega y lo que vuelve no movía un solo "
+          "movimiento, así que entre producción y producción el stock era una estimación. "
+          "⚠ Lo más grave no era una función faltante: `ebr_ajustes_mp` YA existía pero sólo "
+          "dejaba una NOTA. La MP que el operario agrega para ajustar pH quedaba escrita en el "
+          "legajo y NUNCA salía del stock -- el sistema creía que seguía ahí. Un agujero de "
+          "inventario silencioso, invisible porque el legajo se ve completo. "
+          "Y la devolución trae de regalo el CONTEO CÍCLICO que pidió Sebastián 'sin ser "
+          "obligatorio': al devolver, el operario puede declarar el físico total del lote y el "
+          "sistema lo contrasta contra el kardex sin que nadie haga una jornada de conteo.", [
+        """CREATE TABLE IF NOT EXISTS ebr_devoluciones_mp (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             ebr_id INTEGER NOT NULL,
+             material_id TEXT NOT NULL,
+             material_nombre TEXT DEFAULT '',
+             lote TEXT DEFAULT '',
+             cantidad_g REAL NOT NULL,
+             stock_sistema_g REAL,
+             fisico_declarado_g REAL,
+             discrepancia_g REAL,
+             mov_id INTEGER DEFAULT NULL,
+             observaciones TEXT DEFAULT '',
+             pesado_por TEXT DEFAULT '',
+             pesado_at_utc TEXT DEFAULT ''
+           )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_devol_mp_ebr ON ebr_devoluciones_mp(ebr_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_devol_mp_mat ON ebr_devoluciones_mp(material_id, lote)",
+        # El ajuste pasa de NOTA a movimiento real: guarda de qué código y lote salió y el
+        # id del movimiento, para poder auditarlo y revertirlo.
+        "ALTER TABLE ebr_ajustes_mp ADD COLUMN material_id TEXT DEFAULT ''",
+        "ALTER TABLE ebr_ajustes_mp ADD COLUMN lote TEXT DEFAULT ''",
+        "ALTER TABLE ebr_ajustes_mp ADD COLUMN mov_id INTEGER DEFAULT NULL",
+        "ALTER TABLE ebr_ajustes_mp ADD COLUMN descontado_at_utc TEXT DEFAULT ''",
+    ]),
 ]
 
 

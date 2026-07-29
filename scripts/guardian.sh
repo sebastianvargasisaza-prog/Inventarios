@@ -162,6 +162,12 @@ CORAZON=(
   # silencio: una seccion que desaparece, una funcion que se pisa, un boton que apunta
   # a la nada. Nada de eso lanza un error ni lo caza el node-check.
   "tests/test_legajo_vista_continua.py"
+  # El kardex sabe lo que pasa ADENTRO del lote. Lo mas importante: `ebr_ajustes_mp` YA
+  # existia y solo dejaba una NOTA -- la MP agregada para corregir pH quedaba escrita en
+  # el legajo y NUNCA salia del stock. Agujero de inventario invisible, porque el legajo
+  # se ve completo. Incluye la devolucion pesada (que conserva el vencimiento del lote) y
+  # el puente que lleva el granel real de fabricacion a envasado como teorico.
+  "tests/test_kardex_ciclo_lote.py"
 )
 
 echo ""

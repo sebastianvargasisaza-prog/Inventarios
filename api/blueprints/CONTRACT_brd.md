@@ -496,3 +496,31 @@ imprime y se le entrega al operario.
 
 Pantallas: `/planta/ordenes-batch` (listado + crear) y `/planta/orden/<id>` (encabezado, las dos
 firmas, lotes y "Adicionar lote"). Tests: `tests/test_orden_produccion.py` (en el gate).
+
+## INV-16 · El kardex sabe lo que pasa ADENTRO del lote (mig 396)
+
+Hasta el 29-jul la MP salía por FEFO al arrancar y ahí se acababa la conversación: lo que
+sobraba, lo que se agregaba y lo que volvía **no movía un solo movimiento**. Entre producción
+y producción el stock era una estimación.
+
+- **`ebr_ajustes_mp` ya existía y sólo dejaba una NOTA.** La MP que el operario agrega para
+  corregir pH quedaba escrita en el legajo y **nunca salía del stock**: el sistema creía que
+  seguía ahí. No era una función faltante, era un **agujero de inventario silencioso** —
+  invisible porque el legajo se ve completo. Ahora descuenta por `_distribuir_fefo` (M1/M3: no
+  se reimplementa el descuento), guarda `material_id` / `lote` / `mov_id` y audita.
+  ⚠ **Sin `material_id` NO descuenta y lo declara** (`descontado: false`): el nombre es texto
+  libre y descontar por nombre parecido es descontar la molécula equivocada (M19).
+- **`POST /devolucion-mp`** · lo que sobra vuelve al kardex como **Entrada**, y **conserva el
+  vencimiento del lote**: si se pierde, el material devuelto queda sin fecha, el cron de
+  vencidos y el FEFO dejan de verlo y vuelve a producción vencido (M25). Tiene test propio.
+- **Conteo cíclico OPCIONAL** (Sebastián: *"sin ser obligatorio"*): si el operario declara el
+  físico total del lote, se reporta `discrepancia_g = físico − (kardex + devuelto)`. Si no lo
+  declara **no se infiere nada** — un conteo inventado es peor que no contar (M109).
+- **El granel real viaja solo de fabricación a envasado.** `_conciliacion_granel` cae al legajo
+  de FABRICACIÓN del mismo lote físico (`lote_codigo` · M10) cuando el de envasado no trae su
+  propio `ml_envasable`, y expone `origen_granel`. De ahí derivan `unidades_teoricas` y el
+  rendimiento. **Es un fallback, no una sobreescritura**: si el envasado tiene su dato, manda.
+  ⚠ Con **varias presentaciones NO se calcula un teórico por presentación**: repartir el granel
+  exige un criterio que nadie definió (M8). Se da el rendimiento en volumen, que sí vale.
+
+Tests: `tests/test_kardex_ciclo_lote.py` (en el gate).

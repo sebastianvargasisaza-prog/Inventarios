@@ -1419,6 +1419,31 @@ intermedio que nunca existió. **El gate se corre sobre un árbol quieto.** Si h
 trabajando, se espera o se trabaja en otra rama — un rojo falso quema más tiempo que el que
 ahorra el paralelismo.
 
+## 🕳️ M118 · Una feature que sólo deja una NOTA donde debería mover el kardex es un agujero, no un pendiente · 29-jul
+
+`ebr_ajustes_mp` llevaba tiempo construido: el operario agrega trietanolamina para corregir el
+pH, lo registra, queda firmado en el legajo. **Y esa MP nunca salía del stock.** El sistema
+creía que seguía en el estante. Nadie lo vio porque el legajo se ve completo — el registro
+regulado estaba perfecto y el inventario estaba mal.
+
+- **Regla: si una acción describe un hecho FÍSICO sobre material, tiene que mover el kardex o
+  declarar por qué no.** "Se registró" no es lo mismo que "se descontó". Al revisar un módulo,
+  la pregunta no es "¿queda constancia?" sino "¿el stock refleja lo que pasó?".
+- **La forma de encontrarlos:** buscar endpoints que insertan en su tabla propia y NUNCA tocan
+  `movimientos`, en flujos donde el material se mueve de verdad. El ajuste de MP era uno; la
+  devolución del sobrante ni siquiera existía.
+- **Y cuando se descuenta, sin CÓDIGO no se adivina.** El nombre es texto libre; descontar por
+  nombre parecido es descontar la molécula equivocada (M19). Se descuenta con el código o se
+  declara `descontado: false` — nunca se le imputa a alguien "el que más se parece".
+- **Toda Entrada de devolución CONSERVA el vencimiento del lote.** Si se pierde, el material
+  vuelve sin fecha: el cron de vencidos deja de verlo, el FEFO lo trata como eterno y vuelve a
+  producción vencido (M25). Es el error más caro de una devolución y no da ningún síntoma.
+- **El dato que se TECLEA es el primero que queda viejo.** El granel real de fabricación existía
+  y el envasado esperaba que alguien lo copiara. Un puente que lo trae solo (con `origen` a la
+  vista, y como FALLBACK que no pisa el dato propio) vale más que el campo mejor diseñado.
+- **Un conteo que nadie hizo no se infiere.** El conteo cíclico va sólo si el operario declara el
+  físico; sin ese dato la discrepancia queda en None. Inventar un conteo es peor que no contar.
+
 ## ➕ M117 · Cambiar la UNIDAD DE TRABAJO de un registro regulado se hace ADITIVO, nunca migrando · 29-jul
 
 EOS modelaba el batch record **por lote**; MyBatch modela una ORDEN que agrupa N lotes. Los dos

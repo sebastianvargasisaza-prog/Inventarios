@@ -480,6 +480,31 @@ def _conciliacion_granel(conn, ebr_id, header=None):
     densidad = _f(h.get("densidad_g_ml"))
     remanente_g = _f(h.get("remanente_g"))
 
+    # ── El granel REAL de fabricación viaja solo al envasado (Sebastián 29-jul) ──
+    # *"al final de la producción que aparezca peso total del granel, así en envasado ya
+    # va con un teórico para cálculo de rendimiento"*. Sin esto la cadena está cortada:
+    # el peso real existe en la OP y el envasado esperaba que alguien lo tecleara -- y lo
+    # tecleado es lo primero que queda viejo (M9). Se toma del legajo de FABRICACIÓN del
+    # MISMO lote físico (`lote_codigo` · M10: la llave del OF va sufijada, el lote no).
+    origen_granel = "legajo" if disponible else None
+    if not disponible:
+        _lote_fis = (h.get("lote_codigo") or "").strip()
+        if _lote_fis:
+            try:
+                _op = conn.execute(
+                    "SELECT cantidad_real_g, densidad_g_ml, ml_envasable FROM ebr_ejecuciones "
+                    "WHERE COALESCE(lote_codigo, lote)=? AND COALESCE(fase,'fabricacion')='fabricacion' "
+                    "ORDER BY id DESC LIMIT 1", (_lote_fis,)).fetchone()
+                if _op:
+                    densidad = densidad or _f(_op[1])
+                    _ml_op = _f(_op[2])
+                    if not _ml_op and _f(_op[0]) and densidad:
+                        _ml_op = round(_f(_op[0]) / densidad, 2)
+                    if _ml_op:
+                        disponible, origen_granel = _ml_op, "fabricacion"
+            except Exception as _e:
+                log.warning("puente granel OP->OF (lote %s) no disponible: %s", _lote_fis, _e)
+
     presentaciones, envasado_ml, sin_volumen = [], 0.0, 0
     for r in conn.execute(
         "SELECT COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), COALESCE(volumen_ml,0), "
@@ -496,6 +521,25 @@ def _conciliacion_granel(conn, ebr_id, header=None):
         presentaciones.append({"codigo": r[0], "etiqueta": r[1], "volumen_ml": vol,
                                "unidades": uds, "subtotal_ml": sub})
     envasado_ml = round(envasado_ml, 2)
+
+    # Unidades TEÓRICAS y rendimiento · derivados del granel que entró (M71: lo derivado
+    # no se guarda). Es para lo que sirve el teórico: cuántas unidades DEBERÍAN haber
+    # salido de ese granel, y cuántas salieron. Con una sola presentación el teórico es
+    # exacto; con varias no se puede repartir el granel sin inventar un criterio, así que
+    # se declara el teórico TOTAL en mL y no se parte por presentación (M8: si no se puede
+    # scopear bien, no se reparte).
+    unidades_teoricas = rendimiento_uds_pct = None
+    if disponible and len(presentaciones) == 1 and presentaciones[0]["volumen_ml"] > 0:
+        unidades_teoricas = int(disponible // presentaciones[0]["volumen_ml"])
+        presentaciones[0]["unidades_teoricas"] = unidades_teoricas
+        if unidades_teoricas:
+            rendimiento_uds_pct = round(
+                presentaciones[0]["unidades"] / unidades_teoricas * 100, 2)
+            presentaciones[0]["rendimiento_pct"] = rendimiento_uds_pct
+    # El rendimiento en VOLUMEN sí vale con cualquier cantidad de presentaciones: es el
+    # granel que terminó en unidades sobre el que entró.
+    rendimiento_ml_pct = (round(envasado_ml / disponible * 100, 2)
+                          if disponible else None)
 
     # El remanente se PESA; los mL se derivan. Sin densidad no hay conversión posible:
     # se declara el gramaje y la cuenta queda abierta (M109: sin dato no se inventa).
@@ -531,6 +575,10 @@ def _conciliacion_granel(conn, ebr_id, header=None):
         "diferencia_pct": pct,
         "tolerancia_pct": tolerancia,
         "densidad_g_ml": densidad,
+        "origen_granel": origen_granel,          # 'fabricacion' = vino solo del lote de OP
+        "unidades_teoricas": unidades_teoricas,
+        "rendimiento_uds_pct": rendimiento_uds_pct,
+        "rendimiento_ml_pct": rendimiento_ml_pct,
         "presentaciones": presentaciones,
         "presentaciones_sin_volumen": sin_volumen,
         "falta_densidad": bool(remanente_g is not None and not densidad),
@@ -7316,6 +7364,114 @@ def registrar_unidades_envasado(ebr_id):
     return jsonify({"ok": True, "presentacion_codigo": pc, "unidades": unidades})
 
 
+def _stock_lote_g(c, material_id, lote):
+    """Stock del kardex para un (material, lote) con el CASE canónico de la regla #4.
+
+    No se usa `_get_mp_stock` porque ese agrega por material y acá hace falta POR LOTE,
+    que es la granularidad del conteo. Los estados excluidos son los mismos 6, con UPPER
+    (M23: el writer y todos los lectores en el mismo case)."""
+    r = c.execute(
+        "SELECT COALESCE(SUM(CASE "
+        "  WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
+        "  WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) "
+        "FROM movimientos WHERE material_id=? AND COALESCE(lote,'')=? "
+        "AND UPPER(COALESCE(estado_lote,'')) NOT IN "
+        "('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO')",
+        (material_id, lote or "")).fetchone()
+    return float(r[0] or 0) if r else 0.0
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/devolucion-mp", methods=["POST"])
+def brd_devolucion_mp(ebr_id):
+    """Devuelve al inventario la materia prima que SOBRÓ, pesada.
+
+    Cierra la mitad que faltaba del ciclo: hasta hoy la MP salía por FEFO al arrancar y
+    lo que volvía al estante no movía nada, así que el stock quedaba subestimado.
+
+    Y trae el CONTEO CÍCLICO de regalo (Sebastián: *"sin ser obligatorio"*): si el
+    operario declara además cuánto queda EN TOTAL de ese lote, el sistema lo contrasta
+    contra el kardex y reporta la discrepancia. Un conteo real sin hacer un conteo.
+    """
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    material_id = (body.get("material_id") or "").strip()
+    if not material_id:
+        return jsonify({"error": "indicá el código de la materia prima"}), 400
+    lote = (body.get("lote") or "").strip()
+    try:
+        cant = float(str(body.get("cantidad_g") or 0).replace(",", "."))
+    except (TypeError, ValueError):
+        return jsonify({"error": "cantidad_g inválida"}), 400
+    # El trigger de PG rechaza cantidad <= 0 y con razón: una devolución de 0 no es un
+    # hecho, es un formulario mal llenado (M18).
+    if cant <= 0:
+        return jsonify({"error": "la cantidad devuelta tiene que ser mayor que cero",
+                        "codigo": "CANTIDAD_INVALIDA"}), 400
+    conn = get_db(); cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado, COALESCE(lote_codigo, lote,'') FROM ebr_ejecuciones WHERE id=?",
+        (ebr_id,)).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if str(ebr[0] or "").lower() in ("liberado", "rechazado"):
+        return jsonify({"error": "el lote está %s (inmutable)" % ebr[0],
+                        "codigo": "LEGAJO_INMUTABLE"}), 409
+    nombre = (body.get("material_nombre") or "").strip()
+    _vto = ""
+    try:
+        _r = cur.execute(
+            "SELECT COALESCE(nombre_comercial, nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?",
+            (material_id,)).fetchone()
+        nombre = nombre or ((_r[0] if _r else "") or "")
+        # La Entrada de vuelta CONSERVA el vencimiento del lote: si se pierde, el lote
+        # devuelto queda sin fecha y el cron de vencidos y el FEFO dejan de verlo (M25).
+        _v = cur.execute(
+            "SELECT MAX(fecha_vencimiento) FROM movimientos WHERE material_id=? "
+            "AND COALESCE(lote,'')=? AND fecha_vencimiento IS NOT NULL", (material_id, lote)).fetchone()
+        _vto = (_v[0] if _v else "") or ""
+    except Exception as _e:
+        log.warning("devolucion-mp: no se pudo resolver nombre/vencimiento de %s: %s", material_id, _e)
+    stock_antes = _stock_lote_g(cur, material_id, lote)
+    from datetime import datetime as _dt, timezone as _tz
+    ahora = _dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    cur.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
+        "observaciones, lote, fecha_vencimiento, estado_lote, operador) "
+        "VALUES (?,?,?,'Entrada',?,?,?,?, 'VIGENTE', ?)",
+        (material_id, nombre, cant, ahora,
+         "Devolucion de sobrante · legajo #%d lote %s" % (ebr_id, ebr[1]),
+         lote, _vto, user))
+    mov_id = cur.lastrowid
+    # Conteo cíclico OPCIONAL: sólo si el operario declara el físico TOTAL del lote.
+    # Sin ese dato no se infiere nada -- un conteo inventado es peor que no contar.
+    fisico = None
+    discrepancia = None
+    if body.get("fisico_declarado_g") not in (None, ""):
+        try:
+            fisico = float(str(body.get("fisico_declarado_g")).replace(",", "."))
+            discrepancia = round(fisico - (stock_antes + cant), 2)
+        except (TypeError, ValueError):
+            fisico = None
+    cur.execute(
+        "INSERT INTO ebr_devoluciones_mp (ebr_id, material_id, material_nombre, lote, "
+        "cantidad_g, stock_sistema_g, fisico_declarado_g, discrepancia_g, mov_id, "
+        "observaciones, pesado_por, pesado_at_utc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ebr_id, material_id, nombre, lote, cant, stock_antes, fisico, discrepancia,
+         mov_id, (body.get("observaciones") or "").strip()[:500], user, ahora))
+    audit_log(cur, usuario=user, accion="DEVOLVER_MP_SOBRANTE",
+              tabla="movimientos", registro_id=mov_id,
+              despues={"ebr_id": ebr_id, "material_id": material_id, "lote": lote,
+                       "cantidad_g": cant, "stock_antes": stock_antes,
+                       "fisico_declarado_g": fisico, "discrepancia_g": discrepancia})
+    conn.commit()
+    return jsonify({"ok": True, "mov_id": mov_id, "stock_antes_g": stock_antes,
+                    "stock_despues_g": round(stock_antes + cant, 2),
+                    "discrepancia_g": discrepancia}), 201
+
+
 @bp.route("/api/brd/ordenes", methods=["GET", "POST"])
 def brd_ordenes(ebr_id=None):
     """GET: listado de órdenes (filtros `fase` y `estado`). POST: crea una orden.
@@ -8565,13 +8721,59 @@ def agregar_ajuste_mp_ebr(ebr_id):
     user = session.get("compras_user", "")
     conn = get_db()
     cur = conn.cursor()
+    # ── El ajuste ahora DESCUENTA del kardex (mig 396) ──────────────────────────
+    # Hasta hoy esto sólo dejaba una NOTA: la MP que el operario agrega para corregir
+    # pH quedaba escrita en el legajo y NUNCA salía del stock. El sistema creía que
+    # seguía ahí. No era una función faltante, era un agujero de inventario silencioso
+    # -- invisible porque el legajo se ve completo.
+    # Se descuenta por el FEFO CANÓNICO (M1/M3: no se reimplementa el descuento), y sólo
+    # cuando el caller manda `material_id`: sin el código de bodega no hay a qué imputar,
+    # y adivinarlo por el nombre libre sería descontar la molécula equivocada (M19).
+    material_id = (body.get("material_id") or "").strip()
+    mov_ids, lotes_tocados = [], []
+    _desc_at = ""            # `datetime` NO está importado a nivel de módulo en brd.py (M78)
+    if material_id and cant > 0:
+        try:
+            from blueprints.programacion import _distribuir_fefo
+        except ImportError:
+            from programacion import _distribuir_fefo
+        _nom = material
+        try:
+            _r = cur.execute("SELECT COALESCE(nombre_comercial, nombre_inci,'') "
+                             "FROM maestro_mps WHERE codigo_mp=?", (material_id,)).fetchone()
+            _nom = ((_r[0] if _r else "") or "") or material
+        except Exception as _e:
+            log.warning("ajuste-mp: nombre de %s no legible: %s", material_id, _e)
+        from datetime import datetime as _dt, timezone as _tz
+        _ahora = _dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        _desc_at = _ahora
+        for _d in _distribuir_fefo(cur, material_id, cant):
+            _q = float(_d.get("cantidad") or 0)
+            if _q <= 0:          # un descuento de 0 es no-op y el trigger PG lo rechaza (M18)
+                continue
+            cur.execute(
+                "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
+                "observaciones, lote, estado_lote, operador) "
+                "VALUES (?,?,?,'Salida',?,?,?, 'VIGENTE', ?)",
+                (material_id, _nom, _q, _ahora,
+                 "Ajuste de MP en proceso · legajo #%d · %s" % (ebr_id, motivo or "sin motivo"),
+                 _d.get("lote") or "", user))
+            mov_ids.append(cur.lastrowid)
+            if _d.get("lote"):
+                lotes_tocados.append(_d.get("lote"))
     cur.execute("INSERT INTO ebr_ajustes_mp (ebr_id, material, cantidad_g, motivo, registrado_por, "
-                "registrado_at_utc) VALUES (?, ?, ?, ?, ?, datetime('now','utc'))",
-                (ebr_id, material, cant, motivo, user))
+                "registrado_at_utc, material_id, lote, mov_id, descontado_at_utc) "
+                "VALUES (?, ?, ?, ?, ?, datetime('now','utc'), ?, ?, ?, ?)",
+                (ebr_id, material, cant, motivo, user, material_id,
+                 ", ".join(lotes_tocados), (mov_ids[0] if mov_ids else None),
+                 (_desc_at if mov_ids else "")))
     audit_log(cur, usuario=user, accion="AJUSTE_MP_EBR", tabla="ebr_ajustes_mp", registro_id=ebr_id,
-              despues={"material": material, "cantidad_g": cant, "motivo": motivo, "por": user})
+              despues={"material": material, "material_id": material_id, "cantidad_g": cant,
+                       "motivo": motivo, "por": user, "movimientos": mov_ids,
+                       "lotes": lotes_tocados})
     conn.commit()
-    return jsonify({"ok": True}), 201
+    return jsonify({"ok": True, "descontado": bool(mov_ids), "movimientos": mov_ids,
+                    "lotes": lotes_tocados}), 201
 
 
 # ── MyBatch ① · Precauciones + Equipos ──────────────────────────────────────

@@ -8281,6 +8281,9 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</tbody></table>';
   } else { h+='<div style="color:var(--cx-text-faint);font-size:12px;">Sin registro de ajustes de materia prima.</div>'; }
   if(editable&&miRol.realiza){ h+='<button onclick="ebrAgregarAjusteMp('+d.id+')" style="margin-top:6px;background:var(--cx-accent-dark);color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">+ Registrar ajuste de MP</button>'; }
+  // Devolucion del sobrante: lo que vuelve al estante tiene que volver al kardex, si no el
+  // stock queda subestimado y se compra de mas. El conteo ciclico va adentro, opcional.
+  if(editable&&miRol.realiza){ h+='<button onclick="ebrDevolverMp('+d.id+')" title="Pesa lo que sobro y devolvelo a bodega (podes aprovechar y contar el lote)" style="margin-top:6px;margin-left:6px;background:var(--cx-success);color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">&#8617; Devolver MP sobrante</button>'; }
   // 4 · Despeje de Línea · Fabricación (tras dispensar/pesar)
   h+='</div>'+_secOpen('🧹 Despeje de Línea · Fabricación')+_despEtapa('Despeje de Línea · Fabricación', 'fabricacion', _dch.fabricacion);
   } // fin if(fa==='fabricacion') · secciones de MP solo en fabricación
@@ -8738,11 +8741,40 @@ async function ebrAgregarAjusteMp(ebrId){
   var mat=prompt('Materia prima ajustada (ej. Trietanolamina 85%):');
   if(mat===null)return;
   mat=(mat||'').trim(); if(!mat){ alert('Indicá la materia prima'); return; }
+  // El CODIGO es lo que hace que el ajuste descuente del inventario. Sin el, queda solo
+  // como nota: descontar por el nombre libre seria descontar la molecula equivocada.
+  var cod=(prompt('Codigo de bodega de esa MP (ej. MP00123) · si lo dejas vacio queda anotado pero NO descuenta del inventario:')||'').trim();
   var cant=prompt('Cantidad ajustada en gramos (ej. 60):')||'0';
   var mot=prompt('Motivo del ajuste (ej. ajustar pH a 6.0):')||'';
+  if(cod && !confirm('Se van a descontar '+cant+' g de '+cod+' del inventario (FEFO · queda auditado). Confirmas?'))return;
   try{
-    var r=await fetch('/api/brd/ebr/'+ebrId+'/ajustes-mp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({material:mat,cantidad_g:cant,motivo:mot})});
-    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/ajustes-mp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({material:mat,material_id:cod,cantidad_g:cant,motivo:mot})});
+    var j=await r.json();
+    if(!r.ok){ alert('Error: '+(j.error||r.status)); return; }
+    if(j.descontado){ alert('Ajuste registrado y DESCONTADO del inventario (lote '+(j.lotes||[]).join(', ')+').'); }
+    else { alert('Ajuste anotado en el legajo. NO se descuento del inventario porque no diste el codigo de bodega.'); }
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrDevolverMp(ebrId){
+  // Devolucion del sobrante + conteo ciclico OPCIONAL (Sebastian 29-jul).
+  var cod=(prompt('Codigo de bodega de la MP que devolves (ej. MP00123):')||'').trim();
+  if(!cod)return;
+  var lote=(prompt('Lote de esa MP (el del envase):')||'').trim();
+  var cant=(prompt('Gramos que devolves a bodega (pesados):')||'').trim();
+  if(!cant||parseFloat(cant)<=0){ alert('Indica los gramos devueltos.'); return; }
+  var fis=(prompt('OPCIONAL · si ademas contaste, cuanto queda EN TOTAL de ese lote en bodega (deja vacio si no contaste):')||'').trim();
+  try{
+    var body={material_id:cod,lote:lote,cantidad_g:cant};
+    if(fis!==''){ body.fisico_declarado_g=fis; }
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/devolucion-mp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var j=await r.json();
+    if(!r.ok){ alert('Error: '+(j.error||r.status)); return; }
+    var msg='Devueltos '+cant+' g · el inventario paso de '+j.stock_antes_g+' a '+j.stock_despues_g+' g.';
+    if(j.discrepancia_g!==null&&j.discrepancia_g!==undefined){
+      msg+=(j.discrepancia_g===0)?' El conteo CUADRA.':(' CONTEO: '+(j.discrepancia_g>0?'sobran ':'faltan ')+Math.abs(j.discrepancia_g)+' g frente al sistema.');
+    }
+    alert(msg);
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
