@@ -178,3 +178,53 @@ por lote no tiene:
 (INVIMA / Part 11): los legajos existentes tendrían que colgarse de una orden retroactiva, y eso
 es una decisión de Sebastián, no una inferencia mía. Cuando se haga, va de a una fase y con la
 migración probada contra PG con datos sembrados, como el resto.
+
+---
+
+## SEGUNDA MEDICIÓN · 29-jul · lo que quedaba del mapa de MyBatch
+
+Los puntos que el 28-jul quedaron como "apareció y no estaba en el radar" se midieron contra
+el código real antes de construir nada (M28). **De 9, seis ya estaban.**
+
+| MyBatch | EOS | Dónde |
+|---|---|---|
+| `verified_weight` · pesaje con verificación | **YA ESTÁ** | `ebr_pesajes.verificado_por` / `verificado_at_utc` / `verificado_e_sign_id` |
+| `add_equipment_mfg` · equipos de la orden | **YA ESTÁ** | `ebr_precauciones` con `tipo='equipo'` |
+| `filling/density_bulk` | **YA ESTÁ** | `ebr_ejecuciones.densidad_g_ml` + puente OP→OF |
+| `filling/remainder` · remanente de granel | **cerrado el 28-jul** | mig 392 · conciliación del granel (INV-13) |
+| `material_verified` · 2ª firma de lo recibido | **cerrado el 29-jul** | mig 394 (INV-14) |
+| `adjust_mopo` · ajustar la orden | **YA ESTÁ** | `/api/produccion/<id>/ajustar-cantidad` (admin · auditado) · sin paso de aprobación separado |
+| `generate-barcode-pdf` / `ticket/print` | **PARCIAL** | hay rótulos con código de barras (`inventario.py`, JsBarcode); no hay ticket de acondicionamiento |
+| `add_premix` / `discount_premix` · premezclas | **FALTA** | 0 referencias en todo el repo |
+| `mass_release` · liberación masiva | **FALTA** | 0 referencias |
+
+### Por qué los tres que faltan NO se construyeron solos
+
+No es que sean difíciles: es que construirlos sin preguntar sería inventar.
+
+- **Premezclas.** Es un objeto de manufactura con descuento de inventario propio. Que MyBatch lo
+  tenga no significa que Espagiria lo use — y modelar una premezcla que nadie prepara es agregar
+  una tabla muerta al registro regulado. **Pregunta para Sebastián: ¿se preparan premezclas que
+  después entran a un lote?**
+- **Liberación masiva.** Liberar es la acción MÁS crítica del sistema: promueve producto a
+  vendible. Agregarle un camino masivo a ese control, sin que nadie lo pida, multiplica el daño
+  de cualquier defecto por el tamaño del lote de liberaciones. Si hace falta, se construye con
+  su propia pasada y con la firma por lote conservada.
+- **Ticket de código de barras.** La pieza existe a medias (los rótulos ya imprimen barcode).
+  Falta saber qué se escanea y dónde: sin ese dato, el formato del código es una adivinanza.
+
+### Lo único grande que sigue abierto: la ORDEN como objeto propio
+
+Sin cambios respecto del 28-jul. Hoy EOS modela el legajo **por lote**; MyBatch modela una orden
+que agrupa N lotes. Lo que la orden agrega y el legajo por lote no tiene:
+
+1. un encabezado que se **aprueba una vez para todos los lotes** (la firma de arranque ya existe
+   desde la mig 393, pero vive en el legajo, no en una orden madre);
+2. el botón **"Adicionar lote"**;
+3. un **número de orden** que es lo que se imprime y se le entrega al operario.
+
+**Sigue sin construirse a propósito**, y la razón no cambió: cambia la unidad de trabajo de un
+registro regulado. Los legajos que ya existen tendrían que colgarse de una orden retroactiva y
+eso es una decisión de Sebastián. Cuando se haga, la forma segura es **aditiva**: la orden nace
+con FK nuleable, los legajos viejos se quedan sin orden madre y siguen funcionando igual, y sólo
+los nuevos la usan. Nada de migrar registros firmados.
