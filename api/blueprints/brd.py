@@ -3518,8 +3518,11 @@ def ebr_vista_completa(ebr_id):
         # + materiales agregados/editados A MANO (se suman a lo auto-cargado · editables).
         try:
             out['envasado_materiales'] = (out['envasado_materiales'] or []) + _materiales_envase_manuales(conn, ebr_id)
-        except Exception:
-            pass
+        except Exception as _emm:
+            # Antes era `except: pass` y por eso un error en la consulta hacía DESAPARECER
+            # las filas de material de la pantalla sin dejar rastro: indistinguible de "no
+            # hay material cargado" (M4/M94).
+            log.warning('materiales de envase manuales no se pudieron sumar (ebr=%s): %s', ebr_id, _emm)
     # Acondicionamiento (OA · 10-jun) · el cuerpo del legajo es "Unidades por
     # Presentación" (lo acondicionado del lote) + "Materiales de Empaque" (etiquetas,
     # plegadizas, insertos · leídos del mee_consumido). Espeja la rama de envasado.
@@ -5151,10 +5154,29 @@ def brd_material_envase_upsert(ebr_id):
     lote_env = (body.get("lote_envasado") or ebr["lote"] or "").strip()
     row_id = body.get("id")
     if row_id:
+        # Una firma cubre LOS DATOS QUE SE FIRMARON. Si la edición cambia lo que la 2ª
+        # firma certificó -qué material, de qué lote y cuánto llegó- la verificación se
+        # CAE y hay que rehacerla; si sólo se ajusta la conciliación (devuelta/utilizada/
+        # averiada), que es un momento posterior, la firma de recepción sigue valiendo.
+        # Dejarla en pie tras cambiar la cantidad sería una firma sobre otro dato (Part 11).
+        _anula_verif = False
+        try:
+            _prev = cur.execute(
+                "SELECT COALESCE(material_codigo,''), COALESCE(lote_material,''), recibida, "
+                "COALESCE(verificado_por,'') FROM ebr_envase_materiales WHERE id=? AND ebr_id=?",
+                (int(row_id), ebr_id)).fetchone()
+            if _prev and (_prev[3] or "").strip():
+                _anula_verif = (
+                    (_prev[0] or "") != cod
+                    or (_prev[1] or "") != lote_mat
+                    or (_prev[2] if _prev[2] is None else float(_prev[2])) != _num("recibida"))
+        except Exception as _e:                 # columnas de la mig 394 · nunca callar (M94)
+            log.warning("material-envase: verificación previa no legible (ebr=%s): %s", ebr_id, _e)
+        _sql_v = (", verificado_por='', verificado_at_utc=''" if _anula_verif else "")
         cur.execute(
             "UPDATE ebr_envase_materiales SET material_codigo=?, material_nombre=?, "
             "lote_material=?, requerida=?, recibida=?, devuelta=?, utilizada=?, averiada=?, "
-            "lote_envasado=?, recibido_por=?, recibido_at_utc=? "
+            "lote_envasado=?, recibido_por=?, recibido_at_utc=?" + _sql_v + " "
             "WHERE id=? AND ebr_id=?",
             (cod, nom, lote_mat, requerida, _num("recibida"), _num("devuelta"),
              _num("utilizada"), _num("averiada"), lote_env,
@@ -5176,6 +5198,61 @@ def brd_material_envase_upsert(ebr_id):
               registro_id=nuevo_id, despues={"material": cod, "requerida": requerida})
     conn.commit()
     return jsonify({"ok": True, "id": nuevo_id})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/material-envase/<int:row_id>/verificar", methods=["POST"])
+def brd_material_envase_verificar(ebr_id, row_id):
+    """2ª firma sobre el material de envase RECIBIDO (mig 394 · regla de 2 personas · GMP).
+
+    En MyBatch recibir y verificar son dos pasos separados (`material_received` y
+    `material_verified`), y esa separación ES el control: quien cuenta lo que llegó no
+    puede ser el mismo que certifica que está bien. Espeja `despeje-verificar`.
+    """
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if not _batch_role_info(user).get("verifica"):
+        return jsonify({"error": "Verificar el material recibido es atribución de Calidad / Jefe de "
+                                 "Producción / Dirección Técnica. El operario sólo registra la recepción.",
+                        "codigo": "SOLO_VERIFICA_MATERIAL"}), 403
+    conn = get_db(); cur = conn.cursor()
+    ebr = _ebr_estado_lote(cur, ebr_id)
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] in ("liberado", "rechazado"):
+        return jsonify({"error": f"el lote está {ebr['estado']} (inmutable) · no se verifica"}), 409
+    fila = cur.execute(
+        "SELECT COALESCE(recibido_por,''), recibida, COALESCE(verificado_por,''), "
+        "COALESCE(material_codigo,'') FROM ebr_envase_materiales WHERE id=? AND ebr_id=?",
+        (row_id, ebr_id)).fetchone()
+    if not fila:
+        return jsonify({"error": "fila no encontrada"}), 404
+    if fila[1] is None or not (fila[0] or "").strip():
+        return jsonify({"error": "todavía no se registró cuánto material llegó · no hay nada que verificar",
+                        "codigo": "SIN_RECEPCION"}), 409
+    if (fila[2] or "").strip():
+        return jsonify({"error": "ya fue verificado por " + fila[2], "codigo": "YA_VERIFICADO"}), 409
+    # DEMO: un lote de demostración se camina con una sola persona (igual que el despeje).
+    _es_demo = str(ebr["lote"] or "").upper().startswith("DEMO-")
+    if not _es_demo and (fila[0] or "").strip() == user:
+        return jsonify({
+            "error": "No podés verificar tu propia recepción: la 2ª firma debe ser de OTRA persona "
+                     "distinta a quien recibió el material (regla de las 2 personas · GMP).",
+            "codigo": "AUTOVERIFICACION_BLOQUEADA"}), 409
+    cur.execute(
+        "UPDATE ebr_envase_materiales SET verificado_por=?, verificado_at_utc=datetime('now','utc') "
+        "WHERE id=? AND ebr_id=? AND COALESCE(verificado_por,'')=''",
+        (user, row_id, ebr_id))
+    if cur.rowcount != 1:                      # CAS: otro worker la verificó primero (M27)
+        conn.rollback()
+        return jsonify({"error": "ya fue verificada · refrescá", "codigo": "YA_VERIFICADO"}), 409
+    audit_log(cur, usuario=user, accion="VERIFICAR_MATERIAL_ENVASE_EBR",
+              tabla="ebr_envase_materiales", registro_id=row_id,
+              despues={"ebr_id": ebr_id, "material": fila[3], "recibida": fila[1],
+                       "recibido_por": fila[0], "verificado_por": user})
+    conn.commit()
+    return jsonify({"ok": True, "verificado_por": user})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/material-envase/<int:row_id>", methods=["DELETE"])
@@ -5204,13 +5281,25 @@ def brd_material_envase_delete(ebr_id, row_id):
 def _materiales_envase_manuales(conn, ebr_id):
     """Filas de material de envase agregadas/editadas a mano (ebr_envase_materiales).
     Tienen `id` y `fuente='manual'` → la UI permite editarlas/borrarlas."""
+    # `recibida`/`recibido_por` (mig 391) y `verificado_por` (mig 394) SE CONSULTAN acá:
+    # sin eso la sección 3 del envasado de MyBatch (MATERIAL | N° LOTE | REQUERIDA |
+    # RECIBIDA | RECIBIDO POR) queda a medias en pantalla aunque el dato esté guardado.
+    # Es M115: un dato capturado que no llega al consumidor no existe.
     try:
         cur = conn.cursor()
         rows = cur.execute(
             "SELECT id, lote_envasado, material_codigo, material_nombre, lote_material, "
-            "requerida, devuelta, utilizada, averiada FROM ebr_envase_materiales "
-            "WHERE ebr_id=? ORDER BY id", (ebr_id,)).fetchall()
-    except Exception:
+            # Los COALESCE VAN CON ALIAS: sin `AS`, la columna se llama "COALESCE(x,'')" y
+            # el acceso por nombre revienta -- y acá lo tapaba un `except` mudo aguas arriba,
+            # así que la fila desaparecía de la pantalla sin un solo error (M94).
+            "requerida, devuelta, utilizada, averiada, recibida, "
+            "COALESCE(recibido_por,'') AS recibido_por, "
+            "COALESCE(recibido_at_utc,'') AS recibido_at_utc, "
+            "COALESCE(verificado_por,'') AS verificado_por, "
+            "COALESCE(verificado_at_utc,'') AS verificado_at_utc "
+            "FROM ebr_envase_materiales WHERE ebr_id=? ORDER BY id", (ebr_id,)).fetchall()
+    except Exception as _e:
+        log.warning("materiales de envase manuales no legibles (ebr=%s): %s", ebr_id, _e)
         return []
     out = []
     for r in rows:
@@ -5219,13 +5308,21 @@ def _materiales_envase_manuales(conn, ebr_id):
         if req is not None and uti is not None:
             dif = round(float(req) - float(uti), 2)
         nom = r["material_nombre"] or ""
+        # Faltante de ENTREGA (lo que no mandaron) vs merma: son cosas distintas y sin
+        # esta resta se confunden -- el reclamo al proveedor se pierde dentro de "utilizada".
+        rec = r["recibida"]
+        falta_entrega = (round(float(req) - float(rec), 2)
+                         if (req is not None and rec is not None) else None)
         out.append({
             "id": r["id"], "fuente": "manual",
             "lote_envasado": r["lote_envasado"] or "", "lote_acond": r["lote_envasado"] or "",
             "material": (r["material_codigo"] + (" " + nom if nom else "")),
             "material_codigo": r["material_codigo"], "material_nombre": nom,
             "lote_material": r["lote_material"] or "",
-            "requerida": req, "devuelta": dev, "utilizada": uti,
+            "requerida": req, "recibida": rec, "faltante_entrega": falta_entrega,
+            "recibido_por": r["recibido_por"], "recibido_at_utc": r["recibido_at_utc"],
+            "verificado_por": r["verificado_por"], "verificado_at_utc": r["verificado_at_utc"],
+            "devuelta": dev, "utilizada": uti,
             "averiada": r["averiada"], "diferencia": dif,
         })
     return out
@@ -6190,6 +6287,36 @@ def pdf_ebr(ebr_id):
                 f"requerida {m['cant_requerida']} · recibida {m['cant_recibida']} · "
                 f"devuelta {m['cant_devuelta']} · utilizada {m['cant_utilizada']}  ·  "
                 f"{m['registrado_por'] or '-'}",
+                h=5, font_size=9)
+        pdf.ln(2)
+
+    # Material de envase del legajo · sección 3 de MyBatch: qué se pidió, qué ENTREGARON,
+    # quién lo recibió y quién lo VERIFICÓ (las dos firmas). Si no está acá, la regla de
+    # las 2 personas no se puede auditar sobre el papel.
+    try:
+        _mats_pdf = _materiales_envase_manuales(conn, ebr_id)
+    except Exception as _e:
+        log.warning("PDF ebr=%s sin materiales de envase: %s", ebr_id, _e)
+        _mats_pdf = []
+    if _mats_pdf:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"4c-ter. Material de envase recibido ({len(_mats_pdf)})"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for m in _mats_pdf:
+            def _q(v):
+                return f"{v:,.0f}" if v is not None else "-"
+
+            _falta = (f"  [FALTARON {m['faltante_entrega']:,.0f}]"
+                      if m.get("faltante_entrega") else "")
+            _line(
+                f"{m['material']} (lote {m['lote_material'] or '-'}): "
+                f"requerida {_q(m['requerida'])} · recibida {_q(m['recibida'])}{_falta}",
+                h=5, font_size=9)
+            _line(
+                f"   Recibido por: {m['recibido_por'] or 'SIN REGISTRAR'}"
+                + (f" ({m['recibido_at_utc'][:16]} UTC)" if m["recibido_at_utc"] else "")
+                + f"   ·   Verificado por: {m['verificado_por'] or 'SIN VERIFICAR'}"
+                + (f" ({m['verificado_at_utc'][:16]} UTC)" if m["verificado_at_utc"] else ""),
                 h=5, font_size=9)
         pdf.ln(2)
 
@@ -9654,6 +9781,10 @@ async function load(){
     var mats=d.envasado_materiales||[];
     window._mats=mats;
     var puedeEditarMat=(estado!=='liberado'&&estado!=='rechazado');
+    // Quién puede poner la 2ª firma y quién soy. El backend YA bloquea con 403/409: esto
+    // sólo evita ofrecer un botón que va a fallar (el control real nunca vive en la vista).
+    var PUEDE_VERIF=!!(d.mi_rol&&d.mi_rol.verifica);
+    var YO=(d.mi_rol&&d.mi_rol.usuario)||'';
     function mc(v){return v!=null?Number(v).toLocaleString('es-CO'):'';}
     var matRows=mats.length
       ? mats.map(function(m,i){
@@ -9662,11 +9793,30 @@ async function load(){
             acc='<button class="ab ab-ed" onclick="matModal('+i+')" title="Editar / registrar cantidades">&#9998;</button>'+acc;
             if(m.id){acc='<button class="ab ab-x" onclick="borrarMat('+m.id+')" title="Eliminar">&#215;</button>'+acc;}
           }
+          // Recepción y su 2ª firma. Lo que NO se recibió todavía no se puede verificar, y
+          // quien recibió no puede verificarse a sí mismo (el backend lo bloquea · acá sólo
+          // se evita ofrecer un botón que va a dar 409).
+          var recTxt = (m.recibida!=null)
+            ? (mc(m.recibida)+(m.faltante_entrega ? ' <span style="color:var(--cx-danger-text,#b91c1c);font-size:11px;font-weight:700" title="No entregaron esta cantidad">(-'+mc(m.faltante_entrega)+')</span>' : ''))
+            : '<span class="muted">pendiente</span>';
+          var verTxt;
+          if(m.verificado_por){
+            verTxt='<span style="color:var(--cx-success-text,#166534);font-weight:700" title="'+esc(String(m.verificado_at_utc||'').substring(0,16).replace("T"," "))+'">&#10003; '+esc(m.verificado_por)+'</span>';
+          } else if(m.recibida==null){
+            verTxt='<span class="muted">·</span>';
+          } else if(puedeEditarMat && m.id && PUEDE_VERIF && m.recibido_por!==YO){
+            verTxt='<button class="ab ab-ed" onclick="verificarMat('+m.id+')" title="2ª firma: certificás que lo recibido está conforme (no podés verificar tu propia recepción)">&#10003; Verificar</button>';
+          } else {
+            verTxt='<span style="color:var(--cx-warn-text,#b45309);font-weight:700">pendiente</span>';
+          }
           return '<tr>'+
             '<td class="mono">'+esc(m.lote_envasado||'·')+'</td>'+
             '<td>'+esc(m.material||'·')+(m.fuente==='manual'?' <span style="color:var(--cx-primary-text, #7c3aed);font-size:10px;font-weight:700">·manual</span>':'')+'</td>'+
             '<td class="mono">'+esc(m.lote_material||'·')+'</td>'+
             '<td>'+mc(m.requerida)+'</td>'+
+            '<td>'+recTxt+'</td>'+
+            '<td>'+esc(m.recibido_por||'·')+'</td>'+
+            '<td>'+verTxt+'</td>'+
             '<td>'+mc(m.devuelta)+'</td>'+
             '<td>'+mc(m.utilizada)+'</td>'+
             '<td>'+mc(m.averiada)+'</td>'+
@@ -9674,11 +9824,11 @@ async function load(){
             '<td><div class="act">'+acc+'</div></td>'+
           '</tr>';
         }).join('')
-      : '<tr><td colspan="9" class="muted" style="text-align:center;background:var(--cx-card, #fff)">Sin materiales de envase registrados aún.</td></tr>';
+      : '<tr><td colspan="12" class="muted" style="text-align:center;background:var(--cx-card, #fff)">Sin materiales de envase registrados aún.</td></tr>';
     var matCard='<div class="card"><div class="sechead" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div class="sectit">Materiales de Envase</div>'+
       (puedeEditarMat?'<button class="bt bt-pdf" onclick="matModal(-1)" title="Elegir un material de envase del catálogo completo">+ Material de envase</button>':'')+'</div>'+
       '<div class="tw"><table class="t"><thead><tr>'+
-        '<th>N° lote envasado'+ar()+'</th><th>Material de envase'+ar()+'</th><th>N° de lote material'+ar()+'</th><th>Cant. requerida'+ar()+'</th><th>Cant. devuelta'+ar()+'</th><th>Cant. utilizada'+ar()+'</th><th>Cant. averiada'+ar()+'</th><th>Diferencia'+ar()+'</th><th>Acciones</th>'+
+        '<th>N° lote envasado'+ar()+'</th><th>Material de envase'+ar()+'</th><th>N° de lote material'+ar()+'</th><th>Cant. requerida'+ar()+'</th><th>Cant. recibida'+ar()+'</th><th>Recibido por'+ar()+'</th><th>Verificado por'+ar()+'</th><th>Cant. devuelta'+ar()+'</th><th>Cant. utilizada'+ar()+'</th><th>Cant. averiada'+ar()+'</th><th>Diferencia'+ar()+'</th><th>Acciones</th>'+
       '</tr></thead><tbody>'+matRows+'</tbody></table></div>'+
       '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
     // ── Conciliación del granel · ¿en qué terminó el bulk que entró? ────────────
@@ -9758,6 +9908,17 @@ function concModal(){
   ov.style.display='flex';
 }
 function cerrarConc(){var ov=document.getElementById('concov');if(ov)ov.style.display='none';}
+async function verificarMat(id){
+  if(window._vmBusy)return; window._vmBusy=true;                 /* doble-click = doble firma */
+  try{
+    if(!confirm('2a firma: certificás que el material recibido está conforme. Queda con tu nombre y auditado (GMP · regla de las 2 personas). ¿Confirmás?'))return;
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/material-envase/'+id+'/verificar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin'});
+    var dd=await r.json();
+    if(!r.ok||!dd.ok){alert('No se pudo verificar: '+((dd&&dd.error)||r.status));return;}
+    load();
+  }catch(e){alert('Error: '+(e.message||e));}
+  finally{window._vmBusy=false;}
+}
 async function guardarConc(){
   if(window._cgBusy)return; window._cgBusy=true;                 // doble-click crea/mueve datos (M63)
   var b=document.getElementById('cg_ok'); if(b){b.disabled=true;}

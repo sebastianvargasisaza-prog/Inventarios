@@ -10645,6 +10645,15 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         """INSERT INTO app_settings (clave, valor) VALUES ('exigir_aprobacion_orden','0')
            ON CONFLICT (clave) DO NOTHING""",
     ]),
+    (394, "2ª firma sobre el MATERIAL DE ENVASE recibido (regla de 2 personas · GMP). En MyBatch "
+          "recibir y verificar son DOS pasos separados (`material_received` y `material_verified`) "
+          "y esa separación es el control: quien cuenta lo que llegó no puede ser el mismo que "
+          "certifica que está bien. La mig 391 trajo `recibida`/`recibido_por`; faltaba el paso "
+          "siguiente. Espeja `ebr_despeje_items.verificado_por` (mig 285), que ya implementa la "
+          "misma regla en el despeje de línea: un solo patrón para las dos verificaciones.", [
+        "ALTER TABLE ebr_envase_materiales ADD COLUMN verificado_por TEXT DEFAULT ''",
+        "ALTER TABLE ebr_envase_materiales ADD COLUMN verificado_at_utc TEXT DEFAULT ''",
+    ]),
 ]
 
 

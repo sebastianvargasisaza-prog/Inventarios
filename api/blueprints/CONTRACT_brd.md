@@ -441,3 +441,30 @@ pero eso hay que **escribirlo**.
   razonable depende del producto — no es una constante de dominio.
 
 Tests: `tests/test_conciliacion_granel.py` (en el gate).
+
+## INV-14 · Material de envase: recibir y VERIFICAR son dos firmas (mig 394)
+
+En MyBatch son dos pasos separados (`material_received` y `material_verified`) y esa separación
+**es** el control: quien cuenta lo que llegó no puede ser el mismo que certifica que está bien.
+La mig 391 trajo `recibida`/`recibido_por`; faltaba el paso siguiente.
+
+- `POST /api/brd/ebr/<id>/material-envase/<row_id>/verificar` · espeja `despeje-verificar`
+  (mig 285): sólo quien VERIFICA por rol (`_batch_role_info(...)['verifica']` = Calidad /
+  Aseguramiento / Jefe de Producción / Director Técnico), nunca sobre la propia recepción, nunca
+  sobre lo que todavía no llegó, CAS + `audit_log`. Los lotes `DEMO-` se pueden caminar con una
+  sola persona, igual que el despeje.
+- **La firma cubre LOS DATOS QUE SE FIRMARON.** Editar `material_codigo`, `lote_material` o
+  `recibida` **anula** la verificación (hay que rehacerla); ajustar la conciliación posterior
+  (`devuelta`/`utilizada`/`averiada`) NO la toca. Dejarla en pie tras cambiar la cantidad sería
+  una firma sobre otro dato — falsear un registro Part 11.
+- Va en la pantalla (columnas *Cant. recibida · Recibido por · Verificado por*) y en el PDF
+  (4c-ter), con el faltante de ENTREGA a la vista: lo que no mandaron y la merma son cosas
+  distintas y sin esa resta el reclamo al proveedor se pierde dentro de "utilizada".
+
+⚠ **Hueco que se cerró en el mismo commit:** `recibida`/`recibido_por` se guardaban desde el
+28-jul pero `_materiales_envase_manuales` NO los consultaba y la tabla del legajo no tenía esas
+columnas → la sección 3 quedaba a medias en pantalla con el dato ya en la base (M115). Y el
+`except: pass` que envolvía la suma de esas filas escondía cualquier error de la consulta: la
+fila desaparecía sin un solo mensaje, indistinguible de "no hay material cargado" (M4/M94).
+
+Tests: `tests/test_material_envase_verificado.py` (en el gate).

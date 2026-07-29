@@ -1453,6 +1453,15 @@ Construyendo la aprobación de la orden aparecieron tres cosas que valen más qu
 Nadie lo cubría porque no había test del PDF con esa combinación. **Un dato que falta se imprime
 como faltante; nunca tumba el legajo entero.**
 
+**Y una trampa de SQL que me comí el mismo día, con el `except` mudo tapándola:**
+`SELECT COALESCE(recibido_por,'')` **sin `AS`** deja la columna llamada literalmente
+`COALESCE(recibido_por,'')`, así que `row["recibido_por"]` revienta. El `except: pass` que
+envolvía esa suma hacía **desaparecer las filas de material de la pantalla sin un solo mensaje**
+— indistinguible de "no hay material cargado". **Todo `COALESCE` en un SELECT cuyo resultado se
+lea POR NOMBRE va con alias**; si se lee por índice da igual, y por eso el patrón convive sano en
+decenas de sitios y muerde sólo donde alguien accede por nombre. Y el corolario de siempre: un
+`except` mudo alrededor de una lectura convierte un bug en "no hay datos" (M4/M94).
+
 **⚠ Y la de método, que costó dos horas: MATAR un gate a mitad envenena la corrida SIGUIENTE.**
 M115 ya decía "el gate se corre sobre un árbol quieto" pensando en editar mientras corre. Falta la
 otra mitad: **abortarlo también contamina.** Maté una corrida para meter un arreglo en caliente; la

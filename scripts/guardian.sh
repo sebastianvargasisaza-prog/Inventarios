@@ -148,6 +148,11 @@ CORAZON=(
   # heredan todos los endpoints de ejecucion. Incluye el guard de que 'aprueba_dt' siga
   # en la whitelist del firmador: faltaba, y por eso esa firma nunca se pudo dar.
   "tests/test_aprobacion_orden.py"
+  # 2a firma sobre el material de envase recibido: quien cuenta lo que llego no puede ser
+  # quien certifica que esta bien. Incluye el guard de que corregir la cantidad recibida
+  # TUMBA la firma (una firma cubre los datos que se firmaron) y que el dato LLEGUE a la
+  # pantalla: se guardaba desde la mig 391 y la tabla del legajo no lo mostraba.
+  "tests/test_material_envase_verificado.py"
 )
 
 echo ""
