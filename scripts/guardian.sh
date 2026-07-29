@@ -153,6 +153,10 @@ CORAZON=(
   # TUMBA la firma (una firma cubre los datos que se firmaron) y que el dato LLEGUE a la
   # pantalla: se guardaba desde la mig 391 y la tabla del legajo no lo mostraba.
   "tests/test_material_envase_verificado.py"
+  # La ORDEN como objeto propio: una orden agrupa N lotes y se aprueba UNA vez para todos.
+  # El test que mas importa es el ADITIVO: un legajo SIN orden madre (todos los anteriores
+  # a la mig 395) tiene que seguir abriendo y ejecutando exactamente igual.
+  "tests/test_orden_produccion.py"
 )
 
 echo ""

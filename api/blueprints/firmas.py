@@ -56,8 +56,9 @@ VALID_MEANINGS = {
     # de lote- NUNCA se pudo dar desde la UI. El backend que la valida existía y
     # estaba bien; el hueco vivía en la whitelist del firmador. Misma clase que M94:
     # una pieza construida entera que nadie podía ejecutar.
-    "aprueba_dt",       # visto bueno del Director Técnico al cerrar el lote
-    "aprueba_orden",    # autorización para ARRANCAR la orden (mig 393)
+    "aprueba_dt",              # visto bueno del Director Técnico al cerrar el lote
+    "aprueba_orden",           # autorización para ARRANCAR la orden (migs 393/395)
+    "aprueba_orden_calidad",   # 2ª aprobación de la orden · sólo acondicionamiento (mig 395)
 }
 
 
@@ -358,7 +359,7 @@ def sign_record():
     # arranque) · van al mismo nivel que 'aprueba'. No endurece la operación: el gate
     # de abajo sólo exige el TOTP a quien YA tiene MFA enrolado.
     _MEANINGS_CRITICOS = {'libera', 'rechaza', 'aprueba', 'autoriza',
-                          'aprueba_dt', 'aprueba_orden'}
+                          'aprueba_dt', 'aprueba_orden', 'aprueba_orden_calidad'}
     if meaning in _MEANINGS_CRITICOS:
         try:
             from config import ADMIN_USERS as _ADM, CALIDAD_USERS as _QC

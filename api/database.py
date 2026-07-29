@@ -10654,6 +10654,42 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE ebr_envase_materiales ADD COLUMN verificado_por TEXT DEFAULT ''",
         "ALTER TABLE ebr_envase_materiales ADD COLUMN verificado_at_utc TEXT DEFAULT ''",
     ]),
+    (395, "La ORDEN como OBJETO PROPIO (Sebastián 29-jul: *'sí, desde los nuevos'*). "
+          "Sebastián describiendo MyBatch: *'tanto fabricación, envasado como acondicionamiento, "
+          "todas inician con una ORDEN; esa orden se le entrega al operario, y después empieza el "
+          "proceso'*. Hasta hoy EOS modelaba el legajo POR LOTE y la orden era una etiqueta; "
+          "MyBatch modela una orden que agrupa N lotes (`add_batch/<pk>`), con un encabezado que "
+          "se aprueba UNA vez para todos y un número que es lo que se imprime y se entrega. "
+          "ES ADITIVA, y eso es el punto: `ebr_ejecuciones.orden_id` es NULEABLE, así que los "
+          "legajos que ya existen se quedan sin orden madre y siguen funcionando exactamente "
+          "igual. NO se migra ni un registro firmado -- colgar retroactivamente un legajo ya "
+          "ejecutado de una orden inventada sería fabricar historia en un registro regulado.", [
+        """CREATE TABLE IF NOT EXISTS ordenes_produccion (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             numero TEXT NOT NULL UNIQUE,
+             fase TEXT NOT NULL DEFAULT 'fabricacion',
+             producto_nombre TEXT NOT NULL DEFAULT '',
+             lote_bulk TEXT DEFAULT '',
+             cantidad_g REAL,
+             densidad_g_ml REAL,
+             estado TEXT NOT NULL DEFAULT 'borrador',
+             observaciones TEXT DEFAULT '',
+             creado_por TEXT DEFAULT '',
+             creado_at_utc TEXT DEFAULT '',
+             elaborado_por TEXT DEFAULT '',
+             aprobada_por TEXT DEFAULT '',
+             aprobada_at_utc TEXT DEFAULT '',
+             aprobada_signature_id INTEGER DEFAULT NULL,
+             aprobada_calidad_por TEXT DEFAULT '',
+             aprobada_calidad_at_utc TEXT DEFAULT '',
+             aprobada_calidad_signature_id INTEGER DEFAULT NULL,
+             anulada_motivo TEXT DEFAULT ''
+           )""",
+        # NULEABLE a propósito: es lo que hace el cambio ADITIVO (ver la nota de arriba).
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN orden_id INTEGER DEFAULT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_ejec_orden ON ebr_ejecuciones(orden_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ordenes_prod_fase_estado ON ordenes_produccion(fase, estado)",
+    ]),
 ]
 
 

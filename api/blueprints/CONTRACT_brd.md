@@ -468,3 +468,31 @@ columnas → la sección 3 quedaba a medias en pantalla con el dato ya en la bas
 fila desaparecía sin un solo mensaje, indistinguible de "no hay material cargado" (M4/M94).
 
 Tests: `tests/test_material_envase_verificado.py` (en el gate).
+
+## INV-15 · La ORDEN es un objeto propio y el vínculo es ADITIVO (mig 395)
+
+Decisión de Sebastián (29-jul): *"sí, desde los nuevos"*. Una orden agrupa **N lotes**
+(`add_batch/<pk>` de MyBatch), se aprueba **una vez para todos** y su número es lo que se
+imprime y se le entrega al operario.
+
+- `ordenes_produccion` (numero UNIQUE, fase, producto, lote_bulk, cantidad_g, densidad) +
+  `ebr_ejecuciones.orden_id` **NULEABLE**. Esa nulabilidad ES el diseño: los legajos anteriores
+  se quedan sin orden madre y **siguen funcionando exactamente igual**. No se migra ni un
+  registro firmado — colgar retroactivamente un legajo ya ejecutado de una orden inventada sería
+  fabricar historia en un registro regulado.
+- Numeración `OP-`/`OF-`/`OA-` con `siguiente_correlativo` + **retry por el UNIQUE** (jamás
+  `CAST(SUBSTR(...))`, que revienta en PG con cualquier sufijo · M45/M96).
+- **`cantidad_ml` se DERIVA** de `cantidad_g / densidad_g_ml` y no se guarda (M71). Sin densidad
+  queda en `None` y la pantalla muestra un punto, no un cero que miente.
+- **Acondicionamiento lleva DOS aprobaciones** (producción + calidad), como la OA-2026-102 real.
+  La orden pasa a `aprobada` **sólo con todas sus firmas**: con una sola todavía no autoriza a
+  arrancar. Un único resolver `_aprobar_orden_generico` para las dos (M1) — separadas, la de
+  calidad sería la que quede vieja.
+- **El gate de arranque acepta la firma del legajo O la de su orden madre.** Si mirara sólo el
+  legajo, aprobar el encabezado no serviría de nada y habría que firmar lote por lote.
+- `adicionar-lote` **delega en `crear_ebr_desde_mbr`** (M3) y sólo le pone el `orden_id`; el lote
+  nuevo **hereda** la aprobación de la orden. ⚠ El contrato de ese helper devuelve `{'ok','id'}`
+  — la llave es `id`, **no** `ebr_id`: indexarlo mal crearía el legajo y devolvería error (M94).
+
+Pantallas: `/planta/ordenes-batch` (listado + crear) y `/planta/orden/<id>` (encabezado, las dos
+firmas, lotes y "Adicionar lote"). Tests: `tests/test_orden_produccion.py` (en el gate).

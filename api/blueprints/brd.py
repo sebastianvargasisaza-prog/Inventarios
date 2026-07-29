@@ -396,10 +396,21 @@ def _gate_aprobacion_orden():
     conn = get_db()
     if not _exige_aprobacion_orden(conn):
         return None
+    # Vale la firma propia del legajo O la de su ORDEN madre (mig 395): el sentido de
+    # aprobar el encabezado UNA vez es que valga para TODOS sus lotes. Si se mirara sólo
+    # el legajo, la orden aprobada no serviría de nada y habría que firmar lote por lote.
     row = conn.execute(
-        "SELECT COALESCE(aprobada_orden_por,''), COALESCE(lote_codigo, lote, '') "
-        "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
-    if not row or (row[0] or "").strip():
+        "SELECT COALESCE(e.aprobada_orden_por,''), COALESCE(e.lote_codigo, e.lote, ''), "
+        "COALESCE(o.aprobada_por,''), COALESCE(o.fase,''), COALESCE(o.aprobada_calidad_por,'') "
+        "FROM ebr_ejecuciones e LEFT JOIN ordenes_produccion o ON o.id=e.orden_id "
+        "WHERE e.id=?", (ebr_id,)).fetchone()
+    if not row:
+        return None
+    if (row[0] or "").strip():
+        return None
+    # En acondicionamiento la orden necesita SUS DOS firmas para autorizar el arranque
+    # (producción y calidad); con una sola todavía no está aprobada.
+    if (row[2] or "").strip() and (row[3] != "acondicionamiento" or (row[4] or "").strip()):
         return None
     if str(row[1] or "").upper().startswith("DEMO-"):   # el legajo demo no firma nada
         return None
@@ -1739,6 +1750,74 @@ def _paso_ej_to_dict(row):
 
 # Fases del motor EBR único (reemplazo MyBatch · OP/OF/OA comparten esqueleto).
 _FASES_VALIDAS = {"fabricacion", "envasado", "acondicionamiento"}
+
+# ── LA ORDEN como objeto propio (mig 395) ───────────────────────────────────────
+#
+# Sebastián: *"todas inician con una ORDEN; esa orden se le entrega al operario, y después
+# empieza el proceso"*. Una orden agrupa N lotes: se aprueba UNA vez para todos, y su
+# número es lo que se imprime. Los legajos viejos siguen sin orden madre (`orden_id` NULL)
+# y funcionan igual -- el cambio es ADITIVO por construcción, no por cortesía.
+
+_ORDEN_PREFIJO = {"fabricacion": "OP", "envasado": "OF", "acondicionamiento": "OA"}
+_ORDEN_ESTADOS = ("borrador", "aprobada", "cerrada", "anulada")
+
+
+def _orden_numero_siguiente(cur, fase, anio=None):
+    """'OF-2026-0007'. NO race-safe por sí solo: el UNIQUE de `numero` es el respaldo y
+    el caller reintenta (patrón de `siguiente_correlativo` · M45/M96: jamás
+    `CAST(SUBSTR(...))`, que revienta en PG con cualquier sufijo)."""
+    from datetime import datetime as _dt, timezone as _tz
+    from audit_helpers import siguiente_correlativo
+    anio = anio or _dt.now(_tz.utc).year
+    pref = "%s-%s-" % (_ORDEN_PREFIJO.get(fase, "OP"), anio)
+    return "%s%04d" % (pref, siguiente_correlativo(cur, "ordenes_produccion", "numero", pref))
+
+
+def _orden_dict(row, lotes=None):
+    d = {
+        "id": row["id"], "numero": row["numero"] or "",
+        "fase": row["fase"] or "fabricacion",
+        "producto_nombre": row["producto_nombre"] or "",
+        "lote_bulk": row["lote_bulk"] or "",
+        "cantidad_g": row["cantidad_g"],
+        "densidad_g_ml": row["densidad_g_ml"],
+        "estado": row["estado"] or "borrador",
+        "observaciones": row["observaciones"] or "",
+        "creado_por": row["creado_por"] or "", "creado_at_utc": row["creado_at_utc"] or "",
+        "elaborado_por": row["elaborado_por"] or "",
+        "aprobada_por": row["aprobada_por"] or "",
+        "aprobada_at_utc": row["aprobada_at_utc"] or "",
+        "aprobada_calidad_por": row["aprobada_calidad_por"] or "",
+        "aprobada_calidad_at_utc": row["aprobada_calidad_at_utc"] or "",
+        "anulada_motivo": row["anulada_motivo"] or "",
+    }
+    # Cantidad por envasar en mL: DERIVADA de la densidad, no se guarda (M71). Sin
+    # densidad queda en None y la pantalla muestra un punto, no un cero que miente.
+    try:
+        d["cantidad_ml"] = (round(float(d["cantidad_g"]) / float(d["densidad_g_ml"]), 2)
+                            if d["cantidad_g"] and d["densidad_g_ml"] else None)
+    except (TypeError, ValueError, ZeroDivisionError):
+        d["cantidad_ml"] = None
+    # Acondicionamiento lleva DOS aprobaciones (producción y calidad · como la OA-2026-102
+    # real: "Supervisado por: Jefe de producción" Y "Aprobado por: Laura González, Jefe de
+    # calidad"). Las otras dos fases, una sola.
+    d["exige_calidad"] = (d["fase"] == "acondicionamiento")
+    d["aprobada"] = bool(d["aprobada_por"] and (not d["exige_calidad"] or d["aprobada_calidad_por"]))
+    if lotes is not None:
+        d["lotes"] = lotes
+    return d
+
+
+def _orden_de_ebr(conn, ebr_id):
+    """La orden madre de un legajo, o None si no tiene (los de antes de la mig 395)."""
+    try:
+        r = conn.execute(
+            "SELECT o.* FROM ordenes_produccion o "
+            "JOIN ebr_ejecuciones e ON e.orden_id=o.id WHERE e.id=?", (ebr_id,)).fetchone()
+        return _orden_dict(r) if r else None
+    except Exception as _e:
+        log.warning("orden madre de ebr=%s no legible: %s", ebr_id, _e)
+        return None
 
 
 def _fase_canonica(label):
@@ -3363,6 +3442,8 @@ def ebr_vista_completa(ebr_id):
                 })
         except Exception as _e:
             log.warning("columnas mig 392/393 no disponibles en ebr=%s: %s", ebr_id, _e)
+        # Orden madre (mig 395) · None para los legajos anteriores, que siguen igual.
+        out['orden'] = _orden_de_ebr(conn, ebr_id)
         # Objetivo EN VIVO (M67 punto 4): mientras el EBR NO esté liberado/completado/rechazado,
         # la magnitud del lote la manda la fuente de verdad produccion_programada.cantidad_kg · no
         # el cantidad_objetivo_g congelado (que pudo nacer con el default del MBR o quedar stale si
@@ -7235,6 +7316,241 @@ def registrar_unidades_envasado(ebr_id):
     return jsonify({"ok": True, "presentacion_codigo": pc, "unidades": unidades})
 
 
+@bp.route("/api/brd/ordenes", methods=["GET", "POST"])
+def brd_ordenes(ebr_id=None):
+    """GET: listado de órdenes (filtros `fase` y `estado`). POST: crea una orden.
+
+    La orden es lo que se le entrega al operario: dice QUÉ y CUÁNTO hay que hacer. Los
+    lotes se le cuelgan después con `adicionar-lote`.
+    """
+    if request.method == "GET":
+        err = _require_login()
+        if err:
+            return err
+        conn = get_db()
+        sql = ("SELECT o.*, (SELECT COUNT(*) FROM ebr_ejecuciones e WHERE e.orden_id=o.id) AS n_lotes "
+               "FROM ordenes_produccion o WHERE 1=1")
+        params = []
+        _f = (request.args.get("fase") or "").strip().lower()
+        if _f in _FASES_VALIDAS:
+            sql += " AND o.fase=?"; params.append(_f)
+        _e = (request.args.get("estado") or "").strip().lower()
+        if _e in _ORDEN_ESTADOS:
+            sql += " AND o.estado=?"; params.append(_e)
+        sql += " ORDER BY o.id DESC LIMIT 300"
+        out = []
+        for r in conn.execute(sql, tuple(params)).fetchall():
+            d = _orden_dict(r)
+            d["n_lotes"] = r["n_lotes"]
+            out.append(d)
+        return jsonify({"ordenes": out, "total": len(out)})
+
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    fase = (body.get("fase") or "fabricacion").strip().lower()
+    if fase not in _FASES_VALIDAS:
+        return jsonify({"error": "fase inválida · " + ", ".join(sorted(_FASES_VALIDAS))}), 400
+    producto = (body.get("producto_nombre") or "").strip()
+    if not producto:
+        return jsonify({"error": "indicá el producto de la orden"}), 400
+
+    def _n(k):
+        try:
+            v = body.get(k)
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    conn = get_db(); cur = conn.cursor()
+    from datetime import datetime as _dt, timezone as _tz
+    ahora = _dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    # Reintento por el UNIQUE de `numero`: el correlativo se calcula leyendo, así que dos
+    # workers pueden sacar el mismo · el índice es el árbitro y acá se vuelve a intentar.
+    ultimo = None
+    for _ in range(5):
+        numero = _orden_numero_siguiente(cur, fase)
+        try:
+            cur.execute(
+                "INSERT INTO ordenes_produccion (numero, fase, producto_nombre, lote_bulk, "
+                "cantidad_g, densidad_g_ml, estado, observaciones, creado_por, creado_at_utc, "
+                "elaborado_por) VALUES (?,?,?,?,?,?, 'borrador', ?,?,?,?)",
+                (numero, fase, producto, (body.get("lote_bulk") or "").strip(),
+                 _n("cantidad_g"), _n("densidad_g_ml"),
+                 (body.get("observaciones") or "").strip()[:500], user, ahora, user))
+            break
+        except Exception as _e:
+            ultimo = _e
+            conn.rollback()
+    else:
+        log.warning("no se pudo numerar la orden (%s): %s", fase, ultimo)
+        return jsonify({"error": "no se pudo asignar el número de orden · reintentá"}), 409
+    oid = cur.lastrowid
+    audit_log(cur, usuario=user, accion="CREAR_ORDEN_PRODUCCION",
+              tabla="ordenes_produccion", registro_id=oid,
+              despues={"numero": numero, "fase": fase, "producto": producto})
+    conn.commit()
+    return jsonify({"ok": True, "id": oid, "numero": numero}), 201
+
+
+@bp.route("/api/brd/ordenes/<int:orden_id>", methods=["GET"])
+def brd_orden_detalle(orden_id):
+    """Encabezado de la orden + sus lotes (con el estado de cada legajo)."""
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    row = conn.execute("SELECT * FROM ordenes_produccion WHERE id=?", (orden_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "orden no encontrada"}), 404
+    lotes = []
+    for r in conn.execute(
+        "SELECT id, COALESCE(lote_codigo, lote) AS lote, estado, COALESCE(operario,'') AS operario, "
+        "COALESCE(iniciado_at_utc,'') AS ini, COALESCE(completado_at_utc,'') AS fin, "
+        "cantidad_objetivo_g, cantidad_real_g "
+        "FROM ebr_ejecuciones WHERE orden_id=? ORDER BY id", (orden_id,)).fetchall():
+        lotes.append({"ebr_id": r["id"], "lote": r["lote"] or "", "estado": r["estado"] or "",
+                      "operario": r["operario"], "iniciado_at_utc": r["ini"],
+                      "completado_at_utc": r["fin"],
+                      "cantidad_objetivo_g": r["cantidad_objetivo_g"],
+                      "cantidad_real_g": r["cantidad_real_g"]})
+    return jsonify({"orden": _orden_dict(row, lotes=lotes),
+                    "mi_rol": _batch_role_info(session.get("compras_user", ""))})
+
+
+def _aprobar_orden_generico(orden_id, *, campo, meaning, rol_requerido, etiqueta):
+    """Núcleo de las DOS aprobaciones de una orden (producción y calidad).
+
+    Un solo resolver para las dos (M1): si se escribieran por separado, la de calidad
+    -que sólo usa acondicionamiento- sería la que se quede vieja."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if rol_requerido and not _batch_role_info(user).get(rol_requerido):
+        return jsonify({"error": "%s es atribución de Calidad / Dirección Técnica." % etiqueta,
+                        "codigo": "ROL_NO_AUTORIZADO"}), 403
+    body = request.get_json(silent=True) or {}
+    signature_id = body.get("signature_id")
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute("SELECT * FROM ordenes_produccion WHERE id=?", (orden_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "orden no encontrada"}), 404
+    if (row["estado"] or "") == "anulada":
+        return jsonify({"error": "la orden está anulada", "codigo": "ORDEN_ANULADA"}), 409
+    if (row[campo] or "").strip():
+        return jsonify({"error": "%s ya la dio %s" % (etiqueta, row[campo]),
+                        "codigo": "YA_APROBADA"}), 409
+    if campo == "aprobada_calidad_por" and (row["fase"] or "") != "acondicionamiento":
+        return jsonify({"error": "la aprobación de Calidad sobre la orden es de acondicionamiento",
+                        "codigo": "FASE_SIN_APROBACION_CALIDAD"}), 400
+    if not signature_id:
+        return jsonify({"error": "signature_id requerido · meaning='%s' "
+                                 "record_table='ordenes_produccion'" % meaning}), 400
+    if not _validar_signature(cur, signature_id, record_table="ordenes_produccion",
+                              record_id=orden_id, meaning=meaning, signer_username=user):
+        return jsonify({"error": "signature_id no corresponde a una firma '%s' de esta orden "
+                                 "por vos" % meaning}), 400
+    cur.execute(
+        "UPDATE ordenes_produccion SET %s=?, %s=datetime('now','utc'), %s=? "
+        "WHERE id=? AND COALESCE(%s,'')=''" % (campo, campo.replace("_por", "_at_utc"),
+                                               campo.replace("_por", "_signature_id"), campo),
+        (user, signature_id, orden_id))
+    if cur.rowcount == 0:                      # CAS: otro worker aprobó primero (M27)
+        conn.rollback()
+        return jsonify({"error": "la orden ya fue aprobada · refrescá", "codigo": "YA_APROBADA"}), 409
+    # La orden pasa a 'aprobada' sólo cuando TIENE todas sus firmas: en acondicionamiento
+    # son dos, y con una sola todavía no está autorizada a arrancar.
+    _o = cur.execute("SELECT fase, COALESCE(aprobada_por,''), COALESCE(aprobada_calidad_por,''), "
+                     "estado FROM ordenes_produccion WHERE id=?", (orden_id,)).fetchone()
+    _completa = bool(_o[1]) and (_o[0] != "acondicionamiento" or bool(_o[2]))
+    if _completa and (_o[3] or "") == "borrador":
+        cur.execute("UPDATE ordenes_produccion SET estado='aprobada' WHERE id=? AND estado='borrador'",
+                    (orden_id,))
+    audit_log(cur, usuario=user, accion="APROBAR_ORDEN_" + ("CALIDAD" if "calidad" in campo else "PRODUCCION"),
+              tabla="ordenes_produccion", registro_id=orden_id,
+              despues={"por": user, "signature_id": signature_id, "completa": _completa})
+    conn.commit()
+    return jsonify({"ok": True, "aprobada_por": user, "orden_aprobada": _completa})
+
+
+@bp.route("/api/brd/ordenes/<int:orden_id>/aprobar", methods=["POST"])
+def brd_orden_aprobar(orden_id):
+    """Aprobación de PRODUCCIÓN sobre la orden · vale para TODOS sus lotes."""
+    return _aprobar_orden_generico(
+        orden_id, campo="aprobada_por", meaning="aprueba_orden",
+        rol_requerido=None, etiqueta="La aprobación de la orden")
+
+
+@bp.route("/api/brd/ordenes/<int:orden_id>/aprobar-calidad", methods=["POST"])
+def brd_orden_aprobar_calidad(orden_id):
+    """2ª aprobación (CALIDAD) · sólo acondicionamiento, como en MyBatch."""
+    return _aprobar_orden_generico(
+        orden_id, campo="aprobada_calidad_por", meaning="aprueba_orden_calidad",
+        rol_requerido="puede_aprobar", etiqueta="La aprobación de Calidad")
+
+
+@bp.route("/api/brd/ordenes/<int:orden_id>/adicionar-lote", methods=["POST"])
+def brd_orden_adicionar_lote(orden_id):
+    """"Adicionar Lote" de MyBatch: crea un legajo NUEVO colgado de esta orden.
+
+    Delega en `crear_ebr_desde_mbr` (M3: una sola ruta canónica de creación de legajo ·
+    acá sólo se le pone el `orden_id`). Una orden puede tener N lotes; un lote, una orden.
+    """
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    lote = (body.get("lote") or "").strip()
+    if not lote:
+        return jsonify({"error": "indicá el número de lote"}), 400
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute("SELECT * FROM ordenes_produccion WHERE id=?", (orden_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "orden no encontrada"}), 404
+    if (row["estado"] or "") in ("anulada", "cerrada"):
+        return jsonify({"error": "la orden está %s · no admite lotes nuevos" % row["estado"],
+                        "codigo": "ORDEN_CERRADA"}), 409
+    try:
+        res = crear_ebr_desde_mbr(
+            cur, producto_nombre=row["producto_nombre"], lote=lote,
+            cantidad_objetivo_g=row["cantidad_g"], usuario=user,
+            fase=row["fase"], notas="Lote de la orden " + (row["numero"] or ""))
+    except Exception as _e:
+        conn.rollback()
+        log.warning("adicionar lote a la orden %s falló: %s", orden_id, _e)
+        return jsonify({"error": "no se pudo crear el legajo: %s" % _e}), 500
+    # El contrato de `crear_ebr_desde_mbr` es {'ok': bool, 'id': int, 'error': str} · la
+    # llave es `id`, NO `ebr_id` (M94: leer el return antes de indexarlo · con la llave
+    # equivocada esto crearía el legajo y devolvería error, que es una feature muerta).
+    if not (isinstance(res, dict) and res.get("ok")):
+        conn.rollback()
+        _err = (res or {}).get("error", "") if isinstance(res, dict) else ""
+        _msg = {"NO_MBR_APROBADO": "el producto no tiene un MBR aprobado para esta fase",
+                "LOTE_DUPLICADO": "ese lote ya tiene legajo en esta fase",
+                "SIN_FORMULA": "el producto no tiene fórmula activa"}.get(_err, _err or "desconocido")
+        return jsonify({"error": "no se pudo crear el legajo del lote: " + _msg,
+                        "codigo": _err or "SIN_LEGAJO"}), 409
+    ebr_id = res.get("id")
+    cur.execute("UPDATE ebr_ejecuciones SET orden_id=? WHERE id=?", (orden_id, ebr_id))
+    # La orden ya aprobada vale para TODOS sus lotes: el lote nuevo hereda esa autorización
+    # (es el sentido de aprobar UNA vez el encabezado). Se copia para que el gate y el
+    # imprimible del legajo la vean sin tener que ir a buscar a la madre.
+    if (row["aprobada_por"] or "").strip():
+        cur.execute(
+            "UPDATE ebr_ejecuciones SET aprobada_orden_por=?, aprobada_orden_at_utc=?, "
+            "aprobada_orden_rol='orden' WHERE id=? AND COALESCE(aprobada_orden_por,'')=''",
+            (row["aprobada_por"], row["aprobada_at_utc"] or "", ebr_id))
+    audit_log(cur, usuario=user, accion="ADICIONAR_LOTE_A_ORDEN",
+              tabla="ordenes_produccion", registro_id=orden_id,
+              despues={"ebr_id": ebr_id, "lote": lote, "numero": row["numero"]})
+    conn.commit()
+    return jsonify({"ok": True, "ebr_id": ebr_id, "lote": lote}), 201
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/remanente-granel", methods=["POST"])
 def remanente_granel_ebr(ebr_id):
     """Cierra la conciliación del granel: cuánto SOBRÓ y en qué terminó.
@@ -10352,6 +10668,283 @@ def _inyectar_aprobacion_orden(nombre, plantilla):
 _ORDEN_DETALLE_HTML = _inyectar_aprobacion_orden("_ORDEN_DETALLE_HTML", _ORDEN_DETALLE_HTML)
 _ENVASADO_LEGAJO_HTML = _inyectar_aprobacion_orden("_ENVASADO_LEGAJO_HTML", _ENVASADO_LEGAJO_HTML)
 _ACOND_LEGAJO_HTML = _inyectar_aprobacion_orden("_ACOND_LEGAJO_HTML", _ACOND_LEGAJO_HTML)
+
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# ORDENES de produccion · listado + detalle (mig 395)
+#
+# La orden es lo que se le entrega al operario. Esta pantalla es donde se crea, se
+# aprueba (una vez para todos sus lotes) y se le adicionan lotes.
+# ──────────────────────────────────────────────────────────────────────────
+
+_ORDENES_BATCH_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Ordenes de Produccion &middot; EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{background:var(--cx-bg,#f6f7fb);color:var(--cx-text,#18181b);font-family:Inter,system-ui,-apple-system,sans-serif;margin:0}
+.wrap{max-width:96vw;margin:0 auto;padding:26px 22px 60px}
+.hero{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+h1{font-size:27px;font-weight:800;letter-spacing:-.5px;margin:0 0 4px}
+.sub{color:var(--cx-text-soft,#475569);font-size:13.5px;margin:0}
+.bt{padding:9px 17px;border:0;border-radius:10px;cursor:pointer;font-weight:700;font-size:13px;background:var(--cx-primary-grad,linear-gradient(135deg,#7c3aed,#a855f7));color:#fff;text-decoration:none;display:inline-block}
+.bt.sec{background:var(--cx-border-soft,#f1f5f9);color:var(--cx-text,#18181b);border:1px solid var(--cx-border,#cbd5e1)}
+.tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+.tb{padding:7px 15px;border-radius:20px;border:1px solid var(--cx-border,#cbd5e1);background:var(--cx-card,#fff);cursor:pointer;font-size:12.5px;font-weight:700;color:var(--cx-text-soft,#475569)}
+.tb.on{background:var(--cx-primary,#7c3aed);color:#fff;border-color:var(--cx-primary,#7c3aed)}
+.card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#e8e8ef);border-radius:15px;overflow:hidden;box-shadow:0 1px 3px rgba(16,16,24,.05)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:11px 14px;background:var(--cx-bg-alt,#f8fafc);color:var(--cx-text-soft,#475569);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--cx-border-soft,#e8e8ef)}
+td{padding:12px 14px;border-bottom:1px solid var(--cx-border-soft,#f1f5f9)}
+tr:last-child td{border-bottom:0}
+tr:hover td{background:var(--cx-bg-alt,#f8fafc)}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700}
+.chip{display:inline-block;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:800;white-space:nowrap}
+.muted{color:var(--cx-text-faint,#94a3b8)}
+.tw{overflow-x:auto}
+</style></head><body>
+<div class="wrap">
+  <div class="hero">
+    <div><h1>Ordenes de Produccion</h1>
+    <p class="sub">La orden dice QUE y CUANTO hay que hacer, se aprueba una vez y se le entrega al operario. Cada orden agrupa uno o varios lotes.</p></div>
+    <div style="display:flex;gap:8px"><button class="bt" onclick="nuevaOrden()">+ Nueva orden</button>
+    <a class="bt sec" href="/inventarios">&#9198; Atras</a></div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div class="card"><div class="tw"><table>
+    <thead><tr><th>N&deg; de orden</th><th>Fase</th><th>Producto</th><th>Lote bulk</th><th>Cantidad</th><th>Lotes</th><th>Estado</th><th>Aprobada por</th></tr></thead>
+    <tbody id="filas"><tr><td colspan="8" class="muted" style="text-align:center;padding:26px">Cargando...</td></tr></tbody>
+  </table></div></div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function gf(n){return n==null?'&middot;':Number(n).toLocaleString('es-CO',{maximumFractionDigits:1});}
+var FASE='';
+var FASES=[['','Todas'],['fabricacion','Fabricacion'],['envasado','Envasado'],['acondicionamiento','Acondicionamiento']];
+function pintarTabs(){
+  document.getElementById('tabs').innerHTML=FASES.map(function(f){
+    return '<button class="tb'+(FASE===f[0]?' on':'')+'" onclick="setFase(&#39;'+f[0]+'&#39;)">'+esc(f[1])+'</button>';}).join('');
+}
+function setFase(f){FASE=f;pintarTabs();cargar();}
+function chipEstado(e){
+  var m={borrador:['var(--cx-warn-pale,#fffbeb)','var(--cx-warn-text,#b45309)'],
+         aprobada:['var(--cx-success-pale,#f0fdf4)','var(--cx-success-text,#166534)'],
+         cerrada:['var(--cx-bg-alt,#f8fafc)','var(--cx-text-soft,#475569)'],
+         anulada:['var(--cx-danger-pale,#fef2f2)','var(--cx-danger-text,#b91c1c)']}[e]||['var(--cx-bg-alt,#f8fafc)','var(--cx-text-soft,#475569)'];
+  return '<span class="chip" style="background:'+m[0]+';color:'+m[1]+'">'+esc(e||'&middot;')+'</span>';
+}
+async function cargar(){
+  try{
+    var r=await fetch('/api/brd/ordenes'+(FASE?('?fase='+FASE):''),{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    var os=d.ordenes||[];
+    document.getElementById('filas').innerHTML = os.length ? os.map(function(o){
+      var apr=o.aprobada_por?esc(o.aprobada_por):'<span class="muted">sin aprobar</span>';
+      if(o.exige_calidad&&o.aprobada_por){apr+=o.aprobada_calidad_por?(' + '+esc(o.aprobada_calidad_por)):' <span style="color:var(--cx-warn-text,#b45309);font-weight:700">(falta Calidad)</span>';}
+      return '<tr style="cursor:pointer" onclick="location.href=&#39;/planta/orden/'+o.id+'&#39;">'+
+        '<td class="mono">'+esc(o.numero)+'</td>'+
+        '<td>'+esc(o.fase)+'</td>'+
+        '<td>'+esc(o.producto_nombre)+'</td>'+
+        '<td class="mono">'+esc(o.lote_bulk||'&middot;')+'</td>'+
+        '<td>'+gf(o.cantidad_g)+' g'+(o.cantidad_ml!=null?(' &middot; '+gf(o.cantidad_ml)+' mL'):'')+'</td>'+
+        '<td>'+(o.n_lotes||0)+'</td>'+
+        '<td>'+chipEstado(o.estado)+'</td>'+
+        '<td>'+apr+'</td></tr>';
+    }).join('') : '<tr><td colspan="8" class="muted" style="text-align:center;padding:26px">Todavia no hay ordenes. Crea la primera con el boton de arriba.</td></tr>';
+  }catch(e){document.getElementById('filas').innerHTML='<tr><td colspan="8" style="color:var(--cx-danger-text,#b91c1c);padding:20px">Error de red: '+esc(e.message)+'</td></tr>';}
+}
+function nuevaOrden(){
+  var ov=document.getElementById('nov');
+  if(!ov){ov=document.createElement('div');ov.id='nov';ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999';document.body.appendChild(ov);}
+  ov.innerHTML='<div style="background:var(--cx-card,#fff);border-radius:15px;padding:24px;max-width:560px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)">'+
+    '<div style="font-weight:800;font-size:18px;margin-bottom:4px">Nueva orden</div>'+
+    '<div style="font-size:12.5px;color:var(--cx-text-soft,#475569);margin-bottom:16px">Los lotes se le agregan despues, desde el detalle de la orden.</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft,#475569)">Fase *</label><select id="n_fase" style="width:100%;padding:9px;border:1px solid var(--cx-border,#cbd5e1);border-radius:8px"><option value="fabricacion">Fabricacion</option><option value="envasado" selected>Envasado</option><option value="acondicionamiento">Acondicionamiento</option></select></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft,#475569)">N&deg; lote bulk</label><input id="n_lote" style="width:100%;padding:9px;border:1px solid var(--cx-border,#cbd5e1);border-radius:8px"></div>'+
+      '<div style="grid-column:1/-1"><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft,#475569)">Producto *</label><input id="n_prod" placeholder="nombre exacto del producto" style="width:100%;padding:9px;border:1px solid var(--cx-border,#cbd5e1);border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft,#475569)">Cantidad (g)</label><input id="n_cant" type="number" step="0.1" style="width:100%;padding:9px;border:1px solid var(--cx-border,#cbd5e1);border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft,#475569)">Densidad (g/mL)</label><input id="n_dens" type="number" step="0.001" style="width:100%;padding:9px;border:1px solid var(--cx-border,#cbd5e1);border-radius:8px"></div>'+
+      '<div style="grid-column:1/-1"><label style="font-size:12px;font-weight:600;color:var(--cx-text-soft,#475569)">Observaciones</label><input id="n_obs" style="width:100%;padding:9px;border:1px solid var(--cx-border,#cbd5e1);border-radius:8px"></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">'+
+      '<button class="bt sec" onclick="cerrarNueva()">Cancelar</button>'+
+      '<button class="bt" id="n_ok" onclick="guardarNueva()">Crear orden</button>'+
+    '</div></div>';
+  ov.style.display='flex';
+}
+function cerrarNueva(){var o=document.getElementById('nov');if(o)o.style.display='none';}
+async function guardarNueva(){
+  if(window._noBusy)return; window._noBusy=true;
+  var b=document.getElementById('n_ok'); if(b)b.disabled=true;
+  try{
+    var prod=document.getElementById('n_prod').value.trim();
+    if(!prod){alert('Indica el producto de la orden.');return;}
+    function n(id){var v=document.getElementById(id).value;return v===''?null:parseFloat(v);}
+    var body={fase:document.getElementById('n_fase').value,producto_nombre:prod,
+              lote_bulk:document.getElementById('n_lote').value,cantidad_g:n('n_cant'),
+              densidad_g_ml:n('n_dens'),observaciones:document.getElementById('n_obs').value};
+    var r=await fetch('/api/brd/ordenes',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo crear: '+((d&&d.error)||r.status));return;}
+    cerrarNueva(); location.href='/planta/orden/'+d.id;
+  }catch(e){alert('Error: '+(e.message||e));}
+  finally{window._noBusy=false; if(b)b.disabled=false;}
+}
+pintarTabs(); cargar();
+</script></body></html>"""
+
+
+_ORDEN_DETALLE_BATCH_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Orden &middot; EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{background:var(--cx-bg,#f6f7fb);color:var(--cx-text,#18181b);font-family:Inter,system-ui,-apple-system,sans-serif;margin:0}
+.wrap{max-width:96vw;margin:0 auto;padding:26px 22px 60px}
+.ortit{font-size:27px;font-weight:800;letter-spacing:-.5px;margin:2px 0 4px}
+.prod{font-size:16px;color:var(--cx-text-soft,#475569);margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:14px;background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#e8e8ef);border-radius:15px;padding:18px;margin-bottom:16px}
+.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--cx-text-faint,#94a3b8);font-weight:700;margin-bottom:3px}
+.val{font-size:14.5px;font-weight:700}
+.card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#e8e8ef);border-radius:15px;overflow:hidden;margin-bottom:16px}
+.sechead{padding:15px 18px;border-bottom:1px solid var(--cx-border-soft,#e8e8ef);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.sectit{font-size:15.5px;font-weight:800}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:11px 14px;background:var(--cx-bg-alt,#f8fafc);color:var(--cx-text-soft,#475569);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px}
+td{padding:12px 14px;border-bottom:1px solid var(--cx-border-soft,#f1f5f9)}
+tr:last-child td{border-bottom:0}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700}
+.bt{padding:9px 17px;border:0;border-radius:10px;cursor:pointer;font-weight:700;font-size:13px;background:var(--cx-primary-grad,linear-gradient(135deg,#7c3aed,#a855f7));color:#fff;text-decoration:none;display:inline-block}
+.bt.sec{background:var(--cx-border-soft,#f1f5f9);color:var(--cx-text,#18181b);border:1px solid var(--cx-border,#cbd5e1)}
+.muted{color:var(--cx-text-faint,#94a3b8)}
+.tw{overflow-x:auto}
+</style></head><body>
+<div class="wrap"><div id="cab"><p class="muted">Cargando...</p></div><div id="cuerpo"></div></div>
+<script>
+var ORDEN_ID=__ORDEN_ID__;
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function gf(n){return n==null?'&middot;':Number(n).toLocaleString('es-CO',{maximumFractionDigits:1});}
+function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
+function dt(s){return s?esc(String(s).substring(0,16).replace("T"," ")):'&middot;';}
+function firmaLinea(tit,quien,cuando,accion,puede){
+  if(quien){return '<div style="display:flex;align-items:center;gap:8px;background:var(--cx-success-pale,#f0fdf4);border:1px solid var(--cx-success-light,#86efac);color:var(--cx-success-text,#166534);border-radius:11px;padding:10px 15px;font-size:13px">'+
+    '<span style="font-size:15px">&#10003;</span><div><b>'+esc(tit)+'</b> &middot; '+esc(quien)+(cuando?(' &middot; '+dt(cuando)):'')+'</div></div>';}
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--cx-warn-pale,#fffbeb);border:1px solid var(--cx-warn-light,#fcd34d);color:var(--cx-warn-text,#b45309);border-radius:11px;padding:10px 15px;font-size:13px">'+
+    '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px">&#9888;</span><div><b>'+esc(tit)+'</b> &middot; pendiente</div></div>'+
+    (puede?('<button class="bt" style="padding:7px 15px;font-size:12.5px" onclick="'+accion+'">&#9998; Firmar</button>'):'')+'</div>';
+}
+async function _firmarOrden(meaning){
+  var pwd=prompt('Firma electronica (21 CFR Part 11) &middot; tu contrasena para firmar:');
+  if(!pwd)return null;
+  var totp=prompt('Codigo MFA de 6 digitos (si no usas MFA, dejalo vacio y acepta):')||'';
+  try{
+    var rc=await fetch('/api/sign/challenge',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:pwd,totp_token:totp})});
+    var dc=await rc.json();
+    if(!rc.ok)return {error:(dc&&dc.error)||'Credenciales invalidas'};
+    var rs=await fetch('/api/sign',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({record_table:'ordenes_produccion',record_id:String(ORDEN_ID),meaning:meaning,challenge_token:dc.token})});
+    var ds=await rs.json();
+    if(!rs.ok)return {error:(ds&&ds.error)||'No se pudo firmar'};
+    return {signature_id:ds.signature_id};
+  }catch(e){return {error:'Error de red al firmar'};}
+}
+async function _aprobar(ruta,meaning,texto){
+  if(window._apBusy)return; window._apBusy=true;
+  try{
+    if(!confirm(texto))return;
+    var f=await _firmarOrden(meaning);
+    if(!f)return;
+    if(f.error){alert('No se pudo firmar: '+f.error);return;}
+    var r=await fetch('/api/brd/ordenes/'+ORDEN_ID+'/'+ruta,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({signature_id:f.signature_id})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo aprobar: '+((d&&d.error)||r.status));return;}
+    cargar();
+  }catch(e){alert('Error: '+(e.message||e));}
+  finally{window._apBusy=false;}
+}
+function aprobarOrden(){_aprobar('aprobar','aprueba_orden','Vas a APROBAR esta orden para que arranque. Vale para TODOS sus lotes y queda firmada con tu identidad (21 CFR Part 11). Confirmas?');}
+function aprobarCalidad(){_aprobar('aprobar-calidad','aprueba_orden_calidad','Aprobacion de CALIDAD sobre la orden de acondicionamiento. Queda firmada con tu identidad. Confirmas?');}
+async function adicionarLote(){
+  var lote=prompt('N&deg; de lote del nuevo legajo:');
+  if(!lote)return;
+  try{
+    var r=await fetch('/api/brd/ordenes/'+ORDEN_ID+'/adicionar-lote',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({lote:lote})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo adicionar el lote: '+((d&&d.error)||r.status));return;}
+    cargar();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+function rutaLegajo(fase,eid){
+  if(fase==='envasado')return '/planta/legajo-envasado/'+eid;
+  if(fase==='acondicionamiento')return '/planta/legajo-acondicionamiento/'+eid;
+  return '/planta/orden-detalle/'+eid;
+}
+async function cargar(){
+  try{
+    var r=await fetch('/api/brd/ordenes/'+ORDEN_ID,{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok){document.getElementById('cab').innerHTML='<span style="color:var(--cx-danger-text,#b91c1c)">Error: '+esc(d.error||r.status)+'</span>';return;}
+    var o=d.orden||{}; var rol=d.mi_rol||{};
+    var puedeEd=(o.estado!=='anulada');
+    document.getElementById('cab').innerHTML=
+      '<div class="ortit">ORDEN N&deg;: '+esc(o.numero||'')+'</div>'+
+      '<div class="prod">'+esc(o.producto_nombre||'')+' &middot; '+esc(o.fase||'')+'</div>'+
+      firmaLinea('Aprobacion de Produccion',o.aprobada_por,o.aprobada_at_utc,'aprobarOrden()',puedeEd&&!!rol.puede_ejecutar)+
+      (o.exige_calidad?('<div style="height:8px"></div>'+firmaLinea('Aprobacion de Calidad',o.aprobada_calidad_por,o.aprobada_calidad_at_utc,'aprobarCalidad()',puedeEd&&!!rol.puede_aprobar)):'')+
+      '<div style="height:14px"></div>'+
+      '<div class="grid">'+
+        fld('Estado','<b>'+esc(o.estado||'')+'</b>')+
+        fld('N&deg; Lote Bulk','<span class="mono">'+esc(o.lote_bulk||'&middot;')+'</span>')+
+        fld('Tamano Bulk',gf(o.cantidad_g)+' g'+(o.cantidad_ml!=null?(' - '+gf(o.cantidad_ml)+' mL'):''))+
+        fld('Densidad',o.densidad_g_ml?(Number(o.densidad_g_ml).toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'&middot;')+
+        fld('Elaborado por',esc(o.elaborado_por||o.creado_por||'&middot;'))+
+        fld('Creada',dt(o.creado_at_utc))+
+        '<div style="grid-column:1/-1"><div class="lbl">Observaciones</div><div class="val" style="font-weight:400">'+esc(o.observaciones||'Ninguna')+'</div></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'+
+        (puedeEd?'<button class="bt" onclick="adicionarLote()">+ Adicionar lote</button>':'')+
+        '<a class="bt sec" href="/planta/ordenes-batch">&#9198; Todas las ordenes</a>'+
+      '</div>';
+    var ls=o.lotes||[];
+    document.getElementById('cuerpo').innerHTML=
+      '<div class="card"><div class="sechead"><div class="sectit">Lotes de la orden ('+ls.length+')</div></div>'+
+      '<div class="tw"><table><thead><tr><th>N&deg; de lote</th><th>Estado</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Objetivo</th><th>Real</th></tr></thead><tbody>'+
+      (ls.length?ls.map(function(l){
+        return '<tr style="cursor:pointer" onclick="location.href=&#39;'+rutaLegajo(o.fase,l.ebr_id)+'&#39;">'+
+          '<td class="mono">'+esc(l.lote)+'</td><td>'+esc(l.estado)+'</td><td>'+esc(l.operario||'&middot;')+'</td>'+
+          '<td>'+dt(l.iniciado_at_utc)+'</td><td>'+dt(l.completado_at_utc)+'</td>'+
+          '<td>'+gf(l.cantidad_objetivo_g)+' g</td><td>'+gf(l.cantidad_real_g)+' g</td></tr>';
+      }).join(''):'<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">Todavia no hay lotes. Agrega el primero con "Adicionar lote".</td></tr>')+
+      '</tbody></table></div></div>';
+  }catch(e){document.getElementById('cab').innerHTML='<span style="color:var(--cx-danger-text,#b91c1c)">Error de red: '+esc(e.message)+'</span>';}
+}
+cargar();
+</script></body></html>"""
+
+
+@bp.route("/planta/ordenes-batch", methods=["GET"])
+def ordenes_batch_page():
+    """Listado de ordenes de produccion (las tres fases)."""
+    if not session.get("compras_user"):
+        return Response('<script>location.href="/login?next=/planta/ordenes-batch"</script>',
+                        mimetype="text/html")
+    return Response(_ORDENES_BATCH_HTML, mimetype="text/html")
+
+
+@bp.route("/planta/orden/<int:orden_id>", methods=["GET"])
+def orden_batch_detalle_page(orden_id):
+    """Detalle de una orden: encabezado, sus firmas y sus lotes."""
+    if not session.get("compras_user"):
+        return Response(
+            '<script>location.href="/login?next=/planta/orden/%d"</script>' % orden_id,
+            mimetype="text/html")
+    return Response(_ORDEN_DETALLE_BATCH_HTML.replace("__ORDEN_ID__", str(orden_id)),
+                    mimetype="text/html")
 
 
 _INSTRUCCIONES_ENVASADO_HTML = """<!DOCTYPE html>
