@@ -662,3 +662,42 @@ porque es el punto de USO. Sale del **kardex** para el `(material, lote)` que se
 (INVIMA Res. 2214 · M25).
 
 Tests: `tests/test_hoja_pesaje_vencimiento.py` (en el gate · 3 casos).
+
+
+## 🏷️ INV-14 · El rótulo de pesaje REPARTE por lote y no inventa cantidad (30-jul)
+
+Sebastián, a punto de producir SUERO MULTIPÉPTIDOS de 45 kg: *"del palmitoyl tripéptido-4 hay
+sólo uno, con menor cantidad de la que se requiere, y cuando le doy rótulos de pesaje me saca ESE
+con la cantidad necesaria a pesar de que no hay (...) debería tomar el lote más viejo con la
+cantidad que hay + otro rótulo con el otro lote que tenga lo que falta, porque así estaría
+registrando lo que no es"*.
+
+`/rotulos/<producto>/<kg>` resolvía **un** lote (el más próximo a vencer con stock) y le imprimía
+el peso teórico **completo** sin mirar si alcanzaba. Es un registro regulado (PRD-PRO-001-F08)
+documentando un lote y una cantidad que no existen, y el operario terminaba completando de otro
+lote **sin rótulo**.
+
+- **El reparto sale de `_distribuir_fefo`, el MISMO que usa el descuento de producción.** Si
+  fueran dos cuentas distintas, el papel y el kardex divergirían (M1/M5). Un rótulo **por lote**,
+  con la cantidad de ESE lote, su ubicación y su vencimiento.
+- Cada hoja marca **"Parte k de n"** y el peso dice *"Peso de ESTE lote · de X g en total"*: nadie
+  puede confundir la parte con el total.
+- ⚠ **`_distribuir_fefo` LANZA si el stock no alcanza** (correcto para un descuento: no se
+  descuenta lo que no hay). Para el rótulo se le pide el reparto de **lo disponible** (stock
+  canónico · regla #4) y la diferencia queda como **faltante declarado**: sale su propia hoja con
+  *"NO HAY STOCK PARA ESTA CANTIDAD · faltan X g"*, nunca un lote inventado. La primera versión
+  atrapaba esa excepción y caía al comportamiento viejo — o sea, no cambiaba nada justo en el caso
+  que importaba; lo cazaron los tests.
+- **Aviso en pantalla (no impreso)** con la lista de qué MP no alcanza y cuánto falta, antes de
+  bajar a bodega.
+
+Tests: `tests/test_rotulo_pesaje_reparto_lotes.py` (en el gate · 5 casos, incluido uno que compara
+el reparto del rótulo contra el del descuento para que no puedan divergir).
+
+## 🔐 Permiso del import masivo de envases (30-jul)
+
+`POST /api/mee/import-bulk` mutaba el maestro y el stock sin permiso de rol. Gate **proporcional**:
+planta sigue cargando (`_require_planta_write` · es su día a día y trabarlo sería una traba
+fantasma · M68), pero **`modo='replace'`, que ARCHIVA en masa todo lo que no venga en el archivo,
+exige ADMIN** (409 `REPLACE_SOLO_ADMIN`). Test en los dos sentidos:
+`tests/test_permisos_barrido_30jul.py`.

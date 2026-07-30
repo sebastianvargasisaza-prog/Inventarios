@@ -332,3 +332,13 @@ cerrados · verificados uno por uno). Test: `tests/test_auto_asignar_operarios_a
 EXACTO mientras `crear_ebr_desde_mbr` ahora lo resuelve con `UPPER(TRIM(...))`: con criterios
 distintos, el gate bloquearía una producción cuyo MBR SÍ existe, sólo porque el nombre está
 guardado con otras mayúsculas. Los dos usan el mismo criterio (M2/M5).
+
+
+## Configuración: `app_settings` conserva QUIÉN la cambió (30-jul)
+
+Los `INSERT OR REPLACE INTO app_settings (clave, valor)` de este blueprint
+(`por_entrar_manual`, `estacionalidad_plan_activa`, `estacionalidad_tope`,
+`envases_no_requiere`) **borraban `actualizado_por` y `descripcion`**: se perdía quién cambió una
+configuración (M20 · `INSERT OR REPLACE` devuelve al default toda columna que no listes).
+Pasados a `ON CONFLICT (clave) DO UPDATE` conservando la auditoría. Regla: ninguna escritura a
+`app_settings` usa `INSERT OR REPLACE` — hay un guard en el barrido que lo verifica.
