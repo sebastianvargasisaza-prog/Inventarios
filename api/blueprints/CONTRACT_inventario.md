@@ -694,6 +694,31 @@ lote **sin rótulo**.
 Tests: `tests/test_rotulo_pesaje_reparto_lotes.py` (en el gate · 5 casos, incluido uno que compara
 el reparto del rótulo contra el del descuento para que no puedan divergir).
 
+### El rótulo IMPRESO · por qué salía "sin divisiones ni cuadritos" (30-jul)
+
+Del piso: *"al imprimir los rótulos no se ven como en la foto, salen sin divisiones ni cuadritos"*.
+Dos causas, las dos en el CSS:
+
+1. **El navegador NO imprime fondos ni rellenos** salvo que el CSS lo exija. Sin
+   `print-color-adjust: exact` (+ `-webkit-`) desaparecen el gris de las etiquetas, el relleno del
+   peso y el rayado de las casillas para escribir: el papel sale casi en blanco.
+2. **Las líneas iban en `#e4e4e7`.** Un gris clarísimo se ve bien en pantalla y en una **térmica
+   monocroma sale invisible**. En `@media print` los bordes van en **negro** explícito (no por
+   token: el token es claro a propósito) y los rellenos en un gris que sí marca.
+
+**Regla: un imprimible que se apoya en fondos y en líneas grises no sobrevive a la impresora.**
+Todo documento regulado que se imprime va con `print-color-adjust: exact` y con los bordes
+declarados en un color que marque en térmica. Se verifica **simulando la impresión** (aplicar las
+reglas del `@media print` como hoja normal y mirarlas), no imprimiendo a ojo.
+
+**Rediseño del mismo día** (Sebastián: *"lo que debería ir más grande es el nombre de la materia
+prima y cuánto pesar; el título va más pequeño a un lado; quitá esas líneas de firmas"*): el
+título del formato pasó a una línea chica junto al logo, el **nombre de la MP y el peso son el
+héroe** de la etiqueta, y la cuadrícula ganó divisiones verticales (`td+td`). Los dos bloques
+grandes de firma se retiraron, pero **el registro de quién pesó NO se pierde**: quedó como celda
+`Pesó / hora` dentro de la cuadrícula (un rótulo GMP sin ejecutor no es un registro). Alto impreso
+medido: **84 mm** sobre la etiqueta de 100 mm.
+
 ## 🔐 Permiso del import masivo de envases (30-jul)
 
 `POST /api/mee/import-bulk` mutaba el maestro y el stock sin permiso de rol. Gate **proporcional**:

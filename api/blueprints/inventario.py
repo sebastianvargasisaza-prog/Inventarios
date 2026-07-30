@@ -10782,87 +10782,120 @@ def generar_rotulos(producto_nombre, cantidad_str):
         mid = _fila['mid']; mnm = _fila['mnm']; pct = _fila['pct']
         peso = _fila['peso']; lote_mp = _fila['lote']; cod_real = _fila['cod']
         ubicacion = ('Est. ' + str(_fila['est']) + str(_fila['pos'])).strip()
+        if ubicacion in ('Est.', 'Est'):   # sin ubicación no se escribe "Est." solo (M115)
+            ubicacion = '-'
         vence = _fila['vence']; inci = incis.get(mid, '')
         bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}",{json.dumps(bv)},{{format:"CODE128",width:1.1,height:24,displayValue:false,margin:0}})}}catch(e){{}};'
         # QR resoluble: al escanear con el celular abre /scan/<código>/<lote> con la info REAL del lote.
         _scan_url = _scan_base + '/scan/' + urllib.parse.quote(str(cod_real), safe='') + '/' + urllib.parse.quote(str(lote_mp), safe='')
         barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:50,height:50,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
-        rhtml+='<div class="sheet"><div class="accent"></div>'
-        rhtml+='<div class="top"><div class="brand"><img class="mark" src="'+_logo_src+'" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
-        rhtml+='<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08<br><b>Versión:</b> 01 &middot; <b>Etiqueta</b> '+str(i+1)+' de '+str(len(_filas_rot))+'<br><b>Vigencia:</b> 04-Mar-2025 / 03-Mar-2028</div></div>'
         _parte_txt = ('' if _fila['n_partes'] <= 1 else
                       ' &middot; <b>Parte ' + str(_fila['parte']) + ' de ' + str(_fila['n_partes'])
                       + '</b> de esta materia prima')
-        rhtml+='<div class="title"><h1>Rótulo para dispensar materia prima</h1><div class="k">OP '+op_num+' &middot; '+hoy+_parte_txt+'</div></div>'
+        rhtml+='<div class="sheet"><div class="accent"></div>'
+        # El titulo va CHICO y al costado: lo que el operario tiene que leer de lejos es la
+        # materia prima y cuanto pesar (Sebastian 30-jul), no el nombre del formato.
+        rhtml+=('<div class="top"><div class="brand">'
+                '<img class="mark" src="'+_logo_src+'" alt="" onerror="this.remove()">'
+                '<div class="bt"><div class="co">ESPAGIRIA Laboratorio SAS</div>'
+                '<div class="ttl">R&oacute;tulo para dispensar materia prima</div>'
+                '<div class="sub">'+op_num+' &middot; '+hoy+_parte_txt+'</div></div></div>')
+        rhtml+='<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08<br><b>Versión:</b> 01 &middot; <b>Etiqueta</b> '+str(i+1)+' de '+str(len(_filas_rot))+'<br><b>Vigencia:</b> 04-Mar-2025 / 03-Mar-2028</div></div>'
+        # HERO · nombre de la MP y el peso, que es lo unico que se mira al dispensar.
+        _falto = _fila['falta'] > 0.01
+        _sub_peso = ('' if _fila['n_partes'] <= 1 else
+                     '<div class="sub">de ' + f"{_fila['total_mp']:,.2f}" + ' g en total</div>')
+        rhtml+=('<div class="hero"><div class="hn"><div class="lbl">Materia prima</div>'
+                '<div class="nm">'+_e(mnm)+'</div>'
+                '<div class="cd">'+_e(mid)+'</div></div>'
+                '<div class="hp'+(' falta' if _falto else '')+'">'
+                '<div class="lbl">'+('Faltan' if _falto else 'Pesar')+'</div>'
+                '<div class="vl">'+f"{peso:,.2f}"+'<span class="u"> g</span></div>'
+                + _sub_peso + '</div></div>')
         rhtml+='<table>'
         rhtml+='<tr><td class="k">Producto</td><td colspan="3"><b>'+_e(prod)+'</b> - '+str(cantidad_kg)+' kg</td></tr>'
-        rhtml+='<tr><td class="k">Materia prima</td><td colspan="3"><b>'+_e(mnm)+'</b> <span class="cod">'+_e(mid)+'</span></td></tr>'
         if inci: rhtml+='<tr><td class="k">Nombre INCI</td><td colspan="3" class="inci">'+_e(inci)+'</td></tr>'
-        if _fila['falta'] > 0.01:
+        if _falto:
             rhtml+=('<tr><td class="k">Lote MP</td><td colspan="3">'
                     '<b style="color:#991b1b">NO HAY STOCK PARA ESTA CANTIDAD</b><br>'
                     '<span style="font-size:10px">Faltan ' + f"{_fila['falta']:,.2f}" + ' g. '
                     'Consegu&iacute; el lote y ped&iacute; el r&oacute;tulo de nuevo, o registr&aacute; '
                     'lo que realmente se pes&oacute;. Este papel NO documenta un lote.</span></td></tr>')
         else:
-            rhtml+='<tr><td class="k">Lote MP</td><td class="num" colspan="3"><b>'+_e(lote_mp)+'</b></td></tr>'
-        rhtml+='<tr><td class="k">Ubicación</td><td colspan="3">'+_e(ubicacion)+'</td></tr>'
-        rhtml+='<tr><td class="k">Vencimiento</td><td class="venc">'+_e(vence)+'</td><td class="k">% fórmula</td><td class="num">'+str(pct)+'%</td></tr>'
-        _lbl_peso = 'Peso teórico' if _fila['n_partes'] <= 1 else 'Peso de ESTE lote'
-        _sub_peso = ('' if _fila['n_partes'] <= 1 else
-                     '<span style="font-size:9.5px;font-weight:400"> &middot; de '
-                     + f"{_fila['total_mp']:,.2f}" + ' g en total</span>')
-        rhtml+='<tr><td class="k">'+_lbl_peso+'</td><td class="peso">'+f"{peso:,.2f} g"+_sub_peso+'</td><td class="k">Lote producción</td><td class="fill"></td></tr>'
-        rhtml+='<tr><td class="k">Tara</td><td class="fill"></td><td class="k">Peso neto</td><td class="fill"></td></tr>'
+            rhtml+=('<tr><td class="k">Lote MP</td><td class="num"><b>'+_e(lote_mp)+'</b></td>'
+                    '<td class="k">Vencimiento</td><td class="venc">'+_e(vence)+'</td></tr>')
+        rhtml+=('<tr><td class="k">Ubicación</td><td>'+_e(ubicacion)+'</td>'
+                '<td class="k">% fórmula</td><td class="num">'+str(pct)+'%</td></tr>')
+        rhtml+='<tr><td class="k">Lote producción</td><td class="fill"></td><td class="k">Tara</td><td class="fill"></td></tr>'
+        rhtml+='<tr><td class="k">Peso neto</td><td class="fill"></td><td class="k">Pesó / hora</td><td class="fill"></td></tr>'
         rhtml+='</table>'
         rhtml+='<div class="bcq"><div class="bcwrap"><svg id="bc'+str(i)+'"></svg><div class="bcv">'+_e(cod_real)+' &middot; '+_e(lote_mp)+'</div></div><div class="qrwrap"><div id="qr'+str(i)+'"></div><div class="qrlbl">Escaneá<br>info real</div></div></div>'
-        rhtml+='<div class="firmas"><div class="firma"><div class="l">Pesado por</div><div class="v">&nbsp;</div><div class="f">Fecha / hora</div></div><div class="firma"><div class="l">Verificado (Calidad)</div><div class="v">&nbsp;</div><div class="f">Fecha / hora</div></div></div>'
         rhtml+='</div>'
     css=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulos</title>'
          '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
          '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>'
          "<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');"
          ':root{--ink:#18181b;--soft:#3f3f46;--mute:var(--cx-text-mute, #71717a);--line:var(--cx-border, #e4e4e7);--violet:#6d28d9;--violet-d:var(--cx-primary-text, #4c1d95);--pale:var(--cx-primary-pale, #f5f3ff)}'
-         '*{margin:0;padding:0;box-sizing:border-box}'
+         # print-color-adjust:exact = LA razon por la que los rotulos salian "sin divisiones ni
+         # cuadritos": el navegador NO imprime fondos ni rellenos salvo que el CSS lo exija.
+         '*{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
          "body{font-family:'Inter',system-ui,Arial,sans-serif;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}"
          '.ph{background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}'
          '.pbtn{background:var(--cx-card, #fff);color:var(--cx-primary-text, #4c1d95);border:none;padding:9px 20px;border-radius:9px;cursor:pointer;font-weight:700;font-family:inherit;}'
          '.wrap{display:flex;flex-wrap:wrap;gap:16px;padding:20px;justify-content:center;align-items:flex-start;}'
          '.sheet{background:var(--cx-card, #fff);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:560px;page-break-inside:avoid;}'
          '.accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet));}'
-         '.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px 16px 8px;}'
+         '.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:12px 16px 10px;}'
          '.brand{display:flex;align-items:center;gap:10px;min-width:0;}'
-         '.mark{width:66px;height:66px;border-radius:13px;flex:none;object-fit:contain;background:var(--cx-card, #fff);border:1px solid var(--line);padding:4px;}'
-         '.co{font-size:14px;font-weight:800;letter-spacing:-.2px;line-height:1.2;}'
+         '.mark{width:54px;height:54px;border-radius:12px;flex:none;object-fit:contain;background:var(--cx-card, #fff);border:1px solid var(--line);padding:4px;}'
+         '.bt{min-width:0;}'
+         '.co{font-size:13px;font-weight:800;letter-spacing:-.2px;line-height:1.2;}'
+         '.bt .ttl{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;margin-top:2px;}'
+         '.bt .sub{font-size:9.5px;color:var(--soft);font-weight:600;margin-top:1px;}'
          '.ctrl{font-size:9px;color:var(--soft);text-align:right;line-height:1.6;background:var(--pale);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:9px;padding:7px 10px;flex:none;white-space:nowrap;}.ctrl b{color:var(--violet-d);font-weight:700;}'
-         '.title{text-align:center;padding:2px 16px 12px;}'
-         '.title h1{margin:0;font-size:14px;font-weight:800;letter-spacing:-.2px;text-transform:uppercase;}.title .k{font-size:10px;color:var(--mute);margin-top:3px;font-weight:600;letter-spacing:.3px;}'
+         # El HERO es lo que se lee de lejos: nombre de la MP + cuanto pesar.
+         '.hero{display:flex;align-items:stretch;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}'
+         '.hero .lbl{font-size:8.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;}'
+         '.hn{flex:1;min-width:0;padding:9px 16px 10px;}'
+         '.hn .nm{font-size:21px;font-weight:800;line-height:1.13;letter-spacing:-.4px;margin-top:1px;word-break:break-word;}'
+         '.hn .cd{font-size:10px;color:var(--soft);font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums;letter-spacing:.3px;}'
+         '.hp{flex:none;width:40%;max-width:215px;padding:9px 16px 10px;border-left:1px solid var(--line);background:var(--cx-warn-pale, #fff7ed);text-align:right;}'
+         '.hp .vl{font-size:27px;font-weight:800;line-height:1.06;letter-spacing:-.8px;color:#c2410c;font-variant-numeric:tabular-nums;margin-top:1px;}'
+         '.hp .vl .u{font-size:.55em;font-weight:700;letter-spacing:0;}'
+         '.hp .sub{font-size:9px;color:var(--soft);font-weight:600;margin-top:2px;}'
+         '.hp.falta{background:var(--cx-danger-pale, #fef2f2);}.hp.falta .vl{color:#991b1b;}'
          'table{width:100%;border-collapse:collapse;}'
-         'td{padding:7px 12px;border-top:1px solid var(--line);vertical-align:middle;font-size:12px;}'
-         'td.k{width:1%;color:var(--mute);font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;background:#fafafa;white-space:nowrap;}'
+         'td{padding:6px 12px;border-top:1px solid var(--line);vertical-align:middle;font-size:12px;}'
+         'td+td{border-left:1px solid var(--line);}'   # las DIVISIONES verticales de la cuadricula
+         'td.k{width:1%;color:var(--mute);font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;background:#f4f4f6;white-space:nowrap;}'
          'td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere;}'
          '.num{font-variant-numeric:tabular-nums;font-weight:600;}.cod{color:#a1a1aa;font-size:.85em;}.inci{font-size:11px;color:var(--soft);white-space:normal;}'
          '.venc{color:var(--cx-danger-text, #c0392b);font-weight:600;}'
-         '.peso{background:var(--cx-warn-pale, #fff7ed);color:#c2410c;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}'
-         '.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:22px;}'
+         '.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 5px,#d4d4d8 5px,#d4d4d8 6px);height:22px;}'
          '.bcq{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;border-top:1px solid var(--line);}'
          '.bcwrap{flex:1;min-width:0;text-align:center;overflow:hidden;}.bcwrap svg{max-width:100%;height:auto;}.bcv{font-size:8px;color:#a1a1aa;font-variant-numeric:tabular-nums;margin-top:2px;}'
          '.qrwrap{flex:none;text-align:center;}.qrwrap img,.qrwrap canvas{display:block;}.qrlbl{font-size:7px;color:var(--violet);font-weight:700;line-height:1.1;margin-top:2px;}'
-         '.firmas{display:flex;border-top:1px solid var(--line);}'
-         '.firma{flex:1;padding:10px 14px 12px;}.firma+.firma{border-left:1px solid var(--line);}'
-         '.firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;}'
-         '.firma .v{font-size:12px;font-weight:600;margin-top:14px;border-top:1px solid var(--ink);padding-top:4px;}.firma .f{font-size:8.5px;color:var(--mute);margin-top:2px;}'
          # Impresión térmica · COMPACTA para caber en UNA etiqueta (default 100×100mm) · afinado 9-jul
-         f'@media print{{html,body{{background:var(--cx-card, #fff);}}.ph{{display:none;}}.wrap{{display:block;padding:0;gap:0;}}'
-         f'.sheet{{width:{_lw-3}mm;max-width:{_lw-3}mm;border-radius:0;box-shadow:none;border:1px solid var(--cx-border, #ccc);margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;}}'
-         f'.sheet:last-child{{page-break-after:auto;}}.accent{{height:3px;}}'
-         'td{padding:1.6px 8px;font-size:7.5pt;line-height:1.12;}td.k{font-size:6pt;}'
+         # · 30-jul: las líneas iban en gris #e4e4e7 y en una térmica salían INVISIBLES ("sin
+         #   divisiones ni cuadritos"). Al imprimir se fuerzan en negro y los rellenos en un gris
+         #   que sí marca; el `print-color-adjust:exact` de arriba es lo que permite que salgan.
+         f'@media print{{html,body{{background:var(--cx-card, #fff);}}'
+         f'.ph{{display:none;}}.wrap{{display:block;padding:0;gap:0;}}.mark{{border-color:#111;}}'
+         f'.sheet{{width:{_lw-3}mm;max-width:{_lw-3}mm;border-radius:0;box-shadow:none;border:1px solid #111;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;}}'
+         f'.sheet:last-child{{page-break-after:auto;}}.accent{{height:3px;background:#111;}}'
+         'td{padding:1.8px 8px;font-size:7.5pt;line-height:1.14;border-top:1px solid #111;}'
+         'td+td{border-left:1px solid #111;}td.k{font-size:6pt;background:#e6e6ea;color:#3f3f46;}'
          'td:not(.k){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'  # PRINT: valores en 1 linea (1 hoja); en pantalla envuelven
-         '.title{padding:0 12px 3px;}.title h1{font-size:9.5pt;}.title .k{font-size:7pt;margin-top:1px;}'
-         '.top{padding:6px 12px 2px;}.mark{width:40px;height:40px;}.co{font-size:9.5pt;}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35;}'
-         '.peso{font-size:10.5pt;}.fill{height:12px;}.inci{font-size:8pt;}'
-         '.bcq{padding:3px 10px;gap:8px;}.bcv{font-size:6.5pt;margin-top:1px;}.qrlbl{font-size:6pt;}'
-         '.firma{padding:4px 10px 5px;}.firma .l{font-size:7.5pt;}.firma .v{margin-top:6px;font-size:10pt;}.firma .f{font-size:7pt;}'
+         '.top{padding:5px 10px 4px;}.mark{width:36px;height:36px;}.co{font-size:9pt;}'
+         '.bt .ttl{font-size:6pt;color:#3f3f46;}.bt .sub{font-size:6.5pt;}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35;}'
+         '.hero{border-top:1px solid #111;border-bottom:1px solid #111;}'
+         '.hn{padding:4px 10px 5px;}.hn .nm{font-size:14.5pt;line-height:1.08;}.hn .cd{font-size:7pt;}'
+         '.hp{padding:4px 10px 5px;border-left:1px solid #111;background:#f0e6da;}'
+         '.hp.falta{background:#f2dede;}'
+         '.hero .lbl{font-size:6pt;color:#3f3f46;}.hp .vl{font-size:18pt;}.hp .sub{font-size:6.5pt;}'
+         '.fill{height:13px;background:repeating-linear-gradient(-45deg,#fff,#fff 4px,#b8b8c0 4px,#b8b8c0 5px);}'
+         '.inci{font-size:8pt;}'
+         '.bcq{padding:3px 10px;gap:8px;border-top:1px solid #111;}.bcv{font-size:6.5pt;margin-top:1px;}.qrlbl{font-size:6pt;}'
          f'@page{{size:{_lw}mm {_lh}mm;margin:1.5mm;}}}}'
          '</style></head><body>')
     _base_path = '/rotulos/' + urllib.parse.quote(prod) + '/' + str(cantidad_kg)
