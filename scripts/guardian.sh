@@ -179,6 +179,20 @@ CORAZON=(
   # disponible: el canonico la excluye y la pantalla no, asi que un contenedor recien
   # recibido se veia usable antes de que Calidad lo liberara.
   "tests/test_recepcion_envases_lineas.py"
+  # Calidad dispone CAJA POR CAJA: de 24 cajas pueden pasar 22 y venir 2 golpeadas. Fija que
+  # el rotulo de cada caja diga la verdad (y que NO se renumeren las cajas fisicas al partir
+  # el movimiento) + el escaneo del codigo de barras.
+  "tests/test_cajas_disposicion_calidad.py"
+  # El que REGISTRA no puede APROBAR el control en proceso. Fija ademas que Aseguramiento y
+  # Direccion Tecnica ENTRAN al batch record: el gate de entrada los rechazaba y por eso su
+  # 2a firma y el visto bueno del DT estaban construidos y eran inalcanzables.
+  "tests/test_ipc_estandar_sod.py"
+  # ?La materia prima SE RECEPCIONA? El recorrido REAL por los endpoints: OC -> recepcion
+  # administrativa -> cuarentena que no cuenta como stock -> F01 con el lote real al kardex
+  # -> firma Part 11 -> F02 -> stock disponible. Mas los guards que ya costaron caidas.
+  "tests/test_mp_recepcion_e2e.py"
+  # La hoja de pesaje dice el VENCIMIENTO del lote que se esta usando (punto de uso).
+  "tests/test_hoja_pesaje_vencimiento.py"
 )
 
 echo ""

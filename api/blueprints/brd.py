@@ -447,8 +447,22 @@ def _require_brd_ejecutor():
     u = session.get("compras_user", "")
     if not u:
         return jsonify({"error": "No autorizado"}), 401
-    if u not in (PLANTA_USERS | CALIDAD_USERS | ADMIN_USERS):
-        return jsonify({"error": "Solo Planta/Calidad/Admin pueden ejecutar pasos del registro de lote"}), 403
+    # FIX 30-jul · ASEGURAMIENTO y DIRECCIÓN TÉCNICA entran. `_batch_role_info` les da
+    # `verifica`, `corrige`, `puede_liberar` y al DT `aprueba_dt` desde el 7-jul... pero este
+    # gate los rechazaba ANTES de que ninguno de esos flags se leyera, en los 36 endpoints de
+    # ejecución. O sea: la 2ª firma del despeje (mig 285), la del material de envase (mig 394)
+    # y el visto bueno del Director Técnico (mig 286) estaban construidos y eran INALCANZABLES
+    # para las personas que los tienen que dar. Es la 3ª capa del mismo hueco de M116: el
+    # permiso del final decía sí y el del principio decía no.
+    # No abre la puerta a otras áreas: compras/marketing/RRHH siguen fuera, y `realiza=False`
+    # los mantiene fuera de ejecutar pasos de producción (sólo verifican y corrigen).
+    try:
+        from config import ASEGURAMIENTO_USERS as _AS_BRD, TECNICA_USERS as _T_BRD
+    except Exception:
+        _AS_BRD, _T_BRD = set(), set()
+    if u not in (PLANTA_USERS | CALIDAD_USERS | ADMIN_USERS | set(_AS_BRD) | set(_T_BRD)):
+        return jsonify({"error": "Solo Planta/Calidad/Aseguramiento/Dirección Técnica/Admin "
+                                 "pueden ejecutar pasos del registro de lote"}), 403
     return _gate_aprobacion_orden()
 
 
@@ -6028,12 +6042,14 @@ def reportar_ipc_estandar(ebr_id):
     conn = get_db()
     cur = conn.cursor()
     ebr = cur.execute(
-        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,)
+        "SELECT estado, COALESCE(lote_codigo, lote, '') AS _lote "
+        "FROM ebr_ejecuciones WHERE id = ?", (ebr_id,)
     ).fetchone()
     if not ebr:
         return jsonify({"error": "EBR no encontrado"}), 404
     if ebr["estado"] not in ("iniciado", "en_proceso"):
         return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+    user = session.get("compras_user", "")
     valor_texto = (body.get("valor_texto") or "").strip()[:200]
     obs = (body.get("observaciones") or "").strip()[:300]
     if body.get("no_aplica"):
@@ -6042,6 +6058,39 @@ def reportar_ipc_estandar(ebr_id):
     else:
         conf = body.get("conforme")
         conforme = (1 if conf else 0) if conf is not None else None
+    # EL QUE REGISTRA NO PUEDE APROBAR (Sebastián 29-jul · mig 400). En MyBatch la sección 5
+    # la firma CALIDAD, y acá cualquier ejecutor podía anotar el valor Y declarar 'Cumple'
+    # sobre su propia medición. Espeja la 2ª firma del material de envase (INV-14):
+    #  · ANOTAR el valor (sin adjudicar) lo puede hacer quien mide;
+    #  · ADJUDICAR (Cumple / No cumple / No aplica) es de quien VERIFICA por rol;
+    #  · y nunca sobre su propia medición (regla de las 2 personas · GMP).
+    # Los lotes DEMO- se caminan con una sola persona, igual que el despeje.
+    _adjudica = (conforme is not None)
+    _prev = None
+    try:
+        _prev = cur.execute(
+            "SELECT COALESCE(medido_por,''), COALESCE(valor_texto,'') "
+            "FROM ipc_estandar_resultados WHERE ebr_id=? AND control_codigo=?",
+            (ebr_id, cod)).fetchone()
+    except Exception as _e:
+        log.warning("registro previo de %s no legible: %s", cod, _e)
+    _es_demo_ipc = str(ebr["_lote"] or '').upper().startswith('DEMO-')
+    if _adjudica and not _es_demo_ipc:
+        if not _batch_role_info(user).get("verifica"):
+            return jsonify({
+                "error": ("Declarar si un control CUMPLE es atribución de Calidad / "
+                          "Aseguramiento / Jefe de Producción / Dirección Técnica. "
+                          "Registrá el valor medido y Calidad lo adjudica."),
+                "codigo": "SOLO_CALIDAD_ADJUDICA",
+            }), 403
+        _midio = (_prev[0].strip() if _prev else '')
+        if _midio and _midio == user:
+            return jsonify({
+                "error": ("No podés adjudicar tu propia medición: quien mide y quien declara "
+                          "que cumple deben ser personas distintas (regla de las 2 personas · "
+                          "GMP). Que lo adjudique otra persona de Calidad."),
+                "codigo": "AUTOADJUDICACION_BLOQUEADA",
+            }), 409
     # Adjudicar (Cumple / No cumple) SIN resultado dejaba la fila diciendo "pendiente" y
     # "✓" a la vez (M5: el número que se muestra es el que decide) — y una conformidad
     # firmada sobre un dato que no existe no es un registro. Se corta en el ORIGEN, no en
@@ -6055,7 +6104,6 @@ def reportar_ipc_estandar(ebr_id):
                       % (nombre, 'Cumple' if conforme == 1 else 'No cumple')),
             "codigo": "IPC_ESTANDAR_SIN_RESULTADO",
         }), 400
-    user = session.get("compras_user", "")
     # Reclamar la desviación ABIERTA de un registro previo del MISMO control: re-registrar
     # el valor (corregir un tipeo) no puede abrir una segunda desviación del mismo hecho.
     _desv_previa = None
@@ -6074,12 +6122,20 @@ def reportar_ipc_estandar(ebr_id):
         "DELETE FROM ipc_estandar_resultados WHERE ebr_id=? AND control_codigo=?",
         (ebr_id, cod),
     )
+    # QUIÉN MIDIÓ se conserva; el que adjudica va en su propia columna (mig 400). Antes el
+    # upsert pisaba `medido_por` con quien adjudicaba y se perdía al medidor — sin ese dato
+    # la regla de las 2 personas no se puede sostener ni auditar.
+    _medio_por = (_prev[0].strip() if (_prev and _prev[0]) else '') or (user if not _adjudica else '')
+    _adj_por = user if _adjudica else ''
     cur.execute(
         """INSERT INTO ipc_estandar_resultados
              (ebr_id, control_codigo, control_nombre, valor_texto, conforme,
-              observaciones, medido_por, medido_at_utc, desviacion_id)
-           VALUES (?,?,?,?,?,?,?, datetime('now','utc'), ?)""",
-        (ebr_id, cod, nombre, valor_texto, conforme, obs, user, _desv_previa),
+              observaciones, medido_por, medido_at_utc, desviacion_id,
+              adjudicado_por, adjudicado_at_utc)
+           VALUES (?,?,?,?,?,?,?, datetime('now','utc'), ?, ?,
+                   CASE WHEN ?='' THEN '' ELSE datetime('now','utc') END)""",
+        (ebr_id, cod, nombre, valor_texto, conforme, obs, _medio_por, _desv_previa,
+         _adj_por, _adj_por),
     )
     rid = cur.lastrowid
     # El MISMO hecho físico (pH fuera de spec) tiene que abrir desviación por las DOS
@@ -12529,6 +12585,32 @@ def dispensado_imprimible(ebr_id):
     except Exception:
         recorded = {}
     obj_g = hdr.get('obj_g', 0)
+    # VENCIMIENTO de la MP que se está usando (Sebastián 30-jul: *"en el rótulo de pesaje que
+    # vaya la fecha de vencimiento de la materia prima que usan"*). Sale del KARDEX para el
+    # (material, lote) que se pesó de verdad — no del maestro, que no tiene lotes. Es un
+    # control en el punto de uso: el operario ve en la hoja que sigue si el lote que tiene en
+    # la mano está vencido, sin tener que ir a buscarlo a otra pantalla (M25).
+    _venc = {}
+    try:
+        _pares = [(str(pr[0]), str(pr[2] or '')) for pr in
+                  conn.execute("SELECT material_id, cantidad_real_g, COALESCE(lote_mp,'') "
+                               "FROM ebr_pesajes WHERE ebr_id=?", (ebr_id,)).fetchall()
+                  if str(pr[2] or '').strip()]
+        for _mid, _lt in set(_pares):
+            _r = conn.execute(
+                "SELECT MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') "
+                "            THEN fecha_vencimiento END) "
+                "FROM movimientos WHERE material_id=? AND UPPER(TRIM(COALESCE(lote,'')))=UPPER(TRIM(?))",
+                (_mid, _lt)).fetchone()
+            if _r and _r[0]:
+                _venc[(_mid, _lt.upper())] = str(_r[0])[:10]
+    except Exception as _ev:
+        log.warning('vencimiento de MP para la hoja de dispensado ebr=%s: %s', ebr_id, _ev)
+    try:
+        from datetime import date as _d_hoy
+        _hoy_iso = _d_hoy.today().isoformat()
+    except Exception:
+        _hoy_iso = ''
     filas = []
     try:
         fitems = conn.execute(
@@ -12544,17 +12626,30 @@ def dispensado_imprimible(ebr_id):
             pesada = ('{:,.1f}'.format(rec[1]) if rec and rec[1] is not None else '')
             lote = (rec[2] if rec else '') or ''
             por = (rec[3] if rec else '') or ''
+            # Vence: sólo se muestra si HAY lote pesado y ese lote tiene fecha en el kardex.
+            # Sin dato va una raya, no una fecha inventada (M115); y si ya venció, se marca:
+            # una MP vencida no puede entrar al producto (INVIMA Res. 2214 · M25).
+            _fv = _venc.get((mid, (lote or '').upper()), '')
+            if not _fv:
+                _venc_cell = ('<span style="color:var(--cx-text-faint, #94a3b8)">'
+                              + ('sin fecha' if lote else '__________') + '</span>')
+            elif _hoy_iso and _fv < _hoy_iso:
+                _venc_cell = ('<b style="color:var(--cx-danger-text, #991b1b)">' + _h.escape(_fv)
+                              + ' &middot; VENCIDO</b>')
+            else:
+                _venc_cell = _h.escape(_fv)
             filas.append(
                 '<tr><td class="n">' + str(i + 1) + '</td>'
                 '<td><span class="mono">' + _h.escape(mid) + '</span> ' + _h.escape(fr[1] or '') + '</td>'
                 '<td class="c">' + ('{:.3f}'.format(pct)).rstrip('0').rstrip('.') + '%</td>'
                 '<td class="mono">' + _h.escape(lote or '________') + '</td>'
+                '<td class="c">' + _venc_cell + '</td>'
                 '<td class="r">' + ('{:,.1f}'.format(a_pesar)) + ' g</td>'
                 '<td class="r">' + (pesada + ' g' if pesada else '__________') + '</td>'
                 '<td class="c">' + _h.escape(por or '______') + '</td></tr>')
     except Exception:
         pass
-    filas_html = ''.join(filas) or '<tr><td colspan="7" style="text-align:center;color:var(--cx-text-faint, #94a3b8)">Sin fórmula con materias primas.</td></tr>'
+    filas_html = ''.join(filas) or '<tr><td colspan="8" style="text-align:center;color:var(--cx-text-faint, #94a3b8)">Sin fórmula con materias primas.</td></tr>'
     e = _h.escape
     html = (
         '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
@@ -12592,7 +12687,7 @@ def dispensado_imprimible(ebr_id):
         '<div><b>Estado</b>' + e(hdr.get('estado') or '·') + '</div>'
         '<div><b>Fecha</b>' + e((hdr.get('iniciado') or '')[:16].replace('T', ' ') or '·') + '</div>'
         '</div>'
-        '<table><thead><tr><th>#</th><th>Materia Prima</th><th style="text-align:center">%</th><th>N° Lote</th>'
+        '<table><thead><tr><th>#</th><th>Materia Prima</th><th style="text-align:center">%</th><th>N° Lote</th><th style="text-align:center">Vence</th>'
         '<th style="text-align:right">Cant. a pesar</th><th style="text-align:right">Cant. pesada</th>'
         '<th style="text-align:center">Pesó</th></tr></thead><tbody>' + filas_html + '</tbody></table>'
         '<div class="firmas">'

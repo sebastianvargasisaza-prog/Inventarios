@@ -269,6 +269,16 @@ textarea{resize:vertical;min-height:70px;}
   <!-- Cola de ARTE de envases por revisar (Sebastián 21-jul) · vuelve de serigrafía → checklist -->
   <div id="arte-cola-cal"></div>
   <div class="ccp-kpis" id="cc-kpis"></div>
+  <!-- Escaneo de la caja (Sebastián 30-jul: "pueden escanear entonces código de barras y hacer
+       lo que corresponde"). El rótulo de cada caja lleva MEE-<recepción>-<caja>: la pistola lo
+       teclea acá y se abre la revisión de ESA caja. -->
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--cx-primary-pale);border:1px solid var(--cx-primary-light);border-radius:10px;padding:10px 14px;margin-bottom:12px">
+    <b style="font-size:12.5px;color:var(--cx-primary-text)">&#128290; Escane&aacute; la caja</b>
+    <input id="cjs-scan" placeholder="MEE-12-7" onkeydown="if(event.key==='Enter'){cjsEscanear();return false;}"
+           style="flex:1 1 200px;max-width:280px;padding:8px 11px;border:1px solid var(--cx-border);border-radius:8px;background:var(--cx-card);color:var(--cx-text);font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace">
+    <button class="ccp-btn" onclick="cjsEscanear()">Abrir la caja</button>
+    <span id="cjs-scan-msg" style="font-size:12px;color:var(--cx-text-mute)"></span>
+  </div>
   <input type="text" class="ccp-search" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…">
   <div class="ccp-wrap" style="overflow-x:auto;">
     <table class="ccp">
@@ -2464,6 +2474,11 @@ async function loadCuarentena(){
       var tipoBadge = esMEE
         ? '<span class="ccp-badge mee">ENVASE</span>'
         : '<span class="ccp-badge mp">MP</span>';
+      // Revisión CAJA POR CAJA (mig 399): de 24 cajas pueden pasar 22 y venir 2 golpeadas.
+      // Sólo para envases y sólo mientras el lote está en cuarentena.
+      if(esMEE && String(l.estado_lote||'').toUpperCase()==='CUARENTENA'){
+        f01cell += ' <button class="ccp-btn" style="margin-top:4px" onclick="cjsAbrir('+l.mov_id+')">&#128230; Revisar cajas</button>';
+      }
       return '<tr>'
         +'<td>'+tipoBadge+'<span class="ccp-name">'+esc(l.nombre)+'</span></td>'
         +'<td><div class="ccp-meta" style="font-size:12.5px">'+esc(l.lote||'sin lote')+'</div><div class="ccp-meta" style="font-size:10.5px;opacity:.8">'+esc(l.codigo_mp||'')+'</div></td>'
@@ -2972,3 +2987,14 @@ try:
     CALIDAD_HTML = CALIDAD_HTML.replace('</body>', _CCR_MODAL + '\n<script>\n' + _CCR_JS + '\n</script>\n</body>')
 except Exception:
     pass
+
+# Revisión CAJA POR CAJA de una recepción de envases (30-jul · mig 399). Mismo patrón aditivo,
+# pero con ASSERT: si el replace no matchea, la bandeja queda con un botón "Revisar cajas" y un
+# campo de escaneo que llaman funciones que nunca se cargaron — no falla, no hace nada, y se
+# despliega así (M112/M116). El `except: pass` de arriba es justo lo que hay que no repetir.
+from templates_py.cajas_review_html import (CAJAS_REVIEW_MODAL_HTML as _CJS_MODAL,
+                                            CAJAS_REVIEW_JS as _CJS_JS)
+assert '</body>' in CALIDAD_HTML, 'CALIDAD_HTML sin </body>: la revisión por caja quedaría muerta'
+CALIDAD_HTML = CALIDAD_HTML.replace(
+    '</body>', _CJS_MODAL + '\n<script>\n' + _CJS_JS + '\n</script>\n</body>')
+assert 'cjsEscanear' in CALIDAD_HTML, 'el JS de revisión por caja no se inyectó'

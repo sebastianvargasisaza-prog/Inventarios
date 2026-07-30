@@ -591,3 +591,74 @@ para un material: llega y no se puede usar hasta que Aseguramiento lo califica y
 
 Tests: `tests/test_recepcion_envases_lineas.py` (en el gate · 22 casos, incluida la pestaña, el
 redirect de la ruta vieja y el guard anti-colisión de funciones).
+
+
+## 📦 INV-13 · Calidad dispone CAJA POR CAJA (mig 399)
+
+Sebastián (30-jul): *"ya cuando calidad haga verificación entonces revisa caja por caja y si es
+necesario cambia los rótulos"*. Liberar o rechazar el movimiento COMPLETO no alcanzaba: de 24
+cajas pueden pasar 22 y venir 2 golpeadas, y había que elegir entre aprobar las malas o rechazar
+las buenas.
+
+- **La cantidad de CADA caja se guarda al recibir** (`mee_cajas_disposicion`). En el muelle se
+  abre caja por caja y cada una puede traer distinto; derivarla dos veces con dos cuentas termina
+  en un cartón que dice una cosa y un sistema que dice otra (M5). El rótulo de la caja y la
+  disposición leen la MISMA fila.
+- `POST /api/mee/cuarentena/<mov>/cajas` · sólo Calidad · rechazar **exige motivo** (una auditoría
+  pregunta por qué) · no se puede **cerrar a medias** (409 `CAJAS_SIN_REVISAR`: una caja sin
+  revisar quedaría ni disponible ni rechazada) · CAS sobre el estado para que dos cierres
+  concurrentes no partan el movimiento dos veces.
+- **Al cerrar se parte la cuenta**: el movimiento original queda con lo aprobado y en VIGENTE, y
+  lo rechazado sale en su propia fila en RECHAZADO. El total se conserva (800 = 400 + 400) y el
+  disponible es sólo lo aprobado.
+- ⚠ **`n_cajas` NO se toca y las filas por caja NO se mueven.** Renumerar dejaría al cartón que
+  dice "3 de 3" hablando de una caja que el sistema ya no tiene — y es justo la que hay que
+  reimprimir marcada. La numeración física de algo ya rotulado es un hecho, no un derivado (M115).
+- **El rótulo imprime el estado de SU caja** (☒ Rechazado / ☒ Aprobado), leído del kardex: al
+  reimprimir sale correcto sin que nadie tache nada.
+- **El código de barras identifica la CAJA**, no la referencia: `MEE-<recepción>-<caja>`. Dos
+  cajas del mismo frasco tienen que distinguirse porque una puede quedar rechazada y la otra no.
+  `GET /api/mee/escanear?token=…` lo resuelve, y la bandeja de Calidad tiene el campo de escaneo
+  (la pistola teclea y se abre esa caja).
+
+Tests: `tests/test_cajas_disposicion_calidad.py` (en el gate · 15 casos).
+
+
+## ✅ Revisión de RECEPCIÓN DE MATERIA PRIMA · el recorrido completo camina (30-jul)
+
+Sebastián: *"quiero que revises materias primas, que sí se recepcionen, que sí pase todo, que no
+tenga bugs"*. Se verificó **caminando el flujo por los endpoints reales**, no leyendo código
+(M94), y el resultado es que la cadena funciona de punta a punta:
+
+    OC autorizada → recepción administrativa (cuenta bultos, lote provisional)
+      → Entrada en CUARENTENA · NO cuenta como stock disponible
+      → le llega a Calidad en el pipeline de recepción
+      → F01 conforme: lote REAL + peso de balanza + vencimiento + ubicación → **al kardex**
+      → el rótulo imprime el lote real (se imprime del kardex · M109)
+      → firma electrónica Part 11 (meaning `libera`) → F02 aprobado
+      → recién ahí el lote SUMA al stock disponible
+
+**No se encontró ningún bug en el flujo principal.** Los guards que ya costaron caídas siguen
+en pie y quedaron fijados con test: ítem de OC con `codigo_mp` vacío (el 500 de producción del
+10-jul · M81) no tumba la recepción, doble envío con el mismo token no duplica, parciales
+sucesivas suman lo pedido, un "código" con espacios se rechaza (una factura de servicios no
+entra a la bodega), con OC la factura es obligatoria, y no se recibe 5× lo comprado sin forzar.
+
+⚠ Tres cosas que el E2E dejó claras y conviene no re-litigar: (1) el F02 **exige firma
+electrónica** para disponer el lote — no es una traba, es el control que le pone nombre a la
+liberación; (2) la clave del payload de recepción es `cantidad_recibida` (no `..._g`); (3) el F02
+firma con `aprobo_por` / `responsable_analisis`.
+
+Tests: `tests/test_mp_recepcion_e2e.py` (en el gate · 9 casos).
+
+## 📅 La hoja de pesaje dice el VENCIMIENTO de la MP que se usa (30-jul)
+
+Sebastián: *"en el rótulo de pesaje que vaya la fecha de vencimiento de la materia prima que
+usan"*. El rótulo de dispensación ya lo imprimía; la **hoja de pesaje del batch record**
+(`/brd/dispensado/<ebr>`, el papel que el operario sigue en piso) no — y es donde más importa,
+porque es el punto de USO. Sale del **kardex** para el `(material, lote)` que se pesó de verdad
+(el maestro no tiene lotes), sin lote pesado se declara que falta en vez de inventar una fecha
+(M115), y si el lote ya venció **se marca en rojo**: una MP vencida no puede entrar al producto
+(INVIMA Res. 2214 · M25).
+
+Tests: `tests/test_hoja_pesaje_vencimiento.py` (en el gate · 3 casos).

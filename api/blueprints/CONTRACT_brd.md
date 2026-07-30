@@ -571,3 +571,34 @@ backend es el que no lo exige. Separarlo es un cambio de quién puede trabajar, 
 tocó por cuenta propia.
 
 Tests: `tests/test_ipc_estandar_gate.py` (en el gate · 13 casos, con los dos lados del trinquete).
+
+
+## INV-18 · El que REGISTRA no puede APROBAR el control en proceso (mig 400)
+
+Sebastián (29-jul): *"sí, pues eso debemos hacerlo, el que registra no puede aprobar"*. En MyBatch
+la sección 5 la firma **Calidad**; acá cualquier ejecutor del batch podía anotar el valor Y
+declarar "Cumple" sobre su propia medición.
+
+- **Dos actos separados**: anotar el valor lo hace quien mide; **adjudicar** (Cumple / No cumple /
+  No aplica) es de quien VERIFICA por rol (403 `SOLO_CALIDAD_ADJUDICA`), y **nunca sobre su propia
+  medición** (409 `AUTOADJUDICACION_BLOQUEADA`). Espeja la 2ª firma del material de envase
+  (INV-14), incluida la exención de los lotes `DEMO-`.
+- **Hacía falta la migración**: el upsert pisaba `medido_por` con quien adjudicaba, así que sin
+  `adjudicado_por` no quedaba constancia de quién midió — la regla no se podía ni auditar. Ahora
+  la fila guarda a los dos.
+- El gate de liberación ya bloqueaba "valor anotado sin adjudicar" (`IPC_ESTANDAR_SIN_ADJUDICAR`),
+  que es justo el estado normal entre la medición y la firma de Calidad.
+
+### ⚠ Y el hueco de 3 capas que esto destapó (M121)
+`_batch_role_info` le da a **Aseguramiento (Miguel)** y a **Dirección Técnica (Hernando)**
+`verifica`, `corrige`, `puede_liberar` y al DT `aprueba_dt` desde el 7-jul. Pero
+`_require_brd_ejecutor` —la puerta de **36 endpoints**— sólo admitía `PLANTA ∪ CALIDAD ∪ ADMIN`:
+ninguno de los dos estaba. **Todo lo construido para ellos era inalcanzable**: la 2ª firma del
+despeje (mig 285), la del material de envase (mig 394) y el visto bueno del DT (mig 286), que
+M116 ya había encontrado roto por el meaning faltante — se arregló el meaning y seguía sin
+funcionar, porque el bloqueo estaba una capa más arriba. El gate ahora incluye
+`ASEGURAMIENTO_USERS | TECNICA_USERS`; `realiza=False` los mantiene fuera de ejecutar pasos de
+producción, y hay un test que verifica que **compras sigue afuera** (ampliar un permiso sin probar
+el borde es cambiar un control por una puerta abierta).
+
+Tests: `tests/test_ipc_estandar_sod.py` (en el gate · 9 casos).

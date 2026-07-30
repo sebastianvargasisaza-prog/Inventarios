@@ -10758,6 +10758,37 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         # (mig 265 · UNIQUE(recepcion_id)): el cliente lo genera, el UNIQUE es el guard real.
         # No hace falta tabla nueva; se documenta acá para que nadie la busque.
     ]),
+    (399, "Calidad dispone CAJA POR CAJA (Sebastián 30-jul): 'cuando calidad haga verificación "
+          "entonces revisa caja por caja y si es necesario cambia los rótulos'. Liberar o rechazar "
+          "el movimiento COMPLETO no alcanza: de 24 cajas pueden pasar 22 y venir 2 golpeadas, y "
+          "hoy había que elegir entre aprobar las 2 malas o rechazar las 22 buenas. "
+          "La disposición vive por caja y es lo que el RÓTULO de esa caja imprime, así que "
+          "reimprimir la caja 7 sale con su estado real sin que nadie se acuerde de tacharlo. "
+          "Aditiva: sin filas por caja, todo funciona igual que hasta hoy (el estado lo manda el "
+          "movimiento).", [
+        """CREATE TABLE IF NOT EXISTS mee_cajas_disposicion (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             mov_id INTEGER NOT NULL,
+             caja INTEGER NOT NULL,
+             estado TEXT NOT NULL DEFAULT 'CUARENTENA',
+             motivo TEXT DEFAULT '',
+             cantidad REAL,
+             dispuesto_por TEXT DEFAULT '',
+             dispuesto_at_utc TEXT DEFAULT '',
+             UNIQUE(mov_id, caja)
+           )""",
+        "CREATE INDEX IF NOT EXISTS idx_mee_cajas_mov ON mee_cajas_disposicion(mov_id)",
+    ]),
+    (400, "El que REGISTRA no puede APROBAR el control en proceso (Sebastián 29-jul: 'sí, pues eso "
+          "debemos hacerlo, el que registra no puede aprobar'). En MyBatch la sección 5 la firma "
+          "CALIDAD, y acá cualquier ejecutor podía anotar el valor Y declarar 'Cumple' sobre su "
+          "propia medición. Hacía falta separar los dos actos en la BASE: el upsert pisaba "
+          "`medido_por` con quien adjudicaba, así que sin estas columnas la regla no se puede "
+          "sostener (no queda quién midió). Aditiva: nacen vacías y un registro anterior sigue "
+          "leyéndose igual.", [
+        "ALTER TABLE ipc_estandar_resultados ADD COLUMN adjudicado_por TEXT DEFAULT ''",
+        "ALTER TABLE ipc_estandar_resultados ADD COLUMN adjudicado_at_utc TEXT DEFAULT ''",
+    ]),
 ]
 
 
