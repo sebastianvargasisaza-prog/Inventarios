@@ -183,8 +183,15 @@ def test_codigo_con_tabulador_o_espacios_se_normaliza(app, db_clean):
 
 # ══ 3 · entra en CUARENTENA y NO cuenta como disponible ═════════════════════════
 
-def test_entra_en_cuarentena_y_no_suma_al_disponible(app, db_clean):
-    """El envase recibido NO es stock usable hasta que Calidad lo libere con el F01."""
+def test_entra_DISPONIBLE_y_se_puede_usar(app, db_clean):
+    """DECISIÓN de Sebastián (30-jul, cambió la del 25-jul): *"aquí no deben caer en cuarentena
+    de una, que ingresen a inventario para ser usados; lo que queda es para Calidad revisar
+    estados, pero no en cuarentena"*.
+
+    Antes este test exigía lo contrario (CUARENTENA + 0 disponible). No se rompió: cambió la
+    regla de negocio, y el test la sigue (M97). Lo que NO cambia es que Calidad revise: eso lo
+    fija `test_la_revision_de_calidad_NO_desaparece`.
+    """
     _sembrar(app)
     _login(app).post('/api/mee/recepcion-lineas', headers=_h(),
                      json=_lineas(recepcion_id='ZZTOK-5'))
@@ -193,8 +200,24 @@ def test_entra_en_cuarentena_y_no_suma_al_disponible(app, db_clean):
         estados = [r[0] for r in get_db().cursor().execute(
             "SELECT UPPER(COALESCE(estado,'')) FROM movimientos_mee WHERE mee_codigo IN (?,?)",
             (COD_A, COD_B)).fetchall()]
-    assert estados and all(e == 'CUARENTENA' for e in estados), estados
-    assert _disponible_canonico(app, COD_A) == 0, 'cuarentena contó como disponible'
+    assert estados and all(e == 'VIGENTE' for e in estados), estados
+    assert _disponible_canonico(app, COD_A) == 4800, 'entró disponible y no cuenta como stock'
+
+
+def test_la_revision_de_calidad_NO_desaparece(app, db_clean):
+    """Quitar el candado no puede llevarse la revisión puesta: la bandeja de Calidad listaba
+    SOLO lo que estaba en cuarentena, así que sin este cambio la revisión caja por caja se
+    habría muerto en silencio el mismo día (M112)."""
+    _sembrar(app)
+    _login(app).post('/api/mee/recepcion-lineas', headers=_h(),
+                     json=_lineas(recepcion_id='ZZTOK-5B'))
+    r = _login(app, 'laura').get('/api/calidad/recepcion-pipeline')
+    assert r.status_code == 200, r.data[:300]
+    mee = [x for x in (r.get_json().get('lotes') or [])
+           if x.get('tipo') == 'MEE' and x.get('codigo_mp') == COD_A]
+    assert mee, 'el envase disponible ya no le llega a Calidad: se perdió la revisión'
+    assert mee[0].get('cajas_por_revisar') is True, (
+        'la pantalla no sabe que faltan cajas por revisar → no ofrecería el botón')
 
 
 def test_la_PANTALLA_de_envases_no_muestra_la_cuarentena_como_disponible(app, db_clean):
@@ -202,8 +225,12 @@ def test_la_PANTALLA_de_envases_no_muestra_la_cuarentena_como_disponible(app, db
     mientras el canónico sí la excluye → dos números para lo mismo, y el que se ve es el
     que miente. Con 9 palets entrando, la pantalla los daba por disponibles."""
     _sembrar(app)
-    _login(app).post('/api/mee/recepcion-lineas', headers=_h(),
-                     json=_lineas(recepcion_id='ZZTOK-6'))
+    # Desde el 30-jul los envases entran DISPONIBLES, así que la cuarentena hay que pedirla
+    # explícitamente. El guard sigue teniendo sentido: si algún día algo entra retenido (o
+    # queda retenido por un rechazo), la pantalla NO puede mostrarlo como disponible.
+    _payload = _lineas(recepcion_id='ZZTOK-6')
+    _payload['cuarentena'] = True
+    _login(app).post('/api/mee/recepcion-lineas', headers=_h(), json=_payload)
     r = _login(app).get('/api/mee/stock')
     assert r.status_code == 200
     item = next((x for x in r.get_json()['items'] if x['codigo'] == COD_A), None)
@@ -214,19 +241,26 @@ def test_la_PANTALLA_de_envases_no_muestra_la_cuarentena_como_disponible(app, db
         'no muestra APARTE lo retenido: el operario no puede saber por qué no subió')
 
 
-def test_liberar_en_calidad_lo_vuelve_disponible(app, db_clean):
-    """El otro lado: una vez liberado, sí cuenta. Un gate que nunca abre no es un gate."""
+def test_lo_que_calidad_RECHAZA_sale_del_stock(app, db_clean):
+    """El reemplazo del gate: si el material entra disponible, el control es que el rechazo
+    lo SAQUE. Sin esto, quitar la cuarentena sería quitar el control entero."""
     _sembrar(app)
     _login(app).post('/api/mee/recepcion-lineas', headers=_h(),
                      json=_lineas(recepcion_id='ZZTOK-7'))
     from database import get_db
     with app.app_context():
-        conn = get_db()
-        mid = conn.cursor().execute(
+        mid = get_db().cursor().execute(
             "SELECT id FROM movimientos_mee WHERE mee_codigo=?", (COD_A,)).fetchone()[0]
-    r = _login(app, 'laura').post('/api/mee/cuarentena/%d/liberar' % mid, headers=_h())
-    assert r.status_code == 200, r.data[:300]
-    assert _disponible_canonico(app, COD_A) == 4800
+    assert _disponible_canonico(app, COD_A) == 4800, 'debía entrar disponible'
+    # 24 cajas de 200: se rechazan 2 (400 und) y se aprueban las otras 22
+    cajas = ([{'caja': k, 'estado': 'APROBADO'} for k in range(1, 23)] +
+             [{'caja': k, 'estado': 'RECHAZADO', 'motivo': 'ZZTEST caja golpeada'}
+              for k in (23, 24)])
+    r = _login(app, 'laura').post('/api/mee/cuarentena/%d/cajas' % mid, headers=_h(),
+                                  json={'cajas': cajas, 'cerrar': True})
+    assert r.status_code == 200, r.data[:400]
+    assert _disponible_canonico(app, COD_A) == 4400, (
+        'lo rechazado siguió contando como disponible')
 
 
 def test_aparece_en_la_bandeja_de_calidad_para_el_F01(app, db_clean):
@@ -324,7 +358,11 @@ def test_un_rotulo_por_caja_numerado(app, db_clean):
     assert 'Caja 25 de 24' not in body
     assert body.count('class="sheet"') == 24, 'un rótulo por caja: %d' % body.count('class="sheet"')
     assert LOTE_PROV in body, 'el rótulo no lleva el lote del proveedor'
-    assert 'CUARENTENA' in body.upper(), 'el rótulo no dice que está retenido'
+    # El material ya está disponible, pero NADIE lo revisó todavía: marcar "Aprobado" sería
+    # decir que Calidad ya pasó. El cartón no puede mentir (30-jul).
+    assert 'PENDIENTE' in body.upper(), 'el rótulo no dice que falta la revisión de Calidad'
+    assert 'CUARENTENA' not in body.upper(), (
+        'el rótulo sigue diciendo cuarentena · los envases ya no entran retenidos')
 
 
 def test_los_rotulos_de_TODA_la_recepcion_en_una_pasada(app, db_clean):

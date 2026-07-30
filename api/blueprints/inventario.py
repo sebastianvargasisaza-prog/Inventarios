@@ -11081,6 +11081,10 @@ def _rotulo_recep_css(lw, lh):
       ".hero .name{font-size:26px;font-weight:800;letter-spacing:-.5px;line-height:1.08;color:var(--ink)}"
       ".inci{font-size:12px;color:var(--mute);font-weight:700;letter-spacing:.8px;margin-top:5px;text-transform:uppercase}"
       ".tipo{display:inline-block;font-size:10.5px;font-weight:700;margin-right:14px;white-space:nowrap;color:var(--mute)}.tipo.on{color:var(--violet-d)}"
+      # El número de caja es lo que el operario busca de lejos entre 24 cartones iguales:
+      # va como chip, no perdido al final de una línea que envuelve (Sebastián 30-jul).
+      ".cajanum{display:inline-block;margin-top:6px;background:var(--cx-primary-pale, #f5f3ff);border:1.5px solid var(--cx-primary-light, #c4b5fd);color:var(--violet-d);border-radius:999px;padding:3px 16px;font-size:14px;font-weight:800;letter-spacing:.4px}"
+
       ".rectag{display:inline-block;margin-left:8px;background:var(--pale);color:var(--violet-d);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:999px;padding:1px 9px;font-size:9px;font-weight:800;text-transform:none;letter-spacing:0;vertical-align:middle}"
       ".lote{margin:0 16px 10px;background:var(--cx-warn-pale, #fff7ed);border:1px solid #fed7aa;border-radius:10px;text-align:center;padding:8px}"
       ".lote .ll{font-size:9px;font-weight:700;color:var(--cx-warn-text, #9a3412);text-transform:uppercase;letter-spacing:.4px}.lote .lv{font-size:20px;font-weight:800;color:#c2410c;letter-spacing:1px}.lote svg{max-width:100%;height:auto;margin-top:4px}"
@@ -11107,6 +11111,7 @@ def _rotulo_recep_css(lw, lh):
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"  # PRINT: los valores ENVUELVEN (no cortan a la derecha)
       ".top{padding:4px 14px 3px}.mark{width:26px;height:26px;border-radius:7px;padding:2px}.brandrow{gap:8px}.co{font-size:10pt;letter-spacing:.8pt}.cosub{font-size:4.6pt;letter-spacing:1.6pt;margin-top:1px}.ctrl{font-size:5pt;line-height:1.4}.ctrl-t{font-size:5.4pt;margin-bottom:2px}"
       ".hero{padding:4px 14px 5px}.hero .name{font-size:16pt;line-height:1.04}.inci{font-size:6.5pt;margin-top:2px}.tipo{font-size:6.5pt;margin-right:8px}"
+      ".cajanum{margin-top:2px;padding:1px 10px;font-size:9.5pt;border-width:1pt}"
       ".lote{margin:0 12px 2px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:4mm;height:auto}"
       ".qc{padding:2px 12px;font-size:6.5pt;gap:9px}.firma{padding:3px 11px 4px}.firma .l{font-size:6pt}.firma .sig{margin:5px 0 1px}.firma .f{font-size:5.6pt}"
       # el area del sticker en alto generoso fijo para llenar el espacio de abajo (Sebastian 18-jul)
@@ -11326,7 +11331,7 @@ def _mee_token_caja(mov_id, caja):
 def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones,
                       lote, cantidad, unidad, fecha_recep, fecha_impresion, estado,
                       logo, bc_id='bc', caja_idx=None, n_cajas=None, cant_total=None,
-                      bc_valor=None):
+                      bc_valor=None, revision_pendiente=False):
     """UNA hoja de rótulo de envase. La usan la ruta de a uno Y la de por-caja.
 
     Dos renderizadores del mismo documento regulado divergen, y el que queda viejo imprime
@@ -11342,13 +11347,21 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
     _tp_mp = '&#9744; Materia Prima (MP)'
     _tp_me = _chk(is_env) + ' Material de Envase (ME)'
     _tp_emp = _chk(not is_env) + ' Material de Empaque (MEMP)'
+    # `[REVISADO]` es la marca interna con la que se reclama el cierre de la revisión (CAS):
+    # es del sistema, no del operario, y no tiene nada que hacer impresa en un formato regulado.
+    observaciones = str(observaciones or '').replace('[REVISADO]', '').strip()
     _est = str(estado or '').strip().upper()
+    # pendiente = el material puede estar disponible y aun así nadie lo revisó
+    _pend = bool(revision_pendiente) and _est not in ('RECHAZADO',)
     _cajatag = ''
+    _cajachip = ''
     _cant_lbl = 'Cantidad'
     _cant_val = _e(cantidad)
     if caja_idx is not None and n_cajas:
-        _cajatag = (' &middot; <b>Caja ' + str(caja_idx) + ' de ' + str(n_cajas) + '</b>')
-        _cant_lbl = 'Cantidad (esta caja)'
+        _cajatag = ''
+        _cajachip = ('<div class="cajanum">Caja ' + str(caja_idx) + ' de '
+                     + str(n_cajas) + '</div>')
+        _cant_lbl = 'Cantidad caja'
         if cant_total:
             _cant_val = (_e(cantidad) + ' <span style="font-weight:400;opacity:.75">&middot; de '
                          + _e(cant_total) + ' en ' + str(n_cajas) + ' cajas</span>')
@@ -11356,7 +11369,7 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
             '<div class="top"><div class="brand"><img class="mark" src="' + logo + '" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
             '<div class="ctrl"><b>Formato:</b> COC-PRO-002-F04<br><b>F. Impresion:</b> ' + _e(fecha_impresion) + '</div></div>'
             '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Material de envase' + _cajatag + '</div>'
-            '<h1 class="name">' + _e(desc) + '</h1></div>'
+            '<h1 class="name">' + _e(desc) + '</h1>' + _cajachip + '</div>'
             '<div class="lote"><div class="ll">Codigo interno</div><div class="lv">' + _e(codigo) + '</div>'
             '<svg id="' + _e(bc_id) + '"></svg>'
             + (('<div style="font-size:9px;letter-spacing:.06em;opacity:.7;margin-top:2px">'
@@ -11369,16 +11382,23 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
             '<span class="tipo' + ('' if is_env else ' on') + '">' + _tp_emp + '</span></td></tr>'
             '<tr><td class="k">Categoria</td><td>' + (_e(categoria) or '-') + '</td>'
             '<td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
-            '<tr><td class="k">Lote</td><td class="num"><b>' + (_e(lote) or '-') + '</b></td>'
-            '<td class="k">Fecha recep.</td><td>' + _e(fecha_recep) + '</td></tr>'
-            '<tr><td class="k">Proveedor / marca</td><td>' + (_e(proveedor) or '-') + '</td>'
-            '<td class="k">Ubicacion / zona</td><td>' + (_e(zona) or '-') + '</td></tr>'
-            '<tr><td class="k">Observaciones</td><td colspan="3">' + (_e(observaciones) or '-') + '</td></tr>'
+            '<tr><td class="k">Lote</td><td class="num" colspan="3"><b>' + (_e(lote) or '-') + '</b></td></tr>'
+            '<tr><td class="k">Fecha recep.</td><td>' + _e(fecha_recep) + '</td>'
+            '<td class="k">Ubicaci&oacute;n</td><td>' + (_e(zona) or '-') + '</td></tr>'
+            '<tr><td class="k">Proveedor</td><td colspan="3">' + (_e(proveedor) or '-') + '</td></tr>'
+            + ('<tr><td class="k">Observaciones</td><td colspan="3">' + _e(observaciones)
+               + '</td></tr>' if str(observaciones or '').strip() else '')
+            + 
             '</table>'
+            # Estado HONESTO (Sebastián 30-jul): desde que los envases entran disponibles,
+            # marcar "Aprobado" apenas se reciben sería decir que Calidad ya lo revisó. Mientras
+            # queden cajas por revisar, el rótulo dice PENDIENTE DE REVISIÓN aunque el material
+            # ya esté en inventario: son dos cosas distintas y el cartón no puede mentir.
             '<div class="qc"><b>Estado:</b> '
-            '<span>' + _chk(_est in ('VIGENTE', 'APROBADO')) + ' Aprobado</span>'
-            '<span>' + _chk(_est == 'CUARENTENA') + ' Cuarentena</span>'
-            '<span>' + _chk(_est == 'RECHAZADO') + ' Rechazado</span></div>'
+            '<span>' + _chk(not _pend and _est in ('VIGENTE', 'APROBADO')) + ' Aprobado</span>'
+            + ('<span>' + _chk(True) + ' Pendiente revisi&oacute;n</span>' if _pend else
+               '<span>' + _chk(_est == 'CUARENTENA') + ' Cuarentena</span>')
+            + '<span>' + _chk(_est == 'RECHAZADO') + ' Rechazado</span></div>'
             '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
             '<div class="firma"><div class="l">Aprobado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
             '</div>')
@@ -11549,12 +11569,18 @@ def rotulos_recepcion_mee_cajas():
             if _solo_caja is not None and k != _solo_caja:
                 continue
             _bid = 'bc%d_%d' % (int(r[0]), k)
+            # El estado de la CAJA (revisión) y el del MATERIAL (kardex) son dos cosas: desde
+            # el 30-jul una caja puede estar disponible y sin revisar a la vez.
+            _ec = str(_disp.get((int(r[0]), k), '') or '').upper()
+            _pend_caja = _ec in ('', 'PENDIENTE')
+            _est_caja_lbl = (_ec if _ec in ('APROBADO', 'RECHAZADO', 'CUARENTENA')
+                             else str(r[11] or 'VIGENTE'))
             hojas.append(_rotulo_mee_sheet(
                 codigo=r[1], desc=r[2], categoria=r[3], proveedor=r[4], zona=r[5],
                 observaciones=r[6], lote=r[7],
                 cantidad=f"{cant_k:,.0f} {_uni}", unidad=_uni,
                 fecha_recep=_frec, fecha_impresion=hoy,
-                estado=_disp.get((int(r[0]), k), r[11]), logo=logo,
+                estado=_est_caja_lbl, revision_pendiente=_pend_caja, logo=logo,
                 bc_id=_bid, caja_idx=k, n_cajas=(_n if _n > 1 else None),
                 cant_total=(f"{_cant:,.0f} {_uni}" if _n > 1 else None),
                 bc_valor=_mee_token_caja(r[0], k)))
@@ -15322,13 +15348,18 @@ def mee_recepcion_lineas():
     factura = str(d.get('factura_numero') or '').strip()[:60]
     oc_num = str(d.get('oc_numero') or '').strip()[:40]
     zona = str(d.get('zona') or '').strip()[:80]
-    try:
-        from database import recepcion_auto_vigente as _rav
-        _cuar_def = (not _rav(c))
-    except Exception:
-        _cuar_def = True
-    cuarentena = bool(d.get('cuarentena', _cuar_def))
+    # Sebastián 30-jul: *"aquí no deben caer en cuarentena de una, que ingresen a inventario
+    # para ser usados; lo que queda es para Calidad revisar estados, pero no en cuarentena"*.
+    # Los envases entran DISPONIBLES y la revisión de Calidad deja de ser un candado sobre el
+    # stock: sigue caja por caja, y lo que rechace SALE del stock en ese momento (fila propia
+    # en RECHAZADO). Es coherente con la decisión del 25-jul de no encender el gate de envases.
+    # ⚠ Esto NO toca la materia prima: la MP sigue entrando en cuarentena (INVIMA).
+    cuarentena = bool(d.get('cuarentena', False))
     estado = 'CUARENTENA' if cuarentena else 'VIGENTE'
+    # El estado de la CAJA es de REVISIÓN, no del kardex: 'PENDIENTE' hasta que Calidad la
+    # dispone. Antes nacía con el estado del movimiento y eso mezclaba dos cosas distintas
+    # (dónde está el material vs si alguien ya lo miró).
+    estado_caja = 'CUARENTENA' if cuarentena else 'PENDIENTE'
 
     movs = []
     for l in lineas:
@@ -15359,7 +15390,7 @@ def mee_recepcion_lineas():
         for _k, _q in enumerate(_det, start=1):
             c.execute("INSERT INTO mee_cajas_disposicion (mov_id, caja, estado, cantidad, "
                       "dispuesto_por, dispuesto_at_utc) VALUES (?,?,?,?,'','')",
-                      (_mid, _k, estado, _q))
+                      (_mid, _k, estado_caja, _q))
         movs.append({'mov_id': _mid, 'codigo': m['codigo'], 'descripcion': m['descripcion'],
                      'cantidad': l['cantidad'], 'lote': l['lote'],
                      'n_cajas': l['n_cajas'], 'unidades_por_caja': l['unidades_por_caja'],
@@ -15382,17 +15413,20 @@ def mee_recepcion_lineas():
 
     # UNA sola campana con el resumen · no una por línea (12 alertas seguidas es fatiga de
     # campana y se dejan de mirar · lección del despeje v3)
-    if estado == 'CUARENTENA':
+    if True:
         try:
             from blueprints.notif import push_notif_multi
             from config import CALIDAD_USERS, ASEGURAMIENTO_USERS
             _qc = sorted((set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS)) - {'sebastian'})
             push_notif_multi(
                 _qc, 'mee_cuarentena',
-                f'Envases en cuarentena: {len(movs)} referencia(s)',
+                (f'Envases en cuarentena: {len(movs)} referencia(s)' if cuarentena else
+                 f'Envases por revisar: {len(movs)} referencia(s)'),
                 body=(f'{_tot_c} caja(s) · {_tot_u:.0f} und de {proveedor or "proveedor sin nombre"}'
                       + (f' · factura {factura}' if factura else '')
-                      + ' · revisar caja por caja y liberar con el F01'),
+                      + (' · revisar caja por caja y liberar con el F01' if cuarentena else
+                         ' · YA está disponible en inventario · revisar caja por caja: lo que se '
+                         'rechace sale del stock')),
                 link='/calidad', importante=True)
         except Exception as _ne:
             import logging as _lg
@@ -15514,7 +15548,8 @@ def mee_cuarentena_cajas(mov_id):
     conn = get_db(); c = conn.cursor()
     mov = c.execute(
         "SELECT mee_codigo, cantidad, COALESCE(estado,'VIGENTE'), n_cajas, unidades_por_caja, "
-        "COALESCE(lote_ref,''), COALESCE(unidad,'und') FROM movimientos_mee "
+        "COALESCE(lote_ref,''), COALESCE(unidad,'und'), COALESCE(observaciones,'') "
+        "FROM movimientos_mee "
         "WHERE id=? AND tipo='Entrada' AND COALESCE(anulado,0)=0", (mov_id,)).fetchone()
     if not mov:
         return jsonify({'error': 'recepción no encontrada'}), 404
@@ -15533,7 +15568,7 @@ def mee_cuarentena_cajas(mov_id):
             'ok': True, 'mov_id': mov_id, 'codigo': mov[0], 'lote': mov[5],
             'unidad': mov[6], 'estado_mov': mov[2], 'total': float(mov[1] or 0),
             'cajas': [{'caja': k, 'cantidad': q,
-                       'estado': disp.get(k, {}).get('estado', mov[2]),
+                       'estado': disp.get(k, {}).get('estado', 'PENDIENTE'),
                        'motivo': disp.get(k, {}).get('motivo', ''),
                        'dispuesto_por': disp.get(k, {}).get('dispuesto_por', '')}
                       for k, q in cajas],
@@ -15542,11 +15577,17 @@ def mee_cuarentena_cajas(mov_id):
     if user not in QC_USERS:
         return jsonify({'error': 'solo Calidad dispone las cajas',
                         'codigo': 'SOLO_CALIDAD'}), 403
-    if str(mov[2] or '').upper() != 'CUARENTENA':
-        return jsonify({'error': 'la recepción ya está %s · las cajas se disponen en cuarentena'
-                                 % mov[2], 'codigo': 'YA_RESUELTA'}), 409
+    # Sebastián 30-jul: los envases ya NO entran en cuarentena, así que la revisión no puede
+    # exigir que lo estén. Se dispone mientras la recepción no haya sido cerrada (marca
+    # [REVISADO]) y el material no esté rechazado.
+    if str(mov[2] or '').upper() == 'RECHAZADO':
+        return jsonify({'error': 'esta recepción está RECHAZADA', 'codigo': 'YA_RESUELTA'}), 409
+    if '[REVISADO]' in str(mov[7] or ''):
+        return jsonify({'error': 'esta recepción ya fue revisada por Calidad · si hay que '
+                                 'corregir algo, hacelo con un ajuste de inventario',
+                        'codigo': 'YA_RESUELTA'}), 409
     d = request.get_json(silent=True) or {}
-    _validos = ('APROBADO', 'RECHAZADO', 'CUARENTENA')
+    _validos = ('APROBADO', 'RECHAZADO', 'PENDIENTE', 'CUARENTENA')
     _por_caja = {k: q for k, q in cajas}
     pedidas = d.get('cajas') or []
     for x in pedidas:
@@ -15571,11 +15612,15 @@ def mee_cuarentena_cajas(mov_id):
                    _por_caja[k], user))
         disp[k] = {'estado': est, 'motivo': str((x or {}).get('motivo') or '')}
 
-    resumen = {'APROBADO': 0.0, 'RECHAZADO': 0.0, 'CUARENTENA': 0.0}
-    n_est = {'APROBADO': 0, 'RECHAZADO': 0, 'CUARENTENA': 0}
+    resumen = {'APROBADO': 0.0, 'RECHAZADO': 0.0, 'PENDIENTE': 0.0}
+    n_est = {'APROBADO': 0, 'RECHAZADO': 0, 'PENDIENTE': 0}
     for k, q in cajas:
-        e = disp.get(k, {}).get('estado', 'CUARENTENA').upper()
-        e = e if e in resumen else 'CUARENTENA'
+        e = disp.get(k, {}).get('estado', 'PENDIENTE').upper()
+        # 'CUARENTENA' es el valor con el que nacían las cajas antes del 30-jul: para la
+        # revisión significa exactamente lo mismo que 'PENDIENTE' (nadie la miró todavía).
+        if e == 'CUARENTENA':
+            e = 'PENDIENTE'
+        e = e if e in resumen else 'PENDIENTE'
         resumen[e] += q
         n_est[e] += 1
 
@@ -15584,23 +15629,23 @@ def mee_cuarentena_cajas(mov_id):
         return jsonify({'ok': True, 'guardado': len(pedidas), 'resumen': resumen,
                         'cajas_por_estado': n_est, 'cerrado': False})
 
-    if n_est['CUARENTENA']:
+    if n_est['PENDIENTE']:
         return jsonify({'error': 'quedan %d caja(s) sin revisar · no se puede cerrar a medias'
-                                 % n_est['CUARENTENA'],
+                                 % n_est['PENDIENTE'],
                         'codigo': 'CAJAS_SIN_REVISAR'}), 409
     aprob, rech = round(resumen['APROBADO'], 2), round(resumen['RECHAZADO'], 2)
-    # CAS: el UPDATE lleva el estado en el WHERE, así dos cierres concurrentes no parten
-    # el movimiento dos veces (M27/M31).
-    if aprob > 0:
-        # ⚠ `n_cajas` NO se toca. Las cajas están numeradas en el cartón: si la original
-        # pasara a "22 cajas", el rótulo pegado en la caja 23 hablaría de una caja que el
-        # sistema ya no tiene. La numeración física es un hecho, no un derivado (M115).
-        c.execute("UPDATE movimientos_mee SET estado='VIGENTE', cantidad=? "
-                  "WHERE id=? AND UPPER(COALESCE(estado,'VIGENTE'))='CUARENTENA'",
-                  (aprob, mov_id))
-    else:
-        c.execute("UPDATE movimientos_mee SET estado='RECHAZADO' "
-                  "WHERE id=? AND UPPER(COALESCE(estado,'VIGENTE'))='CUARENTENA'", (mov_id,))
+    _era_cuarentena = str(mov[2] or '').upper() == 'CUARENTENA'
+    # CAS por MARCA, no por estado: desde el 30-jul la recepción ya nace VIGENTE, así que no
+    # hay transición de estado sobre la que reclamar. La marca [REVISADO] la toma UN solo
+    # worker; el segundo ve rowcount 0 (mismo patrón que la anulación de movimientos · M31).
+    # ⚠ `n_cajas` NO se toca. Las cajas están numeradas en el cartón: si la original pasara a
+    # "22 cajas", el rótulo pegado en la caja 23 hablaría de una caja que el sistema ya no
+    # tiene. La numeración física es un hecho, no un derivado (M115/M121).
+    _nuevo_estado = 'RECHAZADO' if aprob <= 0 else 'VIGENTE'
+    c.execute("UPDATE movimientos_mee SET estado=?, cantidad=?, "
+              "observaciones=COALESCE(observaciones,'')||' [REVISADO]' "
+              "WHERE id=? AND COALESCE(observaciones,'') NOT LIKE '%[REVISADO]%'",
+              (_nuevo_estado, (aprob if aprob > 0 else float(mov[1] or 0)), mov_id))
     if c.rowcount != 1:
         conn.rollback()
         return jsonify({'error': 'otro usuario ya cerró esta revisión · refrescá',
@@ -15621,15 +15666,25 @@ def mee_cuarentena_cajas(mov_id):
         # el que Calidad necesita reimprimir marcado como rechazado. Las cajas son los
         # cartones que llegaron en esa recepción; el movimiento de rechazo es sólo la cuenta
         # del kardex.
-    # El cache refleja SOLO lo aprobado (la recepción no lo sumó porque estaba retenido)
-    if aprob > 0:
-        c.execute("UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? WHERE codigo=?",
-                  (aprob, mov[0]))
+    # CACHE · el ajuste depende de qué se contó al recibir:
+    #   · si entró en CUARENTENA (flujo viejo/MP-like) no se sumó nada → se suma lo APROBADO;
+    #   · si entró DISPONIBLE (flujo nuevo de envases) ya se sumó TODO → se resta lo RECHAZADO.
+    # Sumar lo aprobado en el segundo caso contaría el material dos veces. El stock canónico
+    # (SUM de movimientos_mee) se corrige solo; esto es sólo el cache (M26).
+    if _era_cuarentena:
+        if aprob > 0:
+            c.execute("UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? "
+                      "WHERE codigo=?", (aprob, mov[0]))
+    elif rech > 0:
+        c.execute("UPDATE maestro_mee SET stock_actual = "
+                  "CASE WHEN COALESCE(stock_actual,0) - ? < 0 THEN 0 "
+                  "     ELSE COALESCE(stock_actual,0) - ? END WHERE codigo=?",
+                  (rech, rech, mov[0]))
     try:
         from audit_helpers import audit_log as _al
         _al(c, usuario=user, accion='MEE_DISPOSICION_CAJAS', tabla='movimientos_mee',
             registro_id=str(mov_id),
-            antes={'cantidad': float(mov[1] or 0), 'n_cajas': mov[3], 'estado': 'CUARENTENA'},
+            antes={'cantidad': float(mov[1] or 0), 'n_cajas': mov[3], 'estado': mov[2]},
             despues={'aprobado': aprob, 'rechazado': rech, 'cajas': n_est,
                      'mov_rechazo': mov_rech},
             detalle='Disposición caja por caja · %d aprobadas / %d rechazadas'

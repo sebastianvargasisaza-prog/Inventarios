@@ -777,6 +777,44 @@ M120), no como página aparte.
 Tests: `tests/test_recepcion_equipos.py` (en el gate · 12 casos, con los permisos probados en
 los dos sentidos y el equipo pendiente ausente de su área hasta calificarse).
 
+## 📦 INV-17 · Los ENVASES entran DISPONIBLES · la revisión no es un candado (30-jul)
+
+Sebastián: *"aquí no deben caer en cuarentena de una, que ingresen a inventario para ser usados;
+lo que queda es para Calidad revisar estados, pero no en cuarentena"*. Cambia la decisión del
+25-jul (que había dejado el gate de envases apagado a medias) y **no toca la materia prima**: la
+MP sigue entrando en CUARENTENA, que es lo que exige INVIMA.
+
+- `POST /api/mee/recepcion-lineas` escribe `estado='VIGENTE'`: el envase cuenta como stock
+  disponible desde que se recibe. Se puede forzar cuarentena con `{"cuarentena": true}`.
+- **El estado de la CAJA es de REVISIÓN, no del kardex**: nace `'PENDIENTE'`. Antes heredaba el
+  estado del movimiento y eso mezclaba dos cosas distintas (dónde está el material vs si alguien
+  ya lo miró). El valor legado `'CUARENTENA'` se lee como pendiente.
+- ⚠ **Quitar el candado casi se lleva puesta la revisión**: la bandeja de Calidad
+  (`/api/calidad/recepcion-pipeline`) listaba SOLO lo que estaba en cuarentena, así que la
+  revisión caja por caja habría desaparecido de la pantalla el mismo día, en silencio (M112).
+  Ahora también lista lo que llegó por cajas y nadie revisó (`n_cajas>0` y sin `[REVISADO]`), y
+  la fila trae `cajas_por_revisar` — la pantalla decide con ESO, no con el estado del kardex.
+- **El control es el rechazo**: si el material entra disponible, lo que lo sostiene es que
+  rechazar SAQUE del stock. Cerrar la disposición con 2 de 24 cajas rechazadas baja el
+  disponible de 4.800 a 4.400 y deja la fila de rechazo aparte (total intacto y trazable).
+- **CAS por MARCA, no por estado**: ya no hay transición CUARENTENA→VIGENTE sobre la que
+  reclamar, así que el cierre se reclama con `[REVISADO]` en `observaciones`
+  (`WHERE ... NOT LIKE '%[REVISADO]%'` + rowcount, patrón de M31). La marca **se quita del
+  imprimible**: es del sistema, no va en un formato regulado.
+- **CACHE `maestro_mee.stock_actual`**: si entró en cuarentena no se sumó nada → se suma lo
+  aprobado; si entró disponible ya se sumó todo → se **resta lo rechazado**. Sumar lo aprobado en
+  el segundo caso contaría el material dos veces (el stock canónico se corrige solo · M26).
+- **Rótulo honesto**: mientras queden cajas por revisar dice `☒ Pendiente revisión`, no
+  "Aprobado" (marcarlo al recibir sería decir que Calidad ya pasó) ni "Cuarentena" (ya no lo
+  está). El número de caja es un **chip destacado** (`Caja 1 de 24`) y el lote se lleva la fila
+  entera: en la columna angosta salía partido como "CN-" / "2607-A", y un lote mal transcrito en
+  un registro regulado es un problema real. Alto medido: 83,6 mm de los 96 útiles.
+
+Tests: `test_recepcion_envases_lineas.py` + `test_cajas_disposicion_calidad.py` (los dos en el
+gate). Los 6 casos que fijaban la regla vieja se actualizaron **con el motivo escrito**: no se
+rompieron, cambió la decisión (M97). Los nuevos fijan lo que ahora sostiene el control —
+`test_la_revision_de_calidad_NO_desaparece` y `test_lo_que_calidad_RECHAZA_sale_del_stock`.
+
 ## 🔐 Permiso del import masivo de envases (30-jul)
 
 `POST /api/mee/import-bulk` mutaba el maestro y el stock sin permiso de rol. Gate **proporcional**:

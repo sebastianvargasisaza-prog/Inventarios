@@ -2475,8 +2475,10 @@ async function loadCuarentena(){
         ? '<span class="ccp-badge mee">ENVASE</span>'
         : '<span class="ccp-badge mp">MP</span>';
       // Revisión CAJA POR CAJA (mig 399): de 24 cajas pueden pasar 22 y venir 2 golpeadas.
-      // Sólo para envases y sólo mientras el lote está en cuarentena.
-      if(esMEE && String(l.estado_lote||'').toUpperCase()==='CUARENTENA'){
+      // Desde el 30-jul los envases entran DISPONIBLES, así que la condición ya no es el
+      // estado del kardex sino si quedan cajas por revisar (si no, la revisión desaparecía
+      // de esta pantalla al quitar la cuarentena · M112).
+      if(esMEE && (l.cajas_por_revisar || String(l.estado_lote||'').toUpperCase()==='CUARENTENA')){
         f01cell += ' <button class="ccp-btn" style="margin-top:4px" onclick="cjsAbrir('+l.mov_id+')">&#128230; Revisar cajas</button>';
       }
       return '<tr>'

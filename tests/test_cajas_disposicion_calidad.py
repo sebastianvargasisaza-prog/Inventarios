@@ -79,7 +79,10 @@ def test_la_cantidad_de_cada_caja_se_guarda(app, db_clean):
             "SELECT caja, cantidad, estado FROM mee_cajas_disposicion WHERE mov_id=? ORDER BY caja",
             (mv['mov_id'],)).fetchall()
     assert [(int(f[0]), float(f[1])) for f in filas] == [(1, 200), (2, 200), (3, 150)]
-    assert all(str(f[2]).upper() == 'CUARENTENA' for f in filas)
+    # La caja nace PENDIENTE: es un estado de REVISIÓN, no del kardex. Desde el 30-jul el
+    # material entra disponible y aun así nadie lo miró todavía (Sebastián: "que ingresen a
+    # inventario para ser usados; lo que queda es para Calidad revisar estados").
+    assert all(str(f[2]).upper() == 'PENDIENTE' for f in filas), filas
 
 
 def test_el_rotulo_imprime_la_cantidad_de_ESA_caja(app, db_clean):
@@ -111,7 +114,7 @@ def test_escanear_resuelve_la_caja(app, db_clean):
     j = r.get_json()
     assert j['caja'] == 2 and j['n_cajas'] == 2
     assert j['cantidad_caja'] == 150
-    assert j['estado_caja'].upper() == 'CUARENTENA'
+    assert j['estado_caja'].upper() == 'PENDIENTE'
     assert j['lote'] == LOTE and j['codigo'] == COD
 
 

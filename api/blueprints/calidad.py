@@ -1321,11 +1321,23 @@ def calidad_recepcion_pipeline():
         for r in c.execute(
             """SELECT mv.id, mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), mv.cantidad,
                       COALESCE(mv.lote_ref,''), COALESCE(mv.fecha_vencimiento,''), COALESCE(mv.proveedor,''),
-                      mv.fecha, COALESCE(mv.oc_numero,''), COALESCE(mv.estado,'')
+                      mv.fecha, COALESCE(mv.oc_numero,''), COALESCE(mv.estado,''),
+                      COALESCE(mv.n_cajas,0), COALESCE(mv.observaciones,'')
                FROM movimientos_mee mv
                LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mv.mee_codigo))
                WHERE mv.tipo='Entrada' AND COALESCE(mv.anulado,0)=0
-                 AND UPPER(COALESCE(mv.estado,'VIGENTE'))='CUARENTENA'
+                 AND (
+                      UPPER(COALESCE(mv.estado,'VIGENTE'))='CUARENTENA'
+                      -- Sebastián 30-jul: los envases ya NO entran en cuarentena (entran
+                      -- disponibles). Si esta bandeja siguiera mirando sólo la cuarentena, la
+                      -- revisión de Calidad DESAPARECERÍA de la pantalla el mismo día que se
+                      -- quitó el candado (M112: al cambiar el estado, la cola que se alimenta
+                      -- de ese estado se muere en silencio). Ahora también lista lo que llegó
+                      -- por cajas y todavía nadie revisó.
+                      OR (COALESCE(mv.n_cajas,0) > 0
+                          AND COALESCE(mv.observaciones,'') NOT LIKE '%[REVISADO]%'
+                          AND UPPER(COALESCE(mv.estado,'VIGENTE')) <> 'RECHAZADO')
+                 )
                  AND UPPER(COALESCE(mv.lote_ref,'')) NOT LIKE '%MARCACION%'
                ORDER BY mv.id DESC LIMIT 100""").fetchall():
             mid = r[0]
@@ -1334,6 +1346,11 @@ def calidad_recepcion_pipeline():
             lotes.append({'mov_id': mid, 'tipo': 'MEE', 'codigo_mp': r[1], 'nombre': r[2], 'cantidad': r[3], 'lote': r[4],
                           'fecha_vencimiento': r[5] or '', 'proveedor': r[6] or '', 'fecha': (r[7] or '')[:10],
                           'numero_oc': r[8] or '', 'estado_lote': r[9] or '',
+                          # la pantalla decide con ESTO si ofrece "Revisar cajas", no con el
+                          # estado del kardex (que desde el 30-jul ya es VIGENTE al recibir)
+                          'n_cajas': int(r[10] or 0),
+                          'cajas_por_revisar': bool(int(r[10] or 0) > 0
+                                                    and '[REVISADO]' not in str(r[11] or '')),
                           'f01_resultado': (f01[0] if f01 else ''), 'f02_resultado': ''})
     except Exception:
         pass

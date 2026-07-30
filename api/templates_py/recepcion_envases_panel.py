@@ -55,8 +55,8 @@ PANEL_ENVASES_HTML = r'''
 <div class="env-card" style="background:var(--cx-primary-pale);border-left:4px solid var(--cx-primary)">
   <div class="env-hint"><b>&#128230; Material que llega SIN orden de compra en EOS.</b> Se recibe
   <b>una referencia por vez</b>, caja por caja, y cada caja sale con su r&oacute;tulo y su c&oacute;digo de
-  barras. Todo entra en <b>cuarentena</b>: Calidad la revisa caja por caja escaneando, y hasta
-  entonces no cuenta como stock disponible.</div>
+  barras. Entra <b>disponible en inventario</b> y se puede usar de una: Calidad lo revisa caja por
+  caja escaneando, y lo que rechace sale del stock en ese momento.</div>
 </div>
 
 <div class="env-card">
@@ -139,7 +139,7 @@ PANEL_ENVASES_HTML = r'''
       <div><span>Unidades totales</span><b id="env-k-u">0</b></div>
     </div>
     <div class="env-acciones">
-      <button class="env-btn" id="env-b-recibir" onclick="envRecibir()">Recibir en cuarentena</button>
+      <button class="env-btn" id="env-b-recibir" onclick="envRecibir()">Recibir e ingresar a inventario</button>
       <button class="env-btn ghost env-oculto" id="env-b-todos" onclick="envRotulosTodos()">Imprimir los r&oacute;tulos de todas las cajas</button>
       <button class="env-btn ghost env-oculto" id="env-b-otra" onclick="envOtraRef()">Recibir otra referencia</button>
     </div>
@@ -293,7 +293,7 @@ async function envRecibir(){
   ENV_MOV=mv.mov_id||null;
   envPintarCajas();
   envShow('env-b-todos', true); envShow('env-b-otra', true);
-  if(msg)msg.innerHTML='<div class="env-ok"><b>Recibido en cuarentena.</b> '+ENV_CAJAS.length
+  if(msg)msg.innerHTML='<div class="env-ok"><b>Recibido y disponible en inventario.</b> '+ENV_CAJAS.length
     +' caja(s) &middot; '+u.toLocaleString('es-CO')+' unidades. Ya pod&eacute;s imprimir el r&oacute;tulo de cada caja: '
     +'cada uno lleva su c&oacute;digo de barras <b>MEE-'+ENV_MOV+'-(caja)</b>, que es lo que Calidad escanea '
     +'para revisar esa caja.</div>';
