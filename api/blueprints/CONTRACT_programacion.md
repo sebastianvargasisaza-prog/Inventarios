@@ -358,3 +358,16 @@ si cada camino armara su lista, dos pantallas contarían historias distintas del
 Nació de un reporte de piso: la verificación sumaba bien todos los lotes usables pero sólo
 imprimía `necesita / hay / falta`, así que un lote en cuarentena se veía como si no existiera y el
 operario, con dos lotes enfrente, leía "sin stock" (M124 · INV-15 de `CONTRACT_inventario.md`).
+
+
+## 🔧 `_equipos_de_area` excluye lo que todavía no está calificado (30-jul)
+
+Un equipo recién recibido nace `estado_calificacion='PENDIENTE'` (mig 402 · INV-16 de
+`CONTRACT_inventario.md`) y esta función lo SACA de la lista del área: mientras no lo califique
+Aseguramiento, producción no lo puede elegir. Es la cuarentena del equipo, y si sólo fuera una
+etiqueta de color no controlaría nada.
+
+Los equipos que ya existían quedan en `NO_APLICA` y siguen saliendo igual. Si la columna no
+estuviera (base sin la migración), la función NO devuelve vacío: cae a la consulta de siempre y
+loguea — un área sin equipos por un `except` mudo es indistinguible de un área sin equipos de
+verdad (M94).

@@ -179,6 +179,10 @@ CORAZON=(
   # disponible: el canonico la excluye y la pantalla no, asi que un contenedor recien
   # recibido se veia usable antes de que Calidad lo liberara.
   "tests/test_recepcion_envases_lineas.py"
+  # Recepcion de EQUIPOS: quien registra (Catalina y Luz) vs quien califica (Aseguramiento),
+  # y sobre todo que un equipo PENDIENTE de calificacion NO aparezca como usable en su area.
+  # Incluye que los 102 equipos que ya estaban (NO_APLICA) sigan saliendo igual.
+  "tests/test_recepcion_equipos.py"
   # Calidad dispone CAJA POR CAJA: de 24 cajas pueden pasar 22 y venir 2 golpeadas. Fija que
   # el rotulo de cada caja diga la verdad (y que NO se renumeren las cajas fisicas al partir
   # el movimiento) + el escaneo del codigo de barras.

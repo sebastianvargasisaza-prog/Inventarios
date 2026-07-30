@@ -4591,6 +4591,102 @@ def calidad_equipos_registrar_evento(codigo):
     return jsonify({'ok': True, 'evento_id': evento_id})
 
 
+@bp.route('/api/calidad/equipos/por-calificar', methods=['GET'])
+def calidad_equipos_por_calificar():
+    """Equipos recibidos que todavía NO se pueden usar (la cola de Aseguramiento).
+
+    Es el equivalente de la bandeja de cuarentena de materia prima: llegó, está registrado,
+    y hasta que alguien lo califique no entra a producción.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    items = []
+    try:
+        for r in c.execute(
+            "SELECT codigo, nombre, COALESCE(marca,''), COALESCE(modelo,''), COALESCE(serial,''), "
+            "COALESCE(area_codigo,''), COALESCE(ubicacion_raw,''), COALESCE(fecha_ingreso,''), "
+            "COALESCE(recibido_por,''), COALESCE(empresa,''), COALESCE(proveedor,'') "
+            "FROM equipos_planta WHERE COALESCE(estado_calificacion,'NO_APLICA')='PENDIENTE' "
+            "AND COALESCE(activo,1)=1 ORDER BY fecha_ingreso, codigo").fetchall():
+            items.append({'codigo': r[0], 'nombre': r[1], 'marca': r[2], 'modelo': r[3],
+                          'serial': r[4], 'area': r[5], 'ubicacion': r[6], 'fecha_ingreso': r[7],
+                          'recibido_por': r[8], 'empresa': r[9], 'proveedor': r[10]})
+    except Exception as e:
+        log.warning('cola de equipos por calificar: %s', e)
+        return jsonify({'ok': True, 'items': [], 'error_lectura': True})
+    return jsonify({'ok': True, 'items': items,
+                    'puede_calificar': session.get('compras_user', '') in _autorizados_equipos()})
+
+
+@bp.route('/api/calidad/equipos/<path:codigo>/calificar', methods=['POST'])
+def calidad_equipos_calificar(codigo):
+    """Aseguramiento CALIFICA el equipo (IQ/OQ/PQ) y recién ahí queda operativo.
+
+    Body: {resultado: 'CALIFICADO'|'RECHAZADO', iq, oq, pq (bool), notas}
+
+    El que RECIBE no califica (el mismo principio que ya rige los controles en proceso): la
+    recepción es de Compras/Luz y esto es de Aseguramiento. Va con CAS sobre el estado: dos
+    calificaciones concurrentes no pueden dejar el equipo en dos estados distintos (M27), y un
+    equipo ya calificado no se vuelve a calificar por un doble click.
+    """
+    user = session.get('compras_user', '')
+    if user not in _autorizados_equipos():
+        return jsonify({'error': 'Solo Aseguramiento, Calidad o Admin califican un equipo'}), 403
+    d = request.get_json(silent=True) or {}
+    resultado = str(d.get('resultado') or '').strip().upper()
+    if resultado not in ('CALIFICADO', 'RECHAZADO'):
+        return jsonify({'error': "resultado debe ser 'CALIFICADO' o 'RECHAZADO'"}), 400
+    notas = str(d.get('notas') or '').strip()
+    if resultado == 'RECHAZADO' and not notas:
+        # Rechazar un equipo sin decir por qué deja un registro que no explica nada.
+        return jsonify({'error': 'Para rechazar un equipo hace falta el motivo'}), 400
+    cod = str(codigo or '').strip()
+    fases = [k.upper() for k in ('iq', 'oq', 'pq') if d.get(k)]
+    conn = get_db(); c = conn.cursor()
+    fila = c.execute(
+        "SELECT nombre, COALESCE(estado_calificacion,'NO_APLICA') FROM equipos_planta "
+        "WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1", (cod,)).fetchone()
+    if not fila:
+        return jsonify({'error': 'Equipo %s no encontrado' % cod}), 404
+    ahora = (datetime.utcnow()).replace(microsecond=0).isoformat()
+    hoy_co = (datetime.utcnow() - timedelta(hours=5)).date().isoformat()
+    nuevo_op = 'operativo' if resultado == 'CALIFICADO' else 'baja'
+    c.execute(
+        "UPDATE equipos_planta SET estado_calificacion=?, calificado_por=?, calificado_at_utc=?, "
+        "calificacion_notas=?, estado_operacional=?, actualizado_en=? "
+        "WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?)) AND COALESCE(estado_calificacion,'')='PENDIENTE'",
+        (resultado, user, ahora, notas, nuevo_op, ahora, cod))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({'error': 'Ese equipo ya no está pendiente de calificación (está en %s)'
+                                 % fila[1], 'estado_actual': fila[1]}), 409
+    # La calificación es un EVENTO de la hoja de vida: si no queda ahí, mañana nadie puede
+    # demostrar que se calificó antes de usarlo. 'validacion' es el valor que admite el CHECK
+    # de la tabla — inventar uno nuevo haría fallar el INSERT en silencio (M62).
+    try:
+        c.execute(
+            "INSERT INTO equipos_eventos (equipo_codigo, tipo_evento, fecha, estado, responsable, "
+            "resultado, observaciones, creado_por) VALUES (?,'validacion',?,'completado',?,?,?,?)",
+            (cod, hoy_co, user, resultado,
+             ('Calificación de recepción' + (' · fases ' + '/'.join(fases) if fases else '')
+              + (' · ' + notas if notas else '')), user))
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo registrar la calificación en la hoja de vida',
+                        'detalle': str(e)}), 500
+    audit_log(c, usuario=user, accion='CALIFICAR_EQUIPO', tabla='equipos_planta', registro_id=cod,
+              antes={'estado_calificacion': 'PENDIENTE'},
+              despues={'estado_calificacion': resultado, 'fases': fases, 'notas': notas},
+              detalle='%s %s · %s' % (resultado, cod, fila[0]))
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod, 'estado_calificacion': resultado,
+                    'estado_operacional': nuevo_op,
+                    'mensaje': ('Equipo calificado: ya puede usarse en producción.'
+                                if resultado == 'CALIFICADO' else
+                                'Equipo RECHAZADO: queda registrado y fuera de operación.')})
+
+
 @bp.route('/api/calidad/equipos/cronograma/<int:cron_id>/completar', methods=['POST'])
 def calidad_equipos_cronograma_completar(cron_id):
     """Marca un item del cronograma como completado y crea evento asociado.

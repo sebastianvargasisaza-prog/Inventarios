@@ -31,6 +31,7 @@ from templates_py.login_html import LOGIN_HTML
 from templates_py.compras_html import COMPRAS_HTML
 from templates_py.recepcion_html import RECEPCION_HTML
 from templates_py.recepcion_envases_panel import PANEL_ENVASES_HTML
+from templates_py.recepcion_equipos_panel import PANEL_EQUIPOS_HTML
 from templates_py.salida_html import SALIDA_HTML
 from templates_py.solicitudes_html import SOLICITUDES_HTML
 from templates_py.dashboard_html import DASHBOARD_HTML
@@ -55,6 +56,9 @@ def recepcion_panel():
     assert '__PANEL_ENVASES__' in _html_out, \
         'RECEPCION_HTML perdió el placeholder __PANEL_ENVASES__ · la pestaña de envases quedaría muerta'
     _html_out = _html_out.replace('__PANEL_ENVASES__', PANEL_ENVASES_HTML)
+    assert '__PANEL_EQUIPOS__' in _html_out, \
+        'RECEPCION_HTML perdió el placeholder __PANEL_EQUIPOS__ · la pestaña de equipos quedaría muerta'
+    _html_out = _html_out.replace('__PANEL_EQUIPOS__', PANEL_EQUIPOS_HTML)
     return Response(_html_out, mimetype='text/html')
 
 @bp.route('/api/recepcion/detalle/<numero_oc>')
@@ -319,6 +323,295 @@ def recepcion_aprobar_lote():
                       + (f" · motivo: {motivo}" if motivo else ""))
     conn.commit()
     return jsonify({'ok': True, 'estado': nuevo_estado})
+
+# ══ Recepción de EQUIPOS ═══════════════════════════════════════════════════════
+# Sebastián 30-jul: *"los equipos llegan, necesito que Compras los recepcione, o Luz en
+# Espagiria"*. Va como pestaña de /recepcion, igual que todo lo que llega (M120): el punto de
+# entrada lo define el TIPO de cosa que llega, no la feature.
+#
+# Un equipo no es materia prima, pero tiene la misma forma: llega, se registra con lo que trae
+# (serial, marca, factura, cuánto costó), y NO se puede usar hasta que alguien lo apruebe. Ahí
+# la "cuarentena" del equipo es la CALIFICACIÓN (IQ/OQ/PQ) y la hace Aseguramiento.
+
+# Prefijo de código por tipo · sale de los códigos que YA existen en el maestro (BL-PRD-001,
+# TF-PRD-005, PR-COC-001…), no de una nomenclatura inventada (M115).
+_EQUIPO_TIPOS = [
+    ('BL', 'Balanza'), ('TF', 'Tanque de fabricación'), ('ES', 'Envasadora'),
+    ('TP', 'Tapadora'), ('AG', 'Agitador'), ('HO', 'Homogeneizador'),
+    ('PH', 'pHmetro'), ('TE', 'Termómetro / termohigrómetro'), ('DL', 'Datalogger'),
+    ('VI', 'Viscosímetro'), ('NE', 'Nevera / refrigeración'), ('CO', 'Compresor'),
+    ('IM', 'Impresora / loteadora'), ('MO', 'Molino'), ('CB', 'Cabina'),
+    ('PR', 'Instrumento de medición'), ('EQ', 'Otro equipo'),
+]
+_EQUIPO_PREFIJOS = {p for p, _ in _EQUIPO_TIPOS}
+# Áreas que son laboratorio/calidad → el código va con COC; el resto con PRD (así están los 102
+# equipos que ya existen). Se mira el código de área, no el nombre libre.
+_AREAS_CALIDAD = {'CC', 'MUESTRAS', 'LAB'}
+
+
+def _require_recepcion_equipos():
+    """Quién registra la llegada de un equipo.
+
+    Decisión de Sebastián (30-jul): **Catalina (Compras) y Luz (Espagiria)**. Catalina porque
+    es quien tiene la factura y la OC con la que el activo se valoriza; Luz porque a Espagiria
+    llegan equipos y si hay que esperar a que Catalina esté, se registra tarde o no se registra.
+    El registro guarda QUIÉN recibió, así que ampliar la puerta no diluye la responsabilidad.
+    Calificar (IQ/OQ/PQ) es de Aseguramiento y es OTRO permiso: el que recibe no aprueba.
+    """
+    u = session.get('compras_user', '')
+    if not u:
+        return None, jsonify({'error': 'No autenticado'}), 401
+    permitidos = set(COMPRAS_ACCESS) | {'luz'} | set(ADMIN_USERS)
+    if u not in permitidos:
+        return None, jsonify({
+            'error': 'Solo Compras, Luz (Espagiria) o un admin registran la llegada de un equipo',
+            'detail': "'%s' no está autorizado para recepción de equipos" % u,
+        }), 403
+    return u, None, None
+
+
+def _hoy_col_iso():
+    """Fecha de Colombia. El server de Render corre en UTC: de noche `today()` ya es mañana y
+    la recepción quedaría fechada un día después de que llegó el equipo (M24)."""
+    return (datetime.utcnow() - timedelta(hours=5)).date().isoformat()
+
+
+def _zona_codigo_equipo(area_codigo):
+    return 'COC' if str(area_codigo or '').strip().upper() in _AREAS_CALIDAD else 'PRD'
+
+
+def _siguiente_codigo_equipo(c, prefijo, zona, ocupados=None):
+    """`PRE-ZONA-NNN` continuando la numeración que ya existe.
+
+    El correlativo se extrae en PYTHON: un `CAST(SUBSTR(...))` revienta en PostgreSQL en cuanto
+    un código traiga un sufijo no numérico, y ese patrón ya tumbó la creación de OCs de un año
+    entero (M45).
+    """
+    import re as _re
+    pat = _re.compile(r'^' + _re.escape(prefijo) + r'-' + _re.escape(zona) + r'-(\d+)$')
+    mx = 0
+    try:
+        for (cod,) in c.execute("SELECT codigo FROM equipos_planta").fetchall():
+            m = pat.match(str(cod or '').strip().upper())
+            if m:
+                mx = max(mx, int(m.group(1)))
+    except Exception as e:
+        log_eq = __import__('logging').getLogger('despachos')
+        log_eq.warning('numeración de equipos: %s', e)
+    for extra in ocupados or ():
+        m = pat.match(str(extra or '').strip().upper())
+        if m:
+            mx = max(mx, int(m.group(1)))
+    return '%s-%s-%03d' % (prefijo, zona, mx + 1)
+
+
+@bp.route('/api/recepcion/equipos', methods=['GET'])
+def recepcion_equipos_listar():
+    """Lo recibido últimamente + el vocabulario real de áreas (los valores que YA se usan)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    filas = []
+    try:
+        for r in c.execute(
+            "SELECT codigo, nombre, COALESCE(marca,''), COALESCE(modelo,''), COALESCE(serial,''), "
+            "COALESCE(empresa,''), COALESCE(area_codigo,''), COALESCE(ubicacion_raw,''), "
+            "COALESCE(proveedor,''), COALESCE(factura,''), COALESCE(valor_cop,0), "
+            "COALESCE(fecha_ingreso,''), COALESCE(recibido_por,''), "
+            "COALESCE(estado_calificacion,'NO_APLICA'), COALESCE(calificado_por,'') "
+            "FROM equipos_planta WHERE COALESCE(recibido_at_utc,'') <> '' "
+            "ORDER BY recibido_at_utc DESC, id DESC LIMIT 60").fetchall():
+            filas.append({
+                'codigo': r[0], 'nombre': r[1], 'marca': r[2], 'modelo': r[3], 'serial': r[4],
+                'empresa': r[5], 'area_codigo': r[6], 'ubicacion': r[7], 'proveedor': r[8],
+                'factura': r[9], 'valor_cop': float(r[10] or 0), 'fecha_ingreso': r[11],
+                'recibido_por': r[12], 'estado_calificacion': r[13], 'calificado_por': r[14],
+            })
+    except Exception as e:
+        return jsonify({'error': 'no se pudo leer', 'detalle': str(e)}), 500
+    areas = []
+    try:
+        areas = [a[0] for a in c.execute(
+            "SELECT DISTINCT COALESCE(area_codigo,'') FROM equipos_planta "
+            "WHERE COALESCE(area_codigo,'') <> '' ORDER BY 1").fetchall()]
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'items': filas, 'areas': areas,
+                    'tipos': [{'prefijo': p, 'nombre': n} for p, n in _EQUIPO_TIPOS],
+                    'hoy': _hoy_col_iso(),
+                    'puede_registrar': session.get('compras_user', '') in (
+                        set(COMPRAS_ACCESS) | {'luz'} | set(ADMIN_USERS))})
+
+
+@bp.route('/api/recepcion/equipos', methods=['POST'])
+def recepcion_equipos_registrar():
+    """Registra la llegada de 1..N equipos iguales. Cada uno nace PENDIENTE de calificación."""
+    _u, _err, _code = _require_recepcion_equipos()
+    if _err:
+        return _err, _code
+    d = request.get_json(silent=True) or {}
+    nombre = str(d.get('nombre') or '').strip()
+    if not nombre:
+        return jsonify({'error': 'El nombre del equipo es obligatorio'}), 400
+    prefijo = str(d.get('tipo_prefijo') or 'EQ').strip().upper()
+    if prefijo not in _EQUIPO_PREFIJOS:
+        prefijo = 'EQ'
+    try:
+        cantidad = int(d.get('cantidad') or 1)
+    except (TypeError, ValueError):
+        cantidad = 1
+    if cantidad < 1 or cantidad > 20:
+        return jsonify({'error': 'La cantidad debe estar entre 1 y 20'}), 400
+    area = str(d.get('area_codigo') or '').strip().upper()
+    ubic = str(d.get('ubicacion') or '').strip()
+    serial = str(d.get('serial') or '').strip()
+    if cantidad > 1 and serial:
+        # Un serial identifica UNA máquina. Pegarle el mismo a N equipos es inventar un dato
+        # que después nadie puede corregir sin saber cuál era cuál.
+        return jsonify({'error': 'El serial identifica UN equipo. Registrá los seriales '
+                                 'uno por uno, o dejá el serial vacío y cargalo después.'}), 400
+    try:
+        valor = float(d.get('valor_cop') or 0)
+    except (TypeError, ValueError):
+        valor = 0.0
+    fecha_ing = str(d.get('fecha_ingreso') or '').strip()[:10] or _hoy_col_iso()
+    codigo_manual = str(d.get('codigo') or '').strip().upper()
+
+    conn = get_db(); c = conn.cursor()
+    if serial:
+        try:
+            dup = c.execute(
+                "SELECT codigo FROM equipos_planta WHERE UPPER(TRIM(COALESCE(serial,'')))=? "
+                "AND COALESCE(serial,'') <> ''", (serial.upper(),)).fetchone()
+        except Exception:
+            dup = None
+        if dup:
+            return jsonify({'error': 'Ese serial ya está registrado en %s. Un serial es un '
+                                     'equipo: si son dos, cada uno trae el suyo.' % dup[0],
+                            'codigo_existente': dup[0]}), 409
+    if codigo_manual:
+        ya = c.execute("SELECT 1 FROM equipos_planta WHERE UPPER(TRIM(codigo))=?",
+                       (codigo_manual,)).fetchone()
+        if ya:
+            return jsonify({'error': 'El código %s ya existe' % codigo_manual}), 409
+        if cantidad > 1:
+            return jsonify({'error': 'Un código manual identifica UN equipo · '
+                                     'poné cantidad 1 o dejá que EOS numere'}), 400
+
+    zona = _zona_codigo_equipo(area)
+    ahora = datetime.utcnow().replace(microsecond=0).isoformat()
+    creados = []
+    try:
+        for _ in range(cantidad):
+            cod = codigo_manual or _siguiente_codigo_equipo(c, prefijo, zona, ocupados=creados)
+            c.execute(
+                """INSERT INTO equipos_planta
+                   (codigo, nombre, area_codigo, ubicacion_raw, tipo, capacidad_raw,
+                    estado_operacional, activo, notas, empresa, marca, modelo, serial,
+                    proveedor, factura, numero_oc, valor_cop, fecha_ingreso,
+                    recibido_por, recibido_at_utc, estado_calificacion)
+                   VALUES (?,?,?,?,?,?, 'calibracion', 1, ?,?,?,?,?,?,?,?,?,?,?,?, 'PENDIENTE')""",
+                (cod, nombre, area, ubic, str(d.get('tipo') or 'otro').strip() or 'otro',
+                 str(d.get('capacidad') or '').strip(), str(d.get('notas') or '').strip(),
+                 str(d.get('empresa') or '').strip().upper(),
+                 str(d.get('marca') or '').strip(), str(d.get('modelo') or '').strip(), serial,
+                 str(d.get('proveedor') or '').strip(), str(d.get('factura') or '').strip(),
+                 str(d.get('numero_oc') or '').strip(), valor, fecha_ing, _u, ahora))
+            creados.append(cod)
+        audit_log(c, usuario=_u, accion='RECEPCION_EQUIPO', tabla='equipos_planta',
+                  registro_id=','.join(creados),
+                  despues={'equipos': creados, 'nombre': nombre, 'serial': serial,
+                           'factura': str(d.get('factura') or ''), 'valor_cop': valor,
+                           'area': area, 'fecha_ingreso': fecha_ing},
+                  detalle='Recepción de %d equipo(s) "%s" · PENDIENTE de calificación'
+                          % (len(creados), nombre))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo registrar el equipo', 'detalle': str(e)}), 500
+    return jsonify({
+        'ok': True, 'codigos': creados, 'cantidad': len(creados),
+        'estado': 'PENDIENTE',
+        'mensaje': ('%d equipo(s) recibido(s). Quedan PENDIENTES de calificación: hasta que '
+                    'Aseguramiento no los califique (IQ/OQ/PQ) no se pueden usar en producción.'
+                    % len(creados)),
+    }), 201
+
+
+@bp.route('/rotulos-equipo', methods=['GET'])
+def rotulos_equipo():
+    """Rótulo para pegarle al equipo: código con código de barras + el estado de calificación.
+
+    Es el equivalente del rótulo de cuarentena de una materia prima: mientras diga PENDIENTE,
+    nadie debería usarlo. Se imprime en la misma etiqueta que el resto de Planta.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login?next=/recepcion')
+    import html as _h
+    import urllib.parse as _up
+    from blueprints.inventario import _rotulo_recep_css, _rotulo_logo_src
+    cods = [x.strip().upper() for x in (request.args.get('cods') or '').split(',') if x.strip()]
+    if not cods:
+        return Response('<p style="font-family:Arial;padding:24px">Sin equipos que rotular.</p>',
+                        mimetype='text/html')
+    try:
+        lw = max(40, min(210, int(request.args.get('w') or 100)))
+        lh = max(20, min(297, int(request.args.get('h') or 100)))
+    except (TypeError, ValueError):
+        lw, lh = 100, 100
+    conn = get_db(); c = conn.cursor()
+    logo = _rotulo_logo_src(c)
+    ph = ','.join(['?'] * len(cods))
+    filas = c.execute(
+        "SELECT codigo, nombre, COALESCE(marca,''), COALESCE(modelo,''), COALESCE(serial,''), "
+        "COALESCE(area_codigo,''), COALESCE(ubicacion_raw,''), COALESCE(fecha_ingreso,''), "
+        "COALESCE(estado_calificacion,'NO_APLICA'), COALESCE(empresa,'') "
+        "FROM equipos_planta WHERE UPPER(TRIM(codigo)) IN (%s) ORDER BY codigo" % ph,
+        tuple(cods)).fetchall()
+    hojas, barcodes = '', ''
+    for i, r in enumerate(filas):
+        est = str(r[8] or '')
+        pend = est == 'PENDIENTE'
+        barcodes += ('try{JsBarcode("#bq%d",%s,{format:"CODE128",width:1.5,height:38,'
+                     'displayValue:false,margin:0})}catch(e){};' % (i, json.dumps(str(r[0]))))
+        # MISMA estructura que el rótulo de envase (`_rotulo_mee_sheet`): .top/.title/.lote/table.
+        # Si inventara clases propias, este rótulo se vería distinto del resto de Planta y el día
+        # que alguien retoque el CSS compartido, éste quedaría roto sin que nadie lo note.
+        hojas += '<div class="sheet"><div class="accent"></div>'
+        hojas += ('<div class="top"><div class="brand">'
+                  '<img class="mark" src="' + logo + '" alt="" onerror="this.remove()">'
+                  '<div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
+                  '<div class="ctrl"><b>Ingreso:</b> ' + _h.escape(str(r[7])) + '<br>'
+                  '<b>Empresa:</b> ' + (_h.escape(str(r[9])) or '-') + '</div></div>')
+        hojas += ('<div class="title"><div class="eyebrow">Equipo de planta</div>'
+                  '<h1 class="name">' + _h.escape(str(r[1])) + '</h1></div>')
+        hojas += ('<div class="lote"><div class="ll">Código del equipo</div>'
+                  '<div class="lv">' + _h.escape(str(r[0])) + '</div>'
+                  '<svg id="bq' + str(i) + '"></svg></div>')
+        hojas += '<table>'
+        hojas += ('<tr><td class="k">Marca / modelo</td><td>' +
+                  (_h.escape((str(r[2]) + ' ' + str(r[3])).strip()) or '-') + '</td></tr>')
+        hojas += '<tr><td class="k">Serial</td><td>' + (_h.escape(str(r[4])) or '-') + '</td></tr>'
+        hojas += ('<tr><td class="k">Ubicación</td><td>' +
+                  (_h.escape((str(r[5]) + ' ' + str(r[6])).strip()) or '-') + '</td></tr>')
+        hojas += ('<tr><td class="k">Estado</td><td class="' + ('pend' if pend else 'ok') + '">' +
+                  ('PENDIENTE DE CALIFICACIÓN &middot; NO USAR' if pend else _h.escape(est)) +
+                  '</td></tr>')
+        hojas += '</table>'
+        hojas += '</div>'
+    html = ('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+            '<title>Rotulos de equipo</title>'
+            '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
+            + _rotulo_recep_css(lw, lh) +
+            '<style>.pend{color:var(--cx-danger-text, #991b1b);font-weight:800;}'
+            '.ok{color:var(--cx-success-text, #166534);font-weight:700;}'
+            '</style></head><body>'
+            '<div class="ph no-print"><div><b>Rótulos de equipo</b> &middot; ' + str(len(filas)) +
+            '</div><button class="pbtn" onclick="window.print()">Imprimir</button></div>'
+            '<div class="wrap">' + hojas + '</div>'
+            '<script>' + barcodes + '</script></body></html>')
+    return Response(html, mimetype='text/html', headers={'Cache-Control': 'no-store'})
+
 
 @bp.route('/api/recepcion/trazabilidad/<path:lote>')
 def recepcion_trazabilidad_lote(lote):

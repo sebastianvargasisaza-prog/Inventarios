@@ -746,6 +746,37 @@ lotes hay ni por qué algunos no se pueden tocar.
 Tests: `tests/test_lotes_visibles_verificacion.py` (en el gate · 6 casos, con el escenario de
 Sebastián sembrado tal cual: un lote chico usable + uno grande en cuarentena).
 
+## 🔧 INV-16 · Recepción de EQUIPOS · la calificación es su cuarentena (30-jul)
+
+Sebastián: *"los equipos llegan, necesito que Compras los recepcione, o Luz en Espagiria"*.
+Va como **pestaña de `/recepcion`** (el punto de entrada lo define el TIPO de cosa que llega ·
+M120), no como página aparte.
+
+- **Quién**: `POST /api/recepcion/equipos` → `COMPRAS_ACCESS ∪ {luz} ∪ ADMIN`. **Calificar es
+  OTRO permiso** (`_autorizados_equipos` = Calidad ∪ Aseguramiento ∪ Admin): el que recibe no
+  aprueba su propia recepción.
+- **`estado_calificacion` es la cuarentena del equipo** (mig 402): nace `PENDIENTE` y
+  `_equipos_de_area` lo EXCLUYE, así que producción no lo puede elegir. Al calificar
+  (`POST /api/calidad/equipos/<cod>/calificar`) pasa a `CALIFICADO` + `estado_operacional=operativo`
+  y recién ahí aparece. Rechazado → `baja`, **sin borrar** (GMP): queda registrado.
+  Los 102 equipos que ya existían quedan en `NO_APLICA` y siguen saliendo igual — la migración
+  es aditiva y no les inventa una calificación que nadie hizo (M117).
+- **CAS** en la calificación: dos clicks (o dos workers) no pueden dejar el equipo en dos
+  estados distintos → 409 si ya no está pendiente (M27). Y deja **evento en la hoja de vida**
+  (`equipos_eventos` tipo `validacion`, que es el valor que admite el CHECK · M62): sin ese
+  registro nadie puede demostrar que se calificó antes de usarlo.
+- **Código**: `<PREFIJO>-<ZONA>-NNN` continuando la numeración que ya existe (`BL-PRD-007`,
+  `PR-COC-002` para Control de Calidad). El correlativo se extrae **en Python**, nunca con
+  `CAST(SUBSTR(...))` (M45). Si el equipo trae placa propia, se respeta.
+- **Un serial es UN equipo**: no se puede pegar el mismo a N unidades (400) ni repetir uno ya
+  registrado (409).
+- **Rótulo** `GET /rotulos-equipo?cods=A,B` con código de barras, en el mismo lenguaje visual
+  que los demás rótulos de Planta (`_rotulo_recep_css`), y dice **"PENDIENTE DE CALIFICACIÓN ·
+  NO USAR"** mientras no esté calificado.
+
+Tests: `tests/test_recepcion_equipos.py` (en el gate · 12 casos, con los permisos probados en
+los dos sentidos y el equipo pendiente ausente de su área hasta calificarse).
+
 ## 🔐 Permiso del import masivo de envases (30-jul)
 
 `POST /api/mee/import-bulk` mutaba el maestro y el stock sin permiso de rol. Gate **proporcional**:

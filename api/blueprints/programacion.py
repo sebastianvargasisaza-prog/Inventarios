@@ -5966,14 +5966,30 @@ def _equipos_de_area(c, area_codigo):
     sala-legacy→área-equipos para PROD1..PROD4."""
     alias = _SALA_EQUIPO_ALIAS.get(area_codigo, area_codigo)
     try:
+        # Un equipo recién recibido está PENDIENTE de calificación (IQ/OQ/PQ) y no se puede
+        # usar todavía: es la cuarentena del equipo. Los 102 que ya estaban quedan en
+        # 'NO_APLICA' y siguen saliendo igual — la columna nació vacía a propósito (M117).
         rows = c.execute(
             """SELECT codigo, nombre, tipo FROM equipos_planta
                WHERE area_codigo IN (?, ?) AND activo=1
+                 AND COALESCE(estado_calificacion,'NO_APLICA') NOT IN ('PENDIENTE','RECHAZADO')
                ORDER BY codigo""",
             (area_codigo, alias),
         ).fetchall()
-    except Exception:
-        return []
+    except Exception as _ec:
+        # Si la columna no estuviera (base sin la migración), NO se pierde la lista de equipos:
+        # se cae a la consulta de siempre. Un except mudo acá dejaría el área sin equipos y
+        # nadie sabría por qué (M94).
+        log.warning('equipos de %s sin filtro de calificación: %s', area_codigo, _ec)
+        try:
+            rows = c.execute(
+                """SELECT codigo, nombre, tipo FROM equipos_planta
+                   WHERE area_codigo IN (?, ?) AND activo=1
+                   ORDER BY codigo""",
+                (area_codigo, alias),
+            ).fetchall()
+        except Exception:
+            return []
     return [{'codigo': r[0], 'nombre': r[1], 'tipo': r[2] or ''} for r in rows]
 
 

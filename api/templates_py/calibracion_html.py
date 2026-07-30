@@ -31,6 +31,12 @@ body{font-family:"Inter",system-ui,-apple-system,Arial,sans-serif;background:var
 .kpi .l{font-size:11px;color:var(--cx-text-mute,#8b8b9e);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-top:3px}
 .kpi.v .n{color:var(--cx-success-text)}.kpi.p .n{color:var(--cx-warn-text)}.kpi.x .n{color:var(--cx-danger-text)}
 .bar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.pendbox{background:var(--cx-warn-pale);border:1px solid var(--cx-warn);border-radius:14px;padding:14px 17px;margin-bottom:16px}
+.pendt{font-size:13.5px;font-weight:800;color:var(--cx-warn-text)}
+.pendsub{font-size:12.5px;color:var(--cx-text-soft);margin:3px 0 10px;line-height:1.5}
+.pendrow{display:flex;gap:11px;align-items:center;flex-wrap:wrap;background:var(--cx-surface);border:1px solid var(--cx-border);border-radius:10px;padding:8px 12px;margin-bottom:7px}
+.pendcod{font-family:ui-monospace,monospace;font-weight:800;color:var(--cx-primary-text)}
+
 .bar input.q{flex:1;min-width:230px;max-width:420px}
 .fchip{border:1px solid var(--cx-border,#e4e2ee);background:var(--cx-surface,#fff);color:var(--cx-text-soft,#64748b);border-radius:22px;padding:7px 15px;font-size:12.5px;font-weight:700;cursor:pointer;transition:.15s}
 .fchip:hover{border-color:var(--cx-primary-light)}
@@ -87,6 +93,12 @@ tr.r-proximo{background:rgba(217,119,6,.045)}
     <div class="kpi p"><div class="n" id="k-prox">&middot;</div><div class="l">Vencen en 30 d&iacute;as</div></div>
     <div class="kpi x"><div class="n" id="k-venc">&middot;</div><div class="l">Vencidos</div></div>
     <div class="kpi s"><div class="n" id="k-sin">&middot;</div><div class="l">Sin calibrar</div></div>
+  </div>
+
+  <div id="cal-pend" class="pendbox" style="display:none">
+    <div class="pendt">Equipos recibidos que faltan CALIFICAR</div>
+    <div class="pendsub">Llegaron y est&aacute;n registrados, pero hasta que no se califiquen (IQ/OQ/PQ) no se pueden usar para fabricar. Es la cuarentena del equipo.</div>
+    <div id="cal-pend-lista"></div>
   </div>
 
   <div class="bar">
@@ -169,7 +181,52 @@ async function cargar(){
     document.getElementById('k-venc').textContent = k.vencidos||0;
     document.getElementById('k-sin').textContent = k.sin_calibrar||0;
     pintar();
+    calPendientes();
   }catch(e){ document.getElementById('tb').innerHTML='<tr><td colspan="9" class="empty">Error de red: '+esc(e.message)+'</td></tr>'; }
+}
+
+async function calPendientes(){
+  try{
+    var r = await fetch('/api/calidad/equipos/por-calificar', {credentials:'same-origin'});
+    var d = await r.json();
+    var box = document.getElementById('cal-pend');
+    var items = (d && d.items) || [];
+    if(!items.length){ box.style.display='none'; return; }
+    box.style.display='';
+    var puede = !!(d && d.puede_calificar);
+    document.getElementById('cal-pend-lista').innerHTML = items.map(function(x){
+      return '<div class="pendrow">'+
+        '<span class="pendcod">'+esc(x.codigo)+'</span>'+
+        '<span style="flex:1;min-width:170px">'+esc(x.nombre)+
+          (x.marca? ' <span style="color:var(--cx-text-mute)">'+esc(x.marca)+' '+esc(x.modelo||'')+'</span>':'')+
+          (x.serial? ' <span style="color:var(--cx-text-mute)">serial '+esc(x.serial)+'</span>':'')+'</span>'+
+        '<span style="color:var(--cx-text-mute);font-size:12px">'+esc(x.area||'')+' &middot; lleg&oacute; '+esc(x.fecha_ingreso||'')+' &middot; recibi&oacute; '+esc(x.recibido_por||'')+'</span>'+
+        (puede
+          ? '<button class="cx-btn cx-btn-sm" style="background:var(--cx-success);color:#fff" onclick="calCalificar(&quot;'+esc(x.codigo)+'&quot;,&quot;CALIFICADO&quot;)">Calificar</button>'+
+            '<button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="calCalificar(&quot;'+esc(x.codigo)+'&quot;,&quot;RECHAZADO&quot;)">Rechazar</button>'
+          : '<span style="font-size:12px;color:var(--cx-text-mute)">solo Aseguramiento</span>')+
+      '</div>';
+    }).join('');
+  }catch(e){}
+}
+
+async function calCalificar(cod, resultado){
+  var notas = '';
+  if(resultado === 'RECHAZADO'){
+    notas = prompt('Motivo del rechazo de ' + cod + ' (queda en la hoja de vida):') || '';
+    if(!notas.trim()){ alert('Sin motivo no se puede rechazar un equipo.'); return; }
+  }else{
+    if(!confirm('Calificar ' + cod + '? Queda operativo y disponible para fabricar.')) return;
+    notas = prompt('Observaciones de la calificacion (opcional):') || '';
+  }
+  try{
+    var r = await fetch('/api/calidad/equipos/'+encodeURIComponent(cod)+'/calificar',
+      _opts('POST', {resultado: resultado, notas: notas, iq: true, oq: true, pq: true}));
+    var d = await r.json();
+    if(!r.ok || !d.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
+    alert(d.mensaje || 'Listo.');
+    calPendientes(); cargar();
+  }catch(e){ alert('Error de red.'); }
 }
 
 function filtrar(btn){
