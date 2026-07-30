@@ -377,6 +377,25 @@ def _exige_aprobacion_orden(conn) -> bool:
         return False
 
 
+def _exige_ipc_estandar(conn) -> bool:
+    """Toggle de `app_settings` · default OFF (M68: un modo beta es NO-OP TOTAL).
+
+    Exigir los 5 controles estándar (densidad/pH/olor/color/apariencia) ANTES de
+    completar es la posición GMP, pero encenderlo a ciegas traba el piso el mismo
+    día: hoy casi ningún lote los registra. Se prende desde /admin/seguridad-planta
+    cuando Calidad ya los tome de rutina.
+
+    ⚠ Esto NO gobierna el bloqueo por NO CONFORMIDAD: un estándar marcado 'No
+    cumple' frena la liberación SIEMPRE (nadie lo marca por accidente · liberar
+    producto con una no conformidad declarada es lo que no puede pasar)."""
+    try:
+        r = conn.execute("SELECT valor FROM app_settings WHERE clave='exigir_ipc_estandar'").fetchone()
+        return bool(r) and str(r[0]).strip() in ("1", "true", "True")
+    except Exception as _e:                       # tabla ausente = beta (nunca frenar por esto)
+        log.warning("exigir_ipc_estandar no legible: %s", _e)
+        return False
+
+
 def _gate_aprobacion_orden():
     """Si el toggle está ON, un legajo SIN aprobar no deja ejecutar el proceso.
 
@@ -4041,14 +4060,18 @@ def ebr_vista_completa(ebr_id):
         est = {}
         try:
             for er in conn.execute(
-                """SELECT control_codigo, COALESCE(valor_texto,''), conforme,
-                          COALESCE(observaciones,''), COALESCE(medido_por,''),
-                          COALESCE(medido_at_utc,'')
-                   FROM ipc_estandar_resultados WHERE ebr_id=?""",
+                """SELECT r.control_codigo, COALESCE(r.valor_texto,''), r.conforme,
+                          COALESCE(r.observaciones,''), COALESCE(r.medido_por,''),
+                          COALESCE(r.medido_at_utc,''), COALESCE(d.codigo,''),
+                          COALESCE(d.estado,'')
+                   FROM ipc_estandar_resultados r
+                   LEFT JOIN desviaciones d ON d.id = r.desviacion_id
+                   WHERE r.ebr_id=?""",
                 (ebr_id,),
             ).fetchall():
                 est[er[0]] = er
-        except Exception:
+        except Exception as _e:
+            log.warning("ipc estandar (vista) ebr=%s: %s", ebr_id, _e)
             est = {}
         for cod, nom, uni in IPC_ESTANDAR:
             if nom.strip().lower() in nombres_mbr:
@@ -4064,6 +4087,8 @@ def ebr_vista_completa(ebr_id):
                 'realizado_por_full': _persona(er[4] if er else ''),
                 'fecha': (er[5] if er else ''), 'obligatorio': False,
                 'tipo': 'estandar', 'codigo': cod,
+                'desviacion': (er[6] if er else ''),
+                'desviacion_estado': (er[7] if er else ''),
             })
         out['ipc'] = ipc
     except Exception:
@@ -4443,6 +4468,30 @@ def completar_ebr(ebr_id):
             } for r in ipcs_no_conformes],
         }), 409
 
+    # 29-jul · los 5 controles ESTÁNDAR (densidad/pH/olor/color/apariencia) son los que
+    # de hecho se usan (ningún MBR define specs). Exigirlos antes de completar es la
+    # posición GMP, pero nace APAGADO: encenderlo a ciegas traba el piso el mismo día.
+    # Registrado = con valor adjudicado o marcado 'No aplica'; una fila con el valor
+    # anotado y sin adjudicar cuenta como PENDIENTE (falta la firma de Calidad).
+    if not _es_demo and _exige_ipc_estandar(conn):
+        try:
+            _regs = {r[0]: r[1] for r in cur.execute(
+                "SELECT control_codigo, conforme FROM ipc_estandar_resultados WHERE ebr_id=?",
+                (ebr_id,)).fetchall()}
+        except Exception as _ee:
+            log.warning("ipc_estandar_resultados no legible (ebr %s): %s", ebr_id, _ee)
+            _regs = {}
+        _falt = [nom for cod, nom, _u in IPC_ESTANDAR
+                 if _regs.get(cod) not in (0, 1, 2)]
+        if _falt:
+            return jsonify({
+                "error": ("Faltan controles en proceso por registrar: "
+                          + " · ".join(_falt)
+                          + ". Registralos con su resultado o marcalos 'No aplica'."),
+                "codigo": "IPC_ESTANDAR_PENDIENTES",
+                "controles": _falt,
+            }), 409
+
     yield_pct = round((cantidad_real / ebr["cantidad_objetivo_g"]) * 100, 2) if ebr["cantidad_objetivo_g"] else None
     # Puente OP→OF · densidad (g/mL) opcional → mL envasable = real_g / densidad.
     try:
@@ -4749,6 +4798,71 @@ def liberar_ebr(ebr_id):
                           f"resuelta (cerrada con CAPA efectivo)."),
                 "codigo": "IPC_OOS_SIN_RESOLVER",
             }), 409
+
+    # 29-jul · EL MISMO GATE PARA LOS CONTROLES ESTÁNDAR. El de arriba mira sólo
+    # `ipc_resultados` (specs del MBR) y hoy NINGÚN MBR define specs → todo pasa por la
+    # vía estándar, así que el control de OOS estaba de hecho inerte: se reprodujo un
+    # lote con el pH marcado 'No cumple' saliendo 'liberado'. Espeja el de arriba:
+    #  · conforme=0 (no conformidad DECLARADA) → sólo pasa con su desviación cerrada y
+    #    CAPA efectivo. Nadie marca 'No cumple' por accidente.
+    #  · valor anotado y NADIE adjudicó (conforme NULL con resultado) → tampoco: es la
+    #    firma de Calidad que falta, igual que el cualitativo del MBR.
+    # Lo que NO bloquea acá es un control sin registrar (fila ausente): eso lo gobierna
+    # el toggle `exigir_ipc_estandar` en `completar`, o este gate sería el estricto
+    # encendido por la puerta de atrás (M68).
+    _est_bloq = []
+    try:
+        _est_bloq = cur.execute(
+            """SELECT r.control_nombre, r.conforme, COALESCE(r.valor_texto,''),
+                      COALESCE(d.codigo,''), COALESCE(d.estado,'')
+                 FROM ipc_estandar_resultados r
+                 LEFT JOIN desviaciones d ON d.id = r.desviacion_id
+                WHERE r.ebr_id = ?
+                  AND ( ( r.conforme = 0
+                          AND ( r.desviacion_id IS NULL
+                                OR COALESCE(d.estado,'') NOT IN ('cerrada','anulada')
+                                OR (COALESCE(d.estado,'') = 'cerrada'
+                                    AND COALESCE(d.efectividad_ok,1) = 0) ) )
+                        OR ( r.conforme IS NULL
+                             AND COALESCE(TRIM(r.valor_texto),'') != '' ) )""",
+            (ebr_id,)).fetchall()
+    except Exception as _ee:
+        # No se pudo verificar (columna/tabla ausente): si hay estándar no conformes no
+        # podemos probar que estén resueltos → fail-closed, igual que el gate de arriba.
+        log.warning("gate IPC estándar no verificable: %s", _ee)
+        try:
+            _n = cur.execute(
+                "SELECT COUNT(*) FROM ipc_estandar_resultados "
+                "WHERE ebr_id=? AND conforme=0", (ebr_id,)).fetchone()[0]
+        except Exception:
+            _n = 0
+        if _n:
+            return jsonify({
+                "error": (f"No se puede liberar: {_n} control(es) estándar NO CONFORME(S) "
+                          f"y no se pudo verificar su desviación."),
+                "codigo": "IPC_ESTANDAR_NO_VERIFICABLE",
+            }), 409
+        _est_bloq = []
+    if _est_bloq:
+        _nc = [r for r in _est_bloq if r[1] == 0]
+        _sa = [r for r in _est_bloq if r[1] is None]
+        if _nc:
+            return jsonify({
+                "error": ("No se puede liberar: control(es) en proceso NO CONFORME(S) sin "
+                          "desviación resuelta (cerrada con CAPA efectivo) · "
+                          + " · ".join(f"{r[0]} = {r[2]}" + (f" [{r[3]}]" if r[3] else "")
+                                       for r in _nc)),
+                "codigo": "IPC_ESTANDAR_NO_CONFORME",
+                "controles": [{"control": r[0], "resultado": r[2],
+                               "desviacion": r[3], "estado_desviacion": r[4]} for r in _nc],
+            }), 409
+        return jsonify({
+            "error": ("No se puede liberar: control(es) en proceso con resultado anotado y "
+                      "SIN adjudicar por Calidad (Cumple / No cumple) · "
+                      + " · ".join(f"{r[0]} = {r[2]}" for r in _sa)),
+            "codigo": "IPC_ESTANDAR_SIN_ADJUDICAR",
+            "controles": [{"control": r[0], "resultado": r[2]} for r in _sa],
+        }), 409
 
     # Batch B · Acondicionamiento · no liberar con arte/etiqueta sin aprobar
     # (gate de etiquetado GMP). Aplica si hay artes registradas (costo nulo si no).
@@ -5873,14 +5987,20 @@ def reportar_ipc_estandar(ebr_id):
         est = {}
         try:
             for er in cur.execute(
-                """SELECT control_codigo, COALESCE(valor_texto,''), conforme,
-                          COALESCE(observaciones,''), COALESCE(medido_por,''),
-                          COALESCE(medido_at_utc,'')
-                   FROM ipc_estandar_resultados WHERE ebr_id=?""",
+                """SELECT r.control_codigo, COALESCE(r.valor_texto,''), r.conforme,
+                          COALESCE(r.observaciones,''), COALESCE(r.medido_por,''),
+                          COALESCE(r.medido_at_utc,''), COALESCE(d.codigo,''),
+                          COALESCE(d.estado,'')
+                   FROM ipc_estandar_resultados r
+                   LEFT JOIN desviaciones d ON d.id = r.desviacion_id
+                   WHERE r.ebr_id=?""",
                 (ebr_id,),
             ).fetchall():
                 est[er[0]] = er
-        except Exception:
+        except Exception as _e:
+            # Nunca mudo: un except que traga vuelve el legajo "sin controles", que es
+            # indistinguible de la realidad (M4/M94).
+            log.warning("ipc-estandar GET ebr=%s: %s", ebr_id, _e)
             est = {}
         items = []
         for cod, nom, uni in IPC_ESTANDAR:
@@ -5892,6 +6012,8 @@ def reportar_ipc_estandar(ebr_id):
                 "observaciones": (er[3] if er else ""),
                 "medido_por": (er[4] if er else ""),
                 "medido_at_utc": (er[5] if er else ""),
+                "desviacion": (er[6] if er else ""),
+                "desviacion_estado": (er[7] if er else ""),
             })
         return jsonify({"items": items})
     err = _require_brd_ejecutor()
@@ -5920,7 +6042,33 @@ def reportar_ipc_estandar(ebr_id):
     else:
         conf = body.get("conforme")
         conforme = (1 if conf else 0) if conf is not None else None
+    # Adjudicar (Cumple / No cumple) SIN resultado dejaba la fila diciendo "pendiente" y
+    # "✓" a la vez (M5: el número que se muestra es el que decide) — y una conformidad
+    # firmada sobre un dato que no existe no es un registro. Se corta en el ORIGEN, no en
+    # la vista: si se arregla sólo la pantalla, la base queda igual de rota (M115).
+    # 'No aplica' sí es una respuesta completa en sí misma y no exige valor.
+    if conforme in (0, 1) and not valor_texto:
+        return jsonify({
+            "error": ("Falta el resultado de %s. Un control no se puede declarar "
+                      "%s sin el dato que lo respalda; si el control no corresponde "
+                      "a este producto, marcalo 'No aplica'."
+                      % (nombre, 'Cumple' if conforme == 1 else 'No cumple')),
+            "codigo": "IPC_ESTANDAR_SIN_RESULTADO",
+        }), 400
     user = session.get("compras_user", "")
+    # Reclamar la desviación ABIERTA de un registro previo del MISMO control: re-registrar
+    # el valor (corregir un tipeo) no puede abrir una segunda desviación del mismo hecho.
+    _desv_previa = None
+    try:
+        _dp = cur.execute(
+            """SELECT r.desviacion_id FROM ipc_estandar_resultados r
+                 JOIN desviaciones d ON d.id = r.desviacion_id
+                WHERE r.ebr_id=? AND r.control_codigo=?
+                  AND COALESCE(d.estado,'') NOT IN ('cerrada','anulada')""",
+            (ebr_id, cod)).fetchone()
+        _desv_previa = _dp[0] if _dp else None
+    except Exception as _e:
+        log.warning("desviacion previa de %s no legible: %s", cod, _e)
     # Upsert por (ebr_id, control_codigo): borra el previo y reinserta.
     cur.execute(
         "DELETE FROM ipc_estandar_resultados WHERE ebr_id=? AND control_codigo=?",
@@ -5929,21 +6077,68 @@ def reportar_ipc_estandar(ebr_id):
     cur.execute(
         """INSERT INTO ipc_estandar_resultados
              (ebr_id, control_codigo, control_nombre, valor_texto, conforme,
-              observaciones, medido_por, medido_at_utc)
-           VALUES (?,?,?,?,?,?,?, datetime('now','utc'))""",
-        (ebr_id, cod, nombre, valor_texto, conforme, obs, user),
+              observaciones, medido_por, medido_at_utc, desviacion_id)
+           VALUES (?,?,?,?,?,?,?, datetime('now','utc'), ?)""",
+        (ebr_id, cod, nombre, valor_texto, conforme, obs, user, _desv_previa),
     )
     rid = cur.lastrowid
+    # El MISMO hecho físico (pH fuera de spec) tiene que abrir desviación por las DOS
+    # vías: si sólo la abre el camino del MBR, el gate de liberación —que mira
+    # desviaciones— no ve nada y el lote sale (M45: un control que vive en dos caminos
+    # y sólo uno lo aplica). Espeja `reportar_ipc_resultado`, incluido el fail-closed.
+    desviacion = None
+    if conforme == 0 and not _desv_previa:
+        try:
+            lr = cur.execute("SELECT lote FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+            lote = (lr[0] if lr else '') or f'EBR{ebr_id}'
+            desc = (f"Control en proceso estándar NO CONFORME · lote {lote} (EBR #{ebr_id}) · "
+                    f"{nombre} = {valor_texto}. "
+                    + (f"Observación: {obs}. " if obs else "")
+                    + "Desviación abierta automáticamente desde el legajo.")
+            try:
+                from blueprints.aseguramiento import crear_desviacion_auto
+            except Exception:
+                from api.blueprints.aseguramiento import crear_desviacion_auto
+            _cod_desv, _desv_id = crear_desviacion_auto(
+                cur, tipo='proceso', descripcion=desc, lotes_afectados=lote,
+                detectado_por=user, area_origen='Producción', impacto_producto=1)
+            cur.execute("UPDATE ipc_estandar_resultados SET desviacion_id=? WHERE id=?",
+                        (_desv_id, rid))
+            desviacion = {"codigo": _cod_desv, "id": _desv_id}
+        except Exception as _ed:
+            # FAIL-CLOSED (igual que el IPC del MBR): un NO CONFORME sin su desviación
+            # es un OOS sin trazabilidad, y el gate de liberación no lo vería.
+            log.error('auto-desviación IPC estándar %s falló: %s', cod, _ed)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return jsonify({
+                "error": ("El control quedó NO CONFORME pero no se pudo abrir la "
+                          "desviación automática. No se guardó el resultado · "
+                          "reintentá o avisá a Calidad."),
+                "codigo": "DESVIACION_AUTO_FALLO",
+            }), 500
+    elif conforme == 0 and _desv_previa:
+        try:
+            _c = cur.execute("SELECT codigo FROM desviaciones WHERE id=?",
+                             (_desv_previa,)).fetchone()
+            desviacion = {"codigo": (_c[0] if _c else ''), "id": _desv_previa,
+                          "reusada": True}
+        except Exception:
+            desviacion = {"codigo": '', "id": _desv_previa, "reusada": True}
     try:
         audit_log(cur, usuario=user, accion='IPC_ESTANDAR_REGISTRAR',
                   tabla='ipc_estandar_resultados', registro_id=rid,
                   despues={'ebr_id': ebr_id, 'control': cod, 'conforme': conforme,
-                           'valor': valor_texto})
+                           'valor': valor_texto,
+                           'desviacion': (desviacion or {}).get('codigo')})
     except Exception:
         pass
     conn.commit()
     estado_txt = {1: 'Cumple', 0: 'No cumple', 2: 'No aplica'}.get(conforme, 'pendiente')
-    return jsonify({"ok": True, "id": rid, "conforme": conforme, "estado": estado_txt})
+    return jsonify({"ok": True, "id": rid, "conforme": conforme, "estado": estado_txt,
+                    "desviacion": desviacion})
 
 
 @bp.route("/api/brd/cleaning", methods=["POST"])
@@ -6186,7 +6381,10 @@ def pdf_ebr(ebr_id):
     def _q(sql, *p):
         try:
             return conn.execute(sql, p).fetchall()
-        except Exception:
+        except Exception as _e:
+            # Nunca mudo (M4/M94): si una sección del legajo desaparece del PDF, el
+            # documento archivado se ve completo y no lo es. Deploy-safe, pero con rastro.
+            log.warning("PDF EBR %s · sección omitida por error de consulta: %s", ebr_id, _e)
             return []
     pesajes = _q(
         "SELECT p.material_id, p.material_nombre, p.cantidad_teorica_g, p.cantidad_real_g, "
@@ -6381,6 +6579,33 @@ def pdf_ebr(ebr_id):
                 f"{(ipc['medido_at_utc'] or '')[:19]} UTC",
                 h=5, font_size=9,
             )
+        pdf.ln(2)
+
+    # 4-bis · Controles en proceso ESTÁNDAR (29-jul). La sección 4 de arriba imprime sólo
+    # los IPC del MBR y hoy NINGÚN MBR define specs → el legajo archivado salía SIN un
+    # solo control en proceso, aunque en pantalla estuvieran registrados. Un bloque que
+    # sólo vive en la pantalla no es un registro: el que ve la auditoría es este (INV-13).
+    _ipc_est = _q(
+        """SELECT r.control_nombre, COALESCE(r.valor_texto,''), r.conforme,
+                  COALESCE(r.observaciones,''), COALESCE(r.medido_por,''),
+                  COALESCE(r.medido_at_utc,''), COALESCE(d.codigo,''), COALESCE(d.estado,'')
+             FROM ipc_estandar_resultados r
+             LEFT JOIN desviaciones d ON d.id = r.desviacion_id
+            WHERE r.ebr_id = ? ORDER BY r.id""",
+        ebr_id)
+    if _ipc_est:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"4-bis. Controles en proceso estándar ({len(_ipc_est)})"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for _c in _ipc_est:
+            _cf = {1: "Cumple", 0: "NO CUMPLE", 2: "No aplica"}.get(_c[2], "sin adjudicar")
+            _ln = (f"{_c[0]}: {_c[1] or '-'}  ·  {_cf}  ·  {_c[4] or '-'}  ·  "
+                   f"{(_c[5] or '')[:19]} UTC")
+            if _c[6]:
+                _ln += f"  ·  desviación {_c[6]} ({_c[7] or 'abierta'})"
+            _line(_ln, h=5, font_size=9)
+            if _c[3]:
+                _line(f"   obs: {_c[3]}", h=4, font_size=8, italic=True)
         pdf.ln(2)
 
     # Pesajes de materias primas (con 2ª firma de verificación)

@@ -27,8 +27,13 @@
   **pendiente que Calidad apruebe la v2 con e-firma** para que entre en vigor.
 - Ya están los 28 de 28 productos con fórmula activa (test que lo vigila:
   `tests/test_instructivos_completos.py`).
-- Los MBR **no tienen IPCs definidos**, así que el legajo cae a los controles estándar y muestra
-  "pendiente" con ✓ a la vez. Cargar specs por producto en `/brd`.
+- Los MBR **no tienen IPCs definidos**, así que el legajo cae a los controles estándar. Cargar
+  specs por producto en `/brd` sigue pendiente (es dato de Calidad, no código).
+  ⚠ Lo que sí era código está **cerrado el 29-jul** (mig 397 · INV-17): el "pendiente con ✓ a la
+  vez" era la punta de un hueco estructural — los dos gates de IPC miraban sólo las specs del MBR,
+  así que la vía estándar (la que se usa) no tenía control: un pH marcado *No cumple* no abría
+  desviación, **no frenaba la liberación** (reproducido: el lote salió `liberado`) y el PDF
+  archivado no imprimía ni un control. Ahora bloquea, abre desviación y va al legajo.
 
 ### Producción sin batch record
 - ~~35 de 56 órdenes sin legajo~~ **No es un hueco** (Sebastián 26-jul): esas 35 son de **antes**

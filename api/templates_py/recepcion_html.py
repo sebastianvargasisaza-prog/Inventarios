@@ -85,6 +85,14 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 .icon-ok{color:var(--cx-success-text);font-size:16px;}
 .icon-disc{color:var(--cx-warn-text);font-size:16px;}
 .icon-falta{color:var(--cx-danger-text);font-size:16px;}
+/* Pestañas por TIPO de lo que llega · clases propias (no `tab-btn`/`tab-content`, que son del
+   monitoreo de OCs y las gobierna su propia showTab) */
+.rt-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px;border-bottom:1px solid var(--cx-border);padding-bottom:10px;}
+.rt-btn{border:1px solid var(--cx-border);background:var(--cx-card);color:var(--cx-text-soft);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.rt-btn:hover{border-color:var(--cx-primary-light);color:var(--cx-primary-text);}
+.rt-btn.rt-act{background:var(--cx-primary-grad);color:#fff;border-color:transparent;}
+.rt-pane{display:none;}
+.rt-pane.rt-on{display:block;}
 </style>
 </head>
 <body>
@@ -106,6 +114,17 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 </header>
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 <div class="container">
+
+  <!-- Pestañas por TIPO de lo que llega (Sebastián 30-jul: "pueden quedar en recepción pero
+       como una pestaña para recepcionar este tipo de cosas"). Clase y función PROPIAS: la
+       `showTab` de esta página está cableada a las 4 sub-pestañas del monitoreo y apaga todos
+       sus paneles antes de encender el destino, así que reusarla dejaría la pantalla en blanco. -->
+  <div class="rt-tabs">
+    <button class="rt-btn rt-act" id="rt-btn-oc" onclick="rtIr('oc')">Con orden de compra</button>
+    <button class="rt-btn" id="rt-btn-env" onclick="rtIr('env')">Contenedor sin OC &middot; envases por cajas</button>
+  </div>
+
+  <div id="rt-oc" class="rt-pane rt-on">
 
   <div class="card" style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-left:4px solid var(--cx-primary);">
     <div style="font-size:13px;color:var(--cx-text-soft);line-height:1.6;">
@@ -228,8 +247,23 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
     </div>
   </div>
 
+  </div><!-- /rt-oc -->
+
+  <div id="rt-env" class="rt-pane">__PANEL_ENVASES__</div>
+
 </div>
 <script>
+// Pestañas por TIPO de lo que llega. Si el hash trae #envases se abre directo (el enlace que
+// viene de la pestaña Envases de Inventarios apunta ahí).
+function rtIr(t){
+  ['oc','env'].forEach(function(x){
+    var p=document.getElementById('rt-'+x), b=document.getElementById('rt-btn-'+x);
+    if(p)p.classList.toggle('rt-on', x===t);
+    if(b)b.classList.toggle('rt-act', x===t);
+  });
+  try{ history.replaceState(null,'', t==='env'?'#envases':'#oc'); }catch(e){}
+}
+try{ if((location.hash||'').toLowerCase().indexOf('envas')>=0) rtIr('env'); }catch(e){}
 var currentOC = null;
 var _recCtx = null;      // {i, cod, lote, total} · contexto del modal de envases de la fila
 var _envBreak = {};      // {rowIdx: [1000,1000,1000,500]} · desglose por envase guardado por fila

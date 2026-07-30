@@ -10725,6 +10725,39 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE ebr_ajustes_mp ADD COLUMN mov_id INTEGER DEFAULT NULL",
         "ALTER TABLE ebr_ajustes_mp ADD COLUMN descontado_at_utc TEXT DEFAULT ''",
     ]),
+    (397, "Los CONTROLES EN PROCESO ESTÁNDAR son controles de verdad (29-jul). Los dos gates de "
+          "IPC (completar y liberar) miraban SÓLO `ipc_specs`/`ipc_resultados`, así que todo lo "
+          "que pasa por la vía ESTÁNDAR -- que hoy es TODO, porque ningún MBR define specs -- "
+          "quedaba fuera de control: un pH marcado 'No cumple' NO abría desviación y NO frenaba "
+          "la liberación (reproducido: el lote salió 'liberado' con la no conformidad encima), "
+          "'Cumple' se aceptaba con el resultado VACÍO (la fila decía 'pendiente' y '✓' a la vez) "
+          "y el PDF archivado -- el legajo que lee la auditoría -- no imprimía ni uno. "
+          "Aditiva: el enlace a la desviación nace NULEABLE y el toggle nace en 0 (NO-OP total).", [
+        # El estándar no conforme abre desviación igual que el del MBR (mismo hecho físico
+        # por las dos vías) y guarda el enlace, que es lo que el gate de liberación mira.
+        "ALTER TABLE ipc_estandar_resultados ADD COLUMN desviacion_id INTEGER DEFAULT NULL",
+        # Exigir los 5 estándar antes de completar nace APAGADO (M68: un beta que igual
+        # bloquea en un caso es una traba fantasma esperando a aparecer). Se prende desde
+        # /admin/seguridad-planta cuando Calidad ya los registre de rutina.
+        """INSERT INTO app_settings (clave, valor) VALUES ('exigir_ipc_estandar','0')
+           ON CONFLICT (clave) DO NOTHING""",
+    ]),
+    (398, "El envase llega en CAJAS y el rótulo se pega a la CAJA (Sebastián 30-jul). "
+          "'Llegan 40 cajas de niacinamida, cada una con 200 envases; en otra vienen los "
+          "goteros, las tapas... y que me permita imprimir los rótulos 1 de 30, 2 de 30'. "
+          "Lo que se cuenta en el muelle son CAJAS: las unidades son la multiplicación, no "
+          "un dato que se teclea aparte (si se teclean los dos, divergen · M71). Y el número "
+          "de cajas hay que GUARDARLO: cuando Calidad revise caja por caja y reimprima el "
+          "rótulo de la caja 7, el sistema tiene que saber que eran 24 -- si no, lo adivina "
+          "(un dato que se captura y se pierde termina inventado por la pantalla · M115). "
+          "Aditiva: las dos columnas nacen NULEABLES y toda recepción anterior sigue igual "
+          "(sin cajas = un solo rótulo por el total, como hasta hoy).", [
+        "ALTER TABLE movimientos_mee ADD COLUMN n_cajas INTEGER DEFAULT NULL",
+        "ALTER TABLE movimientos_mee ADD COLUMN unidades_por_caja REAL DEFAULT NULL",
+        # El token de idempotencia de la recepción por líneas reusa `oc_recepcion_dedup`
+        # (mig 265 · UNIQUE(recepcion_id)): el cliente lo genera, el UNIQUE es el guard real.
+        # No hace falta tabla nueva; se documenta acá para que nadie la busque.
+    ]),
 ]
 
 

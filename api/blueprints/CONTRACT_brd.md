@@ -524,3 +524,50 @@ y producción el stock era una estimación.
   exige un criterio que nadie definió (M8). Se da el rendimiento en volumen, que sí vale.
 
 Tests: `tests/test_kardex_ciclo_lote.py` (en el gate).
+
+## INV-17 · Los controles en proceso ESTÁNDAR son controles de verdad (mig 397)
+
+El roadmap lo tenía anotado como un detalle de pantalla (*"muestra 'pendiente' con ✓ a la vez"*).
+Al medirlo contra el código el hueco era estructural: **los dos gates de IPC miraban sólo
+`ipc_specs` / `ipc_resultados`**, y como **ningún MBR define specs**, todo pasa por la vía
+ESTÁNDAR (`ipc_estandar_resultados`) — que no tenía ningún control encima. Reproducido antes de
+tocar nada: un lote con el pH marcado **No cumple** salió `{"estado":"liberado","ok":true}`.
+
+Las cinco piezas, y por qué son la misma:
+
+1. **`conforme=1/0` exige resultado.** Adjudicar sin dato dejaba la fila diciendo "pendiente" y
+   "✓" a la vez (M5), y una conformidad firmada sobre un dato que no existe no es un registro. Se
+   corta en el ORIGEN (400 `IPC_ESTANDAR_SIN_RESULTADO`), no en la vista: arreglar sólo la
+   pantalla deja la base igual de rota (M115). `no_aplica` (conforme=2) **sí** es una respuesta
+   completa en sí misma y no exige valor.
+2. **Un NO CONFORME abre desviación, fail-closed**, por el helper canónico
+   `crear_desviacion_auto` (M1/M3: no se reimplementa). El mismo hecho físico por las dos vías
+   tiene que dejar el mismo rastro; si sólo lo abre el camino del MBR, el gate de liberación —que
+   mira desviaciones— no ve nada. Si la desviación no se puede abrir, **el resultado no se
+   guarda** (un OOS sin trazabilidad es peor que un error). Re-registrar el mismo control
+   **reusa** su desviación abierta: corregir un tipeo no puede abrir una segunda del mismo hecho.
+3. **`liberar_ebr` tiene el gate directo por `ebr_id`**, espejo del de `ipc_resultados`:
+   `conforme=0` sólo pasa con su desviación cerrada y CAPA efectivo (409
+   `IPC_ESTANDAR_NO_CONFORME`), y un valor anotado que **nadie adjudicó** tampoco (409
+   `IPC_ESTANDAR_SIN_ADJUDICAR` · es la firma de Calidad que falta, igual que el cualitativo del
+   MBR). Es directo *a propósito*: el gate por desviación depende de que `lotes_afectados`
+   matchee el lote como texto libre — hay un test que rompe ese cruce para probar que el directo
+   queda en pie. Lo que **no** bloquea acá es un control sin registrar (fila ausente): eso lo
+   gobierna el toggle, o sería el estricto encendido por la puerta de atrás (M68).
+4. **`completar_ebr` puede exigir los 5**, detrás de `app_settings.exigir_ipc_estandar` **default
+   `0` → NO-OP TOTAL** (M68). Hoy casi ningún lote los registra: encenderlo a ciegas traba el piso
+   el mismo día. Se prende desde `/admin/seguridad-planta` (efecto inmediato, auditado). El
+   bloqueo por NO CONFORMIDAD **no** depende del toggle: nadie marca "No cumple" por accidente.
+5. **Van en el PDF (sección 4-bis).** La sección 4 imprime sólo los IPC del MBR, así que el
+   legajo archivado —el que lee la auditoría— salía **sin un solo control en proceso** aunque en
+   pantalla estuvieran registrados. Es INV-13 otra vez: un bloque que sólo vive en la pantalla no
+   es un registro. De paso, el `_q` del PDF dejó de tragar en silencio: si una sección se cae por
+   un error de consulta, el documento se veía completo y no lo era (M4/M94).
+
+⚠ **Decisión abierta (de Sebastián, no técnica):** hoy `POST /ipc-estandar` lo puede usar
+cualquier ejecutor de BRD, así que el mismo operario que mide puede declarar "Cumple". En MyBatch
+la sección 5 la firma **Calidad**, y la UI ya sólo le muestra el botón a quien verifica — el
+backend es el que no lo exige. Separarlo es un cambio de quién puede trabajar, así que no se
+tocó por cuenta propia.
+
+Tests: `tests/test_ipc_estandar_gate.py` (en el gate · 13 casos, con los dos lados del trinquete).

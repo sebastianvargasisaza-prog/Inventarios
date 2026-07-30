@@ -168,6 +168,17 @@ CORAZON=(
   # se ve completo. Incluye la devolucion pesada (que conserva el vencimiento del lote) y
   # el puente que lleva el granel real de fabricacion a envasado como teorico.
   "tests/test_kardex_ciclo_lote.py"
+  # Los controles en proceso ESTANDAR son controles de verdad. Los dos gates de IPC
+  # miraban solo las specs del MBR -- que NINGUN producto define -- asi que un pH marcado
+  # 'No cumple' no abria desviacion, no frenaba la liberacion (reproducido: el lote salio
+  # liberado) y el PDF archivado no imprimia ni uno. Fija los dos lados del trinquete:
+  # bloquea la no conformidad y NO traba un lote conforme.
+  "tests/test_ipc_estandar_gate.py"
+  # Recepcion de envases por lineas (sin OC) · lo que llega en CAJAS y el rotulo va por
+  # caja numerado. Fija ademas que la pantalla de envases NO cuente la cuarentena como
+  # disponible: el canonico la excluye y la pantalla no, asi que un contenedor recien
+  # recibido se veia usable antes de que Calidad lo liberara.
+  "tests/test_recepcion_envases_lineas.py"
 )
 
 echo ""

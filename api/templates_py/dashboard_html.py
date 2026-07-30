@@ -2110,6 +2110,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div id="meepane-recepcion">
       <div style="background:#f8f9ff;border:1px solid var(--cx-border);border-radius:10px;padding:20px;">
         <h3 style="margin:0 0 16px;color:var(--cx-primary-text);font-size:1.05em;">&#128666; Recepci&oacute;n de envases</h3>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--cx-primary-pale);border:1px solid var(--cx-primary-light);border-radius:9px;padding:10px 13px;margin-bottom:14px;font-size:12.5px;">
+          <span style="color:var(--cx-primary-text);font-weight:700">&#128230; &iquest;Lleg&oacute; un contenedor con varias referencias?</span>
+          <span style="color:var(--cx-text-mute)">Peg&aacute; el packing list y recib&iacute; todo por cajas, con un r&oacute;tulo por caja.</span>
+          <a href="/recepcion#envases" style="background:var(--cx-primary);color:#fff;border-radius:7px;padding:6px 13px;font-weight:700;text-decoration:none">Abrir en Recepci&oacute;n</a>
+        </div>
         <input type="hidden" id="mee-tipo" value="Entrada">
         <input type="hidden" id="mee-unidad" value="und">
         <input type="hidden" id="mee-batch" value="">
@@ -8338,7 +8343,9 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       var resTxt = rr ? ((rr.valor_medido!=null?rr.valor_medido:'')+' '+(rr.valor_texto||'')) : '<span style="color:var(--cx-warn-text);">pendiente</span>';
       var confTxt = rr ? (rr.conforme===1?'<span style="color:var(--cx-success-text);font-weight:700;">✓</span>':(rr.conforme===0?'<span style="color:var(--cx-danger-text);font-weight:700;">✗ OOS</span>':(rr.conforme===2?'<span style="color:var(--cx-text-mute);font-weight:700;">N/A</span>':'<span style="color:var(--cx-text-faint);">-</span>'))) : '';
       var oblig = sp.obligatorio?' <span title="obligatorio" style="color:var(--cx-danger-text);">*</span>':'';
-      var ipcAcc = (!rr && editable && miRol.verifica) ? '<button onclick="ebrReportarIpc('+d.id+','+sp.id+','+((sp.valor_min!=null||sp.valor_max!=null)?1:0)+')" style="background:var(--cx-info);color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Reportar</button>' : '<span style="color:var(--cx-text-faint);">'+(rr?(rr.conforme===2?'N/A':'✓'):'-')+'</span>';
+      // Con resultado ya cargado no hay acción: el veredicto vive en la columna Conf. Antes
+      // esta celda ponía un '✓' fijo, así que un OOS mostraba '✗ OOS' y '✓' en la misma fila.
+      var ipcAcc = (!rr && editable && miRol.verifica) ? '<button onclick="ebrReportarIpc('+d.id+','+sp.id+','+((sp.valor_min!=null||sp.valor_max!=null)?1:0)+')" style="background:var(--cx-info);color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Reportar</button>' : '<span style="color:var(--cx-text-faint);">-</span>';
       h+='<tr><td>'+(sp.parametro||'')+oblig+'</td><td style="font-size:11px;color:#777;">'+rango+'</td><td>'+resTxt+'</td><td style="text-align:center;">'+confTxt+'</td><td style="font-size:11px;">'+((rr&&rr.medido_por)||'')+'</td><td style="text-align:right;">'+ipcAcc+'</td></tr>';
     }
     h+='</tbody></table>';
@@ -8350,9 +8357,18 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   for(var e=0;e<ipcEstandar.length;e++){
     var ec=ipcEstandar[e];
     var ecConf=ec.conforme===1?'<span style="color:var(--cx-success-text);font-weight:700;">✓</span>':(ec.conforme===0?'<span style="color:var(--cx-danger-text);font-weight:700;">✗</span>':(ec.conforme===2?'<span style="color:var(--cx-text-mute);font-weight:700;">N/A</span>':'<span style="color:var(--cx-text-faint);">-</span>'));
-    var ecRes=ec.conforme===2?'No aplica':(ec.valor_texto||'<span style="color:var(--cx-warn-text);">pendiente</span>');
+    // La fila decía "pendiente" y "✓" a la vez cuando alguien adjudicaba sin resultado (M5:
+    // el dato que se muestra es el que decide). El backend ya lo rechaza en el origen; acá
+    // se declara el registro viejo incoherente en vez de disfrazarlo de pendiente.
+    var _ecV=(ec.valor_texto||'').trim();
+    var ecRes;
+    if(ec.conforme===2) ecRes='No aplica';
+    else if(_ecV) ecRes=_escHTML(_ecV);
+    else if(ec.conforme===1||ec.conforme===0) ecRes='<span style="color:var(--cx-danger-text);font-weight:700;">adjudicado SIN resultado</span>';
+    else ecRes='<span style="color:var(--cx-warn-text);">pendiente</span>';
+    if(ec.desviacion) ecRes+=' <span title="desviación abierta por este control" style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border-radius:9px;padding:1px 7px;font-size:10px;font-weight:800;">'+_escHTML(ec.desviacion)+(ec.desviacion_estado?(' · '+_escHTML(ec.desviacion_estado)):'')+'</span>';
     var ecAcc=(editable&&miRol.verifica)?'<button onclick="ebrReportarIpcEstandar('+d.id+',\\''+ec.control_codigo+'\\')" style="background:var(--cx-info);color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Registrar</button>':'<span style="color:var(--cx-text-faint);">-</span>';
-    h+='<tr><td>'+ec.control_nombre+'</td><td>'+ecRes+'</td><td style="text-align:center;">'+ecConf+'</td><td style="font-size:11px;">'+(ec.medido_por||'')+'</td><td style="text-align:right;">'+ecAcc+'</td></tr>';
+    h+='<tr><td>'+_escHTML(ec.control_nombre||'')+'</td><td>'+ecRes+'</td><td style="text-align:center;">'+ecConf+'</td><td style="font-size:11px;">'+_escHTML(ec.medido_por||'')+'</td><td style="text-align:right;">'+ecAcc+'</td></tr>';
   }
   h+='</tbody></table>';
   // Conciliación de material de envase/empaque (SOLO envasado/acondicionamiento)

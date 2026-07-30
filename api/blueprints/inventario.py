@@ -11121,6 +11121,88 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
        '</body></html>')
     return h
 
+def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones,
+                      lote, cantidad, unidad, fecha_recep, fecha_impresion, estado,
+                      logo, bc_id='bc', caja_idx=None, n_cajas=None, cant_total=None):
+    """UNA hoja de rótulo de envase. La usan la ruta de a uno Y la de por-caja.
+
+    Dos renderizadores del mismo documento regulado divergen, y el que queda viejo imprime
+    algo distinto de lo que el otro imprime (M1). El estado va MARCADO desde el kardex, no
+    con las tres casillas vacías: cuando Calidad libera y reimprime, el rótulo nuevo sale
+    con Aprobado marcado sin que nadie tenga que acordarse de tacharlo.
+    """
+    import html as _hh
+    def _e(x): return _hh.escape(str(x if x is not None else ''))
+    _chk = lambda on: ('&#9746;' if on else '&#9744;')
+    # M.ENV: envases primarios / M.EMP: empaque secundario
+    is_env = categoria in {'Envase', 'Frasco', 'Tapa', 'Gotero', 'Contorno'}
+    _tp_mp = '&#9744; Materia Prima (MP)'
+    _tp_me = _chk(is_env) + ' Material de Envase (ME)'
+    _tp_emp = _chk(not is_env) + ' Material de Empaque (MEMP)'
+    _est = str(estado or '').strip().upper()
+    _cajatag = ''
+    _cant_lbl = 'Cantidad'
+    _cant_val = _e(cantidad)
+    if caja_idx is not None and n_cajas:
+        _cajatag = (' &middot; <b>Caja ' + str(caja_idx) + ' de ' + str(n_cajas) + '</b>')
+        _cant_lbl = 'Cantidad (esta caja)'
+        if cant_total:
+            _cant_val = (_e(cantidad) + ' <span style="font-weight:400;opacity:.75">&middot; de '
+                         + _e(cant_total) + ' en ' + str(n_cajas) + ' cajas</span>')
+    return ('<div class="sheet"><div class="accent"></div>'
+            '<div class="top"><div class="brand"><img class="mark" src="' + logo + '" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
+            '<div class="ctrl"><b>Formato:</b> COC-PRO-002-F04<br><b>F. Impresion:</b> ' + _e(fecha_impresion) + '</div></div>'
+            '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Material de envase' + _cajatag + '</div>'
+            '<h1 class="name">' + _e(desc) + '</h1></div>'
+            '<div class="lote"><div class="ll">Codigo interno</div><div class="lv">' + _e(codigo) + '</div>'
+            '<svg id="' + _e(bc_id) + '"></svg></div>'
+            '<table>'
+            '<tr><td class="k">Nombre comercial</td><td colspan="3"><b>' + _e(desc) + '</b></td></tr>'
+            '<tr><td class="k">Tipo de insumo</td><td colspan="3"><span class="tipo">' + _tp_mp + '</span>'
+            '<span class="tipo' + (' on' if is_env else '') + '">' + _tp_me + '</span>'
+            '<span class="tipo' + ('' if is_env else ' on') + '">' + _tp_emp + '</span></td></tr>'
+            '<tr><td class="k">Categoria</td><td>' + (_e(categoria) or '-') + '</td>'
+            '<td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
+            '<tr><td class="k">Lote</td><td class="num"><b>' + (_e(lote) or '-') + '</b></td>'
+            '<td class="k">Fecha recep.</td><td>' + _e(fecha_recep) + '</td></tr>'
+            '<tr><td class="k">Proveedor / marca</td><td>' + (_e(proveedor) or '-') + '</td>'
+            '<td class="k">Ubicacion / zona</td><td>' + (_e(zona) or '-') + '</td></tr>'
+            '<tr><td class="k">Observaciones</td><td colspan="3">' + (_e(observaciones) or '-') + '</td></tr>'
+            '</table>'
+            '<div class="qc"><b>Estado:</b> '
+            '<span>' + _chk(_est in ('VIGENTE', 'APROBADO')) + ' Aprobado</span>'
+            '<span>' + _chk(_est == 'CUARENTENA') + ' Cuarentena</span>'
+            '<span>' + _chk(_est == 'RECHAZADO') + ' Rechazado</span></div>'
+            '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
+            '<div class="firma"><div class="l">Aprobado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
+            '</div>')
+
+
+def _rotulo_mee_medidas():
+    """Tamaño de la etiqueta térmica · ?w=100&h=100 (default cuadrada, como el resto)."""
+    try:
+        _lw = int(round(float(request.args.get('w') or 100)))
+        _lh = int(round(float(request.args.get('h') or 100)))
+    except Exception:
+        _lw, _lh = 100, 100
+    return max(50, min(_lw, 210)), max(30, min(_lh, 297))
+
+
+def _rotulo_mee_pagina(titulo, hojas, codigos_bc, lw, lh):
+    """Envuelve N hojas · una por página al imprimir (el CSS de recepción ya pagina)."""
+    _bc = ';'.join(
+        'try{JsBarcode("#%s",%s,{format:"CODE128",width:1.4,height:30,displayValue:false,margin:0});}catch(e){}'
+        % (bid, json.dumps(cod)) for bid, cod in codigos_bc)
+    return ('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>' + titulo + '</title>'
+            '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
+            + _rotulo_recep_css(lw, lh) + '</head><body>'
+            '<div class="ph"><div style="font-weight:700">' + titulo + '</div>'
+            '<button class="pbtn" onclick="window.print()">&#128424; Imprimir</button></div>'
+            '<div class="wrap">' + ''.join(hojas) + '</div>'
+            '<script>window.onload=function(){' + _bc + '};</script>'
+            '</body></html>')
+
+
 @bp.route('/rotulo-recepcion-mee/<codigo>/<cantidad_str>')
 def rotulo_recepcion_mee(codigo, cantidad_str):
     if 'compras_user' not in session:
@@ -11135,7 +11217,9 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
         conn = get_db(); c = conn.cursor()
         c.execute("SELECT descripcion, categoria, proveedor, unidad FROM maestro_mee WHERE codigo=?", (codigo,))
         mee = c.fetchone()
-        c.execute("SELECT lote_ref, responsable, fecha, observaciones, COALESCE(zona,'') FROM movimientos_mee WHERE mee_codigo=? AND tipo='Entrada' AND anulado=0 ORDER BY id DESC LIMIT 1", (codigo,))
+        c.execute("SELECT lote_ref, responsable, fecha, observaciones, COALESCE(zona,''), "
+                  "COALESCE(estado,'VIGENTE') FROM movimientos_mee WHERE mee_codigo=? "
+                  "AND tipo='Entrada' AND anulado=0 ORDER BY id DESC LIMIT 1", (codigo,))
         mov = c.fetchone()
     except Exception as e:
         return f"<h2>Error DB: {e}</h2>", 500
@@ -11144,58 +11228,114 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
     prov  = mee[2] if mee else ''
     unid  = mee[3] if mee and len(mee)>3 else 'und'
     lote  = lote_ref or (mov[0] if mov else '')
-    oper  = mov[1] if mov else ''
     obs   = mov[3] if mov and len(mov)>3 else ''
     zona  = mov[4] if mov and len(mov)>4 else ''
-    # M.ENV: envases primarios / M.EMP: empaque secundario
-    env_cats = {'Envase','Frasco','Tapa','Gotero','Contorno'}
-    is_env = cat in env_cats
-    # Tipo de insumo MARCADO (Laura 16-jul · MP / ME / MEMP)
-    _tp_mp  = '&#9744; Materia Prima (MP)'
-    _tp_me  = ('&#9746;' if is_env else '&#9744;') + ' Material de Envase (ME)'
-    _tp_emp = ('&#9746;' if not is_env else '&#9744;') + ' Material de Empaque (MEMP)'
+    _est  = (mov[5] if mov and len(mov) > 5 else 'VIGENTE')
     # Fecha de recepción REAL (la Entrada MEE en el kardex · NO la fecha de impresión)
     _frec = ''
     if mov and len(mov) > 2 and mov[2]:
         _frec = _fecha_larga_es(mov[2])
     if not _frec:
         _frec = hoy
-    cant_str = f"{cantidad:,} {unid}"
+    lw, lh = _rotulo_mee_medidas()
+    hoja = _rotulo_mee_sheet(
+        codigo=codigo, desc=desc, categoria=cat, proveedor=prov, zona=zona,
+        observaciones=obs, lote=lote, cantidad=f"{cantidad:,} {unid}", unidad=unid,
+        fecha_recep=_frec, fecha_impresion=hoy, estado=_est,
+        logo=_rotulo_logo_src(c), bc_id='bc')
+    return _rotulo_mee_pagina('Rotulo de recepcion &middot; Material de envase',
+                              [hoja], [('bc', codigo)], lw, lh)
 
-    import html as _hh
-    def _e(x): return _hh.escape(str(x if x is not None else ''))
+
+@bp.route('/rotulos-recepcion-mee')
+def rotulos_recepcion_mee_cajas():
+    """Un rótulo POR CAJA, numerado (Sebastián 30-jul).
+
+    *"Llegan 40 cajas de niacinamida cada una con 200 envases (...) que me permita imprimir
+    los rótulos 1 de 30, 2 de 30, etc."* El rótulo se pega a una caja física, así que hay
+    uno por caja con SU cantidad y su número.
+
+    · `?mov=<id>` → las cajas de ESE movimiento de recepción
+    · `?movs=1,2,3` → todas las cajas de una recepción completa (12 líneas = un imprimible)
+    · `?caja=7` → SÓLO la caja 7 (Calidad revisa caja por caja y reimprime la que cambia)
+
+    El número de cajas sale de lo GUARDADO en la recepción (mig 398), no de un recuento
+    nuevo: si se recalculara, el día que Calidad reimprima el rótulo de la caja 7 el
+    sistema tendría que adivinar cuántas cajas eran (M115).
+    """
+    if 'compras_user' not in session:
+        return redirect('/login')
+    from datetime import date
+    hoy = _fecha_larga_es(date.today())
+    ids = []
+    for _raw in (request.args.get('movs') or request.args.get('mov') or '').split(','):
+        _raw = _raw.strip()
+        if _raw:
+            try:
+                ids.append(int(_raw))
+            except ValueError:
+                import html as _hh
+                return "<h2>Movimiento invalido: %s</h2>" % _hh.escape(_raw[:40]), 400
+    if not ids:
+        return "<h2>Falta el movimiento (?mov=ID o ?movs=1,2,3)</h2>", 400
+    _solo_caja = None
+    if request.args.get('caja'):
+        try:
+            _solo_caja = int(request.args.get('caja'))
+        except ValueError:
+            return "<h2>Caja invalida</h2>", 400
+
+    conn = get_db(); c = conn.cursor()
+    _ph = ','.join(['?'] * len(ids))
     try:
-        _lw = int(round(float(request.args.get('w') or 100))); _lh = int(round(float(request.args.get('h') or 100)))
-    except Exception:
-        _lw, _lh = 100, 100
-    _lw = max(50, min(_lw, 210)); _lh = max(30, min(_lh, 297))
-    _logo = _rotulo_logo_src(c)
-    _tipo = 'Material de envase (primario)' if is_env else 'Material de empaque (secundario)'
-    h=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulo Recepcion Envase</title>'
-       '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
-       + _rotulo_recep_css(_lw, _lh) + '</head><body>'
-       '<div class="ph"><div style="font-weight:700">Rotulo de recepcion &middot; Material de envase</div>'
-       '<button class="pbtn" onclick="window.print()">&#128424; Imprimir</button></div><div class="wrap">'
-       '<div class="sheet"><div class="accent"></div>'
-       '<div class="top"><div class="brand"><img class="mark" src="'+_logo+'" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
-       '<div class="ctrl"><b>Formato:</b> COC-PRO-002-F04<br><b>F. Impresion:</b> '+_e(hoy)+'</div></div>'
-       '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Material de envase</div><h1 class="name">'+_e(desc)+'</h1></div>'
-       '<div class="lote"><div class="ll">Codigo interno</div><div class="lv">'+_e(codigo)+'</div><svg id="bc"></svg></div>'
-       '<table>'
-       '<tr><td class="k">Nombre comercial</td><td colspan="3"><b>'+_e(desc)+'</b></td></tr>'
-       '<tr><td class="k">Tipo de insumo</td><td colspan="3"><span class="tipo">'+_tp_mp+'</span><span class="tipo'+(' on' if is_env else '')+'">'+_tp_me+'</span><span class="tipo'+('' if is_env else ' on')+'">'+_tp_emp+'</span></td></tr>'
-       '<tr><td class="k">Categoria</td><td>'+(_e(cat) or '-')+'</td><td class="k">Cantidad</td><td class="cant">'+_e(cant_str)+'</td></tr>'
-       '<tr><td class="k">Lote</td><td class="num"><b>'+(_e(lote) or '-')+'</b></td><td class="k">Fecha recep.</td><td>'+_e(_frec)+'</td></tr>'
-       '<tr><td class="k">Proveedor / marca</td><td>'+(_e(prov) or '-')+'</td><td class="k">Ubicacion / zona</td><td>'+(_e(zona) or '-')+'</td></tr>'
-       '<tr><td class="k">Observaciones</td><td colspan="3">'+(_e(obs) or '-')+'</td></tr>'
-       '</table>'
-       '<div class="qc"><b>Estado:</b> <span>&#9744; Aprobado</span><span>&#9744; Cuarentena</span><span>&#9744; Rechazado</span></div>'
-       '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
-       '<div class="firma"><div class="l">Aprobado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
-       '</div></div>'
-       '<script>window.onload=function(){try{JsBarcode("#bc",'+json.dumps(codigo)+',{format:"CODE128",width:1.4,height:30,displayValue:false,margin:0});}catch(e){}};</script>'
-       '</body></html>')
-    return h
+        rows = c.execute(
+            "SELECT mv.id, mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), "
+            "       COALESCE(mm.categoria,''), COALESCE(mv.proveedor, mm.proveedor, ''), "
+            "       COALESCE(mv.zona,''), COALESCE(mv.observaciones,''), COALESCE(mv.lote_ref,''), "
+            "       mv.cantidad, COALESCE(mv.unidad, mm.unidad, 'und'), mv.fecha, "
+            "       COALESCE(mv.estado,'VIGENTE'), mv.n_cajas, mv.unidades_por_caja "
+            "  FROM movimientos_mee mv "
+            "  LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mv.mee_codigo)) "
+            f" WHERE mv.id IN ({_ph}) ORDER BY mv.id", ids).fetchall()
+    except Exception as e:
+        return f"<h2>Error DB: {e}</h2>", 500
+    if not rows:
+        return "<h2>No se encontraron esos movimientos</h2>", 404
+
+    logo = _rotulo_logo_src(c)
+    lw, lh = _rotulo_mee_medidas()
+    hojas, bcs = [], []
+    for r in rows:
+        _cant = float(r[8] or 0)
+        _uni = r[9] or 'und'
+        _n = int(r[12] or 0) or 1
+        _por = float(r[13] or 0) or _cant
+        _frec = _fecha_larga_es(r[10]) if r[10] else hoy
+        # La última caja lleva el resto: 24 cajas de 200 con la última de 150 se imprime
+        # tal cual, no 24 iguales que no suman lo recibido.
+        _cajas = []
+        _acum = 0.0
+        for k in range(1, _n + 1):
+            _c_k = (_cant - _acum) if k == _n else min(_por, _cant - _acum)
+            _acum += _c_k
+            if _c_k > 0:
+                _cajas.append((k, round(_c_k, 2)))
+        for k, cant_k in _cajas:
+            if _solo_caja is not None and k != _solo_caja:
+                continue
+            _bid = 'bc%d_%d' % (int(r[0]), k)
+            hojas.append(_rotulo_mee_sheet(
+                codigo=r[1], desc=r[2], categoria=r[3], proveedor=r[4], zona=r[5],
+                observaciones=r[6], lote=r[7],
+                cantidad=f"{cant_k:,.0f} {_uni}", unidad=_uni,
+                fecha_recep=_frec, fecha_impresion=hoy, estado=r[11], logo=logo,
+                bc_id=_bid, caja_idx=k, n_cajas=(_n if _n > 1 else None),
+                cant_total=(f"{_cant:,.0f} {_uni}" if _n > 1 else None)))
+            bcs.append((_bid, r[1]))
+    if not hojas:
+        return "<h2>Esa caja no existe en la recepcion</h2>", 404
+    _tit = ('Rotulos de recepcion &middot; Material de envase &middot; %d caja(s)' % len(hojas))
+    return _rotulo_mee_pagina(_tit, hojas, bcs, lw, lh)
 
 @bp.route('/api/ordenes-compra/pendientes-recepcion')
 def ocs_pendientes_recepcion():
@@ -14468,6 +14608,12 @@ def mee_stock_list():
     # FIX 12-jun · stock CANÓNICO = SUM(movimientos_mee) (igual que _mee_stock_real),
     # no el cache m.stock_actual que driftea (hay backfill de drift en admin). El
     # display y la alerta critico/bajo se calculan sobre stock_real, no el cache.
+    # FIX 30-jul (M5/M26 · 2ª instancia) · el canónico `_get_mee_stock` EXCLUYE
+    # CUARENTENA y RECHAZADO y esta pantalla no lo hacía → con 9 palets recién recibidos
+    # mostraba como DISPONIBLE lo que producción no puede usar, y la alerta de bajo mínimo
+    # se apagaba con material retenido. Ahora `stock_real` = disponible (idéntico al
+    # canónico) y lo retenido va APARTE y visible (M6: si sólo bajás el número, el
+    # operario no entiende por qué no subió).
     sql = """
         SELECT m.codigo, m.descripcion, m.categoria, m.unidad,
                COALESCE(mv.stock_real, m.stock_actual, 0) as stock_actual, m.stock_minimo, m.estado, m.proveedor,
@@ -14478,7 +14624,9 @@ def mee_stock_list():
                COALESCE(mv.ultima_entrada,'') as ultima_entrada,
                COALESCE(mv.ultima_salida,'')  as ultima_salida,
                COALESCE(mv.total_entradas,0)  as total_entradas,
-               COALESCE(mv.total_salidas,0)   as total_salidas
+               COALESCE(mv.total_salidas,0)   as total_salidas,
+               COALESCE(mv.en_cuarentena,0)   as en_cuarentena,
+               COALESCE(mv.rechazado,0)       as rechazado
         FROM maestro_mee m
         LEFT JOIN (
             SELECT mee_codigo,
@@ -14486,10 +14634,18 @@ def mee_stock_list():
                    MAX(CASE WHEN tipo='Salida'  AND anulado=0 THEN fecha END) as ultima_salida,
                    SUM(CASE WHEN tipo='Entrada' AND anulado=0 THEN cantidad ELSE 0 END) as total_entradas,
                    SUM(CASE WHEN tipo='Salida'  AND anulado=0 THEN cantidad ELSE 0 END) as total_salidas,
-                   SUM(CASE WHEN anulado=0 AND tipo='Entrada' THEN cantidad
+                   SUM(CASE WHEN anulado=0 AND tipo='Entrada'
+                                 AND UPPER(COALESCE(estado,'VIGENTE')) NOT IN ('CUARENTENA','RECHAZADO')
+                                THEN cantidad
                             WHEN anulado=0 AND tipo='Salida'  THEN -cantidad
                             WHEN anulado=0 AND tipo='Ajuste'  THEN cantidad
-                            ELSE 0 END) as stock_real
+                            ELSE 0 END) as stock_real,
+                   SUM(CASE WHEN anulado=0 AND tipo='Entrada'
+                                 AND UPPER(COALESCE(estado,'VIGENTE'))='CUARENTENA'
+                                THEN cantidad ELSE 0 END) as en_cuarentena,
+                   SUM(CASE WHEN anulado=0 AND tipo='Entrada'
+                                 AND UPPER(COALESCE(estado,'VIGENTE'))='RECHAZADO'
+                                THEN cantidad ELSE 0 END) as rechazado
             FROM movimientos_mee GROUP BY mee_codigo
         ) mv ON m.codigo = mv.mee_codigo
         WHERE m.estado='Activo'
@@ -14509,6 +14665,8 @@ def mee_stock_list():
         # usan el stock real, nunca negativo aunque haya sobre-consumo registrado
         s = max(float(r['stock_actual'] or 0), 0)
         r['stock_actual'] = s
+        r['en_cuarentena'] = max(float(r.get('en_cuarentena') or 0), 0)
+        r['rechazado'] = max(float(r.get('rechazado') or 0), 0)
         mn = r['stock_minimo'] or 0
         if mn > 0:
             ratio = s / mn
@@ -14533,9 +14691,14 @@ def mee_stock_list():
     categorias = [row[0] for row in c.fetchall()]
     c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo'")
     total = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo' AND stock_minimo>0 AND stock_actual<stock_minimo")
-    bajo = c.fetchone()[0]
-    return jsonify({'items': rows, 'categorias': categorias, 'total': total, 'bajo_minimo': bajo})
+    # El contador de bajo-mínimo se cuenta sobre el DISPONIBLE ya calculado, no sobre el
+    # cache `stock_actual` de la tabla: si no, el número del encabezado contradice a las
+    # filas de abajo (M5, el mismo bug una línea más allá).
+    bajo = sum(1 for r in rows
+               if (r['stock_minimo'] or 0) > 0 and float(r['stock_actual'] or 0) < r['stock_minimo'])
+    _cuar = sum(1 for r in rows if float(r.get('en_cuarentena') or 0) > 0)
+    return jsonify({'items': rows, 'categorias': categorias, 'total': total,
+                    'bajo_minimo': bajo, 'con_cuarentena': _cuar})
 
 @bp.route('/api/mee/movimiento', methods=['POST'])
 def mee_registrar_movimiento():
@@ -14622,7 +14785,12 @@ def mee_registrar_movimiento():
     mov_id = c.lastrowid
 
     if tipo == 'Entrada':
-        c.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cantidad, codigo))
+        # FIX 30-jul · el cache NO se infla con lo que está RETENIDO. El canónico
+        # (`_get_mee_stock`) excluye CUARENTENA y el cron de las 3AM alinea el cache a él,
+        # así que sumarlo acá dejaba el cache mintiendo hasta la madrugada. Al liberar,
+        # `mee_cuarentena_resolver` lo suma.
+        if estado_mee != 'CUARENTENA':
+            c.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cantidad, codigo))
         if proveedor_r:  # guardar último proveedor recibido en el maestro
             c.execute("UPDATE maestro_mee SET proveedor=? WHERE codigo=?", (proveedor_r, codigo))
         _cliente_r = (d.get('cliente') or '').strip()
@@ -14668,6 +14836,250 @@ def mee_registrar_movimiento():
         'message': f'{tipo} de {cantidad:.0f} {unidad} registrada para {mee[1]}'
     })
 
+def _mee_lineas_normalizar(lineas):
+    """Normaliza las líneas del packing list y DERIVA la cantidad de las cajas.
+
+    Lo que se cuenta en el muelle son CAJAS (Sebastián 30-jul: *"llegan 40 cajas de
+    niacinamida, cada una con 200 envases"*); las unidades son la multiplicación, no un
+    dato que se teclea aparte — si se teclean los dos, divergen (M71).
+
+    · `n_cajas` + `unidades_por_caja` (+ `unidades_ultima_caja` opcional, porque la última
+      caja casi siempre viene incompleta y si el sistema exige que todas sean iguales el
+      operario "redondea" y el kardex queda mintiendo).
+    · sin `n_cajas`: `cantidad` suelta = 1 recipiente (una bolsa, un palet abierto).
+
+    Devuelve (lineas_ok, error) · el `codigo` y el `lote` van con `.strip()`: un tabulador
+    pegado a un código es una CLAVE DISTINTA = stock invisible en el kardex (M100).
+    """
+    out = []
+    for i, l in enumerate(lineas or [], start=1):
+        if not isinstance(l, dict):
+            return None, f'línea {i}: formato inválido'
+        cod = str(l.get('codigo') or '').strip()
+        if not cod:
+            return None, f'línea {i}: falta el código'
+        lote = str(l.get('lote_proveedor') or l.get('lote') or '').strip()
+        try:
+            n_cajas = int(float(l.get('n_cajas') or 0))
+        except (TypeError, ValueError):
+            return None, f'línea {i} ({cod}): n_cajas inválido'
+        try:
+            por_caja = float(l.get('unidades_por_caja') or 0)
+        except (TypeError, ValueError):
+            return None, f'línea {i} ({cod}): unidades_por_caja inválido'
+        ultima = l.get('unidades_ultima_caja')
+        try:
+            ultima = float(ultima) if ultima not in (None, '') else None
+        except (TypeError, ValueError):
+            return None, f'línea {i} ({cod}): unidades_ultima_caja inválido'
+        if n_cajas > 0:
+            if por_caja <= 0:
+                return None, f'línea {i} ({cod}): unidades por caja debe ser > 0'
+            if ultima is not None and ultima <= 0:
+                return None, f'línea {i} ({cod}): la última caja debe traer > 0'
+            cantidad = (por_caja * (n_cajas - 1) + ultima) if (ultima is not None and n_cajas >= 1) \
+                else (por_caja * n_cajas)
+        else:
+            try:
+                cantidad = float(l.get('cantidad') or 0)
+            except (TypeError, ValueError):
+                return None, f'línea {i} ({cod}): cantidad inválida'
+            n_cajas, por_caja = 1, cantidad
+        if cantidad <= 0:
+            return None, f'línea {i} ({cod}): la cantidad debe ser > 0'
+        out.append({
+            'codigo': cod, 'lote': lote, 'cantidad': round(cantidad, 2),
+            'n_cajas': n_cajas, 'unidades_por_caja': round(por_caja, 2),
+            'unidades_ultima_caja': (round(ultima, 2) if ultima is not None else None),
+            'fecha_vencimiento': str(l.get('fecha_vencimiento') or '').strip(),
+            'observaciones': str(l.get('observaciones') or '').strip()[:300],
+            'linea': i,
+        })
+        try:
+            out[-1]['precio_unitario'] = float(l.get('precio_unitario') or 0)
+        except (TypeError, ValueError):
+            out[-1]['precio_unitario'] = 0.0
+    if not out:
+        return None, 'no hay líneas para recibir'
+    return out, None
+
+
+@bp.route('/api/mee/recepcion-lineas', methods=['POST'])
+def mee_recepcion_lineas():
+    """Recepción administrativa de ENVASES por líneas · sin OC (Sebastián 30-jul).
+
+    *"Mañana llegan 9 palets de China, no tenemos la orden de compra en EOS (las pidió
+    Alejandro) y llegan a planta"*. La OC es texto libre y opcional: su ausencia no puede
+    frenar una recepción física que ya llegó.
+
+    `preview: true` → NO escribe nada: cruza cada código contra el maestro y devuelve qué
+    falta, con los totales. El apply es **TODO-o-NADA**: una recepción es un hecho único
+    con su factura, y media recepción escrita es peor que ninguna (nadie sabe qué entró).
+
+    Idempotencia: `recepcion_id` lo genera el CLIENTE y lo reclama el UNIQUE de
+    `oc_recepcion_dedup` — el servidor no puede distinguir un doble-envío de una segunda
+    recepción legítima del mismo material (M45). Sin esto, un doble-click mete 9 palets
+    dos veces.
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    d = request.get_json(silent=True) or {}
+    lineas, _lerr = _mee_lineas_normalizar(d.get('lineas'))
+    if _lerr:
+        return jsonify({'error': _lerr, 'codigo': 'LINEA_INVALIDA'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    # Cruce contra el maestro · una sola query (no N+1) y por código normalizado
+    _codes = sorted({l['codigo'] for l in lineas})
+    _ph = ','.join(['?'] * len(_codes))
+    maestro = {}
+    for r in c.execute(
+        "SELECT UPPER(TRIM(codigo)), codigo, COALESCE(descripcion,''), COALESCE(unidad,'und') "
+        f"FROM maestro_mee WHERE UPPER(TRIM(codigo)) IN ({_ph})",
+        [x.upper() for x in _codes],
+    ).fetchall():
+        maestro[r[0]] = {'codigo': r[1], 'descripcion': r[2], 'unidad': r[3]}
+
+    salida, faltantes, vistos, avisos = [], [], set(), []
+    for l in lineas:
+        m = maestro.get(l['codigo'].upper())
+        if not m:
+            faltantes.append(l['codigo'])
+        clave = (l['codigo'].upper(), l['lote'].upper())
+        if clave in vistos:
+            avisos.append("Línea %d: %s con lote '%s' está repetida en este envío · "
+                          "confirmá que son dos cajas distintas y no el packing list pegado dos veces"
+                          % (l['linea'], l['codigo'], l['lote'] or 'sin lote'))
+        vistos.add(clave)
+        salida.append({
+            'linea': l['linea'], 'codigo': l['codigo'], 'existe': bool(m),
+            'descripcion': (m['descripcion'] if m else ''),
+            'unidad': (m['unidad'] if m else 'und'),
+            'lote_proveedor': l['lote'], 'cantidad': l['cantidad'],
+            'n_cajas': l['n_cajas'], 'unidades_por_caja': l['unidades_por_caja'],
+            'unidades_ultima_caja': l['unidades_ultima_caja'],
+        })
+
+    _tot_u = round(sum(x['cantidad'] for x in salida), 2)
+    _tot_c = sum(x['n_cajas'] for x in salida)
+    if d.get('preview'):
+        return jsonify({
+            'ok': True, 'preview': True, 'lineas': salida,
+            'total_lineas': len(salida), 'total_unidades': _tot_u, 'total_cajas': _tot_c,
+            'faltantes': faltantes, 'avisos': avisos,
+        })
+
+    if faltantes:
+        return jsonify({
+            'error': ('Estos códigos no están en el maestro de envases: '
+                      + ', '.join(faltantes)
+                      + '. Creálos primero (el botón los crea con stock 0) o corregí el código.'),
+            'codigo': 'CODIGOS_SIN_MAESTRO', 'faltantes': faltantes,
+        }), 409
+
+    # Token de idempotencia · el UNIQUE es el guard real (SELECT-luego-INSERT no frena
+    # el doble-envío concurrente en PG · M31/M45)
+    _tok = str(d.get('recepcion_id') or '').strip()[:80]
+    if _tok:
+        try:
+            c.execute("INSERT INTO oc_recepcion_dedup (recepcion_id, numero_oc, creado_en) "
+                      "VALUES (?,?,datetime('now'))",
+                      (_tok, str(d.get('oc_numero') or '')[:40]))
+        except Exception as _e:
+            if 'UNIQUE' in str(_e) or 'duplicate' in str(_e).lower():
+                conn.rollback()
+                return jsonify({'error': 'Esta recepción ya fue registrada.',
+                                'codigo': 'RECEPCION_DUPLICADA'}), 409
+            raise
+
+    proveedor = str(d.get('proveedor') or '').strip()[:120]
+    factura = str(d.get('factura_numero') or '').strip()[:60]
+    oc_num = str(d.get('oc_numero') or '').strip()[:40]
+    zona = str(d.get('zona') or '').strip()[:80]
+    try:
+        from database import recepcion_auto_vigente as _rav
+        _cuar_def = (not _rav(c))
+    except Exception:
+        _cuar_def = True
+    cuarentena = bool(d.get('cuarentena', _cuar_def))
+    estado = 'CUARENTENA' if cuarentena else 'VIGENTE'
+
+    movs = []
+    for l in lineas:
+        m = maestro[l['codigo'].upper()]
+        c.execute(
+            """INSERT INTO movimientos_mee
+                 (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones,
+                  proveedor, zona, precio_unitario, fecha_vencimiento, oc_numero,
+                  factura_numero, estado, n_cajas, unidades_por_caja)
+               VALUES (?,'Entrada',?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (m['codigo'], l['cantidad'], m['unidad'], l['lote'], _u,
+             l['observaciones'], proveedor, zona, l['precio_unitario'],
+             l['fecha_vencimiento'], oc_num, factura, estado,
+             l['n_cajas'], l['unidades_por_caja']))
+        _mid = c.lastrowid
+        # El cache sólo refleja lo USABLE: lo retenido entra al número cuando Calidad libera.
+        if estado != 'CUARENTENA':
+            c.execute("UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? WHERE codigo=?",
+                      (l['cantidad'], m['codigo']))
+        if proveedor:
+            c.execute("UPDATE maestro_mee SET proveedor=? WHERE codigo=?", (proveedor, m['codigo']))
+        movs.append({'mov_id': _mid, 'codigo': m['codigo'], 'descripcion': m['descripcion'],
+                     'cantidad': l['cantidad'], 'lote': l['lote'],
+                     'n_cajas': l['n_cajas'], 'unidades_por_caja': l['unidades_por_caja']})
+
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=_u, accion='RECEPCION_ENVASES_LINEAS', tabla='movimientos_mee',
+            registro_id=(str(movs[0]['mov_id']) if movs else ''),
+            despues={'lineas': len(movs), 'unidades': _tot_u, 'cajas': _tot_c,
+                     'proveedor': proveedor, 'factura': factura, 'oc': oc_num,
+                     'estado': estado, 'movs': [x['mov_id'] for x in movs]},
+            detalle=f'Recepción de envases · {len(movs)} línea(s) · {_tot_c} caja(s) · {_tot_u:.0f} und')
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('inventario').warning('audit recepcion_envases falló: %s', _ae)
+    conn.commit()
+
+    # UNA sola campana con el resumen · no una por línea (12 alertas seguidas es fatiga de
+    # campana y se dejan de mirar · lección del despeje v3)
+    if estado == 'CUARENTENA':
+        try:
+            from blueprints.notif import push_notif_multi
+            from config import CALIDAD_USERS, ASEGURAMIENTO_USERS
+            _qc = sorted((set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS)) - {'sebastian'})
+            push_notif_multi(
+                _qc, 'mee_cuarentena',
+                f'Envases en cuarentena: {len(movs)} referencia(s)',
+                body=(f'{_tot_c} caja(s) · {_tot_u:.0f} und de {proveedor or "proveedor sin nombre"}'
+                      + (f' · factura {factura}' if factura else '')
+                      + ' · revisar caja por caja y liberar con el F01'),
+                link='/calidad', importante=True)
+        except Exception as _ne:
+            import logging as _lg
+            _lg.getLogger('inventario').warning('push recepcion_envases falló: %s', _ne)
+
+    return jsonify({
+        'ok': True, 'recibidas': len(movs), 'movimientos': movs,
+        'total_unidades': _tot_u, 'total_cajas': _tot_c, 'estado': estado,
+        'rotulos_url': '/rotulos-recepcion-mee?movs=' + ','.join(str(x['mov_id']) for x in movs),
+        'avisos': avisos,
+    }), 201
+
+
+@bp.route('/planta/recepcion-envases', methods=['GET'])
+def planta_recepcion_envases_pagina():
+    """Redirige a la PESTAÑA de Recepción (Sebastián 30-jul).
+
+    Nació como página aparte y el punto de entrada correcto es el TIPO de cosa que llega:
+    ahora vive en `/recepcion` como pestaña 'Contenedor sin OC'. La ruta se conserva
+    redirigiendo porque ya hay un enlace hacia ella (y puede haber un marcador): una ruta
+    que se borra deja un botón apuntando a la nada, que no falla y simplemente no hace nada.
+    """
+    return redirect('/recepcion#envases')
+
+
 @bp.route('/api/mee/cuarentena-pendientes', methods=['GET'])
 def mee_cuarentena_pendientes():
     """Recepciones de envases en cuarentena (esperando que Calidad libere) · Sebastián 28-jun."""
@@ -14707,10 +15119,18 @@ def mee_cuarentena_resolver(mov_id, accion):
         return jsonify({'error': 'acción inválida'}), 400
     nuevo = 'VIGENTE' if accion == 'liberar' else 'RECHAZADO'
     conn = get_db(); c = conn.cursor()
+    _pre = c.execute("SELECT mee_codigo, cantidad FROM movimientos_mee WHERE id=?",
+                     (mov_id,)).fetchone()
     c.execute("UPDATE movimientos_mee SET estado=? WHERE id=? AND tipo='Entrada' "
               "AND UPPER(COALESCE(estado,'VIGENTE'))='CUARENTENA'", (nuevo, mov_id))
     if c.rowcount == 0:
         return jsonify({'error': 'movimiento no encontrado o ya resuelto'}), 404
+    # El cache pasa a reflejar lo liberado: la recepción NO lo sumó porque estaba retenido
+    # (fix 30-jul), así que es acá donde entra al número que ve la bodega. El rechazo no
+    # suma nada. El cron de las 3AM sigue siendo el respaldo, no la vía principal.
+    if accion == 'liberar' and _pre:
+        c.execute("UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? WHERE codigo=?",
+                  (float(_pre[1] or 0), _pre[0]))
     try:
         from audit_helpers import audit_log as _al
         _al(c, usuario=_user, accion='MEE_CUARENTENA_' + accion.upper(), tabla='movimientos_mee',
@@ -15064,7 +15484,9 @@ def mee_alertas_list():
                  FROM maestro_mee m
                  LEFT JOIN (
                      SELECT mee_codigo,
-                            SUM(CASE WHEN tipo IN ('Entrada','Ajuste +','Ajuste') THEN cantidad
+                            SUM(CASE WHEN tipo IN ('Entrada','Ajuste +','Ajuste')
+                                          AND UPPER(COALESCE(estado,'VIGENTE')) NOT IN ('CUARENTENA','RECHAZADO')
+                                         THEN cantidad
                                      WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad ELSE 0 END) as stock_real
                      FROM movimientos_mee WHERE COALESCE(anulado,0)=0 GROUP BY mee_codigo
                  ) mv ON m.codigo = mv.mee_codigo

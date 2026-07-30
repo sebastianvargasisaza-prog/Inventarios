@@ -501,3 +501,93 @@ corrompería el kardex. Todo queda en `audit_log` con `F01_CORRIGE_KARDEX` y el 
 Cierra el circuito con INV-11 de `CONTRACT_compras.md`: la recepción administrativa deja un lote
 provisional que **no se puede liberar**, el F01 pone el real, y ahí sí se libera.
 Tests: `tests/test_f01_escribe_kardex.py` (en el gate).
+
+
+## 📦 INV-12 · Recepción de envases por LÍNEAS y por CAJAS · sin OC (30-jul · mig 398)
+
+Sebastián: *"mañana llegan 9 palets de China, no tenemos la orden de compra en EOS (las pidió
+Alejandro) y llegan a planta · necesito hacerle recepción administrativa para que después Calidad
+haga lo suyo"*, y *"llegan 40 cajas de niacinamida cada una con 200 envases, en otra vienen los
+goteros, las tapas · que me permita imprimir los rótulos 1 de 30, 2 de 30"*.
+
+- **La OC es texto libre y opcional.** Su ausencia no puede frenar una recepción física que ya
+  llegó al muelle.
+- **`POST /api/mee/recepcion-lineas`** · `preview: true` NO escribe nada: cruza cada código contra
+  el maestro y devuelve qué falta con los totales. El apply es **TODO-o-NADA** (si falta un código,
+  409 `CODIGOS_SIN_MAESTRO` y cero escrituras): una recepción es un hecho único con su factura, y
+  media recepción escrita es peor que ninguna porque nadie sabe qué entró.
+- **La cantidad se DERIVA de las cajas** (`n_cajas × unidades_por_caja`, con
+  `unidades_ultima_caja` opcional porque la última casi siempre viene incompleta). Lo que se cuenta
+  en el muelle son cajas; si se teclearan las dos cosas, divergen (M71). Sin `n_cajas`, una
+  `cantidad` suelta = 1 recipiente.
+- **Las cajas se GUARDAN** (`movimientos_mee.n_cajas` / `unidades_por_caja`, mig 398 · nuleables,
+  toda recepción anterior sigue igual). Sin eso, el día que Calidad reimprima el rótulo de la caja
+  7 el sistema tendría que adivinar cuántas cajas eran (M115).
+- **Idempotencia con token del CLIENTE** (`recepcion_id` + UNIQUE de `oc_recepcion_dedup`, mig
+  265): el servidor no puede distinguir un doble-envío de una segunda recepción legítima del mismo
+  material (M45). Sin esto un doble-click mete 9 palets dos veces.
+- Todo entra en **CUARENTENA** (`recepcion_auto_vigente` manda) → **UNA sola campana** a Calidad
+  con el resumen, no una por línea (12 alertas seguidas es fatiga y se dejan de mirar).
+- Códigos y lotes con `.strip()` en el punto de escritura: un tabulador pegado a un código es una
+  CLAVE DISTINTA = stock invisible en el kardex (M100).
+- Pantalla `/planta/recepcion-envases` (pegar packing list → ver qué cruza → crear los que faltan
+  con `stock_actual` **0 explícito**, porque `maestro_mee` tiene `DEFAULT 2000` y un alta
+  descuidada inventa 2000 unidades · M100 → recibir).
+
+### El rótulo va por CAJA · `GET /rotulos-recepcion-mee`
+`?mov=<id>` (las cajas de esa línea) · `?movs=1,2,3` (toda la recepción en un imprimible) ·
+`?caja=7` (sólo esa caja, que es lo que Calidad necesita cuando revisa caja por caja y cambia el
+rótulo de una). **Un solo renderizador** (`_rotulo_mee_sheet`) para la ruta de a uno y la de por
+caja: dos renderizadores del mismo documento regulado divergen y el que queda viejo imprime otra
+cosa (M1). El **estado va MARCADO desde el kardex** (☒ Cuarentena / ☒ Aprobado), no con las tres
+casillas vacías: al liberar y reimprimir, el rótulo sale correcto sin que nadie se acuerde de
+tacharlo. La última caja lleva el resto, no una cantidad igual que no suma lo recibido.
+
+### ⚠ El bug que esto destapó (M5/M26 · 2ª instancia)
+`/api/mee/stock` (la pantalla de Envases) y `/api/mee/alertas` sumaban el stock **sin excluir
+CUARENTENA ni RECHAZADO**, mientras el canónico `_get_mee_stock` —el que usa producción y
+planeación— **sí las excluye**. Con un contenedor recién recibido la pantalla lo mostraba como
+**disponible** y la alerta de bajo mínimo se apagaba con material retenido: dos números para lo
+mismo y el que se ve es el que miente. Ahora el disponible es idéntico al canónico y lo retenido va
+**aparte y visible** (`en_cuarentena`, `rechazado`), porque si sólo bajás el número el operario no
+entiende por qué no subió (M6). El contador de bajo-mínimo del encabezado también se cuenta sobre
+el disponible, no sobre el cache. Y la recepción **ya no infla `maestro_mee.stock_actual`** con lo
+retenido: entra al cache cuando Calidad libera.
+
+**PENDIENTE (Sebastián 30-jul):** Calidad revisa **caja por caja** y puede necesitar liberar unas y
+rechazar otras de la misma línea. Hoy `mee_cuarentena_resolver` libera o rechaza el movimiento
+COMPLETO. La liberación parcial por caja es la pasada siguiente; se hace antes de que Laura haga el
+F01 de este contenedor.
+
+### Vive DENTRO de Recepción, como una pestaña
+Sebastián (30-jul): *"no puede quedar todo de manera loca, pueden quedar en recepción pero como
+una pestaña para recepcionar este tipo de cosas"*. Nació como página aparte
+(`/planta/recepcion-envases`) y estaba en el lugar equivocado: **el punto de entrada lo define el
+TIPO de cosa que llega**, no la feature que la construyó, y una página al lado es una función que
+nadie encuentra.
+
+`/recepcion` gana una barra de pestañas por tipo: **Con orden de compra** (todo lo que ya había,
+intacto) y **Contenedor sin OC · envases por cajas**. La ruta vieja **redirige** a
+`/recepcion#envases` (borrarla dejaría el enlace que ya existe apuntando a la nada · M112).
+
+Tres trampas de compartir documento, todas cerradas y con test:
+- **No se reusa `showTab` ni las clases `tab-btn`/`tab-content`**: esa función está cableada a las
+  4 sub-pestañas del monitoreo de OCs y APAGA todos sus paneles antes de encender el destino, así
+  que con un destino ajeno dejaría la pantalla en blanco (M61/M112). Clase (`rt-*`) y función
+  (`rtIr`) propias.
+- **El panel va prefijado** (`env-` en ids, `env` en funciones): la página ya tenía su propia
+  `esc()`, y una segunda declaración del mismo nombre pisa la primera y rompe la pantalla ajena
+  sin un solo error (M59). Un test falla si cualquier función queda declarada dos veces en la
+  página renderizada.
+- **Se inyecta UNA vez con `assert`** (`__PANEL_ENVASES__` en `despachos.recepcion_panel`): si el
+  placeholder no matchea, la pestaña queda con botones que llaman a funciones que no se cargaron
+  (M116). El panel vive en `templates_py/recepcion_envases_panel.py`, no duplicado.
+
+**PENDIENTE de esa conversación:** falta la pestaña de **EQUIPOS** (Sebastián va a pasar la lista).
+Hoy existe `equipos_planta` (código, área, tipo, capacidad, estado operacional) y la bitácora de
+calibración de Aseguramiento, pero NO el lado de activo (serial, marca, modelo, proveedor, factura,
+garantía, vida útil) ni la calificación IQ/OQ/PQ, que para un equipo es lo que la cuarentena es
+para un material: llega y no se puede usar hasta que Aseguramiento lo califica y calibra.
+
+Tests: `tests/test_recepcion_envases_lineas.py` (en el gate · 22 casos, incluida la pestaña, el
+redirect de la ruta vieja y el guard anti-colisión de funciones).

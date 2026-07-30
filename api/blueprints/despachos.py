@@ -30,6 +30,7 @@ from templates_py.financiero_html import FINANCIERO_HTML
 from templates_py.login_html import LOGIN_HTML
 from templates_py.compras_html import COMPRAS_HTML
 from templates_py.recepcion_html import RECEPCION_HTML
+from templates_py.recepcion_envases_panel import PANEL_ENVASES_HTML
 from templates_py.salida_html import SALIDA_HTML
 from templates_py.solicitudes_html import SOLICITUDES_HTML
 from templates_py.dashboard_html import DASHBOARD_HTML
@@ -46,7 +47,15 @@ def recepcion_panel():
     # persona. Se escapa: va dentro de un atributo HTML.
     import html as _html
     _receptor = _html.escape(str(session.get('compras_user') or ''), quote=True)
-    return Response(RECEPCION_HTML.replace('__RECEPTOR__', _receptor), mimetype='text/html')
+    _html_out = RECEPCION_HTML.replace('__RECEPTOR__', _receptor)
+    # El panel de recepción de envases por líneas vive en su propio módulo y se inyecta UNA
+    # vez (Sebastián 30-jul: va como pestaña acá, no como página aparte). Con assert: si el
+    # placeholder no matchea, la pestaña queda con botones llamando a funciones que no se
+    # cargaron — no falla, simplemente no hace nada, y se despliega así (M112/M116).
+    assert '__PANEL_ENVASES__' in _html_out, \
+        'RECEPCION_HTML perdió el placeholder __PANEL_ENVASES__ · la pestaña de envases quedaría muerta'
+    _html_out = _html_out.replace('__PANEL_ENVASES__', PANEL_ENVASES_HTML)
+    return Response(_html_out, mimetype='text/html')
 
 @bp.route('/api/recepcion/detalle/<numero_oc>')
 def recepcion_detalle_oc(numero_oc):
