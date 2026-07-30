@@ -7245,6 +7245,29 @@ function _showStockInsuficientePopup(producto, cantidad_kg, faltantes){
         '&#9888; Hay <b>'+(f.retenido_g||0).toLocaleString()+' g</b> de este MP en bodega pero <b>NO disponible</b>: '+det.join(' · ')+'. '+
         'Si es CUARENTENA, <b>liberá el lote en Calidad</b> (control de calidad → aprobar) y volvé a producir.</td></tr>';
     }
+    // 30-jul-2026 (Sebastián, goma xantana) · LOS LOTES, no sólo el total. "Vi que había dos
+    // lotes pero sólo jalaba uno": el que no jala está en cuarentena o vencido, y sin verlo
+    // parece que el sistema miente. Se listan los que SÍ se van a usar y los que no, con motivo.
+    var _lu = f.lotes_usables||[], _lr = f.lotes_retenidos||[];
+    if(_lu.length || _lr.length){
+      var _lh = '';
+      if(_lu.length){
+        _lh += '<div style="font-weight:700;color:var(--cx-success-text);margin-bottom:2px">Lotes que SÍ se pueden usar ('+_lu.length+')</div>';
+        _lh += _lu.map(function(l){
+          return '&#8226; <b>'+_escHTML(l.lote)+'</b> &middot; '+(l.g||0).toLocaleString()+' g'+
+                 (l.vence?' &middot; vence '+_escHTML(l.vence):'');
+        }).join('<br>');
+      } else {
+        _lh += '<div style="font-weight:700;color:var(--cx-danger-text)">Ningún lote de este MP se puede usar hoy.</div>';
+      }
+      if(_lr.length){
+        _lh += '<div style="font-weight:700;color:var(--cx-warn-text);margin:6px 0 2px">Lotes BLOQUEADOS ('+_lr.length+') &middot; existen en bodega pero producción no los puede tocar</div>';
+        _lh += _lr.map(function(l){
+          return '&#8226; <b>'+_escHTML(l.lote)+'</b> &middot; '+(l.g||0).toLocaleString()+' g &middot; '+_escHTML(l.motivo||l.estado||'');
+        }).join('<br>');
+      }
+      base += '<tr style="background:var(--cx-bg-alt)"><td colspan="4" style="padding:7px 10px;font-size:11px;color:var(--cx-text-soft);border-top:1px dashed var(--cx-border);line-height:1.5">'+_lh+'</td></tr>';
+    }
     // código de fórmula ≠ código de bodega → mapeo cruzado (revisar mapeo)
     if(f.codigo_mp_formula && f.codigo_mp && f.codigo_mp_formula!==f.codigo_mp){
       base += '<tr style="background:var(--cx-danger-pale)"><td colspan="4" style="padding:5px 10px;font-size:10px;color:var(--cx-danger-text)">'+
@@ -7655,6 +7678,14 @@ async function iniciarRegistroProd(){
           html+='<td style="padding:4px 8px;text-align:right;color:var(--cx-text-mute);">'+(f.disponible_g||0).toLocaleString()+' g</td>';
           html+='<td style="padding:4px 8px;text-align:right;font-weight:700;color:var(--cx-danger-text);">'+(f.falta_g||0).toLocaleString()+' g</td>';
           html+='</tr>';
+          // los LOTES de esa MP (los usables y los bloqueados con su motivo) · 30-jul
+          var _u=(f.lotes_usables||[]), _b=(f.lotes_retenidos||[]);
+          if(_u.length||_b.length){
+            var _t=[];
+            _u.forEach(function(l){ _t.push('usable: '+_escHTML(l.lote)+' ('+(l.g||0).toLocaleString()+' g'+(l.vence?', vence '+_escHTML(l.vence):'')+')'); });
+            _b.forEach(function(l){ _t.push('BLOQUEADO: '+_escHTML(l.lote)+' ('+(l.g||0).toLocaleString()+' g · '+_escHTML(l.motivo||l.estado||'')+')'); });
+            html+='<tr><td colspan="4" style="padding:3px 8px 7px;font-size:11px;color:var(--cx-text-soft);line-height:1.45">'+_t.join('<br>')+'</td></tr>';
+          }
         });
         html+='</tbody></table>';
         html+='<div style="margin-top:8px;font-size:11px;color:var(--cx-danger-text);">&#x2192; Verifica entradas en <b>Bodega MP</b> o crea OC en <b>/compras</b>.</div>';

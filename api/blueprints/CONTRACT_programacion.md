@@ -342,3 +342,19 @@ Los `INSERT OR REPLACE INTO app_settings (clave, valor)` de este blueprint
 configuración (M20 · `INSERT OR REPLACE` devuelve al default toda columna que no listes).
 Pasados a `ON CONFLICT (clave) DO UPDATE` conservando la auditoría. Regla: ninguna escritura a
 `app_settings` usa `INSERT OR REPLACE` — hay un guard en el barrido que lo verifica.
+
+
+## 👁️ `_lotes_de_material(c, cod)` · el detalle que sostiene el total (30-jul)
+
+Helper canónico que devuelve `{usables, retenidos}` de un código: lo que el FEFO va a consumir
+(en orden de vencimiento) y lo que existe en bodega pero producción **no puede tocar**, con el
+motivo (cuarentena sin liberar, rechazado, bloqueado, o vencido POR FECHA aunque el cron todavía
+no lo haya marcado · mismo criterio que el FEFO, M25).
+
+Lo usan `_validar_stock_para_produccion` (arranque programado), el camino directo de
+`/api/produccion` (inventario.py) y el diagnóstico `/api/admin/mp-diag`. **Uno solo a propósito**:
+si cada camino armara su lista, dos pantallas contarían historias distintas del mismo lote (M5).
+
+Nació de un reporte de piso: la verificación sumaba bien todos los lotes usables pero sólo
+imprimía `necesita / hay / falta`, así que un lote en cuarentena se veía como si no existiera y el
+operario, con dos lotes enfrente, leía "sin stock" (M124 · INV-15 de `CONTRACT_inventario.md`).

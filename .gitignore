@@ -72,3 +72,4 @@ _barrido_ronda1.txt
 
 # node-check temporal (se regenera al vuelo)
 _tmp_nodech*/
+.claude/worktrees/

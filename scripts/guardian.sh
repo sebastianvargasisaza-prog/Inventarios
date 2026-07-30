@@ -210,6 +210,10 @@ CORAZON=(
   # Tres endpoints que mutaban sin permiso de rol · probados en los DOS sentidos (el dueno
   # entra, el ajeno no): poner un permiso sin probar el borde cambia un control por una traba.
   "tests/test_permisos_barrido_30jul.py"
+  # La verificacion de MP muestra LOS LOTES (los usables y los bloqueados con su motivo). El
+  # motor sumaba bien; lo que faltaba era decirlo: un lote en cuarentena se veia como si no
+  # existiera y el operario, con dos lotes enfrente, leia "sin stock".
+  "tests/test_lotes_visibles_verificacion.py"
 )
 
 echo ""

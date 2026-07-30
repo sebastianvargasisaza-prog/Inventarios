@@ -2391,6 +2391,16 @@ def _handle_produccion_inner():
                     retenido = {k: round(v, 2) for k, v in retenido.items()}
                 except Exception:
                     retenido = {}
+                # Los LOTES, no sólo el total: sin esto la pantalla dice "no hay" y el operario
+                # está viendo dos lotes en el estante (Sebastián 30-jul · goma xantana). El
+                # helper es el mismo que usa el camino programado, así que los dos avisan igual.
+                _lts = {'usables': [], 'retenidos': []}
+                try:
+                    from blueprints.programacion import _lotes_de_material as _ldm
+                    _lts = _ldm(c, mat_id)
+                except Exception as _el:
+                    import logging as _lgl
+                    _lgl.getLogger('inventario').warning('lotes de %s: %s', mat_id, _el)
                 faltantes.append({
                     'material': mat_nombre,
                     'material_id': mat_id,
@@ -2399,6 +2409,8 @@ def _handle_produccion_inner():
                     'falta_g': round(g_total - stock_total_disp, 2),
                     'retenido_g': round(ret_total, 2),
                     'retenido_por_estado': retenido,
+                    'lotes_usables': _lts.get('usables') or [],
+                    'lotes_retenidos': _lts.get('retenidos') or [],
                 })
                 continue
 
@@ -13311,8 +13323,44 @@ def mp_diag():
     if _err:
         return _err, _code
     cod = (request.args.get('codigo') or '').strip().upper()
+    # Búsqueda por NOMBRE (Sebastián 30-jul · "goma xantana tenía dos lotes y sólo jalaba uno"):
+    # para diagnosticar hay que saber el código, y justo lo que se investiga es si el material
+    # está partido en DOS códigos. Con `?q=goma` salen todos los códigos que matchean, cada uno
+    # con sus lotes y su estado, y el reparto queda a la vista sin adivinar.
+    q = (request.args.get('q') or '').strip()
+    if q and not cod:
+        conn = get_db(); c = conn.cursor()
+        like = '%' + q.lower() + '%'
+        try:
+            filas = c.execute(
+                """SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,''),
+                          COALESCE(activo,1)
+                   FROM maestro_mps
+                   WHERE LOWER(COALESCE(nombre_comercial,'')) LIKE ?
+                      OR LOWER(COALESCE(nombre_inci,'')) LIKE ?
+                      OR LOWER(COALESCE(codigo_mp,'')) LIKE ?
+                   ORDER BY codigo_mp LIMIT 40""", (like, like, like)).fetchall()
+        except Exception as _eq:
+            return jsonify({'error': 'busqueda fallida', 'detalle': str(_eq)}), 500
+        from blueprints.programacion import _lotes_de_material as _ldm
+        out = []
+        for f in filas:
+            _l = _ldm(c, f[0], limite=30)
+            _us = round(sum(x['g'] for x in _l['usables']), 2)
+            _re = round(sum(x['g'] for x in _l['retenidos']), 2)
+            out.append({'codigo': f[0], 'nombre_comercial': f[1], 'nombre_inci': f[2],
+                        'activo': int(f[3] or 0), 'stock_usable_g': _us, 'stock_retenido_g': _re,
+                        'lotes_usables': _l['usables'], 'lotes_retenidos': _l['retenidos']})
+        _con_algo = [o for o in out if o['stock_usable_g'] > 0.01 or o['stock_retenido_g'] > 0.01]
+        return jsonify({
+            'ok': True, 'q': q, 'codigos': out,
+            'codigos_con_stock': len(_con_algo),
+            'aviso': ('OJO: %d códigos distintos con stock para "%s". Producción consume UN código '
+                      'por ítem de fórmula, así que el stock del otro NO se suma.'
+                      % (len(_con_algo), q)) if len(_con_algo) > 1 else '',
+        })
     if not cod:
-        return jsonify({'error': 'codigo requerido'}), 400
+        return jsonify({'error': 'codigo o q requerido'}), 400
     conn = get_db(); c = conn.cursor()
     m = c.execute(
         """SELECT codigo_mp, COALESCE(NULLIF(TRIM(nombre_inci),''),''), COALESCE(NULLIF(TRIM(nombre_comercial),''),''),
@@ -13421,6 +13469,9 @@ def mp_diag_page():
   <div style="display:flex;gap:10px;align-items:flex-end;margin-top:16px">
     <div><label style="font-size:12px;color:var(--cx-text-soft, #555);display:block;margin-bottom:4px">Codigo MP</label><input id="cod" class="inp" placeholder="MP00293"></div>
     <button class="cx-btn" style="background:var(--cx-primary, #7c3aed);color:#fff" onclick="diag()">Diagnosticar</button>
+    <div style="width:1px;height:34px;background:var(--cx-border, #e4e4e7)"></div>
+    <div><label style="font-size:12px;color:var(--cx-text-soft, #555);display:block;margin-bottom:4px">o buscar por NOMBRE</label><input id="q" class="inp" style="width:210px;font-family:inherit" placeholder="goma xantana" onkeydown="if(event.key==='Enter')buscar()"></div>
+    <button class="cx-btn cx-btn-ghost" onclick="buscar()">Buscar todos los codigos</button>
   </div>
   <div id="out" style="margin-top:18px"></div>
   <div style="margin-top:16px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver a Inventario</button></div>
@@ -13429,6 +13480,29 @@ def mp_diag_page():
 var _C='';
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function num(n){return Number(n||0).toLocaleString('es-CO');}
+async function buscar(){
+  var q=(document.getElementById('q').value||'').trim();
+  if(!q){alert('Escribi un nombre, por ejemplo: goma');return;}
+  document.getElementById('out').innerHTML='<div style="color:var(--cx-primary-text, #7c3aed)">Buscando...</div>';
+  try{
+    var r=await fetch('/api/admin/mp-diag?q='+encodeURIComponent(q),{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<div style="color:var(--cx-danger-text, #dc2626)">'+esc(d.error||r.status)+'</div>';return;}
+    var h='';
+    if(d.aviso)h+='<div style="background:var(--cx-warn-pale, #fffbeb);border:1px solid #fde68a;color:var(--cx-warn-text, #92400e);border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:13.5px"><b>&#9888; '+esc(d.aviso)+'</b></div>';
+    if(!(d.codigos||[]).length)h+='<div style="color:var(--cx-text-mute, #888)">Ningun codigo matchea ese nombre.</div>';
+    (d.codigos||[]).forEach(function(o){
+      h+='<div style="background:var(--cx-card, #fff);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:12px;padding:14px;margin-bottom:10px">';
+      h+='<div style="font-size:15px"><b style="font-family:monospace">'+esc(o.codigo)+'</b> &middot; '+esc(o.nombre_comercial||o.nombre_inci||'')+(o.activo?'':' <span style="color:var(--cx-danger-text, #991b1b);font-weight:700">(INACTIVA)</span>')+'</div>';
+      h+='<div style="font-size:13px;color:var(--cx-text-soft, #555);margin-top:3px">usable: <b>'+num(o.stock_usable_g)+' g</b> &middot; bloqueado: <b>'+num(o.stock_retenido_g)+' g</b></div>';
+      (o.lotes_usables||[]).forEach(function(l){h+='<div style="font-size:12.5px;color:var(--cx-success-text, #166534);margin-top:2px">&bull; '+esc(l.lote)+' &middot; '+num(l.g)+' g'+(l.vence?' &middot; vence '+esc(l.vence):'')+'</div>';});
+      (o.lotes_retenidos||[]).forEach(function(l){h+='<div style="font-size:12.5px;color:var(--cx-warn-text, #b45309);margin-top:2px">&bull; '+esc(l.lote)+' &middot; '+num(l.g)+' g &middot; '+esc(l.motivo||l.estado||'')+'</div>';});
+      h+='<button class="cx-btn cx-btn-ghost" style="margin-top:8px;font-size:12px" onclick="document.getElementById('cod').value=''+esc(o.codigo)+'';diag()">Ver detalle</button>';
+      h+='</div>';
+    });
+    document.getElementById('out').innerHTML=h;
+  }catch(e){document.getElementById('out').innerHTML='<div style="color:var(--cx-danger-text, #dc2626)">Error de red</div>';}
+}
 async function diag(){
   var cod=(document.getElementById('cod').value||'').trim().toUpperCase();
   if(!cod){alert('Poné un código');return;}

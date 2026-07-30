@@ -719,6 +719,33 @@ grandes de firma se retiraron, pero **el registro de quién pesó NO se pierde**
 `Pesó / hora` dentro de la cuadrícula (un rótulo GMP sin ejecutor no es un registro). Alto impreso
 medido: **84 mm** sobre la etiqueta de 100 mm.
 
+## 👁️ INV-15 · La verificación de MP MUESTRA los lotes (30-jul)
+
+Sebastián, en vivo: *"goma xantana tenía dos lotes, pero al fabricar sólo jalaba uno -- el de
+poca cantidad -- y lo mostraba como sin stock"*.
+
+El motor está bien y se verificó antes de tocar nada: `_validar_stock_para_produccion` y el
+camino directo de `/api/produccion` **suman todos los lotes usables** del código. Lo que faltaba
+era decirlo: el faltante viajaba con `disponible_g / falta_g` y la pantalla no mostraba **cuáles**
+lotes hay ni por qué algunos no se pueden tocar.
+
+- Helper canónico **`_lotes_de_material(c, cod)`** (programacion.py) → `{usables, retenidos}`.
+  Usable = lo que el FEFO va a consumir, en orden de vencimiento. Retenido = existe en bodega
+  pero producción no puede tocarlo, **con el motivo**: cuarentena sin liberar, rechazado,
+  bloqueado, o **vencido por fecha aunque el cron todavía no lo haya marcado** (mismo criterio
+  que el FEFO · M25, o la pantalla diría algo distinto de lo que el descuento hace).
+- Los **dos caminos** (fabricación directa y arranque programado) devuelven `lotes_usables` y
+  `lotes_retenidos` desde ese único helper: no puede haber una pantalla contando una historia y
+  otra contando otra (M5).
+- La UI los pinta en el popup de "no se puede fabricar" y en el detalle inline.
+- **Diagnóstico por NOMBRE**: `GET /api/admin/mp-diag?q=goma` (admin) lista TODOS los códigos que
+  matchean, cada uno con sus lotes y estados, y avisa cuando hay más de uno con stock —
+  producción consume UN código por ítem de fórmula, así que el stock del otro **no se suma**.
+  Con `?codigo=` sigue funcionando igual. La página `/admin/mp-diag` trae el buscador.
+
+Tests: `tests/test_lotes_visibles_verificacion.py` (en el gate · 6 casos, con el escenario de
+Sebastián sembrado tal cual: un lote chico usable + uno grande en cuarentena).
+
 ## 🔐 Permiso del import masivo de envases (30-jul)
 
 `POST /api/mee/import-bulk` mutaba el maestro y el stock sin permiso de rol. Gate **proporcional**:

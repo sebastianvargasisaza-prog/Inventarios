@@ -10809,6 +10809,35 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         # idx_tareas_estado se lo llevó tareas_internas (mig 36) · operativas (mig 47) no
         "CREATE INDEX IF NOT EXISTS idx_tareas_oper_estado ON tareas_operativas(estado, fecha_objetivo)",
     ]),
+    (402, "Recepción de EQUIPOS · el lado ACTIVO del equipo (Sebastián 30-jul: 'los equipos "
+          "llegan, necesito que Compras los recepcione, o Luz en Espagiria'). `equipos_planta` "
+          "describía el equipo para operar (código, área, capacidad) pero no tenía nada de lo "
+          "que llega CON el equipo: serial, marca, factura, cuánto costó, quién lo recibió. Sin "
+          "eso no se puede ni valorizar ni demostrarle a INVIMA que un equipo se calificó antes "
+          "de usarse. `estado_calificacion` es la CUARENTENA del equipo: nace 'PENDIENTE' y hasta "
+          "que Aseguramiento no lo califica (IQ/OQ/PQ) no queda operativo. "
+          "ADITIVA (M117): las columnas nacen vacías y los 102 equipos que ya están quedan en "
+          "'NO_APLICA' — llevan años en uso, inventarles una calificación que nadie hizo sería "
+          "fabricar historia en un registro regulado.", [
+        "ALTER TABLE equipos_planta ADD COLUMN empresa TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN marca TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN modelo TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN serial TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN proveedor TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN factura TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN numero_oc TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN valor_cop REAL DEFAULT 0",
+        "ALTER TABLE equipos_planta ADD COLUMN fecha_ingreso TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN recibido_por TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN recibido_at_utc TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN estado_calificacion TEXT DEFAULT 'NO_APLICA'",
+        "ALTER TABLE equipos_planta ADD COLUMN calificado_por TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN calificado_at_utc TEXT DEFAULT ''",
+        "ALTER TABLE equipos_planta ADD COLUMN calificacion_notas TEXT DEFAULT ''",
+        # nombre propio: `idx_equipos_*` ya lo usan area/tipo/capacidad (M122)
+        "CREATE INDEX IF NOT EXISTS idx_equipos_calificacion "
+        "ON equipos_planta(estado_calificacion, activo)",
+    ]),
 ]
 
 

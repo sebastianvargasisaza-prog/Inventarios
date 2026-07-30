@@ -11140,6 +11140,66 @@ _ESTADOS_LOTE_NO_PRODUCIBLES = (
 )
 
 
+def _lotes_de_material(c, cod, limite=12):
+    """TODOS los lotes de un código, separados en los que producción puede usar y los que no.
+
+    Existe por un reporte de Sebastián (30-jul, en vivo): *"vi que goma xantana tenía dos lotes,
+    pero al fabricar sólo jalaba uno -- el de poca cantidad -- y lo mostraba como sin stock"*.
+    El motor estaba bien (suma TODOS los lotes usables del código); lo que faltaba era DECIRLO:
+    la pantalla mostraba `disponible / falta` y nada más, así que un lote en CUARENTENA esperando
+    a Calidad, o vencido, se veía como si no existiera. El operario ve dos lotes en bodega y el
+    sistema le dice "no hay" sin explicar cuál no puede tocar ni por qué.
+
+    Devuelve `{'usables': [...], 'retenidos': [...]}`:
+      · usables  = lo que el FEFO va a consumir, en orden de vencimiento (el primero que sale).
+      · retenidos = existe físicamente pero producción NO lo puede consumir, con el MOTIVO.
+
+    Un lote vencido POR FECHA cuenta como retenido aunque el cron aún no lo haya marcado: es el
+    mismo criterio que usan el FEFO y la validación (M25), o la pantalla diría algo distinto de
+    lo que el descuento hace (M5).
+    """
+    from datetime import datetime as _dtl, timedelta as _tdl
+    hoy_col = (_dtl.utcnow() - _tdl(hours=5)).date().isoformat()
+    usables, retenidos = [], []
+    try:
+        rows = c.execute(
+            """SELECT COALESCE(lote,'') AS lote,
+                      MAX(UPPER(COALESCE(estado_lote,''))) AS est,
+                      MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv,
+                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                               WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                               ELSE 0 END) AS neto
+               FROM movimientos
+               WHERE UPPER(TRIM(COALESCE(material_id,'')))=UPPER(TRIM(?))
+                 AND COALESCE(lote,'') NOT IN ('', 'S/L')
+               GROUP BY lote""", (str(cod or '').strip(),)).fetchall()
+    except Exception as _e:
+        # Nunca tumba la pantalla, pero tampoco se calla: un except mudo acá convierte
+        # "no pude leer los lotes" en "no hay lotes", que es justo el engaño a evitar (M4/M94).
+        log.warning('lotes de %s para el aviso de stock: %s', cod, _e)
+        return {'usables': [], 'retenidos': [], 'error': True}
+    for r in rows:
+        lote = str(r[0] or '').strip()
+        est = str(r[1] or '').strip()
+        fv = str(r[2] or '').strip()[:10]
+        neto = round(float(r[3] or 0), 2)
+        if neto <= 0.01:
+            continue
+        item = {'lote': lote, 'g': neto, 'vence': fv, 'estado': est or 'VIGENTE'}
+        if est in _ESTADOS_LOTE_NO_PRODUCIBLES:
+            item['motivo'] = ('en CUARENTENA · falta que Calidad lo libere'
+                              if est.startswith('CUARENTENA') else est)
+            retenidos.append(item)
+        elif fv and fv < hoy_col:
+            item['motivo'] = 'VENCIDO el ' + fv
+            retenidos.append(item)
+        else:
+            usables.append(item)
+    usables.sort(key=lambda x: (x['vence'] or '9999-12-31'))
+    retenidos.sort(key=lambda x: -x['g'])
+    return {'usables': usables[:limite], 'retenidos': retenidos[:limite]}
+
+
 def _validar_stock_para_produccion(c, mps_a_consumir):
     """Verifica que haya stock suficiente para descontar TODAS las MPs.
 
@@ -11204,6 +11264,7 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
                     ret_total += stk
             except Exception:
                 pass
+            _lts = _lotes_de_material(c, cod)
             falt = {
                 'codigo_mp': cod,
                 'nombre': mp['nombre'],
@@ -11213,6 +11274,9 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
                 'falta_g': round(mp['cantidad_g'] - disp, 2),
                 'retenido_g': round(ret_total, 2),
                 'retenido_por_estado': retenido,
+                # qué lotes SÍ se van a usar y cuáles no se pueden tocar (y por qué)
+                'lotes_usables': _lts['usables'],
+                'lotes_retenidos': _lts['retenidos'],
             }
             faltantes.append(falt)
 
