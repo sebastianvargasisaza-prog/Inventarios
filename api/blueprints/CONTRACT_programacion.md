@@ -371,3 +371,28 @@ Los equipos que ya existían quedan en `NO_APLICA` y siguen saliendo igual. Si l
 estuviera (base sin la migración), la función NO devuelve vacío: cae a la consulta de siempre y
 loguea — un área sin equipos por un `except` mudo es indistinguible de un área sin equipos de
 verdad (M94).
+
+
+## 🔎 `/api/programacion/diag-por-que-no-sale?q=<nombre|codigo>` · explicar una AUSENCIA (30-jul)
+
+Alejandro: *"lauryl glucoside no sale en abastecimiento"*. La tabla de Abastecimiento **no es un
+catálogo**: `items_out_mp` recorre `consumo_mp`, o sea sólo las MP que alguna producción
+PROGRAMADA va a consumir. Que una MP no aparezca puede significar cuatro cosas muy distintas, y
+había que adivinar cuál:
+
+1. no existe en `maestro_mps` (nadie la dio de alta);
+2. existe pero **ninguna fórmula activa la usa** (a la fórmula le falta el ingrediente);
+3. está en una fórmula pero **ese producto no tiene lotes programados** (correcto: nada que consumir);
+4. aporta 0 g — `porcentaje=0` y `cantidad_g_por_lote=0`, o `controla_stock=0` (agua), o el
+   nombre del PLAN no cruza con el de la FÓRMULA (ver `lotes_sin_formula` del endpoint).
+
+El diagnóstico busca por **nombre** (no sólo por código: justo lo que se investiga es si el
+material está bajo otro código o no está) y devuelve un **veredicto en una frase**. Mira también
+el `material_nombre` escrito en la fórmula, porque un ítem puede traer un código heredado cuyo
+nombre en el maestro es otro.
+
+**Descartado con el código en la mano:** el resolver NO puede plegar la demanda de un material
+dentro de otro — el match por nombre/INCI es exacto (normalizado), y con dos candidatos del mismo
+INCI se frena a propósito en vez de elegir por stock (M17/M19).
+
+Tests: `tests/test_diag_por_que_no_sale.py` (en el gate · los 4 casos + la búsqueda por nombre).

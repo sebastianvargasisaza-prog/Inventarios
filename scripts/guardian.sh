@@ -218,6 +218,10 @@ CORAZON=(
   # motor sumaba bien; lo que faltaba era decirlo: un lote en cuarentena se veia como si no
   # existiera y el operario, con dos lotes enfrente, leia "sin stock".
   "tests/test_lotes_visibles_verificacion.py"
+  # Por que una MP no sale en Abastecimiento: la tabla lista lo que las producciones
+  # PROGRAMADAS van a consumir, no un catalogo. Una ausencia sin explicacion se lee como
+  # un error del sistema aunque sea correcta, y cuando SI es un error se lee como normal.
+  "tests/test_diag_por_que_no_sale.py"
 )
 
 echo ""

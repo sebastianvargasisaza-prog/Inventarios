@@ -4057,6 +4057,147 @@ def prog_diag_mp_demanda():
     })
 
 
+@bp.route('/api/programacion/diag-por-que-no-sale', methods=['GET'])
+def prog_diag_por_que_no_sale():
+    """¿POR QUÉ una materia prima no aparece en Abastecimiento? Búsqueda por NOMBRE o código.
+
+    Alejandro, 30-jul: *"lauryl glucoside no sale en abastecimiento"*. La tabla de Abastecimiento
+    NO es un catálogo: lista lo que las producciones PROGRAMADAS van a consumir. Que una MP no
+    aparezca puede significar cuatro cosas MUY distintas -- y hasta ahora había que adivinar cuál:
+
+      1. no existe en el maestro (nadie la dio de alta);
+      2. existe, pero NINGUNA fórmula activa la usa (a la fórmula le falta el ingrediente);
+      3. está en una fórmula, pero ese producto NO tiene producción programada en el horizonte
+         (correcto: no hay nada que consumir todavía);
+      4. está en la fórmula con porcentaje 0, o es `controla_stock=0` (agua), o el nombre del
+         plan no cruza con el de la fórmula → ese lote aporta 0 g a TODAS sus MPs.
+
+    Una ausencia sin explicación se lee como un error del sistema aunque sea el comportamiento
+    correcto -- y cuando de verdad es un error, se lee como si fuera normal (M124).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    q = (request.args.get('q') or request.args.get('codigo') or '').strip()
+    if not q:
+        return jsonify({'ok': False, 'error': 'pasá ?q=lauryl glucoside (o ?q=MP00123)'}), 400
+    conn = get_db(); c = conn.cursor()
+    like = '%' + q.lower() + '%'
+    qn = _norm_mp_name(q)
+
+    # 1) ¿existe en el maestro?
+    codigos = []
+    try:
+        for r in c.execute(
+            """SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,''),
+                      COALESCE(activo,1), COALESCE(controla_stock,1), COALESCE(tipo_material,'MP')
+               FROM maestro_mps
+               WHERE LOWER(COALESCE(nombre_comercial,'')) LIKE ?
+                  OR LOWER(COALESCE(nombre_inci,'')) LIKE ?
+                  OR LOWER(COALESCE(codigo_mp,'')) LIKE ?
+               ORDER BY codigo_mp LIMIT 25""", (like, like, like)).fetchall():
+            codigos.append({'codigo': r[0], 'nombre_comercial': r[1], 'nombre_inci': r[2],
+                            'activo': int(r[3] or 0), 'controla_stock': int(r[4] or 0),
+                            'tipo_material': r[5]})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudo consultar el maestro',
+                        'detalle': str(e)}), 500
+    cods_set = {str(x['codigo']).strip().upper() for x in codigos}
+
+    # 2) ¿alguna fórmula la nombra? Se busca por el NOMBRE escrito en la fórmula ADEMÁS de por
+    # código: una fórmula puede traer un código fantasma y el nombre correcto, y ese es
+    # justamente el caso que hay que ver.
+    usos = []
+    try:
+        for r in c.execute(
+            """SELECT fi.producto_nombre, fi.material_id, COALESCE(fi.material_nombre,''),
+                      COALESCE(fi.porcentaje,0), COALESCE(fi.cantidad_g_por_lote,0),
+                      COALESCE(fh.activo,1), COALESCE(fh.lote_size_kg,0)
+               FROM formula_items fi
+               LEFT JOIN formula_headers fh
+                 ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre))
+               ORDER BY fi.producto_nombre""").fetchall():
+            mid = str(r[1] or '').strip().upper()
+            mnom = str(r[2] or '')
+            if not (mid in cods_set or q.lower() in mnom.lower() or (qn and _norm_mp_name(mnom) == qn)):
+                continue
+            usos.append({
+                'producto': r[0], 'material_id': r[1], 'material_nombre': mnom,
+                'porcentaje': float(r[3] or 0), 'g_por_lote': float(r[4] or 0),
+                'formula_activa': int(r[5] or 0), 'lote_size_kg': float(r[6] or 0),
+                'codigo_existe_en_maestro': mid in cods_set or bool(c.execute(
+                    "SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (mid,)).fetchone()),
+            })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudieron leer las fórmulas',
+                        'detalle': str(e)}), 500
+
+    # 3) ¿esos productos tienen producción programada? (mismo filtro que usa el motor)
+    from datetime import datetime as _dt2, timedelta as _td2, date as _date2
+    hoy = (_dt2.utcnow() - _td2(hours=5)).date()
+    programado = {}
+    try:
+        for pn, fecha, ckg, origen in c.execute(
+            "SELECT producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), "
+            "COALESCE(origen,'') FROM produccion_programada "
+            "WHERE substr(fecha_programada,1,10) >= ? "
+            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado','esperando_recurso') "
+            "AND COALESCE(inventario_descontado_at,'')='' ORDER BY fecha_programada",
+                (hoy.isoformat(),)).fetchall():
+            k = _norm_prod_fuerte(pn or '')
+            programado.setdefault(k, []).append({'fecha': fecha, 'kg': float(ckg or 0),
+                                                 'origen': origen})
+    except Exception as e:
+        log.warning('diag-por-que-no-sale · plan: %s', e)
+    for u in usos:
+        lotes = programado.get(_norm_prod_fuerte(u['producto']), [])
+        u['producciones_programadas'] = len(lotes)
+        u['primera_fecha'] = lotes[0]['fecha'] if lotes else ''
+        u['dias_hasta'] = ((_date2.fromisoformat(lotes[0]['fecha']) - hoy).days
+                           if lotes else None)
+
+    # 4) el veredicto · en una frase, que es lo que hace falta cuando algo NO aparece
+    activos = [u for u in usos if u['formula_activa'] == 1]
+    con_plan = [u for u in activos if u['producciones_programadas'] > 0]
+    sin_pct = [u for u in activos if u['porcentaje'] <= 0 and u['g_por_lote'] <= 0]
+    infinitas = [x for x in codigos if x['controla_stock'] == 0]
+    if not codigos and not usos:
+        verdicto = ('No existe ninguna materia prima con ese nombre ni código, y ninguna fórmula '
+                    'la nombra. Si se usa de verdad, hay que darla de alta en el maestro y '
+                    'agregarla a la fórmula: hoy el sistema no sabe que existe.')
+    elif codigos and not usos:
+        verdicto = ('La materia prima EXISTE en el maestro pero NINGUNA fórmula la usa. Por eso '
+                    'no hay demanda que mostrar: a la fórmula le falta el ingrediente.')
+    elif usos and not activos:
+        verdicto = ('Sólo la usan fórmulas DESCONTINUADAS (header activo=0). El abastecimiento '
+                    'las excluye a propósito: no se compra para un producto que no se fabrica.')
+    elif infinitas and not con_plan:
+        verdicto = ('Está marcada como `controla_stock=0` (material infinito, tipo agua del lab): '
+                    'nunca se compra, por eso no sale en Abastecimiento.')
+    elif sin_pct and not con_plan:
+        verdicto = ('Está en la fórmula pero con porcentaje 0 y sin gramos por lote, así que '
+                    'aporta 0 g de demanda. Hay que cargarle el porcentaje.')
+    elif activos and not con_plan:
+        verdicto = ('Está en %d fórmula(s) ACTIVA(s) pero NINGUNO de esos productos tiene '
+                    'producción programada hacia adelante. Abastecimiento muestra lo que se va a '
+                    'CONSUMIR, así que sin lotes en el calendario no hay nada que pedir. '
+                    'Programá el producto y aparece.' % len(activos))
+    else:
+        verdicto = ('DEBERÍA aparecer: la usan %d fórmula(s) activa(s) y hay producción '
+                    'programada (%s). Si no sale en la tabla, revisá que el nombre del producto '
+                    'del PLAN cruce con el de la FÓRMULA (mirá `lotes_sin_formula` en el '
+                    'endpoint de abastecimiento) y avisá.'
+                    % (len(activos), ', '.join(sorted({u['producto'] for u in con_plan})[:4])))
+
+    return jsonify({
+        'ok': True, 'q': q,
+        'existe_en_maestro': bool(codigos), 'codigos': codigos,
+        'usos_en_formulas': usos,
+        'formulas_activas_que_lo_usan': len(activos),
+        'con_produccion_programada': len(con_plan),
+        'veredicto': verdicto,
+    })
+
+
 def _estacionalidad_mensual(c, meses_hist=24):
     """Fase 1 forecast (Sebastián 5-jul) · multiplicador de ESTACIONALIDAD por producto y mes (1-12) desde el
     histórico Shopify. multiplicador[m] = ventas_promedio_del_mes_m / promedio_mensual_anual. >1 = mes alto
