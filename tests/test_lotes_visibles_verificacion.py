@@ -181,3 +181,42 @@ def test_la_pagina_de_diagnostico_trae_el_buscador(app, db_clean):
     body = r.data.decode('utf-8', 'replace')
     assert 'function buscar(' in body and 'id="q"' in body, (
         'la página quedó sin el buscador por nombre')
+
+
+def test_el_JS_de_la_pagina_PARSEA(app, db_clean):
+    """Que la función esté ESCRITA no significa que el navegador la pueda ejecutar.
+
+    Pasó el 30-jul: metí el buscador con `\\'` dentro de un template de Python que NO es raw,
+    así que los backslashes se perdieron y quedó una comilla suelta -> `Uncaught ReferenceError:
+    buscar is not defined` y el botón sin hacer nada. El test anterior pasaba en verde porque
+    sólo miraba que el TEXTO 'function buscar(' estuviera en el HTML (M65/M125).
+
+    La única verificación que caza esto es node --check del JS RENDERIZADO. Si no hay node en la
+    máquina, el test se salta declarándolo (nunca da un verde silencioso).
+    """
+    import os
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+    import pytest
+    if not shutil.which('node'):
+        pytest.skip('node no está instalado · sin él no se puede validar el JS renderizado')
+    body = _login(app).get('/admin/mp-diag').data.decode('utf-8', 'replace')
+    bloques = [b for b in re.findall(r'<script(?![^>]*src=)[^>]*>(.*?)</script>', body, re.S)
+               if b.strip()]
+    assert bloques, 'la página no tiene JS inline: ¿se rompió el render?'
+    for i, b in enumerate(bloques):
+        ruta = os.path.join(tempfile.gettempdir(), '_eos_chk_mpdiag_%d.js' % i)
+        with open(ruta, 'w', encoding='utf-8') as fh:
+            fh.write(b)
+        try:
+            r = subprocess.run(['node', '--check', ruta], capture_output=True, text=True)
+        finally:
+            try:
+                os.remove(ruta)
+            except OSError:
+                pass
+        assert r.returncode == 0, (
+            'el bloque %d de /admin/mp-diag NO parsea · la página se sirve igual pero los '
+            'botones no hacen nada:\n%s' % (i, r.stderr[:600]))

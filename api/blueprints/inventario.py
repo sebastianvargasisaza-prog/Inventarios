@@ -13480,6 +13480,12 @@ def mp_diag_page():
 var _C='';
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function num(n){return Number(n||0).toLocaleString('es-CO');}
+function verDetalle(btn){
+  var c=btn.getAttribute('data-cod')||'';
+  var e=document.getElementById('cod');
+  if(e){ e.value=c; }
+  diag();
+}
 async function buscar(){
   var q=(document.getElementById('q').value||'').trim();
   if(!q){alert('Escribi un nombre, por ejemplo: goma');return;}
@@ -13497,7 +13503,7 @@ async function buscar(){
       h+='<div style="font-size:13px;color:var(--cx-text-soft, #555);margin-top:3px">usable: <b>'+num(o.stock_usable_g)+' g</b> &middot; bloqueado: <b>'+num(o.stock_retenido_g)+' g</b></div>';
       (o.lotes_usables||[]).forEach(function(l){h+='<div style="font-size:12.5px;color:var(--cx-success-text, #166534);margin-top:2px">&bull; '+esc(l.lote)+' &middot; '+num(l.g)+' g'+(l.vence?' &middot; vence '+esc(l.vence):'')+'</div>';});
       (o.lotes_retenidos||[]).forEach(function(l){h+='<div style="font-size:12.5px;color:var(--cx-warn-text, #b45309);margin-top:2px">&bull; '+esc(l.lote)+' &middot; '+num(l.g)+' g &middot; '+esc(l.motivo||l.estado||'')+'</div>';});
-      h+='<button class="cx-btn cx-btn-ghost" style="margin-top:8px;font-size:12px" onclick="document.getElementById('cod').value=''+esc(o.codigo)+'';diag()">Ver detalle</button>';
+      h+='<button class="cx-btn cx-btn-ghost" style="margin-top:8px;font-size:12px" data-cod="'+esc(o.codigo)+'" onclick="verDetalle(this)">Ver detalle</button>';
       h+='</div>';
     });
     document.getElementById('out').innerHTML=h;
