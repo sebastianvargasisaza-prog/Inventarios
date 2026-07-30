@@ -1278,10 +1278,10 @@ def job_auto_d20(app):
                     'valor': cant * float(prec or 0),
                 })
             for prov, items in por_prov.items():
-                n = c.execute("""
-                    SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
-                    FROM solicitudes_compra WHERE numero LIKE ?
-                """, (f"SOL-{_dt.now().strftime('%Y')}-%",)).fetchone()[0] + 1
+                from audit_helpers import siguiente_correlativo
+                # PG-safe (M45/M96)
+                n = siguiente_correlativo(c, 'solicitudes_compra', 'numero',
+                                          f"SOL-{_dt.now().strftime('%Y')}-")
                 numero = f"SOL-{_dt.now().strftime('%Y')}-{n:04d}"
                 observ = f'🎨 Cron D-20 · decoración D-20 · {prod_match} · producción {f.isoformat()} · {unidades} ud · proveedor {prov}'
                 # Fix #5 · 21-may-2026 · categoria='Material de Empaque'

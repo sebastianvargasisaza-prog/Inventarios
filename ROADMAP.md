@@ -160,3 +160,52 @@ Verificado contra el código el 26-jul, no de memoria:
 - **`/api/formulas` servía las recetas a cualquier usuario logueado** — cerrado (26-jul).
 - **Mapa de permisos y mapa de esquema** — generados, no escritos a mano:
   `python scripts/generar_mapa_permisos.py` y `scripts/generar_mapa_esquema.py`.
+
+
+---
+
+## ✅ Revisado el 30-jul · caminando los endpoints, no leyendo
+
+- **Recepción de materia prima**: el recorrido completo funciona (OC → recepción administrativa →
+  cuarentena que no cuenta como stock → F01 con lote real/peso/vencimiento al kardex → firma
+  Part 11 → F02 → stock disponible). **Sin bugs en el flujo principal.** Los seis guards que ya
+  costaron caídas quedaron fijados con test. `tests/test_mp_recepcion_e2e.py`.
+- **Caja menor**: funciona. Recibo `RC-año-NNNN` numerado, el saldo cuadra, anular **conserva la
+  fila** con su motivo, y la fecha es la del hecho. `tests/test_caja_cargos_e2e.py`.
+- **Cargos fijos**: funciona. El flujo es `pendiente_monto` → (Catalina carga el monto) →
+  `por_pagar` → (sólo admin paga) → `pagado`, y el **anti-doble-pago ya estaba** con CAS; ahora
+  tiene test que lo fija.
+- **PQR**: **no falta código.** Están el inbox omnicanal (`pqr_inbox`), el clasificador con
+  fallback determinista, el auto-enrutado, la bandeja de triaje en Aseguramiento (enrutar /
+  descartar) y un diagnóstico admin. Lo que falta es **configuración**: `PQR_WEBHOOK_SECRET` en
+  Render y el workflow del lado de GHL que llame al webhook. Sin el secret el endpoint responde
+  503 a propósito (nunca dejar el buzón abierto). Para ver si alguna vez entró algo:
+  `GET /api/aseguramiento/pqr-inbox/diagnostico` (admin).
+- **Tres índices que nunca existieron** (M96) → creados con nombre propio en la mig 401, con
+  trinquete para que no vuelva a pasar.
+
+### Pendiente REAL que salió de esta revisión
+- **14 `CAST(SUBSTR(...))`** en numeradores de `pedidos`, `despachos`, `maquila_pedidos`, `SOL-` y
+  `AUTO-`: misma clase que tumbó toda la creación de OC del año. **Latente, no activo** (los
+  generadores producen números limpios), pero el arreglo es mecánico con el helper canónico
+  `siguiente_correlativo`.
+- **36 endpoints que mutan sin guard visible**: casi todos de planta, donde la política es
+  deliberada ("lo hacen todos"). Los que no son de planta y merecen decisión: `rechazar_oc`,
+  `api_maquila_facturar`, `mee_import_bulk`.
+
+
+### 🟡 3 rojos PREEXISTENTES en el gate `--full` (medido el 30-jul · NO son regresión)
+
+`bash scripts/guardian.sh --full` termina con 3 rojos:
+`test_shopify_necesidades::test_ventas_diarias_sku_case_insensitive`,
+`test_shopify_necesidades::test_job_alerta_skus_sin_mapear` y
+`test_sugerencia_solo_animus::test_proxima_sugerida_solo_animus`.
+
+**Verificado que NO son de un cambio nuevo**: se corrió el mismo `--full` contra el árbol en
+BASELINE (`git stash`) y dio **exactamente los mismos 3 fallos con los mismos números**
+(3 failed / 513 passed). Y **los tres pasan AISLADOS**. O sea: es contaminación de estado entre
+archivos que comparten la BD de tests en un mismo proceso — la deuda mecánica que ya describe
+M103 (96 de 203 archivos que siembran no borran lo suyo).
+
+Antes de perseguir uno de estos rojos: correrlo **aislado** y contra baseline. Si pasa aislado y
+falla en la suite, el bug es el orden, no el código.

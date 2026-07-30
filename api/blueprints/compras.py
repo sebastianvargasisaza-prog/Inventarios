@@ -9679,8 +9679,12 @@ def get_comprobante(numero_oc):
 
 @bp.route('/api/compras/oc/<numero_oc>/rechazar', methods=['POST'])
 def rechazar_oc(numero_oc):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
+    # Rechazar una OC cambia su estado y libera las SOL: es una decision de COMPRAS, no de
+    # cualquiera que este logueado (barrido 30-jul · el hermano `autorizar_oc` ya gateaba y la
+    # asimetria es la firma de M45). Se usa el guard estandar de mutaciones del modulo.
+    _u_rech, _err_rech, _code_rech = _require_compras_write()
+    if _err_rech:
+        return _err_rech, _code_rech
     usuario_actual = session.get('compras_user', '')
     d = request.get_json() or {}
     motivo = d.get('motivo', 'Sin motivo especificado')[:300]

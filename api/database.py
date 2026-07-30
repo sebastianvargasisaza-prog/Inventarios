@@ -7346,7 +7346,9 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
             fecha_completado     TEXT,
             observaciones_cierre TEXT DEFAULT ''
         )""",
-        """CREATE INDEX IF NOT EXISTS idx_tareas_estado ON tareas_operativas(estado, fecha_objetivo)""",
+        # (retirada 30-jul · nunca creó nada: el nombre `idx_tareas_estado` ya lo había tomado
+        #  otra tabla, así que este CREATE era un no-op silencioso. El índice real de
+        #  tareas_operativas lo crea la mig 401 con nombre propio · M96)
         """CREATE INDEX IF NOT EXISTS idx_tareas_asignado ON tareas_operativas(asignado_a)""",
     ]),
     (50, "produccion_programada: cantidad_kg explicita (auto-derivada del calendario, no depende del JOIN con formula_headers)", [
@@ -8011,7 +8013,9 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
             actualizado_en TEXT,
             UNIQUE(producto_nombre, presentacion_codigo)
         )""",
-        "CREATE INDEX IF NOT EXISTS idx_pp_producto ON producto_presentaciones(producto_nombre, activo)",
+        # (retirada 30-jul · nunca creó nada: el nombre `idx_pp_producto` ya lo había tomado
+        #  otra tabla, así que este CREATE era un no-op silencioso. El índice real de
+        #  producto_presentaciones lo crea la mig 401 con nombre propio · M96)
         "CREATE INDEX IF NOT EXISTS idx_pp_sku ON producto_presentaciones(sku_shopify)",
         "CREATE INDEX IF NOT EXISTS idx_pp_envase ON producto_presentaciones(envase_codigo)",
         # Seed de plantillas por categoria (Alejandro 30-abr-2026).
@@ -9273,7 +9277,9 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         )""",
         # disparo_d20=1 → cron diario revisa Calendar y dispara SC en D-20
         # (serigrafía/tampografía); aplica=0 → ignorado por Auto-SC (plegadiza).
-        "CREATE INDEX IF NOT EXISTS idx_mlt_origen ON mee_lead_time_config(origen, aplica)",
+        # (retirada 30-jul · nunca creó nada: el nombre `idx_mlt_origen` ya lo había tomado
+        #  otra tabla, así que este CREATE era un no-op silencioso. El índice real de
+        #  mee_lead_time_config lo crea la mig 401 con nombre propio · M96)
 
         """CREATE TABLE IF NOT EXISTS sku_mee_config (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -10788,6 +10794,20 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
           "leyéndose igual.", [
         "ALTER TABLE ipc_estandar_resultados ADD COLUMN adjudicado_por TEXT DEFAULT ''",
         "ALTER TABLE ipc_estandar_resultados ADD COLUMN adjudicado_at_utc TEXT DEFAULT ''",
+    ]),
+    (401, "Tres índices que NUNCA se crearon (barrido 30-jul · M96). Los nombres de índice son "
+          "GLOBALES: un `CREATE INDEX IF NOT EXISTS` con un nombre ya usado es un no-op "
+          "silencioso, así que el segundo de cada par nunca existió y su tabla quedó en scan "
+          "completo. El que más pesa es `producto_presentaciones`: es la tabla que el motor de "
+          "envases consulta POR PRODUCTO para repartir cajas y calcular la compra. "
+          "Se crean con nombre propio; los tres originales quedan como estaban (el que sí se "
+          "creó de cada par sigue sirviendo a su tabla).", [
+        # idx_mlt_origen se lo llevó mp_lead_time_config (mig 65) · mee (mig 71) quedó sin él
+        "CREATE INDEX IF NOT EXISTS idx_mee_lt_origen ON mee_lead_time_config(origen, aplica)",
+        # idx_pp_producto se lo llevó produccion_programada (mig 12) · presentaciones (mig 62) no
+        "CREATE INDEX IF NOT EXISTS idx_prodpres_producto ON producto_presentaciones(producto_nombre, activo)",
+        # idx_tareas_estado se lo llevó tareas_internas (mig 36) · operativas (mig 47) no
+        "CREATE INDEX IF NOT EXISTS idx_tareas_oper_estado ON tareas_operativas(estado, fecha_objetivo)",
     ]),
 ]
 

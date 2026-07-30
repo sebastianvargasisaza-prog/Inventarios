@@ -193,6 +193,23 @@ CORAZON=(
   "tests/test_mp_recepcion_e2e.py"
   # La hoja de pesaje dice el VENCIMIENTO del lote que se esta usando (punto de uso).
   "tests/test_hoja_pesaje_vencimiento.py"
+  # Un nombre de indice repetido es un indice que NO existe: el 2o CREATE IF NOT EXISTS es
+  # un no-op silencioso y la tabla se queda en scan completo. Trinquete de M96.
+  "tests/test_indices_no_se_pisan.py"
+  # Caja menor y cargos fijos por sus endpoints reales: recibo numerado, saldo, anular que
+  # CONSERVA la fila, y no pagar dos veces el mismo periodo de un cargo fijo.
+  "tests/test_caja_cargos_e2e.py"
+  # El rotulo de pesaje reparte por LOTE con el MISMO FEFO que el descuento, y lo que no
+  # alcanza se declara faltante. Antes sacaba UN lote con el peso completo aunque ese lote
+  # no lo tuviera: un registro regulado diciendo lo que no es.
+  "tests/test_rotulo_pesaje_reparto_lotes.py"
+  # Los 15 numeradores sin CAST(SUBSTR): ese patron revienta en PG con cualquier sufijo y ya
+  # tumbo la creacion de OC de todo un ano. Incluye el guard de que el helper este en scope
+  # (usarlo sin importarlo es un NameError = 500 silencioso).
+  "tests/test_correlativos_pg_safe_todos.py"
+  # Tres endpoints que mutaban sin permiso de rol · probados en los DOS sentidos (el dueno
+  # entra, el ajeno no): poner un permiso sin probar el borde cambia un control por una traba.
+  "tests/test_permisos_barrido_30jul.py"
 )
 
 echo ""

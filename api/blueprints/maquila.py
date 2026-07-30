@@ -10,7 +10,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
-from audit_helpers import audit_log
+from audit_helpers import audit_log, siguiente_correlativo
 from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -272,6 +272,13 @@ def api_maquila_facturar(oid):
     Body opcional:
       iva_pct (default 19), descuento (default 0), notas, fecha_vencimiento
     """
+    # Generar una factura es un acto FINANCIERO: alimenta `facturas` y despues
+    # flujo_ingresos. No lo hace cualquiera que este logueado (barrido 30-jul): va con el
+    # mismo criterio que el resto del dinero en EOS -- contadora o direccion.
+    _u_fac = session.get('compras_user', '')
+    if _u_fac not in (set(CONTADORA_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Facturar es de Contabilidad o Direccion',
+                        'codigo': 'SOLO_CONTABILIDAD'}), 403
     from datetime import date
     d = request.json or {}
     conn = get_db(); c = conn.cursor()
@@ -695,9 +702,8 @@ def hub_stock_sku(sku):
 def hub_despachar():
     d = request.get_json() or {}
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM despachos WHERE numero LIKE ?",
-              (f"DSP-{datetime.now().strftime('%Y')}-%",))
-    n = (c.fetchone()[0] or 0) + 1
+    n = siguiente_correlativo(c, 'despachos', 'numero',
+                              f"DSP-{datetime.now().strftime('%Y')}-")  # PG-safe · M45
     numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
     c.execute("""INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado)
                  VALUES (?,?,?,datetime('now', '-5 hours'),?,?,?)""",

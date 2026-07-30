@@ -10665,27 +10665,154 @@ def generar_rotulos(producto_nombre, cantidad_str):
         _logo_src = ((_lrow[0] if _lrow else '') or '').strip() or '/static/logos/espagiria.svg'
     except Exception:
         _logo_src = '/static/logos/espagiria.svg'
+    # ── REPARTO POR LOTES (Sebastián 30-jul) ──────────────────────────────────────────────
+    # "el palmitoyl tripeptido-4 hay solo uno, menor cantidad de la que se requiere para 45
+    # kilos, y cuando le doy rótulos de pesaje me saca ESE con la cantidad necesaria a pesar
+    # de que no hay: debería tomar el lote más viejo con la cantidad que hay + otro rótulo con
+    # el otro lote que tenga lo que falta, porque así estaría registrando lo que no es".
+    #
+    # Antes se resolvía UN lote (el más viejo con stock) y se le imprimía el peso teórico
+    # COMPLETO, sin mirar si ese lote alcanzaba: el rótulo -- que es un registro regulado
+    # (PRD-PRO-001-F08) -- documentaba un lote y una cantidad que no existen, y el operario
+    # terminaba completando de otro lote SIN rótulo.
+    #
+    # Ahora el reparto sale de `_distribuir_fefo`, EL MISMO que usa el descuento de producción:
+    # así el papel dice exactamente lo que el kardex va a hacer (si fueran dos cuentas
+    # distintas, divergirían · M1/M5). Un rótulo POR LOTE, con la cantidad de ESE lote, y lo
+    # que no alcanza se declara como faltante en vez de inventarlo.
+    try:
+        from blueprints.programacion import _distribuir_fefo as _fefo_rot
+    except Exception:
+        try:
+            from api.blueprints.programacion import _distribuir_fefo as _fefo_rot
+        except Exception:
+            _fefo_rot = None
+    _ubic_lote = {}          # (cod, lote) -> (est, pos, vence)
+    def _ubic_de_lote(cod, lote):
+        k = (str(cod), str(lote))
+        if k in _ubic_lote:
+            return _ubic_lote[k]
+        est = pos = ven = ''
+        try:
+            _r = c.execute(
+                "SELECT MAX(estanteria), MAX(posicion), "
+                "       MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) "
+                "FROM movimientos WHERE material_id=? AND UPPER(TRIM(COALESCE(lote,'')))=UPPER(TRIM(?))",
+                (cod, lote)).fetchone()
+            if _r:
+                est, pos = (_r[0] or ''), (_r[1] or '')
+                ven = str(_r[2])[:10] if _r[2] else ''
+        except Exception as _eu:
+            import logging as _lg
+            _lg.getLogger('inventario').warning('ubicacion de lote %s/%s: %s', cod, lote, _eu)
+        _ubic_lote[k] = (est, pos, ven)
+        return _ubic_lote[k]
+
+    # Una FILA por (materia prima, lote): es lo que se va a pesar de verdad.
+    _filas_rot = []
+    _faltantes = []          # para avisar arriba: qué MP no alcanza y cuánto falta
+    for _mid, _mnm, _pct in items:
+        _peso = round((_pct / 100.0) * cant_g, 2)
+        _cod = cods.get(_mid, _mid)
+        _partes = []
+        _falta_dir = 0.0
+        if _fefo_rot and _peso > 0:
+            # `_distribuir_fefo` LANZA si el stock no alcanza -- correcto para un descuento
+            # (no se descuenta lo que no hay), pero el rótulo necesita justo ese caso: reparte
+            # lo que SÍ hay y declara el faltante. Así que se le pide el reparto de lo
+            # disponible (stock canónico, regla #4) y la diferencia queda como faltante.
+            _disp = None
+            try:
+                from blueprints.programacion import _get_mp_stock as _gms_rot
+            except Exception:
+                try:
+                    from api.blueprints.programacion import _get_mp_stock as _gms_rot
+                except Exception:
+                    _gms_rot = None
+            if _gms_rot:
+                try:
+                    _mapa = _gms_rot(conn)
+                    _disp = float(_mapa.get(_cod, _mapa.get(str(_cod).upper(), 0)) or 0)
+                except Exception as _eg:
+                    import logging as _lg
+                    _lg.getLogger('inventario').warning('stock canonico del rotulo %s: %s', _cod, _eg)
+                    _disp = None
+            _pedir = _peso if (_disp is None or _disp >= _peso) else max(_disp, 0.0)
+            if _disp is not None and _disp < _peso:
+                _falta_dir = round(_peso - max(_disp, 0.0), 2)
+            if _pedir > 0.01:
+                try:
+                    _partes = _fefo_rot(c, _cod, _pedir) or []
+                except Exception as _ef:
+                    import logging as _lg
+                    _lg.getLogger('inventario').warning('FEFO del rotulo %s: %s', _cod, _ef)
+                    _partes = []
+                    _falta_dir = 0.0
+            elif _falta_dir > 0.01:
+                _partes = [{'lote': '', 'cantidad': 0.0, 'sin_lote': True}]
+        if not _partes:      # sin distribuidor o sin stock: se conserva el comportamiento viejo
+            _info = lotes.get(_mid, {})
+            _partes = [{'lote': _info.get('lote', 'S/L'), 'cantidad': _peso,
+                        'fecha_vencimiento': _info.get('vence', ''), 'sin_lote': False}]
+        _reales = [p for p in _partes if not p.get('sin_lote') and float(p.get('cantidad') or 0) > 0.01]
+        _falta = round(sum(float(p.get('cantidad') or 0) for p in _partes if p.get('sin_lote'))
+                       + _falta_dir, 2)
+        if _falta > 0.01:
+            _faltantes.append((_mnm or _mid, _cod, _falta))
+        _n = len(_reales) + (1 if _falta > 0.01 else 0)
+        for _k, _p in enumerate(_reales, start=1):
+            _lt = str(_p.get('lote') or 'S/L')
+            _e_, _p_, _v_ = _ubic_de_lote(_cod, _lt)
+            _filas_rot.append({
+                'mid': _mid, 'mnm': _mnm, 'pct': _pct, 'cod': _cod,
+                'lote': _lt, 'peso': round(float(_p.get('cantidad') or 0), 2),
+                'est': _e_, 'pos': _p_,
+                'vence': (str(_p.get('fecha_vencimiento'))[:10] if _p.get('fecha_vencimiento') else _v_),
+                'parte': _k, 'n_partes': _n, 'total_mp': _peso, 'falta': 0.0,
+            })
+        if _falta > 0.01:
+            _filas_rot.append({
+                'mid': _mid, 'mnm': _mnm, 'pct': _pct, 'cod': _cod,
+                'lote': 'SIN STOCK', 'peso': _falta, 'est': '', 'pos': '', 'vence': '',
+                'parte': _n, 'n_partes': _n, 'total_mp': _peso, 'falta': _falta,
+            })
+
     rhtml=''; barcodes=''
-    for i,r in enumerate(items):
-        mid,mnm,pct=r; peso=round((pct/100)*cant_g,2); info=lotes.get(mid,{}); lote_mp=info.get('lote','S/L')
-        cod_real=cods.get(mid,mid)
-        ubicacion=('Est. '+str(info.get('est',''))+str(info.get('pos',''))).strip(); vence=info.get('vence',''); inci=incis.get(mid,'')
+    for i, _fila in enumerate(_filas_rot):
+        mid = _fila['mid']; mnm = _fila['mnm']; pct = _fila['pct']
+        peso = _fila['peso']; lote_mp = _fila['lote']; cod_real = _fila['cod']
+        ubicacion = ('Est. ' + str(_fila['est']) + str(_fila['pos'])).strip()
+        vence = _fila['vence']; inci = incis.get(mid, '')
         bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}",{json.dumps(bv)},{{format:"CODE128",width:1.1,height:24,displayValue:false,margin:0}})}}catch(e){{}};'
         # QR resoluble: al escanear con el celular abre /scan/<código>/<lote> con la info REAL del lote.
         _scan_url = _scan_base + '/scan/' + urllib.parse.quote(str(cod_real), safe='') + '/' + urllib.parse.quote(str(lote_mp), safe='')
         barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:50,height:50,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
         rhtml+='<div class="sheet"><div class="accent"></div>'
         rhtml+='<div class="top"><div class="brand"><img class="mark" src="'+_logo_src+'" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
-        rhtml+='<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08<br><b>Versión:</b> 01 &middot; <b>Etiqueta</b> '+str(i+1)+' de '+str(len(items))+'<br><b>Vigencia:</b> 04-Mar-2025 / 03-Mar-2028</div></div>'
-        rhtml+='<div class="title"><h1>Rótulo para dispensar materia prima</h1><div class="k">OP '+op_num+' &middot; '+hoy+'</div></div>'
+        rhtml+='<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08<br><b>Versión:</b> 01 &middot; <b>Etiqueta</b> '+str(i+1)+' de '+str(len(_filas_rot))+'<br><b>Vigencia:</b> 04-Mar-2025 / 03-Mar-2028</div></div>'
+        _parte_txt = ('' if _fila['n_partes'] <= 1 else
+                      ' &middot; <b>Parte ' + str(_fila['parte']) + ' de ' + str(_fila['n_partes'])
+                      + '</b> de esta materia prima')
+        rhtml+='<div class="title"><h1>Rótulo para dispensar materia prima</h1><div class="k">OP '+op_num+' &middot; '+hoy+_parte_txt+'</div></div>'
         rhtml+='<table>'
         rhtml+='<tr><td class="k">Producto</td><td colspan="3"><b>'+_e(prod)+'</b> - '+str(cantidad_kg)+' kg</td></tr>'
         rhtml+='<tr><td class="k">Materia prima</td><td colspan="3"><b>'+_e(mnm)+'</b> <span class="cod">'+_e(mid)+'</span></td></tr>'
         if inci: rhtml+='<tr><td class="k">Nombre INCI</td><td colspan="3" class="inci">'+_e(inci)+'</td></tr>'
-        rhtml+='<tr><td class="k">Lote MP</td><td class="num" colspan="3"><b>'+_e(lote_mp)+'</b></td></tr>'
+        if _fila['falta'] > 0.01:
+            rhtml+=('<tr><td class="k">Lote MP</td><td colspan="3">'
+                    '<b style="color:#991b1b">NO HAY STOCK PARA ESTA CANTIDAD</b><br>'
+                    '<span style="font-size:10px">Faltan ' + f"{_fila['falta']:,.2f}" + ' g. '
+                    'Consegu&iacute; el lote y ped&iacute; el r&oacute;tulo de nuevo, o registr&aacute; '
+                    'lo que realmente se pes&oacute;. Este papel NO documenta un lote.</span></td></tr>')
+        else:
+            rhtml+='<tr><td class="k">Lote MP</td><td class="num" colspan="3"><b>'+_e(lote_mp)+'</b></td></tr>'
         rhtml+='<tr><td class="k">Ubicación</td><td colspan="3">'+_e(ubicacion)+'</td></tr>'
         rhtml+='<tr><td class="k">Vencimiento</td><td class="venc">'+_e(vence)+'</td><td class="k">% fórmula</td><td class="num">'+str(pct)+'%</td></tr>'
-        rhtml+='<tr><td class="k">Peso teórico</td><td class="peso">'+f"{peso:,.2f} g"+'</td><td class="k">Lote producción</td><td class="fill"></td></tr>'
+        _lbl_peso = 'Peso teórico' if _fila['n_partes'] <= 1 else 'Peso de ESTE lote'
+        _sub_peso = ('' if _fila['n_partes'] <= 1 else
+                     '<span style="font-size:9.5px;font-weight:400"> &middot; de '
+                     + f"{_fila['total_mp']:,.2f}" + ' g en total</span>')
+        rhtml+='<tr><td class="k">'+_lbl_peso+'</td><td class="peso">'+f"{peso:,.2f} g"+_sub_peso+'</td><td class="k">Lote producción</td><td class="fill"></td></tr>'
         rhtml+='<tr><td class="k">Tara</td><td class="fill"></td><td class="k">Peso neto</td><td class="fill"></td></tr>'
         rhtml+='</table>'
         rhtml+='<div class="bcq"><div class="bcwrap"><svg id="bc'+str(i)+'"></svg><div class="bcv">'+_e(cod_real)+' &middot; '+_e(lote_mp)+'</div></div><div class="qrwrap"><div id="qr'+str(i)+'"></div><div class="qrlbl">Escaneá<br>info real</div></div></div>'
@@ -10747,12 +10874,32 @@ def generar_rotulos(producto_nombre, cantidad_str):
         ('background:var(--cx-card, #fff);color:var(--cx-primary-text, #4c1d95);' if (w == _lw and h == _lh) else 'background:var(--cx-primary, #6d28d9);color:#fff;') +
         '">' + lbl + ' · ' + str(w) + '×' + str(h) + 'mm</a>'
         for w, h, lbl in _sizes)
+    # Avisar ANTES de que bajen a bodega qué MP no alcanza y cuánto falta (Sebastián 30-jul:
+    # "además de irles diciendo"). No se imprime: es para la pantalla.
+    if _faltantes:
+        _fil = ''.join(
+            '<li><b>' + _e(_n) + '</b> <span style="opacity:.75">(' + _e(_c) + ')</span> &middot; '
+            'faltan <b>' + f"{_f:,.2f}" + ' g</b></li>'
+            for _n, _c, _f in _faltantes)
+        _aviso_falta = (
+            '<div class="no-print" style="max-width:1000px;margin:10px auto;background:#fef3c7;'
+            'border-left:5px solid #f59e0b;border-radius:10px;padding:14px 18px;color:#7c2d12;'
+            'font-size:12.5px;line-height:1.55">'
+            '<b>&#9888; No hay stock suficiente de ' + str(len(_faltantes)) + ' materia(s) prima(s)</b>'
+            '<ul style="margin:8px 0 0 18px;padding:0">' + _fil + '</ul>'
+            '<div style="margin-top:8px">Los rótulos salen con lo que SÍ hay, repartido por lote '
+            '(el más próximo a vencer primero), y el faltante va señalado. '
+            'No se dispensa contra un rótulo sin lote.</div></div>')
+    else:
+        _aviso_falta = ''
     return (css + '<div class="ph"><div style="display:flex;align-items:center;gap:12px;"><img src="' + _logo_src + '" alt="" onerror="this.remove()" style="height:34px;width:auto;background:var(--cx-card, #fff);border-radius:6px;padding:2px 5px;"><div><h2 style="margin:0;">Rotulos - ' + prod + ' - ' + str(cantidad_kg) + ' kg</h2>'
-            '<div style="font-size:8pt;opacity:0.8;">' + op_num + ' | ' + str(len(items)) + ' MPs | ' + hoy +
+            '<div style="font-size:8pt;opacity:0.8;">' + op_num + ' | ' + str(len(items)) + ' MPs | '
+            + str(len(_filas_rot)) + ' rótulos | ' + hoy +
             ' | etiqueta ' + str(_lw) + '×' + str(_lh) + 'mm</div></div></div>'
             '<div style="display:flex;align-items:center;gap:4px;"><span style="font-size:8pt;opacity:.8;">Tamaño:</span>' +
             _size_links +
             '<button class="pbtn" style="margin-left:12px;" onclick="window.print()">Imprimir todos</button></div></div>'
+            + _aviso_falta +
             '<div class="wrap">' + rhtml + '</div>'
             '<script>window.onload=function(){' + barcodes + '};</script>'
             '</body></html>')
@@ -16224,12 +16371,22 @@ def mee_import_bulk():
                        si no existe, INSERT. No borra los que no aparezcan.
     replace: archiva (estado='Archivado') los items NO incluidos.
     """
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
+    # Gate PROPORCIONAL (barrido 30-jul): cargar/actualizar envases es la operacion diaria de
+    # planta y se queda con el guard de planta -- trabarla seria una traba fantasma (M68). Lo
+    # que SI cambia de nivel es `modo='replace'`, que ARCHIVA en masa todo lo que no venga en
+    # el archivo: una mutacion masiva del maestro no la hace cualquiera.
+    _u_imp, _err_imp, _code_imp = _require_planta_write()
+    if _err_imp:
+        return _err_imp, _code_imp
     user = session.get('compras_user','')
     d = request.json or {}
     items = d.get('items') or []
     modo = (d.get('modo') or 'upsert').strip()
+    if modo == 'replace' and user not in set(ADMIN_USERS):
+        return jsonify({
+            'error': ("El modo 'replace' ARCHIVA todos los envases que no vengan en el archivo. "
+                      "Eso lo hace Direccion. Usá 'upsert' para cargar o actualizar."),
+            'codigo': 'REPLACE_SOLO_ADMIN'}), 403
     if not items:
         return jsonify({'error': 'items vacio'}), 400
     conn = get_db(); c = conn.cursor()

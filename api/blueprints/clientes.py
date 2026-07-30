@@ -11,7 +11,7 @@ from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CLIENTE
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
 from http_helpers import validate_money
-from audit_helpers import audit_log
+from audit_helpers import audit_log, siguiente_correlativo
 from templates_py.clientes_html import CLIENTES_HTML
 
 bp = Blueprint('clientes', __name__)
@@ -804,7 +804,8 @@ def handle_pedidos():
                 'precio_unitario': precio,
                 'subtotal': subtotal,
             })
-        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM pedidos WHERE numero LIKE ?", (f"PED-{datetime.now().strftime('%Y')}-%",)); n = (c.fetchone()[0] or 0) + 1
+        n = siguiente_correlativo(c, 'pedidos', 'numero',
+                                  f"PED-{datetime.now().strftime('%Y')}-")  # PG-safe · M45
         numero = f"PED-{datetime.now().strftime('%Y')}-{n:04d}"
         valor_total = sum(it['subtotal'] for it in items_clean)
         # Validar que cliente_id existe
@@ -1018,7 +1019,8 @@ def handle_despachos():
                     'error': f'cliente_id del despacho ({d.get("cliente_id")}) no coincide con pedido (cliente {ped_cliente_id})',
                     'codigo': 'CLIENTE_PEDIDO_MISMATCH',
                 }), 400
-        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM despachos WHERE numero LIKE ?", (f"DSP-{datetime.now().strftime('%Y')}-%",)); n = (c.fetchone()[0] or 0) + 1
+        n = siguiente_correlativo(c, 'despachos', 'numero',
+                                  f"DSP-{datetime.now().strftime('%Y')}-")  # PG-safe · M45
         numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
         c.execute("INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado) VALUES (?,?,?,datetime('now', '-5 hours'),?,?,?)",
                   (numero, numero_ped, d['cliente_id'], session.get('compras_user','sistema'), d.get('observaciones',''), 'Completado'))

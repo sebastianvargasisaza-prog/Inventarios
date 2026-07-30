@@ -33,7 +33,7 @@ import logging
 from database import get_db
 from config import ADMIN_USERS, COMPRAS_USERS, PLANTA_USERS
 from inventario_helpers import stock_mp_total, stock_mp_disponible
-from audit_helpers import audit_log
+from audit_helpers import audit_log, siguiente_correlativo
 
 bp = Blueprint('auto_plan', __name__)
 log = logging.getLogger('auto_plan')
@@ -1361,10 +1361,8 @@ def aplicar_plan(plan, usuario='cron'):
 
     for (prov, cat), items_grupo in grupos_por_prov.items():
         # Numero unico AUTO-XXXX
-        next_n = c.execute("""
-            SELECT COALESCE(MAX(CAST(SUBSTR(numero, 6) AS INTEGER)), 0) + 1
-            FROM solicitudes_compra WHERE numero LIKE 'AUTO-%'
-        """).fetchone()[0] or 1
+        # PG-safe (M45/M96) · el helper ignora sufijos no numéricos
+        next_n = siguiente_correlativo(c, 'solicitudes_compra', 'numero', 'AUTO-')
         numero = f'AUTO-{next_n:04d}'
 
         # Urgencia maxima del grupo (critica > alta > normal)
@@ -4238,9 +4236,7 @@ def maquila_pedidos():
         if not cli:
             return jsonify({'error': 'Cliente no existe'}), 400
         # Generar número
-        n = c.execute(
-            "SELECT COALESCE(MAX(CAST(SUBSTR(numero,4) AS INTEGER)),0)+1 FROM maquila_pedidos WHERE numero LIKE 'MQ-%'"
-        ).fetchone()[0] or 1
+        n = siguiente_correlativo(c, 'maquila_pedidos', 'numero', 'MQ-')  # PG-safe · M45
         numero = f'MQ-{n:04d}'
         # Calcular kg estimados desde presentación
         kg_est = d.get('kg_estimados')
@@ -5371,11 +5367,9 @@ def auto_sc_generar():
     fecha_hoy_iso = datetime.now().date().isoformat()
     for proveedor, items in plan['scs_por_proveedor'].items():
         # Generar número
-        c.execute("""
-            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
-            FROM solicitudes_compra WHERE numero LIKE ?
-        """, (f"SOL-{datetime.now().strftime('%Y')}-%",))
-        n = (c.fetchone()[0] or 0) + 1
+        # PG-safe (M45/M96) · el CAST(SUBSTR) revienta en PG con un sufijo no numérico
+        n = siguiente_correlativo(c, 'solicitudes_compra', 'numero',
+                                  f"SOL-{datetime.now().strftime('%Y')}-")
         numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
 
         observ = f'🤖 Auto-SC IA ({modo}) · proveedor: {proveedor} · horizonte 60-90d · buffers IA tendencia + estacional aplicados'
@@ -6072,11 +6066,9 @@ def auto_sc_mee_generar():
         prov_real = proveedor_clave.split(' (')[0]
         origen_real = items[0]['origen'] if items else 'Local'
 
-        c.execute("""
-            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
-            FROM solicitudes_compra WHERE numero LIKE ?
-        """, (f"SOL-{datetime.now().strftime('%Y')}-%",))
-        n = (c.fetchone()[0] or 0) + 1
+        # PG-safe (M45/M96) · el CAST(SUBSTR) revienta en PG con un sufijo no numérico
+        n = siguiente_correlativo(c, 'solicitudes_compra', 'numero',
+                                  f"SOL-{datetime.now().strftime('%Y')}-")
         numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
 
         observ = (f'🤖 Auto-SC IA MEE ({modo}) · proveedor: {prov_real} · '
@@ -6128,11 +6120,9 @@ def auto_sc_mee_generar():
     # mapping. 1 sola SC con todos los items a asignar por Catalina.
     if generico and plan.get('items_genericos'):
         items_gen = plan['items_genericos']
-        c.execute("""
-            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
-            FROM solicitudes_compra WHERE numero LIKE ?
-        """, (f"SOL-{datetime.now().strftime('%Y')}-%",))
-        n_gen = (c.fetchone()[0] or 0) + 1
+        # PG-safe (M45/M96)
+        n_gen = siguiente_correlativo(c, 'solicitudes_compra', 'numero',
+                                      f"SOL-{datetime.now().strftime('%Y')}-")
         numero_gen = f"SOL-{datetime.now().strftime('%Y')}-{n_gen:04d}"
         n_skus = len(set(it['sku_codigo'] for it in items_gen))
         observ_gen = (f'🎯 SC GENÉRICA Auto-MEE ({modo}) · {len(items_gen)} items '
@@ -6557,10 +6547,9 @@ def sc_etiqueta_rapida():
 
     fecha_hoy_iso = datetime.now().date().isoformat()
     for prov, prov_items in items_por_prov.items():
-        n = c.execute("""
-            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
-            FROM solicitudes_compra WHERE numero LIKE ?
-        """, (f"SOL-{datetime.now().strftime('%Y')}-%",)).fetchone()[0] + 1
+        # PG-safe (M45/M96)
+        n = siguiente_correlativo(c, 'solicitudes_compra', 'numero',
+                                  f"SOL-{datetime.now().strftime('%Y')}-")
         numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
         observ = (f'🏷️ SC etiqueta post-envasado · lote {lote} · {producto} '
                   f'· {presentacion} · {unidades} ud · proveedor {prov}')
@@ -6721,10 +6710,9 @@ def auto_d20_cron():
                     'dry_run': True,
                 })
                 continue
-            n = c.execute("""
-                SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
-                FROM solicitudes_compra WHERE numero LIKE ?
-            """, (f"SOL-{datetime.now().strftime('%Y')}-%",)).fetchone()[0] + 1
+            # PG-safe (M45/M96)
+            n = siguiente_correlativo(c, 'solicitudes_compra', 'numero',
+                                      f"SOL-{datetime.now().strftime('%Y')}-")
             numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
             observ = (f'🎨 Cron D-20 · decoración D-20 · {cand["producto"]} · '
                       f'producción {cand["fecha"]} · {cand["unidades_estimadas"]} ud · '
@@ -6844,10 +6832,9 @@ def sc_d20_rapida():
     scs_creadas = []
     fecha_hoy_iso = datetime.now().date().isoformat()
     for prov, prov_items in items_por_prov.items():
-        n = c.execute("""
-            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
-            FROM solicitudes_compra WHERE numero LIKE ?
-        """, (f"SOL-{datetime.now().strftime('%Y')}-%",)).fetchone()[0] + 1
+        # PG-safe (M45/M96)
+        n = siguiente_correlativo(c, 'solicitudes_compra', 'numero',
+                                  f"SOL-{datetime.now().strftime('%Y')}-")
         numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
         observ = (f'🎨 SC decoración D-20 · {producto} · producción {fecha_prod} '
                   f'· {unidades} ud · proveedor {prov}')

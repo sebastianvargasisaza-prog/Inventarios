@@ -1875,6 +1875,41 @@ con 8 colores (los acentos de las tarjetas de KPI de Clientes y Financiero) apla
   de esa página, así que resuelve al valor oscuro del token. **Antes de "corregir" un mapeo, mirá
   en qué bloque de tema está declarado.**
 
+## 🗂️ M122 · Un nombre de índice REPETIDO es un índice que no existe · y un barrido sin verificación es ruido · 30-jul
+
+Barrido multi-ángulo (8 detectores, cada uno de una familia distinta) + verificación uno por uno.
+Las dos lecciones son de método tanto como de código.
+
+**Lo REAL: tres índices que nunca se crearon.** Los nombres de índice son GLOBALES, así que un
+`CREATE INDEX IF NOT EXISTS idx_x ON otra_tabla(...)` con un nombre que otra migración ya usó es
+un **no-op silencioso**: no falla, no avisa, y la tabla se queda en scan completo para siempre.
+Pasó tres veces (`idx_mlt_origen`, `idx_pp_producto`, `idx_tareas_estado`), y el que más pesa es
+**`producto_presentaciones`** — la tabla que el motor de envases consulta POR PRODUCTO para
+repartir cajas y calcular la compra.
+- **La línea duplicada es CÓDIGO MUERTO y se retira de la migración vieja.** No hace falta el
+  cuidado de M111 (donde había que soltar un objeto ya creado): acá nunca se creó nada, así que
+  quitarla no cambia ninguna base existente y evita que una instalación nueva repita la colisión.
+  El índice bueno va en una migración nueva **con nombre propio**.
+- **Trinquete:** un test que recorre `MIGRATIONS` y falla si un nombre aparece sobre dos tablas,
+  más otro que comprueba que los tres existen en el esquema REAL. Declararlo no es tenerlo.
+- Regla de escritura: **nombre de índice = tabla + columnas** (`idx_prodpres_producto`), nunca una
+  abreviatura que otra tabla pueda querer.
+
+**Y la lección de método, que vale más: un barrido sin verificación es ruido con formato de
+hallazgo.** De lo que salió: `COALESCE(col,"")` en aseguramiento **no** es bug (el compat de PG lo
+reescribe · lo comprobé ejecutándolo); los "57 endpoints sin permiso" eran 36 y los de más riesgo
+**sí tienen guard**, con nombres que mi detector no conocía (`_require_qc` en liberar cuarentena,
+`_auth()` = contadora ∪ admin en contabilidad) — el ingenuo era mi detector, no el código; y los
+14 `CAST(SUBSTR(...))` que quedan son **latentes, no activos** (verifiqué los generadores: producen
+números limpios, así que sólo revientan si un dato ya trae sufijo).
+- **Antes de reportar un hallazgo de barrido, ejecutá la comprobación que lo decide.** Para el
+  `""` fue una línea (`translate_placeholders`); para los permisos, abrir dos endpoints; para el
+  CAST, buscar si algún generador pega sufijos. Tres verificaciones de un minuto convirtieron
+  ~60 "hallazgos" en 3 reales.
+- **Un detector que busca nombres de guard en una lista a mano da falsos positivos en masa.** Si
+  vas a medir "esto no tiene permiso", matcheá el PATRÓN (`_require*`, `_auth*`, `*_USERS`), no una
+  lista que se queda vieja el día que alguien nombra distinto a su guard.
+
 ## 🔐 M121 · Un permiso que se amplía "al final de la cadena" y no en la PUERTA deja la feature inalcanzable · 30-jul
 
 Tercera capa del mismo hueco de M116, y la encontró un test que buscaba otra cosa.

@@ -598,9 +598,8 @@ def pedido_rapido():
         return jsonify({"error": "Cliente no existe o esta inactivo"}), 400
 
     # Numero secuencial MQ-NNNN
-    n = c.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTR(numero,4) AS INTEGER)),0)+1 FROM maquila_pedidos WHERE numero LIKE 'MQ-%'"
-    ).fetchone()[0] or 1
+    from audit_helpers import siguiente_correlativo
+    n = siguiente_correlativo(c, 'maquila_pedidos', 'numero', 'MQ-')  # PG-safe · M45
     numero = f'MQ-{n:04d}'
 
     # Calcular kg si tenemos presentacion

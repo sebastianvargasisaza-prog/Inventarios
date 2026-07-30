@@ -239,7 +239,11 @@ def artes_biblioteca():
         if not _es_dt(u):
             return jsonify({'error': 'Solo Direccion Tecnica'}), 403
         url = (request.json or {}).get('url', '').strip()
-        c.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('artes_drive_url', ?)", (url,))
+        c.execute("INSERT INTO app_settings (clave, valor, actualizado_at_utc, actualizado_por) "
+                  "VALUES ('artes_drive_url', ?, datetime('now','utc'), ?) "
+                  "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor, "
+                  "actualizado_at_utc=excluded.actualizado_at_utc, "
+                  "actualizado_por=excluded.actualizado_por", (url, u))
         audit_log(c, usuario=u, accion='ARTE_BIBLIOTECA_URL', tabla='app_settings', registro_id=0, detalle=url[:200])
         conn.commit()
         return jsonify({'ok': True, 'url': url})

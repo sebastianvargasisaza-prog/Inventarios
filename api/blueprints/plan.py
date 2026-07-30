@@ -3342,8 +3342,12 @@ def plan_pauta_multitono():
             data[key] = regla
         else:
             data.pop(key, None)
-        conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('pauta_multitono', ?)",
-                     (_j.dumps(data),))
+        conn.execute("INSERT INTO app_settings (clave, valor, actualizado_at_utc, actualizado_por) "
+                     "VALUES ('pauta_multitono', ?, datetime('now','utc'), ?) "
+                     "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor, "
+                     "actualizado_at_utc=excluded.actualizado_at_utc, "
+                     "actualizado_por=excluded.actualizado_por",
+                     (_j.dumps(data), session.get('compras_user','')))
         conn.commit()
         return jsonify({'ok': True, 'producto': prod, 'regla': data.get(key, 'auto'), 'overrides': data})
     return jsonify({'ok': True, 'overrides': data,
@@ -3381,8 +3385,12 @@ def plan_producto_externo():
                 data.append(prod)
         else:
             data = [x for x in data if str(x).strip().lower() != prod.strip().lower()]
-        conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('productos_externos', ?)",
-                     (_j.dumps(data),))
+        conn.execute("INSERT INTO app_settings (clave, valor, actualizado_at_utc, actualizado_por) "
+                     "VALUES ('productos_externos', ?, datetime('now','utc'), ?) "
+                     "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor, "
+                     "actualizado_at_utc=excluded.actualizado_at_utc, "
+                     "actualizado_por=excluded.actualizado_por",
+                     (_j.dumps(data), session.get('compras_user','')))
         conn.commit()
         return jsonify({'ok': True, 'producto': prod, 'externo': bool(externo), 'externos': data})
     return jsonify({'ok': True, 'externos': data})
@@ -14908,8 +14916,12 @@ def plan_acelerador_config():
             cfg['lead_umbral'] = max(1, min(int(body['lead_umbral']), 365))
         except Exception:
             pass
-    conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('acelerador_compras', ?)",
-                 (_j.dumps(cfg),))
+    conn.execute("INSERT INTO app_settings (clave, valor, actualizado_at_utc, actualizado_por) "
+                 "VALUES ('acelerador_compras', ?, datetime('now','utc'), ?) "
+                 "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor, "
+                 "actualizado_at_utc=excluded.actualizado_at_utc, "
+                 "actualizado_por=excluded.actualizado_por",
+                 (_j.dumps(cfg), session.get('compras_user','')))
     conn.commit()
     return jsonify({'ok': True, 'config': cfg})
 

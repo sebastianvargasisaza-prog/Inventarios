@@ -3350,7 +3350,12 @@ def prog_por_entrar_manual():
             data[sku] = n
         else:
             data.pop(sku, None)
-        conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('por_entrar_manual', ?)", (_j.dumps(data),))
+        conn.execute("INSERT INTO app_settings (clave, valor, actualizado_at_utc, actualizado_por) "
+                     "VALUES ('por_entrar_manual', ?, datetime('now','utc'), ?) "
+                     "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor, "
+                     "actualizado_at_utc=excluded.actualizado_at_utc, "
+                     "actualizado_por=excluded.actualizado_por",
+                     (_j.dumps(data), session.get('compras_user','')))
         conn.commit()
         return jsonify({'ok': True, 'sku': sku, 'uds': n, 'por_entrar_manual': data})
     return jsonify({'ok': True, 'por_entrar_manual': data,
@@ -4229,7 +4234,12 @@ def prog_estacionalidad_config():
             return jsonify({'ok': True, 'accion': 'refrescar', 'mult_auto': g})
         if acc == 'toggle':
             v = '1' if str(d.get('activa') or '').strip().lower() in ('1', 'true', 'on', 'si', 'sí') else '0'
-            conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('estacionalidad_plan_activa', ?)", (v,))
+            conn.execute("INSERT INTO app_settings (clave, valor, actualizado_at_utc, actualizado_por) "
+                     "VALUES ('estacionalidad_plan_activa', ?, datetime('now','utc'), ?) "
+                     "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor, "
+                     "actualizado_at_utc=excluded.actualizado_at_utc, "
+                     "actualizado_por=excluded.actualizado_por",
+                     (v, session.get('compras_user','')))
             conn.commit()
             return jsonify({'ok': True, 'activa': v == '1'})
         if acc == 'tope':
@@ -4237,7 +4247,12 @@ def prog_estacionalidad_config():
                 t = max(1.05, min(float(d.get('tope') or 2.0), 4.0))
             except Exception:
                 t = 2.0
-            conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('estacionalidad_tope', ?)", (str(t),))
+            conn.execute("INSERT INTO app_settings (clave, valor, actualizado_at_utc, actualizado_por) "
+                         "VALUES ('estacionalidad_tope', ?, datetime('now','utc'), ?) "
+                         "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor, "
+                         "actualizado_at_utc=excluded.actualizado_at_utc, "
+                         "actualizado_por=excluded.actualizado_por",
+                         (str(t), session.get('compras_user','')))
             conn.commit()
             return jsonify({'ok': True, 'tope': t})
         if acc == 'override':
@@ -4567,7 +4582,12 @@ def prog_pres_no_aplica():
     lst = [x for x in lst if str(x).strip().upper() != prod.upper()]
     if not quitar:
         lst.append(prod)
-    conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('envases_no_requiere', ?)", (_j.dumps(lst),))
+    conn.execute("INSERT INTO app_settings (clave, valor, actualizado_at_utc, actualizado_por) "
+                 "VALUES ('envases_no_requiere', ?, datetime('now','utc'), ?) "
+                 "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor, "
+                 "actualizado_at_utc=excluded.actualizado_at_utc, "
+                 "actualizado_por=excluded.actualizado_por",
+                 (_j.dumps(lst), session.get('compras_user','')))
     conn.commit()
     return jsonify({'ok': True, 'producto': prod, 'no_requiere': not quitar})
 

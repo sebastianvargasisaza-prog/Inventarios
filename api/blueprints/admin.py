@@ -20,7 +20,7 @@ from config import (
 from database import db_connect
 from database import get_db  # Sebastián 7-jul: usado por endpoints logo/purgar-gcal/producciones-sin-formula (antes NameError)
 from auth import _client_ip, _log_sec
-from audit_helpers import audit_log, siguiente_numero_oc
+from audit_helpers import audit_log, siguiente_numero_oc, siguiente_correlativo
 from backup import (
     do_backup, list_backups, get_backup_path, BACKUPS_DIR,
     RETENTION_DAYS, BACKUP_INTERVAL_HOURS,
@@ -12057,9 +12057,9 @@ def admin_import_pagos_influencers_excel():
         # ── Importar plan ───────────────────────────────────────────────────
         from datetime import datetime as _dt
         anio = _dt.now().year
-        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero, 10) AS INTEGER)),0) "
-                  "FROM solicitudes_compra WHERE numero LIKE ?", (f'SOL-{anio}-%',))
-        n_sol = (c.fetchone()[0] or 0)
+        # PG-safe (M45/M96): el CAST(SUBSTR) revienta en PostgreSQL si un número trae
+        # sufijo no numérico. El helper extrae el correlativo en Python y devuelve max+1.
+        n_sol = siguiente_correlativo(c, 'solicitudes_compra', 'numero', f'SOL-{anio}-') - 1
         # PG-safe (drift CAST · 16-jun): el max int del correlativo, ignorando
         # sufijos no numéricos (ej. OC-2026-0215-1) que rompen CAST en PostgreSQL.
         n_oc = int(siguiente_numero_oc(c, anio).rsplit('-', 1)[1]) - 1
