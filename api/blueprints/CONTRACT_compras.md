@@ -389,3 +389,32 @@ a toda cantidad.
 
 Test: `tests/test_oc_unidad_real.py` (en el gate · incluye el guard de que nadie vuelva a
 concatenar `' g'` a la cantidad de la bandeja).
+
+
+## 🔎 INV-12 · El rastro de una orden · "se me perdió" se contesta con hechos (31-jul)
+
+Catalina: *"al hacer órdenes de compra se le perdió"*. Esa pregunta sólo se podía contestar con
+una hipótesis: más de 30 acciones distintas tocan una OC, todas quedan en `audit_log`, y nadie
+tenía cómo leerlo.
+
+`GET /api/compras/rastro?q=OC-2026-0231` (lectura · cualquier autenticado) devuelve el veredicto
+en una frase + la línea de tiempo completa:
+
+- **existe** → estado, proveedor, cuántos ítems y cuánto vale;
+- **se fusionó** → con cuál orden, cuándo y quién (y aclara que los ítems se movieron, no se
+  perdieron);
+- **la eliminaron** → quién y cuándo;
+- **una orden que existe pero SIN ítems** se declara: guardar una edición con la lista vacía los
+  borra todos y la orden queda en cero sin que nadie lo note.
+
+**Las TRES formas legítimas en que una OC desaparece** (ninguna destruye datos, pero las tres se
+viven como "se perdió"):
+1. `cambiar-proveedor` **FUSIONA** si el nuevo proveedor ya tiene una OC editable de la misma
+   categoría: mueve ítems + re-vincula SOLs y **borra esta OC** (decisión de Sebastián 14-jul,
+   "siempre una orden por proveedor"). La UI lo avisa en un alert al final.
+2. `editar_oc` con `items` en el body **borra e re-inserta**: una lista vacía deja la orden sin
+   ítems.
+3. `ELIMINAR_OC` borra la orden y **revierte sus SOLs a pendientes** (no se pierden).
+
+Tests: `tests/test_rastro_oc.py` (en el gate). ⚠ `audit_log` es **append-only por trigger**
+(Part 11 §11.10(e)): un test que intente limpiarlo falla — cada caso usa su propio número.

@@ -200,6 +200,9 @@ CORAZON=(
   # SKU que el cron no habia procesado -- un producto NUEVO -- daba cero ventas teniendo ordenes
   # reales. Cero ventas = velocidad cero = el motor no lo programa. Estaba en 3 lugares.
   "tests/test_fastpath_no_cambia_la_respuesta.py"
+  # "Se me perdio una orden de compra" se contestaba con una teoria. El rastro lee audit_log y
+  # dice en una frase si existe, si la fusionaron (y con cual) o si la borraron (quien y cuando).
+  "tests/test_rastro_oc.py"
   # Calidad dispone CAJA POR CAJA: de 24 cajas pueden pasar 22 y venir 2 golpeadas. Fija que
   # el rotulo de cada caja diga la verdad (y que NO se renumeren las cajas fisicas al partir
   # el movimiento) + el escaneo del codigo de barras.

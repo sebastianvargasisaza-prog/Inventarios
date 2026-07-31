@@ -14553,3 +14553,118 @@ def admin_proveedores_dedup_nombre():
     return jsonify({'ok': True, 'nombre': nombre, 'keeper_id': keeper[0],
                     'dados_de_baja': ids_baja, 'n_baja': len(ids_baja),
                     'refs_movidas': contadores})
+
+
+# ══ RASTRO · ¿QUÉ PASÓ CON ESTA ORDEN? ═════════════════════════════════════════
+# Catalina, 31-jul: *"al hacer órdenes de compra se le perdió"*. Buscar eso a mano es
+# imposible: hay 30+ acciones distintas que tocan una OC y todas quedan en `audit_log`,
+# pero nadie tiene cómo leerlo. Sin esto, un "se perdió" se contesta con una teoría.
+#
+# Una OC puede desaparecer por razones LEGÍTIMAS -- la más común es la fusión por
+# proveedor (Sebastián 14-jul: "siempre una orden por proveedor"), que mueve los ítems a
+# otra orden y borra ésta. El rastro dice CUÁL fue, cuándo y quién, en una frase.
+
+_RASTRO_ACCIONES = {
+    'CREAR_OC': 'se creó la orden',
+    'CREAR_OC_BULK': 'se creó junto a otras desde solicitudes',
+    'EDITAR_OC': 'se editó',
+    'ELIMINAR_OC': '🗑️ SE ELIMINÓ la orden',
+    'FUSIONAR_OC_POR_PROVEEDOR': '🔗 SE FUSIONÓ con otra orden del mismo proveedor',
+    'CAMBIAR_PROVEEDOR_OC': 'se le cambió el proveedor',
+    'ACTUALIZAR_ESTADO_OC': 'cambió de estado',
+    'ACTUALIZAR_PRECIOS_OC': 'se actualizaron los precios',
+    'AGREGAR_ITEM_OC': 'se agregó un ítem',
+    'AUTORIZAR_OC': 'se autorizó',
+    'PAGAR_OC': 'se pagó',
+    'REVERTIR_PAGO_OC': 'se revirtió el pago',
+    'RECIBIR_OC': 'se recibió mercancía',
+    'ANULAR_RECEPCION': 'se anuló una recepción',
+    'CONSOLIDAR_AUTO_PENDIENTES': 'se consolidó automáticamente',
+    'FUSIONAR_PROVEEDORES': 'se fusionaron proveedores',
+}
+
+
+@bp.route('/api/compras/rastro', methods=['GET'])
+def compras_rastro():
+    """¿Qué pasó con esta orden (o solicitud)? Lee `audit_log` y lo cuenta en orden.
+
+    `?q=OC-2026-0231` · también acepta un número de SOL. Read-only.
+
+    Contesta la pregunta que hoy se contesta con una teoría: si la orden ya no está,
+    dice si la borraron, si se fusionó con otra (y con cuál), o si nunca existió.
+    """
+    usuario, err, code = _require_compras_session()
+    if err:
+        return err, code
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'error': 'pasá ?q=OC-2026-0231 (o el número de la solicitud)'}), 400
+    conn = get_db(); c = conn.cursor()
+    qu = q.upper()
+
+    # ¿existe HOY?
+    existe = None
+    try:
+        r = c.execute(
+            "SELECT numero_oc, COALESCE(proveedor,''), COALESCE(estado,''), "
+            "COALESCE(valor_total,0), COALESCE(fecha,''), COALESCE(creado_por,'') "
+            "FROM ordenes_compra WHERE UPPER(TRIM(numero_oc))=?", (qu,)).fetchone()
+        if r:
+            _n = c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=?",
+                           (r[0],)).fetchone()[0]
+            existe = {'numero_oc': r[0], 'proveedor': r[1], 'estado': r[2],
+                      'valor_total': float(r[3] or 0), 'fecha': r[4], 'creado_por': r[5],
+                      'items': int(_n or 0)}
+    except Exception as e:
+        return jsonify({'error': 'no se pudo consultar la orden', 'detalle': str(e)}), 500
+
+    # el rastro completo
+    eventos = []
+    try:
+        import json as _js
+        for acc, usr, fec, det, antes, desp, tabla in c.execute(
+                "SELECT COALESCE(accion,''), COALESCE(usuario,''), COALESCE(fecha,''), "
+                "COALESCE(detalle,''), COALESCE(antes,''), COALESCE(despues,''), "
+                "COALESCE(tabla,'') FROM audit_log "
+                "WHERE UPPER(COALESCE(registro_id,''))=? OR UPPER(COALESCE(detalle,'')) LIKE ? "
+                "ORDER BY fecha, id", (qu, '%' + qu + '%')).fetchall():
+            def _p(x):
+                try:
+                    return _js.loads(x) if x else {}
+                except Exception:
+                    return {}
+            eventos.append({
+                'fecha': str(fec)[:19], 'usuario': usr, 'accion': acc, 'tabla': tabla,
+                'que_paso': _RASTRO_ACCIONES.get(acc, acc.replace('_', ' ').lower()),
+                'detalle': det, 'antes': _p(antes), 'despues': _p(desp),
+            })
+    except Exception as e:
+        return jsonify({'error': 'no se pudo leer el rastro', 'detalle': str(e)}), 500
+
+    # el veredicto en una frase
+    _fus = [e for e in eventos if e['accion'] == 'FUSIONAR_OC_POR_PROVEEDOR']
+    _del = [e for e in eventos if e['accion'] == 'ELIMINAR_OC']
+    if existe:
+        verdicto = ('La orden EXISTE: %s · %s · %d ítem(s) · $%s.'
+                    % (existe['estado'], existe['proveedor'] or 'sin proveedor',
+                       existe['items'], format(int(existe['valor_total']), ',d')))
+        if existe['items'] == 0:
+            verdicto += (' ⚠ No tiene ítems: si los tenía, se perdieron al guardar una edición '
+                         'con la lista vacía.')
+    elif _fus:
+        _dst = (_fus[-1]['despues'] or {}).get('proveedor') or ''
+        _det = _fus[-1]['detalle'] or ''
+        verdicto = ('La orden NO existe porque **se fusionó con otra del mismo proveedor** '
+                    '(%s, el %s, por %s). Los ítems NO se perdieron: se movieron. %s'
+                    % (_det or 'ver detalle', _fus[-1]['fecha'][:16], _fus[-1]['usuario'], ''))
+    elif _del:
+        verdicto = ('La orden NO existe porque **la eliminaron** el %s (%s). %s'
+                    % (_del[-1]['fecha'][:16], _del[-1]['usuario'], _del[-1]['detalle'] or ''))
+    elif eventos:
+        verdicto = ('La orden no existe hoy y no hay un evento de borrado ni de fusión en el '
+                    'rastro. Mirá los eventos: puede haberse creado con otro número.')
+    else:
+        verdicto = ('No hay ni orden ni rastro con ese número. Revisá el número (o buscá la '
+                    'solicitud que la originó).')
+    return jsonify({'ok': True, 'q': q, 'existe': existe, 'eventos': eventos,
+                    'n_eventos': len(eventos), 'veredicto': verdicto})
