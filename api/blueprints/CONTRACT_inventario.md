@@ -815,6 +815,41 @@ gate). Los 6 casos que fijaban la regla vieja se actualizaron **con el motivo es
 rompieron, cambió la decisión (M97). Los nuevos fijan lo que ahora sostiene el control —
 `test_la_revision_de_calidad_NO_desaparece` y `test_lo_que_calidad_RECHAZA_sale_del_stock`.
 
+## 🔎 INV-18 · La consulta rápida: qué lote y DÓNDE está (30-jul)
+
+Sebastián, mirando "Verificar stock" antes de fabricar: *"aquí pienso que debería ser un punto de
+consulta rápida · como aquí dice si alcanza o no, debería salir el lote y la posición de la
+materia prima, así pueden ir consultando sin salirse de allí"*.
+
+- `POST /api/produccion/simular` devuelve por ingrediente `lotes` (los que el FEFO va a consumir,
+  con cantidad, vencimiento y **ubicación**) y `lotes_bloqueados` (los que existen en bodega pero
+  no se pueden tocar, con el motivo). Sale del helper canónico `_lotes_de_material` (INV-15), así
+  que dice lo MISMO que el aviso de faltante y que el descuento real.
+- La ubicación se lee de la **Entrada** del lote, que es donde se guarda al recepcionar.
+- `GET /api/alertas/all` → los lotes vencidos traen `ubicacion`: dar de baja 12 lotes sin saber
+  dónde están es recorrer la bodega buscando cada uno.
+
+## 🏷️ INV-19 · Lote INTERNO cuando el proveedor no manda lote (30-jul)
+
+Sebastián: *"es posible que no tengan lote · qué tal si ponés la opción de lote interno, y te
+inventás cómo serían para la trazabilidad"*.
+
+`POST /api/mee/recepcion-lineas` con el lote vacío genera **`INT-AAMMDD-NNN`**: fecha de recepción
+(el hecho que lo origina) + correlativo del día, extraído en Python (nunca `CAST(SUBSTR(...))` ·
+M45). Dos referencias del mismo contenedor **no comparten lote**: ante un reclamo, apunta a UNA
+recepción concreta y no a "lo que llegó ese día".
+
+El rótulo lo imprime marcado **"interno EOS (el proveedor no envió lote)"**. Si se confundiera con
+un lote del proveedor, mañana alguien le reclama a China por un número que EOS se inventó (M115:
+sin dato no se inventa un default que parezca real).
+
+**La cola de calificación de Calidad la decide QUIEN RECIBE** (`requiere_calificacion` en
+`/api/mee/crear-auto`, default NO): antes toda referencia nueva nacía `calificado=0` y la bandeja
+acumulaba material que nadie pidió revisar — una bandeja con 22 ítems que no hay que mirar deja de
+mirarse. La campana también se calló para los que no la requieren.
+
+Tests: `tests/test_consulta_rapida_planta.py` + `test_recepcion_envases_lineas.py` (en el gate).
+
 ## 🔐 Permiso del import masivo de envases (30-jul)
 
 `POST /api/mee/import-bulk` mutaba el maestro y el stock sin permiso de rol. Gate **proporcional**:
