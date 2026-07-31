@@ -218,7 +218,7 @@ def _proximo_dia_acond(desde_fecha):
     return f
 
 
-def _ventas_sku_map_orders(c, dias_max=200):
+def _ventas_sku_map_orders(c, dias_max=200, forzar_ordenes=False):
     """PERF 25-jun (M43) · construye {sku: {fecha: qty}} de animus_shopify_orders UNA sola vez por
     request (cacheado en flask.g) para NO re-consultar+re-parsear TODAS las órdenes por cada SKU/ventana
     (era O(productos×SKUs×ventanas×órdenes) = segundos en cada carga de Necesidades/calendario). Mismos
@@ -248,7 +248,11 @@ def _ventas_sku_map_orders(c, dias_max=200):
     # (el cron aún no corrió) cae al parse de órdenes de abajo. Mismos filtros ya aplicados por el cron.
     _usada_cache = False
     try:
-        _vd = c.execute("SELECT sku, fecha, cantidad FROM ventas_diarias WHERE fecha >= ?", (cutoff,)).fetchall()
+        # `forzar_ordenes` = el caller necesita la lista COMPLETA de SKUs vendidos (p.ej. detectar
+        # los que no están mapeados). Ahí el fast-path es directamente incorrecto: un SKU que el
+        # cron todavía no procesó no existiría para él, que es justo el que hay que detectar.
+        _vd = [] if forzar_ordenes else c.execute(
+            "SELECT sku, fecha, cantidad FROM ventas_diarias WHERE fecha >= ?", (cutoff,)).fetchall()
         if _vd:
             for _sk, _fe, _cant in _vd:
                 _sk = (_sk or '').strip().upper()
@@ -349,6 +353,44 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
             return sorted([(f, q) for f, q in _v.items() if f and f >= cutoff_str])
     except Exception:
         pass
+
+    # ⚠ El mapa de arriba sale de `ventas_diarias` (la tabla que precalcula el cron) y es
+    # TODO-O-NADA: si esa tabla tiene aunque sea una fila en la ventana, las órdenes NO se
+    # consultan. Entonces un SKU que el cron todavía no procesó -- uno NUEVO que empezó a
+    # vender hoy, o uno que el cron dejó afuera -- devolvía CERO ventas teniendo órdenes
+    # reales, y cero ventas es velocidad cero: el motor no lo programa (30-jul).
+    # Un fast-path puede acelerar la respuesta; no puede CAMBIARLA. Para el SKU que falta se
+    # consultan sus órdenes directo (consulta acotada a ese SKU · no re-parsea las 16k).
+    try:
+        _like = '%"' + _sku_u + '"%'
+        _rows = c.execute("""
+            SELECT date(creado_en), sku_items FROM animus_shopify_orders
+            WHERE date(creado_en) >= ? AND COALESCE(sku_items,'') != ''
+              AND UPPER(sku_items) LIKE ?
+              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+              AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')
+        """, (cutoff_str, _like)).fetchall()
+        _por_fecha = {}
+        for _fe, _js in _rows:
+            if not _fe or not _js:
+                continue
+            try:
+                _items = json.loads(_js) if isinstance(_js, str) else _js
+            except Exception:
+                continue
+            if not isinstance(_items, list):
+                continue
+            for _it in _items:
+                if (str(_it.get('sku') or _it.get('SKU') or '').strip().upper()) != _sku_u:
+                    continue
+                _cant = float(_it.get('cantidad') or _it.get('quantity') or _it.get('qty') or 0)
+                if _cant > 0:
+                    _por_fecha[_fe] = _por_fecha.get(_fe, 0.0) + _cant
+        if _por_fecha:
+            return sorted(_por_fecha.items())
+    except Exception as _evd:
+        logging.getLogger('auto_plan').warning(
+            'ventas directas de %s (fallback del fast-path): %s', _sku_u, _evd)
 
     # Estrategia 3: ordenes_shopify_items legacy
     try:

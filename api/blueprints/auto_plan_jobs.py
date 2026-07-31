@@ -4043,7 +4043,10 @@ def job_alerta_skus_sin_mapear(app):
             _lg.warning("job_alerta_skus_sin_mapear import fallo: %s", _e)
             return
         try:
-            ventas = _ventas_sku_map_orders(c, dias_max=90) or {}
+            # Este job existe para encontrar SKUs que NADIE mapeó: si leyera el precalculado
+            # del cron, un SKU nuevo (el caso que busca) sería invisible hasta que el cron lo
+            # procese -- y si el cron lo excluye, invisible para siempre (30-jul).
+            ventas = _ventas_sku_map_orders(c, dias_max=90, forzar_ordenes=True) or {}
         except Exception as _e:
             _lg.warning("job_alerta_skus_sin_mapear ventas fallo: %s", _e)
             return

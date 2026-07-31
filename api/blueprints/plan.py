@@ -4067,6 +4067,51 @@ def _ventas_maps_shopify(c, vd_base, vd_iso, cut30, cut90, b2b_sql_extra, b2b_pa
             _vd_ok = True
     except Exception:
         _vd_ok = False
+    # ⚠ El fast-path es TODO-O-NADA: si `ventas_diarias` tiene una fila, las órdenes NO se
+    # parsean. Un SKU que el cron todavía no procesó -- uno NUEVO que empezó a vender hoy --
+    # quedaba con velocidad CERO teniendo ventas reales, y con velocidad cero el motor no lo
+    # programa (30-jul · misma trampa en 3 sitios · M45). Se completan SOLO los que faltan:
+    # una consulta acotada por SKU, no el re-parseo de las 16k órdenes.
+    if _vd_ok:
+        try:
+            _conocidos = set()
+            for _r in c.execute("SELECT UPPER(TRIM(sku)) FROM sku_producto_map "
+                                "WHERE COALESCE(activo,1)=1 AND COALESCE(sku,'') != ''").fetchall():
+                if _r[0]:
+                    _conocidos.add(_r[0])
+            _faltan = [x for x in _conocidos if x not in v90 and x not in skus_regalo][:40]
+            for _sk in _faltan:
+                for _js, _cr in c.execute(
+                        "SELECT sku_items, creado_en FROM animus_shopify_orders "
+                        "WHERE creado_en >= ? AND COALESCE(sku_items,'') != '' "
+                        "AND UPPER(sku_items) LIKE ? "
+                        "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
+                        "AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')",
+                        (vd_base, '%"' + _sk + '"%')).fetchall():
+                    try:
+                        _its = _jVm.loads(_js) if isinstance(_js, str) else _js
+                    except Exception:
+                        continue
+                    if not isinstance(_its, list):
+                        continue
+                    _c10 = str(_cr or '')[:10]
+                    for _it in _its:
+                        if str(_it.get('sku') or _it.get('SKU') or '').strip().upper() != _sk:
+                            continue
+                        _q = float(_it.get('cantidad') or _it.get('quantity') or _it.get('qty') or 0)
+                        if _q <= 0:
+                            continue
+                        if _c10 >= vd_iso:
+                            v60[_sk] = v60.get(_sk, 0) + _q
+                        if _c10 >= cut30:
+                            v30[_sk] = v30.get(_sk, 0) + _q
+                        if _c10 >= cut90:
+                            v90[_sk] = v90.get(_sk, 0) + _q
+                            _p = pv.get(_sk)
+                            if _p is None or _c10 < _p:
+                                pv[_sk] = _c10
+        except Exception as _efb:
+            log.warning('completar SKUs fuera de ventas_diarias: %s', _efb)
     base_sql = ("SELECT sku_items, creado_en FROM animus_shopify_orders "
                 "WHERE creado_en >= ? AND sku_items IS NOT NULL AND sku_items != '' "
                 "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "

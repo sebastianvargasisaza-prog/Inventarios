@@ -195,6 +195,11 @@ CORAZON=(
   # nadie se entero: una bandeja vacia se ve igual que una bandeja al dia, y la queja de un
   # cliente es un registro regulado cuyo plazo corre igual.
   "tests/test_pqr_mudo.py"
+  # Un fast-path puede acelerar la respuesta; NO puede cambiarla. `ventas_diarias` (precalculada
+  # por cron) se leia TODO-O-NADA: con una sola fila, las ordenes no se consultaban nunca y un
+  # SKU que el cron no habia procesado -- un producto NUEVO -- daba cero ventas teniendo ordenes
+  # reales. Cero ventas = velocidad cero = el motor no lo programa. Estaba en 3 lugares.
+  "tests/test_fastpath_no_cambia_la_respuesta.py"
   # Calidad dispone CAJA POR CAJA: de 24 cajas pueden pasar 22 y venir 2 golpeadas. Fija que
   # el rotulo de cada caja diga la verdad (y que NO se renumeren las cajas fisicas al partir
   # el movimiento) + el escaneo del codigo de barras.

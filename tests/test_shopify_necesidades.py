@@ -14,16 +14,20 @@ def _exec(sql, params=()):
 
 
 def test_ventas_diarias_sku_case_insensitive(app, db_clean):
+    # El total se compara EXACTO, así que cualquier orden ajena cuyo SKU matchee (el match es
+    # case-insensitive) rompe el test. SKU propio + limpieza ANTES de sembrar (M103): en la
+    # suite completa el orden de los archivos no está garantizado.
+    _exec("DELETE FROM animus_shopify_orders WHERE UPPER(COALESCE(sku_items,'')) LIKE '%ZZCASE-30%'")
     # orden Shopify (no cancelada, pagada) con el SKU en MINÚSCULA
     _exec("INSERT INTO animus_shopify_orders (shopify_id, estado, estado_pago, sku_items, unidades_total, "
           "tags, customer_tags, creado_en) VALUES ('TCASE1','','paid',?,5,'','',datetime('now','-5 hours'))",
-          (json.dumps([{'sku': 'abc-30', 'qty': 5}]),))
+          (json.dumps([{'sku': 'zzcase-30', 'qty': 5}]),))
     with app.app_context():
         from database import get_db
         from blueprints.auto_plan import _ventas_diarias_por_sku
         c = get_db()
         # el motor del calendario busca el SKU en MAYÚSCULA → debe encontrar la venta (case-insensitive)
-        ventas = _ventas_diarias_por_sku(c, 'ABC-30', dias=30)
+        ventas = _ventas_diarias_por_sku(c, 'ZZCASE-30', dias=30)
     total = sum(q for _, q in ventas)
     assert total == 5, ('SKU case-insensitive falló · velocidad quedaría en 0', ventas)
 
@@ -66,6 +70,9 @@ def test_job_alerta_skus_sin_mapear(app, db_clean):
     _exec("INSERT INTO animus_shopify_orders (shopify_id, estado, estado_pago, sku_items, unidades_total, "
           "tags, customer_tags, creado_en) VALUES ('TALERT1','','paid',?,7,'','',datetime('now','-5 hours'))",
           (json.dumps([{'sku': 'NUEVO-SIN-MAPEAR-99', 'qty': 7}]),))
+    # El job puede dedupear por día: si otro archivo ya lo disparó en esta corrida, no crearía
+    # nada y el test mediría el estado que dejó el vecino, no su propio efecto (M102).
+    _exec("DELETE FROM notificaciones_app WHERE tipo='shopify_sku_sin_mapear'")
     from blueprints.auto_plan_jobs import job_alerta_skus_sin_mapear
     job_alerta_skus_sin_mapear(app)
     n = _q1("SELECT COUNT(*) FROM notificaciones_app WHERE destinatario='sebastian' "

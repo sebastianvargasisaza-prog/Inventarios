@@ -10863,7 +10863,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
                 '<div class="cd">'+_e(mid)+'</div></div>'
                 '<div class="hp'+(' falta' if _falto else '')+'">'
                 '<div class="lbl">'+('Faltan' if _falto else 'Pesar')+'</div>'
-                '<div class="vl">'+f"{peso:,.2f}"+'<span class="u"> g</span></div>'
+                '<div class="vl">'+f"{peso:,.2f} g"+'</div>'
                 + _sub_peso + '</div></div>')
         rhtml+='<table>'
         rhtml+='<tr><td class="k">Producto</td><td colspan="3"><b>'+_e(prod)+'</b> - '+str(cantidad_kg)+' kg</td></tr>'
