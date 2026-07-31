@@ -2509,10 +2509,29 @@ def job_quejas_plazos(app):
         from database import get_db
         conn = get_db(); c = conn.cursor()
         try:
-            sin_triar = c.execute("""
-                SELECT codigo, cliente_nombre, tipo_queja FROM quejas_clientes
-                WHERE estado='nueva'
+            # Sebastián 31-jul · 5 quejas por REACCIÓN ADVERSA llevaban 47 días en 'nueva' y esta
+            # alerta corría todos los días sin que nadie reaccionara. El motivo: la rama 🚨 sólo
+            # miraba quejas que alguien YA había empezado a trabajar (en_triaje/en_investigacion),
+            # así que la peor de todas -- una reacción adversa que NADIE tocó nunca -- salía como
+            # una línea más de "nuevas sin triar", sin 🚨 y sin marcar importante.
+            # Regla: la gravedad la da el TIPO de queja, no el avance de quien la atiende.
+            # ⚠ COALESCE en TODAS: `severidad` es nuleable, y `NOT (... OR severidad='critica')`
+            # con severidad NULL da NULL -> la fila se descarta en silencio (lógica de 3 valores).
+            # Sin esto, la rama de quejas COMUNES quedaba vacía y el aviso perdía la mitad.
+            _CRIT = ("(COALESCE(impacto_salud,0)=1 OR COALESCE(severidad,'')='critica' "
+                     "OR COALESCE(tipo_queja,'')='reaccion_adversa')")
+            sin_triar_criticas = c.execute(f"""
+                SELECT codigo, cliente_nombre, tipo_queja, fecha_recepcion FROM quejas_clientes
+                WHERE estado='nueva' AND {_CRIT}
                   AND date(fecha_recepcion) <= date('now', '-5 hours', '-1 day')
+                ORDER BY fecha_recepcion
+                LIMIT 30
+            """).fetchall()
+            sin_triar = c.execute(f"""
+                SELECT codigo, cliente_nombre, tipo_queja FROM quejas_clientes
+                WHERE estado='nueva' AND NOT {_CRIT}
+                  AND date(fecha_recepcion) <= date('now', '-5 hours', '-1 day')
+                ORDER BY fecha_recepcion
                 LIMIT 30
             """).fetchall()
             criticas_lentas = c.execute("""
@@ -2540,14 +2559,34 @@ def job_quejas_plazos(app):
             log.warning('quejas_plazos read fallo: %s', e)
             return False, {'error': str(e)[:200]}, 0
 
-        if not (sin_triar or criticas_lentas or sin_responder or sin_cerrar):
+        if not (sin_triar or sin_triar_criticas or criticas_lentas or sin_responder or sin_cerrar):
             return True, {'mensaje': 'Sin quejas en plazo vencido'}, 0
+
+        def _dias_desde(f):
+            """Días que lleva abierta · el aviso tiene que ENVEJECER a la vista.
+
+            Decir ">1d" el día 47 igual que el día 2 es lo que convierte una alerta diaria en
+            ruido: nada en el texto delata que la cosa se está pudriendo.
+            """
+            try:
+                from datetime import datetime as _dt, timedelta as _td
+                _hoy = (_dt.utcnow() - _td(hours=5)).date()
+                return max(0, (_hoy - _dt.fromisoformat(str(f)[:10]).date()).days)
+            except Exception:
+                return 0
 
         try:
             from blueprints.notif import push_notif_multi
             destinatarios = ['controlcalidad.espagiria','aseguramiento.espagiria',
                              'laura','sebastian']
             partes = []
+            if sin_triar_criticas:
+                _peor = _dias_desde(sin_triar_criticas[0][3])
+                partes.append(f'🚨 {len(sin_triar_criticas)} de SALUD sin que nadie las abra '
+                              f'· la más vieja lleva {_peor} días')
+                for r in sin_triar_criticas[:5]:
+                    partes.append(f'  · {r[0]}: {(r[1] or "")[:30]} · {r[2] or "?"} '
+                                  f'({_dias_desde(r[3])}d)')
             if sin_triar:
                 partes.append(f'⏰ {len(sin_triar)} nuevas sin triar (>1d)')
                 for r in sin_triar[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:30]} · {r[2] or "?"}')
@@ -2562,14 +2601,17 @@ def job_quejas_plazos(app):
                 for r in sin_cerrar[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:30]} · resp {r[2]}')
             push_notif_multi(
                 destinatarios, 'capa',
-                f'⚠ Quejas de cliente en plazo vencido (ASG-PRO-013)',
+                (f'🚨 {len(sin_triar_criticas)} queja(s) de SALUD sin abrir (ASG-PRO-013)'
+                 if sin_triar_criticas
+                 else '⚠ Quejas de cliente en plazo vencido (ASG-PRO-013)'),
                 body='\n'.join(partes),
                 link='/aseguramiento', remitente='cron-quejas',
-                importante=bool(criticas_lentas),
+                importante=bool(criticas_lentas or sin_triar_criticas),
             )
         except Exception as e:
             log.warning('quejas_plazos notif fallo: %s', e)
         return True, {
+            'sin_triar_criticas_1d': len(sin_triar_criticas),
             'sin_triar_1d': len(sin_triar),
             'criticas_lentas_2d': len(criticas_lentas),
             'sin_responder_7d': len(sin_responder),

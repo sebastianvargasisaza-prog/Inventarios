@@ -635,8 +635,18 @@ def test_cambiar_proveedor_fusiona_en_oc_existente(app, db_clean):
     _seed_oc('OC-T-AAA', 'PROV-ALFA', items=[{'codigo_mp': 'M1', 'nombre_mp': 'Uno', 'cantidad_g': 10, 'precio_unitario': 5}])
     _seed_oc('OC-T-BBB', 'PROV-BETA', items=[{'codigo_mp': 'M2', 'nombre_mp': 'Dos', 'cantidad_g': 20, 'precio_unitario': 3}])
     try:
+        # 31-jul · la fusión ahora PREGUNTA antes de borrar la orden (Catalina: "hice una OC y
+        # se me perdió"). Quien pide "cambiá el proveedor" no pidió "borrá la orden", así que
+        # el primer intento devuelve 409 con el número de la orden con la que se fusionaría.
+        # El test conserva sus dientes: verifica la fusión completa, ahora confirmada.
+        r0 = cs.post('/api/ordenes-compra/OC-T-AAA/cambiar-proveedor',
+                     json={'proveedor': 'PROV-BETA'}, headers=csrf_headers())
+        assert r0.status_code == 409, ('fusionó sin preguntar: %s' % r0.data[:200])
+        assert (r0.get_json() or {}).get('fusiona_con') == 'OC-T-BBB', r0.get_json()
+
         r = cs.post('/api/ordenes-compra/OC-T-AAA/cambiar-proveedor',
-                    json={'proveedor': 'PROV-BETA'}, headers=csrf_headers())
+                    json={'proveedor': 'PROV-BETA', 'confirmar_fusion': True},
+                    headers=csrf_headers())
         assert r.status_code == 200, r.data
         d = r.get_json()
         assert d.get('merged_into') == 'OC-T-BBB', d

@@ -1030,8 +1030,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <div class="total-row">Total: <span id="noc-tot">$0</span></div>
   </div>
   <div class="mf">
-    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--cx-text-soft);margin-right:auto;cursor:pointer" title="Autoriza la OC al crearla → va directo a Por Pagar (dentro de tu límite). Si el monto la excede, queda en Borrador para gerencia.">
-      <input type="checkbox" id="noc-autorizar" checked> Autorizar al crear (va directo a Por Pagar)
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--cx-text-soft);margin-right:auto;cursor:pointer" title="Autoriza la OC al crearla (dentro de tu límite · si el monto la excede queda en Borrador para gerencia). Al quedar Autorizada SALE de esta lista, que muestra sólo las que faltan por autorizar: la mercancía queda esperando en Recepción y los servicios/cuentas de cobro en Por Pagar.">
+      <input type="checkbox" id="noc-autorizar" checked> Autorizar al crear (sale de esta lista: mercancía espera en Recepción, servicios van a Por Pagar)
     </label>
     <button class="btn bo" onclick="closeModal('m-noc')">Cancelar</button>
     <button class="btn bp" id="noc-submit-btn" onclick="submitOC()">Crear OC</button>
@@ -1318,8 +1318,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     </div>
   </div>
   <div class="mf">
-    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--cx-text-soft);margin-right:auto;cursor:pointer" title="Si lo dejás marcado, la OC se autoriza al crearla y va directo a Por Pagar (dentro de tu límite). Si el monto la excede, queda en Borrador para que la apruebe gerencia.">
-      <input type="checkbox" id="noc-mp-autorizar" checked> Autorizar al crear (va directo a Por Pagar)
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--cx-text-soft);margin-right:auto;cursor:pointer" title="Si lo dejás marcado, la OC se autoriza al crearla (dentro de tu límite · si el monto la excede queda en Borrador para gerencia). Al quedar Autorizada SALE de esta lista y queda esperando en Recepción; pasa a Por Pagar cuando la materia prima llegue.">
+      <input type="checkbox" id="noc-mp-autorizar" checked> Autorizar al crear (queda esperando en Recepción)
     </label>
     <button class="btn bo" onclick="closeModal('m-noc-mp')">Cancelar</button>
     <button class="btn bp" onclick="crearOCMP()">&#x2713; Crear Orden de Compra</button>
@@ -3630,6 +3630,27 @@ function calcTot(){
     document.getElementById('noc-tot').textContent=fmt(tot);
   }
 }
+// Catalina 31-jul: "hice una OC y se me perdió". No se perdía: con "Autorizar al crear"
+// (marcado por defecto) la OC nace Autorizada, y la lista de OCs muestra a propósito sólo
+// Borrador/Revisada -> desaparecía de la pantalla donde la estaba buscando.
+//
+// Y el destino NO es el mismo para todo: Por Pagar trae Recibida/Parcial (mercancía que ya
+// llegó) y, de las Autorizadas, sólo las de PAGO DIRECTO. Una OC de materia prima autorizada
+// no está en ninguna de las dos listas: está esperando en Recepción. Por eso acá se decide
+// a dónde llevarla -- mandarla siempre a Por Pagar sería cambiar una lista vacía por otra.
+var _OC_PAGO_DIRECTO=['SVC','CC'];
+function _destinoOC(cat){
+  return _OC_PAGO_DIRECTO.indexOf(cat)>=0 ? 'por-pagar' : 'recepcion';
+}
+function _irADondeQuedo(cat){
+  try{
+    if(_destinoOC(cat)==='por-pagar'){
+      var _b=document.querySelector('[data-tab="por-pagar"]');
+      if(_b){ _b.click(); return; }
+    }
+    window.open('/recepcion','_blank');
+  }catch(e){}
+}
 async function submitOC(){
   var cat=document.getElementById('noc-cat').value;
   var _isCat=(cat==='MP'||cat==='MEE');
@@ -3697,11 +3718,17 @@ async function submitOC(){
     var _msg=(_ocMode==='edit'?'OC actualizada: '+_ocEditNum:'Creada: '+d.numero_oc);
     // 1-clic Catalina: autorizar al CREAR → va directo a Por Pagar (reusa el autorizar canónico).
     var _auto=document.getElementById('noc-autorizar');
+    var _aPorPagar=false;
     if(_ocMode!=='edit' && _auto && _auto.checked && d.numero_oc){
       try{
         var ra=await fetch('/api/ordenes-compra/'+encodeURIComponent(d.numero_oc)+'/autorizar',_fetchOpts('PATCH', {}));
         var da=await ra.json();
-        if(ra.ok && !da.error){ _msg='✓ OC '+d.numero_oc+' creada y enviada a Por Pagar'; }
+        if(ra.ok && !da.error){
+          _aPorPagar=true;
+          _msg=_destinoOC(cat)==='por-pagar'
+            ? '✓ OC '+d.numero_oc+' autorizada · quedó en 💰 Por Pagar'
+            : '✓ OC '+d.numero_oc+' autorizada · queda esperando en 📦 Recepción (pasa a Por Pagar cuando llegue)';
+        }
         else{ _msg='OC '+d.numero_oc+' creada · quedó en Borrador (no se autorizó: '+(da.error||'monto/permiso')+')'; }
       }catch(e){}
     }
@@ -3709,6 +3736,7 @@ async function submitOC(){
     await loadData();
     renderDash();
     alert(_msg);
+    if(_aPorPagar) _irADondeQuedo(cat);
   }catch(e){ alert('Error de conexion: '+e); }
 }
 var crearOC=submitOC;
@@ -4315,11 +4343,15 @@ async function crearOCMP(){
     // con su chequeo de límite + CAS · si excede el monto, queda en Borrador para gerencia).
     var _auto=document.getElementById('noc-mp-autorizar');
     var _msg='OC creada: '+d.numero_oc;
+    var _aPorPagar=false;
     if(_auto && _auto.checked && d.numero_oc){
       try{
         var ra=await fetch('/api/ordenes-compra/'+encodeURIComponent(d.numero_oc)+'/autorizar',_fetchOpts('PATCH', {}));
         var da=await ra.json();
-        if(ra.ok && !da.error){ _msg='✓ OC '+d.numero_oc+' creada y enviada a Por Pagar'; }
+        if(ra.ok && !da.error){
+          _aPorPagar=true;
+          _msg='✓ OC '+d.numero_oc+' autorizada · queda esperando en 📦 Recepción (pasa a Por Pagar cuando llegue)';
+        }
         else{ _msg='OC '+d.numero_oc+' creada · quedó en Borrador (no se autorizó: '+(da.error||'monto/permiso')+')'; }
       }catch(e){}
     }
@@ -4327,6 +4359,7 @@ async function crearOCMP(){
     await loadData();
     renderDash();
     alert(_msg);
+    if(_aPorPagar) _irADondeQuedo('MP');
   }catch(e){ alert('Error de conexion: '+e); }
 }
 

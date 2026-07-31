@@ -8646,9 +8646,16 @@ def pagos_kpis():
 # panel para pagar influencers y no debe aparecer en /compras.
 CATEGORIAS_PAGO_DIRECTO = (
     'Cuenta de Cobro',
+    'CC',            # ← el CÓDIGO que escribe el modal de Nueva OC (píldora "Cta. Cobro")
     'Servicio',
     'SVC',
 )
+# Sebastián 31-jul · faltaba 'CC' y por eso una cuenta de cobro autorizada quedaba SIN SALIDA:
+# no entraba a Por Pagar (que sólo trae Recibida/Parcial + pago directo Autorizada) y, al no ser
+# reconocida como pago directo, tampoco se bloqueaba su "recepción" -- pero nadie recibe una
+# cuenta de cobro, así que nunca llegaba a Recibida. Invisible hasta buscarla por número.
+# El vocabulario ya estaba enumerado con 'CC' en los otros 4 sitios (autorizar, feed, 3 fuentes);
+# esta constante era la única que se lo perdía (M45: un vocabulario vive en varios lugares).
 
 # ── CONSUMOS / Gastos Generales (Sebastián 23-jun-2026) ──────────────────────
 # Todo lo que la empresa CONSUME y NO es materia prima ni material de empaque:

@@ -145,6 +145,54 @@ def test_editar_con_items_de_verdad_SIGUE_funcionando(app, db_clean):
     assert int(n) == 1
 
 
+def test_autorizada_de_MERCANCIA_queda_visible_en_RECEPCION(app, db_clean):
+    """Lo que le pasó a Catalina con la 0299 (31-jul).
+
+    Al crear una OC el checkbox "Autorizar al crear" viene marcado, así que la orden nace
+    **Autorizada**. Y la lista de OCs muestra a propósito sólo las que faltan por autorizar
+    (Borrador/Revisada), así que la orden desaparece de la pantalla donde se la acaba de crear.
+
+    Eso está bien SIEMPRE QUE siga visible en algún lado. Para mercancía ese lado NO es Por
+    Pagar (que trae Recibida/Parcial): es **Recepción**, esperando que llegue. Si un día alguien
+    cambia ese filtro, la orden se vuelve invisible en las tres pantallas y el "se me perdió"
+    vuelve -- por eso el test mira el destino real, no el mensaje.
+    """
+    _crear_oc(OC, 'ZZ Proveedor')
+    _sql("UPDATE ordenes_compra SET estado='Autorizada' WHERE numero_oc=?", (OC,))
+    cli = _login(app, 'catalina')
+
+    r = cli.get('/api/recepcion/seguimiento')
+    assert r.status_code == 200, r.data[:200]
+    fila = [o for o in (r.get_json() or []) if o.get('numero_oc') == OC]
+    assert fila, 'la OC autorizada de mercancía no aparece en Recepción: quedó invisible'
+    assert fila[0].get('en_transito') is True, fila[0]
+
+    # y NO se cuela en Por Pagar antes de llegar (ahí se paga lo que ya se recibió)
+    r2 = cli.get('/api/compras/por-pagar')
+    assert r2.status_code == 200
+    _pp = (r2.get_json() or {})
+    _nums = [x.get('numero_oc') for x in (_pp.get('items') or _pp.get('ocs') or [])]
+    assert OC not in _nums, 'mercancía sin recibir no debería estar en Por Pagar'
+
+
+def test_una_CUENTA_DE_COBRO_autorizada_SI_llega_a_por_pagar(app, db_clean):
+    """La misma trampa, pero sin salida: una cuenta de cobro no se "recibe" nunca.
+
+    El modal guarda la categoría con el código `CC`, y `CATEGORIAS_PAGO_DIRECTO` enumeraba
+    'Cuenta de Cobro' pero no 'CC' -- así que la orden no entraba a Por Pagar y tampoco podía
+    pasar a Recibida: quedaba invisible para siempre.
+    """
+    _crear_oc(OC2, 'ZZ Beneficiario', con_items=False)
+    _sql("UPDATE ordenes_compra SET estado='Autorizada', categoria='CC' WHERE numero_oc=?", (OC2,))
+    r = _login(app, 'catalina').get('/api/compras/por-pagar')
+    assert r.status_code == 200, r.data[:200]
+    _pp = r.get_json() or {}
+    _items = _pp.get('items') or _pp.get('ocs') or []
+    fila = [x for x in _items if x.get('numero_oc') == OC2]
+    assert fila, 'la cuenta de cobro autorizada no llegó a Por Pagar (queda sin salida)'
+    assert fila[0].get('pago_directo') is True, fila[0]
+
+
 def test_fusionar_dos_ordenes_PREGUNTA_antes_de_borrar(app, db_clean):
     """Cambiar el proveedor puede FUSIONAR y borrar esta orden (decisión de Sebastián 14-jul).
     Quien pidió "cambiá el proveedor" no pidió "borrá la orden": se confirma antes."""

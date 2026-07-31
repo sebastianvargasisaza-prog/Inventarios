@@ -159,3 +159,59 @@ def test_un_PQR_que_no_se_pudo_registrar_avisa_YA(app, db_clean):
         'el error no dice qué arreglar · así se perdieron seis semanas: %r' % j)
     fila = _sql("SELECT valor FROM app_settings WHERE clave='pqr_aviso_fallo'")
     assert fila, 'no dejó registro de que avisó'
+
+
+# ══ la queja GRAVE que nadie abrió (31-jul) ════════════════════════════════════
+#
+# Sebastián abrió Aseguramiento y había 5 quejas por REACCIÓN ADVERSA en estado 'nueva',
+# de hace 47 días. El vigía de plazos corría todos los días desde entonces... y las
+# reportaba como "⏰ 5 nuevas sin triar (>1d)", igual que una queja por el empaque.
+#
+# El motivo: la rama 🚨 CRÍTICAS sólo miraba quejas que alguien YA había empezado a
+# trabajar (en_triaje / en_investigacion). La peor de todas -- una reacción adversa que
+# NADIE tocó nunca -- se quedaba fuera. La gravedad la da el TIPO de queja, no el avance
+# de quien la atiende.
+
+def _limpiar_quejas():
+    _sql("DELETE FROM quejas_clientes WHERE codigo LIKE 'ZZQ-%'")
+
+
+def _sembrar_queja(codigo, tipo, dias, estado='nueva', impacto=0):
+    f = (date.today() - timedelta(days=dias)).isoformat()
+    _sql("INSERT INTO quejas_clientes (codigo, cliente_nombre, tipo_queja, estado, "
+         "impacto_salud, fecha_recepcion, descripcion, recibido_por, canal) "
+         "VALUES (?,?,?,?,?,?,?,?,?)",
+         (codigo, 'ZZ Cliente', tipo, estado, impacto, f, 'ZZ prueba', 'zztest', 'whatsapp'))
+
+
+def _correr_plazos(app):
+    from blueprints.auto_plan_jobs import job_quejas_plazos
+    return job_quejas_plazos(app)
+
+
+def test_una_REACCION_ADVERSA_sin_abrir_es_critica_desde_el_dia_1(app, db_clean):
+    _limpiar_quejas()
+    _sembrar_queja('ZZQ-RA', 'reaccion_adversa', dias=47)
+    _sembrar_queja('ZZQ-EMP', 'envase_empaque', dias=47)
+    try:
+        ok, data, _ = _correr_plazos(app)
+        assert ok, data
+        assert data.get('sin_triar_criticas_1d') == 1, (
+            'la reacción adversa sin abrir no se contó como crítica: %r' % data)
+        assert data.get('sin_triar_1d') == 1, (
+            'la queja de empaque debe seguir en la lista normal: %r' % data)
+    finally:
+        _limpiar_quejas()
+
+
+def test_una_queja_comun_NO_escala_a_critica(app, db_clean):
+    """Dientes del otro lado: si todo escala, nada escala."""
+    _limpiar_quejas()
+    _sembrar_queja('ZZQ-EMP2', 'envase_empaque', dias=10)
+    try:
+        ok, data, _ = _correr_plazos(app)
+        assert ok, data
+        assert data.get('sin_triar_criticas_1d') == 0, data
+        assert data.get('sin_triar_1d') == 1, data
+    finally:
+        _limpiar_quejas()
