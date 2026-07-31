@@ -1390,6 +1390,24 @@ def editar_oc(numero_oc):
              fecha_entrega_est, con_iva, valor_sin_iva, numero_oc))
         # Si vinieron items, reemplazar completo y recalcular valor_total con IVA
         if 'items' in d:
+            # ⚠ GUARD (31-jul · Catalina: "se me perdió una orden"): este bloque BORRA todos los
+            # ítems y los re-inserta. Si la pantalla manda la lista VACÍA -- por un error de JS,
+            # una carga a medias o un doble submit -- la orden queda existiendo con cero ítems y
+            # en cero pesos, sin que nadie lo note. Vaciar una orden nunca es el objetivo de
+            # "guardar cambios": si de verdad hay que dejarla sin ítems, se elimina la orden.
+            if not (d.get('items') or []):
+                _tiene = c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=?",
+                                   (numero_oc,)).fetchone()[0] or 0
+                if _tiene:
+                    conn.rollback()
+                    return jsonify({
+                        'error': 'La edición llegó SIN ítems y la orden tiene %d · no se borran '
+                                 'todos por una lista vacía' % _tiene,
+                        'codigo': 'ITEMS_VACIOS',
+                        'que_hacer': ('Si querés dejar la orden sin ítems, eliminá la orden. Si '
+                                      'esto salió sin que lo pidieras, recargá la pantalla: se '
+                                      'perdió lo que tenías cargado antes de guardar.'),
+                    }), 409
             c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
             valor_total = 0.0
             for it in (d.get('items') or []):
@@ -1507,6 +1525,22 @@ def cambiar_proveedor_oc(numero_oc):
         (nuevo, numero_oc, categoria)).fetchone()
     if dest:
         dest_oc = dest[0]; dest_civ = int(dest[1] or 0)
+        # AVISAR ANTES, no después (31-jul · "se me perdió la orden"): fusionar BORRA esta orden,
+        # y hasta hoy sólo se enteraba al final, en un alert que se cierra sin leer. Quien pidió
+        # "cambiá el proveedor" no pidió "borrá esta orden": son dos cosas distintas y la segunda
+        # no se hace sin confirmar. El front reenvía con `confirmar_fusion: true`.
+        if not d.get('confirmar_fusion'):
+            _n_it = c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=?",
+                              (numero_oc,)).fetchone()[0] or 0
+            return jsonify({
+                'requiere_confirmacion': True,
+                'codigo': 'FUSION_CONFIRMAR',
+                'fusiona_con': dest_oc,
+                'mensaje': ('%s ya tiene la orden %s abierta. Si seguís, los %d ítem(s) de %s se '
+                            'mueven allá y ESTA orden desaparece (queda una sola por proveedor). '
+                            'Los ítems no se pierden.'
+                            % (nuevo, dest_oc, _n_it, numero_oc)),
+            }), 409
         c.execute("UPDATE ordenes_compra_items SET numero_oc=? WHERE numero_oc=?", (dest_oc, numero_oc))
         c.execute("UPDATE solicitudes_compra SET numero_oc=? WHERE numero_oc=?", (dest_oc, numero_oc))
         sub = c.execute("SELECT COALESCE(SUM(subtotal),0) FROM ordenes_compra_items WHERE numero_oc=?",

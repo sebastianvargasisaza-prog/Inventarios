@@ -251,3 +251,37 @@ def test_el_import_no_borra_lo_que_no_viene_en_el_archivo(app, db_clean):
     assert COD in (p.get('detalle_sobran') or []), (
         'no avisó que un activo del libro no viene en el archivo: %r' % p)
     assert _mio(_libro(app)) is not None, 'el preview borró algo'
+
+
+# ══ recepción de activos que NO son equipos (31-jul) ════════════════════════════
+
+def test_un_activo_que_no_es_equipo_entra_por_recepcion(app, db_clean):
+    """*"Todo lo que llegue se debe recepcionar"*. Tenían puerta la MP, los envases, los
+    consumibles y los equipos. Un computador o una silla no son equipos de planta: sólo entraban
+    al libro por el Excel, así que el valor de la empresa quedaba viejo hasta la próxima carga."""
+    _sql("DELETE FROM activos WHERE nombre LIKE 'ZZTEST portatil%'")
+    r = _login(app, 'catalina').post('/api/recepcion/activos', headers=_h(), json={
+        'nombre': 'ZZTEST portatil HP', 'tipo_prefijo': 'LT', 'empresa': 'ANIMUS',
+        'ubicacion': 'Administrativa', 'responsable': 'Daniela', 'proveedor': 'ZZ Tienda',
+        'factura': 'FV-555', 'valor_cop': 2800000, 'fecha_ingreso': '2026-07-31'})
+    assert r.status_code == 201, r.data[:400]
+    cod = r.get_json()['codigos'][0]
+    assert cod.startswith('ANM-LT-'), ('el código no sigue la convención del Excel: %s' % cod)
+    x = next((i for i in _libro(app)['items'] if i['codigo'] == cod), None)
+    assert x is not None, 'no entró al libro'
+    assert x['valor_en_libros'] == 2800000 and x['factura'] == 'FV-555', x
+    assert x['origen'] == 'recepcion'
+
+
+def test_la_puerta_de_activos_es_la_misma_que_la_de_equipos(app, db_clean):
+    """Con dientes: un operario de planta no da de alta activos."""
+    r = _login(app, 'mayerlin').post('/api/recepcion/activos', headers=_h(),
+                                     json={'nombre': 'ZZTEST silla'})
+    assert r.status_code == 403, r.data[:300]
+
+
+def test_la_pestana_de_activos_vive_dentro_de_recepcion(app, db_clean):
+    body = _login(app).get('/recepcion').data.decode('utf-8', 'replace')
+    assert 'rt-btn-act' in body and 'id="rt-act"' in body, 'no quedó la pestaña'
+    assert '__PANEL_ACTIVOS__' not in body, 'el placeholder no se reemplazó'
+    assert body.count('function actvGuardar(') == 1, 'función duplicada o ausente'

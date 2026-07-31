@@ -102,3 +102,68 @@ def test_un_numero_que_nunca_existio_lo_dice_sin_inventar(app, db_clean):
     j = _rastro(app, 'OC-NO-EXISTE-999')
     assert j['existe'] is None and j['n_eventos'] == 0
     assert 'ni orden ni rastro' in j['veredicto'], j['veredicto']
+
+
+# ══ que no se pierda una orden sin que nadie lo pida (31-jul) ═══════════════════
+
+def _crear_oc(num, prov, con_items=True):
+    _sql("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (num,))
+    _sql("DELETE FROM ordenes_compra WHERE numero_oc=?", (num,))
+    _sql("INSERT INTO ordenes_compra (numero_oc, proveedor, estado, categoria, valor_total, fecha) "
+         "VALUES (?,?,'Borrador','Materia Prima',119000,'2026-07-31')", (num, prov))
+    if con_items:
+        _sql("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g, "
+             "precio_unitario, subtotal) VALUES (?,?,?,1000,100,100000)",
+             (num, 'MP-ZZ', 'ZZ material'))
+
+
+def test_una_lista_de_items_VACIA_no_borra_los_que_hay(app, db_clean):
+    """El otro modo de perder una orden: sigue existiendo pero queda en cero. Este bloque borra
+    e re-inserta, así que una lista vacía -- por un error de JS, una carga a medias o un doble
+    submit -- la dejaba sin nada. Vaciar una orden nunca es el objetivo de "guardar cambios"."""
+    _crear_oc(OC, 'ZZ Proveedor')
+    r = _login(app, 'catalina').patch(
+        '/api/ordenes-compra/%s/editar' % OC,
+        headers={'Content-Type': 'application/json', **csrf_headers()},
+        json={'items': []})
+    assert r.status_code == 409, ('borró los ítems por una lista vacía: %s' % r.data[:300])
+    assert (r.get_json() or {}).get('codigo') == 'ITEMS_VACIOS', r.get_json()
+    n = _sql("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=?", (OC,))[0][0]
+    assert int(n) == 1, 'los ítems se borraron igual'
+
+
+def test_editar_con_items_de_verdad_SIGUE_funcionando(app, db_clean):
+    """Dientes del otro lado: el guard no puede trabar la edición normal."""
+    _crear_oc(OC, 'ZZ Proveedor')
+    r = _login(app, 'catalina').patch(
+        '/api/ordenes-compra/%s/editar' % OC,
+        headers={'Content-Type': 'application/json', **csrf_headers()},
+        json={'items': [{'codigo_mp': 'MP-ZZ', 'nombre_mp': 'ZZ material',
+                         'cantidad_g': 2000, 'precio_unitario': 50}]})
+    assert r.status_code in (200, 201), r.data[:300]
+    n = _sql("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=?", (OC,))[0][0]
+    assert int(n) == 1
+
+
+def test_fusionar_dos_ordenes_PREGUNTA_antes_de_borrar(app, db_clean):
+    """Cambiar el proveedor puede FUSIONAR y borrar esta orden (decisión de Sebastián 14-jul).
+    Quien pidió "cambiá el proveedor" no pidió "borrá la orden": se confirma antes."""
+    _crear_oc(OC, 'ZZ Proveedor A')
+    _crear_oc(OC2, 'ZZ Proveedor B')
+    cli = _login(app, 'catalina')
+    r = cli.post('/api/ordenes-compra/%s/cambiar-proveedor' % OC,
+                 headers={'Content-Type': 'application/json', **csrf_headers()},
+                 json={'proveedor': 'ZZ Proveedor B'})
+    assert r.status_code == 409, ('fusionó sin preguntar: %s' % r.data[:300])
+    j = r.get_json()
+    assert j.get('requiere_confirmacion') and j.get('fusiona_con') == OC2, j
+    assert _sql("SELECT COUNT(*) FROM ordenes_compra WHERE numero_oc=?", (OC,))[0][0] == 1, (
+        'borró la orden antes de que nadie confirmara')
+    # con la confirmación explícita, sí fusiona
+    r2 = cli.post('/api/ordenes-compra/%s/cambiar-proveedor' % OC,
+                  headers={'Content-Type': 'application/json', **csrf_headers()},
+                  json={'proveedor': 'ZZ Proveedor B', 'confirmar_fusion': True})
+    assert r2.status_code == 200, r2.data[:300]
+    assert (r2.get_json() or {}).get('merged_into') == OC2, r2.get_json()
+    assert _sql("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=?", (OC2,))[0][0] >= 2, (
+        'los ítems no llegaron a la orden destino')

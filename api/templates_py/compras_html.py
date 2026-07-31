@@ -8184,6 +8184,18 @@ async function saveConsolEdits(idx){
       try{
         var rp = await fetch('/api/ordenes-compra/'+encodeURIComponent(pOcNum)+'/cambiar-proveedor', _fetchOpts('POST', {proveedor:newProv}));
         var dp = await rp.json().catch(function(){return{};});
+        // Fusionar BORRA esta orden: se pregunta ANTES. Quien pidió cambiar el proveedor no
+        // pidió borrar la orden (31-jul · "se me perdió la orden 0299").
+        if(rp.status===409 && dp.requiere_confirmacion){
+          if(confirm(dp.mensaje+' ¿Seguimos?')){
+            rp = await fetch('/api/ordenes-compra/'+encodeURIComponent(pOcNum)+'/cambiar-proveedor',
+                             _fetchOpts('POST', {proveedor:newProv, confirmar_fusion:true}));
+            dp = await rp.json().catch(function(){return{};});
+          } else {
+            mergedInfo = 'Se dejó la orden '+pOcNum+' como estaba (no se fusionó).';
+            continue;
+          }
+        }
         if(!rp.ok){ errors.push(pOcNum+' proveedor: '+(dp.error||rp.status)); }
         else if(dp.merged_into){ mergedInfo = '🔗 Se juntó con la orden '+dp.merged_into+' (mismo proveedor).'; }
       }catch(e){ errors.push(pOcNum+' proveedor: '+e.message); }

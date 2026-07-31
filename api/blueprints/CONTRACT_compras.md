@@ -418,3 +418,34 @@ viven como "se perdió"):
 
 Tests: `tests/test_rastro_oc.py` (en el gate). ⚠ `audit_log` es **append-only por trigger**
 (Part 11 §11.10(e)): un test que intente limpiarlo falla — cada caso usa su propio número.
+
+
+## 🛡️ INV-13 · Una orden no se vacía ni desaparece sin que alguien lo pida (31-jul)
+
+Del caso de Catalina ("se me perdió la orden 0299") salieron dos guards. Ninguno cambia lo que el
+sistema hace bien; los dos evitan que lo haga **sin que nadie lo haya pedido**:
+
+- **`editar_oc` con `items: []` ya no borra los ítems que hay** → 409 `ITEMS_VACIOS`. El bloque
+  borra-y-re-inserta, así que una lista vacía (error de JS, carga a medias, doble submit) dejaba
+  la orden existiendo con cero ítems y en cero pesos, y nadie lo notaba. **Vaciar una orden nunca
+  es el objetivo de "guardar cambios"**: si de verdad hay que dejarla sin ítems, se elimina.
+- **`cambiar-proveedor` PREGUNTA antes de fusionar** → 409 `FUSION_CONFIRMAR` con el número de la
+  orden destino y cuántos ítems se mueven; el front reenvía con `confirmar_fusion: true`. La
+  fusión sigue siendo la regla (Sebastián 14-jul: una orden por proveedor), pero **quien pidió
+  "cambiá el proveedor" no pidió "borrá esta orden"**: son dos actos y el segundo se confirma.
+  Antes se enteraba después, en un alert que se cierra sin leer.
+
+Tests: `tests/test_rastro_oc.py` (en el gate · incluye los dientes del otro lado: la edición
+normal con ítems sigue funcionando y la fusión confirmada sí mueve todo).
+
+## 📦 INV-14 · Recepción de OTROS ACTIVOS (31-jul)
+
+*"Todo lo que llegue se debe recepcionar"*. Tenían puerta la MP, los envases, los consumibles y
+los equipos; un computador, una silla o un archivador **no son equipos de planta** y sólo entraban
+al libro por el Excel — o sea que el valor de la empresa quedaba viejo hasta la próxima carga.
+
+`POST /api/recepcion/activos` (misma puerta que equipos: `COMPRAS_ACCESS ∪ {luz} ∪ ADMIN`) crea la
+fila en `activos` con `origen='recepcion'`, código siguiendo la convención del Excel maestro
+(`ANM-LT-003`, `ESP-SIL-012` · correlativo extraído en Python, nunca `CAST(SUBSTR)` · M45). **No
+lleva calificación** (una silla no se califica) y suma al valor en libros desde que se registra.
+Pestaña "Otros activos" dentro de `/recepcion` (M120).

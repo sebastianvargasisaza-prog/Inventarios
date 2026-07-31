@@ -32,6 +32,7 @@ from templates_py.compras_html import COMPRAS_HTML
 from templates_py.recepcion_html import RECEPCION_HTML
 from templates_py.recepcion_envases_panel import PANEL_ENVASES_HTML
 from templates_py.recepcion_equipos_panel import PANEL_EQUIPOS_HTML
+from templates_py.recepcion_activos_panel import PANEL_ACTIVOS_HTML
 from templates_py.salida_html import SALIDA_HTML
 from templates_py.solicitudes_html import SOLICITUDES_HTML
 from templates_py.dashboard_html import DASHBOARD_HTML
@@ -59,6 +60,8 @@ def recepcion_panel():
     assert '__PANEL_EQUIPOS__' in _html_out, \
         'RECEPCION_HTML perdió el placeholder __PANEL_EQUIPOS__ · la pestaña de equipos quedaría muerta'
     _html_out = _html_out.replace('__PANEL_EQUIPOS__', PANEL_EQUIPOS_HTML)
+    assert '__PANEL_ACTIVOS__' in _html_out,         'RECEPCION_HTML perdió el placeholder __PANEL_ACTIVOS__ · la pestaña quedaría muerta'
+    _html_out = _html_out.replace('__PANEL_ACTIVOS__', PANEL_ACTIVOS_HTML)
     return Response(_html_out, mimetype='text/html')
 
 @bp.route('/api/recepcion/detalle/<numero_oc>')
@@ -663,3 +666,137 @@ def recepcion_trazabilidad_lote(lote):
 
 # ─── Recursos Humanos ────────────────────────────────────────────────────────
 
+
+# ══ Recepción de OTROS ACTIVOS (no equipos) ════════════════════════════════════
+# Sebastián: *"todo lo que llegue se debe recepcionar"*. Tenían puerta la materia prima, los
+# envases, los consumibles y los EQUIPOS. Un computador, una silla o un archivador no son
+# equipos de planta: hasta hoy sólo entraban al libro por el Excel, o sea que si mañana llega
+# un portátil no hay dónde recibirlo y el libro queda viejo hasta la próxima carga manual.
+#
+# Va como pestaña de /recepcion, igual que todo lo que llega (M120).
+
+# Prefijo del código por tipo · sale de los códigos que YA usa el Excel maestro
+# (ANM-ARC-001, ANM-PC-002, ESP-SIL-004…), no de una nomenclatura inventada (M115).
+_ACTIVO_TIPOS = [
+    ('PC', 'Computador de escritorio'), ('LT', 'Portátil'), ('MON', 'Monitor'),
+    ('IMP', 'Impresora'), ('CEL', 'Celular'), ('TAB', 'Tablet'),
+    ('SIL', 'Silla'), ('MES', 'Mesa / escritorio'), ('ARC', 'Archivador'),
+    ('EST', 'Estantería'), ('AIR', 'Aire acondicionado'), ('NEV', 'Nevera'),
+    ('CAM', 'Cámara / foto'), ('HER', 'Herramienta'), ('OTR', 'Otro activo'),
+]
+_ACTIVO_PREFIJOS = {p for p, _ in _ACTIVO_TIPOS}
+
+
+def _siguiente_codigo_activo(c, empresa, prefijo, ocupados=None):
+    """`ANM-PC-003` / `ESP-SIL-012` · continúa la numeración que ya existe en el libro.
+
+    El correlativo se extrae en PYTHON: un `CAST(SUBSTR(...))` revienta en PostgreSQL en cuanto
+    un código traiga un sufijo no numérico (M45).
+    """
+    import re as _re_a
+    emp = 'ANM' if str(empresa or '').strip().upper().startswith(('ANM', 'ÁNIMUS', 'ANIMUS')) else 'ESP'
+    base = '%s-%s-' % (emp, prefijo)
+    pat = _re_a.compile(r'^' + _re_a.escape(base) + r'(\d+)$')
+    mx = 0
+    try:
+        for (cod,) in c.execute("SELECT codigo FROM activos").fetchall():
+            m = pat.match(str(cod or '').strip().upper())
+            if m:
+                mx = max(mx, int(m.group(1)))
+    except Exception as e:
+        __import__('logging').getLogger('despachos').warning('numeración de activos: %s', e)
+    for extra in ocupados or ():
+        m = pat.match(str(extra or '').strip().upper())
+        if m:
+            mx = max(mx, int(m.group(1)))
+    return base + '%03d' % (mx + 1)
+
+
+@bp.route('/api/recepcion/activos', methods=['GET'])
+def recepcion_activos_listar():
+    """Lo recibido últimamente por esta puerta + el vocabulario de tipos."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    items = []
+    try:
+        for r in c.execute(
+            "SELECT codigo, nombre, COALESCE(tipo_bien,''), COALESCE(empresa,''), "
+            "COALESCE(ubicacion,''), COALESCE(responsable,''), COALESCE(costo_cop,0), "
+            "COALESCE(factura,''), COALESCE(fecha_ingreso,''), COALESCE(estado,'') "
+            "FROM activos WHERE origen='recepcion' AND COALESCE(equipo_codigo,'')='' "
+            "ORDER BY id DESC LIMIT 50").fetchall():
+            items.append({'codigo': r[0], 'nombre': r[1], 'tipo_bien': r[2], 'empresa': r[3],
+                          'ubicacion': r[4], 'responsable': r[5], 'valor_cop': float(r[6] or 0),
+                          'factura': r[7], 'fecha_ingreso': r[8], 'estado': r[9]})
+    except Exception as e:
+        return jsonify({'error': 'no se pudo leer', 'detalle': str(e)}), 500
+    return jsonify({'ok': True, 'items': items,
+                    'tipos': [{'prefijo': p, 'nombre': n} for p, n in _ACTIVO_TIPOS],
+                    'hoy': _hoy_col_iso(),
+                    'puede_registrar': session.get('compras_user', '') in (
+                        set(COMPRAS_ACCESS) | {'luz'} | set(ADMIN_USERS))})
+
+
+@bp.route('/api/recepcion/activos', methods=['POST'])
+def recepcion_activos_registrar():
+    """Registra la llegada de 1..N activos que NO son equipos de planta.
+
+    Entra directo al libro (no lleva calificación: una silla no se califica). Lo que sostiene
+    su valor es la FACTURA, así que se pide junto con el resto.
+    """
+    _u, _err, _code = _require_recepcion_equipos()      # misma puerta: Compras, Luz o admin
+    if _err:
+        return _err, _code
+    d = request.get_json(silent=True) or {}
+    nombre = str(d.get('nombre') or '').strip()
+    if not nombre:
+        return jsonify({'error': 'El nombre del activo es obligatorio'}), 400
+    prefijo = str(d.get('tipo_prefijo') or 'OTR').strip().upper()
+    if prefijo not in _ACTIVO_PREFIJOS:
+        prefijo = 'OTR'
+    try:
+        cantidad = int(d.get('cantidad') or 1)
+    except (TypeError, ValueError):
+        cantidad = 1
+    if cantidad < 1 or cantidad > 50:
+        return jsonify({'error': 'La cantidad debe estar entre 1 y 50'}), 400
+    try:
+        valor = float(d.get('valor_cop') or 0)
+    except (TypeError, ValueError):
+        valor = 0.0
+    empresa = str(d.get('empresa') or '').strip().upper()
+    fecha_ing = str(d.get('fecha_ingreso') or '').strip()[:10] or _hoy_col_iso()
+    ahora = datetime.utcnow().replace(microsecond=0).isoformat()
+    conn = get_db(); c = conn.cursor()
+    creados = []
+    try:
+        for _ in range(cantidad):
+            cod = _siguiente_codigo_activo(c, empresa, prefijo, ocupados=creados)
+            c.execute(
+                """INSERT INTO activos (codigo, empresa, nombre, tipo_bien, categoria_contable,
+                     ubicacion, responsable, cantidad, estado, costo_cop, fecha_ingreso,
+                     factura, proveedor, origen, notas, actualizado_en)
+                   VALUES (?,?,?,?,?,?,?,1,'En uso',?,?,?,?, 'recepcion', ?, ?)""",
+                (cod, empresa, nombre, str(d.get('tipo_bien') or '').strip(),
+                 str(d.get('categoria_contable') or 'Muebles y enseres').strip(),
+                 str(d.get('ubicacion') or '').strip(), str(d.get('responsable') or '').strip(),
+                 valor, fecha_ing, str(d.get('factura') or '').strip(),
+                 str(d.get('proveedor') or '').strip(),
+                 str(d.get('notas') or '').strip(), ahora))
+            c.execute("INSERT INTO activos_eventos (activo_codigo, tipo, detalle, valor_despues, "
+                      "estado_despues, usuario) VALUES (?,'ALTA',?,?, 'En uso', ?)",
+                      (cod, 'Recepción de activo', valor, _u))
+            creados.append(cod)
+        audit_log(c, usuario=_u, accion='RECEPCION_ACTIVO', tabla='activos',
+                  registro_id=','.join(creados),
+                  despues={'activos': creados, 'nombre': nombre, 'valor_cop': valor,
+                           'factura': str(d.get('factura') or ''), 'empresa': empresa},
+                  detalle='Recepción de %d activo(s) "%s"' % (len(creados), nombre))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo registrar el activo', 'detalle': str(e)}), 500
+    return jsonify({'ok': True, 'codigos': creados, 'cantidad': len(creados),
+                    'mensaje': ('%d activo(s) registrado(s) y ya suman al valor en libros.'
+                                % len(creados))}), 201

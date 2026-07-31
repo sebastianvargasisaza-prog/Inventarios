@@ -123,6 +123,7 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
     <button class="rt-btn rt-act" id="rt-btn-oc" onclick="rtIr('oc')">Con orden de compra</button>
     <button class="rt-btn" id="rt-btn-env" onclick="rtIr('env')">Contenedor sin OC &middot; envases por cajas</button>
     <button class="rt-btn" id="rt-btn-eq" onclick="rtIr('eq')">Equipos</button>
+    <button class="rt-btn" id="rt-btn-act" onclick="rtIr('act')">Otros activos</button>
   </div>
 
   <div id="rt-oc" class="rt-pane rt-on">
@@ -254,22 +255,25 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 
   <div id="rt-eq" class="rt-pane">__PANEL_EQUIPOS__</div>
 
+  <div id="rt-act" class="rt-pane">__PANEL_ACTIVOS__</div>
+
 </div>
 <script>
 // Pestañas por TIPO de lo que llega. Si el hash trae #envases se abre directo (el enlace que
 // viene de la pestaña Envases de Inventarios apunta ahí).
 function rtIr(t){
-  ['oc','env','eq'].forEach(function(x){
+  ['oc','env','eq','act'].forEach(function(x){
     var p=document.getElementById('rt-'+x), b=document.getElementById('rt-btn-'+x);
     if(p)p.classList.toggle('rt-on', x===t);
     if(b)b.classList.toggle('rt-act', x===t);
   });
-  try{ history.replaceState(null,'', t==='env'?'#envases':(t==='eq'?'#equipos':'#oc')); }catch(e){}
+  try{ history.replaceState(null,'', t==='env'?'#envases':(t==='eq'?'#equipos':(t==='act'?'#activos':'#oc'))); }catch(e){}
 }
 try{
   var _h=(location.hash||'').toLowerCase();
   if(_h.indexOf('envas')>=0) rtIr('env');
   else if(_h.indexOf('equip')>=0) rtIr('eq');
+  else if(_h.indexOf('activ')>=0) rtIr('act');
 }catch(e){}
 var currentOC = null;
 var _recCtx = null;      // {i, cod, lote, total} · contexto del modal de envases de la fila
