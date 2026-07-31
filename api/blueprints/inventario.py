@@ -3617,6 +3617,34 @@ def simular_produccion():
         costo_total += costo_item
         if not precio_kg or precio_kg == 0:
             sin_precio += 1
+        # PUNTO DE CONSULTA RÁPIDA (Sebastián 30-jul): *"aquí donde dice si alcanza o no
+        # debería salir el lote y la posición de la materia prima, así pueden ir consultando
+        # sin salirse de allí"*. Sin esto, saber de dónde sacar cada MP obliga a abrir Bodega
+        # en otra pestaña y buscar material por material.
+        _lts = {'usables': [], 'retenidos': []}
+        try:
+            from blueprints.programacion import _lotes_de_material as _ldm_sim
+            _lts = _ldm_sim(c, cod_bodega, limite=6)
+        except Exception as _els:
+            import logging as _lgs
+            _lgs.getLogger('inventario').warning('lotes del simulador %s: %s', cod_bodega, _els)
+        # dónde está cada lote · se lee de la Entrada, que es donde se guarda al recepcionar
+        _ubi = {}
+        try:
+            for _lr in c.execute(
+                    "SELECT lote, MAX(COALESCE(estanteria,'')), MAX(COALESCE(posicion,'')) "
+                    "FROM movimientos WHERE material_id=? AND tipo='Entrada' "
+                    "AND COALESCE(lote,'') NOT IN ('','S/L') GROUP BY lote",
+                    (cod_bodega,)).fetchall():
+                _u1 = (str(_lr[1] or '').strip() + str(_lr[2] or '').strip()).strip()
+                if _u1:
+                    _ubi[str(_lr[0])] = 'Est. ' + _u1
+        except Exception:
+            _ubi = {}
+        for _x in _lts.get('usables') or []:
+            _x['ubicacion'] = _ubi.get(_x.get('lote'), '')
+        for _x in _lts.get('retenidos') or []:
+            _x['ubicacion'] = _ubi.get(_x.get('lote'), '')
         resultado.append({
             'material_id': mat_id, 'material_nombre': mat_nombre,
             'porcentaje': pct, 'g_requerido': g_req,
@@ -3624,7 +3652,10 @@ def simular_produccion():
             'g_faltante': max(0, round(g_req - g_disp, 2)),
             'suficiente': suf,
             'precio_kg': round(precio_kg or 0, 2),
-            'costo': costo_item
+            'costo': costo_item,
+            'codigo_bodega': cod_bodega,
+            'lotes': (_lts.get('usables') or [])[:4],
+            'lotes_bloqueados': (_lts.get('retenidos') or [])[:3],
         })
     faltantes = sum(1 for r in resultado if not r['suficiente'])
     n = len(resultado)
@@ -4319,11 +4350,16 @@ def alertas_all():
 
     # 2. Lotes vencidos + próximos
     rows_v = c.execute(
+        # La UBICACIÓN va en la lista (Sebastián 30-jul: "en lotes vencidos poner la ubicación
+        # para identificarlos más rápido"). Sin ella, dar de baja 12 lotes es recorrer la bodega
+        # buscando cada uno. Se toma de la ENTRADA (es donde se guarda al recepcionar).
         """SELECT material_id, lote, MAX(material_nombre) as nombre,
                   MAX(fecha_vencimiento) as venc, MAX(proveedor) as prov,
                   SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
                           WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
-                          ELSE 0 END) as stock
+                          ELSE 0 END) as stock,
+                  MAX(CASE WHEN tipo='Entrada' THEN COALESCE(estanteria,'') END) as est,
+                  MAX(CASE WHEN tipo='Entrada' THEN COALESCE(posicion,'') END) as pos
            FROM movimientos
            WHERE COALESCE(lote,'') != ''
              AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento != ''
@@ -4339,7 +4375,9 @@ def alertas_all():
     lotes_vencidos = []
     lotes_proximos = []
     for r in rows_v:
-        mid, lote, nombre, venc, prov, stock = r
+        mid, lote, nombre, venc, prov, stock = r[0], r[1], r[2], r[3], r[4], r[5]
+        _est = (r[6] if len(r) > 6 else '') or ''
+        _pos = (r[7] if len(r) > 7 else '') or ''
         if not venc:
             continue
         try:
@@ -4357,6 +4395,9 @@ def alertas_all():
             'cantidad_g': float(stock or 0),
             'fecha_vencimiento': str(venc)[:10],
             'dias_para_vencer': dias,
+            'estanteria': str(_est).strip(), 'posicion': str(_pos).strip(),
+            'ubicacion': (('Est. ' + str(_est).strip() + str(_pos).strip()).strip()
+                          if str(_est).strip() or str(_pos).strip() else ''),
         }
         if dias < 0:
             lotes_vencidos.append(item)
@@ -11382,7 +11423,10 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
             '<span class="tipo' + ('' if is_env else ' on') + '">' + _tp_emp + '</span></td></tr>'
             '<tr><td class="k">Categoria</td><td>' + (_e(categoria) or '-') + '</td>'
             '<td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
-            '<tr><td class="k">Lote</td><td class="num" colspan="3"><b>' + (_e(lote) or '-') + '</b></td></tr>'
+            '<tr><td class="k">Lote</td><td class="num" colspan="3"><b>' + (_e(lote) or '-') + '</b>'
+            + ('<span style="font-weight:600;font-size:.8em;opacity:.75"> &middot; interno EOS '
+               '(el proveedor no envi&oacute; lote)</span>'
+               if str(lote or '').upper().startswith('INT-') else '') + '</td></tr>'
             '<tr><td class="k">Fecha recep.</td><td>' + _e(fecha_recep) + '</td>'
             '<td class="k">Ubicaci&oacute;n</td><td>' + (_e(zona) or '-') + '</td></tr>'
             '<tr><td class="k">Proveedor</td><td colspan="3">' + (_e(proveedor) or '-') + '</td></tr>'
@@ -14797,10 +14841,15 @@ def mee_crear_auto():
         if c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (cand,)).fetchone():
             continue
         try:
+            # ¿Requiere calificación de Calidad? LO DECIDE QUIEN RECIBE (Sebastián 30-jul:
+            # "que Catalina escoja, porque si no, no"). Antes TODA referencia nueva nacía sin
+            # calificar y la cola de Calidad se llenaba de material que nadie había pedido
+            # revisar -- una bandeja con 22 ítems que no hay que mirar deja de mirarse.
+            _califica = 0 if bool(d.get('requiere_calificacion')) else 1
             c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, volumen_ml, "
                       "stock_actual, stock_minimo, estado, calificado, cliente, fecha_creacion) "
-                      "VALUES (?,?,?,?,?,0,0,'Activo',0,?,?)",
-                      (cand, desc, cat, 'und', volml, cliente, _ts))
+                      "VALUES (?,?,?,?,?,0,0,'Activo',?,?,?)",
+                      (cand, desc, cat, 'und', volml, _califica, cliente, _ts))
             codigo = cand
             break
         except Exception:
@@ -14830,16 +14879,20 @@ def mee_crear_auto():
             detalle=f'Material MEE {codigo} creado (código auto)')
     except Exception:
         pass
-    # alerta a Calidad · material nuevo por calificar
-    try:
-        from blueprints.notif import push_notif_multi
-        from config import CALIDAD_USERS, ASEGURAMIENTO_USERS
-        _qc = sorted((set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS)) - {'sebastian'})
-        push_notif_multi(_qc, 'mee_por_calificar', f'Material nuevo por calificar: {desc or codigo}',
-                         body=f'{codigo} · revisar capacidad, material, medidas y documentos',
-                         link='/inventarios', importante=True)
-    except Exception:
-        pass
+    # alerta a Calidad · SOLO si de verdad hay que calificarlo (`calificado=0`). Avisar por
+    # material que nadie pidió revisar es fatiga de campana, y una campana que se ignora deja
+    # de servir para la que sí importa.
+    if not _califica:
+        try:
+            from blueprints.notif import push_notif_multi
+            from config import CALIDAD_USERS, ASEGURAMIENTO_USERS
+            _qc = sorted((set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS)) - {'sebastian'})
+            push_notif_multi(_qc, 'mee_por_calificar',
+                             f'Material nuevo por calificar: {desc or codigo}',
+                             body=f'{codigo} · revisar capacidad, material, medidas y documentos',
+                             link='/inventarios', importante=True)
+        except Exception:
+            pass
     conn.commit()
     return jsonify({'ok': True, 'codigo': codigo, 'categoria': cat,
                     'message': f'Creado {codigo}',
@@ -15348,6 +15401,32 @@ def mee_recepcion_lineas():
     factura = str(d.get('factura_numero') or '').strip()[:60]
     oc_num = str(d.get('oc_numero') or '').strip()[:40]
     zona = str(d.get('zona') or '').strip()[:80]
+
+    def _lote_interno(c_, cod_):
+        """Lote INTERNO cuando el proveedor no manda uno (Sebastián 30-jul: *"es posible que
+        no tengan lote · qué tal si ponés la opción de lote interno"*).
+
+        Forma: `INT-AAMMDD-NNN`. Lleva la fecha de recepción (que es el hecho que lo origina) y
+        un correlativo del día, así que dos referencias del mismo contenedor no comparten lote:
+        si mañana hay un reclamo, el lote apunta a UNA recepción concreta y no a "lo que llegó
+        ese día". El prefijo INT- lo distingue a simple vista de un lote del proveedor -- que se
+        confundan sería peor que no tener lote (M115: sin dato no se inventa un default que
+        parezca real).
+        """
+        import re as _re_l
+        base = 'INT-' + (datetime.utcnow() - timedelta(hours=5)).strftime('%y%m%d') + '-'
+        mx = 0
+        try:
+            for (lr,) in c_.execute(
+                    "SELECT lote_ref FROM movimientos_mee WHERE COALESCE(lote_ref,'') LIKE ?",
+                    (base + '%',)).fetchall():
+                m_ = _re_l.match(r'^' + _re_l.escape(base) + r'(\d+)$', str(lr or '').strip())
+                if m_:
+                    mx = max(mx, int(m_.group(1)))
+        except Exception as _eli:
+            import logging as _lgi
+            _lgi.getLogger('inventario').warning('correlativo de lote interno: %s', _eli)
+        return base + '%03d' % (mx + 1)
     # Sebastián 30-jul: *"aquí no deben caer en cuarentena de una, que ingresen a inventario
     # para ser usados; lo que queda es para Calidad revisar estados, pero no en cuarentena"*.
     # Los envases entran DISPONIBLES y la revisión de Calidad deja de ser un candado sobre el
@@ -15364,6 +15443,12 @@ def mee_recepcion_lineas():
     movs = []
     for l in lineas:
         m = maestro[l['codigo'].upper()]
+        if not str(l.get('lote') or '').strip():
+            # sin lote del proveedor no se deja el campo vacío: sin lote no hay trazabilidad,
+            # y un lote vacío rompe el rótulo, el escaneo y la revisión por caja.
+            l['lote'] = _lote_interno(c, m['codigo'])
+            l['observaciones'] = ((l.get('observaciones') or '') +
+                                  ' [lote interno: el proveedor no envió lote]').strip()
         c.execute(
             """INSERT INTO movimientos_mee
                  (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones,

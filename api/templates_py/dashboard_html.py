@@ -2151,7 +2151,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <button style="width:100%;background:var(--cx-primary);color:#fff;padding:12px;font-weight:700;border:none;border-radius:8px;cursor:pointer;" onclick="registrarMeeMovimiento()">&#10003; Registrar ingreso</button>
         <div id="mee-form-msg" style="margin-top:8px;"></div>
       </div>
-      <div id="mee-cuarentena-box" style="display:none;background:var(--cx-warn-pale);border:1px solid #fed7aa;border-radius:10px;padding:16px;margin-top:16px;">
+      <div id="mee-cuarentena-box" style="display:none !important;background:var(--cx-warn-pale);border:1px solid #fed7aa;border-radius:10px;padding:16px;margin-top:16px;">
         <h3 style="margin:0 0 10px;color:#c2410c;font-size:1em;">&#128737; En cuarentena - Calidad debe liberar (<span id="mee-cuar-count">0</span>)</h3>
         <div id="mee-cuarentena-list"></div>
       </div>
@@ -6708,7 +6708,7 @@ function _renderSeccionLotes(titulo, items, color, esVencido){
     return h;
   }
   h += '<div style="overflow-x:auto"><table class="table" style="font-size:12px"><thead><tr>'+
-    '<th>Código</th><th>Material</th><th>Lote</th><th>Proveedor</th>'+
+    '<th>Código</th><th>Material</th><th>Lote</th><th>Ubicación</th><th>Proveedor</th>'+
     '<th style="text-align:right">Cantidad g</th>'+
     '<th style="text-align:center">Vence</th><th style="text-align:center">Días</th>'+
     '<th style="text-align:center">Acción</th></tr></thead><tbody>';
@@ -6718,6 +6718,7 @@ function _renderSeccionLotes(titulo, items, color, esVencido){
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.material_id)+'</td>'+
       '<td style="font-weight:600">'+_escHTML(it.nombre)+'</td>'+
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.lote)+'</td>'+
+      '<td style="font-size:11px;font-weight:700;color:var(--cx-primary-text)">'+_escHTML(it.ubicacion||'-')+'</td>'+
       '<td style="font-size:11px;color:var(--cx-text-soft)">'+_escHTML(it.proveedor||'-')+'</td>'+
       '<td style="text-align:right;font-weight:600">'+Math.round(it.cantidad_g).toLocaleString()+'</td>'+
       '<td style="text-align:center">'+_escHTML(it.fecha_vencimiento)+'</td>'+
@@ -7152,12 +7153,25 @@ async function simularProduccion(){
       var costoCell=i.precio_kg>0
         ?'<span style="color:#2d3748;">$'+Number(i.costo).toLocaleString('es-CO')+'</span>'
         :'<span style="color:#a0aec0;font-size:0.8em;">sin precio</span>';
+      var _lt = (i.lotes||[]).map(function(l){
+        return '<span style="display:inline-block;margin:2px 6px 0 0;padding:1px 7px;border-radius:9px;background:var(--cx-success-pale);color:var(--cx-success-text);font-size:11px;font-weight:700">'
+          +_escHTML(l.lote)+' &middot; '+Number(l.g||0).toLocaleString()+'g'
+          +(l.ubicacion? ' &middot; '+_escHTML(l.ubicacion):'')+'</span>';
+      }).join('');
+      var _lb = (i.lotes_bloqueados||[]).map(function(l){
+        return '<span style="display:inline-block;margin:2px 6px 0 0;padding:1px 7px;border-radius:9px;background:var(--cx-warn-pale);color:var(--cx-warn-text);font-size:11px;font-weight:700" title="'+_escHTML(l.motivo||'')+'">'
+          +_escHTML(l.lote)+' &middot; '+Number(l.g||0).toLocaleString()+'g &middot; '+_escHTML(l.motivo||'')+'</span>';
+      }).join('');
+      var _det = (_lt||_lb) ? ('<tr style="background:'+rowbg+';"><td colspan="5" style="padding:2px 8px 8px;border-top:none">'
+          +(_lt? '<span style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700">LOTES A USAR (FEFO): </span>'+_lt : '')
+          +(_lb? '<div style="margin-top:3px"><span style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700">NO SE PUEDEN USAR: </span>'+_lb+'</div>' : '')
+          +'</td></tr>') : '';
       return '<tr style="background:'+rowbg+';">'
-        +'<td>'+i.material_nombre+'</td>'
+        +'<td>'+i.material_nombre+(i.codigo_bodega?'<div style="font-size:10px;color:var(--cx-text-mute);font-family:monospace">'+_escHTML(i.codigo_bodega)+'</div>':'')+'</td>'
         +'<td style="text-align:right;">'+i.g_requerido.toLocaleString()+'g</td>'
         +'<td style="text-align:right;">'+i.g_disponible.toLocaleString()+'g</td>'
         +'<td style="text-align:right;">'+badge+'</td>'
-        +'<td style="text-align:right;">'+costoCell+'</td></tr>';
+        +'<td style="text-align:right;">'+costoCell+'</td></tr>'+_det;
     }).join('');
     var costoHtml='';
     if(d.costo_total>0){

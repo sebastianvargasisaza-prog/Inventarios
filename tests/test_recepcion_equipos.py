@@ -48,9 +48,16 @@ def _sql(sql, params=()):
 
 
 def _limpiar():
+    # Desde el libro de activos (30-jul) recibir un equipo TAMBIÉN crea su activo, así que la
+    # limpieza tiene que borrar los dos: si no, el código queda ocupado en `activos` (UNIQUE) y
+    # el siguiente test que reciba un equipo con ese mismo correlativo no puede inscribirlo.
+    # Lo cazó el gate completo -- en aislamiento pasaba (M103: un test que escribe, limpia).
     for (cod,) in _sql("SELECT codigo FROM equipos_planta WHERE nombre LIKE 'ZZTEST%'"):
         _sql("DELETE FROM equipos_eventos WHERE equipo_codigo=?", (cod,))
+        _sql("DELETE FROM activos_eventos WHERE activo_codigo=?", (cod,))
+        _sql("DELETE FROM activos WHERE codigo=?", (cod,))
     _sql("DELETE FROM equipos_planta WHERE nombre LIKE 'ZZTEST%'")
+    _sql("DELETE FROM activos WHERE nombre LIKE 'ZZTEST%'")
 
 
 def _registrar(cli, **extra):

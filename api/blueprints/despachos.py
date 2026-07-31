@@ -518,6 +518,31 @@ def recepcion_equipos_registrar():
                  str(d.get('proveedor') or '').strip(), str(d.get('factura') or '').strip(),
                  str(d.get('numero_oc') or '').strip(), valor, fecha_ing, _u, ahora))
             creados.append(cod)
+            # El equipo que llega ES un activo: entra al libro en el mismo acto (Sebastián
+            # 30-jul: "todo lo que llegue se debe recepcionar"). Si el libro dependiera de que
+            # alguien lo copie después, el valor de la empresa quedaría siempre desactualizado.
+            # Best-effort: un problema en el libro NO puede tumbar la recepción física, pero se
+            # loguea (un except mudo lo volvería invisible · M4).
+            try:
+                c.execute(
+                    """INSERT INTO activos (codigo, empresa, nombre, tipo_bien,
+                         categoria_contable, ubicacion, responsable, cantidad, estado,
+                         costo_cop, fecha_ingreso, serial, factura, proveedor, equipo_codigo,
+                         origen, notas)
+                       VALUES (?,?,?,?, 'Maquinaria y equipo', ?, ?, 1, 'En uso', ?,?,?,?,?,?,
+                               'recepcion', ?)""",
+                    (cod, str(d.get('empresa') or '').strip().upper(), nombre,
+                     str(d.get('tipo') or 'Equipo').strip() or 'Equipo',
+                     (area + ' ' + ubic).strip(), _u, valor, fecha_ing, serial,
+                     str(d.get('factura') or '').strip(),
+                     str(d.get('proveedor') or '').strip(), cod,
+                     'Alta por recepción de equipo · pendiente de calificación'))
+                c.execute("INSERT INTO activos_eventos (activo_codigo, tipo, detalle, "
+                          "valor_despues, estado_despues, usuario) VALUES (?,'ALTA',?,?,?,?)",
+                          (cod, 'Recepción de equipo en planta', valor, 'En uso', _u))
+            except Exception as _ea:
+                log_act = __import__('logging').getLogger('despachos')
+                log_act.warning('no se pudo inscribir %s en el libro de activos: %s', cod, _ea)
         audit_log(c, usuario=_u, accion='RECEPCION_EQUIPO', tabla='equipos_planta',
                   registro_id=','.join(creados),
                   despues={'equipos': creados, 'nombre': nombre, 'serial': serial,

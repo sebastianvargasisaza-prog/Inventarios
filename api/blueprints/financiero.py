@@ -1268,3 +1268,315 @@ def financiero_pnl():
 # INVENTARIO v2 - NUEVOS ENDPOINTS
 # ===============================================================
 
+
+# ══ LIBRO DE ACTIVOS (mig 403) ═════════════════════════════════════════════════
+# Sebastián 30-jul: *"esto es trazabilidad y plata, pero a la vez nos permite hacer
+# seguimientos · como CEO debo verlo, Tesorería también, y todo lo que llegue se debe
+# recepcionar"*. El maestro vivía en un Excel: el valor de la empresa dependía de que
+# nadie perdiera un archivo.
+#
+# MP y envases NO entran acá (decisión suya): son inventario VIVO que varía con el uso y
+# ya tienen su kardex. Meterlos duplicaría la verdad (M37).
+
+# Un activo dado de baja, hurtado o fuera de uso DEJA de sumar al valor en libros, pero la
+# fila NO se borra: un activo robado no desaparece del libro, se registra como pérdida.
+# 'Dañado' SÍ suma: sigue siendo un bien, sólo que deteriorado (el Excel lo marca como
+# "para revisión / posible baja", que es una decisión pendiente, no un hecho consumado).
+_ACTIVO_FUERA_DE_LIBROS = ('DE BAJA', 'BAJA', 'HURTO', 'ROBADO', 'PERDIDO', 'FUERA DE USO')
+
+
+def _activo_auth():
+    """CEO (admin) y Tesorería (contadora). Mismo criterio que el resto de /financiero."""
+    u = session.get('compras_user', '')
+    if not u or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
+        return None, jsonify({'error': 'No autorizado'}), 401
+    return u, None, None
+
+
+def _activo_en_libros(estado):
+    return str(estado or '').strip().upper() not in _ACTIVO_FUERA_DE_LIBROS
+
+
+def _activo_valor(costo, deprec):
+    v = float(costo or 0) - float(deprec or 0)
+    return v if v > 0 else 0.0
+
+
+@bp.route('/api/activos', methods=['GET'])
+def activos_listar():
+    """El libro completo + los totales. `valor_en_libros` se DERIVA, no se teclea."""
+    _u, _err, _code = _activo_auth()
+    if _err:
+        return _err, _code
+    conn = get_db(); c = conn.cursor()
+    try:
+        filas = c.execute(
+            "SELECT codigo, empresa, nombre, tipo_bien, categoria_contable, ubicacion, "
+            "responsable, cantidad, estado, rotulado, costo_cop, vida_util_anios, "
+            "fecha_ingreso, depreciacion_acumulada_cop, COALESCE(serial,''), "
+            "COALESCE(factura,''), COALESCE(proveedor,''), COALESCE(equipo_codigo,''), "
+            "origen, COALESCE(notas,''), COALESCE(baja_motivo,''), COALESCE(baja_fecha,'') "
+            "FROM activos ORDER BY empresa, codigo").fetchall()
+    except Exception as e:
+        return jsonify({'error': 'no se pudo leer el libro', 'detalle': str(e)}), 500
+    items, kpis = [], {}
+    por_estado, por_categoria = {}, {}
+    for r in filas:
+        en_libros = _activo_en_libros(r[8])
+        valor = _activo_valor(r[10], r[13]) if en_libros else 0.0
+        emp = (r[1] or 'SIN EMPRESA').strip()
+        items.append({
+            'codigo': r[0], 'empresa': emp, 'nombre': r[2], 'tipo_bien': r[3],
+            'categoria_contable': r[4], 'ubicacion': r[5], 'responsable': r[6],
+            'cantidad': float(r[7] or 1), 'estado': r[8], 'rotulado': int(r[9] or 0),
+            'costo_cop': float(r[10] or 0), 'vida_util_anios': float(r[11] or 0),
+            'fecha_ingreso': r[12], 'depreciacion_cop': float(r[13] or 0),
+            'serial': r[14], 'factura': r[15], 'proveedor': r[16], 'equipo_codigo': r[17],
+            'origen': r[18], 'notas': r[19], 'baja_motivo': r[20], 'baja_fecha': r[21],
+            'en_libros': en_libros, 'valor_en_libros': round(valor, 2),
+        })
+        k = kpis.setdefault(emp, {'activos': 0, 'valor': 0.0, 'fuera': 0, 'sin_rotular': 0})
+        k['activos'] += 1
+        k['valor'] += valor
+        if not en_libros:
+            k['fuera'] += 1
+        if not int(r[9] or 0):
+            k['sin_rotular'] += 1
+        _e = (r[8] or 'Sin estado').strip()
+        por_estado[_e] = por_estado.get(_e, 0) + 1
+        _cat = (r[4] or 'Sin categoria').strip()
+        _c = por_categoria.setdefault(_cat, {'n': 0, 'valor': 0.0})
+        _c['n'] += 1
+        _c['valor'] += valor
+    total_valor = round(sum(k['valor'] for k in kpis.values()), 2)
+    for k in kpis.values():
+        k['valor'] = round(k['valor'], 2)
+    for v in por_categoria.values():
+        v['valor'] = round(v['valor'], 2)
+    return jsonify({
+        'ok': True, 'items': items, 'total': len(items),
+        'valor_en_libros_total': total_valor,
+        'por_empresa': kpis, 'por_estado': por_estado, 'por_categoria': por_categoria,
+        'estados_fuera_de_libros': sorted(_ACTIVO_FUERA_DE_LIBROS),
+    })
+
+
+@bp.route('/api/activos/importar', methods=['POST'])
+def activos_importar():
+    """Carga el Excel maestro de activos. `?dry_run=1` (default) NO escribe: muestra el plan.
+
+    Cruza las dos hojas por CODIGO: `INVENTARIO HHA` (qué es, dónde está, quién responde) y
+    `CIERRE CONTABLE` (categoría, vida útil, costo, depreciación). Sebastián 30-jul: *"el Excel
+    manda, sólo usá los que te subo"* -- así que esto no inventa activos ni borra los que no
+    vengan: da de alta y ACTUALIZA, y lo que sobra queda listado para que él decida.
+    """
+    _u, _err, _code = _activo_auth()
+    if _err:
+        return _err, _code
+    f = request.files.get('archivo')
+    if not f:
+        return jsonify({'error': 'Subí el Excel maestro de activos (campo `archivo`)'}), 400
+    dry = str(request.args.get('dry_run', '1')).strip() not in ('0', 'false', 'no')
+    try:
+        import openpyxl
+    except ImportError:
+        return jsonify({'error': 'openpyxl no está disponible en el servidor'}), 500
+    try:
+        wb = openpyxl.load_workbook(f, data_only=True)
+    except Exception as e:
+        return jsonify({'error': 'no se pudo leer el archivo', 'detalle': str(e)}), 400
+    if 'INVENTARIO HHA' not in wb.sheetnames:
+        return jsonify({'error': 'el archivo no tiene la hoja "INVENTARIO HHA"',
+                        'hojas': wb.sheetnames}), 400
+
+    def _txt(x):
+        return str(x).strip() if x is not None else ''
+
+    def _num(x):
+        try:
+            return float(str(x).replace(',', '').replace('$', '').strip() or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    inv = {}
+    incompletos = []
+    for r in wb['INVENTARIO HHA'].iter_rows(min_row=4, values_only=True):
+        cod = _txt(r[0] if len(r) > 0 else '')
+        _desc = _txt(r[3] if len(r) > 3 else '')
+        _tipo = _txt(r[2] if len(r) > 2 else '')
+        if not cod and not _desc and not _tipo:
+            continue                      # fila vacía / separador
+        # El nombre cae al TIPO DE BIEN si la descripción viene vacía. Tres activos reales del
+        # archivo (una balanza y dos tapadoras) traen código y tipo pero sin descripción: con el
+        # filtro original se perdían SIN AVISO, que es la peor forma de perder un activo. Se
+        # cargan igual y se DECLARAN en el plan para que se corrija el Excel.
+        _nombre = _desc or _tipo or cod
+        if not cod or not _desc:
+            incompletos.append({'codigo': cod or '(sin código)', 'nombre': _nombre,
+                                'falta': ('código' if not cod else 'descripción')})
+        if not cod:
+            continue                      # sin código no hay llave: no se puede cargar
+        inv[cod] = {
+            'codigo': cod, 'empresa': _txt(r[1]), 'tipo_bien': _tipo,
+            'nombre': _nombre, 'ubicacion': _txt(r[4]), 'responsable': _txt(r[5]),
+            'cantidad': _num(r[6]) or 1, 'estado': _txt(r[7]) or 'En uso',
+            'rotulado': 1 if _txt(r[8]).upper().startswith('S') else 0,
+            'costo_cop': _num(r[9]),
+            'categoria_contable': '', 'vida_util_anios': 0.0, 'fecha_ingreso': '',
+            'depreciacion_acumulada_cop': 0.0, 'notas': '',
+        }
+    if 'CIERRE CONTABLE' in wb.sheetnames:
+        for r in wb['CIERRE CONTABLE'].iter_rows(min_row=4, values_only=True):
+            cod = _txt(r[0] if len(r) > 0 else '')
+            if cod not in inv:
+                continue
+            inv[cod].update({
+                'categoria_contable': _txt(r[3]), 'vida_util_anios': _num(r[4]),
+                'fecha_ingreso': _txt(r[5])[:10],
+                'costo_cop': _num(r[7]) or inv[cod]['costo_cop'],
+                'depreciacion_acumulada_cop': _num(r[8]),
+                'notas': _txt(r[10]),
+            })
+    if not inv:
+        return jsonify({'error': 'no se encontró ninguna fila de activo en el archivo'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    existentes = {}
+    try:
+        for r in c.execute("SELECT codigo, nombre, estado, costo_cop FROM activos").fetchall():
+            existentes[r[0]] = {'nombre': r[1], 'estado': r[2], 'costo': float(r[3] or 0)}
+    except Exception as e:
+        return jsonify({'error': 'no se pudo leer el libro actual', 'detalle': str(e)}), 500
+    nuevos = [k for k in inv if k not in existentes]
+    cambios = []
+    for k, v in inv.items():
+        e = existentes.get(k)
+        if not e:
+            continue
+        if (e['nombre'] != v['nombre'] or e['estado'] != v['estado']
+                or abs(e['costo'] - v.get('costo_cop', 0)) > 0.01):
+            cambios.append({'codigo': k, 'antes': e,
+                            'despues': {'nombre': v['nombre'], 'estado': v['estado'],
+                                        'costo': v.get('costo_cop', 0)}})
+    sobran = [k for k in existentes if k not in inv]
+    plan = {
+        'ok': True, 'dry_run': dry, 'en_archivo': len(inv),
+        'nuevos': len(nuevos), 'actualizan': len(cambios), 'no_vienen_en_el_archivo': len(sobran),
+        'detalle_nuevos': nuevos[:40], 'detalle_cambios': cambios[:40],
+        'detalle_sobran': sobran[:40],
+        'incompletos': incompletos[:40], 'n_incompletos': len(incompletos),
+        'aviso': ('Los %d que ya están en EOS y NO vienen en el archivo NO se tocan: el import '
+                  'da de alta y actualiza, nunca borra. Si alguno hay que darlo de baja, se hace '
+                  'con su motivo desde la pantalla.' % len(sobran)) if sobran else '',
+        'aviso_incompletos': ('%d fila(s) del archivo vienen sin descripción (se cargan con el '
+                              'tipo de bien como nombre): %s. Conviene completarlas en el Excel.'
+                              % (len(incompletos),
+                                 ', '.join(x['codigo'] for x in incompletos[:8]))) if incompletos else '',
+    }
+    if dry:
+        return jsonify(plan)
+
+    ahora = datetime.utcnow().replace(microsecond=0).isoformat()
+    for k, v in inv.items():
+        campos = (v.get('empresa', ''), v.get('nombre', ''), v.get('tipo_bien', ''),
+                  v.get('categoria_contable', ''), v.get('ubicacion', ''),
+                  v.get('responsable', ''), float(v.get('cantidad') or 1),
+                  v.get('estado', 'En uso'), int(v.get('rotulado') or 0),
+                  float(v.get('costo_cop') or 0), float(v.get('vida_util_anios') or 0),
+                  v.get('fecha_ingreso', ''),
+                  float(v.get('depreciacion_acumulada_cop') or 0), v.get('notas', ''), ahora)
+        if k in existentes:
+            c.execute(
+                "UPDATE activos SET empresa=?, nombre=?, tipo_bien=?, categoria_contable=?, "
+                "ubicacion=?, responsable=?, cantidad=?, estado=?, rotulado=?, costo_cop=?, "
+                "vida_util_anios=?, fecha_ingreso=?, depreciacion_acumulada_cop=?, notas=?, "
+                "actualizado_en=? WHERE codigo=?", campos + (k,))
+        else:
+            c.execute(
+                "INSERT INTO activos (empresa, nombre, tipo_bien, categoria_contable, ubicacion, "
+                "responsable, cantidad, estado, rotulado, costo_cop, vida_util_anios, "
+                "fecha_ingreso, depreciacion_acumulada_cop, notas, actualizado_en, codigo, origen) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'excel')", campos + (k,))
+            c.execute("INSERT INTO activos_eventos (activo_codigo, tipo, detalle, "
+                      "valor_despues, estado_despues, usuario) VALUES (?,'ALTA',?,?,?,?)",
+                      (k, 'Alta por importacion del Excel maestro',
+                       float(v.get('costo_cop') or 0), v.get('estado', 'En uso'), _u))
+    audit_log(c, usuario=_u, accion='ACTIVOS_IMPORTAR', tabla='activos',
+              registro_id='excel',
+              despues={'en_archivo': len(inv), 'nuevos': len(nuevos), 'actualizan': len(cambios)},
+              detalle='Import del Excel maestro de activos · %d fila(s)' % len(inv))
+    conn.commit()
+    plan['dry_run'] = False
+    plan['aplicado'] = True
+    return jsonify(plan)
+
+
+@bp.route('/api/activos/<path:codigo>/baja', methods=['POST'])
+def activos_baja(codigo):
+    """Da de baja un activo (o revierte la baja). Sale del valor en libros SIN borrarse.
+
+    Body: `{motivo, estado}` con estado en De baja / Hurto / Fuera de uso, o `{revertir: true}`.
+    """
+    _u, _err, _code = _activo_auth()
+    if _err:
+        return _err, _code
+    d = request.get_json(silent=True) or {}
+    cod = str(codigo or '').strip()
+    conn = get_db(); c = conn.cursor()
+    fila = c.execute("SELECT estado, costo_cop, depreciacion_acumulada_cop, nombre "
+                     "FROM activos WHERE codigo=?", (cod,)).fetchone()
+    if not fila:
+        return jsonify({'error': 'activo %s no existe' % cod}), 404
+    hoy = _hoy_col().isoformat()
+    ahora = datetime.utcnow().replace(microsecond=0).isoformat()
+    if d.get('revertir'):
+        nuevo = str(d.get('estado') or 'En uso').strip() or 'En uso'
+        c.execute("UPDATE activos SET estado=?, baja_motivo='', baja_fecha='', baja_por='', "
+                  "actualizado_en=? WHERE codigo=?", (nuevo, ahora, cod))
+        c.execute("INSERT INTO activos_eventos (activo_codigo, tipo, detalle, estado_antes, "
+                  "estado_despues, usuario) VALUES (?,'REVERTIR_BAJA',?,?,?,?)",
+                  (cod, str(d.get('motivo') or '')[:300], fila[0], nuevo, _u))
+        audit_log(c, usuario=_u, accion='ACTIVO_REVERTIR_BAJA', tabla='activos', registro_id=cod,
+                  antes={'estado': fila[0]}, despues={'estado': nuevo},
+                  detalle='Revierte la baja de %s' % cod)
+        conn.commit()
+        return jsonify({'ok': True, 'codigo': cod, 'estado': nuevo, 'en_libros': True})
+    motivo = str(d.get('motivo') or '').strip()
+    if not motivo:
+        # Una baja sin motivo es plata que desaparece del libro sin explicación.
+        return jsonify({'error': 'La baja va con motivo: es plata que sale del valor en libros'}), 400
+    estado = str(d.get('estado') or 'De baja').strip()
+    if estado.upper() not in _ACTIVO_FUERA_DE_LIBROS:
+        return jsonify({'error': 'estado inválido para una baja',
+                        'validos': sorted(_ACTIVO_FUERA_DE_LIBROS)}), 400
+    if not _activo_en_libros(fila[0]):
+        return jsonify({'error': 'ese activo ya estaba fuera de libros (%s)' % fila[0],
+                        'codigo_error': 'YA_DE_BAJA'}), 409
+    valor_antes = _activo_valor(fila[1], fila[2])
+    # CAS: dos bajas concurrentes no pueden registrar dos pérdidas del mismo activo (M27).
+    c.execute("UPDATE activos SET estado=?, baja_motivo=?, baja_fecha=?, baja_por=?, "
+              "actualizado_en=? WHERE codigo=? AND COALESCE(baja_fecha,'')=''",
+              (estado, motivo[:300], hoy, _u, ahora, cod))
+    if c.rowcount != 1:
+        conn.rollback()
+        return jsonify({'error': 'otro usuario ya dio de baja este activo · refrescá',
+                        'codigo_error': 'YA_DE_BAJA'}), 409
+    c.execute("INSERT INTO activos_eventos (activo_codigo, tipo, detalle, valor_antes, "
+              "valor_despues, estado_antes, estado_despues, usuario) "
+              "VALUES (?,'BAJA',?,?,0,?,?,?)", (cod, motivo[:300], valor_antes, fila[0], estado, _u))
+    audit_log(c, usuario=_u, accion='ACTIVO_BAJA', tabla='activos', registro_id=cod,
+              antes={'estado': fila[0], 'valor_en_libros': valor_antes},
+              despues={'estado': estado, 'valor_en_libros': 0, 'motivo': motivo},
+              detalle='Baja de %s (%s) · %s' % (cod, fila[3], estado))
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod, 'estado': estado, 'en_libros': False,
+                    'valor_que_sale': round(valor_antes, 2)})
+
+
+@bp.route('/activos', methods=['GET'])
+def activos_page():
+    u = session.get('compras_user', '')
+    if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
+        return redirect(url_for('core.login'))
+    from templates_py.activos_html import ACTIVOS_HTML
+    return Response(ACTIVOS_HTML, mimetype='text/html')

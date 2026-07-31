@@ -779,6 +779,11 @@ JOBS_SCHEDULE = [
     ('quejas_plazos',         9,  0, None, None,                'job_quejas_plazos'),
     # ⭐ Aseguramiento · diario 9:30 · alerta recalls sin clasificar/notificar (ASG-PRO-004)
     ('recalls_plazos',        9, 30, None, None,                'job_recalls_plazos'),
+    # ⭐ Aseguramiento · diario 9:15 · el buzón de PQR se quedó MUDO (30-jul)
+    # Los PQR entran por un workflow de GHL. El 30-jul se vio que el último había entrado el
+    # 15 de JUNIO: seis semanas de quejas de cliente fuera del sistema de calidad, y nadie se
+    # enteró porque una bandeja vacía se ve igual que una bandeja al día.
+    ('pqr_mudo',              9, 15, None, None,                'job_pqr_mudo'),
     # (IA de Marketing retirada 16-jul-2026 · CMO IA + sentiment sync/analyze eliminados)
     # ⭐ CEO · LUNES 7:30 · executive brief con health snapshot + KPIs semanales
     ('weekly_executive',      7, 30, [0],  None,                'job_weekly_executive_email'),
@@ -5738,3 +5743,66 @@ def iniciar_multi_cron(app):
                  ', '.join(j[0] for j in JOBS_SCHEDULE))
     else:
         log.warning('[multi-cron] Multi-cron thread anterior estaba muerto · RELANZADO por supervisor')
+
+
+def job_pqr_mudo(app):
+    """El buzón de PQR se quedó MUDO · diario 9:15 (30-jul).
+
+    Los PQR entran por un workflow de GoHighLevel que dispara un webhook a EOS. El 30-jul se
+    descubrió que **el último PQR había entrado el 15 de junio**: seis semanas sin una sola queja
+    de cliente, con el volumen que tiene Ánimus, no es que los clientes dejaran de escribir --
+    es que el envío se cortó. Y nadie se enteró porque una bandeja vacía se ve igual que una
+    bandeja al día.
+
+    **Una integración que enmudece es peor que una que nunca funcionó**: la que nunca funcionó se
+    nota el primer día. Esta acumuló seis semanas de quejas de clientes fuera del sistema de
+    calidad (INVIMA: la queja es un registro regulado, y su plazo de respuesta corre igual).
+
+    El aviso sólo tiene sentido si ANTES entraban PQR: en un buzón que nunca recibió nada, el
+    silencio no prueba que algo se rompió.
+    """
+    with app.app_context():
+        from database import get_db
+        from datetime import date as _d
+        conn = get_db(); c = conn.cursor()
+        try:
+            tot = c.execute("SELECT COUNT(*) FROM pqr_inbox").fetchone()[0] or 0
+            ult = (c.execute("SELECT MAX(substr(COALESCE(recibido_en,''),1,10)) "
+                             "FROM pqr_inbox").fetchone() or [''])[0] or ''
+        except Exception as e:
+            return False, {'error': str(e)[:200]}, 0
+        if not tot:
+            return True, {'mensaje': 'El buzón nunca recibió un PQR · nada que vigilar'}, 0
+        # umbral configurable sin deploy · default 7 días
+        umbral = 7
+        try:
+            r = c.execute("SELECT valor FROM app_settings WHERE clave='pqr_dias_mudo'").fetchone()
+            if r and str(r[0]).strip().isdigit():
+                umbral = max(2, min(60, int(str(r[0]).strip())))
+        except Exception:
+            pass
+        from datetime import timezone as _tzp
+        hoy = (datetime.now(_tzp.utc) - timedelta(hours=5)).date()   # Colombia (M24)
+        dias = None
+        if ult:
+            try:
+                dias = (hoy - _d.fromisoformat(ult[:10])).days
+            except (ValueError, TypeError):
+                dias = None
+        if dias is None or dias < umbral:
+            return True, {'mensaje': 'PQR al día', 'ultimo': ult, 'dias': dias}, 0
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['aseguramiento.espagiria', 'miguel', 'daniela', 'sebastian'], 'pqr',
+                'El buzón de PQR lleva %d días sin recibir nada' % dias,
+                body=('Último PQR: %s. El webhook de EOS responde bien, así que lo que se cortó '
+                      'es el ENVÍO desde GoHighLevel: revisá el workflow "Auto 35: PQR" '
+                      '(Execution logs) y que algo siga poniendo la etiqueta que lo dispara. '
+                      'Las quejas que entren por WhatsApp o Instagram mientras tanto NO están '
+                      'quedando registradas, y su plazo de respuesta corre igual.' % (ult or '?')),
+                link='/aseguramiento', remitente='cron-pqr', importante=True)
+        except Exception as e:
+            log.warning('pqr_mudo notif fallo: %s', e)
+        return True, {'dias_sin_recibir': dias, 'ultimo_recibido': ult, 'umbral': umbral,
+                      'total_historico': tot}, 0

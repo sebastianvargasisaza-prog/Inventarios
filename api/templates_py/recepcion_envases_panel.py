@@ -29,7 +29,8 @@ PANEL_ENVASES_HTML = r'''
 #rt-env .env-card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;padding:18px 20px;margin-bottom:16px}
 #rt-env .env-card h3{margin:0 0 4px;font-size:15px;font-weight:800;color:var(--cx-primary-text)}
 #rt-env .env-step{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--cx-primary);color:#fff;font-size:12px;font-weight:800;margin-right:8px}
-#rt-env .env-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+#rt-env .env-w2{grid-column:1/-1}
+.env-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
 #rt-env label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--cx-text-mute);margin-bottom:5px}
 #rt-env input,#rt-env select{width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--cx-border);border-radius:8px;background:var(--cx-bg-soft);color:var(--cx-text);font-size:13px;font-family:inherit}
 #rt-env table{width:100%;border-collapse:collapse;font-size:13px}
@@ -86,8 +87,11 @@ PANEL_ENVASES_HTML = r'''
       <select id="env-ref" size="6" style="margin-top:8px" onchange="envRefSel()"></select>
     </div>
     <div>
-      <label>Lote del proveedor</label><input id="env-lote" placeholder="CN-2607-A">
-      <div class="env-hint" style="margin:8px 0">Es el lote que Calidad necesita para el F01 y el que se imprime en el r&oacute;tulo.</div>
+      <label>Lote del proveedor <span class="env-hint" style="text-transform:none;font-weight:600">(si no trae, dejalo vac&iacute;o)</span></label>
+      <input id="env-lote" placeholder="CN-2607-A &middot; o vac&iacute;o si no trae">
+      <div class="env-hint" style="margin:8px 0">Es el lote que Calidad necesita para el F01 y el que se imprime en el r&oacute;tulo.
+      <b>Si el proveedor no manda lote, EOS genera uno interno</b> (<code>INT-260730-001</code>) para que igual haya trazabilidad:
+      queda impreso en el r&oacute;tulo marcado como interno, y es el que se escanea.</div>
       <button class="env-btn ghost" onclick="envNuevaAbrir()">No existe &middot; crear referencia nueva</button>
     </div>
   </div>
@@ -114,6 +118,14 @@ PANEL_ENVASES_HTML = r'''
       <div><label>Color / detalle</label><input id="env-n-color" placeholder="&Aacute;mbar, negro mate&hellip;" oninput="envArmarNombre()"></div>
       <div><label>Nombre del envase</label><input id="env-n-desc" placeholder="Frasco vidrio &aacute;mbar 30 ml"></div>
       <div><label>C&oacute;digo que se va a asignar</label><input id="env-n-cod" readonly placeholder="se calcula solo" style="background:var(--cx-border-soft)"></div>
+      <div class="env-w2">
+        <label style="display:flex;align-items:center;gap:9px;text-transform:none;font-size:13px;font-weight:600;color:var(--cx-text-soft);cursor:pointer">
+          <input type="checkbox" id="env-n-calif" style="width:17px;height:17px;flex:none">
+          &iquest;Este material <b>requiere calificaci&oacute;n de Calidad</b>? (capacidad de llenado, material, medidas, documentos)
+        </label>
+        <div class="env-hint" style="margin-top:5px">Si no lo marc&aacute;s, entra directo y <b>no</b> aparece en la cola de Calidad.
+        Marcalo cuando sea un envase nuevo que nadie ha validado todav&iacute;a.</div>
+      </div>
     </div>
     <div class="env-acciones">
       <button class="env-btn" onclick="envCrearRef()">Crear la referencia</button>
@@ -210,7 +222,8 @@ async function envCrearRef(){
   var t=await envCsrf();
   var r=await fetch('/api/mee/crear-auto',{method:'POST',credentials:'same-origin',
     headers:{'Content-Type':'application/json','X-CSRF-Token':t},
-    body:JSON.stringify({tipo:tipo,descripcion:desc,volumen_ml:parseFloat(ml||0)||0})});
+    body:JSON.stringify({tipo:tipo,descripcion:desc,volumen_ml:parseFloat(ml||0)||0,
+      requiere_calificacion: !!(document.getElementById('env-n-calif')||{}).checked})});
   var j=await r.json();
   if(!r.ok||!j.ok){alert('No se pudo crear: '+(j.error||r.status));return;}
   ENV_MAESTRO.unshift({codigo:j.codigo,desc:desc,unidad:'und'});

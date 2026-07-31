@@ -454,3 +454,59 @@ def test_el_panel_no_pisa_funciones_de_la_pagina_de_recepcion(app, db_clean):
     nombres = re.findall(r'function\s+([A-Za-z_$][\w$]*)\s*\(', body)
     dupes = sorted({n for n in nombres if nombres.count(n) > 1})
     assert not dupes, 'funciones declaradas dos veces en la misma página: %s' % dupes
+
+
+# ══ lote interno cuando el proveedor no manda lote (30-jul) ═════════════════════
+
+def test_sin_lote_del_proveedor_EOS_genera_uno_interno(app, db_clean):
+    """Sebastián: *"es posible que no tengan lote · qué tal si ponés la opción de lote interno,
+    y te inventás cómo serían para la trazabilidad"*.
+
+    Sin lote no hay trazabilidad, y un lote vacío además rompe el rótulo, el escaneo por caja y
+    la revisión de Calidad. EOS genera `INT-AAMMDD-NNN`: lleva la fecha de recepción (el hecho
+    que lo origina) y un correlativo del día, así que dos referencias del mismo contenedor no
+    comparten lote -- si mañana hay un reclamo, apunta a UNA recepción concreta.
+    """
+    _sembrar(app)
+    payload = _lineas(recepcion_id='ZZTOK-INT1')
+    for l in payload['lineas']:
+        l['lote_proveedor'] = ''
+    r = _login(app).post('/api/mee/recepcion-lineas', headers=_h(), json=payload)
+    assert r.status_code in (200, 201), r.data[:400]
+    from database import get_db
+    with app.app_context():
+        lotes = [x[0] for x in get_db().cursor().execute(
+            "SELECT lote_ref FROM movimientos_mee WHERE mee_codigo IN (?,?)",
+            (COD_A, COD_B)).fetchall()]
+    assert lotes and all(str(l).startswith('INT-') for l in lotes), (
+        'no generó lote interno: %r' % lotes)
+    assert len(set(lotes)) == len(lotes), (
+        'dos referencias comparten el mismo lote interno: %r' % lotes)
+
+
+def test_el_rotulo_DICE_que_el_lote_es_interno(app, db_clean):
+    """Si se confunde con un lote del proveedor, mañana alguien le reclama a China por un
+    número que EOS se inventó."""
+    _sembrar(app)
+    payload = _lineas(recepcion_id='ZZTOK-INT2')
+    for l in payload['lineas']:
+        l['lote_proveedor'] = ''
+    cli = _login(app)
+    j = cli.post('/api/mee/recepcion-lineas', headers=_h(), json=payload).get_json()
+    mov = j['movimientos'][0]
+    body = cli.get('/rotulos-recepcion-mee?mov=%d&caja=1' % mov['mov_id']).data.decode(
+        'utf-8', 'replace')
+    assert 'INT-' in body, 'el rótulo no trae el lote interno'
+    assert 'interno EOS' in body, 'el rótulo no aclara que el lote lo generó EOS'
+
+
+def test_el_lote_del_proveedor_MANDA_si_viene(app, db_clean):
+    """Dientes del otro lado: el interno es un respaldo, no un reemplazo."""
+    _sembrar(app)
+    j = _login(app).post('/api/mee/recepcion-lineas', headers=_h(),
+                         json=_lineas(recepcion_id='ZZTOK-INT3')).get_json()
+    from database import get_db
+    with app.app_context():
+        lote = get_db().cursor().execute(
+            "SELECT lote_ref FROM movimientos_mee WHERE mee_codigo=?", (COD_A,)).fetchone()[0]
+    assert lote == LOTE_PROV, 'pisó el lote del proveedor: %r' % lote

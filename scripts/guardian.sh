@@ -183,6 +183,18 @@ CORAZON=(
   # y sobre todo que un equipo PENDIENTE de calificacion NO aparezca como usable en su area.
   # Incluye que los 102 equipos que ya estaban (NO_APLICA) sigan saliendo igual.
   "tests/test_recepcion_equipos.py"
+  # Libro de activos: el valor en libros se DERIVA del estado (de baja/hurto/fuera de uso no
+  # suman, danado SI), la baja exige motivo y conserva la fila, el import no borra nada y NO
+  # pierde filas en silencio (3 activos reales venian sin descripcion y se descartaban).
+  "tests/test_libro_activos.py"
+  # Consulta rapida en planta: "Verificar stock" dice DE QUE LOTE y DONDE esta cada MP (y cual
+  # no se puede tocar), los lotes vencidos traen ubicacion, y la cola de calificacion de Calidad
+  # la decide quien recibe (antes toda referencia nueva caia ahi y la bandeja se dejaba de mirar).
+  "tests/test_consulta_rapida_planta.py"
+  # El buzon de PQR que se queda MUDO avisa solo. El ultimo PQR habia entrado el 15-jun y
+  # nadie se entero: una bandeja vacia se ve igual que una bandeja al dia, y la queja de un
+  # cliente es un registro regulado cuyo plazo corre igual.
+  "tests/test_pqr_mudo.py"
   # Calidad dispone CAJA POR CAJA: de 24 cajas pueden pasar 22 y venir 2 golpeadas. Fija que
   # el rotulo de cada caja diga la verdad (y que NO se renumeren las cajas fisicas al partir
   # el movimiento) + el escaneo del codigo de barras.

@@ -10838,6 +10838,75 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_equipos_calificacion "
         "ON equipos_planta(estado_calificacion, activo)",
     ]),
+    (403, "LIBRO DE ACTIVOS (Sebastián 30-jul: 'esto es trazabilidad y plata, pero a la vez nos "
+          "permite hacer seguimientos · como CEO debo verlo, Tesorería también, y todo lo que "
+          "llegue se debe recepcionar'). El Excel maestro de activos vive fuera del sistema, así "
+          "que el valor de la empresa depende de que alguien no pierda un archivo. "
+          "MP y envases NO entran acá: ésos son inventario VIVO (varían con el uso) y ya tienen "
+          "su kardex — meterlos duplicaría la verdad (M37). "
+          "`valor_en_libros` NO es una columna: se DERIVA del estado (un activo dado de baja, "
+          "hurtado o fuera de uso deja de sumar). Un número tecleado queda viejo el día que "
+          "alguien se olvida de actualizarlo (M109).", [
+        """CREATE TABLE IF NOT EXISTS activos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE,
+            empresa TEXT NOT NULL DEFAULT '',
+            nombre TEXT NOT NULL,
+            tipo_bien TEXT DEFAULT '',
+            categoria_contable TEXT DEFAULT '',
+            ubicacion TEXT DEFAULT '',
+            responsable TEXT DEFAULT '',
+            cantidad REAL NOT NULL DEFAULT 1,
+            estado TEXT NOT NULL DEFAULT 'En uso',
+            rotulado INTEGER NOT NULL DEFAULT 0,
+            costo_cop REAL NOT NULL DEFAULT 0,
+            vida_util_anios REAL DEFAULT 0,
+            fecha_ingreso TEXT DEFAULT '',
+            depreciacion_acumulada_cop REAL NOT NULL DEFAULT 0,
+            serial TEXT DEFAULT '',
+            factura TEXT DEFAULT '',
+            proveedor TEXT DEFAULT '',
+            equipo_codigo TEXT DEFAULT '',
+            origen TEXT NOT NULL DEFAULT 'excel',
+            notas TEXT DEFAULT '',
+            baja_motivo TEXT DEFAULT '',
+            baja_fecha TEXT DEFAULT '',
+            baja_por TEXT DEFAULT '',
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_activos_empresa ON activos(empresa, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_activos_equipo ON activos(equipo_codigo)",
+        # La historia del activo: alta, baja, traslado, cambio de responsable, ajuste de valor.
+        # Un activo que cambia de manos sin registro es un activo que no se puede auditar.
+        """CREATE TABLE IF NOT EXISTS activos_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activo_codigo TEXT NOT NULL,
+            tipo TEXT NOT NULL,
+            detalle TEXT DEFAULT '',
+            valor_antes REAL DEFAULT 0,
+            valor_despues REAL DEFAULT 0,
+            estado_antes TEXT DEFAULT '',
+            estado_despues TEXT DEFAULT '',
+            usuario TEXT DEFAULT '',
+            fecha TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_activos_ev ON activos_eventos(activo_codigo, fecha DESC)",
+    ]),
+    (404, "NINGÚN envase queda en cuarentena (Sebastián 30-jul: 'esto quitalo, ningún MEE "
+          "debería estar en cuarentena'). La recepción ya entra VIGENTE desde el commit "
+          "anterior, pero quedaban 25 movimientos retenidos de antes: su stock no contaba como "
+          "disponible y la pantalla los mostraba en una bandeja que deja de existir. "
+          "Se liberan dejando la marca en observaciones -- un cambio de estado de inventario "
+          "sin rastro es exactamente lo que no se puede hacer. NO toca materia prima.", [
+        "UPDATE movimientos_mee SET estado='VIGENTE', "
+        "observaciones=COALESCE(observaciones,'')||' [liberado 30-jul: los envases no van a "
+        "cuarentena]' WHERE UPPER(COALESCE(estado,''))='CUARENTENA'",
+        # las cajas que quedaron marcadas como CUARENTENA pasan a PENDIENTE: es un estado de
+        # REVISIÓN, y la revisión sigue existiendo aunque el candado no
+        "UPDATE mee_cajas_disposicion SET estado='PENDIENTE' "
+        "WHERE UPPER(COALESCE(estado,''))='CUARENTENA'",
+    ]),
 ]
 
 

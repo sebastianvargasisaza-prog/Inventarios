@@ -4157,10 +4157,18 @@ def _ghl_fetch_contact(c, contact_id):
     (custom field pqr_mensaje), canal, nombre, email y teléfono. GHL no resuelve
     los custom fields en el webhook → hay que jalarlos por la API. Devuelve dict
     con campos vacíos si falla (el caller decide qué hacer)."""
+    # `_diag` dice POR QUÉ no vino el texto. Antes devolvía todo vacío sin distinguir entre
+    # "no hay token", "la API falló" y "el contacto no tiene el campo lleno" — tres problemas
+    # con tres arreglos distintos, y el caller respondía "mensaje vacío" para los tres. Seis
+    # semanas de PQR perdidos se diagnosticaron a mano por eso (30-jul · M94/M124).
     out = {'message': '', 'channel': '', 'fullName': '', 'email': '', 'phone': '',
-           'producto': '', 'lote': '', 'pedido': ''}
+           'producto': '', 'lote': '', 'pedido': '', '_diag': ''}
     token = _ghl_token(c)
-    if not token or not contact_id:
+    if not token:
+        out['_diag'] = 'sin_token_ghl'
+        return out
+    if not contact_id:
+        out['_diag'] = 'sin_contact_id'
         return out
     try:
         import urllib.request as _ur
@@ -4193,9 +4201,11 @@ def _ghl_fetch_contact(c, contact_id):
                 out['lote'] = str(val)
             elif cid == _GHL_CF_PEDIDO:
                 out['pedido'] = str(val)
+        out['_diag'] = 'ok' if out['message'] else 'contacto_sin_pqr_mensaje'
         return out
     except Exception as e:
         log.warning('GHL fetch contact %s falló: %s', contact_id, e)
+        out['_diag'] = 'fallo_api_ghl: ' + str(e)[:120]
         return out
 
 
@@ -4264,8 +4274,10 @@ def pqr_inbound():
 
     # GHL no resuelve los custom fields en el webhook → si el texto viene vacío
     # pero hay contact_id, lo jalamos de la API de GHL (mensaje + canal + trazabilidad).
+    _diag_ghl = ''
     if not mensaje and ghl_contact_id:
         g = _ghl_fetch_contact(c, ghl_contact_id)
+        _diag_ghl = g.get('_diag') or ''
         if g.get('message'):
             mensaje = g['message'].strip()
         if not canal and g.get('channel'):
@@ -4278,8 +4290,62 @@ def pqr_inbound():
         pedido = pedido or g.get('pedido', '')
     canal = canal or 'otro'
     if not mensaje:
-        return jsonify({'error': 'mensaje vacío'}), 400
+        # Un 400 que sólo dice "mensaje vacío" obliga a adivinar entre tres causas distintas.
+        # Este texto sale en el log de GHL (Execution logs → View details), que es donde alguien
+        # lo va a leer: el error es parte del control (M109).
+        _d = str((_diag_ghl or '')).strip()
+        if _d.startswith('fallo_api_ghl'):
+            _por_que = ('EOS no pudo consultar el contacto en GoHighLevel (%s). Lo más común es '
+                        'que el token de la API de GHL haya expirado o lo hayan rotado.' % _d)
+        elif _d == 'sin_token_ghl':
+            _por_que = 'EOS no tiene configurado el token de la API de GoHighLevel.'
+        elif _d == 'contacto_sin_pqr_mensaje':
+            _por_que = ('El contacto existe en GHL pero su campo `pqr_mensaje` está VACÍO: nadie '
+                        'guardó ahí el texto de la queja.')
+        elif _d == 'sin_contact_id':
+            _por_que = 'El webhook llegó sin `contact_id`, así que no hay a quién consultarle el texto.'
+        else:
+            _por_que = 'El webhook llegó sin texto en `message`.'
+        # UN INTENTO FALLIDO ES UNA QUEJA QUE SE PIERDE · avisar YA, no en 7 días (30-jul).
+        # El workflow de GHL de Sebastián no permite ramificar sobre la respuesta del webhook
+        # (su versión no expone ese campo en las condiciones), así que del lado de GHL un fallo
+        # es indistinguible de un éxito. La alarma vive acá, que además es donde queda auditable.
+        # Una vez al día: la campana que suena por cada mensaje deja de mirarse.
+        try:
+            _hoy_txt = _hoy_col().isoformat()
+            _prev = c.execute("SELECT valor FROM app_settings WHERE clave='pqr_aviso_fallo'"
+                              ).fetchone()
+            if not (_prev and str(_prev[0]).strip() == _hoy_txt):
+                c.execute("INSERT INTO app_settings (clave, valor) VALUES ('pqr_aviso_fallo',?) "
+                          "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor", (_hoy_txt,))
+                conn.commit()
+                from blueprints.notif import push_notif_multi as _pnm
+                _pnm(['aseguramiento.espagiria', 'miguel', 'daniela', 'sebastian'], 'pqr',
+                     'Llegó un PQR que EOS NO pudo registrar',
+                     body=('%s · Ese mensaje de cliente NO quedó en el sistema de calidad y su '
+                           'plazo de respuesta corre igual. Revisá el workflow "Auto 35: PQR" en '
+                           'GoHighLevel.' % _por_que),
+                     link='/aseguramiento', remitente='pqr-inbound', importante=True)
+        except Exception as _ea:
+            log.warning('aviso de PQR fallido no salió: %s', _ea)
+        return jsonify({
+            'error': 'mensaje vacío',
+            'por_que': _por_que,
+            'como_arreglarlo': ('Mandá el TEXTO del mensaje en el campo `message` del webhook. '
+                                'Los campos personalizados ({{contact.pqr_mensaje}}) NO se '
+                                'resuelven dentro de un webhook de GHL: llegan vacíos. Con un '
+                                'disparador de mensaje entrante podés mapear el cuerpo real del '
+                                'mensaje.'),
+            'diagnostico': _d or 'sin_intento',
+        }), 400
 
+    # ⚠ Un `message_id` IGUAL al `contact_id` no identifica un MENSAJE: identifica a la PERSONA
+    # (30-jul · así está mapeado hoy en el workflow de GHL, `message_id = {{contact.id}}`). Con
+    # eso, la SEGUNDA queja del mismo cliente entra con el mismo id que la primera y se descarta
+    # como duplicada -- se pierde en silencio, que es lo peor que le puede pasar a una queja.
+    # No se puede confiar en que la configuración externa esté bien: se detecta y se ignora.
+    if ghl_msg_id and ghl_contact_id and str(ghl_msg_id).strip() == str(ghl_contact_id).strip():
+        ghl_msg_id = None
     # Idempotencia sin depender de un id nativo de GHL: contact_id + sha1(mensaje).
     # Mismo texto = mismo id (anti-reintento); reclamo distinto = registro nuevo.
     if not ghl_msg_id:
