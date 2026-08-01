@@ -395,4 +395,25 @@ nombre en el maestro es otro.
 dentro de otro — el match por nombre/INCI es exacto (normalizado), y con dos candidatos del mismo
 INCI se frena a propósito en vez de elegir por stock (M17/M19).
 
-Tests: `tests/test_diag_por_que_no_sale.py` (en el gate · los 4 casos + la búsqueda por nombre).
+**5ª respuesta posible, agregada el 1-ago:** *ese CÓDIGO no se usa, pero un PARIENTE sí.*
+Sebastián, al leer el veredicto del día anterior: *"el lauryl glucoside se usa en varias fórmulas,
+¿cómo así?"* — y las dos cosas eran ciertas. `MP00070` no aparece en ninguna fórmula, pero las
+fórmulas usan **decyl** glucoside (MP00092) y **caprylyl/capryl** glucoside (MP00050): misma
+familia, moléculas distintas (C12 / C10 / C8). *"Nadie lo usa"* a secas manda a agregar a la
+fórmula un ingrediente que quizá ya está ahí con otro nombre.
+
+La respuesta trae ahora `parientes[]` (otros códigos del maestro que comparten una palabra
+significativa del nombre/INCI), con `usos_en_formulas_activas` y `kardex` de cada uno, y
+`kardex` también para los códigos buscados.
+
+- **NO empareja ni sugiere fusionar.** Cuál es cuál lo decide Alejandro (M19: emparejar por
+  parecido termina descontando la molécula equivocada). El endpoint pone los candidatos sobre la
+  mesa y se calla.
+- **El `kardex` es lo que separa las dos explicaciones OPUESTAS:** si en planta se vierte éste y
+  la fórmula nombra al otro, éste tiene entradas y **cero salidas** mientras el otro sale; si son
+  materiales genuinamente distintos, los dos se mueven.
+- **Una palabra que matchea con ≥40 códigos se descarta como criterio** (`acid`, `extract`,
+  `oil`…): un "pariente" que lo es de todos no informa nada.
+
+Tests: `tests/test_diag_por_que_no_sale.py` (en el gate · los 4 casos + la búsqueda por nombre +
+el aviso de parientes, con su prueba de que NO se dispara cuando no los hay).
