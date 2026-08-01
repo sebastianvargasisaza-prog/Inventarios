@@ -439,6 +439,35 @@ Tests: `tests/test_diag_por_que_no_sale.py` (en el gate · los 4 casos + la bús
 el aviso de parientes con su prueba de que NO se dispara cuando no los hay + el cruce por marca
 con su prueba de que NO confunde a un pariente con un uso + la limitación declarada sin INCI).
 
+## 📄 `/api/programacion/reconciliar-batch-record` · EOS contra la verdad EXTERNA (1-ago)
+
+Sebastián: *"ya varias veces me has dicho que es perfecto, pero hoy hay cosas que no sabíamos"*.
+La razón de fondo: **todas las verificaciones anteriores comparaban EOS consigo mismo** (motores
+entre sí, display vs cálculo, un endpoint vs su gemelo). Eso encuentra inconsistencias internas y
+**nunca** un dato que esté mal en los dos lados. Faltaba una fuente externa.
+
+`api/data/formulas_batch_record.json` son los 28 batch records **firmados** (lo que se pesó de
+verdad, con quién pesó y quién verificó · 645 líneas, 173 códigos). Se genera del PDF, no se
+teclea. **Control de integridad: los 28 suman 100,000%** — si alguno no lo hiciera, el dato está
+mal extraído y NO se puede usar para acusar a una fórmula.
+
+Informa cuatro diferencias con arreglos **opuestos**: `falta_en_eos` (se descuenta de MENOS),
+`sobra_en_eos` (de MÁS), `porcentaje_difiere` (potencia equivocada), `sin_formula_en_eos`.
+**No corrige nada** — cambiar una fórmula es dato regulado y lo decide Alejandro (M19).
+
+- El emparejamiento por nombre va con **umbral alto** (0.70 + 0.20 de ventaja sobre el segundo).
+  Con 0.50 unía *"Suero Vitamina C+"* con *"SUERO ANTIOXIDANTE VITAMINA C+B3"*: comparar el par
+  equivocado **inventa** diferencias. Lo que no llega sale como `candidatos_en_eos`.
+- El informe **siempre dice cómo cruzó** (`match_por`): un emparejamiento que no se puede auditar
+  no sirve para GMP.
+
+Hallazgos que dejó al construirlo: el lauryl glucoside **no aparece en ningún batch record** (se
+pesan decyl, caprylyl y ascorbyl), o sea que EOS tenía razón; y los 645 renglones no usan **ni un**
+código fantasma `MPxxxSO01`, así que todo fantasma con saldo en EOS es residuo a limpiar.
+
+Tests: `tests/test_reconciliar_batch_record.py` (en el gate · la referencia sana + las 4 clases de
+diferencia + que el umbral no baje + que siempre diga cómo cruzó).
+
 ## 📦 `/api/programacion/mp-sin-formula` · MP con stock que ninguna fórmula declara (1-ago)
 
 La forma general de la pregunta del lauryl: no *"¿por qué no sale ésta?"* sino *"¿cuántas más hay
