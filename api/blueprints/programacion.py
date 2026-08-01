@@ -4543,31 +4543,98 @@ def prog_reconciliar_batch_record():
                  for cod, pct in sorted(ref_items.items()) if cod not in f['items']]
         sobra = [{'codigo': cod, 'porcentaje': pct}
                  for cod, pct in sorted(f['items'].items()) if cod not in ref_items]
+
+        # ⚠ SEPARAR "otro código" de "otra fórmula" · sin esto el informe dice las cosas mal (M124).
+        # La primera corrida dio "0 de 28 coinciden", que suena a catástrofe -- y casi todo era el
+        # MISMO material con dos códigos: el agua es MP00286 en el batch record y MPAGUALI01 en
+        # EOS, con el MISMO 87,71%. Contarlo como "falta un ingrediente" + "sobra otro" esconde las
+        # POCAS diferencias que sí son de fórmula, que son las que hay que arreglar.
+        #
+        # Se emparejan por porcentaje IDÉNTICO y sólo si ese porcentaje es único de los dos lados
+        # (si hay dos ingredientes al 0,05% no se puede saber cuál es cuál, y adivinar acá es
+        # inventar). Cada par dice con qué se corroboró: el puente y el INCI son prueba; el
+        # porcentaje solo es una coincidencia fuerte que igual hay que mirar.
+        import collections as _col
+        _pf = _col.Counter(x['porcentaje'] for x in falta)
+        _ps = _col.Counter(x['porcentaje'] for x in sobra)
+        _sobra_por_pct = {x['porcentaje']: x for x in sobra}
+        pares, falta_real, sobra_usados = [], [], set()
+        for x in falta:
+            pc = x['porcentaje']
+            if pc <= 0 or _pf[pc] != 1 or _ps.get(pc) != 1:
+                falta_real.append(x)
+                continue
+            y = _sobra_por_pct[pc]
+            _cb, _ce = x['codigo'], y['codigo']
+            _conf = 'solo_porcentaje'
+            try:
+                if c.execute("SELECT 1 FROM mp_formula_bridge WHERE COALESCE(activo,1)=1 AND "
+                             "((formula_material_id=? AND bodega_material_id=?) OR "
+                             " (formula_material_id=? AND bodega_material_id=?))",
+                             (_cb, _ce, _ce, _cb)).fetchone():
+                    _conf = 'puente'
+                else:
+                    _i = c.execute("SELECT UPPER(TRIM(COALESCE(nombre_inci,''))) FROM maestro_mps "
+                                   "WHERE UPPER(TRIM(codigo_mp)) IN (?,?)", (_cb, _ce)).fetchall()
+                    _i = {r[0] for r in _i if r[0]}
+                    if len(_i) == 1:
+                        _conf = 'mismo_inci'
+            except Exception as e:
+                log.warning('reconciliar · corroborar par: %s', e)
+            sobra_usados.add(_ce)
+            pares.append({'codigo_batch_record': _cb, 'codigo_eos': _ce, 'porcentaje': pc,
+                          'nombre_batch_record': x['nombre'], 'confirmado_por': _conf})
+        sobra_real = [x for x in sobra if x['codigo'] not in sobra_usados]
+        falta, sobra = falta_real, sobra_real
         # 0.01 de tolerancia: el PDF redondea a 2-3 decimales, no es una diferencia real
         difiere = [{'codigo': cod, 'batch_record': ref_items[cod], 'eos': f['items'][cod]}
                    for cod in sorted(set(ref_items) & set(f['items']))
                    if abs(ref_items[cod] - f['items'][cod]) > 0.01]
         if falta or sobra or difiere:
             n_dif += 1
+        _est = ('coincide' if not (falta or sobra or difiere or pares)
+                else 'solo_codigos_distintos' if not (falta or sobra or difiere)
+                else 'difiere')
         salida.append({
             'producto': p['producto'], 'archivo': p['archivo'], 'nombre_en_eos': f['nombre_eos'],
-            'match_por': _match_por,
-            'estado': 'coincide' if not (falta or sobra or difiere) else 'difiere',
+            'match_por': _match_por, 'estado': _est,
             'ingredientes_batch_record': len(ref_items), 'ingredientes_eos': len(f['items']),
+            'mismo_material_otro_codigo': pares,
             'falta_en_eos': falta, 'sobra_en_eos': sobra, 'porcentaje_difiere': difiere,
         })
 
-    salida.sort(key=lambda x: (x['estado'] == 'coincide', x['producto']))
+    _orden = {'difiere': 0, 'sin_formula_en_eos': 1, 'solo_codigos_distintos': 2, 'coincide': 3}
+    salida.sort(key=lambda x: (_orden.get(x['estado'], 9), x['producto']))
     _ok = [x for x in salida if x['estado'] == 'coincide']
+    _solo_cod = [x for x in salida if x['estado'] == 'solo_codigos_distintos']
+    _mal = [x for x in salida if x['estado'] in ('difiere', 'sin_formula_en_eos')]
+    # el mapa de códigos que EOS y el batch record NO comparten · es UNO solo para todo el sistema
+    _mapa = {}
+    for x in salida:
+        for pr in x.get('mismo_material_otro_codigo') or []:
+            _mapa.setdefault((pr['codigo_batch_record'], pr['codigo_eos']),
+                             {'codigo_batch_record': pr['codigo_batch_record'],
+                              'codigo_eos': pr['codigo_eos'],
+                              'nombre': pr['nombre_batch_record'],
+                              'confirmado_por': pr['confirmado_por'], 'en_productos': 0})
+            _mapa[(pr['codigo_batch_record'], pr['codigo_eos'])]['en_productos'] += 1
     return jsonify({
-        'ok': True, 'n_productos': len(salida), 'coinciden': len(_ok), 'con_diferencias': n_dif,
+        'ok': True, 'n_productos': len(salida),
+        'coinciden': len(_ok), 'solo_codigos_distintos': len(_solo_cod),
+        'con_diferencias_reales': len(_mal), 'con_diferencias': n_dif,
+        'mapa_codigos_batch_record_vs_eos': sorted(_mapa.values(),
+                                                   key=lambda z: -z['en_productos']),
         'productos': salida,
         'veredicto': (
-            '%d de %d fórmulas coinciden EXACTO con su batch record firmado. %d tienen '
-            'diferencias: mirá `falta_en_eos` (se descuenta de MENOS: el material se usa y el '
-            'sistema no lo sabe), `sobra_en_eos` (se descuenta de MÁS) y `porcentaje_difiere` '
-            '(potencia equivocada). Ninguna se corrige sola: cambiar una fórmula es dato '
-            'regulado y lo decide Alejandro.' % (len(_ok), len(salida), n_dif)),
+            'De %d fórmulas: %d idénticas, %d iguales pero con OTRO CÓDIGO para el mismo material '
+            '(el agua es MP00286 en el batch record y MPAGUALI01 en EOS, con el mismo %%), y %d '
+            'con diferencias REALES de fórmula. Las dos primeras clases NO son un error de '
+            'fórmula: son el mapa de códigos que quedó sin unificar, y se arreglan renombrando '
+            'códigos (reversible), no tocando recetas. Las %d últimas son las que importan: mirá '
+            '`falta_en_eos` (se descuenta de MENOS), `sobra_en_eos` (de MÁS) y '
+            '`porcentaje_difiere` (potencia equivocada). Ninguna se corrige sola: cambiar una '
+            'fórmula es dato regulado y lo decide Alejandro.'
+            % (len(salida), len(_ok), len(_solo_cod), len(_mal), len(_mal))),
     })
 
 

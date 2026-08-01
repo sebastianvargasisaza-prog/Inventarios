@@ -85,10 +85,13 @@ def _pedir(app):
 def test_corre_contra_las_formulas_reales_y_da_veredicto(app, db_clean):
     j = _pedir(app)
     assert j['ok'] and j['n_productos'] == 28, j.get('n_productos')
-    assert 'coinciden' in j and 'con_diferencias' in j
-    assert j['coinciden'] + j['con_diferencias'] == 28, j
+    # las tres clases son excluyentes y cubren los 28 · si no sumaran, el informe estaría
+    # perdiendo productos por el camino y nadie lo notaría
+    assert (j['coinciden'] + j['solo_codigos_distintos']
+            + j['con_diferencias_reales']) == 28, j
     for p in j['productos']:
-        assert p['estado'] in ('coincide', 'difiere', 'sin_formula_en_eos'), p
+        assert p['estado'] in ('coincide', 'solo_codigos_distintos', 'difiere',
+                               'sin_formula_en_eos'), p
 
 
 def test_detecta_un_ingrediente_que_FALTA_en_eos(app, db_clean):
@@ -141,3 +144,60 @@ def test_siempre_dice_COMO_cruzo_cada_producto(app, db_clean):
         else:
             assert p.get('match_por'), ('no dice cómo cruzó: %r' % p['producto'])
             assert p.get('nombre_en_eos'), p
+
+
+# ── 3. separar "otro código" de "otra fórmula" (M124) ─────────────────────────
+
+def _sembrar_par(codigo_eos, pct):
+    """Una fórmula de EOS que usa OTRO código para el mismo material del batch record."""
+    _sql("DELETE FROM formula_items WHERE producto_nombre=?", ('ZZBR LIMPIADOR',))
+    _sql("DELETE FROM formula_headers WHERE producto_nombre=?", ('ZZBR LIMPIADOR',))
+
+
+def test_un_material_con_OTRO_CODIGO_no_se_cuenta_como_diferencia_de_formula(app, db_clean):
+    """La primera corrida dijo "0 de 28 coinciden" y sonaba a catástrofe.
+
+    Casi todo era el MISMO material con dos códigos: el agua es MP00286 en el batch record y
+    MPAGUALI01 en EOS, con el MISMO 87,71%. Contarlo como "falta un ingrediente" + "sobra otro"
+    esconde las POCAS diferencias que sí son de fórmula, que son las únicas que hay que arreglar
+    (M124: un informe que no separa clases dice las cosas mal).
+
+    Son arreglos distintos: un código se renombra (reversible); una receta la cambia Alejandro.
+    """
+    r = _login(app).get('/api/programacion/reconciliar-batch-record')
+    j = r.get_json()
+    assert 'solo_codigos_distintos' in j and 'con_diferencias_reales' in j, j.keys()
+    assert 'mapa_codigos_batch_record_vs_eos' in j
+    for p in j['productos']:
+        assert p['estado'] in ('coincide', 'solo_codigos_distintos', 'difiere',
+                               'sin_formula_en_eos'), p['estado']
+        # un producto marcado 'solo_codigos_distintos' NO puede traer diferencias reales
+        if p['estado'] == 'solo_codigos_distintos':
+            assert not p['falta_en_eos'] and not p['sobra_en_eos'], p
+            assert not p['porcentaje_difiere'], p
+            assert p['mismo_material_otro_codigo'], p
+
+
+def test_cada_par_de_codigos_dice_como_se_corroboro(app, db_clean):
+    """Emparejar por porcentaje es una coincidencia fuerte, NO una prueba. El puente y el INCI
+    sí lo son. Si el informe no dijera con qué se corroboró cada par, estaría afirmando que dos
+    códigos son el mismo material sin poder demostrarlo -- y eso, en una fórmula regulada, es
+    exactamente lo que no se puede hacer (M19)."""
+    r = _login(app).get('/api/programacion/reconciliar-batch-record')
+    j = r.get_json()
+    for p in j['productos']:
+        for par in p.get('mismo_material_otro_codigo') or []:
+            assert par['confirmado_por'] in ('puente', 'mismo_inci', 'solo_porcentaje'), par
+            assert par['codigo_batch_record'] and par['codigo_eos'], par
+            assert par['codigo_batch_record'] != par['codigo_eos'], par
+
+
+def test_NO_empareja_si_el_porcentaje_esta_repetido(app, db_clean):
+    """Si dos ingredientes van al 0,05%, no se puede saber cuál es cuál -- y adivinar ahí es
+    inventar un mapeo de códigos en un dato regulado. Esos quedan como diferencia real, que es
+    lo honesto: alguien los mira."""
+    import re
+    from blueprints import programacion as P
+    fuente = open(P.__file__.replace('.pyc', '.py'), encoding='utf-8').read()
+    assert '_pf[pc] != 1 or _ps.get(pc) != 1' in fuente, (
+        'se perdió el guard de porcentaje único: emparejaría a ciegas')
