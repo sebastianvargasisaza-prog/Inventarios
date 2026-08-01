@@ -4495,20 +4495,50 @@ def prog_mp_sin_formula():
         return jsonify({'ok': False, 'error': 'no se pudo leer el maestro',
                         'detalle': str(e)[:200]}), 500
 
+    # ⚠ ¿Está PUENTEADO a otro código que TAMBIÉN tiene stock? (1-ago · lo destapó el resultado
+    # real: MP00181 y MPCENTESO01 con 893 g CADA UNO, MP00161 y MPCARNSO01 con 141 g cada uno.)
+    # `_get_mp_stock` NO pliega el puente -- indexa por material_id y por variantes de NOMBRE --,
+    # así que esos son DOS conjuntos de movimientos distintos, no un alias del mismo. Si el puente
+    # dice que son el mismo material, el inventario está contando lo mismo dos veces y el valor
+    # en libros sale inflado. No se afirma: se marca para que alguien lo cuente.
+    _puente = {}
+    try:
+        for fm, bm in c.execute(
+                "SELECT formula_material_id, bodega_material_id FROM mp_formula_bridge "
+                "WHERE COALESCE(activo,1)=1").fetchall():
+            _puente[str(fm or '').strip().upper()] = str(bm or '').strip().upper()
+    except Exception as e:
+        log.warning('mp-sin-formula · puente: %s', e)
+    for x in items:
+        _dest = _puente.get(str(x['codigo']).strip().upper(), '')
+        x['puenteado_a'] = _dest
+        x['destino_tambien_tiene_stock'] = bool(_dest and float(stock.get(_dest) or 0) > 0.01)
+        x['stock_del_destino_g'] = round(float(stock.get(_dest) or 0), 2) if _dest else 0
+
     items.sort(key=lambda x: -x['stock_g'])
+    _dup = [x for x in items if x['destino_tambien_tiene_stock']]
     _con_salidas = [x for x in items if x['salio_alguna_vez']]
     return jsonify({
         'ok': True, 'n': len(items),
         'total_g_parado': round(sum(x['stock_g'] for x in items), 2),
         'items': items,
         'ojo_se_consumen_sin_formula': _con_salidas,
+        'ojo_posible_stock_duplicado': _dup,
+        'total_g_posible_duplicado': round(sum(x['stock_g'] for x in _dup), 2),
         'veredicto': (
             'Hay %d materia(s) prima(s) ACTIVAS con stock que ninguna fórmula activa declara '
-            '(%s g en total). De ésas, %d YA SALIERON del kardex alguna vez: ésas son las que '
-            'preocupan -- se están consumiendo sin que ninguna fórmula las descuente, así que su '
-            'stock queda inflado y nadie las vuelve a comprar. Las que nunca salieron son compra '
-            'parada.' % (len(items), format(int(sum(x['stock_g'] for x in items)), ',d'),
-                         len(_con_salidas))) if items else
+            '(%s g en total). NO son todas el mismo problema, y conviene mirarlas en este orden: '
+            '(1) %d están PUENTEADAS a otro código que TAMBIÉN tiene stock (%s g): el puente dice '
+            'que son el mismo material, así que probablemente el inventario lo esté contando dos '
+            'veces -- eso infla el valor en libros y hay que contarlo físicamente; '
+            '(2) %d YA SALIERON del kardex sin que ninguna fórmula las declare: se consumen por '
+            'fuera, su stock queda inflado y nadie las vuelve a comprar (ojo: el alcohol de '
+            'limpieza y los materiales retirados a propósito caen acá y son normales); '
+            '(3) el resto nunca salió: es compra parada -- desarrollo, muestras o material que '
+            'quedó sin producto.'
+            % (len(items), format(int(sum(x['stock_g'] for x in items)), ',d'),
+               len(_dup), format(int(sum(x['stock_g'] for x in _dup)), ',d'),
+               len(_con_salidas))) if items else
             'Ninguna materia prima activa con stock queda fuera de las fórmulas.',
     })
 

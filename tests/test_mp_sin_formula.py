@@ -138,3 +138,49 @@ def test_separa_la_que_YA_SALIO_del_kardex(app, db_clean):
         assert COD_PARADO in [x['codigo'] for x in j['ojo_se_consumen_sin_formula']], j
     finally:
         _limpiar()
+
+
+def test_marca_el_POSIBLE_STOCK_DUPLICADO(app, db_clean):
+    """Lo destapó el resultado real (1-ago): MP00181 y MPCENTESO01 con 893 g CADA UNO,
+    MP00161 y MPCARNSO01 con 141 g cada uno. `_get_mp_stock` NO pliega el puente (indexa por
+    material_id y por variantes de NOMBRE), así que esos son DOS conjuntos de movimientos
+    distintos -- no un alias del mismo. Si el puente dice que son el mismo material, el
+    inventario está contando lo mismo dos veces y el valor en libros sale inflado.
+
+    No se afirma que esté duplicado: se marca para que alguien lo cuente.
+    """
+    _limpiar()
+    _mp(COD_PARADO, 'ZZ fantasma con stock')
+    _entrada(COD_PARADO, 893, 'ZZD-1')
+    _mp(COD_USADO, 'ZZ canonico con stock')
+    _entrada(COD_USADO, 893, 'ZZD-2')
+    _sql("INSERT INTO mp_formula_bridge (formula_material_id, bodega_material_id, activo) "
+         "VALUES (?,?,1)", (COD_PARADO, COD_USADO))
+    try:
+        j = _pedir(app)
+        fila = [x for x in j['items'] if x['codigo'] == COD_PARADO]
+        assert fila, j['items'][:3]
+        assert fila[0]['puenteado_a'] == COD_USADO, fila[0]
+        assert fila[0]['destino_tambien_tiene_stock'] is True, fila[0]
+        assert fila[0]['stock_del_destino_g'] == 893.0, fila[0]
+        assert COD_PARADO in [x['codigo'] for x in j['ojo_posible_stock_duplicado']], j
+    finally:
+        _limpiar()
+
+
+def test_NO_marca_duplicado_si_el_destino_esta_en_cero(app, db_clean):
+    """Dientes: un puente cuyo destino no tiene stock es una migración BIEN hecha (el saldo se
+    movió), no un duplicado. Si marcara esos, la lista sería ruido."""
+    _limpiar()
+    _mp(COD_PARADO, 'ZZ fantasma con stock')
+    _entrada(COD_PARADO, 500, 'ZZD-3')
+    _mp(COD_USADO, 'ZZ canonico vacio')
+    _sql("INSERT INTO mp_formula_bridge (formula_material_id, bodega_material_id, activo) "
+         "VALUES (?,?,1)", (COD_PARADO, COD_USADO))
+    try:
+        j = _pedir(app)
+        fila = [x for x in j['items'] if x['codigo'] == COD_PARADO]
+        assert fila and fila[0]['destino_tambien_tiene_stock'] is False, fila
+        assert COD_PARADO not in [x['codigo'] for x in j['ojo_posible_stock_duplicado']], j
+    finally:
+        _limpiar()
