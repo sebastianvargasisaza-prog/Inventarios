@@ -4417,6 +4417,160 @@ def prog_diag_por_que_no_sale():
     })
 
 
+_BATCH_REF_CACHE = {}
+
+
+def _cargar_batch_records():
+    """Las 28 fórmulas de los BATCH RECORDS firmados · la verdad de referencia (1-ago).
+
+    Sebastián: *"estas son todas las fórmulas maestras del batch record"*. El batch record es lo
+    que se pesó de verdad en planta, firmado por quien pesó y por quien verificó — manda sobre
+    cualquier otra fuente (decisión cerrada 26-jul). El archivo se genera del PDF, no se teclea.
+
+    Control de integridad del propio archivo: los 28 suman 100%. Si alguno no lo hiciera, el dato
+    estaría mal extraído y NO se puede usar para acusar a una fórmula de estar mal.
+    """
+    if _BATCH_REF_CACHE.get('data') is not None:
+        return _BATCH_REF_CACHE['data']
+    import json as _js
+    ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        'data', 'formulas_batch_record.json')
+    try:
+        with open(ruta, encoding='utf-8') as f:
+            _BATCH_REF_CACHE['data'] = _js.load(f)
+    except Exception as e:
+        log.warning('no se pudo leer la referencia de batch records: %s', e)
+        _BATCH_REF_CACHE['data'] = {'productos': [], '_error': str(e)[:200]}
+    return _BATCH_REF_CACHE['data']
+
+
+@bp.route('/api/programacion/reconciliar-batch-record', methods=['GET'])
+def prog_reconciliar_batch_record():
+    """¿La fórmula que tiene EOS es la MISMA que dice el batch record firmado? · read-only.
+
+    Sebastián 1-ago: *"necesito que revises fórmulas, inventario, códigos, descuentos,
+    necesidades ... ya varias veces me has dicho que es perfecto, pero hoy hay cosas que no
+    sabíamos"*. La razón por la que aparecían cosas es que **nadie estaba comparando el sistema
+    contra los batch records**. Esto lo compara, ingrediente por ingrediente, y se puede volver a
+    correr cuando se quiera -- no es una revisión de una sola vez.
+
+    Por cada producto informa cuatro clases de diferencia, que tienen arreglos DISTINTOS:
+      · `falta_en_eos`      -- el batch record lo lleva y la fórmula no → se descuenta de menos
+      · `sobra_en_eos`      -- la fórmula lo lleva y el batch record no → se descuenta de más
+      · `porcentaje_difiere`-- el mismo código con % distinto → potencia equivocada
+      · `sin_formula_en_eos`-- el producto no existe como fórmula activa
+
+    NO corrige nada: un cambio de fórmula es dato regulado y lo decide Alejandro (M19).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    ref = _cargar_batch_records()
+    productos_ref = ref.get('productos') or []
+    if not productos_ref:
+        return jsonify({'ok': False, 'error': 'no hay referencia de batch records cargada',
+                        'detalle': ref.get('_error', '')}), 500
+
+    conn = get_db(); c = conn.cursor()
+
+    # fórmulas de EOS indexadas por nombre normalizado (mismo normalizador que el motor · M13)
+    eos = {}
+    try:
+        for pn, mid, pct, act in c.execute(
+                """SELECT fi.producto_nombre, fi.material_id, COALESCE(fi.porcentaje,0),
+                          COALESCE(fh.activo,1)
+                   FROM formula_items fi
+                   LEFT JOIN formula_headers fh
+                     ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre))""").fetchall():
+            if int(act or 1) != 1:
+                continue
+            k = _norm_prod_fuerte(pn or '')
+            eos.setdefault(k, {'nombre_eos': pn, 'items': {}})
+            eos[k]['items'][str(mid or '').strip().upper()] = float(pct or 0)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudieron leer las fórmulas',
+                        'detalle': str(e)[:200]}), 500
+
+    # El mismo producto se escribe distinto en el PDF y en EOS: "AZ Hybrid Clear" vs "AZ HIBRID
+    # CLEAR", "HYDRABALANCE" vs "HYDRA BALANCE", el sufijo "NF", "FORMULA NUEVA". Emparejar sólo
+    # por nombre exacto reportaba 7 de 28 como "no existe la fórmula", que es una acusación falsa
+    # y de las que hacen perder la confianza en el informe. Tres niveles, y SIEMPRE se dice por
+    # cuál cruzó (`match_por`): un emparejamiento que no se puede auditar no sirve para un dato
+    # regulado (M19).
+    _STOP_PROD = {'de', 'del', 'la', 'el', 'con', 'y', 'nf', 'formula', 'nueva', 'suero', 'crema'}
+
+    def _tokens(s):
+        return {t for t in _norm_prod_fuerte(s).split() if len(t) >= 3 and t not in _STOP_PROD}
+
+    _eos_tok = {k: _tokens(v['nombre_eos']) for k, v in eos.items()}
+
+    def _buscar(k, nombre):
+        if k in eos:
+            return eos[k], 'nombre_exacto', []
+        _c = [kk for kk in eos if kk and (kk.startswith(k[:14]) or k.startswith(kk[:14]))]
+        if len(_c) == 1:
+            return eos[_c[0]], 'prefijo', []
+        tk = _tokens(nombre)
+        if not tk:
+            return None, '', []
+        punt = sorted(((len(tk & _eos_tok[kk]) / float(len(tk | _eos_tok[kk]) or 1), kk)
+                       for kk in eos if _eos_tok[kk]), reverse=True)
+        # Umbral ALTO a propósito (0.70 + 0.20 de ventaja sobre el segundo). Con 0.50 emparejaba
+        # "Suero Vitamina C+" con "SUERO ANTIOXIDANTE VITAMINA C+B3" al 67%, que pueden ser dos
+        # productos distintos -- y comparar el par equivocado inventa diferencias en una fórmula
+        # regulada. Lo que no llega al umbral sale como CANDIDATO para que lo confirme una persona:
+        # una lista de candidatos es honesta, un emparejamiento equivocado no.
+        if punt and punt[0][0] >= 0.70 and (len(punt) == 1 or punt[0][0] - punt[1][0] >= 0.20):
+            return eos[punt[0][1]], 'palabras:%.0f%%' % (punt[0][0] * 100), []
+        return None, '', [{'nombre_eos': eos[kk]['nombre_eos'], 'parecido_pct': round(s * 100)}
+                          for s, kk in punt[:3] if s > 0.2]
+
+    salida, n_dif = [], 0
+    for p in productos_ref:
+        k = _norm_prod_fuerte(p['producto'])
+        f, _match_por, _cands = _buscar(k, p['producto'])
+        ref_items = {i['codigo']: float(i['porcentaje'] or 0) for i in p['items']}
+        if not f:
+            n_dif += 1
+            salida.append({'producto': p['producto'], 'archivo': p['archivo'],
+                           'estado': 'sin_formula_en_eos',
+                           'ingredientes_batch_record': len(ref_items),
+                           'candidatos_en_eos': _cands,
+                           'falta_en_eos': [], 'sobra_en_eos': [], 'porcentaje_difiere': []})
+            continue
+
+        falta = [{'codigo': cod, 'nombre': next((i['nombre'] for i in p['items']
+                                                 if i['codigo'] == cod), ''), 'porcentaje': pct}
+                 for cod, pct in sorted(ref_items.items()) if cod not in f['items']]
+        sobra = [{'codigo': cod, 'porcentaje': pct}
+                 for cod, pct in sorted(f['items'].items()) if cod not in ref_items]
+        # 0.01 de tolerancia: el PDF redondea a 2-3 decimales, no es una diferencia real
+        difiere = [{'codigo': cod, 'batch_record': ref_items[cod], 'eos': f['items'][cod]}
+                   for cod in sorted(set(ref_items) & set(f['items']))
+                   if abs(ref_items[cod] - f['items'][cod]) > 0.01]
+        if falta or sobra or difiere:
+            n_dif += 1
+        salida.append({
+            'producto': p['producto'], 'archivo': p['archivo'], 'nombre_en_eos': f['nombre_eos'],
+            'match_por': _match_por,
+            'estado': 'coincide' if not (falta or sobra or difiere) else 'difiere',
+            'ingredientes_batch_record': len(ref_items), 'ingredientes_eos': len(f['items']),
+            'falta_en_eos': falta, 'sobra_en_eos': sobra, 'porcentaje_difiere': difiere,
+        })
+
+    salida.sort(key=lambda x: (x['estado'] == 'coincide', x['producto']))
+    _ok = [x for x in salida if x['estado'] == 'coincide']
+    return jsonify({
+        'ok': True, 'n_productos': len(salida), 'coinciden': len(_ok), 'con_diferencias': n_dif,
+        'productos': salida,
+        'veredicto': (
+            '%d de %d fórmulas coinciden EXACTO con su batch record firmado. %d tienen '
+            'diferencias: mirá `falta_en_eos` (se descuenta de MENOS: el material se usa y el '
+            'sistema no lo sabe), `sobra_en_eos` (se descuenta de MÁS) y `porcentaje_difiere` '
+            '(potencia equivocada). Ninguna se corrige sola: cambiar una fórmula es dato '
+            'regulado y lo decide Alejandro.' % (len(_ok), len(salida), n_dif)),
+    })
+
+
 @bp.route('/api/programacion/mp-sin-formula', methods=['GET'])
 def prog_mp_sin_formula():
     """Materia prima CON STOCK que NINGUNA fórmula activa declara · read-only (1-ago).

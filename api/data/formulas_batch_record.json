@@ -1,0 +1,3539 @@
+{
+ "_fuente": "Batch records firmados (Espagiria) entregados por Sebastian 1-ago-2026",
+ "_nota": "VERDAD de referencia. Los 28 suman 100.000% -- ese es el control de que la extraccion salio bien. No editar a mano: se regenera del PDF.",
+ "productos": [
+  {
+   "producto": "ANIMUSLASH",
+   "archivo": "ANIMUSLASH.pdf",
+   "codigo_pt": "PT-ANIMUSLASH-10-001",
+   "orden": "OP-2026-74",
+   "lote": "261621",
+   "cantidad_g": 3000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00169",
+     "nombre": "Sodium Ascorbyl Phosphate",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00147",
+     "nombre": "L-Arginine",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00178",
+     "nombre": "Acetyl Tetrapeptide-40",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00194",
+     "nombre": "Copper Tripeptide -1",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00170",
+     "nombre": "Acetyl Tetrapeptide-3",
+     "porcentaje": 0.02
+    },
+    {
+     "codigo": "MP00164",
+     "nombre": "N-Acetyl-L-Cysteine",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00193",
+     "nombre": "Biotinoyl Tripeptide-1",
+     "porcentaje": 0.006
+    },
+    {
+     "codigo": "MP00187",
+     "nombre": "Myristoil Pentapeptido-17",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00168",
+     "nombre": "Hidrolyzed Keratin",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00236",
+     "nombre": "Pantenol Polvo",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00069",
+     "nombre": "Cafeina Anhidra",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00285",
+     "nombre": "Hidrolyzed Collagen",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00256",
+     "nombre": "Ethoxydiglycol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 87.71
+    },
+    {
+     "codigo": "MP00258",
+     "nombre": "Butylene Glycol",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00171",
+     "nombre": "Myristoyl Hexapeptide-16",
+     "porcentaje": 0.02
+    },
+    {
+     "codigo": "MP00231",
+     "nombre": "Glicinamida HCL",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00151",
+     "nombre": "Proline",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00072",
+     "nombre": "Gransil VX 419",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00241",
+     "nombre": "Trifolium Pratense",
+     "porcentaje": 0.001
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00150",
+     "nombre": "Ergothioneine",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.06
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00174",
+     "nombre": "Palmitoyl Tripeptide-38",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 5.0
+    }
+   ]
+  },
+  {
+   "producto": "AZ Hybrid Clear",
+   "archivo": "AZ HYBRID.pdf",
+   "codigo_pt": "PT-AZHYBRID-15-001",
+   "orden": "OP-2026-90",
+   "lote": "261821",
+   "cantidad_g": 28000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00169",
+     "nombre": "Sodium Ascorbyl Phosphate",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00296",
+     "nombre": "CARBOMERO 980 NF",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 1.25
+    },
+    {
+     "codigo": "MP00239",
+     "nombre": "Sodium Phytate",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00178",
+     "nombre": "Acetyl Tetrapeptide-40",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00102",
+     "nombre": "Extracto De Centella Asiatica",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 20.0
+    },
+    {
+     "codigo": "MP00236",
+     "nombre": "Pantenol Polvo",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00221",
+     "nombre": "Acido Zelaico",
+     "porcentaje": 6.0
+    },
+    {
+     "codigo": "MP00167",
+     "nombre": "Acido Tranexamico",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 48.817
+    },
+    {
+     "codigo": "MP00073",
+     "nombre": "Goma Xanthan",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00244",
+     "nombre": "Potassium Azeloyl Diglycinate",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00072",
+     "nombre": "Gransil VX 419",
+     "porcentaje": 0.8
+    },
+    {
+     "codigo": "MP00295",
+     "nombre": "AZELAMIDOPROPYL DIMETHYL AMINE",
+     "porcentaje": 4.0
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00246",
+     "nombre": "Capryloyl Salicylic Acid",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00297",
+     "nombre": "Hidroxido de sodio sol",
+     "porcentaje": 0.9
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00283",
+     "nombre": "Zinc Pca",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 5.0
+    }
+   ]
+  },
+  {
+   "producto": "BALM-6 Blush Balm",
+   "archivo": "BLUSH BALM.pdf",
+   "codigo_pt": "PT-BLUSH",
+   "orden": "OP-2026-61",
+   "lote": "261482",
+   "cantidad_g": 10000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00257",
+     "nombre": "Synthetic Wax",
+     "porcentaje": 11.5
+    },
+    {
+     "codigo": "MP00127",
+     "nombre": "Silicona Bm 956 (Fenil Trimeticona)",
+     "porcentaje": 20.271
+    },
+    {
+     "codigo": "MP00024",
+     "nombre": "Cera Microcristalina 127 Blanca",
+     "porcentaje": 10.0
+    },
+    {
+     "codigo": "MP00305",
+     "nombre": "CITRUS AURANTIUM AMARA leaf OIL",
+     "porcentaje": 0.02
+    },
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00159",
+     "nombre": "Palmitoyl Tripeptide-1",
+     "porcentaje": 0.001
+    },
+    {
+     "codigo": "MP00063",
+     "nombre": "Tinogard Tt",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00172",
+     "nombre": "Palmitoyl Tetrapeptide-7",
+     "porcentaje": 0.001
+    },
+    {
+     "codigo": "MP00303",
+     "nombre": "COCO-CAPRYLATE",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00051",
+     "nombre": "Polyglyceryl-2 Triisostearate",
+     "porcentaje": 10.0
+    },
+    {
+     "codigo": "MP00306",
+     "nombre": "Pigmentos",
+     "porcentaje": 7.5
+    },
+    {
+     "codigo": "MP00060",
+     "nombre": "Ceresine Wax",
+     "porcentaje": 10.0
+    },
+    {
+     "codigo": "MP00040",
+     "nombre": "Cetiol Dicaprylyl Carbonate",
+     "porcentaje": 20.271
+    },
+    {
+     "codigo": "MP00055",
+     "nombre": "Polimetilsilsesquioxan",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00077",
+     "nombre": "Manteca De Murumuru",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00207",
+     "nombre": "Stabil",
+     "porcentaje": 0.75
+    },
+    {
+     "codigo": "MP00288",
+     "nombre": "Boron Nitride",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00300",
+     "nombre": "CERAMIDE NP",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00174",
+     "nombre": "Palmitoyl Tripeptide-38",
+     "porcentaje": 0.001
+    },
+    {
+     "codigo": "MP00101",
+     "nombre": "Aceite Esencial De Vainilla 0.620",
+     "porcentaje": 0.035
+    },
+    {
+     "codigo": "MP00054",
+     "nombre": "Lauroyl Lysine",
+     "porcentaje": 1.0
+    }
+   ]
+  },
+  {
+   "producto": "Booster Tensor",
+   "archivo": "Booster tensor.pdf",
+   "codigo_pt": "PT-BOOSTER-001",
+   "orden": "OP-2026-95",
+   "lote": "261891",
+   "cantidad_g": 15000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00056",
+     "nombre": "Pullulan",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00223",
+     "nombre": "Pdrn",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00155",
+     "nombre": "Acetyl Hexapeptido-8",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00179",
+     "nombre": "Dipeptide Diaminobul Bencilamide Diacette",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00259",
+     "nombre": "Dimethyl Isosorbide",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00256",
+     "nombre": "Ethoxydiglycol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00116",
+     "nombre": "Epi-On",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 89.689
+    },
+    {
+     "codigo": "MP00177",
+     "nombre": "Oligopeptido 68",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00248",
+     "nombre": "Hidrolyzed Sponge (Spicules) 99%",
+     "porcentaje": 0.06
+    },
+    {
+     "codigo": "MP00298",
+     "nombre": "Aerosil 200",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00200",
+     "nombre": "Carbopol 940",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 0.95
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00174",
+     "nombre": "Palmitoyl Tripeptide-38",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00250",
+     "nombre": "Miristoyl Nonapeptide3",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 2.0
+    }
+   ]
+  },
+  {
+   "producto": "Contorno de cafeina",
+   "archivo": "Contorno de cafeina.pdf",
+   "codigo_pt": "",
+   "orden": "OP-2026-11",
+   "lote": "",
+   "cantidad_g": 0.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00217",
+     "nombre": "Aloe Vera 200X",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00293",
+     "nombre": "Dimethicone",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00138",
+     "nombre": "Acido Lactico",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00152",
+     "nombre": "Adenosine",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00045",
+     "nombre": "Benzoato De Sodio",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00069",
+     "nombre": "Cafeina Anhidra",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00167",
+     "nombre": "Acido Tranexamico",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 82.57
+    },
+    {
+     "codigo": "MP00078",
+     "nombre": "Vitamina E Liquida",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00202",
+     "nombre": "Sorbato De Potasio",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00175",
+     "nombre": "Acetyl Tetrapeptido-5",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00047",
+     "nombre": "Alantoina",
+     "porcentaje": 0.5
+    }
+   ]
+  },
+  {
+   "producto": "Contorno de Ojos Multipeptidos",
+   "archivo": "CONTORNO MULTIPEPTIDOS.pdf",
+   "codigo_pt": "PT-CONTMULTIP-15-001",
+   "orden": "OP-2026-62",
+   "lote": "261491",
+   "cantidad_g": 14000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00238",
+     "nombre": "Ascorbyl Glucoside",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00194",
+     "nombre": "Copper Tripeptide -1",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00159",
+     "nombre": "Palmitoyl Tripeptide-1",
+     "porcentaje": 0.015
+    },
+    {
+     "codigo": "MP00293",
+     "nombre": "Dimethicone",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00172",
+     "nombre": "Palmitoyl Tetrapeptide-7",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00152",
+     "nombre": "Adenosine",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00236",
+     "nombre": "Pantenol Polvo",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00069",
+     "nombre": "Cafeina Anhidra",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00155",
+     "nombre": "Acetyl Hexapeptido-8",
+     "porcentaje": 0.015
+    },
+    {
+     "codigo": "MP00285",
+     "nombre": "Hidrolyzed Collagen",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00191",
+     "nombre": "Palmitoyl Tripeptido-5",
+     "porcentaje": 0.015
+    },
+    {
+     "codigo": "MP00006",
+     "nombre": "Permulen Ez-40 Polymer",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 78.51
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00125",
+     "nombre": "Glicina",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00175",
+     "nombre": "Acetyl Tetrapeptido-5",
+     "porcentaje": 0.015
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 5.0
+    }
+   ]
+  },
+  {
+   "producto": "CONTORNO DE OJOS RETINALDEHIDO 0.05%",
+   "archivo": "CCONTORNO RETINALDEHIDO.pdf",
+   "codigo_pt": "PT-CONTRETINAL-15-001",
+   "orden": "OP-2026-99",
+   "lote": "261981",
+   "cantidad_g": 7500.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00159",
+     "nombre": "Palmitoyl Tripeptide-1",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00063",
+     "nombre": "Tinogard Tt",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00293",
+     "nombre": "Dimethicone",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00172",
+     "nombre": "Palmitoyl Tetrapeptide-7",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00152",
+     "nombre": "Adenosine",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00201",
+     "nombre": "Alcohol Cetilico",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00167",
+     "nombre": "Acido Tranexamico",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00285",
+     "nombre": "Hidrolyzed Collagen",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00006",
+     "nombre": "Permulen Ez-40 Polymer",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00280",
+     "nombre": "Retinaldehido",
+     "porcentaje": 0.025
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 71.625
+    },
+    {
+     "codigo": "MP00282",
+     "nombre": "Squalene Oil",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00173",
+     "nombre": "Bakuchiol",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00192",
+     "nombre": "Acetyl Hexapeptide-8",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00214",
+     "nombre": "Betaglucano",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00277",
+     "nombre": "Silimarina Polvo",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00180",
+     "nombre": "L-Theanine",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00047",
+     "nombre": "Alantoina",
+     "porcentaje": 0.5
+    }
+   ]
+  },
+  {
+   "producto": "Crema Corporal Renova Body",
+   "archivo": "RENOVA BODY.pdf",
+   "codigo_pt": "PT-RENOVABODY-120-001",
+   "orden": "OP-2026-84",
+   "lote": "261811",
+   "cantidad_g": 70000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00107",
+     "nombre": "Urea",
+     "porcentaje": 10.0
+    },
+    {
+     "codigo": "MP00062",
+     "nombre": "Fragancia Pistacho",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00293",
+     "nombre": "Dimethicone",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00134",
+     "nombre": "Miristato De Isopropilo",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00136",
+     "nombre": "Aceite Jojoba",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00019",
+     "nombre": "Fresa Cremosa",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00071",
+     "nombre": "Quimcrem",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00137",
+     "nombre": "Aceite De Argan",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 64.2
+    },
+    {
+     "codigo": "MP00078",
+     "nombre": "Vitamina E Liquida",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00266",
+     "nombre": "Dibutil Adipate",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 2.0
+    }
+   ]
+  },
+  {
+   "producto": "Crema Facial de Urea - Emulsion",
+   "archivo": "CREMA FACIAL DE UREA.pdf",
+   "codigo_pt": "PT-CRUREA-50-001",
+   "orden": "OP-2026-79",
+   "lote": "261671",
+   "cantidad_g": 25000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00107",
+     "nombre": "Urea",
+     "porcentaje": 10.0
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00008",
+     "nombre": "Carbopol",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00240",
+     "nombre": "Cetyl Tranexamate",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00223",
+     "nombre": "Pdrn",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00254",
+     "nombre": "C13-C15 Alkane",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00006",
+     "nombre": "Permulen Ez-40 Polymer",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 67.4
+    },
+    {
+     "codigo": "MP00078",
+     "nombre": "Vitamina E Liquida",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00040",
+     "nombre": "Cetiol Dicaprylyl Carbonate",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00043",
+     "nombre": "Propanediol",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00110",
+     "nombre": "Pantenol",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 3.0
+    }
+   ]
+  },
+  {
+   "producto": "EMULSION HIDRATANTE ILUMINADORA NF",
+   "archivo": "Emulsion Hidratante.pdf",
+   "codigo_pt": "PT-EHILUM-150-001",
+   "orden": "OP-2026-88",
+   "lote": "261832",
+   "cantidad_g": 35000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00127",
+     "nombre": "Silicona Bm 956 (Fenil Trimeticona)",
+     "porcentaje": 1.75
+    },
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00132",
+     "nombre": "Polyaguol Lw",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00149",
+     "nombre": "Tetrahexyldecyl Ascorbate",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00240",
+     "nombre": "Cetyl Tranexamate",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00302",
+     "nombre": "Ethylhexylglycerin",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00063",
+     "nombre": "Tinogard Tt",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00201",
+     "nombre": "Alcohol Cetilico",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00303",
+     "nombre": "COCO-CAPRYLATE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00291",
+     "nombre": "Aceite de cacay",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00006",
+     "nombre": "Permulen Ez-40 Polymer",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 0.9
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 66.139
+    },
+    {
+     "codigo": "MP00040",
+     "nombre": "Cetiol Dicaprylyl Carbonate",
+     "porcentaje": 6.0
+    },
+    {
+     "codigo": "MP00301",
+     "nombre": "PROPYLHEPTYL CAPRYLATE",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00231",
+     "nombre": "Glicinamida HCL",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00177",
+     "nombre": "Oligopeptido 68",
+     "porcentaje": 0.001
+    },
+    {
+     "codigo": "MP00120",
+     "nombre": "Regaliz",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00304",
+     "nombre": "4-BUTYLRESORCINOL",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00043",
+     "nombre": "Propanediol",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00300",
+     "nombre": "CERAMIDE NP",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 5.0
+    }
+   ]
+  },
+  {
+   "producto": "EMULSION LIMPIADORA NF",
+   "archivo": "EMULSION LIMPIADORA.pdf",
+   "codigo_pt": "PT-EMLIMP-150-001",
+   "orden": "OP-2026-92",
+   "lote": "261871",
+   "cantidad_g": 70000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00063",
+     "nombre": "Tinogard Tt",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 6.0
+    },
+    {
+     "codigo": "MP00050",
+     "nombre": "Caprylyl/Capryl Glucoside",
+     "porcentaje": 2.5
+    },
+    {
+     "codigo": "MP00080",
+     "nombre": "Probetaina Capb",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00049",
+     "nombre": "Poloxamer 184",
+     "porcentaje": 1.2
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00006",
+     "nombre": "Permulen Ez-40 Polymer",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 75.06
+    },
+    {
+     "codigo": "MP00078",
+     "nombre": "Vitamina E Liquida",
+     "porcentaje": 0.25
+    },
+    {
+     "codigo": "MP00073",
+     "nombre": "Goma Xanthan",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00092",
+     "nombre": "Decyl Glucoside",
+     "porcentaje": 1.3
+    },
+    {
+     "codigo": "MP00301",
+     "nombre": "PROPYLHEPTYL CAPRYLATE",
+     "porcentaje": 4.5
+    },
+    {
+     "codigo": "MP00053",
+     "nombre": "Silica Dimethyl Silylate",
+     "porcentaje": 0.35
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 0.95
+    },
+    {
+     "codigo": "MP00300",
+     "nombre": "CERAMIDE NP",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00214",
+     "nombre": "Betaglucano",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00082",
+     "nombre": "Tween 20",
+     "porcentaje": 0.5
+    }
+   ]
+  },
+  {
+   "producto": "ESENCIA DE CENTELLA ASIATICA FULL",
+   "archivo": "ESENCIA CENTELLA ASIATICA.pdf",
+   "codigo_pt": "PT-ECENCENTASIT-50",
+   "orden": "OP-2026-83",
+   "lote": "261741",
+   "cantidad_g": 50000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 92.05
+    },
+    {
+     "codigo": "MP00141",
+     "nombre": "Centella Asiatica Extract(Asiaticoside 95%)",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00120",
+     "nombre": "Regaliz",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00125",
+     "nombre": "Glicina",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00176",
+     "nombre": "Water Soluble Total Triterpenes 80%",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00214",
+     "nombre": "Betaglucano",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 2.0
+    }
+   ]
+  },
+  {
+   "producto": "GEL HIDRATANTE NF",
+   "archivo": "Gel hidratante.pdf",
+   "codigo_pt": "PT-GHIDRA-50-002",
+   "orden": "OP-2026-85",
+   "lote": "261751",
+   "cantidad_g": 80000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00296",
+     "nombre": "CARBOMERO 980 NF",
+     "porcentaje": 0.25
+    },
+    {
+     "codigo": "MP00127",
+     "nombre": "Silicona Bm 956 (Fenil Trimeticona)",
+     "porcentaje": 1.75
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00302",
+     "nombre": "Ethylhexylglycerin",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00223",
+     "nombre": "Pdrn",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00236",
+     "nombre": "Pantenol Polvo",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00006",
+     "nombre": "Permulen Ez-40 Polymer",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 0.9
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 84.69
+    },
+    {
+     "codigo": "MP00078",
+     "nombre": "Vitamina E Liquida",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00040",
+     "nombre": "Cetiol Dicaprylyl Carbonate",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00301",
+     "nombre": "PROPYLHEPTYL CAPRYLATE",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00300",
+     "nombre": "CERAMIDE NP",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 2.0
+    }
+   ]
+  },
+  {
+   "producto": "HYDRABALANCE",
+   "archivo": "HYDRABALANCE.pdf",
+   "codigo_pt": "",
+   "orden": "OP-2026-98",
+   "lote": "",
+   "cantidad_g": 0.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00147",
+     "nombre": "L-Arginine",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 0.95
+    },
+    {
+     "codigo": "MP00132",
+     "nombre": "Polyaguol Lw",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00111",
+     "nombre": "Puresil Org01",
+     "porcentaje": 4.0
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00254",
+     "nombre": "C13-C15 Alkane",
+     "porcentaje": 4.0
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00006",
+     "nombre": "Permulen Ez-40 Polymer",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 76.95
+    },
+    {
+     "codigo": "MP00244",
+     "nombre": "Potassium Azeloyl Diglycinate",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00298",
+     "nombre": "Aerosil 200",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00246",
+     "nombre": "Capryloyl Salicylic Acid",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00043",
+     "nombre": "Propanediol",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00125",
+     "nombre": "Glicina",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00207",
+     "nombre": "Stabil",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00200",
+     "nombre": "Carbopol 940",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 0.95
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00283",
+     "nombre": "Zinc Pca",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00035",
+     "nombre": "Extracto De Te Verde",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00047",
+     "nombre": "Alantoina",
+     "porcentaje": 0.5
+    }
+   ]
+  },
+  {
+   "producto": "HYDRAPEPTIDE",
+   "archivo": "HYDRAPEPTIDE.pdf",
+   "codigo_pt": "PT-HYDRAPEPTIDE",
+   "orden": "OP-2026-101",
+   "lote": "262031",
+   "cantidad_g": 30000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00127",
+     "nombre": "Silicona Bm 956 (Fenil Trimeticona)",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00132",
+     "nombre": "Polyaguol Lw",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00159",
+     "nombre": "Palmitoyl Tripeptide-1",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00302",
+     "nombre": "Ethylhexylglycerin",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00063",
+     "nombre": "Tinogard Tt",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00172",
+     "nombre": "Palmitoyl Tetrapeptide-7",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00303",
+     "nombre": "COCO-CAPRYLATE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00291",
+     "nombre": "Aceite de cacay",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00155",
+     "nombre": "Acetyl Hexapeptido-8",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00006",
+     "nombre": "Permulen Ez-40 Polymer",
+     "porcentaje": 0.45
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 0.9
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 76.858
+    },
+    {
+     "codigo": "MP00078",
+     "nombre": "Vitamina E Liquida",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00040",
+     "nombre": "Cetiol Dicaprylyl Carbonate",
+     "porcentaje": 4.0
+    },
+    {
+     "codigo": "MP00301",
+     "nombre": "PROPYLHEPTYL CAPRYLATE",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00321",
+     "nombre": "CHOLESTEROL",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00043",
+     "nombre": "Propanediol",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00176",
+     "nombre": "Water Soluble Total Triterpenes 80%",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00300",
+     "nombre": "CERAMIDE NP",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00174",
+     "nombre": "Palmitoyl Tripeptide-38",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 2.0
+    }
+   ]
+  },
+  {
+   "producto": "Limpiador Facial BHA 2%",
+   "archivo": "Limpiador BHA.pdf",
+   "codigo_pt": "PT-LIMBHA-100-001",
+   "orden": "OP-2026-96",
+   "lote": "261901",
+   "cantidad_g": 200000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 1.9
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 10.0
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 10.0
+    },
+    {
+     "codigo": "MP00080",
+     "nombre": "Probetaina Capb",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00210",
+     "nombre": "Acido Salicilico",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 63.0
+    },
+    {
+     "codigo": "MP00073",
+     "nombre": "Goma Xanthan",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00212",
+     "nombre": "Asco Aos-40",
+     "porcentaje": 4.0
+    },
+    {
+     "codigo": "MP00181",
+     "nombre": "Centella Asiatica Extract(Asiaticoside 10%)",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00294",
+     "nombre": "PEG-400",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00085",
+     "nombre": "Aceite Esencial Arbol De Te",
+     "porcentaje": 0.05
+    }
+   ]
+  },
+  {
+   "producto": "LIMPIADOR FACIAL HIDRATANTE",
+   "archivo": "LIMPIADOR FACIAL HIDRATANTE.pdf",
+   "codigo_pt": "",
+   "orden": "OP-2026-17",
+   "lote": "",
+   "cantidad_g": 0.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00217",
+     "nombre": "Aloe Vera 200X",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00138",
+     "nombre": "Acido Lactico",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 10.0
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 10.0
+    },
+    {
+     "codigo": "MP00080",
+     "nombre": "Probetaina Capb",
+     "porcentaje": 3.5
+    },
+    {
+     "codigo": "MP00285",
+     "nombre": "Hidrolyzed Collagen",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 66.56
+    },
+    {
+     "codigo": "MP00073",
+     "nombre": "Goma Xanthan",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00212",
+     "nombre": "Asco Aos-40",
+     "porcentaje": 3.5
+    },
+    {
+     "codigo": "MP00181",
+     "nombre": "Centella Asiatica Extract(Asiaticoside 10%)",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00120",
+     "nombre": "Regaliz",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00125",
+     "nombre": "Glicina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00200",
+     "nombre": "Carbopol 940",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00214",
+     "nombre": "Betaglucano",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00290",
+     "nombre": "Acido Glutamico",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00082",
+     "nombre": "Tween 20",
+     "porcentaje": 2.0
+    }
+   ]
+  },
+  {
+   "producto": "Limpiador Iluminador",
+   "archivo": "LIMPIADOR ILUMINADOR.pdf",
+   "codigo_pt": "PT-LIMILUM-150-001",
+   "orden": "OP-2026-81",
+   "lote": "261701",
+   "cantidad_g": 100000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00063",
+     "nombre": "Tinogard Tt",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00138",
+     "nombre": "Acido Lactico",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00237",
+     "nombre": "Acido Kojico",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 7.0
+    },
+    {
+     "codigo": "MP00050",
+     "nombre": "Caprylyl/Capryl Glucoside",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00080",
+     "nombre": "Probetaina Capb",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00160",
+     "nombre": "3-O Ethyl Ascrobic Acid",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00210",
+     "nombre": "Acido Salicilico",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 1.25
+    },
+    {
+     "codigo": "MP00291",
+     "nombre": "Aceite de cacay",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00307",
+     "nombre": "ORYZA SATIVA EXTRACT",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00049",
+     "nombre": "Poloxamer 184",
+     "porcentaje": 0.6
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 77.99
+    },
+    {
+     "codigo": "MP00078",
+     "nombre": "Vitamina E Liquida",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00073",
+     "nombre": "Goma Xanthan",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00092",
+     "nombre": "Decyl Glucoside",
+     "porcentaje": 2.5
+    },
+    {
+     "codigo": "MP00301",
+     "nombre": "PROPYLHEPTYL CAPRYLATE",
+     "porcentaje": 1.75
+    },
+    {
+     "codigo": "MP00298",
+     "nombre": "Aerosil 200",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00260",
+     "nombre": "Succinic Acid",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 0.95
+    },
+    {
+     "codigo": "MP00300",
+     "nombre": "CERAMIDE NP",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00214",
+     "nombre": "Betaglucano",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00035",
+     "nombre": "Extracto De Te Verde",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00082",
+     "nombre": "Tween 20",
+     "porcentaje": 0.5
+    }
+   ]
+  },
+  {
+   "producto": "LIP SERUM VOLUMINIZADOR CON PEPTIDOS NF",
+   "archivo": "LIP SERUM.pdf",
+   "codigo_pt": "PT-LIPVOL-10-001",
+   "orden": "OP-2026-51",
+   "lote": "261321",
+   "cantidad_g": 12000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00140",
+     "nombre": "Vanillyl Butyl Er",
+     "porcentaje": 0.06
+    },
+    {
+     "codigo": "MP00292",
+     "nombre": "Flavor",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00052",
+     "nombre": "Bis-Diglyceryl Polyacyladipate-2",
+     "porcentaje": 7.0
+    },
+    {
+     "codigo": "MP00159",
+     "nombre": "Palmitoyl Tripeptide-1",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00063",
+     "nombre": "Tinogard Tt",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00074",
+     "nombre": "Manteca De Cupuacu",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00209",
+     "nombre": "Poliisobutileno",
+     "porcentaje": 35.827
+    },
+    {
+     "codigo": "MP00172",
+     "nombre": "Palmitoyl Tetrapeptide-7",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00051",
+     "nombre": "Polyglyceryl-2 Triisostearate",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00291",
+     "nombre": "Aceite de cacay",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00166",
+     "nombre": "Menthyl Lactte",
+     "porcentaje": 0.6
+    },
+    {
+     "codigo": "MP00137",
+     "nombre": "Aceite De Argan",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00306",
+     "nombre": "Pigmentos",
+     "porcentaje": 1.1
+    },
+    {
+     "codigo": "MP00253",
+     "nombre": "Benzil Nicotinate",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00078",
+     "nombre": "Vitamina E Liquida",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00103",
+     "nombre": "Beauty Oil Ceramide",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00247",
+     "nombre": "Palmitoyl Tripeptide 38",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00249",
+     "nombre": "Polybutene",
+     "porcentaje": 6.5
+    },
+    {
+     "codigo": "MP00077",
+     "nombre": "Manteca De Murumuru",
+     "porcentaje": 7.0
+    },
+    {
+     "codigo": "MP00207",
+     "nombre": "Stabil",
+     "porcentaje": 0.8
+    },
+    {
+     "codigo": "MP00048",
+     "nombre": "Diisostearyl Malate",
+     "porcentaje": 35.0
+    },
+    {
+     "codigo": "MP00054",
+     "nombre": "Lauroyl Lysine",
+     "porcentaje": 0.45
+    },
+    {
+     "codigo": "MP00110",
+     "nombre": "Pantenol",
+     "porcentaje": 1.0
+    }
+   ]
+  },
+  {
+   "producto": "Suero Antioxidante Renova C10",
+   "archivo": "RENOVA C10.pdf",
+   "codigo_pt": "PT-RENOVAC10-30-001",
+   "orden": "OP-2026-67",
+   "lote": "261531",
+   "cantidad_g": 23000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00169",
+     "nombre": "Sodium Ascorbyl Phosphate",
+     "porcentaje": 3.5
+    },
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00238",
+     "nombre": "Ascorbyl Glucoside",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00063",
+     "nombre": "Tinogard Tt",
+     "porcentaje": 0.04
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00071",
+     "nombre": "Quimcrem",
+     "porcentaje": 1.2
+    },
+    {
+     "codigo": "MP00160",
+     "nombre": "3-O Ethyl Ascrobic Acid",
+     "porcentaje": 4.0
+    },
+    {
+     "codigo": "MP00299",
+     "nombre": "Ascorbyl Tetraisopalmitate",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00236",
+     "nombre": "Pantenol Polvo",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00090",
+     "nombre": "Triglicerido Caprilico",
+     "porcentaje": 0.6
+    },
+    {
+     "codigo": "MP00155",
+     "nombre": "Acetyl Hexapeptido-8",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 79.87
+    },
+    {
+     "codigo": "MP00282",
+     "nombre": "Squalene Oil",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00072",
+     "nombre": "Gransil VX 419",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00125",
+     "nombre": "Glicina",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00173",
+     "nombre": "Bakuchiol",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 5.0
+    }
+   ]
+  },
+  {
+   "producto": "SUERO DE NIACINAMIDA",
+   "archivo": "SUERO DE NIACINAMIDA.pdf",
+   "codigo_pt": "PT-NIA",
+   "orden": "OP-2026-97",
+   "lote": "261911",
+   "cantidad_g": 30000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00236",
+     "nombre": "Pantenol Polvo",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 91.43
+    },
+    {
+     "codigo": "MP00141",
+     "nombre": "Centella Asiatica Extract(Asiaticoside 95%)",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00072",
+     "nombre": "Gransil VX 419",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.35
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 5.0
+    }
+   ]
+  },
+  {
+   "producto": "Suero Exfoliante BHA 2%",
+   "archivo": "Exfoliante BHA.pdf",
+   "codigo_pt": "PT-SUEROEXF-BHA2%",
+   "orden": "OP-2026-69",
+   "lote": "261551",
+   "cantidad_g": 45000.0,
+   "suma_pct": 100.001,
+   "items": [
+    {
+     "codigo": "MP00296",
+     "nombre": "CARBOMERO 980 NF",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 0.9
+    },
+    {
+     "codigo": "MP00273",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00263",
+     "nombre": "Betaine Salicylate",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 9.5
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00145",
+     "nombre": "Glutathion",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00210",
+     "nombre": "Acido Salicilico",
+     "porcentaje": 1.45
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00167",
+     "nombre": "Acido Tranexamico",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00259",
+     "nombre": "Dimethyl Isosorbide",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00256",
+     "nombre": "Ethoxydiglycol",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00116",
+     "nombre": "Epi-On",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 67.249
+    },
+    {
+     "codigo": "MP00073",
+     "nombre": "Goma Xanthan",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00231",
+     "nombre": "Glicinamida HCL",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00246",
+     "nombre": "Capryloyl Salicylic Acid",
+     "porcentaje": 0.45
+    },
+    {
+     "codigo": "MP00043",
+     "nombre": "Propanediol",
+     "porcentaje": 4.5
+    },
+    {
+     "codigo": "MP00260",
+     "nombre": "Succinic Acid",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00297",
+     "nombre": "Hidroxido de sodio sol",
+     "porcentaje": 0.9
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00283",
+     "nombre": "Zinc Pca",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00250",
+     "nombre": "Miristoyl Nonapeptide3",
+     "porcentaje": 0.002
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00277",
+     "nombre": "Silimarina Polvo",
+     "porcentaje": 0.1
+    }
+   ]
+  },
+  {
+   "producto": "Suero Exfoliante Nova Pha",
+   "archivo": "EXFOLIANTE NOVA PHA.pdf",
+   "codigo_pt": "PT-PHA-30-001",
+   "orden": "OP-2026-82",
+   "lote": "261731",
+   "cantidad_g": 12000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00107",
+     "nombre": "Urea",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 8.0
+    },
+    {
+     "codigo": "MP00138",
+     "nombre": "Acido Lactico",
+     "porcentaje": 4.0
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00237",
+     "nombre": "Acido Kojico",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00221",
+     "nombre": "Acido Zelaico",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00210",
+     "nombre": "Acido Salicilico",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00144",
+     "nombre": "Alpha Arbutin",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00264",
+     "nombre": "Ciclodextrin",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 77.79
+    },
+    {
+     "codigo": "MP00072",
+     "nombre": "Gransil VX 419",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00120",
+     "nombre": "Regaliz",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00297",
+     "nombre": "Hidroxido de sodio sol",
+     "porcentaje": 3.0
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    }
+   ]
+  },
+  {
+   "producto": "Suero Hidratante AH 1,5% Elaborado por: Supervisado por:",
+   "archivo": "SUERO HIDRATANTE AH.pdf",
+   "codigo_pt": "PT-SAH-30-001",
+   "orden": "OP-2026-41",
+   "lote": "261201",
+   "cantidad_g": 90000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00217",
+     "nombre": "Aloe Vera 200X",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00195",
+     "nombre": "Glicerina",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00236",
+     "nombre": "Pantenol Polvo",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00021",
+     "nombre": "Phenoxyetanol",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 95.21
+    },
+    {
+     "codigo": "MP00215",
+     "nombre": "Betaina",
+     "porcentaje": 0.35
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.8
+    },
+    {
+     "codigo": "MP00214",
+     "nombre": "Betaglucano",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00047",
+     "nombre": "Alantoina",
+     "porcentaje": 0.3
+    }
+   ]
+  },
+  {
+   "producto": "Suero Iluminador Trx",
+   "archivo": "SUERO ILUMINADOR TRX.pdf",
+   "codigo_pt": "PT-TRX-30-001",
+   "orden": "OP-2026-71",
+   "lote": "261601",
+   "cantidad_g": 90000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00107",
+     "nombre": "Urea",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00239",
+     "nombre": "Sodium Phytate",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00237",
+     "nombre": "Acido Kojico",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00252",
+     "nombre": "Centella Asiatica Extract",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00145",
+     "nombre": "Glutathion",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00210",
+     "nombre": "Acido Salicilico",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00167",
+     "nombre": "Acido Tranexamico",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00219",
+     "nombre": "Melatonina",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00144",
+     "nombre": "Alpha Arbutin",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00264",
+     "nombre": "Ciclodextrin",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 79.369
+    },
+    {
+     "codigo": "MP00231",
+     "nombre": "Glicinamida HCL",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00177",
+     "nombre": "Oligopeptido 68",
+     "porcentaje": 0.001
+    },
+    {
+     "codigo": "MP00072",
+     "nombre": "Gransil VX 419",
+     "porcentaje": 0.25
+    },
+    {
+     "codigo": "MP00120",
+     "nombre": "Regaliz",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00047",
+     "nombre": "Alantoina",
+     "porcentaje": 0.5
+    }
+   ]
+  },
+  {
+   "producto": "Suero Multipeptidos",
+   "archivo": "SUERO MULTIPEPTIDOS.pdf",
+   "codigo_pt": "PT-SMULTIP-30-001",
+   "orden": "OP-2026-87",
+   "lote": "261761",
+   "cantidad_g": 35000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00194",
+     "nombre": "Copper Tripeptide -1",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00223",
+     "nombre": "Pdrn",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00172",
+     "nombre": "Palmitoyl Tetrapeptide-7",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00152",
+     "nombre": "Adenosine",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 2.5
+    },
+    {
+     "codigo": "MP00145",
+     "nombre": "Glutathion",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00155",
+     "nombre": "Acetyl Hexapeptido-8",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00285",
+     "nombre": "Hidrolyzed Collagen",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00191",
+     "nombre": "Palmitoyl Tripeptido-5",
+     "porcentaje": 0.001
+    },
+    {
+     "codigo": "MP00179",
+     "nombre": "Dipeptide Diaminobul Bencilamide Diacette",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00190",
+     "nombre": "Palmitoyl Tripeptido-1",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00228",
+     "nombre": "Palmitoyl Pentapeptide-4",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 88.803
+    },
+    {
+     "codigo": "MP00072",
+     "nombre": "Gransil VX 419",
+     "porcentaje": 0.25
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00125",
+     "nombre": "Glicina",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00175",
+     "nombre": "Acetyl Tetrapeptido-5",
+     "porcentaje": 0.001
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 5.0
+    }
+   ]
+  },
+  {
+   "producto": "Suero Vitamina C+",
+   "archivo": "VITAMINA C+.pdf",
+   "codigo_pt": "PT-VITC-30-001",
+   "orden": "OP-2026-91",
+   "lote": "261831",
+   "cantidad_g": 20000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00270",
+     "nombre": "Gluconolactona",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00121",
+     "nombre": "Propilenglicol",
+     "porcentaje": 3.5
+    },
+    {
+     "codigo": "MP00237",
+     "nombre": "Acido Kojico",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00145",
+     "nombre": "Glutathion",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00160",
+     "nombre": "3-O Ethyl Ascrobic Acid",
+     "porcentaje": 4.0
+    },
+    {
+     "codigo": "MP00285",
+     "nombre": "Hidrolyzed Collagen",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00144",
+     "nombre": "Alpha Arbutin",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00264",
+     "nombre": "Ciclodextrin",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 81.0
+    },
+    {
+     "codigo": "MP00231",
+     "nombre": "Glicinamida HCL",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00072",
+     "nombre": "Gransil VX 419",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00065",
+     "nombre": "Acido Citrico",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00230",
+     "nombre": "Acido Ascorbico",
+     "porcentaje": 6.0
+    },
+    {
+     "codigo": "MP00150",
+     "nombre": "Ergothioneine",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.05
+    }
+   ]
+  },
+  {
+   "producto": "Triactive Retinoid + NAD NF",
+   "archivo": "Triactive.pdf",
+   "codigo_pt": "PT-TRIACTIVE-30-001",
+   "orden": "OP-2026-94",
+   "lote": "261881",
+   "cantidad_g": 12000.0,
+   "suma_pct": 100.0,
+   "items": [
+    {
+     "codigo": "MP00235",
+     "nombre": "NAD+",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00262",
+     "nombre": "N-Acetyl Glucosamina",
+     "porcentaje": 1.0
+    },
+    {
+     "codigo": "MP00079",
+     "nombre": "Vitamina E Polvo",
+     "porcentaje": 0.35
+    },
+    {
+     "codigo": "MP00274",
+     "nombre": "Hidroxipinacolone Retinoate",
+     "porcentaje": 0.115
+    },
+    {
+     "codigo": "MP00123",
+     "nombre": "Trietanolamina 85%",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00239",
+     "nombre": "Sodium Phytate",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00132",
+     "nombre": "Polyaguol Lw",
+     "porcentaje": 1.7
+    },
+    {
+     "codigo": "MP00178",
+     "nombre": "Acetyl Tetrapeptide-40",
+     "porcentaje": 0.003
+    },
+    {
+     "codigo": "MP00149",
+     "nombre": "Tetrahexyldecyl Ascorbate",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00240",
+     "nombre": "Cetyl Tranexamate",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00159",
+     "nombre": "Palmitoyl Tripeptide-1",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00063",
+     "nombre": "Tinogard Tt",
+     "porcentaje": 0.1
+    },
+    {
+     "codigo": "MP00223",
+     "nombre": "Pdrn",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00172",
+     "nombre": "Palmitoyl Tetrapeptide-7",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00201",
+     "nombre": "Alcohol Cetilico",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00236",
+     "nombre": "Pantenol Polvo",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00184",
+     "nombre": "PEG-12 Dimethicone",
+     "porcentaje": 1.5
+    },
+    {
+     "codigo": "MP00234",
+     "nombre": "Apigenin",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00261",
+     "nombre": "Retinal",
+     "porcentaje": 0.035
+    },
+    {
+     "codigo": "MP00179",
+     "nombre": "Dipeptide Diaminobul Bencilamide Diacette",
+     "porcentaje": 0.01
+    },
+    {
+     "codigo": "MP00245",
+     "nombre": "1,2 Hexanediol",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00264",
+     "nombre": "Ciclodextrin",
+     "porcentaje": 0.153
+    },
+    {
+     "codigo": "MP00006",
+     "nombre": "Permulen Ez-40 Polymer",
+     "porcentaje": 0.4
+    },
+    {
+     "codigo": "MP00116",
+     "nombre": "Epi-On",
+     "porcentaje": 2.0
+    },
+    {
+     "codigo": "MP00286",
+     "nombre": "Agua Desionizada",
+     "porcentaje": 70.913
+    },
+    {
+     "codigo": "MP00040",
+     "nombre": "Cetiol Dicaprylyl Carbonate",
+     "porcentaje": 4.0
+    },
+    {
+     "codigo": "MP00242",
+     "nombre": "Rosemary Extrac",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00103",
+     "nombre": "Beauty Oil Ceramide",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00177",
+     "nombre": "Oligopeptido 68",
+     "porcentaje": 0.001
+    },
+    {
+     "codigo": "MP00157",
+     "nombre": "Acido Hialuronico 300Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00246",
+     "nombre": "Capryloyl Salicylic Acid",
+     "porcentaje": 0.25
+    },
+    {
+     "codigo": "MP00043",
+     "nombre": "Propanediol",
+     "porcentaje": 4.5
+    },
+    {
+     "codigo": "MP00142",
+     "nombre": "Acido Hialuronico 1500Kd",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00287",
+     "nombre": "Retinyl Retinoate",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00200",
+     "nombre": "Carbopol 940",
+     "porcentaje": 0.2
+    },
+    {
+     "codigo": "MP00173",
+     "nombre": "Bakuchiol",
+     "porcentaje": 0.03
+    },
+    {
+     "codigo": "MP00068",
+     "nombre": "Biosure FE",
+     "porcentaje": 0.95
+    },
+    {
+     "codigo": "MP00288",
+     "nombre": "Boron Nitride",
+     "porcentaje": 0.5
+    },
+    {
+     "codigo": "MP00163",
+     "nombre": "Acido Hialuronico 50Kd",
+     "porcentaje": 0.3
+    },
+    {
+     "codigo": "MP00174",
+     "nombre": "Palmitoyl Tripeptide-38",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00275",
+     "nombre": "Nicotinamide Mononucleotide",
+     "porcentaje": 0.05
+    },
+    {
+     "codigo": "MP00226",
+     "nombre": "Ectoina",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00250",
+     "nombre": "Miristoyl Nonapeptide3",
+     "porcentaje": 0.005
+    },
+    {
+     "codigo": "MP00046",
+     "nombre": "Edta Disodico",
+     "porcentaje": 0.15
+    },
+    {
+     "codigo": "MP00148",
+     "nombre": "Niacinamida",
+     "porcentaje": 5.0
+    },
+    {
+     "codigo": "MP00047",
+     "nombre": "Alantoina",
+     "porcentaje": 0.5
+    }
+   ]
+  }
+ ]
+}
