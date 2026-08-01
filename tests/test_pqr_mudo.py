@@ -215,3 +215,111 @@ def test_una_queja_comun_NO_escala_a_critica(app, db_clean):
         assert data.get('sin_triar_1d') == 1, data
     finally:
         _limpiar_quejas()
+
+
+# ══ que un mapeo equivocado NO vuelva a enmudecer el buzón (1-ago) ══════════════
+#
+# Sebastián: *"sigamos con PQR para que quede funcionando"*. El buzón estuvo mudo seis semanas
+# porque el workflow mandaba el texto en un campo que GHL no resuelve, y EOS sólo miraba cuatro
+# nombres de campo en el primer nivel del JSON. Un integrador externo cambia la forma del payload
+# sin avisar; la tolerancia tiene que vivir de este lado.
+
+def test_acepta_el_texto_venga_en_el_campo_que_venga(app, db_clean):
+    from blueprints.aseguramiento import _texto_del_payload
+    casos = [
+        ({'message': 'hola'}, 'hola'),                              # lo de siempre
+        ({'body': 'hola'}, 'hola'),
+        ({'text': 'hola'}, 'hola'),                                 # nombre nuevo
+        ({'message': {'body': 'hola'}}, 'hola'),                    # GHL manda el OBJETO
+        ({'customData': {'mensaje': 'hola'}}, 'hola'),              # anidado en custom data
+        ({'sms': {'text': 'hola'}}, 'hola'),
+    ]
+    for payload, esperado in casos:
+        assert _texto_del_payload(payload) == esperado, payload
+
+
+def test_NO_agarra_cualquier_texto_como_si_fuera_la_queja(app, db_clean):
+    """Dientes: 'buscá el string más largo' metería un nombre o una URL como queja de cliente."""
+    from blueprints.aseguramiento import _texto_del_payload
+    assert _texto_del_payload({'full_name': 'Juan Perez', 'email': 'j@x.com'}) == ''
+    assert _texto_del_payload({'contact': {'id': 'abc123', 'name': 'Juan'}}) == ''
+
+
+def test_un_message_id_anidado_NO_se_usa_como_llave(app, db_clean):
+    """La llave de dedup no puede salir de un `id` cualquiera del JSON: dos mensajes DISTINTOS
+    colisionarían y el segundo se descartaría como duplicado (así se pierde una queja)."""
+    from blueprints.aseguramiento import _campo_del_payload
+    d = {'contact': {'id': 'ID-DE-OTRA-COSA'}, 'message': 'hola'}
+    assert _campo_del_payload(d, ('message_id', 'messageId', 'id'), profundo=False) == ''
+
+
+def test_un_intento_fallido_GUARDA_lo_que_ghl_mando(app, db_clean):
+    """Antes se descartaba el payload: se perdía la queja Y la única pista de qué manda GHL."""
+    _sql("DELETE FROM pqr_intentos_fallidos")
+    _sql("DELETE FROM app_settings WHERE clave='pqr_aviso_fallo'")
+    cli = app.test_client()
+    r = cli.post('/api/pqr/inbound',
+                 json={'contact_id': 'ZZTEST-EVIDENCIA', 'pqr_mensaje_raro': 'me salio brote'},
+                 headers=_tok_headers())
+    assert r.status_code == 400, r.data[:200]
+    j = r.get_json()
+    assert 'pqr_mensaje_raro' in (j.get('esto_fue_lo_que_mandaste') or ''), j
+    filas = _sql("SELECT claves, payload FROM pqr_intentos_fallidos ORDER BY id DESC LIMIT 1")
+    assert filas, 'no guardó el intento: la evidencia se perdió otra vez'
+    assert 'pqr_mensaje_raro' in filas[0][0], filas[0]
+    assert 'me salio brote' in filas[0][1], 'el texto del cliente no quedó guardado'
+
+
+def test_el_endpoint_muestra_que_campos_manda_ghl(app, db_clean):
+    _sql("DELETE FROM pqr_intentos_fallidos")
+    _sql("DELETE FROM app_settings WHERE clave='pqr_aviso_fallo'")
+    cli = app.test_client()
+    cli.post('/api/pqr/inbound', json={'contact_id': 'ZZT-2', 'campo_inventado': 'hola'},
+             headers=_tok_headers())
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c2 = app.test_client()
+    c2.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD},
+            headers=csrf_headers(), follow_redirects=False)
+    r = c2.get('/api/aseguramiento/pqr-intentos-fallidos')
+    assert r.status_code == 200, r.data[:200]
+    j = r.get_json()
+    assert j['n'] >= 1, j
+    assert 'campo_inventado' in j['campos_que_manda_ghl'], j['campos_que_manda_ghl']
+    assert 'message' in j['campos_que_EOS_acepta_como_texto']
+
+
+def test_E2E_una_queja_de_whatsapp_entra_y_aparece_en_la_bandeja(app, db_clean):
+    """"Que quede funcionando": el recorrido completo con la forma de payload que manda un
+    disparador de mensaje entrante de GHL -- el objeto `message` con el cuerpo adentro, que es
+    exactamente lo que antes se caía con 400.
+
+    Un test de unidad del extractor no alcanza: lo que hay que probar es que la queja LLEGA a
+    la bandeja donde Miguel la va a ver (M94 · construido no es lo mismo que validado).
+    """
+    _sql("DELETE FROM pqr_inbox WHERE COALESCE(ghl_contact_id,'')='ZZE2E-CONTACT'")
+    cli = app.test_client()
+    r = cli.post('/api/pqr/inbound', headers=_tok_headers(), json={
+        'contact_id': 'ZZE2E-CONTACT',
+        'full_name': 'ZZ Cliente E2E',
+        'phone': '+573001112233',
+        'type': 'whatsapp',
+        'message': {'id': 'ZZE2E-MSG-1', 'body': 'ZZTEST me salio brote con la crema, lote 123'},
+    })
+    assert r.status_code in (200, 201), r.data[:300]
+    assert not (r.get_json() or {}).get('error'), r.get_json()
+
+    fila = _sql("SELECT mensaje, canal, contacto_nombre, estado FROM pqr_inbox "
+                "WHERE ghl_contact_id='ZZE2E-CONTACT' ORDER BY id DESC LIMIT 1")
+    assert fila, 'la queja no quedó en el buzón'
+    assert 'brote' in fila[0][0], fila[0]
+    assert fila[0][3] == 'pendiente', fila[0]
+
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c2 = app.test_client()
+    c2.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD},
+            headers=csrf_headers(), follow_redirects=False)
+    rb = c2.get('/api/aseguramiento/pqr-inbox?estado=pendiente')
+    assert rb.status_code == 200, rb.data[:200]
+    _ids = [x.get('contacto_nombre') for x in (rb.get_json() or {}).get('inbox', [])]
+    assert 'ZZ Cliente E2E' in _ids, 'entró al buzón pero NO aparece en la bandeja de triaje'
+    _sql("DELETE FROM pqr_inbox WHERE COALESCE(ghl_contact_id,'')='ZZE2E-CONTACT'")

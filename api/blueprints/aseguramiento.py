@@ -4243,6 +4243,86 @@ def pqr_ghl_test(contact_id):
     return jsonify(out)
 
 
+# ── Leer el payload de GHL sin depender de que el mapeo esté EXACTO ──────────────
+# Sebastián 1-ago: *"sigamos con PQR para que quede funcionando"*. El buzón estuvo mudo seis
+# semanas porque el workflow mandaba el texto en un campo que GHL no resuelve, y EOS sólo miraba
+# cuatro nombres de campo, todos en el primer nivel del JSON. Un integrador externo puede cambiar
+# la forma del payload sin avisar (y GHL manda estructuras distintas según el disparador), así que
+# la tolerancia va acá: se busca por NOMBRE de llave a cualquier profundidad.
+#
+# Deliberadamente NO se agarra "el string más largo que haya": eso metería un nombre, una URL o un
+# id como si fuera la queja del cliente. Sólo llaves de una lista blanca.
+_PQR_CLAVES_TEXTO = ('message', 'body', 'mensaje', 'text', 'texto', 'lastMessageBody',
+                     'messageBody', 'message_body', 'last_message', 'contenido', 'content')
+
+
+def _walk_payload(d, profundidad=0, tope=250):
+    """Recorre el JSON (dicts y listas) devolviendo pares (clave, valor). Acotado a propósito:
+    un payload hostil o gigante no puede volverse un recorrido infinito dentro de un webhook."""
+    if profundidad > 4 or tope <= 0:
+        return
+    if isinstance(d, dict):
+        for k, v in d.items():
+            yield str(k), v
+            if isinstance(v, (dict, list)):
+                for par in _walk_payload(v, profundidad + 1, tope - 1):
+                    yield par
+    elif isinstance(d, list):
+        for v in d[:20]:
+            if isinstance(v, (dict, list)):
+                for par in _walk_payload(v, profundidad + 1, tope - 1):
+                    yield par
+
+
+def _campo_del_payload(d, claves, profundo=True):
+    """Primer valor de texto para alguna de esas llaves · primero el nivel 1, después anidado.
+
+    `profundo=False` para llaves genéricas como `id`: buscarla anidada devolvería el id de
+    cualquier objeto suelto y eso, en la llave de deduplicación, hace colisionar mensajes
+    DISTINTOS -- que es como se pierde una queja sin que nadie lo note.
+    """
+    for k in claves:
+        v = d.get(k) if isinstance(d, dict) else None
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    if not profundo:
+        return ''
+    _low = {str(k).lower() for k in claves}
+    for k, v in _walk_payload(d):
+        if k.lower() in _low and isinstance(v, str) and v.strip():
+            return v.strip()
+    return ''
+
+
+def _texto_del_payload(d):
+    """El TEXTO de la queja, venga como venga: `message`, `message.body`, `sms.text`…
+
+    Se respeta la prioridad de la lista blanca (no "el más largo"), así que si el payload trae
+    a la vez `message` y un `text` de otra cosa, gana el que el integrador tenía que mandar.
+    """
+    if isinstance(d, dict):
+        _m = d.get('message')
+        if isinstance(_m, dict):                       # GHL manda el objeto entero, no el texto
+            for k in ('body', 'text', 'message', 'content'):
+                if isinstance(_m.get(k), str) and _m[k].strip():
+                    return _m[k].strip()
+    return _campo_del_payload(d, _PQR_CLAVES_TEXTO)
+
+
+def _claves_del_payload(d, limite=40):
+    """Las llaves que trajo el webhook · es lo que dice QUÉ campo hay que mapear en GHL."""
+    vistas, out = set(), []
+    for k, v in _walk_payload(d):
+        if k in vistas:
+            continue
+        vistas.add(k)
+        out.append('%s=%s' % (k, ('{...}' if isinstance(v, (dict, list))
+                                  else str(v)[:40].replace('\n', ' '))))
+        if len(out) >= limite:
+            break
+    return ' · '.join(out)
+
+
 @bp.route('/api/pqr/inbound', methods=['POST'])
 def pqr_inbound():
     """Webhook server-to-server desde GHL. Valida secreto propio (no usa sesión).
@@ -4256,14 +4336,13 @@ def pqr_inbound():
         return jsonify({'error': 'PQR_WEBHOOK_SECRET no configurado'}), 503
 
     d = request.get_json(silent=True) or {}
-    mensaje = (d.get('message') or d.get('body') or d.get('mensaje') or d.get('lastMessageBody') or '').strip()
-    contacto = (d.get('full_name') or d.get('fullName') or d.get('contact_name')
-                or d.get('name') or d.get('contacto') or '').strip()
-    email = (d.get('email') or d.get('contact_email') or '').strip()
-    telefono = (d.get('phone') or d.get('telefono') or '').strip()
-    canal = (d.get('channel') or d.get('canal') or d.get('source') or '').strip().lower()
-    ghl_contact_id = (d.get('contact_id') or d.get('contactId') or d.get('ghl_contact_id') or '').strip() or None
-    ghl_msg_id = (d.get('message_id') or d.get('messageId') or d.get('id') or '').strip() or None
+    mensaje = _texto_del_payload(d)
+    contacto = _campo_del_payload(d, ('full_name', 'fullName', 'contact_name', 'name', 'contacto'))
+    email = _campo_del_payload(d, ('email', 'contact_email'))
+    telefono = _campo_del_payload(d, ('phone', 'telefono'))
+    canal = _campo_del_payload(d, ('channel', 'canal', 'source', 'type')).lower()
+    ghl_contact_id = _campo_del_payload(d, ('contact_id', 'contactId', 'ghl_contact_id')) or None
+    ghl_msg_id = _campo_del_payload(d, ('message_id', 'messageId', 'id'), profundo=False) or None
 
     conn = get_db(); c = conn.cursor()
 
@@ -4306,6 +4385,25 @@ def pqr_inbound():
             _por_que = 'El webhook llegó sin `contact_id`, así que no hay a quién consultarle el texto.'
         else:
             _por_que = 'El webhook llegó sin texto en `message`.'
+
+        # El intento se GUARDA CRUDO (1-ago · mig 405). Antes se descartaba: se perdía la queja
+        # del cliente y, peor, la única pista de qué manda GHL en realidad -- por eso las seis
+        # semanas mudas hubo que depurarlas a ciegas, adivinando nombres de campo. Con el payload
+        # guardado, la respuesta a "¿qué campo mapeo?" se LEE en vez de suponerse.
+        _claves = ''
+        try:
+            import json as _js_f
+            _claves = _claves_del_payload(d)
+            c.execute(
+                "INSERT INTO pqr_intentos_fallidos (recibido_en, ghl_contact_id, diagnostico, "
+                "claves, payload) VALUES (?,?,?,?,?)",
+                (datetime.utcnow().replace(microsecond=0).isoformat(), ghl_contact_id,
+                 (_d or 'sin_texto')[:120], _claves[:2000],
+                 _js_f.dumps(d, ensure_ascii=False)[:8000]))
+            conn.commit()
+        except Exception as _efa:
+            log.warning('no se pudo guardar el intento fallido de PQR: %s', _efa)
+
         # UN INTENTO FALLIDO ES UNA QUEJA QUE SE PIERDE · avisar YA, no en 7 días (30-jul).
         # El workflow de GHL de Sebastián no permite ramificar sobre la respuesta del webhook
         # (su versión no expone ese campo en las condiciones), así que del lado de GHL un fallo
@@ -4324,7 +4422,8 @@ def pqr_inbound():
                      'Llegó un PQR que EOS NO pudo registrar',
                      body=('%s · Ese mensaje de cliente NO quedó en el sistema de calidad y su '
                            'plazo de respuesta corre igual. Revisá el workflow "Auto 35: PQR" en '
-                           'GoHighLevel.' % _por_que),
+                           'GoHighLevel. Esto fue lo que GHL mandó: %s'
+                           % (_por_que, (_claves or 'un cuerpo vacío')[:400])),
                      link='/aseguramiento', remitente='pqr-inbound', importante=True)
         except Exception as _ea:
             log.warning('aviso de PQR fallido no salió: %s', _ea)
@@ -4335,7 +4434,9 @@ def pqr_inbound():
                                 'Los campos personalizados ({{contact.pqr_mensaje}}) NO se '
                                 'resuelven dentro de un webhook de GHL: llegan vacíos. Con un '
                                 'disparador de mensaje entrante podés mapear el cuerpo real del '
-                                'mensaje.'),
+                                'mensaje. EOS acepta el texto en cualquiera de estos campos, y '
+                                'también anidado: ' + ', '.join(_PQR_CLAVES_TEXTO)),
+            'esto_fue_lo_que_mandaste': _claves or '(cuerpo vacío)',
             'diagnostico': _d or 'sin_intento',
         }), 400
 
@@ -4405,6 +4506,40 @@ def pqr_inbox_listar():
     items = [dict(zip(cols, r)) for r in rows]
     pend = c.execute("SELECT COUNT(*) FROM pqr_inbox WHERE estado='pendiente'").fetchone()[0]
     return jsonify({'inbox': items, 'pendientes': pend})
+
+
+@bp.route('/api/aseguramiento/pqr-intentos-fallidos', methods=['GET'])
+def pqr_intentos_fallidos():
+    """Los PQR que GoHighLevel intentó mandar y EOS NO pudo registrar, con el payload CRUDO.
+
+    Sirve para dos cosas, y la segunda es la que importa: (1) la queja del cliente no se pierde
+    -- queda su texto original aunque no haya entrado como PQR; y (2) `claves` dice qué campos
+    mandó GHL de verdad, que es la respuesta a "¿qué tengo que mapear?" sin adivinar ni pedirle
+    a nadie que abra los Execution logs.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    items = []
+    try:
+        for r in c.execute(
+                "SELECT id, recibido_en, COALESCE(ghl_contact_id,''), COALESCE(diagnostico,''), "
+                "COALESCE(claves,''), COALESCE(payload,''), COALESCE(resuelto,0) "
+                "FROM pqr_intentos_fallidos ORDER BY id DESC LIMIT 50").fetchall():
+            items.append({'id': r[0], 'recibido_en': r[1], 'ghl_contact_id': r[2],
+                          'diagnostico': r[3], 'claves': r[4], 'payload': r[5],
+                          'resuelto': int(r[6] or 0)})
+    except Exception as e:
+        return jsonify({'error': 'no se pudo leer', 'detalle': str(e)[:200]}), 500
+    _campos = sorted({p.split('=')[0] for it in items for p in (it['claves'] or '').split(' · ') if p})
+    return jsonify({
+        'ok': True, 'items': items, 'n': len(items),
+        'campos_que_manda_ghl': _campos,
+        'campos_que_EOS_acepta_como_texto': list(_PQR_CLAVES_TEXTO),
+        'ayuda': ('Si en `campos_que_manda_ghl` ves el texto de la queja bajo un nombre que no '
+                  'está en `campos_que_EOS_acepta_como_texto`, ese es el mapeo a corregir en el '
+                  'webhook de GHL (o el nombre que hay que sumar acá).'),
+    })
 
 
 @bp.route('/api/aseguramiento/pqr-inbox/diagnostico', methods=['GET'])

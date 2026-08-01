@@ -122,3 +122,62 @@ def test_lo_encuentra_por_el_NOMBRE_escrito_en_la_formula(app, db_clean):
     assert u['material_id'] == 'MP-ZZOTRO' and u['material_nombre'] == NOMBRE
     assert j['existe_en_maestro'] is False, (
         'el nombre no está en el maestro (está sólo en la fórmula) y el diagnóstico debería decirlo')
+
+
+# ══ la familia · "se usa en varias fórmulas, ¿cómo así?" (1-ago) ════════════════
+#
+# Sebastián, sobre mi respuesta de ayer: el diagnóstico dijo "ninguna fórmula lo usa" y él
+# sabía que el ingrediente SÍ se usa. Las dos cosas eran ciertas: ese CÓDIGO no aparece en
+# ninguna fórmula, pero las fórmulas nombran a un pariente de la misma familia (lauryl /
+# decyl / caprylyl glucoside son parecidos y son moléculas DISTINTAS).
+#
+# "Nadie lo usa" a secas manda a agregar el ingrediente a una fórmula que quizá ya lo tiene
+# con otro nombre. El diagnóstico tiene que poner los candidatos sobre la mesa -- sin
+# emparejarlos, porque cuál es cuál lo decide Alejandro (M19).
+
+def _limpiar_familia():
+    for cod in ('ZZFAM-LAURYL', 'ZZFAM-DECYL'):
+        _sql("DELETE FROM formula_items WHERE material_id=?", (cod,))
+        _sql("DELETE FROM maestro_mps WHERE codigo_mp=?", (cod,))
+    _sql("DELETE FROM formula_items WHERE producto_nombre='ZZFAM LIMPIADOR'")
+    _sql("DELETE FROM formula_headers WHERE producto_nombre='ZZFAM LIMPIADOR'")
+
+
+def test_avisa_que_un_PARIENTE_es_el_que_usan_las_formulas(app, db_clean):
+    _limpiar_familia()
+    # el que se busca: existe, nadie lo nombra, y en bodega ENTRÓ y nunca salió
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+         "VALUES (?,?,?,1)", ('ZZFAM-LAURYL', 'Plantaren ZZ', 'ZZLAURYL ZZGLUCOSIDE'))
+    # el pariente: misma familia, y ESE sí está en una fórmula activa
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+         "VALUES (?,?,?,1)", ('ZZFAM-DECYL', 'Decyl ZZ', 'ZZDECYL ZZGLUCOSIDE'))
+    _sql("INSERT INTO formula_headers (producto_nombre, activo, lote_size_kg) VALUES (?,1,10)",
+         ('ZZFAM LIMPIADOR',))
+    _sql("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) "
+         "VALUES (?,?,?,3.5)", ('ZZFAM LIMPIADOR', 'ZZFAM-DECYL', 'Decyl ZZ'))
+    try:
+        j = _diag(app, 'ZZFAM-LAURYL')
+        assert j['formulas_activas_que_lo_usan'] == 0, j
+        assert j['parientes_usados_en_formulas'] >= 1, (
+            'no avisó que un pariente SÍ se usa · "nadie lo usa" a secas engaña: %r' % j['veredicto'])
+        fam = [p for p in j['parientes'] if p['codigo'] == 'ZZFAM-DECYL']
+        assert fam, j['parientes']
+        assert fam[0]['usos_en_formulas_activas'], fam[0]
+        assert 'MISMA FAMILIA' in j['veredicto'], j['veredicto']
+        # y el kardex viaja, que es la evidencia que distingue las dos explicaciones
+        assert 'kardex' in fam[0] and 'kardex' in j['codigos'][0], j
+    finally:
+        _limpiar_familia()
+
+
+def test_si_NO_hay_parientes_sigue_diciendo_que_falta_el_ingrediente(app, db_clean):
+    """Dientes del otro lado: si todo se explicara con 'mirá la familia', el aviso sería ruido."""
+    _limpiar_familia()
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+         "VALUES (?,?,?,1)", ('ZZFAM-LAURYL', 'ZZUNICO ZZRARO', 'ZZUNICO ZZRARO'))
+    try:
+        j = _diag(app, 'ZZFAM-LAURYL')
+        assert j['parientes_usados_en_formulas'] == 0, j['parientes']
+        assert 'falta el ingrediente' in j['veredicto'], j['veredicto']
+    finally:
+        _limpiar_familia()

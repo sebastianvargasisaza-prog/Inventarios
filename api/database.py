@@ -10907,6 +10907,24 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "UPDATE mee_cajas_disposicion SET estado='PENDIENTE' "
         "WHERE UPPER(COALESCE(estado,''))='CUARENTENA'",
     ]),
+    (405, "Un PQR que EOS no pudo registrar deja EVIDENCIA, no sólo una campana (Sebastián "
+          "1-ago: 'sigamos con PQR para que quede funcionando'). Hasta hoy, cuando el webhook "
+          "llegaba sin texto, el payload se DESCARTABA: se perdía la queja del cliente y, peor, "
+          "se perdía la única pista de qué está mandando GoHighLevel en realidad -- por eso las "
+          "seis semanas de silencio se depuraron a ciegas. Acá queda el intento crudo con sus "
+          "llaves, que es lo que dice qué campo hay que mapear. Tabla NUEVA: no toca nada.", [
+        """CREATE TABLE IF NOT EXISTS pqr_intentos_fallidos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recibido_en TEXT NOT NULL,
+            ghl_contact_id TEXT,
+            diagnostico TEXT,
+            claves TEXT,
+            payload TEXT,
+            resuelto INTEGER NOT NULL DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pqr_intentos_fallidos_fecha "
+        "ON pqr_intentos_fallidos(recibido_en)",
+    ]),
 ]
 
 

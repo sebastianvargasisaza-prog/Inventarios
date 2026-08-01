@@ -4155,6 +4155,97 @@ def prog_diag_por_que_no_sale():
         u['dias_hasta'] = ((_date2.fromisoformat(lotes[0]['fecha']) - hoy).days
                            if lotes else None)
 
+    # 3.b) los PARIENTES · Sebastián 1-ago: *"el lauryl glucoside se usa en varias fórmulas,
+    # ¿cómo así?"*. Y tenía razón a medias: lo que se puede afirmar es que ESE CÓDIGO no aparece
+    # en ninguna fórmula, no que el ingrediente no se use. Si la fórmula lo nombra con otro
+    # código de la misma familia (lauryl / decyl / caprylyl glucoside son tensioactivos parecidos
+    # pero MOLÉCULAS distintas), "nadie lo usa" es una verdad que engaña.
+    #
+    # Acá NO se empareja ni se sugiere fusionar: eso es decisión de Alejandro (M19 · emparejar
+    # por parecido termina descontando la molécula equivocada). Se muestran los candidatos con
+    # la evidencia del KARDEX, que es la que resuelve la duda de verdad: si en planta se vierte
+    # el lauryl pero la fórmula descuenta el decyl, el lauryl tiene entradas y NINGUNA salida
+    # mientras el decyl sale sin haber entrado nunca en esa proporción.
+    _STOP = {'acid', 'extract', 'oil', 'water', 'powder', 'sodium', 'potassium', 'natural',
+             'seed', 'leaf', 'root', 'juice', 'butter', 'polvo', 'aceite', 'agua', 'acido',
+             'extracto', 'liquido', 'liquida', 'grado', 'usp', 'bp', 'solucion'}
+    import re as _re_par
+    _palabras = set()
+    for x in codigos:
+        for tok in _re_par.split(r'[^a-zA-Z]+', (x['nombre_inci'] or '') + ' ' + (x['nombre_comercial'] or '')):
+            tok = tok.lower()
+            if len(tok) >= 4 and tok not in _STOP:
+                _palabras.add(tok)
+    parientes = []
+    try:
+        for pal in sorted(_palabras)[:6]:
+            filas = c.execute(
+                """SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,''),
+                          COALESCE(activo,1)
+                   FROM maestro_mps
+                   WHERE (LOWER(COALESCE(nombre_inci,'')) LIKE ?
+                          OR LOWER(COALESCE(nombre_comercial,'')) LIKE ?)
+                   ORDER BY codigo_mp LIMIT 40""",
+                ('%' + pal + '%', '%' + pal + '%')).fetchall()
+            # una palabra que matchea con medio maestro no dice nada: se descarta como criterio
+            if len(filas) >= 40:
+                continue
+            for r in filas:
+                cod = str(r[0] or '').strip().upper()
+                if cod in cods_set or any(p['codigo'] == r[0] for p in parientes):
+                    continue
+                parientes.append({'codigo': r[0], 'nombre_comercial': r[1], 'nombre_inci': r[2],
+                                  'activo': int(r[3] or 0), 'coincide_por': pal})
+    except Exception as e:
+        log.warning('diag-por-que-no-sale · parientes: %s', e)
+    parientes = parientes[:12]
+
+    # ¿cuáles de esos parientes SÍ los usa una fórmula activa? (esa es la pregunta)
+    _cods_par = [p['codigo'] for p in parientes]
+    if _cods_par:
+        try:
+            _ph = ','.join('?' for _ in _cods_par)
+            _usos_par = {}
+            for r in c.execute(
+                    f"""SELECT fi.material_id, fi.producto_nombre, COALESCE(fi.porcentaje,0)
+                        FROM formula_items fi
+                        LEFT JOIN formula_headers fh
+                          ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre))
+                        WHERE fi.material_id IN ({_ph}) AND COALESCE(fh.activo,1)=1""",
+                    _cods_par).fetchall():
+                _usos_par.setdefault(str(r[0]), []).append({'producto': r[1],
+                                                            'porcentaje': float(r[2] or 0)})
+            for p in parientes:
+                p['usos_en_formulas_activas'] = _usos_par.get(str(p['codigo']), [])
+        except Exception as e:
+            log.warning('diag-por-que-no-sale · usos de parientes: %s', e)
+
+    # el KARDEX de cada uno · entradas vs salidas (la evidencia que decide)
+    _todos = [x['codigo'] for x in codigos] + _cods_par
+    _kardex = {}
+    if _todos:
+        try:
+            _ph2 = ','.join('?' for _ in _todos)
+            for r in c.execute(
+                    f"""SELECT material_id, COALESCE(tipo,''), COUNT(*), COALESCE(SUM(cantidad),0)
+                        FROM movimientos WHERE material_id IN ({_ph2})
+                        GROUP BY material_id, COALESCE(tipo,'')""", _todos).fetchall():
+                d = _kardex.setdefault(str(r[0]), {'entradas_g': 0.0, 'salidas_g': 0.0,
+                                                   'n_entradas': 0, 'n_salidas': 0})
+                _t = str(r[1] or '').strip().upper()
+                if _t in ('ENTRADA', 'AJUSTE +', 'AJUSTE'):
+                    d['entradas_g'] += float(r[3] or 0); d['n_entradas'] += int(r[2] or 0)
+                elif _t in ('SALIDA', 'AJUSTE -'):
+                    d['salidas_g'] += float(r[3] or 0); d['n_salidas'] += int(r[2] or 0)
+        except Exception as e:
+            log.warning('diag-por-que-no-sale · kardex: %s', e)
+    for x in codigos:
+        x['kardex'] = _kardex.get(str(x['codigo']), {'entradas_g': 0.0, 'salidas_g': 0.0,
+                                                     'n_entradas': 0, 'n_salidas': 0})
+    for p in parientes:
+        p['kardex'] = _kardex.get(str(p['codigo']), {'entradas_g': 0.0, 'salidas_g': 0.0,
+                                                     'n_entradas': 0, 'n_salidas': 0})
+
     # 4) el veredicto · en una frase, que es lo que hace falta cuando algo NO aparece
     activos = [u for u in usos if u['formula_activa'] == 1]
     con_plan = [u for u in activos if u['producciones_programadas'] > 0]
@@ -4165,8 +4256,24 @@ def prog_diag_por_que_no_sale():
                     'la nombra. Si se usa de verdad, hay que darla de alta en el maestro y '
                     'agregarla a la fórmula: hoy el sistema no sabe que existe.')
     elif codigos and not usos:
-        verdicto = ('La materia prima EXISTE en el maestro pero NINGUNA fórmula la usa. Por eso '
-                    'no hay demanda que mostrar: a la fórmula le falta el ingrediente.')
+        _par_usados = [p for p in parientes if p.get('usos_en_formulas_activas')]
+        verdicto = ('Ese CÓDIGO existe en el maestro pero NINGUNA fórmula lo nombra. Por eso no '
+                    'hay demanda que mostrar.')
+        if _par_usados:
+            _det = '; '.join(
+                '%s %s (%s)' % (p['codigo'], (p['nombre_comercial'] or p['nombre_inci'])[:34],
+                                ', '.join(u['producto'][:26] for u in p['usos_en_formulas_activas'][:2]))
+                for p in _par_usados[:3])
+            verdicto += (' ⚠ OJO: hay %d material(es) de la MISMA FAMILIA que las fórmulas SÍ usan '
+                         '-- %s. O sea que el ingrediente se usa, pero bajo otro código. Las dos '
+                         'explicaciones posibles son opuestas y sólo Alejandro las distingue: '
+                         '(a) son materiales realmente distintos y este simplemente no se usa, o '
+                         '(b) en planta se vierte ÉSTE y la fórmula nombra al otro, en cuyo caso '
+                         'se está descontando la molécula equivocada. Mirá `kardex`: si éste tiene '
+                         'entradas y CERO salidas mientras el otro sale, es (b).'
+                         % (len(_par_usados), _det))
+        else:
+            verdicto += ' A la fórmula le falta el ingrediente.'
     elif usos and not activos:
         verdicto = ('Sólo la usan fórmulas DESCONTINUADAS (header activo=0). El abastecimiento '
                     'las excluye a propósito: no se compra para un producto que no se fabrica.')
@@ -4194,6 +4301,9 @@ def prog_diag_por_que_no_sale():
         'usos_en_formulas': usos,
         'formulas_activas_que_lo_usan': len(activos),
         'con_produccion_programada': len(con_plan),
+        'parientes': parientes,
+        'parientes_usados_en_formulas': len([p for p in parientes
+                                             if p.get('usos_en_formulas_activas')]),
         'veredicto': verdicto,
     })
 
