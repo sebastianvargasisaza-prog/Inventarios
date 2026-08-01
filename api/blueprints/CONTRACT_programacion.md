@@ -415,5 +415,45 @@ significativa del nombre/INCI), con `usos_en_formulas_activas` y `kardex` de cad
 - **Una palabra que matchea con ≥40 códigos se descarta como criterio** (`acid`, `extract`,
   `oil`…): un "pariente" que lo es de todos no informa nada.
 
+**6ª respuesta, y la más grave (1-ago):** *la fórmula SÍ lo lleva, pero con OTRO CÓDIGO.* Ahí el
+otro código se lleva la demanda y el stock de éste no baja nunca. Los dos arreglos posibles son
+**opuestos** — unificar códigos duplicados (`/admin/renombrar-codigo-mp`, reversible) vs corregir
+el ítem de la fórmula — así que el endpoint lo declara y decide Alejandro (M19).
+
+Ese caso no se veía porque **el cruce sólo conocía la palabra tecleada**: MP00070 se llama
+comercialmente *"Plantaren Lauryl 1200 / Eversoft 1200"*, y una fórmula que lo nombre *"Plantaren
+1200"* con otro código no matcheaba ni por código ni por nombre. **Encontrar necesita UN nombre;
+descartar necesita todos.** Ahora cruza además por la MARCA, con dos reglas duras:
+
+- **MARCA = lo que está en el nombre comercial y NO en el INCI.** El INCI es la molécula
+  ("glucoside"): cruzar por ahí traería a todos los parientes como si fueran usos y el veredicto
+  diría lo contrario de la verdad.
+- **La corroboración es la IDENTIDAD, no un umbral:** un match por marca cuenta sólo si el código
+  del ítem tiene el MISMO INCI (o es un fantasma ausente del maestro, que es el caso sospechoso).
+  Contar apariciones del token pasaba en aislamiento y el gate lo tumbó.
+- **Sin INCI el cruce se APAGA y se declara** (`sin_cruce_por_marca_porque_no_tienen_INCI` +
+  `aviso`): sin INCI no hay forma de separar marca de química, y adivinar da una respuesta segura
+  y equivocada.
+
 Tests: `tests/test_diag_por_que_no_sale.py` (en el gate · los 4 casos + la búsqueda por nombre +
-el aviso de parientes, con su prueba de que NO se dispara cuando no los hay).
+el aviso de parientes con su prueba de que NO se dispara cuando no los hay + el cruce por marca
+con su prueba de que NO confunde a un pariente con un uso + la limitación declarada sin INCI).
+
+## 📦 `/api/programacion/mp-sin-formula` · MP con stock que ninguna fórmula declara (1-ago)
+
+La forma general de la pregunta del lauryl: no *"¿por qué no sale ésta?"* sino *"¿cuántas más hay
+así?"*. Cada una es una de dos cosas, y las dos importan: **plata parada** (se compró y no entra a
+ningún producto) o **el kardex mintiendo** (en planta se usa, ninguna fórmula la descuenta, el
+stock queda inflado y nadie la vuelve a comprar porque el sistema cree que no se consume).
+
+- No decide cuál es: lista con la evidencia. `salio_alguna_vez` es la señal que separa las dos —
+  lo que nunca salió es compra parada; lo que salió sin que ninguna fórmula lo declare se está
+  consumiendo por fuera.
+- **El puente `mp_formula_bridge` cuenta como uso** (M1): una fórmula puede nombrar el material
+  con un código fantasma que puentea a éste. Sin eso, media bodega saldría como huérfana y la
+  lista no serviría.
+- Stock por `_get_mp_stock` (regla #4, nunca un SUM propio) · excluye `controla_stock=0` (el agua
+  del lab no se compra) y lo que está por debajo del umbral de polvo (M21).
+
+Tests: `tests/test_mp_sin_formula.py` (en el gate · incluye los dientes: la que SÍ está en una
+fórmula no aparece, y el puente cuenta como uso).
