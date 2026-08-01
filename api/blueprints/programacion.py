@@ -4103,9 +4103,72 @@ def prog_diag_por_que_no_sale():
                         'detalle': str(e)}), 500
     cods_set = {str(x['codigo']).strip().upper() for x in codigos}
 
+    # Palabras que NO identifican a nadie: aparecen en medio maestro. Se usan en los dos cruces
+    # de abajo (los otros nombres del material y la familia), así que viven acá arriba.
+    import re as _re_par
+    _STOP = {'acid', 'extract', 'oil', 'water', 'powder', 'sodium', 'potassium', 'natural',
+             'seed', 'leaf', 'root', 'juice', 'butter', 'polvo', 'aceite', 'agua', 'acido',
+             'extracto', 'liquido', 'liquida', 'grado', 'usp', 'bp', 'solucion'}
+
     # 2) ¿alguna fórmula la nombra? Se busca por el NOMBRE escrito en la fórmula ADEMÁS de por
     # código: una fórmula puede traer un código fantasma y el nombre correcto, y ese es
     # justamente el caso que hay que ver.
+    #
+    # ⚠ Y también por los OTROS nombres del material (1-ago · punto ciego que me costó una
+    # respuesta equivocada). Buscando "lauryl" el cruce miraba el código MP00070 o que la fórmula
+    # dijera "lauryl"; pero MP00070 se llama comercialmente *"Plantaren Lauryl 1200 / Eversoft
+    # 1200"*, así que una fórmula que lo nombre **"Plantaren 1200"** con otro código NO aparecía
+    # -- y el veredicto salía "ninguna fórmula lo usa" con total tranquilidad. Un buscador que
+    # sólo conoce la palabra que tecleaste no sirve para probar una AUSENCIA.
+    #
+    # Los tokens salen del nombre COMERCIAL (la marca: "plantaren", "eversoft"), no del INCI:
+    # el INCI es la familia ("glucoside") y traería a todos los parientes como si fueran usos.
+    # MARCA = lo que está en el nombre comercial y NO en el INCI. El INCI es la identidad química
+    # ("LAURYL GLUCOSIDE"), así que cualquier palabra que aparezca ahí es la MOLÉCULA, no la marca:
+    # cruzar por "glucoside" traería a todos los parientes como si fueran usos de éste y el
+    # veredicto diría lo contrario de la verdad. Quedan "plantaren" y "eversoft", que es lo que
+    # identifica a ESTE material y a ningún otro.
+    _tok_marca = set()
+    _sin_inci = []
+    for x in codigos:
+        _quimica = {t.lower() for t in _re_par.split(r'[^a-zA-Z]+', x['nombre_inci'] or '') if t}
+        if not _quimica:
+            # SIN INCI no hay forma de separar la marca de la química, y usar el nombre comercial
+            # entero cruzaría por la familia: para un material llamado "Lauryl glucoside X" daría
+            # como "usos" a TODOS los glucósidos y el veredicto diría lo contrario de la verdad.
+            # Ante la duda no se adivina: se apaga el cruce por marca y se declara (abajo).
+            _sin_inci.append(x['codigo'])
+            continue
+        for tok in _re_par.split(r'[^a-zA-Z]+', x['nombre_comercial'] or ''):
+            tok = tok.lower()
+            if len(tok) >= 5 and tok not in _STOP and tok not in _quimica:
+                _tok_marca.add(tok)
+    # 2ª red · CORROBORAR con el INCI, no contar apariciones. Contar era frágil: un token que
+    # aparece en un puñado de materiales sin relación pasaba el umbral y producía "usos" falsos
+    # (lo cazó el gate, no mi corrida aislada · M102). La regla que sí identifica es la de la
+    # identidad: **el mismo material bajo otro código tiene el mismo INCI**. Así que un match por
+    # marca sólo cuenta si el código del ítem tiene el MISMO INCI que el buscado -- o si no está
+    # en el maestro (fantasma), que es precisamente el caso sospechoso que hay que ver.
+    _inci_buscado = {_norm_mp_name(x['nombre_inci']) for x in codigos if (x['nombre_inci'] or '').strip()}
+    _inci_cache = {}
+
+    def _mismo_inci(cod_item):
+        """¿El código del ítem es el MISMO material (mismo INCI) o un fantasma?"""
+        if cod_item in _inci_cache:
+            return _inci_cache[cod_item]
+        try:
+            row = c.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps "
+                            "WHERE UPPER(TRIM(codigo_mp))=?", (cod_item,)).fetchone()
+        except Exception:
+            row = None
+        if row is None:
+            res = True                      # fantasma: no se puede desmentir · hay que mirarlo
+        else:
+            _i = _norm_mp_name(row[0] or '')
+            res = bool(_i) and _i in _inci_buscado
+        _inci_cache[cod_item] = res
+        return res
+
     usos = []
     try:
         for r in c.execute(
@@ -4118,12 +4181,24 @@ def prog_diag_por_que_no_sale():
                ORDER BY fi.producto_nombre""").fetchall():
             mid = str(r[1] or '').strip().upper()
             mnom = str(r[2] or '')
-            if not (mid in cods_set or q.lower() in mnom.lower() or (qn and _norm_mp_name(mnom) == qn)):
-                continue
+            _ml = mnom.lower()
+            if mid in cods_set:
+                _porque = 'codigo'
+            elif q.lower() in _ml or (qn and _norm_mp_name(mnom) == qn):
+                _porque = 'nombre_escrito_en_la_formula'
+            else:
+                _tk = next((t for t in _tok_marca if t in _ml), None)
+                if not _tk or not _mismo_inci(mid):
+                    continue
+                # OTRO código con el nombre comercial de ESTE material: o es un duplicado, o la
+                # fórmula quedó apuntando a un código viejo. En los dos casos hay que verlo.
+                _porque = 'nombre_comercial:' + _tk
             usos.append({
                 'producto': r[0], 'material_id': r[1], 'material_nombre': mnom,
                 'porcentaje': float(r[3] or 0), 'g_por_lote': float(r[4] or 0),
                 'formula_activa': int(r[5] or 0), 'lote_size_kg': float(r[6] or 0),
+                'coincide_por': _porque,
+                'mismo_codigo': mid in cods_set,
                 'codigo_existe_en_maestro': mid in cods_set or bool(c.execute(
                     "SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (mid,)).fetchone()),
             })
@@ -4166,10 +4241,6 @@ def prog_diag_por_que_no_sale():
     # la evidencia del KARDEX, que es la que resuelve la duda de verdad: si en planta se vierte
     # el lauryl pero la fórmula descuenta el decyl, el lauryl tiene entradas y NINGUNA salida
     # mientras el decyl sale sin haber entrado nunca en esa proporción.
-    _STOP = {'acid', 'extract', 'oil', 'water', 'powder', 'sodium', 'potassium', 'natural',
-             'seed', 'leaf', 'root', 'juice', 'butter', 'polvo', 'aceite', 'agua', 'acido',
-             'extracto', 'liquido', 'liquida', 'grado', 'usp', 'bp', 'solucion'}
-    import re as _re_par
     _palabras = set()
     for x in codigos:
         for tok in _re_par.split(r'[^a-zA-Z]+', (x['nombre_inci'] or '') + ' ' + (x['nombre_comercial'] or '')):
@@ -4264,16 +4335,46 @@ def prog_diag_por_que_no_sale():
                 '%s %s (%s)' % (p['codigo'], (p['nombre_comercial'] or p['nombre_inci'])[:34],
                                 ', '.join(u['producto'][:26] for u in p['usos_en_formulas_activas'][:2]))
                 for p in _par_usados[:3])
+            _k = (codigos[0].get('kardex') or {}) if codigos else {}
+            _nunca_salio = float(_k.get('entradas_g') or 0) > 0 and float(_k.get('salidas_g') or 0) <= 0
             verdicto += (' ⚠ OJO: hay %d material(es) de la MISMA FAMILIA que las fórmulas SÍ usan '
                          '-- %s. O sea que el ingrediente se usa, pero bajo otro código. Las dos '
-                         'explicaciones posibles son opuestas y sólo Alejandro las distingue: '
-                         '(a) son materiales realmente distintos y este simplemente no se usa, o '
-                         '(b) en planta se vierte ÉSTE y la fórmula nombra al otro, en cuyo caso '
-                         'se está descontando la molécula equivocada. Mirá `kardex`: si éste tiene '
-                         'entradas y CERO salidas mientras el otro sale, es (b).'
-                         % (len(_par_usados), _det))
+                         'explicaciones posibles son opuestas: (a) son materiales realmente '
+                         'distintos y éste simplemente no se usa, o (b) en planta se vierte ÉSTE y '
+                         'la fórmula nombra al otro, en cuyo caso se descuenta la molécula '
+                         'equivocada.' % (len(_par_usados), _det))
+            if _nunca_salio:
+                verdicto += (' Éste ENTRÓ %s g y NUNCA salió del kardex.'
+                             % format(int(float(_k.get('entradas_g') or 0)), ',d'))
+            # ⚠ El kardex NO distingue (a) de (b), y decir que sí manda a concluir con evidencia
+            # que no discrimina: las salidas del pariente las genera la FÓRMULA al producir, así
+            # que existirían igual aunque en planta estuvieran vertiendo éste. Lo único que
+            # separa las dos explicaciones es el mundo físico.
+            verdicto += (' ⚠ El kardex NO alcanza para decidir: las salidas del otro las genera la '
+                         'FÓRMULA al producir, así que se verían iguales en los dos casos. Lo que '
+                         'decide es un CONTEO FÍSICO de los dos materiales: si en bodega hay MÁS '
+                         'del otro de lo que dice el sistema y MENOS de éste, es (b). Y la '
+                         'confirmación final es Alejandro contra el envase, no un parecido de '
+                         'nombre (M19).')
         else:
             verdicto += ' A la fórmula le falta el ingrediente.'
+    elif activos and not any(u.get('mismo_codigo') for u in activos):
+        # El caso que más duele y el que un buscador por palabra no encuentra: la fórmula SÍ lleva
+        # el material, pero apuntando a OTRO código. La demanda se calcula bajo ese otro, así que
+        # el stock de éste no se consume nunca y el de aquél se descuenta sin existir.
+        _otros = sorted({(u['material_id'], u['material_nombre']) for u in activos})[:3]
+        verdicto = ('⚠ La fórmula SÍ lo lleva, pero con OTRO CÓDIGO: %s. Es decir que %s tiene el '
+                    'stock y el otro código se lleva la demanda -- por eso éste no aparece en '
+                    'Abastecimiento y su stock nunca baja. Hay dos arreglos posibles y son '
+                    'distintos: si son el MISMO material con código duplicado, se unifican '
+                    '(/admin/renombrar-codigo-mp, reversible); si son materiales distintos, hay '
+                    'que corregir el ítem de la fórmula. Confirmalo con Alejandro contra el '
+                    'envase antes de tocar nada (M19).'
+                    % ('; '.join('%s "%s" (en %s)' % (mid, (nm or '')[:30],
+                                                      ', '.join(sorted({u['producto'] for u in activos
+                                                                        if u['material_id'] == mid})[:2]))
+                                 for mid, nm in _otros),
+                       ', '.join(sorted(cods_set)[:2]) or 'este código'))
     elif usos and not activos:
         verdicto = ('Sólo la usan fórmulas DESCONTINUADAS (header activo=0). El abastecimiento '
                     'las excluye a propósito: no se compra para un producto que no se fabrica.')
@@ -4304,7 +4405,111 @@ def prog_diag_por_que_no_sale():
         'parientes': parientes,
         'parientes_usados_en_formulas': len([p for p in parientes
                                              if p.get('usos_en_formulas_activas')]),
+        # Un chequeo que NO corrió tiene que decirlo: si no, su silencio se lee como "no hay
+        # nada" y es exactamente el engaño que este endpoint existe para evitar (M100).
+        'cruce_por_marca': sorted(_tok_marca),
+        'sin_cruce_por_marca_porque_no_tienen_INCI': _sin_inci,
+        'aviso': (('⚠ %s no tiene INCI cargado, así que NO se pudo cruzar por su nombre '
+                   'comercial: si alguna fórmula lo nombra con otro código, este diagnóstico no '
+                   'lo ve. Cargale el INCI y volvé a consultar.' % ', '.join(_sin_inci))
+                  if _sin_inci else ''),
         'veredicto': verdicto,
+    })
+
+
+@bp.route('/api/programacion/mp-sin-formula', methods=['GET'])
+def prog_mp_sin_formula():
+    """Materia prima CON STOCK que NINGUNA fórmula activa declara · read-only (1-ago).
+
+    La forma general de la pregunta del lauryl glucoside: no *"¿por qué no sale ésta?"* sino
+    *"¿cuántas más hay así?"*. Cada una es una de dos cosas, y las dos importan:
+
+      · plata parada — se compró y no entra a ningún producto; o
+      · **el kardex mintiendo** — en planta se usa y ninguna fórmula la descuenta, así que el
+        stock queda inflado y nadie la vuelve a comprar porque el sistema cree que no se consume.
+
+    NO se decide cuál es: se listan con la evidencia (stock, si alguna vez SALIÓ del kardex) para
+    que Alejandro las mire. El `salio_alguna_vez` es la señal que más habla: un material que nunca
+    salió es compra parada; uno que salió sin que ninguna fórmula lo declare se está consumiendo
+    por fuera y hay que averiguar por dónde.
+
+    ⚠ El puente `mp_formula_bridge` cuenta como uso: una fórmula puede nombrar el material con un
+    código fantasma que puentea a éste (M1). Sin eso, media bodega saldría como huérfana.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    # códigos que ALGUNA fórmula activa nombra · directo y por puente
+    usados = set()
+    try:
+        for (mid,) in c.execute(
+                "SELECT DISTINCT fi.material_id FROM formula_items fi "
+                "LEFT JOIN formula_headers fh "
+                "  ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre)) "
+                "WHERE COALESCE(fh.activo,1)=1").fetchall():
+            usados.add(str(mid or '').strip().upper())
+        for fm, bm in c.execute(
+                "SELECT formula_material_id, bodega_material_id FROM mp_formula_bridge "
+                "WHERE COALESCE(activo,1)=1").fetchall():
+            if str(fm or '').strip().upper() in usados:
+                usados.add(str(bm or '').strip().upper())
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudieron leer las fórmulas',
+                        'detalle': str(e)[:200]}), 500
+
+    # stock por el helper canónico (regla #4 · nunca un SUM propio)
+    try:
+        stock = _get_mp_stock(conn) or {}
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudo calcular el stock',
+                        'detalle': str(e)[:200]}), 500
+
+    # ¿salió alguna vez del kardex? (la señal que separa "compra parada" de "se usa a escondidas")
+    salidas = {}
+    try:
+        for mid, n in c.execute(
+                "SELECT material_id, COUNT(*) FROM movimientos "
+                "WHERE UPPER(COALESCE(tipo,'')) IN ('SALIDA','AJUSTE -') "
+                "GROUP BY material_id").fetchall():
+            salidas[str(mid or '').strip().upper()] = int(n or 0)
+    except Exception as e:
+        log.warning('mp-sin-formula · salidas: %s', e)
+
+    items = []
+    try:
+        for r in c.execute(
+                "SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,''), "
+                "COALESCE(controla_stock,1) FROM maestro_mps "
+                "WHERE COALESCE(activo,1)=1 ORDER BY codigo_mp").fetchall():
+            cod = str(r[0] or '').strip().upper()
+            if cod in usados or int(r[3] or 1) == 0:      # el agua del lab no se compra
+                continue
+            g = float(stock.get(cod) or 0)
+            if g <= 0.01:                                  # sin stock no es plata parada
+                continue
+            items.append({'codigo': r[0], 'nombre_comercial': r[1], 'nombre_inci': r[2],
+                          'stock_g': round(g, 2), 'salio_alguna_vez': salidas.get(cod, 0) > 0,
+                          'n_salidas': salidas.get(cod, 0)})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudo leer el maestro',
+                        'detalle': str(e)[:200]}), 500
+
+    items.sort(key=lambda x: -x['stock_g'])
+    _con_salidas = [x for x in items if x['salio_alguna_vez']]
+    return jsonify({
+        'ok': True, 'n': len(items),
+        'total_g_parado': round(sum(x['stock_g'] for x in items), 2),
+        'items': items,
+        'ojo_se_consumen_sin_formula': _con_salidas,
+        'veredicto': (
+            'Hay %d materia(s) prima(s) ACTIVAS con stock que ninguna fórmula activa declara '
+            '(%s g en total). De ésas, %d YA SALIERON del kardex alguna vez: ésas son las que '
+            'preocupan -- se están consumiendo sin que ninguna fórmula las descuente, así que su '
+            'stock queda inflado y nadie las vuelve a comprar. Las que nunca salieron son compra '
+            'parada.' % (len(items), format(int(sum(x['stock_g'] for x in items)), ',d'),
+                         len(_con_salidas))) if items else
+            'Ninguna materia prima activa con stock queda fuera de las fórmulas.',
     })
 
 

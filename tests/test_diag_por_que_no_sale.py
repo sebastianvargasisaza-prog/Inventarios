@@ -181,3 +181,113 @@ def test_si_NO_hay_parientes_sigue_diciendo_que_falta_el_ingrediente(app, db_cle
         assert 'falta el ingrediente' in j['veredicto'], j['veredicto']
     finally:
         _limpiar_familia()
+
+
+def test_NO_promete_que_el_kardex_decide(app, db_clean):
+    """Corrección de un error MÍO (1-ago).
+
+    La primera versión del aviso decía: *"mirá el kardex: si éste tiene entradas y cero salidas
+    mientras el otro sale, es que la fórmula nombra al otro"*. **Falso.** Las salidas del pariente
+    las genera la FÓRMULA al producir, no el hecho físico: existirían igual aunque en planta
+    estuvieran virtiendo éste. O sea que el patrón se ve idéntico en las dos explicaciones y la
+    regla no distingue nada -- manda a concluir con evidencia que no discrimina, que es peor que
+    no dar ninguna regla.
+
+    Lo único que separa (a) de (b) es un conteo FÍSICO. El veredicto tiene que decirlo.
+    """
+    _limpiar_familia()
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+         "VALUES (?,?,?,1)", ('ZZFAM-LAURYL', 'Plantaren ZZ', 'ZZLAURYL ZZGLUCOSIDE'))
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+         "VALUES (?,?,?,1)", ('ZZFAM-DECYL', 'Decyl ZZ', 'ZZDECYL ZZGLUCOSIDE'))
+    _sql("INSERT INTO formula_headers (producto_nombre, activo, lote_size_kg) VALUES (?,1,10)",
+         ('ZZFAM LIMPIADOR',))
+    _sql("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) "
+         "VALUES (?,?,?,3.5)", ('ZZFAM LIMPIADOR', 'ZZFAM-DECYL', 'Decyl ZZ'))
+    try:
+        v = _diag(app, 'ZZFAM-LAURYL')['veredicto']
+        assert 'CONTEO F' in v, ('no dice que lo que decide es el conteo físico: %s' % v)
+        assert 'kardex NO alcanza' in v, ('sigue prometiendo que el kardex decide: %s' % v)
+    finally:
+        _limpiar_familia()
+
+
+# ══ el punto ciego que me dio una respuesta equivocada (1-ago) ══════════════════
+#
+# Sebastián: *"hace poco migramos fórmulas... revisá si no están viendo bien"*. Tenía razón.
+# Buscando "lauryl", el cruce miraba (a) el código MP00070 y (b) que la fórmula dijera "lauryl".
+# Pero ese material se llama comercialmente "Plantaren Lauryl 1200 / Eversoft 1200": una fórmula
+# que lo nombre **"Plantaren 1200"** apuntando a otro código NO aparecía, y el veredicto salía
+# "ninguna fórmula lo usa" con total tranquilidad.
+#
+# Un buscador que sólo conoce la palabra que tecleaste no sirve para probar una AUSENCIA.
+
+def _limpiar_marca():
+    for cod in ('ZZMARCA-REAL', 'ZZMARCA-OTRO'):
+        _sql("DELETE FROM formula_items WHERE material_id=?", (cod,))
+        _sql("DELETE FROM maestro_mps WHERE codigo_mp=?", (cod,))
+    _sql("DELETE FROM formula_items WHERE producto_nombre='ZZMARCA LIMPIADOR'")
+    _sql("DELETE FROM formula_headers WHERE producto_nombre='ZZMARCA LIMPIADOR'")
+
+
+def test_encuentra_el_uso_cuando_la_formula_lo_nombra_por_la_MARCA(app, db_clean):
+    _limpiar_marca()
+    # el material que se busca · su nombre comercial trae la marca
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+         "VALUES (?,?,?,1)",
+         ('ZZMARCA-REAL', 'Zzplantaren Zzlauryl 1200', 'ZZLAURYL ZZGLUCOSIDE'))
+    # la fórmula lo lleva, pero con OTRO código y nombrado sólo por la marca
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+         "VALUES (?,?,?,1)", ('ZZMARCA-OTRO', 'Zzplantaren 1200', 'ZZLAURYL ZZGLUCOSIDE'))
+    _sql("INSERT INTO formula_headers (producto_nombre, activo, lote_size_kg) VALUES (?,1,120)",
+         ('ZZMARCA LIMPIADOR',))
+    _sql("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) "
+         "VALUES (?,?,?,3.0)", ('ZZMARCA LIMPIADOR', 'ZZMARCA-OTRO', 'Zzplantaren 1200'))
+    try:
+        j = _diag(app, 'ZZMARCA-REAL')
+        assert j['usos_en_formulas'], (
+            'NO vio el uso porque la fórmula lo nombra por la marca: %s' % j['veredicto'])
+        u = j['usos_en_formulas'][0]
+        assert u['producto'] == 'ZZMARCA LIMPIADOR', u
+        assert u['coincide_por'].startswith('nombre_comercial'), u
+        assert u['mismo_codigo'] is False, u
+        assert 'OTRO C' in j['veredicto'], j['veredicto']
+    finally:
+        _limpiar_marca()
+
+
+def test_NO_confunde_a_un_pariente_con_un_uso(app, db_clean):
+    """Dientes: si el cruce usara el INCI ('glucoside') en vez de la MARCA, cada pariente
+    aparecería como un 'uso' de éste y el veredicto diría lo contrario de la verdad."""
+    _limpiar_marca()
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+         "VALUES (?,?,?,1)",
+         ('ZZMARCA-REAL', 'Zzplantaren Zzlauryl 1200', 'ZZLAURYL ZZGLUCOSIDE'))
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+         "VALUES (?,?,?,1)", ('ZZMARCA-OTRO', 'Zzdecyl Zzglucoside', 'ZZDECYL ZZGLUCOSIDE'))
+    _sql("INSERT INTO formula_headers (producto_nombre, activo, lote_size_kg) VALUES (?,1,120)",
+         ('ZZMARCA LIMPIADOR',))
+    _sql("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) "
+         "VALUES (?,?,?,3.0)", ('ZZMARCA LIMPIADOR', 'ZZMARCA-OTRO', 'Zzdecyl Zzglucoside'))
+    try:
+        j = _diag(app, 'ZZMARCA-REAL')
+        assert not j['usos_en_formulas'], (
+            'contó a un pariente como uso de éste: %r' % j['usos_en_formulas'])
+    finally:
+        _limpiar_marca()
+
+
+def test_si_NO_hay_INCI_lo_DECLARA_en_vez_de_adivinar(app, db_clean):
+    """Sin INCI no se puede separar la marca de la química, así que el cruce por nombre comercial
+    se APAGA -- y eso hay que decirlo. Un chequeo que no corrió y no se anuncia se lee como
+    'no hay nada', que es justo el engaño que este endpoint existe para evitar (M100)."""
+    _limpiar_marca()
+    _sql("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, activo) VALUES (?,?,1)",
+         ('ZZMARCA-REAL', 'Zzplantaren Zzlauryl 1200'))
+    try:
+        j = _diag(app, 'ZZMARCA-REAL')
+        assert 'ZZMARCA-REAL' in j['sin_cruce_por_marca_porque_no_tienen_INCI'], j
+        assert 'no tiene INCI' in (j.get('aviso') or ''), j.get('aviso')
+        assert j['cruce_por_marca'] == [], j['cruce_por_marca']
+    finally:
+        _limpiar_marca()

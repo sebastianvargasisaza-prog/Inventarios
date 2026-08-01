@@ -203,6 +203,7 @@ CORAZON=(
   # "Se me perdio una orden de compra" se contestaba con una teoria. El rastro lee audit_log y
   # dice en una frase si existe, si la fusionaron (y con cual) o si la borraron (quien y cuando).
   "tests/test_rastro_oc.py"
+  "tests/test_mp_sin_formula.py"
   # Calidad dispone CAJA POR CAJA: de 24 cajas pueden pasar 22 y venir 2 golpeadas. Fija que
   # el rotulo de cada caja diga la verdad (y que NO se renumeren las cajas fisicas al partir
   # el movimiento) + el escaneo del codigo de barras.
