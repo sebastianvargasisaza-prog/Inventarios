@@ -635,3 +635,35 @@ Un `fetchone()` sobre `(producto, código)` elegiría una de las dos **al azar**
 puede cambiar entre corridas (M102). `editar-formula-items` trae **todas** las filas en orden
 determinista y, si hay más de una, **bloquea** hasta que el caller diga a cuál se refiere con
 `pct_actual`. Cambiar la línea equivocada de una fórmula regulada no se deshace mirándola.
+
+## 🌸 PROG-N+4 · Un INCI que comparten MUCHOS materiales no identifica a ninguno (2-ago)
+
+Sebastián: *"que ninguna materia prima tenga error, que descuente, abastecimiento contando"*.
+Al verificarlo apareció que la **Fresa Cremosa** (`MP00019`, 0,1 % en Crema Renova Body) **no salía
+en Abastecimiento**, con producción programada y stock 0. Nadie la compraría.
+
+No estaba perdida: **se la llevaba el Pistacho**. La aritmética lo prueba —
+`MP00062` aparecía con **88,5 g** = sus 59 g (0,2 % × 29,5 kg) **+ los 29,5 g de la fresa** (0,1 %).
+
+**Causa.** `_resolver_material_bodega_impl` cae al tier INCI cuando el código de fórmula tiene
+stock 0. El guard contra INCI ambiguo **ya existía** (25-jul · `PARFUM` está listado como grupo
+peligroso), pero medía la ambigüedad sobre los códigos **con stock**:
+
+```python
+_inci_cands = [cod for cod in activos if mismo_inci and stock > 0.01]
+if len(_inci_cands) > 1: ...   # no dispara si sólo UNO tiene stock
+```
+
+De las **diez** fragancias con INCI `PARFUM` sólo el pistacho se ha comprado alguna vez → un solo
+candidato → el guard no dispara y el resolver elige con total confianza.
+
+**Fix:** la ambigüedad es del **INCI**, no del stock. Si más de un material ACTIVO comparte ese
+INCI, el INCI no identifica al material y no sirve para redirigir → el código se resuelve a sí
+mismo y su déficit aparece con su propio nombre.
+
+**Estrictamente más conservador**: sólo puede impedir redirecciones, nunca agregarlas. El duplicado
+legítimo de dos códigos (pantenol líquido/polvo) sigue cruzando -- probado en el mismo archivo.
+
+**Golpea a las MP que NUNCA se compraron**, que son justo las que tienen que salir en la tabla para
+poder comprarlas. Tests: `tests/test_resolver_inci_generico.py` (en el gate · probado con dientes:
+sin el guard, la fresa se va al pistacho).

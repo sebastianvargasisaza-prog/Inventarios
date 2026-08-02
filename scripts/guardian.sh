@@ -265,6 +265,11 @@ CORAZON=(
   # que si llevan triterpenos. Incluye el guard de que un PUENTE activo sobre el destino
   # BLOQUEA: si no, la formula diria un codigo y el descuento seguiria sacando otro.
   "tests/test_editar_formula_items.py"
+  # Un INCI que comparten MUCHOS materiales no identifica a ninguno. PARFUM lo comparten 10
+  # fragancias y solo una se compro alguna vez: el resolver mandaba la demanda de la Fresa
+  # Cremosa al Pistacho, asi que EOS compraria la fragancia equivocada. Golpea a las MP que
+  # NUNCA se compraron, que son justo las que tienen que salir para comprarlas.
+  "tests/test_resolver_inci_generico.py"
 )
 
 echo ""

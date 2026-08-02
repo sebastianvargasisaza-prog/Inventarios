@@ -12595,10 +12595,31 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
             _ir = c.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (fmid,)).fetchone()
             _inci_f = _norm_mp_name(_ir[0]) if (_ir and _ir[0]) else ''
             if _inci_f:
-                _inci_cands = []
+                _inci_cands, _inci_todos = [], []
                 for cod, _inci_c, _com_c in _maestro_mps_activos(c):   # PERF #6: lista cacheada por request
-                    if cod and _norm_mp_name(_inci_c) == _inci_f and _stock_neto(cod) > 0.01:
-                        _inci_cands.append(cod)
+                    if cod and _norm_mp_name(_inci_c) == _inci_f:
+                        _inci_todos.append(cod)
+                        if _stock_neto(cod) > 0.01:
+                            _inci_cands.append(cod)
+                # FIX 2-ago (Sebastián · "que ninguna materia prima tenga error"). El guard de
+                # abajo mide la ambigüedad sobre los que TIENEN STOCK, y eso lo deja pasar justo
+                # cuando más engaña: el INCI `PARFUM` lo comparten DIEZ fragancias distintas
+                # (fresa, pistacho, durazno, gin, mocaccino...) y sólo UNA se ha comprado alguna
+                # vez. Con un solo candidato con stock el guard no dispara y el resolver manda la
+                # demanda de la Fresa Cremosa al Pistacho -- comprobado con la aritmética: el
+                # pistacho aparecía con 88,5 g = sus 59 g (0,2%) + los 29,5 g de la fresa (0,1%).
+                # O sea que EOS compraría la fragancia equivocada, y la fresa NUNCA aparecería.
+                #
+                # La ambigüedad es del INCI, no del stock: si más de un material ACTIVO comparte
+                # ese INCI, el INCI no identifica al material y no sirve para redirigir. Golpea
+                # sobre todo a las MP que nunca se compraron -- que son justo las que tienen que
+                # aparecer para comprarlas.
+                if len(_inci_todos) > 2:
+                    logging.getLogger('programacion').warning(
+                        'resolver: INCI %r lo comparten %d materiales activos (%s...) · NO '
+                        'identifica al material · %r se resuelve a sí mismo',
+                        _inci_f, len(_inci_todos), ','.join(sorted(_inci_todos)[:4]), fmid)
+                    _inci_cands = []
                 # FIX 25-jul (auditoría · riesgo INVIMA): si hay VARIOS candidatos con el mismo
                 # INCI, NO se adivina por stock. El cerebro ya lo declaraba y el gate nunca se
                 # implementó (M17 punto 3 · M19 punto c): "mismo INCI, GRADO distinto = NO
