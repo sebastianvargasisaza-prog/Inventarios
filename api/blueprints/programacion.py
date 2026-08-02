@@ -4813,6 +4813,98 @@ def _plan_unificar_codigos(c):
     return plan
 
 
+@bp.route('/api/programacion/kardex-material', methods=['GET'])
+def prog_kardex_material():
+    """El rastro COMPLETO de un material: cada movimiento con de dónde salió · read-only.
+
+    Sebastián 2-ago, sobre las colisiones de código: hay materiales con salidas del kardex que
+    NINGUNA fórmula explica -- `MP00300` (Eversoft YCS-30S en EOS, ceramida en el batch record)
+    tiene 1.505 g que salieron sin que ningún producto lo declare. Un stock que se mueve sin
+    explicación es la huella de que alguien descontó por el código equivocado, y para saberlo hay
+    que ver CADA movimiento con su origen: qué producción lo pidió, quién lo hizo y qué dice la
+    observación.
+
+    `?q=MP00300` · acepta varios separados por coma. No muta nada.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'error': 'pasá ?q=MP00300 (o varios separados por coma)'}), 400
+    cods = [x.strip().upper() for x in q.split(',') if x.strip()][:8]
+    conn = get_db(); c = conn.cursor()
+
+    _tiene_pid = True
+    try:
+        c.execute("SELECT produccion_id FROM movimientos LIMIT 0")
+    except Exception:
+        _tiene_pid = False
+
+    salida = []
+    for cod in cods:
+        info = {'codigo': cod}
+        try:
+            r = c.execute("SELECT COALESCE(nombre_comercial,''), COALESCE(nombre_inci,''), "
+                          "COALESCE(activo,1), COALESCE(controla_stock,1) FROM maestro_mps "
+                          "WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
+            info['en_maestro'] = ({'comercial': r[0], 'inci': r[1], 'activo': int(r[2] or 0),
+                                   'controla_stock': int(r[3] or 0)} if r else None)
+        except Exception as e:
+            info['en_maestro'] = None
+            log.warning('kardex-material · maestro %s: %s', cod, e)
+
+        try:
+            _pid = 'COALESCE(produccion_id, 0)' if _tiene_pid else '0'
+            movs = []
+            for m in c.execute(
+                    "SELECT COALESCE(tipo,''), COALESCE(cantidad,0), COALESCE(lote,''), "
+                    "COALESCE(fecha,''), COALESCE(observaciones,''), COALESCE(operador,''), "
+                    + _pid + ", COALESCE(estado_lote,'') "
+                    "FROM movimientos WHERE UPPER(TRIM(material_id))=? "
+                    "ORDER BY fecha DESC, id DESC LIMIT 200", (cod,)).fetchall():
+                movs.append({'tipo': m[0], 'cantidad': float(m[1] or 0), 'lote': m[2],
+                             'fecha': str(m[3])[:19], 'observaciones': (m[4] or '')[:180],
+                             'operador': m[5], 'produccion_id': int(m[6] or 0),
+                             'estado_lote': m[7]})
+            info['movimientos'] = movs
+            _sal = [m for m in movs if m['tipo'].strip().upper() in ('SALIDA', 'AJUSTE -')]
+            info['n_movimientos'] = len(movs)
+            info['salidas'] = _sal
+            info['salidas_sin_produccion'] = [m for m in _sal if not m['produccion_id']]
+        except Exception as e:
+            return jsonify({'ok': False, 'error': 'no se pudo leer el kardex',
+                            'detalle': str(e)[:200]}), 500
+
+        # ¿alguna fórmula ACTIVA lo declara? · si no, toda salida es inexplicada
+        try:
+            usos = [x[0] for x in c.execute(
+                "SELECT DISTINCT fi.producto_nombre FROM formula_items fi "
+                "LEFT JOIN formula_headers fh "
+                "  ON TRIM(fh.producto_nombre)=TRIM(fi.producto_nombre) "
+                "WHERE UPPER(TRIM(fi.material_id))=? AND COALESCE(fh.activo,1)=1",
+                (cod,)).fetchall()]
+            info['formulas_activas_que_lo_usan'] = usos
+        except Exception as e:
+            info['formulas_activas_que_lo_usan'] = []
+            log.warning('kardex-material · usos %s: %s', cod, e)
+
+        _sc = len(info.get('salidas_sin_produccion') or [])
+        info['veredicto'] = (
+            ('Ninguna fórmula activa lo declara y tiene %d salida(s) del kardex: ese material se '
+             'consumió por fuera de una fórmula. Mirá `observaciones` y `operador` de cada una '
+             'para saber por dónde salió.' % len(info.get('salidas') or []))
+            if not info['formulas_activas_que_lo_usan'] and info.get('salidas') else
+            ('Lo usan %d fórmula(s) activa(s) y sus salidas están explicadas.'
+             % len(info['formulas_activas_que_lo_usan']))
+            if info['formulas_activas_que_lo_usan'] else
+            'Sin fórmulas que lo usen y sin salidas: es stock que entró y nunca se tocó.')
+        if _sc:
+            info['veredicto'] += (' ⚠ %d salida(s) SIN producción asociada: no salieron por el '
+                                  'descuento automático de un lote.' % _sc)
+        salida.append(info)
+    return jsonify({'ok': True, 'materiales': salida})
+
+
 @bp.route('/api/programacion/salud-formulas', methods=['GET'])
 def prog_salud_formulas():
     """¿Están las fórmulas PERFECTAS? · las cuatro cosas, fórmula por fórmula (2-ago).
