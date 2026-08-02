@@ -4798,13 +4798,29 @@ def prog_unificar_codigos_batch():
         log.exception('unificar-codigos-batch · plan')
         return jsonify({'ok': False, 'error': 'no se pudo armar el plan',
                         'detalle': str(e)[:200]}), 500
+    _body = request.get_json(silent=True) or {}
     seguros = [x for x in plan if x['estado'] == 'seguro']
     trabados = [x for x in plan if x['estado'] != 'seguro']
+    # RENOMBRAR ≠ FUSIONAR y la diferencia importa (1-ago). Renombrar es limpio: el código del
+    # batch NO existe en EOS, así que no se junta nada. Fusionar une DOS códigos que el maestro
+    # mantiene separados -- y eso no es limpiar duplicados, es DECIDIR que son el mismo material.
+    # Caso real: `MP00110 Pantenol` y `MP00236 Pantenol POLVO` existen los dos con el mismo INCI
+    # (el INCI no distingue una presentación), igual que `Aloe vera polvo` vs `Aloe Vera 200X`.
+    # Con `solo_renombrar: true` se aplican los limpios sin tocar los que necesitan criterio.
+    _renombrar = [x for x in seguros if x.get('accion') == 'renombrar']
+    _fusionar = [x for x in seguros if x.get('accion') == 'fusionar']
 
-    if request.method == 'GET' or not (request.get_json(silent=True) or {}).get('confirmar'):
+    if request.method == 'GET' or not _body.get('confirmar'):
         return jsonify({
             'ok': True, 'dry_run': True, 'n_pares': len(plan),
             'seguros': seguros, 'bloqueados': trabados,
+            'renombrados_limpios': len(_renombrar), 'fusiones': len(_fusionar),
+            'nota_fusiones': ('Las %d FUSIONES unen dos códigos que el maestro tiene separados '
+                              '(mismo INCI, pero el INCI no distingue una presentación: '
+                              '"Pantenol" vs "Pantenol polvo", "Aloe vera polvo" vs "Aloe Vera '
+                              '200X"). Eso es una decisión, no una limpieza. Con '
+                              '{"confirmar": true, "solo_renombrar": true} se aplican sólo los '
+                              '%d renombrados limpios.' % (len(_fusionar), len(_renombrar))),
             'veredicto': ('%d pares se pueden unificar sin riesgo y %d quedan trabados. Los '
                           'trabados NO son un error del informe: son casos donde el mismo código '
                           'significa cosas distintas en los dos sistemas, o donde EOS fusionó dos '
@@ -4819,7 +4835,8 @@ def prog_unificar_codigos_batch():
     except Exception as e:
         return jsonify({'ok': False, 'error': 'no se pudo cargar el motor de renombrado',
                         'detalle': str(e)[:200]}), 500
-    for d in seguros:
+    _aplicar = _renombrar if _body.get('solo_renombrar') else seguros
+    for d in _aplicar:
         try:
             r = _norm_cod(c, d['codigo_eos'], d['codigo_batch'], usuario)
         except Exception as e:

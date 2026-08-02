@@ -183,3 +183,26 @@ def test_el_estado_bloqueado_nombre_existe_y_explica(app, db_clean):
     for d in plan['bloqueados']:
         assert d['estado'] in ('bloqueado_ambiguo', 'bloqueado_colision', 'bloqueado_nombre'), d
         assert d.get('motivo'), d
+
+
+def test_solo_renombrar_deja_las_FUSIONES_afuera(app, db_clean):
+    """Renombrar y fusionar no son lo mismo (1-ago).
+
+    Renombrar es limpio: el código del batch NO existe en EOS, así que no se junta nada.
+    Fusionar une DOS códigos que el maestro mantiene separados -- y eso no es limpiar
+    duplicados, es DECIDIR que son el mismo material. El caso que lo destapó: `MP00110
+    Pantenol` y `MP00236 Pantenol POLVO` existen los dos con el mismo INCI, porque el INCI no
+    distingue una presentación. Igual `Aloe vera polvo` vs `Aloe Vera 200X`.
+
+    `solo_renombrar` permite aplicar lo indiscutible sin tomar por el usuario una decisión de
+    formulación.
+    """
+    j = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
+    assert 'renombrados_limpios' in j and 'fusiones' in j, j.keys()
+    assert j['renombrados_limpios'] + j['fusiones'] == len(j['seguros']), j
+    for d in j['seguros']:
+        if d['accion'] == 'renombrar':
+            assert d['destino_existe_en_eos'] is False, (
+                'un "renombrar" cuyo destino YA existe es en realidad una fusión: %r' % d)
+        else:
+            assert d['destino_existe_en_eos'] is True, d
