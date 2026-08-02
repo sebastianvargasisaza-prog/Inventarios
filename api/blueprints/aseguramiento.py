@@ -4625,13 +4625,30 @@ def pqr_inbox_depurar():
     # `con_ia`: lo que las reglas no pueden juzgar ("En un momento pago", "Tarjeta") se le
     # pregunta al clasificador. Va DETRÁS de un flag porque cuesta una llamada por mensaje y
     # porque la depuración tiene que poder correrse sin API key.
-    _con_ia = bool((request.get_json(silent=True) or {}).get('con_ia', False))
+    _body = request.get_json(silent=True) or {}
+    _con_ia = bool(_body.get('con_ia', False))
 
-    a_sacar, se_quedan = [], []
+    # ⚠ PRESUPUESTO DE TIEMPO (M92) · con `con_ia` esto es un BUCLE DE RED: una llamada al
+    # clasificador por mensaje, hasta 20 s cada una. Sin tope, 9 mensajes pueden pasarse del
+    # `--timeout 120` de Gunicorn -> el worker muere de un SIGKILL y encima se recicla. El
+    # trabajo es idempotente (mira sólo lo que sigue `pendiente`), así que se drena en llamadas
+    # cortas sucesivas en vez de una larga.
+    import time as _t
+    _t0 = _t.monotonic()
+    _presupuesto = float(_body.get('presupuesto_seg') or 35)
+    _limite = int(_body.get('limite') or (6 if _con_ia else 0))
+
+    a_sacar, se_quedan, _sin_mirar = [], [], 0
+    _consultados = 0
     for r in filas:
         _mot = _no_es_pqr_por_reglas(r[7] or '')
         if not _mot and _con_ia:
+            if (_limite and _consultados >= _limite) or (_t.monotonic() - _t0) > _presupuesto:
+                _sin_mirar += 1          # se DECLARA lo que quedó sin evaluar (M100)
+                se_quedan.append({'id': int(r[0]), 'mensaje': (r[7] or '')[:120], 'motivo': ''})
+                continue
             try:
+                _consultados += 1
                 _c = _clasificar_pqr(c, r[7] or '', r[4] or '')
                 if _c.get('es_pqr') is False:
                     _mot = (_c.get('razon') or 'la IA lo clasificó como conversación, no PQR')[:300]
@@ -4674,6 +4691,10 @@ def pqr_inbox_depurar():
         'ok': not errores, 'dry_run': not aplicar,
         'en_bandeja': len(filas), 'a_sacar': a_sacar, 'se_quedan': len(se_quedan),
         'sacados': hechos, 'errores': errores,
+        'sin_mirar_por_tope': _sin_mirar,
+        'faltan_por_evaluar': bool(_sin_mirar),
+        'aviso_tope': (('Quedaron %d sin evaluar por el tope de tiempo/cantidad: volvé a llamar '
+                        'para seguir drenando (es idempotente).' % _sin_mirar) if _sin_mirar else ''),
         'que_hace': ('Mueve a descartados lo que no es una petición, queja ni reclamo. El mensaje '
                      'NO se pierde: queda con su motivo y se recupera desde /pqr-descartados. '
                      'Sólo toca lo que nunca se enrutó -- lo que ya llegó a quejas_clientes o a '

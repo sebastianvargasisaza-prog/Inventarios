@@ -213,3 +213,18 @@ def test_depurar_sin_ia_es_conservador(app):
     assert any(m.startswith('Hola') for m in _msgs)
     assert not any(m.startswith('En un momento') for m in _msgs), (
         'sin IA, lo que las reglas no juzgan se QUEDA')
+
+
+def test_depurar_con_ia_tiene_TOPE_y_lo_declara(app):
+    """M92 · con `con_ia` esto es un bucle de RED (una llamada al clasificador por mensaje, hasta
+    20 s cada una). Sin tope, un puñado de mensajes se pasa del --timeout de Gunicorn y mata al
+    worker. Y lo que quedó sin evaluar se DECLARA: si no, su ausencia se lee como "ya está
+    limpio" (M100)."""
+    _limpiar()
+    for i in range(4):
+        _sembrar_en_bandeja('QAPQR-t%d' % i, 'Mensaje de prueba número %d con algo de texto' % i)
+    c = _admin(app)
+    js = c.post(DEPURAR, json={'con_ia': True, 'limite': 1}, headers=_csrf(c)).get_json()
+    assert js['sin_mirar_por_tope'] >= 1, js
+    assert js['faltan_por_evaluar'] is True
+    assert 'volvé a llamar' in js['aviso_tope']
