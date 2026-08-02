@@ -4711,6 +4711,35 @@ def _plan_unificar_codigos(c):
                       "WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
         return (r[0] if r else None)
 
+    def _nombres_eos(cod):
+        r = c.execute("SELECT UPPER(TRIM(COALESCE(nombre_inci,''))||' '||"
+                      "COALESCE(nombre_comercial,'')) FROM maestro_mps "
+                      "WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
+        return (r[0] if r else '')
+
+    # Palabras que distinguen DOS materiales de la misma familia. Si una está de un lado y otra
+    # distinta del mismo grupo está del otro, NO son el mismo material por más que coincida el
+    # porcentaje: `CITRUS AURANTIUM AMARA **leaf** OIL` (petitgrain) vs `... **FLOWER** OIL`
+    # (neroli) son dos aceites esenciales distintos del mismo árbol. Sin este chequeo el par
+    # MP00305←MP00025 salía como "seguro" porque el destino no existe en EOS y entonces no había
+    # INCI con qué corroborar: la única evidencia era el porcentaje (M19).
+    _DISCRIMINANTES = [
+        {'LEAF', 'HOJA', 'FLOWER', 'FLOR', 'SEED', 'SEMILLA', 'ROOT', 'RAIZ', 'FRUIT', 'FRUTO',
+         'PEEL', 'CASCARA', 'BARK', 'CORTEZA', 'STEM', 'TALLO'},
+        {'POLVO', 'POWDER', 'LIQUIDO', 'LIQUIDA', 'LIQUID'},
+    ]
+
+    import re as _re_ch
+
+    def _choca_por_nombre(nom_batch, cod_eos):
+        _a = set(_re_ch.split(r'[^A-Za-z]+', (nom_batch or '').upper()))
+        _b = set(_re_ch.split(r'[^A-Za-z]+', _nombres_eos(cod_eos)))
+        for grupo in _DISCRIMINANTES:
+            _ga, _gb = _a & grupo, _b & grupo
+            if _ga and _gb and _ga != _gb:
+                return '%s vs %s' % ('/'.join(sorted(_ga)), '/'.join(sorted(_gb)))
+        return ''
+
     plan = []
     for d in pares.values():
         cb, ce = d['codigo_batch'], d['codigo_eos']
@@ -4718,7 +4747,15 @@ def _plan_unificar_codigos(c):
         d['destino_existe_en_eos'] = inci_b is not None
         d['inci_batch'], d['inci_eos'] = inci_b, inci_e
         d['n_productos'] = len(d['productos'])
-        if _por_eos[ce] > 1 or _por_batch[cb] > 1:
+        _choque = _choca_por_nombre(d.get('nombre'), ce)
+        if _choque:
+            d['estado'] = 'bloqueado_nombre'
+            d['motivo'] = ('Los nombres se contradicen en una palabra que distingue DOS '
+                           'materiales de la misma familia (%s). Coincide el porcentaje, pero '
+                           'eso no alcanza: el aceite de hoja y el de flor del mismo árbol son '
+                           'productos distintos. Lo confirma Alejandro contra el envase (M19).'
+                           % _choque)
+        elif _por_eos[ce] > 1 or _por_batch[cb] > 1:
             d['estado'] = 'bloqueado_ambiguo'
             d['motivo'] = ('Varios códigos se cruzan entre sí (EOS fusionó lo que el batch record '
                            'separa, o al revés). Renombrar elegiría uno al azar y con grados '

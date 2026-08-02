@@ -63,7 +63,8 @@ def test_solo_un_ADMIN_puede_unificar(app, db_clean):
 def test_cada_par_trae_su_motivo_y_su_clasificacion(app, db_clean):
     j = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
     for d in j['seguros'] + j['bloqueados']:
-        assert d['estado'] in ('seguro', 'bloqueado_ambiguo', 'bloqueado_colision'), d
+        assert d['estado'] in ('seguro', 'bloqueado_ambiguo', 'bloqueado_colision',
+                               'bloqueado_nombre'), d
         assert d.get('motivo'), d
         assert d['codigo_batch'] != d['codigo_eos'], d
         if d['estado'] == 'seguro':
@@ -147,3 +148,38 @@ def test_un_codigo_de_eos_destino_de_DOS_del_batch_queda_bloqueado(app, db_clean
             'par SEGURO cuyo destino EOS recibe varios códigos del batch: %r' % d)
         assert _por_batch[d['codigo_batch']] == 1, (
             'par SEGURO cuyo código del batch va a varios de EOS: %r' % d)
+
+
+def test_BLOQUEA_cuando_los_nombres_se_contradicen_en_una_palabra_que_DISTINGUE(app, db_clean):
+    """El par que casi se aplica (1-ago · lo vi revisando la salida real, no lo cazó el código).
+
+        MP00305 ← MP00025
+        batch: "CITRUS AURANTIUM AMARA **leaf** OIL"   (petitgrain)
+        EOS:   "CITRUS AURANTIUM AMARA **FLOWER** OIL" (neroli)
+
+    Dos aceites esenciales DISTINTOS del mismo árbol. Salía "seguro" porque el código del batch
+    no existe en EOS y entonces no había INCI con qué corroborar: la única evidencia era el
+    porcentaje idéntico -- y el porcentaje no distingue hoja de flor.
+
+    Mismo espíritu que M19 (Centella triterpenos vs extracto plano, Vit E polvo vs líquida): la
+    palabra que cambia el material puede ser una sola.
+    """
+    from blueprints.programacion import _plan_unificar_codigos  # noqa: F401
+    plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
+    for d in plan['seguros']:
+        for grupo in (('LEAF', 'HOJA', 'FLOWER', 'FLOR', 'SEED', 'SEMILLA', 'ROOT', 'RAIZ',
+                       'FRUIT', 'FRUTO', 'PEEL', 'CASCARA'),
+                      ('POLVO', 'POWDER', 'LIQUIDO', 'LIQUIDA', 'LIQUID')):
+            _n = (d.get('nombre') or '').upper()
+            _e = ((d.get('inci_eos') or '') + ' ' + (d.get('inci_batch') or '')).upper()
+            _a = {g for g in grupo if g in _n}
+            _b = {g for g in grupo if g in _e}
+            assert not (_a and _b and _a != _b), (
+                'par SEGURO con nombres que se contradicen (%s vs %s): %r' % (_a, _b, d))
+
+
+def test_el_estado_bloqueado_nombre_existe_y_explica(app, db_clean):
+    plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
+    for d in plan['bloqueados']:
+        assert d['estado'] in ('bloqueado_ambiguo', 'bloqueado_colision', 'bloqueado_nombre'), d
+        assert d.get('motivo'), d
