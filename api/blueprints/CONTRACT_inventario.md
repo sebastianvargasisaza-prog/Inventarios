@@ -857,3 +857,46 @@ planta sigue cargando (`_require_planta_write` · es su día a día y trabarlo s
 fantasma · M68), pero **`modo='replace'`, que ARCHIVA en masa todo lo que no venga en el archivo,
 exige ADMIN** (409 `REPLACE_SOLO_ADMIN`). Test en los dos sentidos:
 `tests/test_permisos_barrido_30jul.py`.
+
+## ⚖️ INV-20 · La corrección de una colisión de código es NET-ZERO o no es corrección (2-ago)
+
+El 9-jul un consumo retroactivo descontó materia prima por el **código equivocado** (MyBatch y EOS
+usan el mismo número para moléculas distintas). El 15-jul se corrigió… **de un solo lado**: se
+agregó el descuento al código correcto y nunca se devolvió el del equivocado.
+
+Las cantidades cuadran al gramo en los tres pares, así que la corrección **identificó bien** el
+material; lo que faltó fue la otra pata:
+
+| Código equivocado | Salió mal el 9-jul | Se corrigió a | El 15-jul |
+|---|---|---|---|
+| `MP00300` Eversoft YCS-30S | 1.400 + 105 g | `MP00103` Ceramide NP | ✓ |
+| `MP00301` Ethylhexylglycerin | 3.150 + 1.050 g | `MP00030` Propylheptyl | ✓ |
+| `MP00302` Isododecane | 140 g | `MP00301` Ethylhexylglycerin | ✓ |
+
+Resultado: esos tres muestran **menos stock del que hay en el estante** y el consumo figura
+registrado dos veces. `MP00303` y `MP00298` no tienen desbalance (sus correcciones se hicieron sin
+haber descontado mal antes).
+
+**Por qué la herramienta del 15-jul no lo cerró sola:** `descuento_retro_corregir` revierte sólo si
+se le vuelve a subir el Excel Y el marcador coincide exacto; si el `wrong` sale vacío, el paso 1 no
+hace nada y el paso 2 aplica igual → media corrección, sin un solo error a la vista.
+
+`GET/POST /api/admin/colisiones-net-zero` (ADMIN · `_plan_colisiones_net_zero` compartido por la
+previa y el apply · M101) se apoya en el kardex, no en el Excel:
+
+- **Empareja por EVIDENCIA, no por parecido.** Tier 1 = el marcador (`[retro-corr B|Y|L|N]` conserva
+  bulk, lote y cantidad del `[retro B|X|L|N]` original: sólo cambia el código). Tier 2 = la cantidad,
+  y **sólo si es inequívoca**. Lo que no cruza se reporta en `sin_pareja` y NO se toca.
+- **Tope duro:** nunca devuelve más de lo que la corrección movió al código correcto — devolver de
+  más es inventar material. Lo que excede sale en `excedente`, sin escribir.
+- **Net-zero real (M31):** la Entrada va al **mismo lote**, espejando el `estado_lote` original (un
+  lote en cuarentena vuelve a cuarentena: no se libera material por la puerta de atrás) y
+  **conservando el vencimiento** (si se pierde, el cron de vencidos deja de verlo y el FEFO lo trata
+  como eterno · M118/M25).
+- **CAS sobre la Salida original** antes de escribir (M27: con 3 workers un SELECT-luego-INSERT deja
+  pasar los dos y devuelve el doble). El marcador `[retro-corr-rev #<id>]` es **el mismo** que usa la
+  herramienta del 15-jul, así que las dos se detectan mutuamente (M3).
+- Auditado antes del commit (`COLISION_NET_ZERO`) y reversible.
+
+UI: panel inferior de `/admin/corregir-colisiones`. Tests: `tests/test_colisiones_net_zero.py`
+(en el gate · el tope y el espejo de estado probados con dientes).

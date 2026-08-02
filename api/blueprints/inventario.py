@@ -13128,6 +13128,213 @@ def descuento_retro_corregir():
                     'resumen': {'a_corregir': len(plan), 'ya_corregidos': sum(1 for p in plan if p['ya_corregido'])}})
 
 
+# ── Compensación NET-ZERO de las colisiones a medio corregir (Sebastián 2-ago) ────────────────
+# El 15-jul se corrigieron las colisiones de código, pero la corrección quedó de UN SOLO LADO: se
+# agregó el descuento al código CORRECTO y nunca se devolvió el del código EQUIVOCADO. Entonces
+# esos materiales muestran MENOS stock del que hay físicamente en el estante (M31: toda reversa es
+# net-zero por construcción · acá se hizo la mitad).
+#
+# Por qué la herramienta del 15-jul no lo cerró sola: revierte sólo si se le vuelve a subir el
+# Excel de consumo Y el marcador coincide exacto; si el `wrong` sale vacío, el paso 1 no hace nada
+# y el paso 2 aplica igual → media corrección, sin un solo error a la vista.
+#
+# Esto se apoya en la evidencia que YA está en el kardex (no necesita el Excel): por cada
+# "Corrección colisión X->Y" busca el descuento equivocado que la originó y le devuelve
+# exactamente esos gramos a X, al MISMO lote y espejando su estado (M31).
+_RE_MARCA_CORR = None
+
+
+def _marca_corr_re():
+    global _RE_MARCA_CORR
+    if _RE_MARCA_CORR is None:
+        import re as _re
+        _RE_MARCA_CORR = _re.compile(r'\[retro-corr ([^|\]]*)\|([^|\]]*)\|([^|\]]*)\|([^|\]]*)\]')
+    return _RE_MARCA_CORR
+
+
+def _mp_nombre(c, cod):
+    r = c.execute("SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp) "
+                  "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
+    return r[0] if r else cod
+
+
+def _net0_ya_revertido(c, mov_id, obs_original):
+    """¿Esta Salida equivocada ya se devolvió? Mira las DOS marcas posibles, para que esta
+    herramienta y la del 15-jul se detecten mutuamente (M3: un solo marcador compartido)."""
+    marca = '[retro-corr-rev #%s]' % mov_id
+    if marca in (obs_original or ''):
+        return True
+    return bool(c.execute("SELECT 1 FROM movimientos WHERE observaciones LIKE ? LIMIT 1",
+                          ('%' + marca + '%',)).fetchone())
+
+
+def _plan_colisiones_net_zero(c):
+    """Núcleo COMPARTIDO por la vista previa y el apply.
+
+    M101: si el apply filtra, la previa filtra IGUAL -- el número que se muestra tiene que ser
+    exactamente el que se va a escribir, o la previa deja de ser una verificación.
+    """
+    pares = []
+    for mal, bueno in _RETRO_CORR_MAP.items():
+        # (a) lo que la corrección del 15-jul movió AL código correcto · una corrección lógica
+        #     puede estar partida en varias filas por el FEFO → se agrupa por su observación.
+        corr = {}
+        for oid, ocant, oobs in c.execute(
+                "SELECT id, COALESCE(cantidad,0), COALESCE(observaciones,'') FROM movimientos "
+                "WHERE UPPER(TRIM(material_id))=? AND UPPER(TRIM(tipo)) LIKE 'SALIDA%' "
+                "AND observaciones LIKE ?", (bueno, 'Corrección colisión ' + mal + '->' + bueno + '%')).fetchall():
+            g = corr.setdefault(oobs, {'g': 0.0, 'n': 0})
+            g['g'] += float(ocant or 0); g['n'] += 1
+        corregido_g = round(sum(v['g'] for v in corr.values()), 2)
+
+        # (b) el descuento EQUIVOCADO original sobre el código malo (marcador '[retro ' con
+        #     espacio · NO matchea '[retro-corr'), agrupado igual.
+        malas = {}
+        for wid, wcant, wlote, wobs, wfec, west in c.execute(
+                "SELECT id, COALESCE(cantidad,0), COALESCE(lote,''), COALESCE(observaciones,''), "
+                "COALESCE(fecha,''), COALESCE(estado_lote,'') FROM movimientos "
+                "WHERE UPPER(TRIM(material_id))=? AND UPPER(TRIM(tipo)) LIKE 'SALIDA%' "
+                "AND observaciones LIKE '%[retro %'", (mal,)).fetchall():
+            grp = malas.setdefault(wobs, {'g': 0.0, 'filas': []})
+            grp['g'] += float(wcant or 0)
+            grp['filas'].append({'mov': int(wid), 'g': round(float(wcant or 0), 2), 'lote': wlote,
+                                 'fecha': str(wfec)[:19], 'estado_lote': west, 'obs': wobs})
+
+        # (c) emparejar. Tier 1 = el MARCADOR (identidad exacta: la corrección conserva bulk, lote
+        #     y cantidad del descuento original, sólo cambia el código). Tier 2 = la CANTIDAD, y
+        #     sólo si es inequívoca. Lo que no cruza NO se toca: se reporta (M132).
+        usados = set(); items = []; sin_pareja = []
+        rx = _marca_corr_re()
+        for oobs, cv in sorted(corr.items()):
+            m = rx.search(oobs)
+            grp = None; via = ''
+            if m:
+                esperado = '[retro %s|%s|%s|%s]' % (m.group(1), mal, m.group(3), m.group(4))
+                for k in malas:
+                    if k not in usados and esperado in k:
+                        grp = k; via = 'marcador'; break
+            if grp is None:
+                cands = [k for k, v in malas.items()
+                         if k not in usados and abs(v['g'] - cv['g']) <= 0.01]
+                if len(cands) == 1:
+                    grp = cands[0]; via = 'cantidad'
+            if grp is None:
+                sin_pareja.append({'correccion_g': round(cv['g'], 2), 'obs': oobs[:160],
+                                   'motivo': 'no encontré el descuento equivocado que la originó'})
+                continue
+            usados.add(grp)
+            for fila in malas[grp]['filas']:
+                if fila['g'] <= 0.01:
+                    continue
+                ya = _net0_ya_revertido(c, fila['mov'], fila['obs'])
+                items.append({'mov': fila['mov'], 'g': fila['g'], 'lote': fila['lote'],
+                              'fecha': fila['fecha'], 'estado_lote': fila['estado_lote'],
+                              'emparejado_por': via, 'ya_devuelto': ya})
+
+        pendientes = [i for i in items if not i['ya_devuelto']]
+        # tope duro: nunca devolver MÁS de lo que la corrección se llevó a `bueno`.
+        cupo = corregido_g - round(sum(i['g'] for i in items if i['ya_devuelto']), 2)
+        a_devolver = []; excedente = []
+        for i in sorted(pendientes, key=lambda x: (x['fecha'], x['mov'])):
+            if i['g'] <= cupo + 0.01:
+                a_devolver.append(i); cupo = round(cupo - i['g'], 2)
+            else:
+                excedente.append(i)
+
+        pares.append({
+            'de': mal, 'a': bueno,
+            'nombre_de': _mp_nombre(c, mal), 'nombre_a': _mp_nombre(c, bueno),
+            'corregido_g': corregido_g,
+            'descontado_mal_g': round(sum(i['g'] for i in items), 2),
+            'ya_devuelto_g': round(sum(i['g'] for i in items if i['ya_devuelto']), 2),
+            'a_devolver_g': round(sum(i['g'] for i in a_devolver), 2),
+            'a_devolver': a_devolver, 'excedente': excedente, 'sin_pareja': sin_pareja,
+        })
+    return pares
+
+
+@bp.route('/api/admin/colisiones-net-zero', methods=['GET', 'POST'])
+def colisiones_net_zero():
+    """Devuelve al código EQUIVOCADO los gramos que la corrección del 15-jul se llevó y nunca
+    repuso. GET = vista previa · POST {"aplicar":true} escribe. Idempotente + auditado."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    d = request.get_json(silent=True) or {}
+    aplicar = (request.method == 'POST') and bool(d.get('aplicar', False))
+    conn = get_db(); c = conn.cursor()
+    pares = _plan_colisiones_net_zero(c)
+
+    hechos = []; errores = []
+    if aplicar:
+        from datetime import timezone as _tz
+        # "ahora" en hora Colombia, calculado en Python · nunca date('now') en un INSERT (M24)
+        ahora = (datetime.now(_tz.utc) - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+        for p in pares:
+            for it in p['a_devolver']:
+                marca = '[retro-corr-rev #%s]' % it['mov']
+                try:
+                    # CAS: reclamar la Salida original ANTES de escribir la Entrada (M31 · con 3
+                    # workers un SELECT-luego-INSERT deja pasar las dos y duplica la devolución).
+                    cur = c.execute(
+                        "UPDATE movimientos SET observaciones = COALESCE(observaciones,'') || ? "
+                        "WHERE id=? AND COALESCE(observaciones,'') NOT LIKE ?",
+                        (' ' + marca, it['mov'], '%' + marca + '%'))
+                    if (cur.rowcount or 0) != 1:
+                        continue
+                    # el vencimiento del lote NO se pierde: si vuelve sin fecha, el cron de
+                    # vencidos deja de verlo y el FEFO lo trata como eterno (M118/M25).
+                    fv = est = pos = None
+                    if (it['lote'] or '').strip():
+                        r = c.execute(
+                            "SELECT MAX(CASE WHEN LOWER(COALESCE(tipo,''))='entrada' THEN "
+                            "  NULLIF(TRIM(CAST(COALESCE(fecha_vencimiento,'') AS TEXT)),'') END), "
+                            "MAX(NULLIF(TRIM(CAST(COALESCE(estanteria,'') AS TEXT)),'')), "
+                            "MAX(NULLIF(TRIM(CAST(COALESCE(posicion,'') AS TEXT)),'')) "
+                            "FROM movimientos WHERE UPPER(TRIM(material_id))=? "
+                            "AND UPPER(TRIM(COALESCE(lote,'')))=UPPER(TRIM(?))",
+                            (p['de'], it['lote'])).fetchone()
+                        if r:
+                            fv, est, pos = r[0], r[1], r[2]
+                    obs = ('Devolución net-zero de la colisión %s->%s · el consumo se movió al código '
+                           'correcto el 15-jul y nunca se repuso acá %s' % (p['de'], p['a'], marca))
+                    c.execute(
+                        "INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,"
+                        "observaciones,lote,fecha_vencimiento,estanteria,posicion,estado_lote,operador) "
+                        "VALUES (?,?,?,'Entrada',?,?,?,?,?,?,?,?)",
+                        (p['de'], _mp_nombre(c, p['de']), it['g'], ahora, obs, it['lote'],
+                         fv, est, pos, (it['estado_lote'] or 'VIGENTE'), _u))
+                    audit_log(c, usuario=_u, accion='COLISION_NET_ZERO', tabla='movimientos',
+                              registro_id=str(it['mov']),
+                              antes={'salida_equivocada_id': it['mov'], 'codigo': p['de'],
+                                     'g': it['g'], 'lote': it['lote'],
+                                     'emparejado_por': it['emparejado_por']},
+                              despues={'entrada_compensatoria_g': it['g'], 'codigo': p['de'],
+                                       'movido_en_su_momento_a': p['a']})
+                    hechos.append({'codigo': p['de'], 'g': it['g'], 'lote': it['lote'],
+                                   'revierte_mov': it['mov']})
+                except Exception as e:
+                    conn.rollback()
+                    errores.append({'codigo': p['de'], 'mov': it['mov'], 'error': str(e)[:200]})
+        if hechos:
+            conn.commit()
+
+    con_saldo = [p for p in pares if p['a_devolver_g'] > 0 or p['sin_pareja'] or p['excedente']]
+    return jsonify({
+        'ok': True, 'dry_run': not aplicar, 'pares': pares,
+        'devuelto': hechos, 'errores': errores,
+        'resumen': {
+            'g_pendientes_de_devolver': round(sum(p['a_devolver_g'] for p in pares), 2),
+            'g_devueltos_ahora': round(sum(h['g'] for h in hechos), 2),
+            'pares_con_saldo': [p['de'] for p in con_saldo],
+        },
+        'que_significa': ('Cada gramo de acá salió del kardex por el código equivocado y se volvió '
+                          'a descontar del correcto: el material sigue en el estante y el sistema '
+                          'lo da por consumido dos veces. La Entrada compensatoria lo devuelve al '
+                          'mismo lote, con su vencimiento, y deja el consumo registrado UNA sola vez.'),
+    })
+
+
 @bp.route('/admin/corregir-colisiones', methods=['GET'])
 def corregir_colisiones_page():
     """UI para corregir las colisiones de código MyBatch↔EOS del Consumo retroactivo."""
@@ -13155,6 +13362,12 @@ input[type=file]{margin:12px 0}
 <input type="file" id="f" accept=".xlsx">
 <div><button class="prev" onclick="ir(false)">Revisar (preview)</button><button id="apl" onclick="ir(true)" disabled>Aplicar corrección</button></div>
 <div id="out"></div>
+
+<hr style="margin:26px 0;border:none;border-top:1px solid var(--cx-border-soft, #eee)">
+<h1 style="font-size:19px">&#9878;&#65039; Devolver lo que la corrección se llevó y no repuso</h1>
+<p class="muted">La corrección del 15-jul quedó de <b>un solo lado</b>: agregó el descuento al código correcto y nunca lo devolvió al equivocado. Esos materiales muestran <b>menos stock del que hay en el estante</b> y el consumo figura registrado dos veces. Esto lee el kardex (no necesita el Excel), empareja cada corrección con el descuento que la originó y devuelve <b>exactamente esos gramos</b>, al mismo lote y con su vencimiento.</p>
+<div><button class="prev" onclick="n0(false)">Revisar devoluciones</button><button id="n0apl" onclick="n0(true)" disabled>Aplicar devolución</button></div>
+<div id="n0out"></div>
 </div>
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -13189,6 +13402,40 @@ function render(d,aplicar){
     document.getElementById('apl').disabled=(p.length===0);
   }
   document.getElementById('out').innerHTML=h;
+}
+async function n0(aplicar){
+  var out=document.getElementById('n0out');
+  if(aplicar && !confirm('Se van a escribir Entradas compensatorias en el kardex. Esto es reversible y queda auditado. Continuar?'))return;
+  out.innerHTML='Leyendo el kardex...';
+  try{
+    var t=await csrf();
+    var r=await fetch('/api/admin/colisiones-net-zero',{method:aplicar?'POST':'GET',credentials:'same-origin',
+        headers:{'X-CSRF-Token':t,'Content-Type':'application/json'},body:aplicar?JSON.stringify({aplicar:true}):undefined});
+    var d=await r.json();
+    if(!r.ok||!d.ok){out.innerHTML='<span class="chip bad">Error: '+esc(d.error||r.status)+'</span>';return;}
+    n0render(d,aplicar);
+  }catch(e){out.innerHTML='<span class="chip bad">Error red: '+esc(e.message)+'</span>';}
+}
+function n0render(d,aplicar){
+  var pares=(d.pares||[]).filter(function(p){return p.corregido_g>0 || p.descontado_mal_g>0;});
+  var rows=pares.map(function(p){
+    var st=p.a_devolver_g>0?'<span class="chip bad">faltan '+p.a_devolver_g+' g</span>'
+          :(p.ya_devuelto_g>0?'<span class="chip done">ya devuelto</span>':'<span class="chip ok">sin saldo</span>');
+    var av=[];
+    if((p.sin_pareja||[]).length)av.push((p.sin_pareja.length)+' corrección(es) sin descuento que la explique');
+    if((p.excedente||[]).length)av.push((p.excedente.length)+' salida(s) por encima del tope: NO se devuelven');
+    return '<tr><td class="mono">'+esc(p.de)+' &rarr; '+esc(p.a)+'</td><td>'+esc(p.nombre_de)+'</td>'
+      +'<td>'+p.corregido_g+' g</td><td>'+p.descontado_mal_g+' g</td><td>'+p.ya_devuelto_g+' g</td>'
+      +'<td>'+st+'</td><td class="muted">'+esc(av.join(' &middot; '))+'</td></tr>';
+  }).join('');
+  var h='<h3>'+(aplicar?'Resultado':'Vista previa')+'</h3>';
+  h+='<table><thead><tr><th>De &rarr; A</th><th>Material</th><th>Se llevó al correcto</th><th>Salió del equivocado</th><th>Ya devuelto</th><th>Estado</th><th>Avisos</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  h+='<div class="warn">'+(aplicar
+      ?('&#9989; Devueltos ahora: <b>'+d.resumen.g_devueltos_ahora+' g</b> &middot; Errores: '+(d.errores||[]).length)
+      :('Pendiente de devolver: <b>'+d.resumen.g_pendientes_de_devolver+' g</b>'))+'</div>';
+  if((d.errores||[]).length)h+='<div class="chip bad">'+esc(JSON.stringify(d.errores))+'</div>';
+  document.getElementById('n0apl').disabled=aplicar||!(d.resumen.g_pendientes_de_devolver>0);
+  document.getElementById('n0out').innerHTML=h;
 }
 </script></body></html>'''
     return _tpl.replace('__PARES__', _pares)

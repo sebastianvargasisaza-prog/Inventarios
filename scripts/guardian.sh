@@ -251,6 +251,11 @@ CORAZON=(
   # PROGRAMADAS van a consumir, no un catalogo. Una ausencia sin explicacion se lee como
   # un error del sistema aunque sea correcta, y cuando SI es un error se lee como normal.
   "tests/test_diag_por_que_no_sale.py"
+  # La correccion de colisiones del 15-jul quedo de UN SOLO LADO: agrego el descuento al codigo
+  # correcto y nunca lo devolvio al equivocado, asi que esos materiales muestran menos stock del
+  # que hay en el estante. La devolucion es net-zero, al mismo lote, con su vencimiento, y con
+  # tope duro (nunca devolver mas de lo que la correccion movio = inventar material).
+  "tests/test_colisiones_net_zero.py"
 )
 
 echo ""
