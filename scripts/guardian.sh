@@ -274,6 +274,13 @@ CORAZON=(
   # del cliente, asi que la bandeja se lleno de "Buena tarde" y "Perfecto": un registro
   # REGULADO lleno de saludos no queda incompleto, queda FALSO. Lo descartado NO se pierde.
   "tests/test_pqr_solo_lo_que_es_pqr.py"
+  # Un MBR aprobado es INMUTABLE, asi que al renombrar un producto queda con el nombre viejo y
+  # crear_ebr_desde_mbr deja de encontrarlo: el producto NO puede generar su legajo. El rename
+  # ahora DEJA el puente, y con dos candidatos ambiguos no elige (dato regulado).
+  "tests/test_mbr_sobrevive_al_rename.py"
+  # Desactivar un puente cambia de QUE codigo sale el material: es mutacion regulada y se
+  # hacia sin dejar rastro. El audit guarda a donde apuntaba, o no se puede revertir.
+  "tests/test_puente_desactivar_audita.py"
 )
 
 echo ""

@@ -15050,13 +15050,34 @@ def mp_bridge_add():
 
 @bp.route('/api/programacion/mp-bridge/<int:bridge_id>', methods=['DELETE'])
 def mp_bridge_delete(bridge_id):
-    """Soft-delete a bridge mapping (sets activo=0)."""
-    if 'compras_user' not in session:
+    """Desactiva un puente (activo=0) · AUDITADO.
+
+    Un puente decide de QUÉ código sale el material cuando se produce, así que quitarlo cambia
+    el descuento del inventario -- es una mutación regulada y hasta el 2-ago se hacía sin dejar
+    rastro. Lo vi al desactivar el puente 184 (`MP00181 → MP00176`), que a su vez alguien había
+    creado en junio sin que quedara constancia: por eso nadie sabía que existía.
+    """
+    _u = session.get('compras_user', '')
+    if not _u:
         return jsonify({'error': 'No autorizado'}), 401
-    with _db() as conn:
-        conn.execute("UPDATE mp_formula_bridge SET activo=0 WHERE id=?", (bridge_id,))
-        conn.commit()
-    return jsonify({'ok': True, 'id': bridge_id, 'activo': 0})
+    conn = get_db(); c = conn.cursor()
+    r = c.execute("SELECT formula_material_id, bodega_material_id, COALESCE(activo,1), "
+                  "COALESCE(notas,'') FROM mp_formula_bridge WHERE id=?", (bridge_id,)).fetchone()
+    if not r:
+        return jsonify({'error': 'ese puente no existe'}), 404
+    cur = c.execute("UPDATE mp_formula_bridge SET activo=0 WHERE id=? AND COALESCE(activo,1)=1",
+                    (bridge_id,))
+    if (cur.rowcount or 0) != 1:
+        return jsonify({'ok': True, 'id': bridge_id, 'activo': 0, 'aviso': 'ya estaba inactivo'})
+    audit_log(c, usuario=_u, accion='DESACTIVAR_PUENTE_MP', tabla='mp_formula_bridge',
+              registro_id=str(bridge_id),
+              antes={'formula_material_id': r[0], 'bodega_material_id': r[1],
+                     'activo': int(r[2] or 0), 'notas': r[3][:200]},
+              despues={'activo': 0, 'efecto': 'la fórmula deja de resolverse a %s' % r[1]})
+    conn.commit()
+    return jsonify({'ok': True, 'id': bridge_id, 'activo': 0,
+                    'que_cambia': ('Las fórmulas que pedían %s dejan de sacar el material de %s. '
+                                   'Queda en audit_log: es reversible.' % (r[0], r[1]))})
 
 
 @bp.route('/api/programacion/mp-bridge/unmatched', methods=['GET'])

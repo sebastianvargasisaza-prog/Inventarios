@@ -21553,6 +21553,27 @@ def admin_renombrar_producto():
         c.execute("UPDATE produccion_envasado SET producto_nombre=? WHERE producto_nombre=?", (nuevo, real))
         c.execute("UPDATE mbr_templates SET producto_nombre=? WHERE producto_nombre=? "
                   "AND COALESCE(estado,'') NOT IN ('aprobado','obsoleto')", (nuevo, real))
+
+        # ⚠ El MBR APROBADO es INMUTABLE (mig 109) y se queda con el nombre VIEJO. Hasta hoy eso
+        # sólo se REPORTABA ('aprobados_inmutables: N') -- y se lee como un pendiente de Calidad
+        # cuando en realidad es una ROTURA: `crear_ebr_desde_mbr` busca el MBR por nombre, así
+        # que el producto renombrado deja de poder generar su legajo. Pasó con HYDRABALANCE y
+        # con "Suero Vitamina C+" el 2-ago.
+        # Al renombrar se deja el PUENTE: el nombre nuevo apunta al viejo, que es donde vive el
+        # documento aprobado. Re-versionar sigue siendo de Calidad; mientras tanto la planta no
+        # se queda sin batch record. Si el MBR se re-versiona con el nombre nuevo, el lookup
+        # exacto gana y el alias deja de usarse solo.
+        _mbr_aprob = c.execute(
+            "SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=? AND estado='aprobado'",
+            (real,)).fetchone()
+        if _mbr_aprob and int(_mbr_aprob[0] or 0) > 0:
+            try:
+                c.execute("INSERT INTO producto_formula_alias (producto_plan, producto_formula, "
+                          "activo, creado_por, creado_en) VALUES (?,?,1,?,date('now','-5 hours')) "
+                          "ON CONFLICT (producto_plan) DO UPDATE SET producto_formula="
+                          "excluded.producto_formula, activo=1", (nuevo, real, u))
+            except Exception as _eal:
+                log.warning('renombrar-producto · no pude dejar el alias al MBR aprobado: %s', _eal)
         c.execute("UPDATE formula_headers SET producto_nombre=?, "
                   "producto_canonico=CASE WHEN producto_canonico=? THEN ? ELSE producto_canonico END "
                   "WHERE producto_nombre=?", (nuevo, real, nuevo, real))

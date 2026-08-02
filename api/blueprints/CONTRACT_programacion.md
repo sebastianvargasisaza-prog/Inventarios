@@ -667,3 +667,39 @@ legítimo de dos códigos (pantenol líquido/polvo) sigue cruzando -- probado en
 **Golpea a las MP que NUNCA se compraron**, que son justo las que tienen que salir en la tabla para
 poder comprarlas. Tests: `tests/test_resolver_inci_generico.py` (en el gate · probado con dientes:
 sin el guard, la fresa se va al pistacho).
+
+## 🌉 PROG-N+5 · Desactivar un puente de MP se AUDITA (2-ago)
+
+`DELETE /api/programacion/mp-bridge/<id>` hacía `UPDATE ... SET activo=0` **sin dejar rastro**. Un
+puente decide **de qué código sale el material** cuando se produce, así que quitarlo cambia el
+descuento del inventario: es una mutación regulada.
+
+Lo destapó desactivar el **puente 184** (`MP00181 → MP00176`), que a su vez alguien había creado en
+junio **sin constancia** — por eso nadie sabía que existía y la centella se descontaba del frasco
+equivocado durante semanas.
+
+Ahora: CAS (`WHERE ... AND activo=1` + `rowcount`), `audit_log` con el **destino previo** (sin él no
+se puede revertir: el puente se recrearía a ciegas), y 404 si no existe. La respuesta dice qué
+cambia. Tests: `tests/test_puente_desactivar_audita.py`.
+
+## 📄 BRD · El MBR aprobado conserva el nombre viejo (2-ago)
+
+Un MBR aprobado es **INMUTABLE** (mig 109), así que al renombrar un producto se queda con el nombre
+viejo y `crear_ebr_desde_mbr` — que lo busca con `UPPER(TRIM)` — **deja de encontrarlo**: el
+producto renombrado **no puede generar su batch record**. `UPPER(TRIM)` no colapsa el espacio de
+adentro (`"HYDRA BALANCE"` ≠ `"HYDRABALANCE"`).
+
+`renombrar-producto` lo reportaba como `aprobados_inmutables: N`, que se lee como un pendiente de
+Calidad — y era una rotura. **Cuando una herramienta dice que salteó algo, hay que preguntarse qué
+se rompe por haberlo salteado.**
+
+Dos mitades:
+- **La causa**: el rename ahora **deja el puente** en `producto_formula_alias` (nombre nuevo →
+  nombre viejo, que es donde vive el documento aprobado).
+- **El síntoma**: el lookup sigue el alias y, si no hay, prueba por **nombre sin espacios ni
+  puntuación** — sólo si es INEQUÍVOCO (con dos candidatos no elige: es un dato regulado · M19/M132).
+  Siempre declara por cuál cruzó en el log.
+
+Re-versionar sigue siendo un acto de Calidad; mientras tanto la planta no se queda sin legajo. Y
+cuando lo re-versionen con el nombre nuevo, el match exacto gana y el alias deja de usarse solo.
+Tests: `tests/test_mbr_sobrevive_al_rename.py`.

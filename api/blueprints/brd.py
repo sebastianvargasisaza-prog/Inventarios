@@ -1983,8 +1983,62 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
         (producto_nombre,),
     ).fetchone()
     if not mbr:
-        return {'ok': False, 'error': 'NO_MBR_APROBADO',
-                'detail': f"No hay MBR aprobado para '{producto_nombre}'"}
+        # ⚠ Un MBR APROBADO es INMUTABLE (mig 109), así que al renombrar un producto su nombre
+        # queda viejo y este lookup deja de encontrarlo: el producto pasa a NO poder generar su
+        # legajo. Pasó el 2-ago con HYDRA BALANCE→HYDRABALANCE y con "Suero de Vitamina C+
+        # fórmula nueva"→"Suero Vitamina C+", y `renombrar-producto` lo reportó como
+        # "aprobados_inmutables: 2" -- que se lee como un pendiente y era una ROTURA.
+        #
+        # El documento sigue siendo VÁLIDO; lo viejo es la etiqueta. Así que se busca por los
+        # mismos puentes que el resto del sistema, en orden de fuerza y SIEMPRE declarando por
+        # cuál cruzó (`mbr_match_por`): un emparejamiento que no se puede auditar no sirve para
+        # un dato regulado (M19/M132). Re-versionar sigue siendo cosa de Calidad, pero mientras
+        # tanto la planta no se queda sin batch record.
+        _mbr_via = ''
+        try:
+            from .programacion import _norm_prod_fuerte as _npf
+        except Exception:
+            from blueprints.programacion import _norm_prod_fuerte as _npf
+
+        def _sin_espacios(s):
+            return _npf(s or '').replace(' ', '')
+
+        # (a) alias explícito producto→fórmula · lo pone una persona (o el rename, ver abajo)
+        try:
+            _al = cur.execute(
+                "SELECT producto_formula FROM producto_formula_alias "
+                "WHERE UPPER(TRIM(producto_plan))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+                "LIMIT 1", (producto_nombre,)).fetchone()
+            if _al and _al[0]:
+                mbr = cur.execute(
+                    """SELECT id, version, lote_size_g FROM mbr_templates
+                        WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND estado='aprobado'
+                        ORDER BY version DESC, id DESC LIMIT 1""", (_al[0],)).fetchone()
+                if mbr:
+                    _mbr_via = 'alias'
+        except Exception as _ea:
+            log.warning('crear_ebr · alias MBR: %s', _ea)
+
+        # (b) el mismo nombre sin espacios ni puntuación · caza HYDRABALANCE ↔ "HYDRA BALANCE".
+        #     Sólo si es INEQUÍVOCO: con dos candidatos no se elige, se avisa (M132).
+        if not mbr:
+            try:
+                _obj = _sin_espacios(producto_nombre)
+                _cands = [r for r in cur.execute(
+                    "SELECT id, version, lote_size_g, producto_nombre FROM mbr_templates "
+                    "WHERE estado='aprobado' ORDER BY version DESC, id DESC").fetchall()
+                    if _sin_espacios(r[3]) == _obj]
+                _nombres = {r[3] for r in _cands}
+                if len(_nombres) == 1 and _cands:
+                    mbr, _mbr_via = _cands[0], 'nombre_sin_espacios'
+            except Exception as _eb:
+                log.warning('crear_ebr · match MBR sin espacios: %s', _eb)
+
+        if not mbr:
+            return {'ok': False, 'error': 'NO_MBR_APROBADO',
+                    'detail': f"No hay MBR aprobado para '{producto_nombre}'"}
+        log.warning('crear_ebr · MBR de %r resuelto por %s (el MBR aprobado conserva el nombre '
+                    'viejo · Calidad debe re-versionarlo)', producto_nombre, _mbr_via)
     # Un solo EBR por (lote físico, FASE): Fabricación/Envasado/Acondicionamiento del
     # mismo lote conviven. Dentro de UNA fase, el lote sigue siendo único.
     if cur.execute(
