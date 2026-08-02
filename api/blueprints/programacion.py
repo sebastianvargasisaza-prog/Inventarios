@@ -12190,15 +12190,32 @@ def _calcular_mp_consumo_produccion(c, evento_id):
     # marca con controla_stock=0 en maestro_mps (mig 218). Chequeamos tanto el
     # código de fórmula como el resuelto (cualquiera marcado → no controla).
     def _no_controla(cod_bodega, cod_formula):
+        # ⚠ NORMALIZAR la clave (1-ago · Sebastián: "hay productos que al fabricar dice que no
+        # hay agua"). Este lookup comparaba `codigo_mp=?` CRUDO mientras el resto del sistema usa
+        # UPPER(TRIM). Un código guardado con un espacio pegado o distinto case no encuentra la
+        # fila, el helper devuelve False, la MP queda como `controla_stock=1` y entonces el AGUA
+        # -- que nunca tiene kardex porque no se recepciona -- bloquea la producción por "no hay
+        # stock". Es M100: una clave sin normalizar no da error, da silencio.
         for cc in (cod_bodega, cod_formula):
+            cc = str(cc or '').strip().upper()
             if not cc:
                 continue
             try:
-                r = c.execute("SELECT COALESCE(controla_stock,1) FROM maestro_mps WHERE codigo_mp=?", (cc,)).fetchone()
+                r = c.execute("SELECT COALESCE(controla_stock,1) FROM maestro_mps "
+                              "WHERE UPPER(TRIM(codigo_mp))=?", (cc,)).fetchone()
                 if r is not None and int(r[0] or 0) == 0:
                     return True
-            except Exception:
-                pass
+            except Exception as _e:
+                log.warning('controla_stock de %s no se pudo leer: %s', cc, _e)
+        # Último recurso: el AGUA por NOMBRE. Hay códigos de agua fantasma sin el flag
+        # (MPAGUAL01/MPAGUALI02 · Sebastián 9-jul) y el simulador ya los cubre así; si acá no se
+        # cubrieran, el simulador diría "alcanza" y el arranque rechazaría con "no hay agua" --
+        # las dos pantallas tienen que decir lo MISMO (M5).
+        try:
+            if _is_unlimited_mp((_acc.get(cod_bodega) or {}).get('nombre') or ''):
+                return True
+        except Exception:
+            pass
         return False
     mps = [{'codigo_mp': k, 'codigo_mp_formula': v['codigo_mp_formula'],
             'nombre': v['nombre'], 'cantidad_g': round(v['cantidad_g'], 2),

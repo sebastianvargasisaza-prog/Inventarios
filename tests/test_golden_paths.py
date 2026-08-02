@@ -4209,19 +4209,24 @@ def test_golden_distribuir_fefo_orden(app, db_clean):
     _exec("""INSERT OR REPLACE INTO maestro_mps
               (codigo_mp, nombre_comercial, activo, tipo_material)
               VALUES (?, 'MP FEFO test', 1, 'MP')""", (mp,))
-    # Lote A · fv lejana 2028
+    # ⚠ Vencimientos RELATIVOS a hoy, no fechas fijas (2-ago-2026). El lote "cercano" estaba
+    # hardcodeado en '2026-08-01' y el test venía verde hasta que rodó el calendario: ese día el
+    # lote quedó VENCIDO, el FEFO lo excluyó -- correctamente, por la guarda de vencimiento-por-
+    # fecha (M25) -- y el golden empezó a exigir que se consumiera un lote vencido.
+    # El código estaba bien; el test envejeció. Con fechas relativas no vuelve a pasar.
+    # Lote A · vence LEJOS
     _exec("""INSERT INTO movimientos
               (material_id, material_nombre, cantidad, tipo, fecha, lote,
                fecha_vencimiento, estado_lote, operador)
               VALUES (?, 'MP FEFO test', 1000, 'Entrada', date('now','-30 days'),
-                      'GP89-LOTE-LEJANA', '2028-12-31', 'VIGENTE', 'gp89')""",
+                      'GP89-LOTE-LEJANA', date('now','+900 days'), 'VIGENTE', 'gp89')""",
           (mp,))
-    # Lote B · fv cercana 2026 (debería usarse PRIMERO por FEFO)
+    # Lote B · vence PRONTO pero AÚN NO (debería usarse PRIMERO por FEFO)
     _exec("""INSERT INTO movimientos
               (material_id, material_nombre, cantidad, tipo, fecha, lote,
                fecha_vencimiento, estado_lote, operador)
               VALUES (?, 'MP FEFO test', 500, 'Entrada', date('now','-20 days'),
-                      'GP89-LOTE-CERCANA', '2026-08-01', 'VIGENTE', 'gp89')""",
+                      'GP89-LOTE-CERCANA', date('now','+30 days'), 'VIGENTE', 'gp89')""",
           (mp,))
 
     try:
