@@ -209,6 +209,7 @@ CORAZON=(
   "tests/test_codigos_para_director_tecnico.py"
   "tests/test_agua_no_bloquea_fabricar.py"
   "tests/test_goldens_no_caducan.py"
+  "tests/test_salud_formulas.py"
   # Calidad dispone CAJA POR CAJA: de 24 cajas pueden pasar 22 y venir 2 golpeadas. Fija que
   # el rotulo de cada caja diga la verdad (y que NO se renumeren las cajas fisicas al partir
   # el movimiento) + el escaneo del codigo de barras.

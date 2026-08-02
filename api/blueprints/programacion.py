@@ -4813,6 +4813,140 @@ def _plan_unificar_codigos(c):
     return plan
 
 
+@bp.route('/api/programacion/salud-formulas', methods=['GET'])
+def prog_salud_formulas():
+    """¿Están las fórmulas PERFECTAS? · las cuatro cosas, fórmula por fórmula (2-ago).
+
+    Sebastián: *"necesito que quede ya eso resuelto y que me digas: fórmulas perfectas, hacen
+    match con materias primas, descuentan y marca en abastecimiento"*. Cada una de esas cuatro
+    se puede fallar por separado, así que se chequean por separado y se dice cuál falló:
+
+      1. **suma** -- los porcentajes dan ~100 %. Si no, el lote sale con más o menos masa de la
+         que dice, y el gramaje de CADA ingrediente queda mal.
+      2. **match** -- cada código de la fórmula existe en el maestro y está activo. Un código que
+         no existe no se puede descontar: la producción sale sin tocar ese material.
+      3. **descuenta** -- el ingrediente aporta gramos (% > 0). Un ingrediente al 0 % está en la
+         receta y no descuenta nada, que es igual a no estar (M71).
+      4. **abastecimiento** -- el producto tiene producción programada. Abastecimiento no es un
+         catálogo: muestra lo que las producciones futuras van a consumir. Sin lote en el
+         calendario no hay demanda que mostrar, y eso NO es un defecto de la fórmula.
+
+    Read-only. No corrige nada.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    maestro = {}
+    try:
+        for cod, act, ctrl, nom in c.execute(
+                "SELECT UPPER(TRIM(codigo_mp)), COALESCE(activo,1), COALESCE(controla_stock,1), "
+                "COALESCE(nombre_comercial,'') FROM maestro_mps").fetchall():
+            maestro[cod] = {'activo': int(act or 0), 'controla_stock': int(ctrl or 0),
+                            'nombre': nom}
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudo leer el maestro',
+                        'detalle': str(e)[:200]}), 500
+
+    # el puente cuenta: una fórmula puede nombrar un código fantasma que resuelve a uno real (M1)
+    puente = {}
+    try:
+        for fm, bm in c.execute("SELECT UPPER(TRIM(formula_material_id)), "
+                                "UPPER(TRIM(bodega_material_id)) FROM mp_formula_bridge "
+                                "WHERE COALESCE(activo,1)=1").fetchall():
+            puente[fm] = bm
+    except Exception as e:
+        log.warning('salud-formulas · puente: %s', e)
+
+    from datetime import datetime as _dsf, timedelta as _tsf
+    _hoy = (_dsf.utcnow() - _tsf(hours=5)).date().isoformat()
+    programado = {}
+    try:
+        for prod, n in c.execute(
+                "SELECT producto, COUNT(*) FROM produccion_programada "
+                "WHERE COALESCE(fecha_programada,'') >= ? "
+                "AND LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado') "
+                "GROUP BY producto", (_hoy,)).fetchall():
+            programado[_norm_prod_fuerte(prod or '')] = int(n or 0)
+    except Exception as e:
+        log.warning('salud-formulas · programado: %s', e)
+
+    formulas = {}
+    try:
+        for pn, mid, mnom, pct in c.execute(
+                """SELECT fi.producto_nombre, fi.material_id, COALESCE(fi.material_nombre,''),
+                          COALESCE(fi.porcentaje,0)
+                   FROM formula_items fi
+                   JOIN formula_headers fh
+                     ON TRIM(fh.producto_nombre)=TRIM(fi.producto_nombre)
+                   WHERE COALESCE(fh.activo,1)=1""").fetchall():
+            formulas.setdefault(pn, []).append(
+                {'codigo': str(mid or '').strip().upper(), 'nombre': mnom,
+                 'porcentaje': float(pct or 0)})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudieron leer las fórmulas',
+                        'detalle': str(e)[:200]}), 500
+
+    salida = []
+    for prod, items in sorted(formulas.items()):
+        suma = round(sum(i['porcentaje'] for i in items), 3)
+        sin_maestro, inactivos, en_cero = [], [], []
+        for i in items:
+            cod = i['codigo']
+            destino = puente.get(cod, cod)
+            e = maestro.get(destino)
+            if e is None:
+                sin_maestro.append({'codigo': cod, 'nombre': i['nombre']})
+            elif e['activo'] != 1:
+                inactivos.append({'codigo': cod, 'nombre': i['nombre'],
+                                  'resuelve_a': destino})
+            if i['porcentaje'] <= 0:
+                en_cero.append({'codigo': cod, 'nombre': i['nombre']})
+        n_prog = programado.get(_norm_prod_fuerte(prod), 0)
+        problemas = []
+        if abs(suma - 100) > 1:
+            problemas.append('suma %.3f%%' % suma)
+        if sin_maestro:
+            problemas.append('%d código(s) que no existen en el maestro' % len(sin_maestro))
+        if inactivos:
+            problemas.append('%d material(es) inactivo(s)' % len(inactivos))
+        if en_cero:
+            problemas.append('%d ingrediente(s) al 0%%' % len(en_cero))
+        salida.append({
+            'producto': prod, 'n_ingredientes': len(items), 'suma_pct': suma,
+            'suma_ok': abs(suma - 100) <= 1,
+            'match_ok': not sin_maestro and not inactivos,
+            'descuenta_ok': not en_cero,
+            'producciones_programadas': n_prog,
+            'sale_en_abastecimiento': n_prog > 0,
+            'codigos_sin_maestro': sin_maestro, 'materiales_inactivos': inactivos,
+            'ingredientes_en_cero': en_cero,
+            'perfecta': not problemas,
+            'problemas': problemas,
+        })
+
+    perfectas = [x for x in salida if x['perfecta']]
+    rotas = [x for x in salida if not x['perfecta']]
+    sin_plan = [x for x in perfectas if not x['sale_en_abastecimiento']]
+    salida.sort(key=lambda x: (x['perfecta'], x['producto']))
+    return jsonify({
+        'ok': True, 'n_formulas_activas': len(salida),
+        'perfectas': len(perfectas), 'con_problemas': len(rotas),
+        'perfectas_sin_produccion_programada': [x['producto'] for x in sin_plan],
+        'formulas': salida,
+        'veredicto': (
+            '%d de %d fórmulas activas están PERFECTAS: suman 100%%, todos sus códigos existen '
+            'y están activos en el maestro, y todos los ingredientes aportan gramos (o sea que '
+            'descuentan). %s De las perfectas, %d no tienen producción programada, así que hoy '
+            'no aparecen en Abastecimiento -- eso NO es un defecto de la fórmula: Abastecimiento '
+            'muestra lo que se va a consumir, y sin lote en el calendario no hay nada que pedir.'
+            % (len(perfectas), len(salida),
+               ('Las otras %d tienen problemas: mirá `problemas` en cada una.' % len(rotas))
+               if rotas else 'Ninguna tiene problemas.',
+               len(sin_plan))),
+    })
+
+
 @bp.route('/api/programacion/codigos-batch-vs-maestro', methods=['GET'])
 def prog_codigos_batch_vs_maestro():
     """La lista para el DIRECTOR TÉCNICO: qué códigos hay que corregir en el batch record.
