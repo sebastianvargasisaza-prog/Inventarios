@@ -4532,17 +4532,34 @@ def prog_editar_formula_items():
             continue
         base = {'producto': prod, 'de': de, 'a': a, 'pct_a': pct_a, 'pct_de': pct_de}
 
-        fila = c.execute(
+        # ⚠ el MISMO código puede estar DOS VECES en una fórmula (`formula_items` no tiene UNIQUE
+        # y la Crema Renova Body tiene MP00062 al 0,2% y al 0,1% -- la segunda es en realidad la
+        # Fresa Cremosa cargada con el código del pistacho). Un `fetchone()` acá elegiría una de
+        # las dos AL AZAR, y en PostgreSQL puede cambiar entre corridas (M102). Se traen TODAS,
+        # en orden determinista, y si hay varias se exige que el caller diga CUÁL con `pct_actual`.
+        filas = c.execute(
             "SELECT fi.id, COALESCE(fi.porcentaje,0), fi.producto_nombre FROM formula_items fi "
             "WHERE UPPER(TRIM(fi.producto_nombre))=UPPER(TRIM(?)) "
             "AND UPPER(TRIM(fi.material_id))=? "
             "AND TRIM(fi.producto_nombre) IN (SELECT TRIM(producto_nombre) FROM formula_headers "
-            "  WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL)",
-            (prod, de)).fetchone()
-        if not fila:
+            "  WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL) "
+            "ORDER BY COALESCE(fi.porcentaje,0) DESC, fi.id", (prod, de)).fetchall()
+        if not filas:
             bloqueados.append(dict(base, motivo='ese ingrediente no está en la fórmula ACTIVA de '
                                                 'ese producto (revisá el nombre y el código)'))
             continue
+        if len(filas) > 1:
+            _pa = ch.get('pct_actual')
+            _cand = ([f for f in filas if abs(float(f[1] or 0) - float(_pa)) <= 0.0001]
+                     if _pa is not None else [])
+            if len(_cand) != 1:
+                bloqueados.append(dict(base, motivo=(
+                    'ese código está %d veces en la fórmula (%s%%). Decime con `pct_actual` a '
+                    'cuál de las líneas te referís, o cambiarías la equivocada.'
+                    % (len(filas), ' y '.join(str(round(float(f[1] or 0), 4)) for f in filas)))))
+                continue
+            filas = _cand
+        fila = filas[0]
         _fid, _pct_actual, _pnombre = int(fila[0]), float(fila[1] or 0), fila[2]
 
         if abs((pct_a + pct_de) - _pct_actual) > 0.001:

@@ -180,3 +180,55 @@ def test_solo_admin(app):
         {'producto': PROD_A, 'de': VIEJO, 'a': NUEVO, 'pct_a': 0.25, 'pct_de': 0}]})
     assert r.status_code in (401, 403)
     assert _items(PROD_A) == {VIEJO: 0.25, OTRO: 99.75}
+
+
+# ── El MISMO código dos veces en una fórmula (2-ago · lo destapó Renova Body) ─────────────────
+# `formula_items` no tiene UNIQUE, y la Crema Renova Body tiene MP00062 al 0,2% y al 0,1%: la
+# segunda es en realidad la Fresa Cremosa cargada con el código del pistacho. Un fetchone() acá
+# elige una de las dos AL AZAR, y en PostgreSQL puede cambiar entre corridas (M102).
+
+def _sembrar_duplicado():
+    _sembrar()
+    db = _db()
+    try:
+        db.execute("UPDATE formula_items SET porcentaje=? WHERE producto_nombre=? AND material_id=?",
+                   (0.20, PROD_A, VIEJO))
+        db.execute("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, "
+                   "porcentaje) VALUES (?,?,?,?)", (PROD_A, VIEJO, 'QA Viejo bis', 0.05))
+        db.execute("UPDATE formula_items SET porcentaje=? WHERE producto_nombre=? AND material_id=?",
+                   (99.75, PROD_A, OTRO))
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_con_el_codigo_repetido_EXIGE_saber_a_cual(app):
+    _sembrar_duplicado()
+    c = _admin(app)
+    js = c.post(URL, headers=_csrf(c), json={'aplicar': True, 'cambios': [
+        {'producto': PROD_A, 'de': VIEJO, 'a': NUEVO, 'pct_a': 0.05, 'pct_de': 0}]}).get_json()
+    assert js['resumen']['aplicados'] == 0
+    assert 'está 2 veces' in js['bloqueados'][0]['motivo'], js['bloqueados']
+    # ojo: `_items` indexa por código y con el duplicado colapsa las dos filas · acá hay que
+    # contarlas, que es justo el caso que el endpoint tiene que saber distinguir
+    db = _db()
+    try:
+        filas = db.execute("SELECT porcentaje FROM formula_items WHERE producto_nombre=? "
+                           "AND material_id=? ORDER BY porcentaje DESC", (PROD_A, VIEJO)).fetchall()
+        assert [round(float(x[0]), 4) for x in filas] == [0.20, 0.05], 'no pudo tocar ninguna'
+    finally:
+        db.close()
+
+
+def test_con_pct_actual_cambia_la_linea_CORRECTA(app):
+    """El caso real: en Renova Body hay que tocar la de 0,1% y dejar quieta la de 0,2%."""
+    _sembrar_duplicado()
+    c = _admin(app)
+    js = c.post(URL, headers=_csrf(c), json={'aplicar': True, 'cambios': [
+        {'producto': PROD_A, 'de': VIEJO, 'a': NUEVO, 'pct_actual': 0.05,
+         'pct_a': 0.05, 'pct_de': 0}]}).get_json()
+    assert js['ok'] is True and js['resumen']['aplicados'] == 1, js
+    it = _items(PROD_A)
+    assert it[NUEVO] == 0.05, 'la línea de 0,05 pasó al código nuevo'
+    assert it[VIEJO] == 0.20, 'la de 0,20 quedó intacta'
+    assert js['formulas_fuera_de_100'] == []

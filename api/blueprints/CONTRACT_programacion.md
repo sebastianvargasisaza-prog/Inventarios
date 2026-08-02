@@ -624,3 +624,14 @@ El test `test_NO_marca_por_parecido_de_NOMBRE` es el que las tumbó las dos.
 
 Tests: `test_reconciliar_batch_record.py::test_une_un_nombre_con_UNA_letra_distinta` +
 `::test_NO_une_dos_productos_distintos_que_comparten_palabras`.
+
+### El MISMO código dos veces en una fórmula (2-ago)
+
+`formula_items` **no tiene UNIQUE(producto, material_id)**, y la Crema Renova Body tiene `MP00062`
+al 0,2 % **y** al 0,1 %: la segunda es en realidad la **Fresa Cremosa** (`MP00019`) cargada con el
+código del pistacho. Los totales cuadran con el batch (0,3 %), lo que está mal es el código.
+
+Un `fetchone()` sobre `(producto, código)` elegiría una de las dos **al azar**, y en PostgreSQL
+puede cambiar entre corridas (M102). `editar-formula-items` trae **todas** las filas en orden
+determinista y, si hay más de una, **bloquea** hasta que el caller diga a cuál se refiere con
+`pct_actual`. Cambiar la línea equivocada de una fórmula regulada no se deshace mirándola.
