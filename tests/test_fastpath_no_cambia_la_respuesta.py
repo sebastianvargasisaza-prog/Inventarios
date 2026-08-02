@@ -79,3 +79,45 @@ def test_el_detector_de_SKUs_sin_mapear_ve_los_nuevos(app, db_clean):
         from blueprints.auto_plan import _ventas_sku_map_orders
         m = _ventas_sku_map_orders(get_db(), dias_max=90, forzar_ordenes=True)
     assert SKU in m, ('el detector de SKUs sin mapear no ve un SKU nuevo: %r' % sorted(m)[:8])
+
+
+# ══ el tope arbitrario que introduje YO al arreglar el fast-path (1-ago) ═══════
+#
+# El arreglo del 30-jul completaba los SKUs que faltan en `ventas_diarias`... pero así:
+#
+#     _faltan = [x for x in _conocidos if x not in v90 ...][:40]
+#
+# `_conocidos` es un SET: su orden de iteración NO es determinista. Con más de 40 SKUs
+# faltantes se completaba un subconjunto ARBITRARIO, distinto en cada corrida. En producción
+# eso deja SKUs reales con velocidad cero al azar -- y sin velocidad el motor no los programa.
+# En el gate hacía fallar `test_proxima_sugerida_solo_animus` 2 de cada 3 corridas mientras
+# pasaba aislado: tres veces lo miré como "rojo falso" antes de encontrarlo.
+#
+# Un tope silencioso se lee como "cubrí todo" cuando no lo hizo.
+
+def test_el_completado_de_SKUs_no_tiene_tope_arbitrario():
+    import re
+    import os as _os
+    ruta = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                         'api', 'blueprints', 'plan.py')
+    src = open(ruta, encoding='utf-8').read()
+    m = re.search(r'_faltan\s*=\s*(.+)', src)
+    assert m, 'no encontré el cálculo de los SKUs faltantes'
+    linea = m.group(1)
+    assert '[:40]' not in linea and '[:20]' not in linea and '[:50]' not in linea, (
+        'volvió el tope arbitrario: %s' % linea)
+    assert 'sorted(' in linea, (
+        'el orden tiene que ser DETERMINISTA · un set sin ordenar hace la salida no reproducible: %s'
+        % linea)
+
+
+def test_con_muchos_faltantes_hace_UNA_pasada_en_vez_de_N_consultas():
+    """Sin tope hay que cuidar el costo: con muchos SKUs faltantes, N consultas acotadas cuestan
+    más que una sola pasada sobre las órdenes de la ventana. Quitar el tope sin esto cambiaría
+    un bug de correctitud por uno de rendimiento (M43: nada O(SKUs x ordenes) en una carga)."""
+    import os as _os
+    ruta = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                         'api', 'blueprints', 'plan.py')
+    src = open(ruta, encoding='utf-8').read()
+    assert 'if len(_faltan) > 40:' in src, 'se perdió el camino de UNA pasada para muchos faltantes'
+    assert '_fset = set(_faltan)' in src

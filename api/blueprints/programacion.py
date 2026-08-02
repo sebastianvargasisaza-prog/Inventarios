@@ -4638,6 +4638,169 @@ def prog_reconciliar_batch_record():
     })
 
 
+def _plan_unificar_codigos(c):
+    """Plan para dejar TODO con los códigos del batch record · clasificado por SEGURIDAD.
+
+    Sebastián 1-ago: *"lo ideal es que todo quede con los códigos del batch, si estás seguro,
+    hazlo"*. Para la mayoría sí; para algunos NO, y hacerlo en bloque destruiría el kardex. Los
+    dos bloqueos que aparecieron en los datos reales:
+
+      · **el destino YA EXISTE en EOS con otro significado** — `MP00301` es PROPYLHEPTYL
+        CAPRYLATE en el batch record, pero en EOS ese código es otro material (0,4%) y el
+        propylheptyl vive en `MP00030`. Renombrar `MP00030→MP00301` FUSIONA dos materiales
+        distintos y eso no se puede deshacer contando;
+      · **dos códigos del batch caen en el MISMO de EOS** — `MP00296 CARBOMERO 980 NF` y
+        `MP00008 Carbopol` van los dos a `MP00200`; `MP00252` y `MP00181` (dos grados de
+        centella) van los dos a `MP00176`. EOS fusionó lo que el batch separa: renombrar
+        elegiría uno al azar, y con centella el grado cambia la potencia (M19).
+
+    Se ejecuta SÓLO lo `seguro`. Lo demás se lista con el motivo para que lo mire Alejandro:
+    una lista de casos a revisar es honesta, aplicar a ciegas no.
+    """
+    ref = _cargar_batch_records()
+    prods = ref.get('productos') or []
+    eos = {}
+    for pn, mid, pct, act in c.execute(
+            """SELECT fi.producto_nombre, fi.material_id, COALESCE(fi.porcentaje,0),
+                      COALESCE(fh.activo,1)
+               FROM formula_items fi
+               LEFT JOIN formula_headers fh
+                 ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre))""").fetchall():
+        if int(act or 1) != 1:
+            continue
+        eos.setdefault(_norm_prod_fuerte(pn or ''), {}) \
+           [str(mid or '').strip().upper()] = float(pct or 0)
+
+    import collections as _col
+    pares = {}
+    for p in prods:
+        k = _norm_prod_fuerte(p['producto'])
+        f = eos.get(k)
+        if not f:
+            _c = [kk for kk in eos if kk and (kk.startswith(k[:14]) or k.startswith(kk[:14]))]
+            f = eos[_c[0]] if len(_c) == 1 else None
+        if not f:
+            continue
+        r = {i['codigo']: float(i['porcentaje'] or 0) for i in p['items']}
+        _nom = {i['codigo']: i['nombre'] for i in p['items']}
+        falta = {cod: pct for cod, pct in r.items() if cod not in f}
+        sobra = {cod: pct for cod, pct in f.items() if cod not in r}
+        _pf, _ps = _col.Counter(falta.values()), _col.Counter(sobra.values())
+        _s_por_pct = {v: kk for kk, v in sobra.items()}
+        for cod_b, pct in falta.items():
+            if pct <= 0 or _pf[pct] != 1 or _ps.get(pct) != 1:
+                continue
+            cod_e = _s_por_pct[pct]
+            d = pares.setdefault((cod_b, cod_e), {'codigo_batch': cod_b, 'codigo_eos': cod_e,
+                                                  'nombre': _nom.get(cod_b, ''), 'productos': []})
+            d['productos'].append(p['producto'])
+
+    # ¿alguno es ambiguo? (varios batch→un eos, o un batch→varios eos)
+    _por_eos = _col.Counter(x['codigo_eos'] for x in pares.values())
+    _por_batch = _col.Counter(x['codigo_batch'] for x in pares.values())
+
+    def _inci(cod):
+        r = c.execute("SELECT UPPER(TRIM(COALESCE(nombre_inci,''))) FROM maestro_mps "
+                      "WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
+        return (r[0] if r else None)
+
+    plan = []
+    for d in pares.values():
+        cb, ce = d['codigo_batch'], d['codigo_eos']
+        inci_b, inci_e = _inci(cb), _inci(ce)
+        d['destino_existe_en_eos'] = inci_b is not None
+        d['inci_batch'], d['inci_eos'] = inci_b, inci_e
+        d['n_productos'] = len(d['productos'])
+        if _por_eos[ce] > 1 or _por_batch[cb] > 1:
+            d['estado'] = 'bloqueado_ambiguo'
+            d['motivo'] = ('Varios códigos se cruzan entre sí (EOS fusionó lo que el batch record '
+                           'separa, o al revés). Renombrar elegiría uno al azar y con grados '
+                           'distintos eso cambia la potencia -- lo decide Alejandro.')
+        elif inci_b is None:
+            d['estado'] = 'seguro'
+            d['accion'] = 'renombrar'
+            d['motivo'] = 'El código del batch record no existe en EOS: es un renombrado limpio.'
+        elif inci_b and inci_e and inci_b != inci_e:
+            d['estado'] = 'bloqueado_colision'
+            d['motivo'] = ('El código del batch record YA EXISTE en EOS con OTRO material '
+                           '(INCI "%s" vs "%s"). Fusionarlos mezclaría dos materias primas '
+                           'distintas.' % (inci_e, inci_b))
+        else:
+            d['estado'] = 'seguro'
+            d['accion'] = 'fusionar'
+            d['motivo'] = ('El código del batch record existe en EOS con el MISMO INCI: son el '
+                           'mismo material bajo dos códigos.')
+        plan.append(d)
+    plan.sort(key=lambda x: (x['estado'] != 'seguro', -x['n_productos']))
+    return plan
+
+
+@bp.route('/api/programacion/unificar-codigos-batch', methods=['GET', 'POST'])
+def prog_unificar_codigos_batch():
+    """Deja los códigos de EOS iguales a los del BATCH RECORD · GET = plan, POST = aplicar.
+
+    Aplica SÓLO lo clasificado `seguro`. Reusa el motor canónico de renombrado
+    (`_normalizar_codigo`, inventario.py) en vez de reimplementar la mutación (M3): ese ya mueve
+    kardex, fórmulas y todas las tablas que referencian el código, y deja rastro en `audit_log`
+    para poder revertir.
+    """
+    usuario = session.get('compras_user', '')
+    if not usuario or usuario.lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'Solo un admin puede unificar códigos'}), 403
+    conn = get_db(); c = conn.cursor()
+    try:
+        plan = _plan_unificar_codigos(c)
+    except Exception as e:
+        log.exception('unificar-codigos-batch · plan')
+        return jsonify({'ok': False, 'error': 'no se pudo armar el plan',
+                        'detalle': str(e)[:200]}), 500
+    seguros = [x for x in plan if x['estado'] == 'seguro']
+    trabados = [x for x in plan if x['estado'] != 'seguro']
+
+    if request.method == 'GET' or not (request.get_json(silent=True) or {}).get('confirmar'):
+        return jsonify({
+            'ok': True, 'dry_run': True, 'n_pares': len(plan),
+            'seguros': seguros, 'bloqueados': trabados,
+            'veredicto': ('%d pares se pueden unificar sin riesgo y %d quedan trabados. Los '
+                          'trabados NO son un error del informe: son casos donde el mismo código '
+                          'significa cosas distintas en los dos sistemas, o donde EOS fusionó dos '
+                          'materiales que el batch record separa. Ésos los decide Alejandro. '
+                          'Para aplicar los seguros: POST con {"confirmar": true}.'
+                          % (len(seguros), len(trabados))),
+        })
+
+    hechos, fallidos = [], []
+    try:
+        from blueprints.inventario import _normalizar_codigo as _norm_cod
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudo cargar el motor de renombrado',
+                        'detalle': str(e)[:200]}), 500
+    for d in seguros:
+        try:
+            r = _norm_cod(c, d['codigo_eos'], d['codigo_batch'], usuario)
+        except Exception as e:
+            conn.rollback()
+            return jsonify({'ok': False, 'error': 'falló al unificar %s→%s' % (d['codigo_eos'],
+                                                                              d['codigo_batch']),
+                            'detalle': str(e)[:200], 'aplicados_antes_del_fallo': hechos}), 500
+        (hechos if r.get('ok') else fallidos).append({**d, 'resultado': r})
+    try:
+        audit_log(c, usuario=usuario, accion='UNIFICAR_CODIGOS_BATCH_RECORD', tabla='maestro_mps',
+                  registro_id='batch-record',
+                  despues={'unificados': [(x['codigo_eos'], x['codigo_batch']) for x in hechos],
+                           'bloqueados': len(trabados)},
+                  detalle='Códigos alineados al batch record firmado (%d)' % len(hechos))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'ok': False, 'error': 'no se pudo confirmar', 'detalle': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'dry_run': False, 'unificados': len(hechos),
+                    'fallidos': fallidos, 'bloqueados': trabados, 'detalle': hechos,
+                    'veredicto': ('%d códigos quedaron con el del batch record. %d siguen '
+                                  'trabados a propósito (mirá `bloqueados`). Todo quedó en '
+                                  'audit_log: es reversible.' % (len(hechos), len(trabados)))})
+
+
 @bp.route('/api/programacion/mp-sin-formula', methods=['GET'])
 def prog_mp_sin_formula():
     """Materia prima CON STOCK que NINGUNA fórmula activa declara · read-only (1-ago).

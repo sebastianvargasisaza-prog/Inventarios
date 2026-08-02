@@ -4079,7 +4079,49 @@ def _ventas_maps_shopify(c, vd_base, vd_iso, cut30, cut90, b2b_sql_extra, b2b_pa
                                 "WHERE COALESCE(activo,1)=1 AND COALESCE(sku,'') != ''").fetchall():
                 if _r[0]:
                     _conocidos.add(_r[0])
-            _faltan = [x for x in _conocidos if x not in v90 and x not in skus_regalo][:40]
+            # ⚠ ORDEN DETERMINISTA y SIN TOPE (1-ago · bug que introduje YO el 30-jul con este
+            # mismo arreglo). Antes decía `[x for x in _conocidos ...][:40]` sobre un SET: el
+            # orden de iteración de un set NO es determinista, así que con más de 40 SKUs
+            # faltantes se completaba un subconjunto ARBITRARIO -- distinto en cada corrida. En
+            # producción eso deja SKUs reales con velocidad cero al azar (no se programan), y en
+            # el gate hacía fallar un test 2 de cada 3 corridas mientras pasaba aislado.
+            # Un tope silencioso se lee como "cubrí todo" cuando no lo hizo.
+            _faltan = sorted(x for x in _conocidos if x not in v90 and x not in skus_regalo)
+            # Con muchos faltantes, N consultas acotadas cuestan más que UNA pasada sobre las
+            # órdenes de la ventana: se hace la pasada y se acumula sólo lo que falta.
+            if len(_faltan) > 40:
+                _fset = set(_faltan)
+                for _js, _cr in c.execute(
+                        "SELECT sku_items, creado_en FROM animus_shopify_orders "
+                        "WHERE creado_en >= ? AND COALESCE(sku_items,'') != '' "
+                        "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
+                        "AND LOWER(COALESCE(estado_pago,'')) NOT IN "
+                        "('refunded','voided','partially_refunded')", (vd_base,)).fetchall():
+                    try:
+                        _its = _jVm.loads(_js) if isinstance(_js, str) else _js
+                    except Exception:
+                        continue
+                    if not isinstance(_its, list):
+                        continue
+                    _c10 = str(_cr or '')[:10]
+                    for _it in _its:
+                        _sk = str(_it.get('sku') or _it.get('SKU') or '').strip().upper()
+                        if _sk not in _fset:
+                            continue
+                        _q = float(_it.get('cantidad') or _it.get('quantity')
+                                   or _it.get('qty') or 0)
+                        if _q <= 0:
+                            continue
+                        if _c10 >= vd_iso:
+                            v60[_sk] = v60.get(_sk, 0) + _q
+                        if _c10 >= cut30:
+                            v30[_sk] = v30.get(_sk, 0) + _q
+                        if _c10 >= cut90:
+                            v90[_sk] = v90.get(_sk, 0) + _q
+                            _p = pv.get(_sk)
+                            if _p is None or _c10 < _p:
+                                pv[_sk] = _c10
+                _faltan = []
             for _sk in _faltan:
                 for _js, _cr in c.execute(
                         "SELECT sku_items, creado_en FROM animus_shopify_orders "
