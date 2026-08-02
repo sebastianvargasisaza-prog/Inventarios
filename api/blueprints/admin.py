@@ -21517,16 +21517,65 @@ def admin_renombrar_producto():
         c.execute("UPDATE formula_headers SET producto_nombre=?, "
                   "producto_canonico=CASE WHEN producto_canonico=? THEN ? ELSE producto_canonico END "
                   "WHERE producto_nombre=?", (nuevo, real, nuevo, real))
+
+        # ⚠ FALTABAN LAS TABLAS QUE SOSTIENEN LA CADENA VIVA (2-ago · Sebastián: "que
+        # HYDRABALANCE quede pegado en todo lado"). El nombre del producto es la LLAVE en 34
+        # tablas y esto renombraba 8. La más cara de olvidar era `sku_producto_map`: ahí vive el
+        # enlace con las ventas de Shopify, así que un producto renombrado a medias pierde su
+        # velocidad, sale con velocidad CERO y deja de programarse -- sin un solo error a la
+        # vista. Es M1/M2: si el nombre es la llave, se renombra en TODAS las llaves.
+        _VIVAS = [
+            ('sku_producto_map', 'producto_nombre'),           # ventas Shopify → velocidad
+            ('sku_planeacion_config', 'producto_nombre'),      # kg/ritmo/mix decididos a mano
+            ('volumen_unitario_producto', 'producto_nombre'),  # ml → unidades
+            ('producto_canonico_config', 'producto_nombre'),
+            ('autoplan_decisiones', 'producto_nombre'),
+            ('tiempo_objetivo_sku', 'producto'),
+            ('pedidos_b2b', 'producto_nombre'),                # compromisos VIVOS de cliente
+            ('pedidos_b2b_recurrentes', 'producto_nombre'),
+            ('solicitudes_compra_anticipada', 'producto_nombre'),
+            ('checklist_plantillas', 'producto_nombre'),
+            ('producto_fmea', 'producto_nombre'),
+            ('producto_perfil_riesgo', 'producto_nombre'),
+            ('maquila_pedidos', 'producto_nombre'),
+            ('portal_solicitudes', 'producto_nombre'),
+        ]
+        _renombradas = {}
+        for _t, _col in _VIVAS:
+            try:
+                c.execute("UPDATE %s SET %s=? WHERE %s=?" % (_t, _col, _col), (nuevo, real))
+                if c.rowcount:
+                    _renombradas[_t] = c.rowcount
+            except Exception as _et:
+                # tabla ausente en este esquema · se registra, no se traga (M4)
+                log.warning('renombrar-producto · %s: %s', _t, _et)
+        # el cache de velocidades se INVALIDA, no se renombra: se recalcula solo
+        try:
+            c.execute("DELETE FROM plan_vmaps_cache")
+        except Exception as _ec:
+            log.warning('renombrar-producto · cache: %s', _ec)
+
         audit_log(c, usuario=u, accion='RENOMBRAR_PRODUCTO', tabla='formula_headers',
                   registro_id=real, despues={'viejo': real, 'nuevo': nuevo, 'modo_barrido': modo_barrido,
-                                             'ocurrencias': counts, 'mbr': mbr_info})
+                                             'ocurrencias': counts, 'mbr': mbr_info,
+                                             'tablas_vivas': _renombradas})
         conn.commit()
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)[:300]}), 500
-    return jsonify({'ok': True, 'aplicado': True, 'viejo': real, 'nuevo': nuevo,
-                    'modo_barrido': modo_barrido, 'ocurrencias': counts, 'mbr': mbr_info, 'shopify_skus': skus,
-                    'reversible': 'sí · renombrar de vuelta + audit_log · los SKUs no cambiaron'})
+    return jsonify({
+        'ok': True, 'aplicado': True, 'viejo': real, 'nuevo': nuevo,
+        'modo_barrido': modo_barrido, 'ocurrencias': counts, 'mbr': mbr_info,
+        'shopify_skus': skus, 'tablas_vivas_renombradas': _renombradas,
+        # Lo que NO se toca se DECLARA: son registros de lo que pasó BAJO ESE NOMBRE. Cambiarlos
+        # sería reescribir historia regulada -- un CoA, una queja o un recall dicen el nombre que
+        # el producto tenía cuando ocurrieron, y así deben quedar (M105).
+        'historico_NO_renombrado': ['movimientos', 'ordenes_produccion', 'formula_versiones',
+                                    'calidad_micro_resultados', 'calidad_fisicoquimica_resultados',
+                                    'calidad_micro_specs', 'calidad_oos', 'cola_liberacion',
+                                    'estabilidades', 'recalls', 'quejas_clientes',
+                                    'animus_conteos_ciclicos', 'flujo_ingresos'],
+        'reversible': 'sí · renombrar de vuelta + audit_log · los SKUs no cambiaron'})
 
 
 @bp.route("/admin/formula-preflight", methods=["GET"])
