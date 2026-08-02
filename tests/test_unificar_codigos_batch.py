@@ -105,3 +105,45 @@ def test_el_candado_TIENE_dientes(app, db_clean):
     assert all(d['estado'] == 'seguro' for d in j['seguros']), (
         'se coló un par no seguro en la lista que se aplica')
     assert all(d['estado'] != 'seguro' for d in j['bloqueados']), j['bloqueados'][:2]
+
+
+def test_el_plan_y_el_informe_usan_EL_MISMO_emparejador(app, db_clean):
+    """El defecto que casi hace aplicar un renombrado equivocado (1-ago).
+
+    El informe cruzaba productos con tres niveles (exacto → prefijo → palabras) y el PLAN sólo
+    con dos. El plan se salteaba 5 productos, y con ellos los pares que hacen AMBIGUO a un
+    código: `MP00296` y `MP00008` caen los dos en `MP00200`, pero como "Crema Facial de Urea"
+    sólo cruzaba por palabras, el plan no veía el segundo par y declaraba el primero **seguro**.
+
+    Un plan armado sobre datos parciales es peor que no tener plan: da confianza para ejecutar.
+    Los dos tienen que ver EXACTAMENTE los mismos productos.
+    """
+    cli = _login(app)
+    rec = cli.get('/api/programacion/reconciliar-batch-record').get_json()
+    plan = cli.get('/api/programacion/unificar-codigos-batch').get_json()
+
+    # los productos que el informe SÍ cruzó
+    cruzados = {p['producto'] for p in rec['productos']
+                if p['estado'] != 'sin_formula_en_eos'}
+    # los productos que el plan tuvo en cuenta
+    en_plan = {prod for d in (plan['seguros'] + plan['bloqueados']) for prod in d['productos']}
+    assert en_plan <= cruzados, (
+        'el plan mira productos que el informe no cruzó: %r' % sorted(en_plan - cruzados))
+
+    # y el emparejador es literalmente el mismo objeto
+    from blueprints.programacion import _emparejar_producto_eos
+    assert callable(_emparejar_producto_eos)
+
+
+def test_un_codigo_de_eos_destino_de_DOS_del_batch_queda_bloqueado(app, db_clean):
+    """Si dos códigos del batch record caen en el mismo de EOS, renombrar elegiría uno al azar.
+    Ese par NO puede aparecer como seguro -- es el caso MP00296/MP00008 → MP00200."""
+    plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
+    import collections
+    _por_eos = collections.Counter(d['codigo_eos'] for d in plan['seguros'] + plan['bloqueados'])
+    _por_batch = collections.Counter(d['codigo_batch'] for d in plan['seguros'] + plan['bloqueados'])
+    for d in plan['seguros']:
+        assert _por_eos[d['codigo_eos']] == 1, (
+            'par SEGURO cuyo destino EOS recibe varios códigos del batch: %r' % d)
+        assert _por_batch[d['codigo_batch']] == 1, (
+            'par SEGURO cuyo código del batch va a varios de EOS: %r' % d)

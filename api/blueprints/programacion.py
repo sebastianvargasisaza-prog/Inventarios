@@ -4419,6 +4419,38 @@ def prog_diag_por_que_no_sale():
 
 _BATCH_REF_CACHE = {}
 
+# UN SOLO emparejador producto-del-PDF ↔ producto-de-EOS (M1). Al principio el informe usaba tres
+# niveles (exacto → prefijo → palabras) y el PLAN de unificación sólo dos: el plan se salteaba 5
+# productos, y con ellos los pares que hacían AMBIGUO a `MP00200` -- así que declaraba "seguro" un
+# renombrado que no lo era. Un plan armado sobre datos parciales es peor que no tener plan.
+_STOP_PROD = {'de', 'del', 'la', 'el', 'con', 'y', 'nf', 'formula', 'nueva', 'suero', 'crema'}
+
+
+def _tokens_prod(s):
+    return {t for t in _norm_prod_fuerte(s).split() if len(t) >= 3 and t not in _STOP_PROD}
+
+
+def _emparejar_producto_eos(eos, k, nombre):
+    """(fórmula_eos, cómo_cruzó, candidatos) · `eos` = {nombre_normalizado: {...}}."""
+    if k in eos:
+        return eos[k], 'nombre_exacto', []
+    _c = [kk for kk in eos if kk and (kk.startswith(k[:14]) or k.startswith(kk[:14]))]
+    if len(_c) == 1:
+        return eos[_c[0]], 'prefijo', []
+    tk = _tokens_prod(nombre)
+    if not tk:
+        return None, '', []
+    _et = {kk: _tokens_prod(v.get('nombre_eos') or kk) for kk, v in eos.items()}
+    punt = sorted(((len(tk & _et[kk]) / float(len(tk | _et[kk]) or 1), kk)
+                   for kk in eos if _et[kk]), reverse=True)
+    # Umbral ALTO a propósito (0.70 + 0.20 de ventaja). Con 0.50 unía "Suero Vitamina C+" con
+    # "SUERO ANTIOXIDANTE VITAMINA C+B3": comparar el par equivocado INVENTA diferencias en una
+    # fórmula regulada. Lo que no llega sale como candidato para que lo confirme una persona.
+    if punt and punt[0][0] >= 0.70 and (len(punt) == 1 or punt[0][0] - punt[1][0] >= 0.20):
+        return eos[punt[0][1]], 'palabras:%.0f%%' % (punt[0][0] * 100), []
+    return None, '', [{'nombre_eos': eos[kk].get('nombre_eos') or kk,
+                       'parecido_pct': round(s * 100)} for s, kk in punt[:3] if s > 0.2]
+
 
 def _cargar_batch_records():
     """Las 28 fórmulas de los BATCH RECORDS firmados · la verdad de referencia (1-ago).
@@ -4496,38 +4528,10 @@ def prog_reconciliar_batch_record():
     # y de las que hacen perder la confianza en el informe. Tres niveles, y SIEMPRE se dice por
     # cuál cruzó (`match_por`): un emparejamiento que no se puede auditar no sirve para un dato
     # regulado (M19).
-    _STOP_PROD = {'de', 'del', 'la', 'el', 'con', 'y', 'nf', 'formula', 'nueva', 'suero', 'crema'}
-
-    def _tokens(s):
-        return {t for t in _norm_prod_fuerte(s).split() if len(t) >= 3 and t not in _STOP_PROD}
-
-    _eos_tok = {k: _tokens(v['nombre_eos']) for k, v in eos.items()}
-
-    def _buscar(k, nombre):
-        if k in eos:
-            return eos[k], 'nombre_exacto', []
-        _c = [kk for kk in eos if kk and (kk.startswith(k[:14]) or k.startswith(kk[:14]))]
-        if len(_c) == 1:
-            return eos[_c[0]], 'prefijo', []
-        tk = _tokens(nombre)
-        if not tk:
-            return None, '', []
-        punt = sorted(((len(tk & _eos_tok[kk]) / float(len(tk | _eos_tok[kk]) or 1), kk)
-                       for kk in eos if _eos_tok[kk]), reverse=True)
-        # Umbral ALTO a propósito (0.70 + 0.20 de ventaja sobre el segundo). Con 0.50 emparejaba
-        # "Suero Vitamina C+" con "SUERO ANTIOXIDANTE VITAMINA C+B3" al 67%, que pueden ser dos
-        # productos distintos -- y comparar el par equivocado inventa diferencias en una fórmula
-        # regulada. Lo que no llega al umbral sale como CANDIDATO para que lo confirme una persona:
-        # una lista de candidatos es honesta, un emparejamiento equivocado no.
-        if punt and punt[0][0] >= 0.70 and (len(punt) == 1 or punt[0][0] - punt[1][0] >= 0.20):
-            return eos[punt[0][1]], 'palabras:%.0f%%' % (punt[0][0] * 100), []
-        return None, '', [{'nombre_eos': eos[kk]['nombre_eos'], 'parecido_pct': round(s * 100)}
-                          for s, kk in punt[:3] if s > 0.2]
-
     salida, n_dif = [], 0
     for p in productos_ref:
         k = _norm_prod_fuerte(p['producto'])
-        f, _match_por, _cands = _buscar(k, p['producto'])
+        f, _match_por, _cands = _emparejar_producto_eos(eos, k, p['producto'])
         ref_items = {i['codigo']: float(i['porcentaje'] or 0) for i in p['items']}
         if not f:
             n_dif += 1
@@ -4668,19 +4672,22 @@ def _plan_unificar_codigos(c):
                  ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre))""").fetchall():
         if int(act or 1) != 1:
             continue
-        eos.setdefault(_norm_prod_fuerte(pn or ''), {}) \
-           [str(mid or '').strip().upper()] = float(pct or 0)
+        _k = _norm_prod_fuerte(pn or '')
+        eos.setdefault(_k, {'nombre_eos': pn, 'items': {}})
+        eos[_k]['items'][str(mid or '').strip().upper()] = float(pct or 0)
 
     import collections as _col
     pares = {}
     for p in prods:
         k = _norm_prod_fuerte(p['producto'])
-        f = eos.get(k)
-        if not f:
-            _c = [kk for kk in eos if kk and (kk.startswith(k[:14]) or k.startswith(kk[:14]))]
-            f = eos[_c[0]] if len(_c) == 1 else None
-        if not f:
+        # ⚠ EL MISMO emparejador que el informe (M1). Con uno más débil acá, el plan se salteaba 5
+        # productos y con ellos los pares que hacen AMBIGUO a un código -- y entonces declaraba
+        # "seguro" un renombrado que habría fusionado dos materiales. Un plan armado sobre datos
+        # parciales es peor que no tener plan: da confianza para ejecutar.
+        _f, _mp, _ = _emparejar_producto_eos(eos, k, p['producto'])
+        if not _f:
             continue
+        f = _f['items']
         r = {i['codigo']: float(i['porcentaje'] or 0) for i in p['items']}
         _nom = {i['codigo']: i['nombre'] for i in p['items']}
         falta = {cod: pct for cod, pct in r.items() if cod not in f}
