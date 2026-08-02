@@ -4597,6 +4597,78 @@ def pqr_inbox_listar():
     return jsonify({'inbox': items, 'pendientes': pend})
 
 
+@bp.route('/api/aseguramiento/pqr-inbox/depurar', methods=['GET', 'POST'])
+def pqr_inbox_depurar():
+    """Pasa el filtro "¿es un PQR?" a lo que YA está en la bandeja · GET = previa, POST aplica.
+
+    El filtro nuevo (2-ago) sólo actúa sobre lo que entra. Los mensajes de antes quedaron en la
+    bandeja como si fueran quejas pendientes de triaje -- "Perfecto", "SII", "Tarjeta", "?" --
+    y ahí siguen inflando lo que Calidad tiene que atender.
+
+    NO borra información: el mensaje se copia a `pqr_descartados` con su motivo y desde ahí se
+    recupera. Y sólo toca lo que nunca se enrutó (`pendiente` y sin destino): un PQR que ya llegó
+    a `quejas_clientes` o a `animus_pqr` es un registro regulado y no se toca desde acá.
+    """
+    _u = session.get('compras_user', '')
+    if _u not in _autorizados_escritura():
+        return jsonify({'error': 'No autorizado'}), 403
+    aplicar = (request.method == 'POST'
+               and bool((request.get_json(silent=True) or {}).get('aplicar', False)))
+    conn = get_db(); c = conn.cursor()
+
+    filas = c.execute(
+        "SELECT id, ghl_message_id, ghl_contact_id, canal, contacto_nombre, contacto_email, "
+        "contacto_telefono, mensaje FROM pqr_inbox "
+        "WHERE COALESCE(estado,'')='pendiente' AND COALESCE(destino_id,0)=0 "
+        "ORDER BY id").fetchall()
+
+    a_sacar, se_quedan = [], []
+    for r in filas:
+        _mot = _no_es_pqr_por_reglas(r[7] or '')
+        (a_sacar if _mot else se_quedan).append(
+            {'id': int(r[0]), 'contacto': r[4], 'mensaje': (r[7] or '')[:120], 'motivo': _mot})
+
+    hechos, errores = [], []
+    if aplicar:
+        for it in a_sacar:
+            r = next(x for x in filas if int(x[0]) == it['id'])
+            try:
+                c.execute(
+                    "INSERT INTO pqr_descartados (recibido_en, ghl_contact_id, ghl_message_id, "
+                    "canal, contacto_nombre, contacto_email, contacto_telefono, mensaje, motivo, "
+                    "fuente) VALUES (date('now','-5 hours'),?,?,?,?,?,?,?,?,'depuracion')",
+                    (r[2], r[1], r[3], (r[4] or '')[:200], (r[5] or '')[:200],
+                     (r[6] or '')[:80], (r[7] or '')[:5000], it['motivo'][:300]))
+                # CAS: sólo si SIGUE pendiente y sin enrutar · si alguien lo triageó mientras
+                # tanto, se deja quieto (es un registro regulado en curso).
+                cur = c.execute("DELETE FROM pqr_inbox WHERE id=? AND COALESCE(estado,'')="
+                                "'pendiente' AND COALESCE(destino_id,0)=0", (it['id'],))
+                if (cur.rowcount or 0) != 1:
+                    conn.rollback()
+                    errores.append({'id': it['id'], 'error': 'lo triagearon mientras tanto'})
+                    continue
+                _audit_log(c, usuario=_u, accion='PQR_DEPURAR_BANDEJA', tabla='pqr_inbox',
+                           registro_id=str(it['id']),
+                           antes={'mensaje': (r[7] or '')[:300], 'estado': 'pendiente'},
+                           despues={'movido_a': 'pqr_descartados', 'motivo': it['motivo'][:200]})
+                hechos.append(it)
+            except Exception as e:
+                conn.rollback()
+                errores.append({'id': it['id'], 'error': str(e)[:200]})
+        if hechos:
+            conn.commit()
+
+    return jsonify({
+        'ok': not errores, 'dry_run': not aplicar,
+        'en_bandeja': len(filas), 'a_sacar': a_sacar, 'se_quedan': len(se_quedan),
+        'sacados': hechos, 'errores': errores,
+        'que_hace': ('Mueve a descartados lo que no es una petición, queja ni reclamo. El mensaje '
+                     'NO se pierde: queda con su motivo y se recupera desde /pqr-descartados. '
+                     'Sólo toca lo que nunca se enrutó -- lo que ya llegó a quejas_clientes o a '
+                     'animus_pqr es un registro regulado y no se toca desde acá.'),
+    })
+
+
 @bp.route('/api/aseguramiento/pqr-descartados', methods=['GET'])
 def pqr_descartados_listar():
     """Lo que llegó al webhook y NO era un PQR · con el motivo, revisable.

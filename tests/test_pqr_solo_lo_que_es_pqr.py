@@ -139,3 +139,63 @@ def test_motivo_explica_por_que(app):
     d = _descartado('QAPQR-m1')
     assert d and d[1], 'sin motivo no sirve'
     assert 'saludo' in d[1].lower() or 'acuse' in d[1].lower(), d[1]
+
+
+# ── Depurar lo que YA estaba en la bandeja (2-ago) ────────────────────────────────────────────
+# El filtro sólo actúa sobre lo que entra. Los 16 mensajes de antes quedaron como si fueran
+# quejas pendientes de triaje ("Perfecto", "SII", "Tarjeta", "?") inflando lo que Calidad tiene
+# que atender.
+
+DEPURAR = '/api/aseguramiento/pqr-inbox/depurar'
+
+
+def _sembrar_en_bandeja(mid, texto, estado='pendiente', destino_id=None):
+    db = _db()
+    try:
+        db.execute("INSERT INTO pqr_inbox (ghl_message_id, canal, contacto_nombre, mensaje, "
+                   "recibido_en, estado, destino_id) VALUES (?,?,?,?,date('now'),?,?)",
+                   (mid, 'otro', 'QA Viejo', texto, estado, destino_id))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _admin(app):
+    c = app.test_client()
+    c.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+           headers=csrf_headers(), follow_redirects=False)
+    return c
+
+
+def _csrf(c):
+    h = dict(csrf_headers())
+    h["X-CSRF-Token"] = c.get("/api/csrf-token").get_json()["csrf_token"]
+    h["Content-Type"] = "application/json"
+    return h
+
+
+def test_depurar_saca_la_charla_y_deja_las_quejas(app):
+    _limpiar()
+    _sembrar_en_bandeja('QAPQR-d1', 'Perfecto')
+    _sembrar_en_bandeja('QAPQR-d2', 'El frasco vino roto de fábrica, quiero cambio')
+    c = _admin(app)
+
+    prev = c.get(DEPURAR).get_json()
+    assert prev['dry_run'] is True
+    assert any(x['mensaje'].startswith('Perfecto') for x in prev['a_sacar'])
+    assert _en_buzon('QAPQR-d1') == 1, 'la previa NO puede escribir'
+
+    js = c.post(DEPURAR, json={'aplicar': True}, headers=_csrf(c)).get_json()
+    assert js['ok'] is True, js
+    assert _en_buzon('QAPQR-d1') == 0, 'la charla sale de la bandeja'
+    assert _en_buzon('QAPQR-d2') == 1, 'la queja real se queda'
+    assert _descartado('QAPQR-d1'), 'y queda guardada con su motivo, no se pierde'
+
+
+def test_NO_toca_lo_que_ya_se_enruto(app):
+    """Un PQR que ya llegó a quejas_clientes o animus_pqr es un registro regulado."""
+    _limpiar()
+    _sembrar_en_bandeja('QAPQR-d3', 'Perfecto', estado='enrutado', destino_id=99)
+    c = _admin(app)
+    c.post(DEPURAR, json={'aplicar': True}, headers=_csrf(c))
+    assert _en_buzon('QAPQR-d3') == 1, 'lo enrutado no se toca desde acá'
