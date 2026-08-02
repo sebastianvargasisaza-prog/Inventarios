@@ -524,3 +524,39 @@ Detalles que hacen que sirva:
 
 Tests: `tests/test_salud_materias_primas.py` (en el gate · cada firma probada con dientes + que el
 trigger siga mordiendo + que el cron esté registrado).
+
+## 🚫 PROG-N+1 · Dos códigos que conviven en una fórmula NO son el mismo material (2-ago)
+
+Sebastián: *"cruzar fórmulas de EOS contra batch, así vamos a resolver el problema de la centella"*.
+El cruce ya existía; lo que le faltaba era el descalificador.
+
+`_pares_que_conviven(productos_ref)` devuelve los pares de códigos que aparecen como **renglones
+separados de una misma fórmula** del batch record. Una receta no lista dos veces el mismo material,
+así que ese par **no puede ser el mismo material** -- por más que compartan INCI o porcentaje. Es un
+**descalificador duro**, no una señal más.
+
+**Lo que escondía:** el reconciliador emparejaba `MP00252 → MP00176` ("Centella Asiatica Extract" →
+"triterpenos 80%") en 8 productos, y la `ESENCIA DE CENTELLA ASIATICA FULL` los lleva a los **dos**
+(0,15% + 0,10%). O sea que en esos 8 productos **EOS descuenta otro grado del que pide el batch
+record, con la misma dosis**: mismo INCI, potencia distinta (M19). El emparejamiento convertía el
+hallazgo en "es el mismo material con otro código", que es exactamente lo contrario.
+
+Va en los **dos** sitios (M45 · el emparejador está duplicado):
+- `prog_reconciliar_batch_record` → los rechazados salen en `no_son_el_mismo_material`, con el
+  producto que lo **prueba** (un hallazgo tiene que ser auditable, no una afirmación · M132).
+- `_plan_unificar_codigos` → entran al plan como `bloqueado_no_es_el_mismo_material`. Acá importa
+  más: esa herramienta **renombra códigos de verdad**, y el apply sólo toca los `seguro`.
+
+**Segundo defecto del mismo bloque:** la corroboración por INCI leía los dos códigos con un
+`IN (?,?)` y aceptaba `len(set)==1` como "mismo INCI". Si uno de los dos **no existe en el maestro**
+(el caso de `MP00252`), la consulta trae UN solo INCI y el chequeo daba **corroborado sin haber
+comparado nada**. Ahora exige que los dos tengan INCI; si no, queda `solo_porcentaje` + `aviso` que
+dice cuál falta. El `aviso` va en campo aparte para no romper el vocabulario de `confirmado_por`,
+que otros consumen (M116).
+
+Efecto lateral bueno: al sacar los pares basura, un par legítimo que estaba bloqueado *de rebote*
+por ambigüedad se destrabó (`MP00301 → MP00030`, propylheptyl, que también figuraba apuntando a
+`MP00195` glicerina).
+
+Tests: `test_reconciliar_batch_record.py` (invariante: ningún par del mapa puede convivir · probada
+con dientes) + `test_unificar_codigos_batch.py::test_un_par_DESCALIFICADO_nunca_puede_quedar_seguro`.

@@ -64,7 +64,8 @@ def test_cada_par_trae_su_motivo_y_su_clasificacion(app, db_clean):
     j = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
     for d in j['seguros'] + j['bloqueados']:
         assert d['estado'] in ('seguro', 'bloqueado_ambiguo', 'bloqueado_colision',
-                               'bloqueado_nombre', 'bloqueado_batch_inconsistente'), d
+                               'bloqueado_nombre', 'bloqueado_batch_inconsistente',
+                               'bloqueado_no_es_el_mismo_material'), d
         assert d.get('motivo'), d
         assert d['codigo_batch'] != d['codigo_eos'], d
         if d['estado'] == 'seguro':
@@ -141,8 +142,14 @@ def test_un_codigo_de_eos_destino_de_DOS_del_batch_queda_bloqueado(app, db_clean
     Ese par NO puede aparecer como seguro -- es el caso MP00296/MP00008 → MP00200."""
     plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
     import collections
-    _por_eos = collections.Counter(d['codigo_eos'] for d in plan['seguros'] + plan['bloqueados'])
-    _por_batch = collections.Counter(d['codigo_batch'] for d in plan['seguros'] + plan['bloqueados'])
+    # 2-ago · los pares DESCALIFICADOS (dos códigos que conviven en una misma fórmula del batch:
+    # no son el mismo material) no son un mapeo, así que no cuentan para la ambigüedad. Antes
+    # `MP00301` figuraba apuntando a MP00030 Y a MP00195 -- pero ese segundo par era basura
+    # (propylheptyl con glicerina) y bloqueaba de rebote al par legítimo.
+    _reales = [d for d in plan['seguros'] + plan['bloqueados']
+               if d['estado'] != 'bloqueado_no_es_el_mismo_material']
+    _por_eos = collections.Counter(d['codigo_eos'] for d in _reales)
+    _por_batch = collections.Counter(d['codigo_batch'] for d in _reales)
     for d in plan['seguros']:
         assert _por_eos[d['codigo_eos']] == 1, (
             'par SEGURO cuyo destino EOS recibe varios códigos del batch: %r' % d)
@@ -182,7 +189,8 @@ def test_el_estado_bloqueado_nombre_existe_y_explica(app, db_clean):
     plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
     for d in plan['bloqueados']:
         assert d['estado'] in ('bloqueado_ambiguo', 'bloqueado_colision', 'bloqueado_nombre',
-                               'bloqueado_batch_inconsistente'), d
+                               'bloqueado_batch_inconsistente',
+                               'bloqueado_no_es_el_mismo_material'), d
         assert d.get('motivo'), d
 
 
@@ -264,3 +272,21 @@ def test_cuando_la_evidencia_es_de_UN_SOLO_lado_el_informe_CONCLUYE(app, db_clea
             assert d.get('veredicto'), (
                 'la evidencia alcanza para concluir y el informe deja la duda abierta: %r' % d)
             assert 'EOS ESTÁ BIEN' in d['veredicto'], d['veredicto']
+
+
+def test_un_par_DESCALIFICADO_nunca_puede_quedar_seguro(app, db_clean):
+    """Dos códigos que el batch record lleva como renglones separados de una misma fórmula no son
+    el mismo material. Acá no es un informe: esta herramienta RENOMBRA códigos de verdad, así que
+    un par así jamás puede llegar a `seguros` (el apply sólo toca esos)."""
+    try:
+        from api.blueprints.programacion import _cargar_batch_records, _pares_que_conviven
+    except Exception:
+        from blueprints.programacion import _cargar_batch_records, _pares_que_conviven
+    conviven = _pares_que_conviven(_cargar_batch_records().get('productos') or [])
+    plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
+    for d in plan['seguros']:
+        a, b = d['codigo_batch'], d['codigo_eos']
+        assert (min(a, b), max(a, b)) not in conviven, d
+    for d in plan['bloqueados']:
+        if d['estado'] == 'bloqueado_no_es_el_mismo_material':
+            assert 'no son el mismo material' in d['motivo'], d

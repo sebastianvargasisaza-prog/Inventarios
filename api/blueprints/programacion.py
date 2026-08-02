@@ -4476,6 +4476,27 @@ def _cargar_batch_records():
     return _BATCH_REF_CACHE['data']
 
 
+def _pares_que_conviven(productos_ref):
+    """Pares de códigos que aparecen como renglones SEPARADOS de una misma fórmula.
+
+    Un material no se lista dos veces en la misma receta, así que si dos códigos conviven ahí,
+    NO son el mismo material -- por más que tengan el mismo INCI o el mismo porcentaje. Es un
+    descalificador duro, no una señal más: sin él, el reconciliador emparejaba
+    `MP00252 -> MP00176` (extracto de centella -> triterpenos 80%) en 8 productos y escondía que
+    EOS está descontando otro grado del que pide el batch record (M19: mismo INCI, otro grado,
+    misma dosis = potencia distinta).
+
+    Devuelve {(codA, codB) ordenado: nombre del producto que lo prueba}.
+    """
+    out = {}
+    for p in productos_ref or []:
+        cods = sorted({i.get('codigo') for i in (p.get('items') or []) if i.get('codigo')})
+        for a in range(len(cods)):
+            for b in range(a + 1, len(cods)):
+                out.setdefault((cods[a], cods[b]), p.get('producto'))
+    return out
+
+
 @bp.route('/api/programacion/reconciliar-batch-record', methods=['GET'])
 def prog_reconciliar_batch_record():
     """¿La fórmula que tiene EOS es la MISMA que dice el batch record firmado? · read-only.
@@ -4528,7 +4549,22 @@ def prog_reconciliar_batch_record():
     # y de las que hacen perder la confianza en el informe. Tres niveles, y SIEMPRE se dice por
     # cuál cruzó (`match_por`): un emparejamiento que no se puede auditar no sirve para un dato
     # regulado (M19).
+    # ⚠ DESCALIFICADOR DURO · dos códigos que conviven como renglones SEPARADOS de la MISMA
+    # fórmula NO pueden ser el mismo material: una receta no lista dos veces lo mismo.
+    # Sebastián 2-ago: el reconciliador venía emparejando `MP00252 -> MP00176` ("Centella
+    # Asiatica Extract" -> "triterpenos 80%") en 8 productos, y la ESENCIA DE CENTELLA los lleva
+    # a los DOS (0,15% + 0,10%). O sea que en esos 8 productos EOS está descontando un material
+    # DISTINTO del que pide el batch record -- mismo INCI, otro grado, misma dosis, potencia
+    # distinta (M19). Emparejarlos escondía justo eso.
+    _coexisten = _pares_que_conviven(productos_ref)
+
+    def _conviven(a, b):
+        """Devuelve el PRODUCTO que lo prueba, para que el hallazgo sea auditable y no una
+        afirmación (M132: el informe siempre dice CÓMO lo supo)."""
+        return _coexisten.get((min(a, b), max(a, b)))
+
     salida, n_dif = [], 0
+    no_mismo_material = []
     for p in productos_ref:
         k = _norm_prod_fuerte(p['producto'])
         f, _match_por, _cands = _emparejar_producto_eos(eos, k, p['producto'])
@@ -4570,7 +4606,17 @@ def prog_reconciliar_batch_record():
                 continue
             y = _sobra_por_pct[pc]
             _cb, _ce = x['codigo'], y['codigo']
-            _conf = 'solo_porcentaje'
+            _prueba = _conviven(_cb, _ce)
+            if _prueba:
+                # no se emparejan: son materiales DISTINTOS y la diferencia es real
+                falta_real.append(x)
+                no_mismo_material.append({
+                    'codigo_batch_record': _cb, 'codigo_eos': _ce, 'porcentaje': pc,
+                    'nombre_batch_record': x['nombre'], 'en_producto': p['producto'],
+                    'prueba': ('el batch record de "%s" los lleva a los DOS como renglones '
+                               'separados, así que no pueden ser el mismo material' % _prueba)})
+                continue
+            _conf, _aviso = 'solo_porcentaje', ''
             try:
                 if c.execute("SELECT 1 FROM mp_formula_bridge WHERE COALESCE(activo,1)=1 AND "
                              "((formula_material_id=? AND bodega_material_id=?) OR "
@@ -4578,16 +4624,27 @@ def prog_reconciliar_batch_record():
                              (_cb, _ce, _ce, _cb)).fetchone():
                     _conf = 'puente'
                 else:
-                    _i = c.execute("SELECT UPPER(TRIM(COALESCE(nombre_inci,''))) FROM maestro_mps "
-                                   "WHERE UPPER(TRIM(codigo_mp)) IN (?,?)", (_cb, _ce)).fetchall()
-                    _i = {r[0] for r in _i if r[0]}
-                    if len(_i) == 1:
+                    # ⚠ los DOS códigos tienen que tener INCI. Antes se leían los INCI de ambos
+                    # con un IN (?,?) y se aceptaba `len(=={1})` como "mismo INCI" -- pero si uno
+                    # de los dos NO existe en el maestro (el caso de MP00252), la consulta trae
+                    # UN solo INCI y el chequeo daba "corroborado por INCI" sin haber comparado
+                    # nada. Un chequeo que no puede correr no puede devolver un OK (M100).
+                    _i = dict(c.execute(
+                        "SELECT UPPER(TRIM(codigo_mp)), UPPER(TRIM(COALESCE(nombre_inci,''))) "
+                        "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp)) IN (?,?)",
+                        (_cb, _ce)).fetchall())
+                    _ia, _ib = _i.get(_cb, ''), _i.get(_ce, '')
+                    if _ia and _ib and _ia == _ib:
                         _conf = 'mismo_inci'
+                    elif not (_ia and _ib):
+                        _aviso = ('no se pudo comparar el INCI: %s no está en el maestro de EOS'
+                                  % (_cb if not _ia else _ce))
             except Exception as e:
                 log.warning('reconciliar · corroborar par: %s', e)
             sobra_usados.add(_ce)
             pares.append({'codigo_batch_record': _cb, 'codigo_eos': _ce, 'porcentaje': pc,
-                          'nombre_batch_record': x['nombre'], 'confirmado_por': _conf})
+                          'nombre_batch_record': x['nombre'], 'confirmado_por': _conf,
+                          'aviso': _aviso})
         sobra_real = [x for x in sobra if x['codigo'] not in sobra_usados]
         falta, sobra = falta_real, sobra_real
         # 0.01 de tolerancia: el PDF redondea a 2-3 decimales, no es una diferencia real
@@ -4622,12 +4679,21 @@ def prog_reconciliar_batch_record():
                               'nombre': pr['nombre_batch_record'],
                               'confirmado_por': pr['confirmado_por'], 'en_productos': 0})
             _mapa[(pr['codigo_batch_record'], pr['codigo_eos'])]['en_productos'] += 1
+    # los pares que se DESCALIFICARON: agrupados, porque el hallazgo es del par, no del producto
+    _nmm = {}
+    for r in no_mismo_material:
+        k2 = (r['codigo_batch_record'], r['codigo_eos'])
+        _nmm.setdefault(k2, {'codigo_batch_record': r['codigo_batch_record'],
+                             'codigo_eos': r['codigo_eos'], 'nombre': r['nombre_batch_record'],
+                             'prueba': r['prueba'], 'productos': []})
+        _nmm[k2]['productos'].append(r['en_producto'])
     return jsonify({
         'ok': True, 'n_productos': len(salida),
         'coinciden': len(_ok), 'solo_codigos_distintos': len(_solo_cod),
         'con_diferencias_reales': len(_mal), 'con_diferencias': n_dif,
         'mapa_codigos_batch_record_vs_eos': sorted(_mapa.values(),
                                                    key=lambda z: -z['en_productos']),
+        'no_son_el_mismo_material': sorted(_nmm.values(), key=lambda z: -len(z['productos'])),
         'productos': salida,
         'veredicto': (
             'De %d fórmulas: %d idénticas, %d iguales pero con OTRO CÓDIGO para el mismo material '
@@ -4637,8 +4703,13 @@ def prog_reconciliar_batch_record():
             'códigos (reversible), no tocando recetas. Las %d últimas son las que importan: mirá '
             '`falta_en_eos` (se descuenta de MENOS), `sobra_en_eos` (de MÁS) y '
             '`porcentaje_difiere` (potencia equivocada). Ninguna se corrige sola: cambiar una '
-            'fórmula es dato regulado y lo decide Alejandro.'
-            % (len(salida), len(_ok), len(_solo_cod), len(_mal), len(_mal))),
+            'fórmula es dato regulado y lo decide Alejandro.%s'
+            % (len(salida), len(_ok), len(_solo_cod), len(_mal), len(_mal),
+               ('' if not _nmm else
+                ' ⚠ Y mirá `no_son_el_mismo_material`: %d par(es) que parecían el mismo material '
+                'con dos códigos y NO lo son -- el batch record los lleva a los dos en una misma '
+                'fórmula. Ahí EOS está descontando un material distinto del que pide el batch, '
+                'con la misma dosis: mismo INCI, otro grado, potencia distinta.' % len(_nmm)))),
     })
 
 
@@ -4678,6 +4749,12 @@ def _plan_unificar_codigos(c):
 
     import collections as _col
     pares = {}
+    _no_mismo = {}
+    _cx = _pares_que_conviven(prods)
+
+    def _conviven_unif(a, b):
+        return _cx.get((min(a, b), max(a, b)))
+
     for p in prods:
         k = _norm_prod_fuerte(p['producto'])
         # ⚠ EL MISMO emparejador que el informe (M1). Con uno más débil acá, el plan se salteaba 5
@@ -4698,6 +4775,19 @@ def _plan_unificar_codigos(c):
             if pct <= 0 or _pf[pct] != 1 or _ps.get(pct) != 1:
                 continue
             cod_e = _s_por_pct[pct]
+            # ⚠ MISMO descalificador que el informe (M45: este emparejador es una COPIA del de
+            # `prog_reconciliar_batch_record`, y el guard hay que ponerlo en los dos o el par
+            # equivocado llega igual -- pero acá RENOMBRA CÓDIGOS DE VERDAD). Dos códigos que
+            # conviven como renglones separados de una misma fórmula no son el mismo material.
+            _pr = _conviven_unif(cod_b, cod_e)
+            if _pr:
+                _no_mismo.setdefault((cod_b, cod_e), {
+                    'codigo_batch': cod_b, 'codigo_eos': cod_e, 'nombre': _nom.get(cod_b, ''),
+                    'motivo': ('el batch record de "%s" los lleva a los DOS como renglones '
+                               'separados: no son el mismo material, así que renombrar uno al '
+                               'otro cambiaría la fórmula' % _pr), 'productos': []})
+                _no_mismo[(cod_b, cod_e)]['productos'].append(p['producto'])
+                continue
             d = pares.setdefault((cod_b, cod_e), {'codigo_batch': cod_b, 'codigo_eos': cod_e,
                                                   'nombre': _nom.get(cod_b, ''), 'productos': []})
             d['productos'].append(p['producto'])
@@ -4809,6 +4899,13 @@ def _plan_unificar_codigos(c):
             d['motivo'] = ('El código del batch record existe en EOS con el MISMO INCI: son el '
                            'mismo material bajo dos códigos.')
         plan.append(d)
+    # los descalificados entran al plan como BLOQUEADOS, no se descartan en silencio: son el
+    # hallazgo más importante (EOS descuenta otro grado del que pide el batch) y además así el
+    # apply -- que sólo toca los `seguro` -- no puede tocarlos nunca.
+    for (cb, ce), r in _no_mismo.items():
+        plan.append({'codigo_batch': cb, 'codigo_eos': ce, 'nombre': r['nombre'],
+                     'productos': r['productos'], 'n_productos': len(r['productos']),
+                     'estado': 'bloqueado_no_es_el_mismo_material', 'motivo': r['motivo']})
     plan.sort(key=lambda x: (x['estado'] != 'seguro', -x['n_productos']))
     return plan
 

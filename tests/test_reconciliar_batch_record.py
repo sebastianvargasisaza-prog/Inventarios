@@ -201,3 +201,72 @@ def test_NO_empareja_si_el_porcentaje_esta_repetido(app, db_clean):
     fuente = open(P.__file__.replace('.pyc', '.py'), encoding='utf-8').read()
     assert '_pf[pc] != 1 or _ps.get(pc) != 1' in fuente, (
         'se perdió el guard de porcentaje único: emparejaría a ciegas')
+
+
+# ── Dos códigos que conviven en una misma fórmula NO son el mismo material (2-ago) ────────────
+# El reconciliador venía emparejando `MP00252 -> MP00176` ("Centella Asiatica Extract" ->
+# "triterpenos 80%") en 8 productos. La ESENCIA DE CENTELLA los lleva a los DOS, 0,15% + 0,10%:
+# una receta no lista dos veces el mismo material. O sea que en esos 8 productos EOS descuenta
+# OTRO GRADO del que pide el batch record, con la misma dosis -- potencia distinta (M19).
+
+def _pqc():
+    try:
+        from api.blueprints.programacion import _pares_que_conviven
+    except Exception:
+        from blueprints.programacion import _pares_que_conviven
+    return _pares_que_conviven
+
+
+def test_detecta_dos_codigos_en_la_misma_formula():
+    f = _pqc()
+    ref = [{'producto': 'X', 'items': [{'codigo': 'MP00001'}, {'codigo': 'MP00002'}]}]
+    assert f(ref).get(('MP00001', 'MP00002')) == 'X'
+
+
+def test_no_marca_codigos_que_viven_en_formulas_distintas():
+    """Si los marcara, ningún par se podría emparejar nunca y el mapa de códigos moriría."""
+    f = _pqc()
+    ref = [{'producto': 'X', 'items': [{'codigo': 'MP00001'}]},
+           {'producto': 'Y', 'items': [{'codigo': 'MP00002'}]}]
+    assert f(ref) == {}
+
+
+def test_en_los_batch_records_REALES_la_centella_convive():
+    """El hecho que dispara todo, sobre el archivo de referencia versionado."""
+    try:
+        from api.blueprints.programacion import _cargar_batch_records
+    except Exception:
+        from blueprints.programacion import _cargar_batch_records
+    ref = _cargar_batch_records().get('productos') or []
+    assert ref, 'no se pudo cargar la referencia de batch records'
+    prueba = _pqc()(ref).get(('MP00176', 'MP00252'))
+    assert prueba and 'ESENCIA' in prueba.upper(), prueba
+
+
+def test_ningun_par_del_mapa_puede_convivir_en_una_formula(app):
+    """La invariante: el mapa de códigos NUNCA puede contener un par descalificado.
+
+    Es lo que estaba roto -- y el par equivocado se propagaba a la herramienta de unificación,
+    que renombra códigos de verdad.
+    """
+    try:
+        from api.blueprints.programacion import _cargar_batch_records
+    except Exception:
+        from blueprints.programacion import _cargar_batch_records
+    conviven = _pqc()(_cargar_batch_records().get('productos') or [])
+    j = _login(app).get('/api/programacion/reconciliar-batch-record').get_json()
+    for m in j.get('mapa_codigos_batch_record_vs_eos') or []:
+        a, b = m['codigo_batch_record'], m['codigo_eos']
+        assert (min(a, b), max(a, b)) not in conviven, m
+
+
+def test_no_corrobora_por_INCI_si_uno_de_los_dos_no_esta_en_el_maestro(app):
+    """Antes leía los INCI de los dos con un IN (?,?) y aceptaba `len(set)==1` como "mismo INCI".
+    Si uno de los códigos no existe en el maestro, la consulta trae UNO solo y el chequeo daba
+    corroborado sin haber comparado nada: un chequeo que no puede correr no devuelve un OK."""
+    j = _login(app).get('/api/programacion/reconciliar-batch-record').get_json()
+    for p in j['productos']:
+        for par in p.get('mismo_material_otro_codigo') or []:
+            if par.get('aviso'):
+                assert par['confirmado_por'] != 'mismo_inci', par
+                assert 'no está en el maestro' in par['aviso'], par
