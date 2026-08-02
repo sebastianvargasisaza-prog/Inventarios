@@ -62,9 +62,15 @@ def _limpiar():
 
 
 def _sembrar_colision(*, g_mal=140.0, g_corr=140.0, lote=LOTE, estado='VIGENTE',
-                      venc=None, con_correccion=True, marca_cant=None):
-    """Reproduce el estado real: el descuento equivocado del 9-jul + la corrección del 15-jul."""
+                      venc=None, con_correccion=True, marca_cant=None, marca_legacy=False):
+    """Reproduce el estado real: el descuento equivocado del 9-jul + la corrección del 15-jul.
+
+    `marca_legacy` usa el marcador de tres campos (bulk|código|cantidad) que es el que tienen de
+    verdad los movimientos de julio: el lote se le agregó al marcador después.
+    """
     mc = int(marca_cant if marca_cant is not None else round(g_mal))
+    marca_mala = ('[retro BULKNET0|%s|%d]' % (MAL, mc) if marca_legacy
+                  else '[retro BULKNET0|%s|%s|%d]' % (MAL, lote, mc))
     db = _db()
     try:
         if venc:
@@ -76,8 +82,8 @@ def _sembrar_colision(*, g_mal=140.0, g_corr=140.0, lote=LOTE, estado='VIGENTE',
                    "observaciones,lote,estado_lote,operador) VALUES (?,?,?,'Salida',"
                    "'2026-07-09 10:00:00',?,?,?,'sebastian')",
                    (MAL, 'Isododecane', g_mal,
-                    'Consumo retroactivo · PT-NET0 · lote real %s [retro BULKNET0|%s|%s|%d]'
-                    % (lote, MAL, lote, mc), lote, estado))
+                    'Consumo retroactivo · PT-NET0 · lote real %s %s' % (lote, marca_mala),
+                    lote, estado))
         if con_correccion:
             db.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,"
                        "observaciones,lote,operador) VALUES (?,?,?,'Salida',"
@@ -230,6 +236,21 @@ def test_espeja_el_estado_del_lote_no_libera_cuarentena(app):
     finally:
         db.close()
     assert _stock(MAL) == antes, "no puede aparecer stock disponible que estaba en cuarentena"
+
+
+def test_empareja_por_identidad_no_por_cantidad(app):
+    """El marcador conserva bulk y cantidad del descuento original: eso identifica la MISMA
+    operación. Con los dos formatos -- el actual con lote y el de julio sin él -- el
+    emparejamiento tiene que ser por MARCADOR; si cae a la cantidad, la corrección de un
+    inventario regulado quedaría apoyada en que dos números coinciden."""
+    for legacy in (True, False):
+        _limpiar(); _sembrar_colision(marca_legacy=legacy)
+        c = _admin(app)
+        js = c.get("/api/admin/colisiones-net-zero").get_json()
+        par = _par(js)
+        assert par['a_devolver_g'] == 140.0
+        assert [i['emparejado_por'] for i in par['a_devolver']] == ['marcador'], \
+            'marcador legacy=%s' % legacy
 
 
 def test_solo_admin(app):

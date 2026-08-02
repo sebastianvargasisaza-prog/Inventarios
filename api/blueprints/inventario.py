@@ -13209,9 +13209,18 @@ def _plan_colisiones_net_zero(c):
             m = rx.search(oobs)
             grp = None; via = ''
             if m:
-                esperado = '[retro %s|%s|%s|%s]' % (m.group(1), mal, m.group(3), m.group(4))
+                # El marcador del descuento tuvo DOS formatos: el actual lleva el lote
+                # (bulk|código|lote|cantidad) y el de julio NO (bulk|código|cantidad · el lote se
+                # le agregó después). Los dos identifican la MISMA operación -- mismo bulk, misma
+                # cantidad, sólo cambia el código -- así que se aceptan ambos: si sólo se
+                # reconociera el formato nuevo, el emparejamiento caería a la cantidad y la
+                # corrección quedaría apoyada en evidencia más débil de la que realmente hay.
+                esperados = ('[retro %s|%s|%s|%s]' % (m.group(1), mal, m.group(3), m.group(4)),
+                             '[retro %s|%s|%s]' % (m.group(1), mal, m.group(4)))
                 for k in malas:
-                    if k not in usados and esperado in k:
+                    if k in usados:
+                        continue
+                    if any(e in k for e in esperados):
                         grp = k; via = 'marcador'; break
             if grp is None:
                 cands = [k for k, v in malas.items()
