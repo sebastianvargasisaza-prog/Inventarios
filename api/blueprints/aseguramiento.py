@@ -4622,9 +4622,21 @@ def pqr_inbox_depurar():
         "WHERE COALESCE(estado,'')='pendiente' AND COALESCE(destino_id,0)=0 "
         "ORDER BY id").fetchall()
 
+    # `con_ia`: lo que las reglas no pueden juzgar ("En un momento pago", "Tarjeta") se le
+    # pregunta al clasificador. Va DETRÁS de un flag porque cuesta una llamada por mensaje y
+    # porque la depuración tiene que poder correrse sin API key.
+    _con_ia = bool((request.get_json(silent=True) or {}).get('con_ia', False))
+
     a_sacar, se_quedan = [], []
     for r in filas:
         _mot = _no_es_pqr_por_reglas(r[7] or '')
+        if not _mot and _con_ia:
+            try:
+                _c = _clasificar_pqr(c, r[7] or '', r[4] or '')
+                if _c.get('es_pqr') is False:
+                    _mot = (_c.get('razon') or 'la IA lo clasificó como conversación, no PQR')[:300]
+            except Exception as e:
+                log.warning('depurar · IA falló para %s: %s', r[0], e)
         (a_sacar if _mot else se_quedan).append(
             {'id': int(r[0]), 'contacto': r[4], 'mensaje': (r[7] or '')[:120], 'motivo': _mot})
 

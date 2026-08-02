@@ -199,3 +199,17 @@ def test_NO_toca_lo_que_ya_se_enruto(app):
     c = _admin(app)
     c.post(DEPURAR, json={'aplicar': True}, headers=_csrf(c))
     assert _en_buzon('QAPQR-d3') == 1, 'lo enrutado no se toca desde acá'
+
+
+def test_depurar_sin_ia_es_conservador(app):
+    """Sin `con_ia` sólo saca lo que las REGLAS pueden juzgar. Lo dudoso se queda: preferir
+    dejar de más antes que botar una queja real."""
+    _limpiar()
+    _sembrar_en_bandeja('QAPQR-d4', 'Hola')
+    _sembrar_en_bandeja('QAPQR-d5', 'En un momento pago')
+    c = _admin(app)
+    prev = c.get(DEPURAR).get_json()
+    _msgs = [x['mensaje'] for x in prev['a_sacar']]
+    assert any(m.startswith('Hola') for m in _msgs)
+    assert not any(m.startswith('En un momento') for m in _msgs), (
+        'sin IA, lo que las reglas no juzgan se QUEDA')
