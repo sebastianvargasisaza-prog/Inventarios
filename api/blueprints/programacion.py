@@ -4437,6 +4437,17 @@ def _emparejar_producto_eos(eos, k, nombre):
     _c = [kk for kk in eos if kk and (kk.startswith(k[:14]) or k.startswith(kk[:14]))]
     if len(_c) == 1:
         return eos[_c[0]], 'prefijo', []
+    # ⚠ Nivel LETRA POR LETRA · un typo de un carácter rompe los dos niveles de arriba y también
+    # el de abajo, que compara CONJUNTOS DE PALABRAS: para él "HYBRID" y "HIBRID" son dos
+    # palabras distintas, así que "AZ Hybrid Clear" contra "AZ HIBRID CLEAR" daba 33% y el batch
+    # record de ese producto NO se comparaba con nada (y ahí vivía un ingrediente al 4%).
+    # Umbral 0.90 sobre el nombre entero: sólo une nombres casi idénticos (una letra, un acento),
+    # nunca dos productos distintos -- "Suero Vitamina C+" contra "Suero Antioxidante Vitamina
+    # C+B3" da 0.66 y sigue saliendo como candidato para que lo confirme una persona.
+    from difflib import SequenceMatcher as _SM
+    _rat = sorted(((_SM(None, k, kk).ratio(), kk) for kk in eos if kk), reverse=True)
+    if _rat and _rat[0][0] >= 0.90 and (len(_rat) == 1 or _rat[0][0] - _rat[1][0] >= 0.10):
+        return eos[_rat[0][1]], 'casi_igual:%.0f%%' % (_rat[0][0] * 100), []
     tk = _tokens_prod(nombre)
     if not tk:
         return None, '', []

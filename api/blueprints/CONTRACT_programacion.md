@@ -590,3 +590,37 @@ la fórmula ya tiene el destino (eso sería fusionar dos ingredientes y se decid
 
 Auditado con el valor previo (`EDITAR_FORMULA_ITEM`) → reversible. Tests:
 `tests/test_editar_formula_items.py` (en el gate · cada guard probado con dientes).
+
+## 🔡 PROG-N+3 · Un typo de una letra dejaba un batch record sin comparar (2-ago)
+
+`_emparejar_producto_eos` cruzaba por nombre exacto → prefijo → **conjuntos de palabras**. Para el
+tercer nivel `HYBRID` y `HIBRID` son dos palabras distintas, así que *"AZ Hybrid Clear"* contra
+*"AZ HIBRID CLEAR"* daba **33 %** y ese batch record **no se comparaba con nada** -- y adentro tiene
+un ingrediente al 4 %.
+
+Nivel nuevo **`casi_igual`**, letra por letra (`SequenceMatcher` sobre el nombre normalizado), con
+umbral **0,90 + 0,10 de ventaja**. Medido: `AZ HYBRID/HIBRID CLEAR` = 0,93 (une); *"Suero Vitamina
+C+"* contra sus dos candidatos = 0,67 y 0,65 (**sigue ambiguo**, que es lo correcto: lo confirma una
+persona · M132). Va DESPUÉS de exacto y prefijo, así que no le gana a un cruce seguro.
+
+### ⚠ Limitación conocida: el INTERCAMBIO CRUZADO
+
+El emparejador de códigos resuelve pares de a uno. Cuando dos códigos **se intercambian entre sí**
+no puede: en `EMULSION HIDRATANTE`, `GEL HIDRATANTE` y `HYDRAPEPTIDE` el batch usa `MP00301`
+(propylheptyl, 3 %) y `MP00302` (ethylhexylglycerin, 0,4 %), mientras EOS usa `MP00030` (3 %) y
+`MP00301` (0,4 %). Como `MP00301` aparece de los **dos** lados, no entra ni en `falta_en_eos` ni en
+`sobra_en_eos`: cae en `porcentaje_difiere`, y `MP00302` se queda sin propuesta.
+
+**Efecto en la lista del Director Técnico:** `MP00302` figura entre los "ya están bien" **porque el
+código existe en EOS** -- y en EOS es ISODODECANE. La corrección (`MP00302 → MP00301`) está
+verificada por otra vía (conjunto de productos idéntico) y hay que **agregarla a mano** a la lista
+hasta que el emparejador sepa resolver ciclos.
+
+Se intentaron dos reglas automáticas para taparlo (código que el batch usa donde EOS no lo lleva; y
+lo mismo exigiendo un sustituto al porcentaje exacto) y **las dos marcaban códigos sanos**: a
+niveles de traza (0,05 · 0,1 · 0,3) que dos ingredientes coincidan en porcentaje es casualidad. Se
+descartaron -- una lista con ruido se descarta entera, incluidas las correcciones que sí importan.
+El test `test_NO_marca_por_parecido_de_NOMBRE` es el que las tumbó las dos.
+
+Tests: `test_reconciliar_batch_record.py::test_une_un_nombre_con_UNA_letra_distinta` +
+`::test_NO_une_dos_productos_distintos_que_comparten_palabras`.

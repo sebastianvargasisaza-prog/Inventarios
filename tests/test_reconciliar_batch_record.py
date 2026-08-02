@@ -270,3 +270,41 @@ def test_no_corrobora_por_INCI_si_uno_de_los_dos_no_esta_en_el_maestro(app):
             if par.get('aviso'):
                 assert par['confirmado_por'] != 'mismo_inci', par
                 assert 'no está en el maestro' in par['aviso'], par
+
+
+# ── Un typo de una letra dejaba un batch record SIN comparar (2-ago) ──────────────────────────
+# "AZ Hybrid Clear" (batch) contra "AZ HIBRID CLEAR" (EOS): el emparejador compara CONJUNTOS DE
+# PALABRAS, y para él HYBRID y HIBRID son dos palabras distintas -> 33% de parecido -> ese batch
+# record no se comparaba con nada. Y ahí adentro vive un ingrediente al 4%.
+
+def _emp():
+    try:
+        from api.blueprints.programacion import _emparejar_producto_eos
+    except Exception:
+        from blueprints.programacion import _emparejar_producto_eos
+    return _emparejar_producto_eos
+
+
+def test_une_un_nombre_con_UNA_letra_distinta():
+    eos = {'AZ HIBRID CLEAR': {'nombre_eos': 'AZ HIBRID CLEAR', 'items': {}},
+           'GEL HIDRATANTE': {'nombre_eos': 'GEL HIDRATANTE', 'items': {}}}
+    f, como, cands = _emp()(eos, 'AZ HYBRID CLEAR', 'AZ Hybrid Clear')
+    assert f is not None and f['nombre_eos'] == 'AZ HIBRID CLEAR', (como, cands)
+    assert 'casi_igual' in como, como
+
+
+def test_NO_une_dos_productos_distintos_que_comparten_palabras():
+    """El umbral alto es a propósito: comparar el par equivocado INVENTA diferencias en una
+    fórmula regulada. Lo que no llega sale como CANDIDATO para que lo confirme una persona."""
+    eos = {'SUERO ANTIOXIDANTE VITAMINA C B3': {'nombre_eos': 'SUERO ANTIOXIDANTE VITAMINA C+B3', 'items': {}},
+           'SUERO DE VITAMINA C FORMULA NUEVA': {'nombre_eos': 'SUERO DE VITAMINA C+ FORMULA NUEVA', 'items': {}}}
+    f, como, cands = _emp()(eos, 'SUERO VITAMINA C', 'Suero Vitamina C+')
+    assert f is None, ('no puede elegir solo entre dos candidatos', como)
+    assert len(cands) >= 2
+
+
+def test_el_nombre_exacto_sigue_ganando():
+    eos = {'GEL HIDRATANTE': {'nombre_eos': 'GEL HIDRATANTE', 'items': {}},
+           'GEL HIDRATANTE PLUS': {'nombre_eos': 'GEL HIDRATANTE PLUS', 'items': {}}}
+    f, como, _ = _emp()(eos, 'GEL HIDRATANTE', 'Gel Hidratante')
+    assert como == 'nombre_exacto' and f['nombre_eos'] == 'GEL HIDRATANTE'
