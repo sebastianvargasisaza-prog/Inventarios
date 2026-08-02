@@ -4870,14 +4870,15 @@ def prog_codigos_batch_vs_maestro():
             donde[i['codigo']].append({'producto': p['producto'], 'orden': p.get('orden', '')})
             nombre_batch.setdefault(i['codigo'], i['nombre'])
 
-    import re as _re_bm
-
-    def _mismo(nb, e):
-        """¿El nombre del batch se reconoce en el material de EOS?"""
-        _s = ((e['comercial'] or '') + ' ' + (e['inci'] or '')).lower()
-        _t = [t for t in _re_bm.split(r'[^a-zA-Z0-9]+', (nb or '').lower()) if len(t) >= 4]
-        return any(t in _s for t in _t) if _t else True
-
+    # ⚠ La clasificación va por EVIDENCIA, no por parecido de nombres. El primer intento comparaba
+    # el nombre del batch contra el de EOS y daba 44 a cambiar cuando son ~12: "Alantoina" no
+    # matchea "Alantoína", "Glicerina" no matchea "Glycerin", "Niacinamida" no matchea
+    # "Niacinamide". Le habría mandado al Director Técnico 32 correcciones falsas -- y una lista
+    # con ruido se descarta entera, incluidas las 12 que sí importan.
+    #
+    # La evidencia que sí sirve: un código está mal SÓLO si (a) no existe en el maestro de EOS, o
+    # (b) la reconciliación produjo un PAR para él, o sea que en la misma fórmula y con el mismo
+    # porcentaje EOS usa otro código. Eso sale de comparar fórmulas, no de adivinar por el nombre.
     cambiar, ok = [], []
     for cod in sorted(nombre_batch):
         nb = nombre_batch[cod]
@@ -4885,20 +4886,19 @@ def prog_codigos_batch_vs_maestro():
         pr = propuesta.get(cod) or {}
         fila = {'codigo_en_batch': cod, 'nombre_en_batch': nb,
                 'usado_en': donde[cod], 'n_usos': len(donde[cod])}
-        if e is None:
-            fila['motivo'] = 'Ese código NO existe en el maestro de EOS.'
-            fila['codigo_correcto'] = pr.get('codigo_eos', '')
-            if fila['codigo_correcto']:
-                _m = maestro.get(fila['codigo_correcto'], {})
-                fila['material_correcto'] = '%s · %s' % (_m.get('comercial', ''), _m.get('inci', ''))
+        if pr.get('codigo_eos'):
+            _m = maestro.get(pr['codigo_eos'], {})
+            fila['codigo_correcto'] = pr['codigo_eos']
+            fila['material_correcto'] = '%s · %s' % (_m.get('comercial', ''), _m.get('inci', ''))
+            fila['motivo'] = (
+                ('Ese código NO existe en el maestro de EOS.' if e is None else
+                 'En EOS ese código es OTRO material: "%s · %s".' % (e['comercial'], e['inci']))
+                + ' En la fórmula, EOS usa %s con el MISMO porcentaje.' % pr['codigo_eos'])
             cambiar.append(fila)
-        elif not _mismo(nb, e):
-            fila['motivo'] = ('En EOS ese código es OTRO material: "%s · %s".'
-                              % (e['comercial'], e['inci']))
-            fila['codigo_correcto'] = pr.get('codigo_eos', '')
-            if fila['codigo_correcto']:
-                _m = maestro.get(fila['codigo_correcto'], {})
-                fila['material_correcto'] = '%s · %s' % (_m.get('comercial', ''), _m.get('inci', ''))
+        elif e is None:
+            fila['codigo_correcto'] = ''
+            fila['motivo'] = ('Ese código NO existe en el maestro de EOS y la fórmula de EOS '
+                              'tampoco tiene un ingrediente equivalente: hay que definir cuál es.')
             cambiar.append(fila)
         else:
             fila['en_eos'] = '%s · %s' % (e['comercial'], e['inci'])

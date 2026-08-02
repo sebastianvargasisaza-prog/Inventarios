@@ -70,3 +70,37 @@ def test_el_que_esta_bien_muestra_el_material_de_eos(app, db_clean):
     j = _pedir(app)
     for x in j['ya_estan_bien'][:20]:
         assert x.get('en_eos'), x
+
+
+def test_NO_marca_por_parecido_de_NOMBRE(app, db_clean):
+    """El error que casi le mando al Director Técnico (1-ago).
+
+    La primera versión comparaba el nombre del batch contra el de EOS y daba **44** a cambiar
+    cuando son ~12: "Alantoina" no matchea "Alantoína", "Glicerina" no matchea "Glycerin",
+    "Niacinamida" no matchea "Niacinamide". Habrían sido 32 correcciones FALSAS -- y una lista
+    con ese ruido se descarta entera, incluidas las que sí importan.
+
+    La clasificación va por EVIDENCIA: el código está mal sólo si no existe en el maestro o si
+    la reconciliación produjo un par (misma fórmula, mismo porcentaje, otro código).
+    """
+    j = _pedir(app)
+    # estos existen en EOS y están bien; su nombre difiere sólo por tilde o idioma
+    sanos = {'MP00047': 'Alantoína', 'MP00195': 'Glycerin', 'MP00148': 'Niacinamide',
+             'MP00226': 'Ectoin', 'MP00163': 'hialurónico'}
+    mal = {x['codigo_en_batch'] for x in j['cambiar_en_batch']}
+    for cod, pista in sanos.items():
+        assert cod not in mal, (
+            '%s (%s) está bien en EOS y lo marcó para cambiar · vuelve el match por nombre'
+            % (cod, pista))
+
+
+def test_lo_marcado_tiene_evidencia_dura(app, db_clean):
+    """Cada uno a cambiar: o no existe en el maestro, o hay un par de la reconciliación."""
+    import json
+    j = _pedir(app)
+    r = _login(app).get('/api/programacion/unificar-codigos-batch')
+    plan = r.get_json()
+    con_par = {d['codigo_batch'] for d in plan['seguros'] + plan['bloqueados']}
+    for x in j['cambiar_en_batch']:
+        assert (x['codigo_en_batch'] in con_par) or not x.get('codigo_correcto'), (
+            'marcado sin evidencia: %r' % x)
