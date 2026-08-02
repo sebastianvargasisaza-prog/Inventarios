@@ -885,8 +885,11 @@ hace nada y el paso 2 aplica igual → media corrección, sin un solo error a la
 previa y el apply · M101) se apoya en el kardex, no en el Excel:
 
 - **Empareja por EVIDENCIA, no por parecido.** Tier 1 = el marcador (`[retro-corr B|Y|L|N]` conserva
-  bulk, lote y cantidad del `[retro B|X|L|N]` original: sólo cambia el código). Tier 2 = la cantidad,
-  y **sólo si es inequívoca**. Lo que no cruza se reporta en `sin_pareja` y NO se toca.
+  bulk, lote y cantidad del `[retro B|X|...|N]` original: sólo cambia el código). **Acepta los DOS
+  formatos del marcador de descuento**: el actual `bulk|código|lote|cantidad` y el de julio
+  `bulk|código|cantidad` (el lote se le agregó después) -- los movimientos reales del 9-jul tienen
+  el de tres campos, así que sin esto todo caía al tier 2. Tier 2 = la cantidad, y **sólo si es
+  inequívoca**. Lo que no cruza se reporta en `sin_pareja` y NO se toca.
 - **Tope duro:** nunca devuelve más de lo que la corrección movió al código correcto — devolver de
   más es inventar material. Lo que excede sale en `excedente`, sin escribir.
 - **Net-zero real (M31):** la Entrada va al **mismo lote**, espejando el `estado_lote` original (un
