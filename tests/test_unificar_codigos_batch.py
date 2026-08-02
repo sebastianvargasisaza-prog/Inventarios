@@ -64,7 +64,7 @@ def test_cada_par_trae_su_motivo_y_su_clasificacion(app, db_clean):
     j = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
     for d in j['seguros'] + j['bloqueados']:
         assert d['estado'] in ('seguro', 'bloqueado_ambiguo', 'bloqueado_colision',
-                               'bloqueado_nombre'), d
+                               'bloqueado_nombre', 'bloqueado_batch_inconsistente'), d
         assert d.get('motivo'), d
         assert d['codigo_batch'] != d['codigo_eos'], d
         if d['estado'] == 'seguro':
@@ -181,7 +181,8 @@ def test_BLOQUEA_cuando_los_nombres_se_contradicen_en_una_palabra_que_DISTINGUE(
 def test_el_estado_bloqueado_nombre_existe_y_explica(app, db_clean):
     plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
     for d in plan['bloqueados']:
-        assert d['estado'] in ('bloqueado_ambiguo', 'bloqueado_colision', 'bloqueado_nombre'), d
+        assert d['estado'] in ('bloqueado_ambiguo', 'bloqueado_colision', 'bloqueado_nombre',
+                               'bloqueado_batch_inconsistente'), d
         assert d.get('motivo'), d
 
 
@@ -206,3 +207,60 @@ def test_solo_renombrar_deja_las_FUSIONES_afuera(app, db_clean):
                 'un "renombrar" cuyo destino YA existe es en realidad una fusión: %r' % d)
         else:
             assert d['destino_existe_en_eos'] is True, d
+
+
+def test_BLOQUEA_si_el_batch_usa_TAMBIEN_el_codigo_de_eos(app, db_clean):
+    """El candado que faltaba · lo aprendí rompiéndolo en producción (1-ago).
+
+    Apliqué 10 renombrados "seguros" y 3 hicieron daño NETO: el hialurónico es `MP00273` en 1
+    producto del batch y `MP00163` en 14. El par sólo se veía por el producto minoritario --
+    en los otros 14 ambos lados coincidían y por eso NO generaban diferencia. Renombrar
+    `MP00163 → MP00273` arregló 1 y rompió 14. El conflicto era invisible hasta después de
+    aplicar; lo vi porque el plan, al volver a correr, proponía deshacer lo que acababa de hacer.
+
+    **Una diferencia sólo se puede corregir mirando dónde NO hay diferencia.** Si el batch usa
+    los dos códigos, el duplicado está en el batch: no lo resuelve un renombrado.
+    """
+    import json as _js
+    import os as _os
+    ruta = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                         'api', 'data', 'formulas_batch_record.json')
+    with open(ruta, encoding='utf-8') as f:
+        ref = _js.load(f)
+    cods_batch = {i['codigo'] for p in ref['productos'] for i in p['items']}
+
+    plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
+    for d in plan['seguros']:
+        assert d['codigo_eos'] not in cods_batch, (
+            'par SEGURO cuyo codigo_eos %s TAMBIÉN lo usa el batch record: renombrarlo rompe '
+            'todos los productos donde el batch ya dice %s · %r'
+            % (d['codigo_eos'], d['codigo_eos'], d))
+
+
+def test_el_estado_batch_inconsistente_dice_cuantos_productos_usa_cada_uno(app, db_clean):
+    """El número es lo que permite decidir: 1 contra 14 no es una duda, es una respuesta."""
+    plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
+    for d in plan['bloqueados']:
+        if d['estado'] == 'bloqueado_batch_inconsistente':
+            assert d.get('usos_en_batch'), d
+            assert d['usos_en_batch']['codigo_eos'] > 0, d
+
+
+def test_cuando_la_evidencia_es_de_UN_SOLO_lado_el_informe_CONCLUYE(app, db_clean):
+    """Dejar una duda abierta cuando los datos ya la contestan es hacer trabajar al usuario.
+
+    Los 4 casos reales: el hialurónico es MP00163 en 18 batch records y MP00273 en 1; y MP00273
+    NI SIQUIERA EXISTE en el maestro de EOS. Ahí no hay nada que decidir -- EOS está bien y lo
+    que salió mal es ese batch record. El informe tiene que decirlo, no listar el par como
+    "pendiente de que alguien decida".
+    """
+    plan = _login(app).get('/api/programacion/unificar-codigos-batch').get_json()
+    for d in plan['bloqueados']:
+        if d['estado'] != 'bloqueado_batch_inconsistente':
+            continue
+        _u = d.get('usos_en_batch') or {}
+        # evidencia de un solo lado = el codigo del batch no esta en el maestro Y es minoritario
+        if d.get('destino_existe_en_eos') is False and _u.get('codigo_eos', 0) >= _u.get('codigo_batch', 0):
+            assert d.get('veredicto'), (
+                'la evidencia alcanza para concluir y el informe deja la duda abierta: %r' % d)
+            assert 'EOS ESTÁ BIEN' in d['veredicto'], d['veredicto']

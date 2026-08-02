@@ -206,6 +206,7 @@ CORAZON=(
   "tests/test_mp_sin_formula.py"
   "tests/test_reconciliar_batch_record.py"
   "tests/test_unificar_codigos_batch.py"
+  "tests/test_codigos_para_director_tecnico.py"
   # Calidad dispone CAJA POR CAJA: de 24 cajas pueden pasar 22 y venir 2 golpeadas. Fija que
   # el rotulo de cada caja diga la verdad (y que NO se renumeren las cajas fisicas al partir
   # el movimiento) + el escaneo del codigo de barras.

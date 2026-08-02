@@ -4705,6 +4705,11 @@ def _plan_unificar_codigos(c):
     # ¿alguno es ambiguo? (varios batch→un eos, o un batch→varios eos)
     _por_eos = _col.Counter(x['codigo_eos'] for x in pares.values())
     _por_batch = _col.Counter(x['codigo_batch'] for x in pares.values())
+    # TODO código que el batch record usa, y en cuántos productos. Es lo que permite ver el
+    # conflicto que NO produce diferencia: si el batch usa el mismo código que EOS en la mayoría
+    # de los productos, ahí no hay par -- y sin esta cuenta el par minoritario parece seguro.
+    _uso_batch = _col.Counter(i['codigo'] for p in prods for i in p['items'])
+    _cods_batch = set(_uso_batch)
 
     def _inci(cod):
         r = c.execute("SELECT UPPER(TRIM(COALESCE(nombre_inci,''))) FROM maestro_mps "
@@ -4748,7 +4753,36 @@ def _plan_unificar_codigos(c):
         d['inci_batch'], d['inci_eos'] = inci_b, inci_e
         d['n_productos'] = len(d['productos'])
         _choque = _choca_por_nombre(d.get('nombre'), ce)
-        if _choque:
+        if ce in _cods_batch:
+            # ⚠ EL CANDADO QUE FALTABA · 1-ago, después de romperlo en producción y revertirlo.
+            # Si el batch record USA TAMBIÉN el código de EOS, entonces el batch se contradice a
+            # sí mismo: nombra el mismo material con dos códigos. Renombrar E→B arregla los pocos
+            # productos donde el batch dice B y ROMPE todos los que dicen E.
+            # Pasó exacto: el hialurónico es MP00273 en 1 producto y MP00163 en 14. El par sólo
+            # se veía por el producto minoritario -- en los otros 14 ambos lados coincidían y por
+            # eso NO generaban diferencia. El conflicto era invisible hasta después de aplicar.
+            # Regla: una diferencia sólo se puede corregir mirando dónde NO hay diferencia.
+            _nb = _uso_batch.get(cb, 0)
+            _ne = _uso_batch.get(ce, 0)
+            d['estado'] = 'bloqueado_batch_inconsistente'
+            d['usos_en_batch'] = {'codigo_batch': _nb, 'codigo_eos': _ne}
+            d['motivo'] = ('El batch record usa LOS DOS códigos para el mismo material: %s en %d '
+                           'producto(s) y %s en %d. Renombrar arreglaría unos y rompería los '
+                           'otros: el duplicado está en el batch record, no en EOS.'
+                           % (cb, _nb, ce, _ne))
+            # Cuando la evidencia es de un solo lado, el informe CONCLUYE en vez de dejar la
+            # duda abierta: si EOS usa el código MAYORITARIO y el otro ni siquiera está en el
+            # maestro, no hay nada que decidir -- lo que está mal es ese batch record. Pasó en
+            # los 4 casos reales (hialurónico 18 vs 1, palmitoyl-38 5 vs 1, acetyl-8 5 vs 1, y
+            # retinal donde el propio maestro dice que Retinaldehído tiene INCI RETINAL).
+            if inci_b is None and _ne >= _nb:
+                d['veredicto'] = (
+                    'EOS ESTÁ BIEN: usa %s, que es el que el batch record emplea en %d de %d '
+                    'productos, y %s ni siquiera existe en el maestro. Lo que hay que revisar '
+                    'es por qué ese batch record salió con un código fuera del maestro.'
+                    % (ce, _ne, _ne + _nb, cb))
+                d['productos_con_el_codigo_raro'] = d['productos']
+        elif _choque:
             d['estado'] = 'bloqueado_nombre'
             d['motivo'] = ('Los nombres se contradicen en una palabra que distingue DOS '
                            'materiales de la misma familia (%s). Coincide el porcentaje, pero '
@@ -4777,6 +4811,117 @@ def _plan_unificar_codigos(c):
         plan.append(d)
     plan.sort(key=lambda x: (x['estado'] != 'seguro', -x['n_productos']))
     return plan
+
+
+@bp.route('/api/programacion/codigos-batch-vs-maestro', methods=['GET'])
+def prog_codigos_batch_vs_maestro():
+    """La lista para el DIRECTOR TÉCNICO: qué códigos hay que corregir en el batch record.
+
+    Sebastián 1-ago: *"desde que en EOS estén perfectos y la fórmula descuente la materia prima
+    que es, se deja así, y yo pido que cambien en batch ... el director técnico me dijo que le
+    enviara la lista de todas las materias primas con códigos, diciéndole cuáles debe cambiar"*.
+
+    La dirección de la corrección no es una preferencia: los códigos del batch que no cuadran o
+    **no existen** en el maestro de EOS (MP00008, MP00303, MP00273, MP00247, MP00192, MP00280) o
+    apuntan a **otro material** (MP00300 es Eversoft en EOS y ceramida en el batch; MP00301 es
+    ethylhexylglycerin vs propylheptyl caprylate; MP00298 es butilenglicol vs Aerosil). Para cada
+    uno de esos materiales EOS SÍ tiene el código con su nombre e INCI correctos. El maestro es
+    consistente; el que se salió del catálogo fue el batch.
+
+    Read-only. Devuelve las 173 MP de los 28 batch records, y por cada una: el código que usa el
+    batch, el correcto en EOS, y -- si hay que cambiarlo -- en qué órdenes de producción aparece
+    mal, para que el DT sepa cuál abrir.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    ref = _cargar_batch_records()
+    prods = ref.get('productos') or []
+    if not prods:
+        return jsonify({'ok': False, 'error': 'no hay referencia de batch records'}), 500
+    conn = get_db(); c = conn.cursor()
+
+    # el maestro de EOS · la referencia
+    maestro = {}
+    try:
+        for cod, com, inci, act in c.execute(
+                "SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_comercial,''), "
+                "COALESCE(nombre_inci,''), COALESCE(activo,1) FROM maestro_mps").fetchall():
+            maestro[cod] = {'comercial': com, 'inci': inci, 'activo': int(act or 0)}
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudo leer el maestro',
+                        'detalle': str(e)[:200]}), 500
+
+    # el código de EOS para cada código del batch que no cuadra · sale del MISMO plan que se usa
+    # para unificar, así que las dos pantallas no pueden contradecirse (M1)
+    propuesta = {}
+    try:
+        for d in _plan_unificar_codigos(c):
+            propuesta[d['codigo_batch']] = {'codigo_eos': d['codigo_eos'],
+                                            'estado_plan': d['estado']}
+    except Exception as e:
+        log.warning('codigos-batch-vs-maestro · plan: %s', e)
+
+    # dónde aparece cada código, con la orden de producción (es lo que el DT necesita abrir)
+    import collections as _c2
+    donde = _c2.defaultdict(list)
+    nombre_batch = {}
+    for p in prods:
+        for i in p['items']:
+            donde[i['codigo']].append({'producto': p['producto'], 'orden': p.get('orden', '')})
+            nombre_batch.setdefault(i['codigo'], i['nombre'])
+
+    import re as _re_bm
+
+    def _mismo(nb, e):
+        """¿El nombre del batch se reconoce en el material de EOS?"""
+        _s = ((e['comercial'] or '') + ' ' + (e['inci'] or '')).lower()
+        _t = [t for t in _re_bm.split(r'[^a-zA-Z0-9]+', (nb or '').lower()) if len(t) >= 4]
+        return any(t in _s for t in _t) if _t else True
+
+    cambiar, ok = [], []
+    for cod in sorted(nombre_batch):
+        nb = nombre_batch[cod]
+        e = maestro.get(cod)
+        pr = propuesta.get(cod) or {}
+        fila = {'codigo_en_batch': cod, 'nombre_en_batch': nb,
+                'usado_en': donde[cod], 'n_usos': len(donde[cod])}
+        if e is None:
+            fila['motivo'] = 'Ese código NO existe en el maestro de EOS.'
+            fila['codigo_correcto'] = pr.get('codigo_eos', '')
+            if fila['codigo_correcto']:
+                _m = maestro.get(fila['codigo_correcto'], {})
+                fila['material_correcto'] = '%s · %s' % (_m.get('comercial', ''), _m.get('inci', ''))
+            cambiar.append(fila)
+        elif not _mismo(nb, e):
+            fila['motivo'] = ('En EOS ese código es OTRO material: "%s · %s".'
+                              % (e['comercial'], e['inci']))
+            fila['codigo_correcto'] = pr.get('codigo_eos', '')
+            if fila['codigo_correcto']:
+                _m = maestro.get(fila['codigo_correcto'], {})
+                fila['material_correcto'] = '%s · %s' % (_m.get('comercial', ''), _m.get('inci', ''))
+            cambiar.append(fila)
+        else:
+            fila['en_eos'] = '%s · %s' % (e['comercial'], e['inci'])
+            fila['activo'] = e['activo']
+            ok.append(fila)
+
+    # los que no tienen propuesta necesitan que alguien la ponga: se declara, no se inventa
+    _sin_propuesta = [x['codigo_en_batch'] for x in cambiar if not x.get('codigo_correcto')]
+    cambiar.sort(key=lambda x: (not x.get('codigo_correcto'), -x['n_usos']))
+    return jsonify({
+        'ok': True, 'n_materias_primas': len(nombre_batch),
+        'cambiar_en_batch': cambiar, 'ya_estan_bien': ok,
+        'n_cambiar': len(cambiar), 'n_ok': len(ok),
+        'sin_codigo_propuesto': _sin_propuesta,
+        'veredicto': (
+            'De las %d materias primas que usan los 28 batch records, %d están bien y %d hay que '
+            'CORREGIRLAS EN EL BATCH RECORD: o el código no existe en el maestro de EOS, o en EOS '
+            'ese código es otro material. En EOS no hay nada que cambiar -- para cada uno de esos '
+            'materiales el maestro ya tiene el código con su nombre e INCI correctos.%s'
+            % (len(nombre_batch), len(ok), len(cambiar),
+               (' ⚠ %d no tienen código propuesto y los tiene que definir el Director Técnico.'
+                % len(_sin_propuesta)) if _sin_propuesta else '')),
+    })
 
 
 @bp.route('/api/programacion/unificar-codigos-batch', methods=['GET', 'POST'])
