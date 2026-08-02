@@ -270,6 +270,10 @@ CORAZON=(
   # Cremosa al Pistacho, asi que EOS compraria la fragancia equivocada. Golpea a las MP que
   # NUNCA se compraron, que son justo las que tienen que salir para comprarlas.
   "tests/test_resolver_inci_generico.py"
+  # Al buzon de PQR solo entra lo que ES un PQR. El disparador de GHL entra con CADA respuesta
+  # del cliente, asi que la bandeja se lleno de "Buena tarde" y "Perfecto": un registro
+  # REGULADO lleno de saludos no queda incompleto, queda FALSO. Lo descartado NO se pierde.
+  "tests/test_pqr_solo_lo_que_es_pqr.py"
 )
 
 echo ""

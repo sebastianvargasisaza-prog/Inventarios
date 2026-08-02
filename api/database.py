@@ -10925,6 +10925,31 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_pqr_intentos_fallidos_fecha "
         "ON pqr_intentos_fallidos(recibido_en)",
     ]),
+    (406, "Al buzón de PQR sólo entra lo que ES un PQR (Sebastián 2-ago: 'debería ser eso solo "
+          "lo que realmente es PQR'). El disparador de GHL entra con CADA respuesta del cliente, "
+          "así que la bandeja se llenó de 'Buena tarde', 'Perfecto' y 'En un momento pago'. Un "
+          "registro REGULADO lleno de saludos no queda incompleto: queda FALSO -- entierra las "
+          "quejas reales y infla los indicadores de calidad. Lo descartado NO se pierde: queda "
+          "acá con su motivo, revisable y recuperable, porque si el filtro se equivoca y bota "
+          "una queja de verdad tiene que poder verse. Tabla NUEVA: no toca nada.", [
+        """CREATE TABLE IF NOT EXISTS pqr_descartados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recibido_en TEXT NOT NULL,
+            ghl_contact_id TEXT,
+            ghl_message_id TEXT,
+            canal TEXT,
+            contacto_nombre TEXT,
+            contacto_email TEXT,
+            contacto_telefono TEXT,
+            mensaje TEXT,
+            motivo TEXT,
+            fuente TEXT,
+            recuperado_en TEXT,
+            recuperado_por TEXT,
+            pqr_inbox_id INTEGER
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pqr_descartados_fecha ON pqr_descartados(recibido_en)",
+    ]),
 ]
 
 

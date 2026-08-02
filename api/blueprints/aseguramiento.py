@@ -3908,6 +3908,44 @@ def _anthropic_key(c):
         return os.environ.get('ANTHROPIC_API_KEY')
 
 
+# Lo que NO es un PQR · filtro determinista, corre aunque la IA no esté disponible.
+# Sólo saluda/acusa recibo/avisa un trámite. Deliberadamente CORTO y anclado al mensaje
+# COMPLETO (no a que contenga la palabra): "gracias, el producto me llegó roto" SÍ es un
+# reclamo, y un filtro por contención lo botaría.
+_NO_PQR_EXACTO = {
+    'hola', 'holaa', 'buenas', 'buenos dias', 'buenos días', 'buen dia', 'buen día',
+    'buenas tardes', 'buena tarde', 'buenas noches', 'buenas!', 'hola!', 'ola',
+    'perfecto', 'perfecto!', 'listo', 'listo!', 'ok', 'oki', 'okay', 'vale', 'dale',
+    'gracias', 'muchas gracias', 'mil gracias', 'graciasss', 'ya', 'si', 'sí', 'no',
+    'bueno', 'de acuerdo', 'entendido', 'claro', 'excelente', 'genial', 'super', 'súper',
+}
+
+
+def _no_es_pqr_por_reglas(mensaje):
+    """Devuelve el MOTIVO si el mensaje claramente no es un PQR, o '' si podría serlo.
+
+    Conservador a propósito: ante la duda devuelve '' y el mensaje sigue su camino. Botar una
+    queja real es mucho peor que dejar pasar un saludo -- por eso el filtro mira el mensaje
+    ENTERO normalizado, no si contiene una palabra.
+    """
+    import re as _re
+    import unicodedata as _ud
+    t = (mensaje or '').strip()
+    if not t:
+        return 'mensaje vacío'
+    _n = _ud.normalize('NFKD', t.lower()).encode('ascii', 'ignore').decode()
+    _n = _re.sub(r'[^a-z0-9áéíóúñ ]+', '', _n).strip()
+    _n = _re.sub(r'\s+', ' ', _n)
+    if not _n:
+        return 'el mensaje no tiene texto (emoji, adjunto o sticker)'
+    if _n in {_ud.normalize('NFKD', x).encode('ascii', 'ignore').decode()
+              for x in _NO_PQR_EXACTO}:
+        return 'saludo o acuse de recibo ("%s"), no hay nada que atender' % t[:60]
+    if len(_n) <= 3:
+        return 'mensaje de %d caracteres: no alcanza para saber qué pide' % len(_n)
+    return ''
+
+
 def _clasificar_pqr_reglas(mensaje):
     """Fallback por palabras clave · confianza baja (cae a triaje)."""
     t = (mensaje or '').lower()
@@ -3932,7 +3970,13 @@ def _clasificar_pqr(c, mensaje, contacto_nombre=''):
     Intenta Claude; si no hay key o falla, cae a reglas (confianza baja → triaje)."""
     base = {'empresa': None, 'tipo': None, 'severidad': None, 'confianza': 0.0,
             'resumen': (mensaje or '')[:160], 'razon': '', 'fuente': 'reglas',
-            'clase': None, 'criticidad': None}
+            'clase': None, 'criticidad': None, 'es_pqr': True}
+    _no = _no_es_pqr_por_reglas(mensaje)
+    if _no:
+        # Se decide ANTES de gastar la llamada a la IA: un "ok" no necesita clasificador. Y si
+        # la IA no está disponible, el filtro sigue funcionando (fail-safe determinista).
+        base.update({'es_pqr': False, 'razon': _no})
+        return base
     api_key = _anthropic_key(c)
     if api_key and (mensaje or '').strip():
         prompt = (
@@ -3945,7 +3989,15 @@ def _clasificar_pqr(c, mensaje, contacto_nombre=''):
             "producto equivocado en el despacho ('me llegó lo que no era'), faltantes del pedido, "
             "devoluciones/cambios/reembolsos, servicio al cliente, facturación/pagos, preguntas comerciales.\n"
             "Caso 'envase roto': si se dañó en transporte = animus; si vino mal de fábrica = espagiria.\n"
-            "Responde SOLO un JSON válido, sin texto extra, con: empresa ('espagiria'|'animus'), "
+            "\nANTES QUE NADA decidí si el mensaje ES un PQR. Un PQR es una Petición, Queja o "
+            "Reclamo: el cliente pide algo concreto, reporta un problema, reclama por el producto "
+            "o el servicio, sugiere una mejora o felicita. NO son PQR: los saludos ('buenas "
+            "tardes', 'hola'), los acuses ('perfecto', 'listo', 'gracias', 'ok'), los avisos de "
+            "trámite ('en un momento pago', 'te aviso cualquier cosa', 'ya te mando el "
+            "comprobante'), los mensajes cortados o sin contenido, y la charla suelta. Ante la "
+            "duda con un mensaje muy corto o sin nada que atender, es_pqr=false.\n"
+            "Responde SOLO un JSON válido, sin texto extra, con: es_pqr (true|false), "
+            "por_que_no (1 frase, sólo si es_pqr es false), empresa ('espagiria'|'animus'), "
             "tipo (para espagiria uno de: reaccion_adversa,calidad_producto,envase_empaque,cantidad_volumen,"
             "fecha_vencimiento,sabor_olor_textura,eficacia,documentacion,servicio,otro · para animus uno de: "
             "envio,producto_equivocado,faltante,devolucion,servicio,facturacion,comercial,otro), "
@@ -3970,6 +4022,18 @@ def _clasificar_pqr(c, mensaje, contacto_nombre=''):
                 txt = json.loads(resp.read().decode("utf-8"))["content"][0]["text"]
             m = re.search(r'\{.*\}', txt, re.DOTALL)
             obj = json.loads(m.group(0)) if m else {}
+            # ¿es un PQR siquiera? Sebastián 2-ago: la bandeja se llenó de "Buena tarde",
+            # "Perfecto" y "En un momento pago" porque el disparador de GHL entra con CADA
+            # respuesta del cliente. Un registro REGULADO lleno de saludos entierra las quejas
+            # reales y además infla los indicadores de calidad: el dato no queda incompleto,
+            # queda FALSO. El clasificador contestaba "de qué empresa" y "qué tipo", pero nunca
+            # "¿esto es un PQR?".
+            if obj.get('es_pqr') is False:
+                base.update({'es_pqr': False, 'fuente': 'ia',
+                             'resumen': (obj.get('resumen') or base['resumen'])[:300],
+                             'razon': (obj.get('por_que_no') or obj.get('razon')
+                                       or 'la IA lo clasificó como conversación, no como PQR')[:300]})
+                return base
             emp = (obj.get('empresa') or '').strip().lower()
             if emp in ('espagiria', 'animus'):
                 base.update({
@@ -4460,6 +4524,31 @@ def pqr_inbound():
             return jsonify({'ok': True, 'inbox_id': ex[0], 'duplicado': True}), 200
 
     clf = _clasificar_pqr(c, mensaje, contacto)
+
+    # ── ¿Es un PQR? · el buzón es un registro REGULADO ────────────────────────────────────────
+    # El disparador de GHL entra con CADA respuesta del cliente, así que llegan saludos y acuses
+    # de recibo. Meterlos al buzón no lo deja incompleto: lo deja FALSO -- entierra las quejas
+    # reales y les infla los indicadores a Calidad.
+    # Lo descartado NO se pierde (M100/M124: lo que se excluye se enumera y se dice por qué):
+    # queda con su motivo y se puede recuperar, porque si el filtro se equivoca y bota una queja
+    # de verdad, tiene que poder verse.
+    if clf.get('es_pqr') is False:
+        _mot = (clf.get('razon') or 'no es una petición, queja ni reclamo')[:300]
+        try:
+            c.execute(
+                "INSERT INTO pqr_descartados (recibido_en, ghl_contact_id, ghl_message_id, canal, "
+                "contacto_nombre, contacto_email, contacto_telefono, mensaje, motivo, fuente) "
+                "VALUES (date('now','-5 hours'),?,?,?,?,?,?,?,?,?)",
+                (ghl_contact_id, ghl_msg_id, canal, contacto[:200], email[:200], telefono[:80],
+                 mensaje[:5000], _mot, clf.get('fuente') or 'reglas'))
+            conn.commit()
+        except Exception as _ed:
+            log.warning('no se pudo guardar el PQR descartado: %s', _ed)
+        return jsonify({'ok': True, 'registrado': False, 'motivo': _mot,
+                        'que_significa': ('El mensaje llegó bien, pero no es una petición, queja '
+                                          'ni reclamo, así que no entra al buzón de PQR. Queda '
+                                          'guardado en descartados por si hay que recuperarlo.')}), 200
+
     c.execute(
         "INSERT INTO pqr_inbox (ghl_message_id, ghl_contact_id, canal, contacto_nombre, contacto_email, "
         "contacto_telefono, mensaje, recibido_en, ia_empresa, ia_tipo, ia_severidad, ia_confianza, "
@@ -4506,6 +4595,75 @@ def pqr_inbox_listar():
     items = [dict(zip(cols, r)) for r in rows]
     pend = c.execute("SELECT COUNT(*) FROM pqr_inbox WHERE estado='pendiente'").fetchone()[0]
     return jsonify({'inbox': items, 'pendientes': pend})
+
+
+@bp.route('/api/aseguramiento/pqr-descartados', methods=['GET'])
+def pqr_descartados_listar():
+    """Lo que llegó al webhook y NO era un PQR · con el motivo, revisable.
+
+    Un filtro que descarta en silencio es un filtro en el que no se puede confiar: si bota una
+    queja de verdad, nadie se entera. Acá queda todo lo que no entró y por qué, y desde
+    `/recuperar` se pasa al buzón si el filtro se equivocó.
+    """
+    if session.get('compras_user', '') not in _autorizados_lectura():
+        return jsonify({'error': 'No autorizado'}), 403
+    conn = get_db(); c = conn.cursor()
+    filas = []
+    try:
+        for r in c.execute(
+                "SELECT id, recibido_en, canal, contacto_nombre, contacto_telefono, mensaje, "
+                "motivo, fuente, COALESCE(recuperado_en,''), COALESCE(pqr_inbox_id,0) "
+                "FROM pqr_descartados ORDER BY id DESC LIMIT 200").fetchall():
+            filas.append({'id': int(r[0]), 'recibido_en': r[1], 'canal': r[2],
+                          'contacto': r[3], 'telefono': r[4], 'mensaje': r[5],
+                          'motivo': r[6], 'fuente': r[7],
+                          'recuperado': bool(r[8]), 'pqr_inbox_id': int(r[9] or 0)})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudo leer descartados',
+                        'detalle': str(e)[:200]}), 500
+    _sin = [f for f in filas if not f['recuperado']]
+    return jsonify({'ok': True, 'n': len(filas), 'sin_recuperar': len(_sin), 'items': filas,
+                    'que_es': ('Mensajes que llegaron por el webhook y no son una petición, queja '
+                               'ni reclamo (saludos, acuses de recibo, avisos de trámite). No '
+                               'entran al buzón para no ensuciar un registro regulado, pero '
+                               'quedan acá: si alguno SÍ era una queja, se recupera con '
+                               'POST /api/aseguramiento/pqr-descartados/<id>/recuperar')})
+
+
+@bp.route('/api/aseguramiento/pqr-descartados/<int:did>/recuperar', methods=['POST'])
+def pqr_descartado_recuperar(did):
+    """Mete al buzón un mensaje que el filtro había descartado (se equivocó)."""
+    _u = session.get('compras_user', '')
+    if _u not in _autorizados_escritura():
+        return jsonify({'error': 'No autorizado'}), 403
+    conn = get_db(); c = conn.cursor()
+    r = c.execute("SELECT ghl_message_id, ghl_contact_id, canal, contacto_nombre, contacto_email, "
+                  "contacto_telefono, mensaje, COALESCE(recuperado_en,'') "
+                  "FROM pqr_descartados WHERE id=?", (did,)).fetchone()
+    if not r:
+        return jsonify({'error': 'no existe ese descartado'}), 404
+    if r[7]:
+        return jsonify({'error': 'ya fue recuperado'}), 409
+    clf = _clasificar_pqr(c, r[6], r[3] or '')
+    c.execute(
+        "INSERT INTO pqr_inbox (ghl_message_id, ghl_contact_id, canal, contacto_nombre, "
+        "contacto_email, contacto_telefono, mensaje, recibido_en, ia_empresa, ia_tipo, "
+        "ia_severidad, ia_confianza, ia_resumen, ia_razon, ia_fuente, ia_clase, ia_criticidad) "
+        "VALUES (?,?,?,?,?,?,?,date('now','-5 hours'),?,?,?,?,?,?,?,?,?)",
+        (r[0], r[1], r[2] or 'otro', (r[3] or '')[:200], (r[4] or '')[:200], (r[5] or '')[:80],
+         (r[6] or '')[:5000], clf.get('empresa'), clf.get('tipo'), clf.get('severidad'),
+         clf.get('confianza'), clf.get('resumen'), 'recuperado de descartados · ' +
+         (clf.get('razon') or '')[:240], clf.get('fuente'), clf.get('clase'),
+         clf.get('criticidad')))
+    _nid = c.lastrowid
+    c.execute("UPDATE pqr_descartados SET recuperado_en=date('now','-5 hours'), recuperado_por=?, "
+              "pqr_inbox_id=? WHERE id=?", (_u, _nid, did))
+    _audit_log(c, usuario=_u, accion='PQR_RECUPERAR_DESCARTADO', tabla='pqr_inbox',
+               registro_id=str(_nid), antes={'descartado_id': did, 'mensaje': (r[6] or '')[:300]},
+               despues={'pqr_inbox_id': _nid})
+    conn.commit()
+    return jsonify({'ok': True, 'pqr_inbox_id': _nid,
+                    'aviso': 'Quedó en el buzón como pendiente de triaje.'})
 
 
 @bp.route('/api/aseguramiento/pqr-intentos-fallidos', methods=['GET'])
