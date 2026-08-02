@@ -257,6 +257,82 @@ def test_empareja_por_identidad_no_por_cantidad(app):
             'marcador legacy=%s' % legacy
 
 
+def test_la_herramienta_del_15jul_ya_no_puede_hacer_media_correccion(app):
+    """El origen del problema, tapado.
+
+    `descuento_retro_corregir` revierte el descuento equivocado sólo si el MARCADOR calza. Los
+    movimientos de julio tienen el marcador viejo (sin lote), así que no calzaba: el paso 1 no
+    hacía nada, el paso 2 aplicaba igual, y el consumo quedaba contado DOS veces sin un solo
+    error a la vista. Ahora, si el marcador no encuentra nada, busca por cantidad antes de
+    aplicar la otra pata.
+    """
+    _limpiar()
+    db = _db()
+    try:
+        db.execute("DELETE FROM maestro_mps WHERE codigo_mp IN (?,?)", (MAL, BUENO))
+        for cod, nom in ((MAL, 'Isododecane'), (BUENO, 'Ethylhexylglycerin')):
+            db.execute("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+                       "VALUES (?,?,?,1)", (cod, nom, nom.upper()))
+        # stock del código CORRECTO, para que el FEFO tenga de dónde descontar
+        db.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,"
+                   "estado_lote,fecha_vencimiento) VALUES (?,?,?,'Entrada','2026-06-17 08:00:00',"
+                   "'L-BUENO','VIGENTE','2027-12-31')", (BUENO, 'Ethylhexylglycerin', 1000.0))
+        # el descuento EQUIVOCADO, con el marcador VIEJO de tres campos (el que hay de verdad)
+        db.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,"
+                   "observaciones,lote,estado_lote,operador) VALUES (?,?,?,'Salida',"
+                   "'2026-07-09 10:00:00',?,?,'VIGENTE','sebastian')",
+                   (MAL, 'Isododecane', 140.0,
+                    'Consumo retroactivo · PT-X · lote real [retro BULKX|%s|140]' % MAL, LOTE))
+        db.commit()
+    finally:
+        db.close()
+
+    c = _admin(app)
+    r = c.post("/api/admin/descuento-retro/corregir", headers=_csrf(c), json={
+        'aplicar': True,
+        'filas': [{'cod': MAL, 'cant': 140.0, 'bulk': 'BULKX', 'prod': 'PT-X', 'lote': LOTE}]})
+    js = r.get_json()
+    assert r.status_code == 200 and js['ok'] is True
+    assert js['plan'][0]['emparejado_por'] == 'cantidad'
+    assert js['plan'][0]['wrong_movs'] == 1, 'tenía que ENCONTRAR el descuento equivocado'
+    assert len(js['revertidos']) == 1 and js['revertidos'][0]['g'] == 140.0
+
+    db = _db()
+    try:
+        # las dos patas: el equivocado recuperó sus 140 g y el correcto los perdió
+        neto_mal = db.execute("SELECT COALESCE(SUM(%s),0) FROM movimientos WHERE material_id=?"
+                              % CASO, (MAL,)).fetchone()[0]
+        neto_bueno = db.execute("SELECT COALESCE(SUM(%s),0) FROM movimientos WHERE material_id=?"
+                                % CASO, (BUENO,)).fetchone()[0]
+        assert round(float(neto_mal), 2) == 0.0, 'el descuento equivocado quedó net-zero'
+        assert round(float(neto_bueno), 2) == 860.0, 'el consumo quedó en el código correcto'
+    finally:
+        db.close()
+
+
+def test_avisa_cuando_no_encuentra_el_descuento_equivocado(app):
+    """Si de verdad no hay nada que revertir, aplicar sólo la otra pata es correcto -- pero se
+    DECLARA. Un silencio ahí es lo que dejó 5.845 g fuera del estante."""
+    _limpiar()
+    db = _db()
+    try:
+        db.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (BUENO,))
+        db.execute("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+                   "VALUES (?,?,?,1)", (BUENO, 'Ethylhexylglycerin', 'ETHYLHEXYLGLYCERIN'))
+        db.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,"
+                   "estado_lote) VALUES (?,?,?,'Entrada','2026-06-17 08:00:00','L-BUENO','VIGENTE')",
+                   (BUENO, 'Ethylhexylglycerin', 1000.0))
+        db.commit()
+    finally:
+        db.close()
+    c = _admin(app)
+    js = c.post("/api/admin/descuento-retro/corregir", headers=_csrf(c), json={
+        'filas': [{'cod': MAL, 'cant': 140.0, 'bulk': 'BULKX', 'prod': 'PT-X', 'lote': LOTE}]}).get_json()
+    it = js['plan'][0]
+    assert it['wrong_movs'] == 0 and it['emparejado_por'] == ''
+    assert 'contado dos veces' in it['aviso']
+
+
 def test_solo_admin(app):
     _limpiar()
     c = app.test_client()

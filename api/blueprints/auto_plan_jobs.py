@@ -767,6 +767,12 @@ JOBS_SCHEDULE = [
     # como factura_proveedor en pagos_oc · matching automático con OC.
     # SOLO corre si IMAP_HOST + IMAP_USER + IMAP_PASSWORD configurados.
     ('mailbox_factura_proveedor', 7, 15, None, None,            'job_mailbox_factura_proveedor'),
+    # ⭐ Planta · diario 7:40 · las 5 firmas de que algo se rompió en MATERIAS PRIMAS (2-ago)
+    # La colisión de códigos del 9-jul estuvo tres semanas a la vista y nadie la vio: un kardex
+    # con un descuento de más se ve igual que uno sano. La validación profunda de las 8:00 mira
+    # duplicados y drift, pero NO mira si una fórmula dejó de sumar 100, si apunta a un código
+    # muerto, ni si una corrección de colisión quedó a medias. Avisa cuando el resultado CAMBIA.
+    ('salud_mp',              7, 40, None, None,                'job_salud_materias_primas'),
     # ⭐ Zero-Error · diario 8:00 · validación profunda matemática (8 checks)
     ('validacion_profunda',   8,  0, None, None,                'job_validacion_profunda'),
     # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
@@ -5851,3 +5857,83 @@ def job_pqr_mudo(app):
             log.warning('pqr_mudo notif fallo: %s', e)
         return True, {'dias_sin_recibir': dias, 'ultimo_recibido': ult, 'umbral': umbral,
                       'total_historico': tot}, 0
+
+
+def job_salud_materias_primas(app):
+    """Diario 7:40 · las 5 firmas de que algo se rompió en materias primas (Sebastián 2-ago).
+
+    Por qué existe: la colisión de códigos del 9-jul estuvo TRES SEMANAS a la vista y nadie la
+    vio, porque un kardex con un descuento de más se ve igual que uno sano. Todo se verificaba
+    abriendo un endpoint, o sea sólo cuando alguien se acordaba. Lo que faltaba no era el
+    arreglo: era el detector (M127).
+
+    Avisa cuando el resultado CAMBIA, no todos los días: una alerta que suena igual siempre deja
+    de mirarse justo el día que importa.
+    """
+    import hashlib as _hashlib
+    import json as _json
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            try:
+                from .programacion import _salud_mp_core
+            except Exception:
+                from blueprints.programacion import _salud_mp_core
+            r = _salud_mp_core(c)
+        except Exception as e:
+            log.warning('salud_materias_primas fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+
+        graves = {k: (r['hallazgos'].get(k) or []) for k in r['graves']}
+        # la huella incluye los chequeos CAÍDOS: si mañana uno deja de correr, eso también es
+        # una novedad que hay que avisar (si no, su lista vacía se leería como "se arregló").
+        firma = _hashlib.sha1(_json.dumps(
+            {'graves': graves, 'fallidos': r['checks_fallidos']},
+            sort_keys=True, ensure_ascii=False, default=str).encode('utf-8')).hexdigest()[:16]
+        prev = ''
+        try:
+            _p = c.execute("SELECT valor FROM app_settings WHERE clave='salud_mp_firma'").fetchone()
+            prev = (_p[0] if _p else '') or ''
+        except Exception:
+            pass
+        try:
+            c.execute("INSERT INTO app_settings (clave, valor) VALUES ('salud_mp_firma', ?) "
+                      "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor", (firma,))
+            conn.commit()
+        except Exception as e:
+            log.warning('salud_materias_primas · no pude guardar la firma: %s', e)
+
+        if r['ok']:
+            return True, {'mensaje': 'Materias primas sanas · las 5 firmas graves en cero'}, 0
+        if firma == prev:
+            return True, {'mensaje': 'Mismos hallazgos que ayer · no re-notifico',
+                          'n_graves': r['n_graves']}, 0
+
+        _ROTULO = {
+            'formula_no_suma_100': 'fórmula(s) que no suman 100%',
+            'formula_apunta_a_codigo_muerto': 'ítem(s) apuntando a un código que no existe o está inactivo',
+            'colision_a_medio_corregir': 'colisión(es) de código a medio corregir',
+            'codigo_con_espacios_en_kardex': 'código(s) del kardex con espacios pegados',
+            'stock_negativo_por_lote': 'lote(s) con stock negativo',
+        }
+        partes = []
+        for k, v in graves.items():
+            if v:
+                partes.append('· %d %s' % (len(v), _ROTULO.get(k, k)))
+        for f in r['checks_fallidos']:
+            partes.append('· ⚠ el chequeo "%s" no pudo correr (%s)' % (f['check'], f['error'][:60]))
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['sebastian', 'alejandro'], 'inventario',
+                'Materias primas: %d cosa(s) que revisar' % r['n_graves'],
+                body=('\n'.join(partes) + '\n\nCada una significa que el sistema está descontando '
+                      '(o dejando de descontar) material que no corresponde. El detalle en '
+                      '/api/programacion/salud-materias-primas'),
+                link='/api/programacion/salud-materias-primas',
+                remitente='cron-salud-mp', importante=True)
+        except Exception as e:
+            log.warning('salud_materias_primas notif fallo: %s', e)
+        return True, {'n_graves': r['n_graves'], 'graves': {k: len(v) for k, v in graves.items()},
+                      'checks_fallidos': r['checks_fallidos']}, r['n_graves']

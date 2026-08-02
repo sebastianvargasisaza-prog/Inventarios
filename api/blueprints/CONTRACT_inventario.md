@@ -903,3 +903,18 @@ previa y el apply · M101) se apoya en el kardex, no en el Excel:
 
 UI: panel inferior de `/admin/corregir-colisiones`. Tests: `tests/test_colisiones_net_zero.py`
 (en el gate · el tope y el espejo de estado probados con dientes).
+
+### El origen, tapado (2-ago)
+
+`descuento_retro_corregir` (la herramienta del 15-jul) revierte el descuento equivocado **sólo si
+el marcador calza**. Los movimientos del 9-jul llevan el marcador viejo de tres campos, así que no
+calzaba: el paso 1 no hacía nada, el paso 2 aplicaba igual, y el consumo quedaba contado dos veces
+**sin un solo error a la vista**. Ahora, si el marcador no encuentra el descuento equivocado, lo
+busca por CANTIDAD (y sólo si es inequívoco) antes de aplicar la otra pata; si de verdad no hay
+nada que revertir, lo **declara** en `aviso` en vez de aplicar en silencio.
+
+**Regla general: si una operación tiene dos patas, la segunda no puede depender de que la primera
+haya encontrado algo. O las dos, o ninguna -- y si la primera no encontró nada, eso se dice.**
+
+Tests: `test_colisiones_net_zero.py::test_la_herramienta_del_15jul_ya_no_puede_hacer_media_correccion`
+y `::test_avisa_cuando_no_encuentra_el_descuento_equivocado`.

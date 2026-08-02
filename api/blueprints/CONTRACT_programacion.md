@@ -486,3 +486,41 @@ stock queda inflado y nadie la vuelve a comprar porque el sistema cree que no se
 
 Tests: `tests/test_mp_sin_formula.py` (en el gate · incluye los dientes: la que SÍ está en una
 fórmula no aparece, y el puente cuenta como uso).
+
+## 🩺 PROG-N · Vigía diario de materias primas · el detector que faltaba (2-ago)
+
+La colisión de códigos del 9-jul estuvo **tres semanas a la vista** y nadie la vio: un kardex con
+un descuento de más se ve igual que uno sano. Todo este frente se verificaba **abriendo** un
+endpoint, o sea sólo cuando alguien se acordaba. Lo que faltaba no era el arreglo: era el detector
+(M127 · una integración muda y un inventario mal descontado fallan igual de silenciosos).
+
+`_salud_mp_core(c)` (read-only) es el núcleo ÚNICO de `GET /api/programacion/salud-materias-primas`
+y del cron `salud_mp` (diario 7:40 · `job_salud_materias_primas`). Seis firmas, cinco **graves**
+que tienen que dar CERO:
+
+| Firma | Qué significa si deja de dar cero |
+|---|---|
+| `formula_no_suma_100` | el control de integridad que trajo el batch record; antes sólo corría a mano |
+| `formula_apunta_a_codigo_muerto` | ese ítem NO descuenta: la producción se lleva el material y el sistema no se entera |
+| `colision_a_medio_corregir` | quedó un consumo contado dos veces (INV-20) |
+| `codigo_con_espacios_en_kardex` | clave distinta → stock invisible, sin un solo error (M100) |
+| `stock_negativo_por_lote` | se descontó algo que no estaba |
+
+La sexta, `salidas_que_ninguna_formula_declara`, es **informativa** (hay bajas y consumos manuales
+legítimos) pero es **la firma exacta de la colisión**: es lo que había que mirar el 10-jul.
+
+Detalles que hacen que sirva:
+- **Un chequeo que no puede correr se DECLARA** en `checks_fallidos`. Si devolviera lista vacía en
+  silencio, su resultado se leería como "todo limpio" y estaría mintiendo (M100).
+- **`colision_a_medio_corregir` reusa `_plan_colisiones_net_zero`**, no una copia: dos versiones
+  del mismo cálculo divergen en silencio (M1).
+- **El cron avisa cuando el resultado CAMBIA** (huella en `app_settings.salud_mp_firma`), no todos
+  los días: una alerta que suena igual siempre deja de mirarse justo el día que importa. La huella
+  incluye los chequeos caídos, así que un chequeo que se rompe también es novedad.
+- `formula_apunta_a_codigo_muerto` **complementa al trigger**, no lo reemplaza: el trigger de
+  `formula_items` (M38) impide APUNTAR a un código inexistente al insertar y al actualizar, pero no
+  puede hacer nada cuando el código se **desactiva después**, con la fórmula ya escrita. Ése es el
+  hueco que este chequeo tapa, y el test lo reproduce por ese camino.
+
+Tests: `tests/test_salud_materias_primas.py` (en el gate · cada firma probada con dientes + que el
+trigger siga mordiendo + que el cron esté registrado).

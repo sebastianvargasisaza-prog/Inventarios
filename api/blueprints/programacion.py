@@ -5039,6 +5039,140 @@ def prog_salud_formulas():
     })
 
 
+# ── Vigía de materias primas · el detector que faltaba (Sebastián 2-ago) ──────────────────────
+# Todo lo de este frente se verificaba ABRIENDO un endpoint, o sea sólo cuando alguien se
+# acordaba. La colisión de códigos estuvo tres semanas a la vista y nadie la vio, porque un
+# kardex con un descuento de más se ve igual que uno sano. Lo que faltaba no era el arreglo: era
+# el detector (M127 · una integración muda y un inventario mal descontado fallan igual de
+# silenciosos).
+#
+# Las cinco firmas GRAVES tienen que dar CERO. Si una deja de dar cero, algo se rompió.
+
+def _salud_mp_core(c):
+    """Núcleo compartido por el diagnóstico y el cron (M1: una sola fuente). Read-only.
+
+    Un chequeo que no se pueda correr se DECLARA en `checks_fallidos`: si devolviera lista vacía
+    en silencio, su resultado se leería como "todo limpio" y estaría mintiendo (M100).
+    """
+    out = {'checks_fallidos': [], 'hallazgos': {}}
+
+    def _chk(nombre, fn):
+        try:
+            out['hallazgos'][nombre] = fn()
+        except Exception as e:
+            out['checks_fallidos'].append({'check': nombre, 'error': str(e)[:200]})
+            log.warning('salud-mp · %s: %s', nombre, e)
+
+    # El universo: fórmulas ACTIVAS, excluyendo por nombre EXACTO las que tienen un header
+    # inactivo case-duplicado (M73: un UPPER(TRIM) en el NOT IN colapsa las variantes de caja y
+    # se lleva por delante la fórmula activa).
+    _ACT = ("TRIM(fi.producto_nombre) IN (SELECT TRIM(producto_nombre) FROM formula_headers "
+            "  WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL) "
+            "AND TRIM(fi.producto_nombre) NOT IN (SELECT TRIM(producto_nombre) FROM formula_headers "
+            "  WHERE COALESCE(activo,1)=0 AND producto_nombre IS NOT NULL)")
+
+    # 1 · una fórmula que no suma 100% no es una fórmula. Es el control de integridad que trajo
+    #     el batch record, y hasta hoy sólo corría si alguien abría el endpoint.
+    def _suma():
+        rows = c.execute(
+            "SELECT fi.producto_nombre, SUM(COALESCE(fi.porcentaje,0)) FROM formula_items fi "
+            "WHERE " + _ACT + " GROUP BY fi.producto_nombre "
+            "HAVING SUM(COALESCE(fi.porcentaje,0)) < 95 OR SUM(COALESCE(fi.porcentaje,0)) > 101"
+        ).fetchall()
+        return [{'producto': r[0], 'suma_pct': round(float(r[1] or 0), 3)} for r in rows]
+    _chk('formula_no_suma_100', _suma)
+
+    # 2 · un ítem que apunta a un código que no existe o está inactivo NO descuenta: la
+    #     producción se lleva el material del estante y el sistema no se entera.
+    def _codigo_muerto():
+        rows = c.execute(
+            "SELECT fi.producto_nombre, fi.material_id, COALESCE(fi.material_nombre,'') "
+            "FROM formula_items fi WHERE " + _ACT + " "
+            "AND UPPER(TRIM(COALESCE(fi.material_id,''))) NOT IN "
+            "  (SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps "
+            "   WHERE COALESCE(activo,1)=1 AND codigo_mp IS NOT NULL) "
+            "ORDER BY fi.producto_nombre LIMIT 60").fetchall()
+        return [{'producto': r[0], 'codigo': r[1], 'material': r[2]} for r in rows]
+    _chk('formula_apunta_a_codigo_muerto', _codigo_muerto)
+
+    # 3 · colisión a medio corregir · el MISMO cálculo que la devolución, no una copia (M1)
+    def _net0():
+        try:
+            from .inventario import _plan_colisiones_net_zero
+        except Exception:
+            from blueprints.inventario import _plan_colisiones_net_zero
+        return [{'de': p['de'], 'a': p['a'], 'falta_devolver_g': p['a_devolver_g']}
+                for p in _plan_colisiones_net_zero(c) if p['a_devolver_g'] > 0]
+    _chk('colision_a_medio_corregir', _net0)
+
+    # 4 · un espacio o un tabulador pegado a un código es una CLAVE DISTINTA: el stock queda
+    #     invisible y no da ni un error (M100 · así se perdieron 1000 envases del kardex).
+    def _clave_sucia():
+        rows = c.execute(
+            "SELECT DISTINCT material_id FROM movimientos "
+            "WHERE material_id IS NOT NULL AND material_id <> TRIM(material_id) LIMIT 40").fetchall()
+        return [{'codigo_crudo': r[0]} for r in rows]
+    _chk('codigo_con_espacios_en_kardex', _clave_sucia)
+
+    # 5 · stock negativo por lote = se descontó algo que no estaba ahí
+    _NETO = ("SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
+             "WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END)")
+
+    def _negativo():
+        rows = c.execute(
+            "SELECT material_id, COALESCE(lote,''), " + _NETO + " FROM movimientos "
+            "GROUP BY material_id, COALESCE(lote,'') HAVING " + _NETO + " < -0.01 LIMIT 40").fetchall()
+        return [{'codigo': r[0], 'lote': r[1], 'stock_g': round(float(r[2] or 0), 2)} for r in rows]
+    _chk('stock_negativo_por_lote', _negativo)
+
+    # 6 · LA firma de la colisión: un material que SALE del kardex y ninguna fórmula activa lo
+    #     declara. Informativo (hay bajas y consumos manuales legítimos), pero es exactamente lo
+    #     que había que mirar el 10-jul y nadie miró.
+    def _sin_formula():
+        rows = c.execute(
+            "SELECT m.material_id, SUM(m.cantidad), COUNT(*), MAX(m.fecha) FROM movimientos m "
+            "WHERE UPPER(TRIM(COALESCE(m.tipo,''))) LIKE 'SALIDA%' "
+            "AND UPPER(TRIM(COALESCE(m.material_id,''))) NOT IN "
+            "  (SELECT UPPER(TRIM(fi.material_id)) FROM formula_items fi "
+            "   WHERE fi.material_id IS NOT NULL AND " + _ACT + ") "
+            "AND COALESCE(m.observaciones,'') NOT LIKE '%Corrección colisión%' "
+            "AND COALESCE(m.observaciones,'') NOT LIKE '%AJUSTE%' "
+            "AND COALESCE(m.observaciones,'') NOT LIKE '%REVERSI%' "
+            "GROUP BY m.material_id ORDER BY SUM(m.cantidad) DESC LIMIT 30").fetchall()
+        return [{'codigo': r[0], 'salio_g': round(float(r[1] or 0), 2),
+                 'movimientos': int(r[2] or 0), 'ultima': str(r[3] or '')[:19]} for r in rows]
+    _chk('salidas_que_ninguna_formula_declara', _sin_formula)
+
+    graves = ('formula_no_suma_100', 'formula_apunta_a_codigo_muerto', 'colision_a_medio_corregir',
+              'codigo_con_espacios_en_kardex', 'stock_negativo_por_lote')
+    out['graves'] = list(graves)
+    out['n_graves'] = sum(len(out['hallazgos'].get(k) or []) for k in graves)
+    out['ok'] = (out['n_graves'] == 0 and not out['checks_fallidos'])
+    return out
+
+
+@bp.route('/api/programacion/salud-materias-primas', methods=['GET'])
+def prog_salud_materias_primas():
+    """Las seis firmas de que algo se rompió en materias primas · read-only, re-ejecutable.
+
+    Las cinco GRAVES tienen que dar cero siempre. El cron `salud_mp` corre esto todos los días
+    a las 7:40 y avisa cuando el resultado CAMBIA, así que esta página es para mirar el detalle,
+    no para acordarse de abrirla.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    r = _salud_mp_core(c)
+    r['veredicto'] = (
+        'Las 5 firmas graves en cero: las fórmulas suman 100%, todos sus códigos existen y están '
+        'activos, no hay colisión a medio corregir, ninguna clave del kardex trae espacios y '
+        'ningún lote está en negativo.'
+        if r['ok'] else
+        '%d hallazgo(s) grave(s). Cada uno significa que el sistema está descontando (o dejando '
+        'de descontar) material que no corresponde.' % r['n_graves'])
+    return jsonify(r)
+
+
 @bp.route('/api/programacion/codigos-batch-vs-maestro', methods=['GET'])
 def prog_codigos_batch_vs_maestro():
     """La lista para el DIRECTOR TÉCNICO: qué códigos hay que corregir en el batch record.

@@ -256,6 +256,10 @@ CORAZON=(
   # que hay en el estante. La devolucion es net-zero, al mismo lote, con su vencimiento, y con
   # tope duro (nunca devolver mas de lo que la correccion movio = inventar material).
   "tests/test_colisiones_net_zero.py"
+  # El vigia diario de materias primas: las 5 firmas graves tienen que dar CERO. La
+  # colision de codigos estuvo tres semanas a la vista y nadie la vio porque todo se
+  # verificaba abriendo un endpoint. Cada firma probada con dientes.
+  "tests/test_salud_materias_primas.py"
 )
 
 echo ""

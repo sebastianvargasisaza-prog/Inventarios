@@ -13076,12 +13076,33 @@ def descuento_retro_corregir():
             "WHERE UPPER(TRIM(material_id))=? AND UPPER(TRIM(tipo)) LIKE 'SALIDA%' "
             "AND observaciones LIKE '%[retro %' AND observaciones LIKE ?",
             (cod, '%' + marca_fin)).fetchall()
+        _via = 'marcador' if wrong else ''
+        if not wrong:
+            # El marcador del descuento tuvo DOS formatos (el de julio no lleva el lote), así que
+            # puede no calzar aunque el descuento equivocado exista. Aplicar el paso 2 sin el paso
+            # 1 deja el consumo contado DOS veces -- que es exactamente lo que pasó el 15-jul y
+            # dejó 5.845 g fuera del estante (M134). Antes de dar por hecho que no hay nada que
+            # revertir, se busca por CANTIDAD.
+            _cand = [x for x in c.execute(
+                "SELECT id, cantidad, COALESCE(lote,''), COALESCE(observaciones,'') FROM movimientos "
+                "WHERE UPPER(TRIM(material_id))=? AND UPPER(TRIM(tipo)) LIKE 'SALIDA%' "
+                "AND observaciones LIKE '%[retro %' AND ABS(cantidad - ?) <= 0.01",
+                (cod, cant)).fetchall() if not _net0_ya_revertido(c, x[0], x[3])]
+            # sólo si es INEQUÍVOCO: un emparejamiento equivocado en un inventario regulado es
+            # peor que no emparejar (M132 · lo que no cruza se declara, no se adivina).
+            if len(_cand) == 1:
+                wrong = _cand; _via = 'cantidad'
         marca_corr = '[retro-corr %s|%s|%s|%s]' % (bulk or prod[:12], correcto, nl, ic)
         ya = c.execute("SELECT 1 FROM movimientos WHERE UPPER(TRIM(material_id))=? AND observaciones LIKE ? LIMIT 1",
                        (correcto, '%' + marca_corr + '%')).fetchone()
         item = {'de': cod, 'a': correcto, 'material': f.get('desc', ''), 'g': cant, 'lote': lote_x,
                 'prod': prod[:40], 'wrong_movs': len(wrong), 'wrong_g': round(sum(w[1] for w in wrong), 2),
-                'ya_corregido': bool(ya)}
+                'ya_corregido': bool(ya), 'emparejado_por': _via,
+                'aviso': ('' if wrong else
+                          'No encontré el descuento equivocado sobre %s: se va a aplicar SÓLO el '
+                          'descuento al código correcto. Si ese material sí se descontó mal, esto '
+                          'lo dejaría contado dos veces -- verificá el kardex de %s antes.'
+                          % (cod, cod))}
         plan.append(item)
         if not aplicar or ya:
             continue
