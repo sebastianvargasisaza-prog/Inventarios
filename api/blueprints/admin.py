@@ -21403,6 +21403,34 @@ def admin_areas_planta_page():
     return _AREAS_PLANTA_HTML
 
 
+# Las tablas VIVAS donde el nombre del producto es la LLAVE. Vive acá arriba y NO adentro del
+# apply porque la vista previa y la ejecución tienen que salir de la MISMA lista: si el apply
+# toca más de lo que el preview cuenta, el preview miente -- y un preview que miente es lo que
+# me hizo vaciar un legajo (M101). El nombre es llave en 34 tablas; las de historia regulada
+# (movimientos, calidad, quejas, recalls) NO se renombran a propósito y se declaran aparte.
+_PROD_TABLAS_VIVAS = [
+    ('sku_producto_map', 'producto_nombre'),           # ventas Shopify → velocidad
+    ('sku_planeacion_config', 'producto_nombre'),      # kg/ritmo/mix decididos a mano
+    ('volumen_unitario_producto', 'producto_nombre'),  # ml → unidades
+    ('producto_canonico_config', 'producto_nombre'),
+    ('autoplan_decisiones', 'producto_nombre'),
+    ('tiempo_objetivo_sku', 'producto'),
+    ('pedidos_b2b', 'producto_nombre'),                # compromisos VIVOS de cliente
+    ('pedidos_b2b_recurrentes', 'producto_nombre'),
+    ('solicitudes_compra_anticipada', 'producto_nombre'),
+    ('checklist_plantillas', 'producto_nombre'),
+    ('producto_fmea', 'producto_nombre'),
+    ('producto_perfil_riesgo', 'producto_nombre'),
+    ('maquila_pedidos', 'producto_nombre'),
+    ('portal_solicitudes', 'producto_nombre'),
+]
+_PROD_HISTORICO_NO_RENOMBRA = [
+    'movimientos', 'ordenes_produccion', 'formula_versiones', 'calidad_micro_resultados',
+    'calidad_fisicoquimica_resultados', 'calidad_micro_specs', 'calidad_oos', 'cola_liberacion',
+    'estabilidades', 'recalls', 'quejas_clientes', 'animus_conteos_ciclicos', 'flujo_ingresos',
+]
+
+
 @bp.route("/api/admin/renombrar-producto", methods=["POST"])
 def admin_renombrar_producto():
     """Renombra un PRODUCTO de forma consistente en las tablas vivas (el nombre es la llave
@@ -21475,6 +21503,17 @@ def admin_renombrar_producto():
         'produccion_checklist': _count("SELECT COUNT(*) FROM produccion_checklist WHERE producto_nombre=?", (real,)),
         'produccion_envasado': _count("SELECT COUNT(*) FROM produccion_envasado WHERE producto_nombre=?", (real,)),
     }
+    # …y las VIVAS, con la MISMA lista que usa el apply (M101: si el apply toca más de lo que el
+    # preview cuenta, el preview miente). Una tabla ausente del esquema se declara, no se calla.
+    _faltan_tablas = []
+    for _t, _col in _PROD_TABLAS_VIVAS:
+        try:
+            n = _count("SELECT COUNT(*) FROM %s WHERE %s=?" % (_t, _col), (real,))
+        except Exception:
+            _faltan_tablas.append(_t)
+            continue
+        if n:
+            counts[_t] = n
     # MBR (legajo maestro): NO se renombra en bloque — es INMUTABLE si está aprobado
     # (trigger trg_mbr_aprobado_no_edit · GMP). Solo se reporta para que el usuario sepa
     # si un MBR conserva el nombre viejo (se cambia re-versionando el MBR, no por UPDATE).
@@ -21524,24 +21563,8 @@ def admin_renombrar_producto():
         # enlace con las ventas de Shopify, así que un producto renombrado a medias pierde su
         # velocidad, sale con velocidad CERO y deja de programarse -- sin un solo error a la
         # vista. Es M1/M2: si el nombre es la llave, se renombra en TODAS las llaves.
-        _VIVAS = [
-            ('sku_producto_map', 'producto_nombre'),           # ventas Shopify → velocidad
-            ('sku_planeacion_config', 'producto_nombre'),      # kg/ritmo/mix decididos a mano
-            ('volumen_unitario_producto', 'producto_nombre'),  # ml → unidades
-            ('producto_canonico_config', 'producto_nombre'),
-            ('autoplan_decisiones', 'producto_nombre'),
-            ('tiempo_objetivo_sku', 'producto'),
-            ('pedidos_b2b', 'producto_nombre'),                # compromisos VIVOS de cliente
-            ('pedidos_b2b_recurrentes', 'producto_nombre'),
-            ('solicitudes_compra_anticipada', 'producto_nombre'),
-            ('checklist_plantillas', 'producto_nombre'),
-            ('producto_fmea', 'producto_nombre'),
-            ('producto_perfil_riesgo', 'producto_nombre'),
-            ('maquila_pedidos', 'producto_nombre'),
-            ('portal_solicitudes', 'producto_nombre'),
-        ]
         _renombradas = {}
-        for _t, _col in _VIVAS:
+        for _t, _col in _PROD_TABLAS_VIVAS:
             try:
                 c.execute("UPDATE %s SET %s=? WHERE %s=?" % (_t, _col, _col), (nuevo, real))
                 if c.rowcount:
@@ -21570,11 +21593,7 @@ def admin_renombrar_producto():
         # Lo que NO se toca se DECLARA: son registros de lo que pasó BAJO ESE NOMBRE. Cambiarlos
         # sería reescribir historia regulada -- un CoA, una queja o un recall dicen el nombre que
         # el producto tenía cuando ocurrieron, y así deben quedar (M105).
-        'historico_NO_renombrado': ['movimientos', 'ordenes_produccion', 'formula_versiones',
-                                    'calidad_micro_resultados', 'calidad_fisicoquimica_resultados',
-                                    'calidad_micro_specs', 'calidad_oos', 'cola_liberacion',
-                                    'estabilidades', 'recalls', 'quejas_clientes',
-                                    'animus_conteos_ciclicos', 'flujo_ingresos'],
+        'historico_NO_renombrado': _PROD_HISTORICO_NO_RENOMBRA,
         'reversible': 'sí · renombrar de vuelta + audit_log · los SKUs no cambiaron'})
 
 
