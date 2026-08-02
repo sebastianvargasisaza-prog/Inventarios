@@ -4476,6 +4476,161 @@ def _cargar_batch_records():
     return _BATCH_REF_CACHE['data']
 
 
+@bp.route('/api/programacion/editar-formula-items', methods=['POST'])
+def prog_editar_formula_items():
+    """Cambiar a qué MATERIAL apunta un ingrediente de UNA fórmula · preview + apply.
+
+    Sebastián 2-ago, con la respuesta de Alejandro sobre la centella: 13 fórmulas de EOS
+    descuentan triterpenos 80% donde el batch record pide el extracto común, y la Esencia lleva
+    los DOS y EOS los fundió en uno. Hay que re-apuntar por PRODUCTO, no en bloque: el
+    `reapuntar-formula` que ya existe cambia el código en TODAS las fórmulas, y acá Hydrapeptide
+    y la Esencia sí llevan triterpenos -- en bloque se rompen (M19: el scope es el ítem, nunca el
+    material_id a secas).
+
+    Cada cambio es `{producto, de, a, pct_a, pct_de}`:
+      · `pct_de` = 0  → el ingrediente `de` pasa a ser `a` con el mismo %
+      · `pct_de` > 0  → se PARTE: `de` se queda con `pct_de` y nace `a` con `pct_a`
+
+    **La suma de los dos tiene que dar el % que ese ingrediente tiene hoy.** Con esa regla la
+    fórmula no puede dejar de sumar 100 por un error de tipeo -- y sumar 100 es el control de
+    integridad de todo este frente.
+
+    NO aplica nada sin `aplicar:true`. Audita cada cambio con el valor previo (reversible).
+    """
+    _u = session.get('compras_user', '')
+    if not _u or _u.lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'Cambiar una fórmula es dato regulado: solo un admin'}), 403
+    d = request.get_json(silent=True) or {}
+    cambios = d.get('cambios') or []
+    aplicar = bool(d.get('aplicar', False))
+    if not cambios:
+        return jsonify({'error': 'mandá `cambios`: [{producto, de, a, pct_a, pct_de}]'}), 400
+    conn = get_db(); c = conn.cursor()
+
+    plan, bloqueados = [], []
+    for ch in cambios[:80]:
+        prod = (ch.get('producto') or '').strip()
+        de = (ch.get('de') or '').strip().upper()
+        a = (ch.get('a') or '').strip().upper()
+        try:
+            pct_a = float(ch.get('pct_a') or 0)
+            pct_de = float(ch.get('pct_de') or 0)
+        except (TypeError, ValueError):
+            bloqueados.append({'producto': prod, 'de': de, 'a': a,
+                               'motivo': 'pct_a / pct_de no son números'})
+            continue
+        base = {'producto': prod, 'de': de, 'a': a, 'pct_a': pct_a, 'pct_de': pct_de}
+
+        fila = c.execute(
+            "SELECT fi.id, COALESCE(fi.porcentaje,0), fi.producto_nombre FROM formula_items fi "
+            "WHERE UPPER(TRIM(fi.producto_nombre))=UPPER(TRIM(?)) "
+            "AND UPPER(TRIM(fi.material_id))=? "
+            "AND TRIM(fi.producto_nombre) IN (SELECT TRIM(producto_nombre) FROM formula_headers "
+            "  WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL)",
+            (prod, de)).fetchone()
+        if not fila:
+            bloqueados.append(dict(base, motivo='ese ingrediente no está en la fórmula ACTIVA de '
+                                                'ese producto (revisá el nombre y el código)'))
+            continue
+        _fid, _pct_actual, _pnombre = int(fila[0]), float(fila[1] or 0), fila[2]
+
+        if abs((pct_a + pct_de) - _pct_actual) > 0.001:
+            bloqueados.append(dict(base, motivo=(
+                'los porcentajes no cuadran: hoy %s aporta %s%% y vos pedís %s%% + %s%% = %s%%. '
+                'Tienen que sumar lo mismo, o la fórmula deja de sumar 100.'
+                % (de, _pct_actual, pct_a, pct_de, round(pct_a + pct_de, 4)))))
+            continue
+        if pct_a <= 0:
+            bloqueados.append(dict(base, motivo='pct_a tiene que ser mayor que 0'))
+            continue
+
+        _ma = c.execute("SELECT COALESCE(activo,1), COALESCE(NULLIF(TRIM(nombre_inci),''),"
+                        "NULLIF(TRIM(nombre_comercial),''),codigo_mp) FROM maestro_mps "
+                        "WHERE UPPER(TRIM(codigo_mp))=?", (a,)).fetchone()
+        if not _ma:
+            bloqueados.append(dict(base, motivo='%s no existe en el maestro de MP' % a))
+            continue
+        if int(_ma[0] or 0) != 1:
+            bloqueados.append(dict(base, motivo='%s está INACTIVO · reactivalo primero' % a))
+            continue
+        if c.execute("SELECT 1 FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+                     "AND UPPER(TRIM(material_id))=?", (prod, a)).fetchone():
+            bloqueados.append(dict(base, motivo=(
+                'esa fórmula YA tiene %s: esto sería fusionar dos ingredientes en uno y eso se '
+                'decide aparte, no de paso' % a)))
+            continue
+
+        # ⚠ un puente activo que redirija el destino deja el cambio MUERTO: la fórmula diría `a`
+        # y el descuento seguiría sacando el material viejo, sin un solo error a la vista. Es
+        # exactamente lo que pasó con la centella (puente 184: MP00181 -> MP00176).
+        _pu = c.execute("SELECT bodega_material_id FROM mp_formula_bridge "
+                        "WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(formula_material_id))=?",
+                        (a,)).fetchone()
+        if _pu and str(_pu[0] or '').strip().upper() != a:
+            bloqueados.append(dict(base, motivo=(
+                'hay un PUENTE activo que manda %s -> %s: la fórmula diría %s y el descuento '
+                'seguiría sacando %s. Desactivá ese puente primero o el cambio queda muerto.'
+                % (a, _pu[0], a, _pu[0]))))
+            continue
+
+        plan.append(dict(base, item_id=_fid, pct_actual=_pct_actual, producto_eos=_pnombre,
+                         nombre_a=_ma[1],
+                         accion=('partir' if pct_de > 0 else 'mover'),
+                         detalle=(('%s pasa de %s%% a %s%% y nace %s con %s%%'
+                                   % (de, _pct_actual, pct_de, a, pct_a)) if pct_de > 0 else
+                                  ('%s (%s%%) pasa a ser %s' % (de, _pct_actual, a)))))
+
+    hechos, errores = [], []
+    if aplicar and plan:
+        for p in plan:
+            try:
+                if p['pct_de'] > 0:
+                    c.execute("UPDATE formula_items SET porcentaje=? WHERE id=?",
+                              (p['pct_de'], p['item_id']))
+                    c.execute("INSERT INTO formula_items (producto_nombre, material_id, "
+                              "material_nombre, porcentaje) VALUES (?,?,?,?)",
+                              (p['producto_eos'], p['a'], p['nombre_a'], p['pct_a']))
+                else:
+                    c.execute("UPDATE formula_items SET material_id=?, material_nombre=?, "
+                              "porcentaje=? WHERE id=?",
+                              (p['a'], p['nombre_a'], p['pct_a'], p['item_id']))
+                audit_log(c, usuario=_u, accion='EDITAR_FORMULA_ITEM', tabla='formula_items',
+                          registro_id=str(p['item_id']),
+                          antes={'producto': p['producto_eos'], 'material_id': p['de'],
+                                 'porcentaje': p['pct_actual']},
+                          despues={'material_id': p['a'], 'porcentaje': p['pct_a'],
+                                   'material_id_restante': (p['de'] if p['pct_de'] > 0 else None),
+                                   'porcentaje_restante': (p['pct_de'] if p['pct_de'] > 0 else None)})
+                hechos.append(p['detalle'])
+            except Exception as e:
+                conn.rollback()
+                errores.append({'producto': p['producto'], 'error': str(e)[:200]})
+        if hechos and not errores:
+            conn.commit()
+        elif errores:
+            conn.rollback()
+            hechos = []
+
+    # control de integridad: después de tocar, cada fórmula afectada tiene que seguir sumando 100
+    sumas = []
+    for _pn in sorted({p['producto_eos'] for p in plan}):
+        try:
+            _s = c.execute("SELECT SUM(COALESCE(porcentaje,0)) FROM formula_items "
+                           "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (_pn,)).fetchone()
+            sumas.append({'producto': _pn, 'suma_pct': round(float((_s or [0])[0] or 0), 3)})
+        except Exception as e:
+            log.warning('editar-formula-items · suma %s: %s', _pn, e)
+    fuera = [x for x in sumas if not (99.9 <= x['suma_pct'] <= 100.1)]
+
+    return jsonify({
+        'ok': not errores, 'dry_run': not aplicar,
+        'plan': plan, 'bloqueados': bloqueados, 'aplicados': hechos, 'errores': errores,
+        'sumas_despues': sumas, 'formulas_fuera_de_100': fuera,
+        'resumen': {'a_cambiar': len(plan), 'bloqueados': len(bloqueados),
+                    'aplicados': len(hechos)},
+    })
+
+
 def _pares_que_conviven(productos_ref):
     """Pares de códigos que aparecen como renglones SEPARADOS de una misma fórmula.
 

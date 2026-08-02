@@ -260,6 +260,11 @@ CORAZON=(
   # colision de codigos estuvo tres semanas a la vista y nadie la vio porque todo se
   # verificaba abriendo un endpoint. Cada firma probada con dientes.
   "tests/test_salud_materias_primas.py"
+  # Re-apuntar un ingrediente de UNA formula (la decision de Alejandro sobre la centella).
+  # El reapuntar-formula que ya existia es BLANKET y aca romperia Hydrapeptide y la Esencia,
+  # que si llevan triterpenos. Incluye el guard de que un PUENTE activo sobre el destino
+  # BLOQUEA: si no, la formula diria un codigo y el descuento seguiria sacando otro.
+  "tests/test_editar_formula_items.py"
 )
 
 echo ""

@@ -560,3 +560,33 @@ por ambigüedad se destrabó (`MP00301 → MP00030`, propylheptyl, que también 
 
 Tests: `test_reconciliar_batch_record.py` (invariante: ningún par del mapa puede convivir · probada
 con dientes) + `test_unificar_codigos_batch.py::test_un_par_DESCALIFICADO_nunca_puede_quedar_seguro`.
+
+## ✏️ PROG-N+2 · Re-apuntar un ingrediente de UNA fórmula (2-ago)
+
+`POST /api/programacion/editar-formula-items` (ADMIN · dry-run por defecto). Nace de la respuesta
+de Alejandro sobre la centella: en 13 productos el batch record pide el **extracto** y EOS descuenta
+**triterpenos 80 %**; la Esencia lleva los **dos** (0,15 % + 0,10 %) y EOS los fundió en 0,25 %.
+
+**Por qué no sirve el `reapuntar-formula` que ya existía:** ése cambia el código en TODAS las
+fórmulas, y Hydrapeptide y la Esencia sí llevan triterpenos. En bloque se rompen (M19: el scope es
+el ítem, nunca el `material_id` a secas).
+
+Cada cambio es `{producto, de, a, pct_a, pct_de}`:
+- `pct_de = 0` → el ingrediente pasa de `de` a `a` con el mismo %
+- `pct_de > 0` → se **parte**: `de` se queda con `pct_de` y nace `a` con `pct_a`
+
+**`pct_a + pct_de` tiene que dar el % que ese ingrediente tiene HOY.** Con esa regla la fórmula no
+puede dejar de sumar 100 por un error de tipeo -- y sumar 100 es el control de integridad de todo
+este frente. La respuesta devuelve además `sumas_despues` y `formulas_fuera_de_100`.
+
+**El guard que más importa: un PUENTE activo sobre el destino BLOQUEA.** Si existe
+`mp_formula_bridge` activo mandando `a → otro`, la fórmula diría `a` y el descuento seguiría
+sacando `otro`, **sin un solo error a la vista** -- la feature quedaría construida y muerta. Es
+literalmente lo que pasó con la centella: el puente 184 (18-jun) manda `MP00181 → MP00176` con la
+nota *"maestro usa extracto MP00181 · stock está bajo MP00176"*.
+
+Otros bloqueos: el ingrediente no está en la fórmula activa; el destino no existe o está inactivo;
+la fórmula ya tiene el destino (eso sería fusionar dos ingredientes y se decide aparte).
+
+Auditado con el valor previo (`EDITAR_FORMULA_ITEM`) → reversible. Tests:
+`tests/test_editar_formula_items.py` (en el gate · cada guard probado con dientes).
