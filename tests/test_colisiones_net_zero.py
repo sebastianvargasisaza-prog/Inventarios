@@ -139,6 +139,10 @@ def test_devuelve_al_estante_lo_que_la_correccion_se_llevo(app):
     assert js['resumen']['g_devueltos_ahora'] == 140.0
     assert _stock(MAL) == round(antes + 140.0, 2)
 
+    # la tabla de resultado muestra el estado DESPUÉS de escribir: si devolviera el plan de
+    # antes, diría "faltan 140 g" al lado de "devueltos 140 g" y se contradiría sola (M5).
+    assert _par(js)['a_devolver_g'] == 0.0 and _par(js)['ya_devuelto_g'] == 140.0
+
     n, g = _entradas_devolucion()
     assert (n, round(float(g), 2)) == (1, 140.0)
     db = _db()

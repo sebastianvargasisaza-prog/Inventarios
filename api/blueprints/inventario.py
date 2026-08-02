@@ -13327,6 +13327,10 @@ def colisiones_net_zero():
                     errores.append({'codigo': p['de'], 'mov': it['mov'], 'error': str(e)[:200]})
         if hechos:
             conn.commit()
+            # releer el plan YA aplicado: si se devuelve el de antes, la tabla de resultado dice
+            # "faltan 1505 g" al lado de "devueltos 5845 g" y se contradice sola. El número que se
+            # muestra tiene que ser el estado real después de escribir (M5).
+            pares = _plan_colisiones_net_zero(c)
 
     con_saldo = [p for p in pares if p['a_devolver_g'] > 0 or p['sin_pareja'] or p['excedente']]
     return jsonify({
