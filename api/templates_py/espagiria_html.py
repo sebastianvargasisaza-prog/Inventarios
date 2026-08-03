@@ -8,6 +8,49 @@ HTML = r"""
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Espagiria - Panel Asistente Gerencia</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
+<!-- MODAL · solicitar pago desde caja (Espagiria) -->
+<div id="modal-ep" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:520px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="font-size:16px;color:var(--cx-text);margin:0;">&#128184; Solicitar pago con caja menor</h3>
+      <button onclick="document.getElementById('modal-ep').style.display='none'"
+              style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Concepto</label>
+      <input id="ep-concepto" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Qu&eacute; se va a pagar">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Monto</label>
+        <input id="ep-monto" type="number" oninput="epAvisarTope()" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="0">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Empresa</label>
+        <select id="ep-empresa" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;">
+          <option value="ESPAGIRIA">Espagiria</option>
+          <option value="ANIMUS">ANIMUS</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">A qui&eacute;n se le paga</label>
+      <input id="ep-benef" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Proveedor o persona">
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Observaciones</label>
+      <textarea id="ep-obs" style="width:100%;min-height:60px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Opcional"></textarea>
+    </div>
+    <div id="ep-tope-aviso" style="font-size:12px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="document.getElementById('modal-ep').style.display='none'"
+              style="background:transparent;border:1px solid var(--cx-text-soft);color:var(--cx-text-soft);border-radius:8px;padding:8px 16px;cursor:pointer;">Cancelar</button>
+      <button onclick="epGuardar()"
+              style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-weight:700;cursor:pointer;">Enviar solicitud</button>
+    </div>
+  </div>
+</div>
+
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
@@ -94,6 +137,7 @@ HTML = r"""
     <button class="esp-tab" data-tab="lab" onclick="esw('lab')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">🔬 Lab en Vivo</button>
     <button class="esp-tab" data-tab="clientes" onclick="esw('clientes')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">👥 Clientes 360</button>
     <button class="esp-tab" data-tab="cartera" onclick="esw('cartera')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">💰 Cartera</button>
+    <button class="esp-tab" data-tab="cajapagos" onclick="esw('cajapagos')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;" title="Pedir un pago con el efectivo de la caja menor">&#128184; Pagos de caja</button>
   </div>
 
   <div class="container">
@@ -253,6 +297,28 @@ HTML = r"""
     </div><!-- /tab clientes -->
 
     <!-- TAB CARTERA -->
+    <div id="esp-tab-cajapagos" class="esp-pane" style="display:none;">
+      <!-- SOLICITAR PAGO DESDE CAJA MENOR (3-ago · Sebastián: "lo mismo a luz en su modulo
+           de espagiria"). Luz PIDE acá; gerencia autoriza y quien maneja la caja paga.
+           Los botones de autorizar y pagar NO van acá: un botón que responde 403 es peor que
+           no tenerlo, porque quien lo aprieta cree que hizo algo. -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+        <div>
+          <div style="font-weight:800;font-size:17px;color:var(--cx-text);">&#128184; Pagos con caja menor</div>
+          <div style="font-size:12px;color:var(--cx-text-mute);margin-top:3px;">
+            Ped&iacute; un pago con el efectivo de la caja &middot; lo autoriza gerencia y lo paga
+            quien maneja la caja &middot; ac&aacute; segu&iacute;s en qu&eacute; va cada uno
+          </div>
+        </div>
+        <button onclick="epAbrir()"
+                style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;border:none;
+                       border-radius:8px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer;">
+          &#10133; Solicitar pago</button>
+      </div>
+      <div id="ep-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;"></div>
+      <div id="ep-body"><div style="color:var(--cx-text-mute);text-align:center;padding:40px;">Cargando...</div></div>
+    </div>
+
     <div id="esp-tab-cartera" class="esp-pane" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:12px;">
         <div>
@@ -450,11 +516,135 @@ function esw(name) {
   });
   if (name === 'lab') cargarLab();
   if (name === 'clientes') cargarClientes();
+  if (name === 'cajapagos') cargarPagosCaja();
 }
 
 // ════════════════════════════════════════════════════════════════
 // LAB EN VIVO
 // ════════════════════════════════════════════════════════════════
+// ── PAGOS CON CAJA MENOR desde Espagiria (3-ago) ──────────────────────────────
+// Luz PIDE acá; gerencia autoriza en su módulo y quien maneja la caja paga en el suyo.
+// La lista se filtra a ESPAGIRIA: no tiene por qué ver los gastos de ÁNIMUS.
+var _EP_TOPE = 200000;
+
+function _epEsc(s){ return String(s == null ? '' : s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _epFmt(n){ return '$ ' + Number(n || 0).toLocaleString('es-CO', {maximumFractionDigits:0}); }
+
+async function cargarPagosCaja(){
+  var body = document.getElementById('ep-body');
+  if(!body) return;
+  try{
+    var r = await fetch('/api/caja/solicitudes?empresa=ESPAGIRIA');
+    var d = await r.json();
+    if(!d.ok){ body.innerHTML = '<div style="color:var(--cx-danger-text);padding:16px;">' + _epEsc(d.error||'Error') + '</div>'; return; }
+    _EP_TOPE = d.tope || 200000;
+    epRenderKPIs(d);
+    epRenderLista(d.solicitudes || []);
+  }catch(e){
+    body.innerHTML = '<div style="color:var(--cx-danger-text);padding:16px;">Error: ' + _epEsc(e.message) + '</div>';
+  }
+}
+
+function epRenderKPIs(d){
+  var k = d.kpis || {};
+  function t(lab, val, sub, color){
+    return '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:14px;">'
+      + '<div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;font-weight:700;">' + lab + '</div>'
+      + '<div style="font-size:22px;font-weight:800;margin-top:6px;color:' + color + ';">' + val + '</div>'
+      + '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;">' + sub + '</div></div>';
+  }
+  var esp = k.solicitada || {n:0,monto:0}, aut = k.autorizada || {n:0,monto:0}, pag = k.pagada || {n:0,monto:0};
+  document.getElementById('ep-kpis').innerHTML =
+      t('Esperan autorizacion', _epFmt(esp.monto), esp.n + ' solicitudes', 'var(--cx-warn-text)')
+    + t('Listas para pagar', _epFmt(aut.monto), aut.n + ' autorizadas', 'var(--cx-success-text)')
+    + t('Ya pagadas', _epFmt(pag.monto), pag.n + ' pagos', 'var(--cx-info-text)')
+    + t('Tope sin autorizar', _epFmt(_EP_TOPE), 'bajo esto no espera a gerencia', 'var(--cx-text-soft)');
+}
+
+function epRenderLista(rows){
+  var body = document.getElementById('ep-body');
+  if(!rows.length){
+    body.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:40px;">Todavia no hay solicitudes de pago.</div>';
+    return;
+  }
+  var col = {solicitada:'var(--cx-warn-text)', autorizada:'var(--cx-success-text)',
+             pagada:'var(--cx-info-text)', rechazada:'var(--cx-danger-text)'};
+  var etq = {solicitada:'espera autorizacion', autorizada:'lista para pagar',
+             pagada:'pagada', rechazada:'rechazada'};
+  var h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">N&deg;</th>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Concepto</th>'
+    + '<th style="text-align:right;padding:8px;border-bottom:1px solid var(--cx-border);">Monto</th>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Estado</th>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Quien</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(s){
+    // El rechazo va CON su motivo: sin el, quien pidio no sabe que corregir.
+    var extra = '';
+    if(s.estado === 'rechazada' && s.motivo_rechazo)
+      extra = '<div style="font-size:11px;color:var(--cx-danger-text);">' + _epEsc(s.motivo_rechazo) + '</div>';
+    else if(s.estado === 'pagada' && s.pagado_por)
+      extra = '<div style="font-size:11px;color:var(--cx-text-mute);">pago ' + _epEsc(s.pagado_por) + '</div>';
+    h += '<tr>'
+      + '<td style="padding:8px;font-weight:700;border-bottom:1px solid var(--cx-hairline);">' + _epEsc(s.numero) + '</td>'
+      + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);">' + _epEsc(s.concepto)
+        + (s.beneficiario ? '<div style="font-size:11px;color:var(--cx-text-mute);">' + _epEsc(s.beneficiario) + '</div>' : '') + '</td>'
+      + '<td style="padding:8px;text-align:right;font-weight:700;border-bottom:1px solid var(--cx-hairline);">' + _epFmt(s.monto) + '</td>'
+      + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);color:' + (col[s.estado]||'var(--cx-text-mute)') + ';font-weight:600;">'
+        + _epEsc(etq[s.estado] || s.estado) + extra + '</td>'
+      + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);font-size:11px;">' + _epEsc(s.solicitado_por) + '</td>'
+      + '</tr>';
+  });
+  body.innerHTML = h + '</tbody></table></div>';
+}
+
+function epAbrir(){
+  ['ep-concepto','ep-monto','ep-benef','ep-obs'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('ep-tope-aviso').innerHTML = '';
+  document.getElementById('modal-ep').style.display = 'flex';
+}
+
+function epAvisarTope(){
+  var m = parseFloat((document.getElementById('ep-monto')||{value:0}).value || 0);
+  var el = document.getElementById('ep-tope-aviso');
+  if(!m){ el.innerHTML = ''; return; }
+  el.innerHTML = m <= _EP_TOPE
+    ? '<span style="color:var(--cx-success-text);">Bajo el tope de ' + _epFmt(_EP_TOPE) + ': queda lista para pagar sin esperar autorizacion.</span>'
+    : '<span style="color:var(--cx-warn-text);">Supera el tope de ' + _epFmt(_EP_TOPE) + ': va a gerencia para autorizar.</span>';
+}
+
+async function epGuardar(){
+  var body = {
+    concepto: (document.getElementById('ep-concepto')||{value:''}).value.trim(),
+    monto: parseFloat((document.getElementById('ep-monto')||{value:0}).value || 0),
+    empresa: (document.getElementById('ep-empresa')||{value:'ESPAGIRIA'}).value,
+    beneficiario: (document.getElementById('ep-benef')||{value:''}).value.trim(),
+    observaciones: (document.getElementById('ep-obs')||{value:''}).value.trim(),
+    modulo_origen: 'espagiria'
+  };
+  if(!body.concepto){ alert('Concepto requerido'); return; }
+  if(!body.monto || body.monto <= 0){ alert('El monto debe ser mayor a 0'); return; }
+  // Guard anti doble-click: una solicitud duplicada termina en un pago duplicado (M63).
+  if(window._epBusy) return;
+  window._epBusy = true;
+  setTimeout(function(){ window._epBusy = false; }, 3000);
+  try{
+    var t = await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r = await fetch('/api/caja/solicitudes', {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},
+      body: JSON.stringify(body)});
+    var d = await r.json();
+    if(!d.ok){ alert('Error: ' + (d.error||'?')); return; }
+    alert(d.numero + ' - ' + (d.aviso||''));
+    document.getElementById('modal-ep').style.display = 'none';
+    cargarPagosCaja();
+  }catch(e){ alert('Error de red: ' + e.message); }
+  finally { window._epBusy = false; }
+}
+
 var _labInterval = null;
 async function cargarLab() {
   try {

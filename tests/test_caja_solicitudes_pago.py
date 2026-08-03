@@ -438,3 +438,48 @@ def test_la_solicitud_desde_compras_queda_marcada_con_su_ORIGEN(app, db_clean):
         org = conn.execute("SELECT modulo_origen FROM caja_solicitudes_pago WHERE id=?",
                            (sid,)).fetchone()[0]
     assert org == 'compras'
+
+
+def _html_espagiria():
+    import ast as _ast, io as _io, os as _os
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    src = _io.open(_os.path.join(raiz, 'api', 'templates_py', 'espagiria_html.py'),
+                   encoding='utf-8').read()
+    cands = [n.value.value for n in _ast.walk(_ast.parse(src))
+             if isinstance(n, _ast.Assign) and isinstance(n.value, _ast.Constant)
+             and isinstance(n.value.value, str) and len(n.value.value) > 5000]
+    assert cands, 'no encontre el HTML de espagiria'
+    return max(cands, key=len)
+
+
+def test_espagiria_tiene_la_entrada_de_luz_completa():
+    """Boton + panel + despacho + quien lo llena. Si falta el despacho la pestana abre vacia."""
+    html = _html_espagiria()
+    assert 'data-tab="cajapagos"' in html, 'no hay boton'
+    assert 'id="esp-tab-cajapagos"' in html, 'no existe el panel'
+    assert "name === 'cajapagos'" in html, 'la pestana no esta enrutada · abriria vacia'
+    assert 'function cargarPagosCaja' in html, 'nadie llena el panel'
+
+
+def test_luz_ve_solo_lo_de_ESPAGIRIA():
+    """No tiene por que ver los gastos de ANIMUS: la lista se pide filtrada."""
+    html = _html_espagiria()
+    assert "'/api/caja/solicitudes?empresa=ESPAGIRIA'" in html, \
+        'la pantalla de Luz pide TODAS las solicitudes'
+
+
+def test_espagiria_NO_ofrece_autorizar_ni_pagar():
+    html = _html_espagiria()
+    for prohibido in ('/autorizar', '/pagar'):
+        assert prohibido not in html, 'la pantalla de Luz ofrece %s' % prohibido
+
+
+def test_el_filtro_por_empresa_funciona_de_verdad(app, db_clean):
+    """El filtro de la pantalla tiene que existir en el BACKEND: si el parametro se ignora,
+    Luz veria todo igual y el test de arriba pasaria mirando una promesa vacia."""
+    _limpiar(app); _tope(app, 1000)
+    _crear(_cli(app, 'catalina'), monto=700000, empresa='ANIMUS')
+    _crear(_cli(app, 'luz'), monto=700000, empresa='ESPAGIRIA')
+    d = _cli(app, 'luz').get('/api/caja/solicitudes?empresa=ESPAGIRIA').get_json()
+    empresas = {s['empresa'] for s in d['solicitudes']}
+    assert empresas <= {'ESPAGIRIA'}, 'el filtro por empresa no se aplica: %s' % empresas
