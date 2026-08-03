@@ -1,7 +1,8 @@
 import sqlite3, json, logging, re, traceback, unicodedata, urllib.request
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
-from config import DB_PATH, ADMIN_USERS, ANIMUS_ACCESS
+from config import (DB_PATH, ADMIN_USERS, ANIMUS_ACCESS, COMPRAS_ACCESS,
+                    ESPAGIRIA_ACCESS)
 from database import get_db
 from audit_helpers import audit_log, siguiente_correlativo, intentar_insert_con_retry
 from http_helpers import validate_money
@@ -1023,7 +1024,8 @@ def animus_calendario():
 
 # ════════════════════════════════════════════════════════════════════
 def registrar_movimiento_caja(c, *, tipo, concepto, monto, fecha, metodo='efectivo',
-                              referencia='', observaciones='', usuario=''):
+                              referencia='', observaciones='', usuario='',
+                              empresa='ANIMUS', origen='', subtipo='', solicitud_id=None):
     """Da de alta un movimiento de caja CON su recibo numerado. Punto único de alta.
 
     Existe como helper y no inline porque hay dos caminos que dan de alta plata en caja (el
@@ -1045,11 +1047,15 @@ def registrar_movimiento_caja(c, *, tipo, concepto, monto, fecha, metodo='efecti
     def _insertar():
         n = siguiente_correlativo(c, 'animus_caja_menor', 'recibo_numero', prefijo)
         recibo = '%s%04d' % (prefijo, n)
+        # `empresa` va en CADA movimiento: la gaveta es una sola pero la plata es de dos
+        # empresas, y sin la marca el reporte no las puede separar después.
+        # `subtipo` distingue el GASTO del TRASLADO a la cuenta -- consignar no es gastar.
         c.execute("""INSERT INTO animus_caja_menor
             (fecha, tipo, concepto, monto, metodo, referencia, observaciones,
-             registrado_por, recibo_numero)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
-            (fecha, tipo, concepto, monto, metodo, referencia, observaciones, usuario, recibo))
+             registrado_por, recibo_numero, empresa, origen, subtipo, solicitud_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (fecha, tipo, concepto, monto, metodo, referencia, observaciones, usuario, recibo,
+             (empresa or 'ANIMUS').upper(), origen or '', subtipo or '', solicitud_id))
         return recibo, c.lastrowid
 
     return intentar_insert_con_retry(_insertar, columna='recibo_numero')
@@ -1069,6 +1075,403 @@ def registrar_movimiento_caja(c, *, tipo, concepto, monto, fecha, metodo='efecti
 # Decisión de modelo: una sola tabla con `tipo` en lugar de dos (ingresos/
 # egresos separadas) — más simple para reportes y el saldo se calcula con
 # CASE en el SELECT.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SOLICITUDES DE PAGO DESDE CAJA MENOR (3-ago · Sebastián)
+#
+# "luz asistente de espagiria solicita un pago se autoriza pago con caja menor · catalina dice
+#  hay que pagar tal cosa decimos paguen con caja menor · daniela es quien maneja caja menor
+#  entonces ella paga registra solicita ok de gerencia paga sube el comprobante de ese pago y
+#  ese dinero sale de la caja"
+#
+# Tres roles sobre UN registro que cambia de estado:
+#   Catalina (Compras) / Luz (Espagiria)  ->  SOLICITA
+#   Gerencia                              ->  AUTORIZA o RECHAZA
+#   Daniela (Caja)                        ->  PAGA  + sube el comprobante
+#
+# Reglas que definen el modelo:
+#  · El saldo baja cuando se PAGA, no cuando se autoriza. Una autorización no es plata que
+#    salió: si el saldo bajara antes, dejaría de cuadrar contra el efectivo de la gaveta, que
+#    es lo único que Daniela puede contar contra la realidad.
+#  · Bajo el TOPE (app_settings · configurable sin desplegar) no hace falta gerencia, pero
+#    igual queda registrado que pasó por ahí y por qué (`autorizacion_via`), porque un atajo
+#    sin rastro es indistinguible de un salto del control.
+#  · Cada transición va con CAS: dos clics no pueden autorizar dos veces ni pagar dos veces.
+#  · El comprobante puede subirse DESPUÉS (decisión de Sebastián), pero lo que no tiene
+#    respaldo se cuenta y se muestra: un egreso sin comprobante es una salida que nadie puede
+#    verificar, así que tiene que incomodar hasta que se cierre.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+EMPRESAS_CAJA = ('ANIMUS', 'ESPAGIRIA')
+CAJA_ESTADOS = ('solicitada', 'autorizada', 'rechazada', 'pagada', 'anulada')
+
+
+def caja_tope_sin_autorizar(conn):
+    """Monto bajo el cual quien maneja la caja paga sin esperar a gerencia.
+
+    Vive en `app_settings` porque es una decisión de gerencia, no de código: cambiarla no
+    puede exigir un despliegue. Si el valor quedó basura, cae al default en vez de dejar la
+    caja sin control (un tope inválido leído como 0 frenaría todo, y como infinito abriría todo).
+    """
+    try:
+        row = conn.execute(
+            "SELECT valor FROM app_settings WHERE clave='caja_tope_sin_autorizar'").fetchone()
+        if row and str(row[0]).strip():
+            v = float(str(row[0]).strip())
+            if v >= 0:
+                return v
+    except Exception as e:
+        log.warning('no pude leer el tope de caja: %s', e)
+    return 200000.0
+
+
+def _caja_auth():
+    """Puerta de las SOLICITUDES de pago de caja.
+
+    NO puede ser `_auth()` (ANIMUS_ACCESS): quienes SOLICITAN son Catalina desde Compras y Luz
+    desde Espagiria, y ninguna de las dos está en ese set -- con la puerta de ÁNIMUS la feature
+    nacía inalcanzable para justo la gente que la pidió (M121: el permiso se amplía en la
+    PUERTA, no sólo al final de la cadena).
+
+    Quién puede hacer QUÉ se decide después, por acción: autorizar es de gerencia y pagar es
+    de quien maneja la caja. Acá sólo se decide quién entra.
+    """
+    u = session.get("compras_user", "")
+    if not u:
+        return None, jsonify({"error": "No autenticado"}), 401
+    if u not in (ANIMUS_ACCESS | COMPRAS_ACCESS | ESPAGIRIA_ACCESS | ADMIN_USERS):
+        return None, jsonify({"error": "Sin acceso a las solicitudes de caja"}), 403
+    return u, None, None
+
+
+def _caja_puede_autorizar(u):
+    """Gerencia. El que PIDE no puede autorizarse a sí mismo (se valida en el endpoint)."""
+    return u in ADMIN_USERS
+
+
+def _caja_puede_pagar(u):
+    """Quien maneja la caja. Admin incluido para no dejar la caja bloqueada si Daniela falta."""
+    return u in ANIMUS_ACCESS or u in ADMIN_USERS
+
+
+def _caja_sol_dict(r, cols):
+    d = dict(zip(cols, r))
+    d['monto'] = float(d.get('monto') or 0)
+    return d
+
+
+@bp.route("/api/caja/tope", methods=["GET", "PUT"])
+def caja_tope():
+    """Lee o cambia el tope de autorización (gerencia · sin desplegar)."""
+    u, err, code = _caja_auth()
+    if err: return err, code
+    conn = _db()
+    if request.method == "GET":
+        return jsonify({"ok": True, "tope": caja_tope_sin_autorizar(conn)})
+    if not _caja_puede_autorizar(u):
+        return jsonify({"error": "Solo gerencia puede cambiar el tope"}), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        nuevo = float(d.get("tope"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Tope inválido"}), 400
+    if nuevo < 0:
+        return jsonify({"error": "El tope no puede ser negativo"}), 400
+    c = conn.cursor()
+    antes = caja_tope_sin_autorizar(conn)
+    c.execute("INSERT INTO app_settings (clave, valor) VALUES ('caja_tope_sin_autorizar', ?) "
+              "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor", (str(int(nuevo)),))
+    audit_log(c, usuario=u, accion='CAJA_TOPE_CAMBIAR', tabla='app_settings', registro_id=0,
+              antes={'tope': antes}, despues={'tope': nuevo},
+              detalle='Tope de caja sin autorizar: %s -> %s' % (antes, nuevo))
+    conn.commit()
+    return jsonify({"ok": True, "tope": nuevo, "antes": antes})
+
+
+@bp.route("/api/caja/solicitudes", methods=["GET", "POST"])
+def caja_solicitudes():
+    """GET: lista. POST: crea una solicitud de pago desde caja menor."""
+    u, err, code = _caja_auth()
+    if err: return err, code
+    conn = _db()
+
+    if request.method == "GET":
+        estado = (request.args.get("estado") or "").strip().lower()
+        empresa = (request.args.get("empresa") or "").strip().upper()
+        cond, args = [], []
+        if estado:
+            cond.append("estado = ?"); args.append(estado)
+        if empresa:
+            cond.append("UPPER(empresa) = ?"); args.append(empresa)
+        where = (" WHERE " + " AND ".join(cond)) if cond else ""
+        cur = conn.execute(
+            "SELECT * FROM caja_solicitudes_pago" + where +
+            " ORDER BY solicitado_at DESC, id DESC LIMIT 300", args)
+        cols = [x[0] for x in cur.description]
+        filas = [_caja_sol_dict(r, cols) for r in cur.fetchall()]
+        # Los KPIs se calculan sobre TODO, no sobre la página filtrada: si contaran sólo lo
+        # visible, filtrar por estado cambiaría los totales y el número dejaría de significar
+        # lo mismo que su etiqueta.
+        tot = conn.execute(
+            "SELECT estado, COUNT(*), COALESCE(SUM(monto),0) FROM caja_solicitudes_pago "
+            "GROUP BY estado").fetchall()
+        kpis = {e: {'n': int(n or 0), 'monto': round(float(m or 0), 2)} for e, n, m in tot}
+        # Pagos sin respaldo: se cuentan y se muestran para que no se acumulen en silencio.
+        sr = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(monto),0) FROM caja_solicitudes_pago "
+            "WHERE estado='pagada' AND COALESCE(comprobante_url,'')=''").fetchone()
+        return jsonify({"ok": True, "solicitudes": filas, "kpis": kpis,
+                        "tope": caja_tope_sin_autorizar(conn),
+                        "sin_comprobante": {"n": int(sr[0] or 0),
+                                            "monto": round(float(sr[1] or 0), 2)}})
+
+    # ── POST · crear
+    d = request.get_json(silent=True) or {}
+    concepto = (d.get("concepto") or "").strip()
+    if not concepto:
+        return jsonify({"error": "Concepto requerido · sin eso nadie sabe qué se está pagando"}), 400
+    try:
+        monto = float(d.get("monto") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Monto inválido"}), 400
+    if monto <= 0:
+        return jsonify({"error": "El monto debe ser mayor a 0"}), 400
+    empresa = (d.get("empresa") or "ANIMUS").strip().upper()
+    if empresa not in EMPRESAS_CAJA:
+        return jsonify({"error": "Empresa inválida · debe ser ANIMUS o ESPAGIRIA"}), 400
+
+    tope = caja_tope_sin_autorizar(conn)
+    # Bajo el tope no espera a gerencia, pero se DECLARA por qué quedó autorizada: un atajo
+    # sin rastro es indistinguible de alguien saltándose el control.
+    bajo_tope = monto <= tope
+    ahora = _now_col().strftime('%Y-%m-%d %H:%M:%S')
+    c = conn.cursor()
+    anio = _hoy_col().strftime('%Y')
+    prefijo = 'SP-%s-' % anio
+
+    def _insertar():
+        n = siguiente_correlativo(c, 'caja_solicitudes_pago', 'numero', prefijo)
+        numero = '%s%04d' % (prefijo, n)
+        c.execute("""INSERT INTO caja_solicitudes_pago
+            (numero, empresa, concepto, monto, beneficiario, modulo_origen, estado,
+             solicitado_por, solicitado_at, observaciones,
+             autorizado_por, autorizado_at, autorizacion_via)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (numero, empresa, concepto, monto, (d.get("beneficiario") or "").strip(),
+             (d.get("modulo_origen") or "").strip(),
+             'autorizada' if bajo_tope else 'solicitada',
+             u, ahora, (d.get("observaciones") or "").strip(),
+             (u if bajo_tope else None), (ahora if bajo_tope else None),
+             ('bajo el tope de %s' % int(tope)) if bajo_tope else ''))
+        return numero, c.lastrowid
+
+    numero, sid = intentar_insert_con_retry(_insertar, columna='numero')
+    audit_log(c, usuario=u, accion='CAJA_SOLICITUD_CREAR', tabla='caja_solicitudes_pago',
+              registro_id=sid,
+              despues={'numero': numero, 'monto': monto, 'empresa': empresa,
+                       'concepto': concepto, 'bajo_tope': bajo_tope},
+              detalle='Solicitud de pago %s por %s (%s)' % (numero, monto, empresa))
+    conn.commit()
+    return jsonify({"ok": True, "id": sid, "numero": numero,
+                    "estado": 'autorizada' if bajo_tope else 'solicitada',
+                    "bajo_tope": bajo_tope, "tope": tope,
+                    "aviso": ('Bajo el tope: no necesita autorización, ya puede pagarse'
+                              if bajo_tope else 'Enviada a gerencia para autorizar')}), 201
+
+
+@bp.route("/api/caja/solicitudes/<int:sid>/autorizar", methods=["POST"])
+def caja_solicitud_autorizar(sid):
+    u, err, code = _caja_auth()
+    if err: return err, code
+    if not _caja_puede_autorizar(u):
+        return jsonify({"error": "Solo gerencia autoriza pagos de caja"}), 403
+    conn = _db(); c = conn.cursor()
+    row = c.execute("SELECT numero, monto, solicitado_por, estado FROM caja_solicitudes_pago "
+                    "WHERE id=?", (sid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Esa solicitud no existe"}), 404
+    # Separación de funciones: quien pide no se autoriza a sí mismo. Es el control que hace
+    # que la autorización signifique algo.
+    if (row[2] or '').lower() == (u or '').lower():
+        return jsonify({"error": "No podés autorizar tu propia solicitud"}), 403
+    # CAS: dos clics no pueden autorizar dos veces ni pisar un rechazo.
+    c.execute("UPDATE caja_solicitudes_pago SET estado='autorizada', autorizado_por=?, "
+              "autorizado_at=?, autorizacion_via='gerencia' "
+              "WHERE id=? AND estado='solicitada'",
+              (u, _now_col().strftime('%Y-%m-%d %H:%M:%S'), sid))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "Esa solicitud ya no está pendiente (está '%s')" % row[3],
+                        "estado": row[3]}), 409
+    audit_log(c, usuario=u, accion='CAJA_SOLICITUD_AUTORIZAR', tabla='caja_solicitudes_pago',
+              registro_id=sid, antes={'estado': 'solicitada'},
+              despues={'estado': 'autorizada', 'monto': float(row[1] or 0)},
+              detalle='Autorizada la solicitud %s por %s' % (row[0], row[1]))
+    conn.commit()
+    return jsonify({"ok": True, "numero": row[0], "estado": "autorizada"})
+
+
+@bp.route("/api/caja/solicitudes/<int:sid>/rechazar", methods=["POST"])
+def caja_solicitud_rechazar(sid):
+    u, err, code = _caja_auth()
+    if err: return err, code
+    if not _caja_puede_autorizar(u):
+        return jsonify({"error": "Solo gerencia rechaza pagos de caja"}), 403
+    motivo = ((request.get_json(silent=True) or {}).get("motivo") or "").strip()
+    if not motivo:
+        # Un rechazo sin motivo deja al que pidió sin saber qué corregir, y a quien audite sin
+        # saber por qué no se pagó.
+        return jsonify({"error": "El motivo del rechazo es obligatorio"}), 400
+    conn = _db(); c = conn.cursor()
+    row = c.execute("SELECT numero, estado FROM caja_solicitudes_pago WHERE id=?", (sid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Esa solicitud no existe"}), 404
+    c.execute("UPDATE caja_solicitudes_pago SET estado='rechazada', rechazado_por=?, "
+              "rechazado_at=?, motivo_rechazo=? WHERE id=? AND estado IN ('solicitada','autorizada')",
+              (u, _now_col().strftime('%Y-%m-%d %H:%M:%S'), motivo, sid))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "No se puede rechazar: está '%s'" % row[1]}), 409
+    audit_log(c, usuario=u, accion='CAJA_SOLICITUD_RECHAZAR', tabla='caja_solicitudes_pago',
+              registro_id=sid, despues={'estado': 'rechazada', 'motivo': motivo},
+              detalle='Rechazada la solicitud %s: %s' % (row[0], motivo))
+    conn.commit()
+    return jsonify({"ok": True, "numero": row[0], "estado": "rechazada"})
+
+
+@bp.route("/api/caja/solicitudes/<int:sid>/pagar", methods=["POST"])
+def caja_solicitud_pagar(sid):
+    """Daniela paga: acá SÍ baja el saldo, con su recibo numerado."""
+    u, err, code = _caja_auth()
+    if err: return err, code
+    if not _caja_puede_pagar(u):
+        return jsonify({"error": "No estás autorizado para pagar desde la caja"}), 403
+    d = request.get_json(silent=True) or {}
+    conn = _db(); c = conn.cursor()
+    row = c.execute("SELECT numero, empresa, concepto, monto, beneficiario, estado "
+                    "FROM caja_solicitudes_pago WHERE id=?", (sid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Esa solicitud no existe"}), 404
+    if row[5] != 'autorizada':
+        return jsonify({"error": "Solo se paga lo AUTORIZADO · esta está '%s'" % row[5],
+                        "estado": row[5]}), 409
+
+    monto = float(row[3] or 0)
+    # Un pago que deja la caja en negativo es un pago que no ocurrió: el efectivo de la gaveta
+    # no puede ser menor que cero. Se avisa con el saldo real para que se pueda decidir.
+    saldo = float(c.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END),0) "
+        "FROM animus_caja_menor WHERE COALESCE(anulado,0)=0").fetchone()[0] or 0)
+    if monto > saldo and not d.get("forzar"):
+        return jsonify({"error": "No hay efectivo suficiente en la caja",
+                        "saldo": round(saldo, 2), "monto": monto,
+                        "puede_forzar": True,
+                        "aviso": "Si el efectivo está y el saldo no lo refleja, primero "
+                                 "registrá el ingreso que falta"}), 409
+
+    # CAS: dos clics no pagan dos veces la misma solicitud.
+    ahora = _now_col().strftime('%Y-%m-%d %H:%M:%S')
+    metodo = (d.get("metodo") or "efectivo").strip()
+    c.execute("UPDATE caja_solicitudes_pago SET estado='pagada', pagado_por=?, pagado_at=?, "
+              "metodo_pago=? WHERE id=? AND estado='autorizada'", (u, ahora, metodo, sid))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "Esa solicitud ya fue pagada por otra persona"}), 409
+
+    fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
+    concepto = row[2] + ((' · ' + row[4]) if row[4] else '')
+    recibo, mov_id = registrar_movimiento_caja(
+        c, tipo='egreso', concepto=concepto, monto=monto, fecha=fecha, metodo=metodo,
+        referencia=row[0], observaciones=(d.get("observaciones") or "").strip(),
+        usuario=u, empresa=row[1], subtipo='gasto', solicitud_id=sid)
+    c.execute("UPDATE caja_solicitudes_pago SET caja_mov_id=? WHERE id=?", (mov_id, sid))
+    audit_log(c, usuario=u, accion='CAJA_SOLICITUD_PAGAR', tabla='caja_solicitudes_pago',
+              registro_id=sid, antes={'estado': 'autorizada'},
+              despues={'estado': 'pagada', 'monto': monto, 'recibo': recibo},
+              detalle='Pagada la solicitud %s por %s · recibo %s' % (row[0], monto, recibo))
+    conn.commit()
+    return jsonify({"ok": True, "numero": row[0], "estado": "pagada",
+                    "recibo_numero": recibo, "caja_mov_id": mov_id,
+                    "falta_comprobante": True})
+
+
+@bp.route("/api/caja/solicitudes/<int:sid>/comprobante", methods=["POST"])
+def caja_solicitud_comprobante(sid):
+    """Sube (o corrige) el respaldo del pago. Se permite DESPUÉS de pagar, a propósito."""
+    u, err, code = _caja_auth()
+    if err: return err, code
+    if not _caja_puede_pagar(u):
+        return jsonify({"error": "No estás autorizado"}), 403
+    url = ((request.get_json(silent=True) or {}).get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "Falta el archivo o el enlace del comprobante"}), 400
+    conn = _db(); c = conn.cursor()
+    row = c.execute("SELECT numero, estado, caja_mov_id, COALESCE(comprobante_url,'') "
+                    "FROM caja_solicitudes_pago WHERE id=?", (sid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Esa solicitud no existe"}), 404
+    if row[1] != 'pagada':
+        return jsonify({"error": "El comprobante es del PAGO · esta solicitud está '%s'" % row[1]}), 409
+    ahora = _now_col().strftime('%Y-%m-%d %H:%M:%S')
+    c.execute("UPDATE caja_solicitudes_pago SET comprobante_url=?, comprobante_at=?, "
+              "comprobante_por=? WHERE id=?", (url, ahora, u, sid))
+    # El movimiento de caja también lo lleva: quien audita la caja mira el movimiento, no la
+    # solicitud, y un egreso sin su respaldo a la vista es un egreso sin respaldo.
+    if row[2]:
+        c.execute("UPDATE animus_caja_menor SET comprobante_url=?, comprobante_at=? WHERE id=?",
+                  (url, ahora, row[2]))
+    audit_log(c, usuario=u, accion='CAJA_COMPROBANTE_SUBIR', tabla='caja_solicitudes_pago',
+              registro_id=sid, antes={'comprobante': row[3]}, despues={'comprobante': url},
+              detalle='Comprobante de %s' % row[0])
+    conn.commit()
+    return jsonify({"ok": True, "numero": row[0], "comprobante_url": url})
+
+
+@bp.route("/api/caja/traslado", methods=["POST"])
+def caja_traslado_cuenta():
+    """Consignar efectivo de la caja a la cuenta bancaria.
+
+    NO es un gasto: la plata cambia de bolsillo. Va con `subtipo='traslado'` para que los
+    reportes de gasto no la cuenten -- si entrara como egreso común, los gastos del mes
+    saldrían inflados y la contabilidad reportaría como gastado algo que está en el banco.
+    """
+    u, err, code = _caja_auth()
+    if err: return err, code
+    if not _caja_puede_pagar(u):
+        return jsonify({"error": "No estás autorizado para mover la caja"}), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        monto = float(d.get("monto") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Monto inválido"}), 400
+    if monto <= 0:
+        return jsonify({"error": "El monto debe ser mayor a 0"}), 400
+    empresa = (d.get("empresa") or "ANIMUS").strip().upper()
+    if empresa not in EMPRESAS_CAJA:
+        return jsonify({"error": "Empresa inválida"}), 400
+    conn = _db(); c = conn.cursor()
+    saldo = float(c.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END),0) "
+        "FROM animus_caja_menor WHERE COALESCE(anulado,0)=0").fetchone()[0] or 0)
+    if monto > saldo and not d.get("forzar"):
+        return jsonify({"error": "No hay efectivo suficiente para consignar",
+                        "saldo": round(saldo, 2), "puede_forzar": True}), 409
+    fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
+    cuenta = (d.get("cuenta") or "").strip()
+    recibo, mov_id = registrar_movimiento_caja(
+        c, tipo='egreso',
+        concepto='Consignación a la cuenta' + ((' · ' + cuenta) if cuenta else ''),
+        monto=monto, fecha=fecha, metodo='transferencia',
+        referencia=cuenta, observaciones=(d.get("observaciones") or "").strip(),
+        usuario=u, empresa=empresa, subtipo='traslado')
+    audit_log(c, usuario=u, accion='CAJA_TRASLADO_CUENTA', tabla='animus_caja_menor',
+              registro_id=mov_id,
+              despues={'monto': monto, 'cuenta': cuenta, 'empresa': empresa, 'recibo': recibo},
+              detalle='Consignados %s de la caja a la cuenta %s' % (monto, cuenta or '(sin detallar)'))
+    conn.commit()
+    return jsonify({"ok": True, "recibo_numero": recibo, "caja_mov_id": mov_id,
+                    "saldo_antes": round(saldo, 2), "saldo_despues": round(saldo - monto, 2)})
+
 
 @bp.route("/api/animus/caja", methods=["GET"])
 def animus_caja_listar():

@@ -340,6 +340,15 @@ def test_cada_pestana_carga_todo_lo_que_muestra():
     assert m, "no encontre loadTab"
     despacho = m.group(1)
 
+    # Los contenedores que viven dentro de un MODAL no entran: un modal se llena cuando se
+    # abre, no al cargar la pestana, y contarlos como "de la pestana" es medir mal (el
+    # trinquete marcaba 'marca-cuerpo', que es el cuerpo del selector de marca).
+    en_modal = set()
+    for m_ in re.finditer(r'<div id="(modal-[^"]+)"', html):
+        fin_ = html.find('<div id="modal-', m_.end())
+        trozo = html[m_.start():fin_ if fin_ > 0 else m_.start() + 4000]
+        en_modal |= set(re.findall(r'id="([a-z-]+)"', trozo))
+
     # cada panel -> los tbody con 'Cargando...' que contiene -> quien los llena
     for tab in sorted(set(re.findall(r"switchTab\('([a-z]+)'\)", html))):
         ini = html.find('id="tab-%s"' % tab)
@@ -349,7 +358,7 @@ def test_cada_pestana_carga_todo_lo_que_muestra():
         panel = html[ini:min(sig) if sig else len(html)]
         pendientes = re.findall(r'id="([a-z-]+)"[^>]*>\s*(?:<tr>)?\s*<td[^>]*>Cargando', panel)
         pendientes += re.findall(r'id="([a-z-]+)"[^>]*>Cargando', panel)
-        for cont in set(pendientes):
+        for cont in set(pendientes) - en_modal:
             # el contenedor tiene que ser escrito por alguna funcion que la pestana dispara
             escritores = re.findall(
                 r"function\s+([A-Za-z0-9_]+)[^\n]*\n(?:.(?!\nfunction ))*?getElementById\('%s'\)"

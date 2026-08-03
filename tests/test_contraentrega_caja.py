@@ -270,7 +270,14 @@ def test_la_pantalla_de_animus_tiene_contraentrega_y_carga(app, db_clean):
     assert 'loadCod' in html and 'codCobrar' in html, 'quedó sin su carga o sin el botón de cobrar'
     # Caja Menor tiene que cargar las DOS mitades: sin loadCod() la sección abre vacía y se lee
     # como "no hay contraentregas".
-    assert "if (name === 'caja') { loadCaja(); loadCod(); }" in html, \
+    #
+    # Se busca la RAMA, no el string exacto: Caja Menor va sumando cargadores (los pagos desde
+    # caja, por ejemplo) y una comparación literal se rompe con cada agregado sin que nada esté
+    # mal. Lo que este test protege es que la contraentrega se cargue, no el orden ni el resto.
+    import re as _re
+    _rama = _re.search(r"if \(name === 'caja'\) \{([^}]*)\}", html)
+    assert _rama, 'no encontré la rama de Caja Menor en loadTab'
+    assert 'loadCod()' in _rama.group(1), \
         'Caja Menor no carga la contraentrega · la sección abriría vacía'
     # Y cobrar tiene que refrescar el saldo, que ahora está en la misma pantalla (M5).
     assert 'loadCod(); loadCaja();' in html, 'cobrar no refresca el saldo que se ve al lado'

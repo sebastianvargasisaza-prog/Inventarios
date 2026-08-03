@@ -10987,6 +10987,58 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE animus_shopify_orders ADD COLUMN direccion TEXT DEFAULT ''",
         "ALTER TABLE animus_shopify_borradores ADD COLUMN direccion TEXT DEFAULT ''",
     ]),
+    (409, "La caja menor no sólo recibe: PAGA, y ese pago se pide, se autoriza y se ejecuta "
+          "(Sebastián 3-ago). Luz o Catalina solicitan, gerencia autoriza, Daniela paga y sube "
+          "el comprobante. Hoy la caja sólo sabía de 'ingreso'/'egreso' sueltos, así que un "
+          "gasto entraba sin quién lo pidió, quién lo aprobó ni con qué respaldo -- y eso es "
+          "justo lo que hace auditable una caja. "
+          "UNA sola caja (una gaveta física, Daniela paga todo) con `empresa` en cada "
+          "movimiento: el saldo sigue siendo verificable contra el efectivo real y el reporte "
+          "separa ÁNIMUS de Espagiria. "
+          "`subtipo` distingue el GASTO del TRASLADO a la cuenta: consignar no es gastar, la "
+          "plata cambia de bolsillo -- contarlo como egreso inflaría los gastos del mes y "
+          "reportaría como gastado algo que está en el banco. "
+          "Columnas ADITIVAS con default: lo que ya está registrado no cambia.", [
+        "ALTER TABLE animus_caja_menor ADD COLUMN empresa TEXT DEFAULT 'ANIMUS'",
+        "ALTER TABLE animus_caja_menor ADD COLUMN origen TEXT DEFAULT ''",
+        "ALTER TABLE animus_caja_menor ADD COLUMN subtipo TEXT DEFAULT ''",
+        "ALTER TABLE animus_caja_menor ADD COLUMN solicitud_id INTEGER",
+        "ALTER TABLE animus_caja_menor ADD COLUMN comprobante_url TEXT DEFAULT ''",
+        "ALTER TABLE animus_caja_menor ADD COLUMN comprobante_at TEXT",
+        """CREATE TABLE IF NOT EXISTS caja_solicitudes_pago (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero              TEXT UNIQUE,
+            empresa             TEXT NOT NULL DEFAULT 'ANIMUS',
+            concepto            TEXT NOT NULL,
+            monto               REAL NOT NULL,
+            beneficiario        TEXT DEFAULT '',
+            modulo_origen       TEXT DEFAULT '',
+            estado              TEXT NOT NULL DEFAULT 'solicitada',
+            solicitado_por      TEXT NOT NULL,
+            solicitado_at       TEXT NOT NULL,
+            observaciones       TEXT DEFAULT '',
+            autorizado_por      TEXT,
+            autorizado_at       TEXT,
+            autorizacion_via    TEXT DEFAULT '',
+            rechazado_por       TEXT,
+            rechazado_at        TEXT,
+            motivo_rechazo      TEXT,
+            pagado_por          TEXT,
+            pagado_at           TEXT,
+            metodo_pago         TEXT DEFAULT 'efectivo',
+            caja_mov_id         INTEGER,
+            comprobante_url     TEXT DEFAULT '',
+            comprobante_at      TEXT,
+            comprobante_por     TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_caja_sol_estado ON caja_solicitudes_pago(estado)",
+        "CREATE INDEX IF NOT EXISTS idx_caja_sol_empresa ON caja_solicitudes_pago(empresa)",
+        "CREATE INDEX IF NOT EXISTS idx_caja_sol_fecha ON caja_solicitudes_pago(solicitado_at)",
+        # El tope bajo el cual quien maneja la caja paga sin esperar autorización. Vive en
+        # app_settings para cambiarlo sin desplegar: es una decisión de gerencia, no de código.
+        "INSERT INTO app_settings (clave, valor) VALUES ('caja_tope_sin_autorizar', '200000') "
+        "ON CONFLICT (clave) DO NOTHING",
+    ]),
 ]
 
 

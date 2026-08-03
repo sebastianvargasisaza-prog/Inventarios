@@ -305,6 +305,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <button class="tn"      data-tab="consol" id="tn-consol" title="OCs activas (Borrador/Revisada/Autorizada) agrupadas por proveedor">📦 OCs Activas <span style="font-size:9px;background:var(--cx-border);color:var(--cx-text-soft);padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">activas</span></button>
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
+    <button class="tn"      data-tab="cajapagos" id="tn-cajapagos" title="Pedir un pago con el efectivo de la caja menor · lo autoriza gerencia y lo paga quien maneja la caja">&#128184; Pagos de caja</button>
     <button class="tn" style="display:none"     data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:var(--cx-danger);color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:var(--cx-danger);color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="mailbox" id="tn-mailbox" title="Facturas detectadas por el cron mailbox · revisar/completar/descartar · Sebastián 23-may">📧 Mailbox <span id="mailbox-badge" style="display:none;background:var(--cx-primary);color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
@@ -792,6 +793,69 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 </div>
 
 <!-- ════════════ TAB: POR PAGAR ════════════ -->
+<div id="pane-cajapagos" class="pane">
+  <!-- SOLICITAR PAGO DESDE CAJA MENOR (3-ago · Sebastián)
+       "quiero que catalina en modulo compras tenga una sub pestaña solicitar pago desde caja
+        menor, me llega a mi a mi modulo ceo autorizo le sale a daniela autorizado paga queda
+        trazabilidad".
+       Acá sólo se PIDE y se sigue el estado. Autorizar es de gerencia y pagar es de quien
+       maneja la caja: los botones de esas acciones NO van acá, porque un botón que responde
+       403 es peor que no tenerlo. -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+    <div>
+      <div style="font-weight:800;font-size:16px;color:var(--cx-text);">&#128184; Pagos con caja menor</div>
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px;">
+        Pedí un pago con el efectivo de la caja · lo autoriza gerencia y lo paga quien maneja la caja ·
+        acá seguís en qué va cada uno
+      </div>
+    </div>
+    <button class="btn bg" onclick="cpAbrirSolicitud()" style="padding:9px 20px;font-size:14px;">&#10133; Solicitar pago</button>
+  </div>
+  <div id="cp-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;"></div>
+  <div id="cp-body"><div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Cargando...</div></div>
+</div>
+
+<!-- MODAL · solicitar pago desde caja (Compras) -->
+<div id="modal-cp" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:520px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="font-size:16px;color:var(--cx-text);margin:0;">&#128184; Solicitar pago con caja menor</h3>
+      <button onclick="document.getElementById('modal-cp').style.display='none'"
+              style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Concepto</label>
+      <input id="cp-concepto" class="in" style="width:100%" placeholder="Qué se va a pagar">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Monto</label>
+        <input id="cp-monto" type="number" class="in" style="width:100%" placeholder="0" oninput="cpAvisarTope()">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Empresa</label>
+        <select id="cp-empresa" class="in" style="width:100%">
+          <option value="ANIMUS">ANIMUS</option>
+          <option value="ESPAGIRIA">Espagiria</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">A quién se le paga</label>
+      <input id="cp-benef" class="in" style="width:100%" placeholder="Proveedor o persona">
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Observaciones</label>
+      <textarea id="cp-obs" class="in" style="width:100%;min-height:60px;" placeholder="Opcional"></textarea>
+    </div>
+    <div id="cp-tope-aviso" style="font-size:12px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn bo" onclick="document.getElementById('modal-cp').style.display='none'">Cancelar</button>
+      <button class="btn bg" onclick="cpGuardar()">Enviar solicitud</button>
+    </div>
+  </div>
+</div>
+
 <div id="pane-por-pagar" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
     <div>
@@ -1693,6 +1757,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='consol') loadConsolidado();
     else if(tab==='pagos'){ loadPagos(); }
     else if(tab==='por-pagar'){ loadPorPagar(); }
+    else if(tab==='cajapagos'){ loadCajaPagos(); }
     else if(tab==='mailbox'){ cargarMailbox(); }
     else if(tab==='cotiz'){ cargarCotizaciones(); }
     else if(tab==='alertas'){ loadAlertasCompras(); }
@@ -7784,6 +7849,132 @@ async function marcarRecibidoSolicitante(numero){
 
 // ─── Consolidado por Proveedor ────────────────────────────────────
 var _consolCache = [];  // cache indexado por posición
+
+// ── PAGOS CON CAJA MENOR desde Compras (3-ago) ────────────────────────────────
+// Catalina PIDE acá; gerencia autoriza en su módulo y quien maneja la caja paga en el suyo.
+// Los botones de autorizar/pagar NO van en esta pantalla: un botón que devuelve 403 es peor
+// que no tenerlo, porque quien lo aprieta cree que hizo algo.
+var _CP_TOPE = 200000;
+
+async function loadCajaPagos(){
+  var body = document.getElementById('cp-body');
+  if(!body) return;
+  try{
+    var r = await fetch('/api/caja/solicitudes');
+    var d = await r.json();
+    if(!d.ok){ body.innerHTML = '<div style="color:var(--cx-danger-text);padding:16px;">'+esc(d.error||'Error')+'</div>'; return; }
+    _CP_TOPE = d.tope || 200000;
+    cpRenderKPIs(d);
+    cpRenderLista(d.solicitudes || []);
+  }catch(e){
+    body.innerHTML = '<div style="color:var(--cx-danger-text);padding:16px;">Error: '+esc(e.message)+'</div>';
+  }
+}
+
+function cpRenderKPIs(d){
+  var k = d.kpis || {};
+  function tarjeta(lab, val, sub, color){
+    return '<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:14px;">'
+      + '<div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;font-weight:700;">'+lab+'</div>'
+      + '<div style="font-size:22px;font-weight:800;margin-top:6px;color:'+color+';">'+val+'</div>'
+      + '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;">'+sub+'</div></div>';
+  }
+  var esp = k.solicitada || {n:0,monto:0}, aut = k.autorizada || {n:0,monto:0}, pag = k.pagada || {n:0,monto:0};
+  document.getElementById('cp-kpis').innerHTML =
+      tarjeta('Esperan autorizacion', fmt(esp.monto), esp.n + ' solicitudes', 'var(--cx-warn-text)')
+    + tarjeta('Listas para pagar', fmt(aut.monto), aut.n + ' autorizadas', 'var(--cx-success-text)')
+    + tarjeta('Ya pagadas', fmt(pag.monto), pag.n + ' pagos', 'var(--cx-info-text)')
+    + tarjeta('Tope sin autorizar', fmt(_CP_TOPE), 'bajo esto no espera a gerencia', 'var(--cx-text-soft)');
+}
+
+function cpRenderLista(rows){
+  var body = document.getElementById('cp-body');
+  if(!rows.length){
+    body.innerHTML = '<div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Todavia no hay solicitudes de pago.</div>';
+    return;
+  }
+  var col = {solicitada:'var(--cx-warn-text)', autorizada:'var(--cx-success-text)',
+             pagada:'var(--cx-info-text)', rechazada:'var(--cx-danger-text)'};
+  var etq = {solicitada:'espera autorizacion', autorizada:'lista para pagar',
+             pagada:'pagada', rechazada:'rechazada'};
+  var h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    + '<thead><tr>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">N&deg;</th>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Concepto</th>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Empresa</th>'
+    + '<th style="text-align:right;padding:8px;border-bottom:1px solid var(--cx-border);">Monto</th>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Estado</th>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Quien</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(s){
+    // El rechazo se muestra CON su motivo: sin el, quien pidio no sabe que corregir.
+    var extra = '';
+    if(s.estado === 'rechazada' && s.motivo_rechazo)
+      extra = '<div style="font-size:11px;color:var(--cx-danger-text);">'+esc(s.motivo_rechazo)+'</div>';
+    else if(s.estado === 'pagada' && s.pagado_por)
+      extra = '<div style="font-size:11px;color:var(--cx-text-mute);">pago '+esc(s.pagado_por)+'</div>';
+    else if(s.estado === 'autorizada' && s.autorizacion_via)
+      extra = '<div style="font-size:11px;color:var(--cx-text-mute);">'+esc(s.autorizacion_via)+'</div>';
+    h += '<tr>'
+      + '<td style="padding:8px;font-weight:700;border-bottom:1px solid var(--cx-hairline);">'+esc(s.numero||'')+'</td>'
+      + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);">'+esc(s.concepto||'')
+        + (s.beneficiario?'<div style="font-size:11px;color:var(--cx-text-mute);">'+esc(s.beneficiario)+'</div>':'')+'</td>'
+      + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);font-size:11px;">'+esc(s.empresa||'')+'</td>'
+      + '<td style="padding:8px;text-align:right;font-weight:700;border-bottom:1px solid var(--cx-hairline);">'+fmt(s.monto||0)+'</td>'
+      + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);color:'+(col[s.estado]||'var(--cx-text-mute)')+';font-weight:600;">'
+        + esc(etq[s.estado]||s.estado||'') + extra + '</td>'
+      + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);font-size:11px;">'+esc(s.solicitado_por||'')+'</td>'
+      + '</tr>';
+  });
+  body.innerHTML = h + '</tbody></table></div>';
+}
+
+function cpAbrirSolicitud(){
+  ['cp-concepto','cp-monto','cp-benef','cp-obs'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('cp-tope-aviso').innerHTML = '';
+  document.getElementById('modal-cp').style.display = 'flex';
+}
+
+function cpAvisarTope(){
+  // Se dice ANTES de enviar si va a esperar a alguien o si queda lista.
+  var m = parseFloat((document.getElementById('cp-monto')||{value:0}).value || 0);
+  var el = document.getElementById('cp-tope-aviso');
+  if(!m){ el.innerHTML = ''; return; }
+  el.innerHTML = m <= _CP_TOPE
+    ? '<span style="color:var(--cx-success-text);">Bajo el tope de '+fmt(_CP_TOPE)+': queda lista para pagar sin esperar autorizacion.</span>'
+    : '<span style="color:var(--cx-warn-text);">Supera el tope de '+fmt(_CP_TOPE)+': va a gerencia para autorizar.</span>';
+}
+
+async function cpGuardar(){
+  var body = {
+    concepto: (document.getElementById('cp-concepto')||{value:''}).value.trim(),
+    monto: parseFloat((document.getElementById('cp-monto')||{value:0}).value || 0),
+    empresa: (document.getElementById('cp-empresa')||{value:'ANIMUS'}).value,
+    beneficiario: (document.getElementById('cp-benef')||{value:''}).value.trim(),
+    observaciones: (document.getElementById('cp-obs')||{value:''}).value.trim(),
+    modulo_origen: 'compras'
+  };
+  if(!body.concepto){ alert('Concepto requerido'); return; }
+  if(!body.monto || body.monto <= 0){ alert('El monto debe ser mayor a 0'); return; }
+  // Guard anti doble-click: una solicitud duplicada termina en un pago duplicado (M63).
+  if(window._cpBusy) return;
+  window._cpBusy = true;
+  setTimeout(function(){ window._cpBusy = false; }, 3000);
+  try{
+    var t = await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r = await fetch('/api/caja/solicitudes', {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},
+      body: JSON.stringify(body)});
+    var d = await r.json();
+    if(!d.ok){ alert('Error: '+(d.error||'?')); return; }
+    alert(d.numero + ' - ' + (d.aviso||''));
+    document.getElementById('modal-cp').style.display='none';
+    loadCajaPagos();
+  }catch(e){ alert('Error de red: '+e.message); }
+  finally { window._cpBusy = false; }
+}
 
 async function loadConsolidado(){
   var body = document.getElementById('consol-body');

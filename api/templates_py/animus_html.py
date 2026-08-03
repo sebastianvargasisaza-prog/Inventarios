@@ -245,6 +245,51 @@ window.addEventListener('error', function(ev){
     </div>
   </div>
 
+  <!-- PAGOS DESDE CAJA (3-ago) · solicitar -> autorizar -> pagar
+       La caja no solo recibe: paga. Quien pide (Catalina/Luz), quien autoriza (gerencia) y
+       quien paga (Daniela) son tres personas distintas, y el registro es UNO que cambia de
+       estado. El saldo baja al PAGAR, no al autorizar: una autorizacion no es plata que salio. -->
+  <div class="card">
+    <div class="card-hdr">
+      <div>
+        <span class="card-title">&#128184; Pagos desde caja</span>
+        <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px;">
+          Lo que se pide, se autoriza y se paga con el efectivo de la caja.
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="sp-filtro" class="select" style="width:auto;" onchange="loadPagosCaja()">
+          <option value="">Todas</option>
+          <option value="solicitada">Esperan autorizacion</option>
+          <option value="autorizada">Listas para pagar</option>
+          <option value="pagada">Pagadas</option>
+          <option value="rechazada">Rechazadas</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="abrirSolicitudPago()">+ Solicitar pago</button>
+        <button class="btn btn-outline btn-sm" onclick="abrirTraslado()"
+                title="Consignar efectivo de la caja a la cuenta. NO es un gasto: la plata cambia de bolsillo">&#127974; Consignar</button>
+      </div>
+    </div>
+    <div id="sp-aviso"></div>
+    <div class="kpi-grid" id="sp-kpis" style="margin-bottom:14px;"></div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>N&deg;</th>
+          <th>Fecha</th>
+          <th>Concepto</th>
+          <th>Empresa</th>
+          <th style="text-align:right;">Monto</th>
+          <th>Pidio</th>
+          <th>Estado</th>
+          <th>Respaldo</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="sp-body"><tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-hdr">
       <span class="card-title">&#128210; Movimientos de caja</span>
@@ -543,6 +588,73 @@ window.addEventListener('error', function(ev){
   </div>
 </div>
 
+<!-- SOLICITAR PAGO DESDE CAJA -->
+<div id="modal-sp" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:520px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="font-size:16px;color:var(--cx-text);">&#128184; Solicitar pago desde caja</h3>
+      <button onclick="cerrarModal('modal-sp')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Concepto</label>
+        <input id="sp-concepto" class="input" placeholder="Que se va a pagar"></div>
+    </div>
+    <div class="form-row">
+      <div><label class="label">Monto</label>
+        <input id="sp-monto" type="number" class="input" placeholder="0" oninput="spAvisarTope()"></div>
+      <div><label class="label">Empresa</label>
+        <select id="sp-empresa" class="select">
+          <option value="ANIMUS">ANIMUS</option>
+          <option value="ESPAGIRIA">Espagiria</option>
+        </select></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">A quien se le paga</label>
+        <input id="sp-beneficiario" class="input" placeholder="Proveedor o persona"></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Observaciones</label>
+        <textarea id="sp-obs" class="textarea" placeholder="Opcional"></textarea></div>
+    </div>
+    <div id="sp-tope-aviso" style="font-size:12px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-sp')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarSolicitudPago()">Enviar solicitud</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONSIGNAR A LA CUENTA -->
+<div id="modal-traslado" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:460px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="font-size:16px;color:var(--cx-text);">&#127974; Consignar a la cuenta</h3>
+      <button onclick="cerrarModal('modal-traslado')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:14px;">
+      Sale de la caja pero NO es un gasto: la plata cambia de bolsillo. Se registra aparte para
+      que no infle los gastos del mes.
+    </div>
+    <div class="form-row">
+      <div><label class="label">Monto</label>
+        <input id="tr-monto" type="number" class="input" placeholder="0"></div>
+      <div><label class="label">Empresa</label>
+        <select id="tr-empresa" class="select">
+          <option value="ANIMUS">ANIMUS</option>
+          <option value="ESPAGIRIA">Espagiria</option>
+        </select></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Cuenta</label>
+        <input id="tr-cuenta" class="input" placeholder="Banco y numero"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-traslado')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarTraslado()">Consignar</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-caja" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
@@ -654,7 +766,7 @@ function switchTab(name){
 function loadTab(name){
   // Caja Menor trae las dos mitades: lo que YA entro (movimientos) y lo que falta entrar
   // (contraentrega en la calle). Sin la segunda, el saldo se lee como si no faltara nada.
-  if (name === 'caja') { loadCaja(); loadCod(); }
+  if (name === 'caja') { loadCaja(); loadCod(); loadPagosCaja(); }
   else if (name === 'invfis') { cargarInvFisico(); cargarMovimientosInvFis(); }
   else if (name === 'inventario') { loadInvSkus(); loadInvConteos(); }
   else if (name === 'pqr') loadAnimusPqr();
@@ -976,6 +1088,211 @@ async function traerPedidos(){
   } catch(e) {
     showToast('Error de red: ' + e.message, 'error');
   }
+}
+
+// ── PAGOS DESDE CAJA ──────────────────────────────────────────────────────────
+// Un solo registro que cambia de estado y tres personas distintas tocandolo. Cada boton
+// aparece SOLO para quien puede ejecutarlo: un boton que responde 403 es peor que no tenerlo,
+// porque quien lo aprieta cree que hizo algo.
+var _SP_ROWS = [], _SP_TOPE = 200000;
+
+async function loadPagosCaja(){
+  var est = (document.getElementById('sp-filtro')||{value:''}).value;
+  try {
+    var r = await fetch('/api/caja/solicitudes' + (est ? '?estado=' + est : ''));
+    var d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    _SP_ROWS = d.solicitudes || [];
+    _SP_TOPE = d.tope || 200000;
+    renderPagosKPIs(d);
+    renderPagosBody();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
+function renderPagosKPIs(d){
+  var k = d.kpis || {}, sc = d.sin_comprobante || {n:0, monto:0};
+  var esperan = k.solicitada || {n:0, monto:0};
+  var listas  = k.autorizada || {n:0, monto:0};
+  var pagadas = k.pagada || {n:0, monto:0};
+  var cards = [
+    { label: 'Esperan autorizacion', val: fmtCOP(esperan.monto), color: esperan.n ? 'kpi-yellow' : 'kpi-blue',
+      sub: esperan.n + ' solicitudes' },
+    { label: 'Listas para pagar', val: fmtCOP(listas.monto), color: listas.n ? 'kpi-green' : 'kpi-blue',
+      sub: listas.n + ' autorizadas' },
+    { label: 'Pagado', val: fmtCOP(pagadas.monto), color: 'kpi-blue',
+      sub: pagadas.n + ' pagos' },
+    // Lo que no tiene respaldo se muestra siempre: un egreso sin comprobante es una salida
+    // que nadie puede verificar, asi que tiene que incomodar hasta que se cierre.
+    { label: 'Sin comprobante', val: fmtCOP(sc.monto), color: sc.n ? 'kpi-red' : 'kpi-blue',
+      sub: sc.n ? sc.n + ' pagos sin respaldo' : 'todo respaldado' }
+  ];
+  document.getElementById('sp-kpis').innerHTML = cards.map(function(c){
+    return '<div class="kpi-card '+c.color+'"><div class="label">'+c.label+'</div>'
+      + '<div class="val">'+c.val+'</div><div class="sub">'+c.sub+'</div></div>';
+  }).join('');
+}
+
+function renderPagosBody(){
+  var body = document.getElementById('sp-body');
+  if (!_SP_ROWS.length) {
+    body.innerHTML = '<tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin solicitudes de pago.</td></tr>';
+    return;
+  }
+  body.innerHTML = _SP_ROWS.map(function(s, i){
+    var badge = {solicitada:'badge-yellow', autorizada:'badge-green', pagada:'badge-blue',
+                 rechazada:'badge-red', anulada:'badge-gray'}[s.estado] || 'badge-gray';
+    var etiqueta = {solicitada:'espera autorizacion', autorizada:'lista para pagar',
+                    pagada:'pagada', rechazada:'rechazada'}[s.estado] || s.estado;
+    var acc = '';
+    if (s.estado === 'solicitada') {
+      acc += '<button class="btn btn-primary btn-sm" onclick="spAutorizar('+i+')">Autorizar</button> ';
+      acc += '<button class="btn btn-outline btn-sm" onclick="spRechazar('+i+')">Rechazar</button>';
+    } else if (s.estado === 'autorizada') {
+      acc += '<button class="btn btn-primary btn-sm" onclick="spPagar('+i+')">Pagar</button>';
+    } else if (s.estado === 'pagada' && !s.comprobante_url) {
+      acc += '<button class="btn btn-outline btn-sm" onclick="spComprobante('+i+')">Subir respaldo</button>';
+    }
+    var resp = '<span style="color:var(--cx-text-mute);">-</span>';
+    if (s.estado === 'pagada') {
+      resp = s.comprobante_url
+        ? '<a href="'+esc(s.comprobante_url)+'" target="_blank" class="badge badge-green">ver</a>'
+        : '<span class="badge badge-red" title="Este pago no tiene respaldo">falta</span>';
+    }
+    // La via de autorizacion se muestra: si paso por el tope en vez de por gerencia, tiene
+    // que poder verse sin abrir la base.
+    var via = (s.estado !== 'solicitada' && s.autorizacion_via)
+      ? '<div style="font-size:10px;color:var(--cx-text-mute);">'+esc(s.autorizacion_via)+'</div>' : '';
+    return '<tr>'
+      + '<td style="font-weight:700;">'+esc(s.numero||'')+'</td>'
+      + '<td>'+fmtFecha(s.solicitado_at)+'</td>'
+      + '<td>'+esc(s.concepto||'')+(s.beneficiario?'<div style="font-size:11px;color:var(--cx-text-mute);">'+esc(s.beneficiario)+'</div>':'')+'</td>'
+      + '<td><span class="badge badge-gray">'+esc(s.empresa||'')+'</span></td>'
+      + '<td style="text-align:right;font-weight:700;">'+fmtCOP(s.monto||0)+'</td>'
+      + '<td style="font-size:12px;">'+esc(s.solicitado_por||'')+'</td>'
+      + '<td><span class="badge '+badge+'">'+etiqueta+'</span>'+via+'</td>'
+      + '<td>'+resp+'</td>'
+      + '<td>'+acc+'</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function abrirSolicitudPago(){
+  document.getElementById('sp-concepto').value = '';
+  document.getElementById('sp-monto').value = '';
+  document.getElementById('sp-beneficiario').value = '';
+  document.getElementById('sp-obs').value = '';
+  document.getElementById('sp-tope-aviso').innerHTML = '';
+  document.getElementById('modal-sp').style.display = 'flex';
+}
+
+function spAvisarTope(){
+  // Se dice ANTES de enviar si va a necesitar autorizacion: que el usuario sepa si el pago
+  // queda listo o si va a esperar a alguien.
+  var m = parseFloat(document.getElementById('sp-monto').value || 0);
+  var el = document.getElementById('sp-tope-aviso');
+  if (!m) { el.innerHTML = ''; return; }
+  el.innerHTML = m <= _SP_TOPE
+    ? '<span style="color:var(--cx-success-text);">Bajo el tope de ' + fmtCOP(_SP_TOPE) + ': queda lista para pagar sin esperar autorizacion.</span>'
+    : '<span style="color:var(--cx-warn-text);">Supera el tope de ' + fmtCOP(_SP_TOPE) + ': va a gerencia para autorizar.</span>';
+}
+
+async function guardarSolicitudPago(){
+  var body = {
+    concepto: document.getElementById('sp-concepto').value.trim(),
+    monto: parseFloat(document.getElementById('sp-monto').value || 0),
+    empresa: document.getElementById('sp-empresa').value,
+    beneficiario: document.getElementById('sp-beneficiario').value.trim(),
+    observaciones: document.getElementById('sp-obs').value.trim(),
+    modulo_origen: 'caja'
+  };
+  if (!body.concepto) { showToast('Concepto requerido', 'error'); return; }
+  if (!body.monto || body.monto <= 0) { showToast('Monto debe ser mayor a 0', 'error'); return; }
+  try {
+    var r = await _fetchUna('/api/caja/solicitudes', _fetchOpts('POST', body));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
+    var d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast(d.numero + ' - ' + (d.aviso||''), 'success');
+    cerrarModal('modal-sp');
+    loadPagosCaja(); loadCaja();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
+async function spAutorizar(i){
+  var s = _SP_ROWS[i]; if (!s) return;
+  if (!confirm('Autorizar el pago de ' + fmtCOP(s.monto) + ' por "' + s.concepto + '"?')) return;
+  await _spAccion('/api/caja/solicitudes/' + s.id + '/autorizar', {}, 'Autorizada');
+}
+
+async function spRechazar(i){
+  var s = _SP_ROWS[i]; if (!s) return;
+  // El motivo es obligatorio: sin el, quien pidio no sabe que corregir y quien audita no sabe
+  // por que no se pago.
+  var motivo = prompt('Motivo del rechazo (queda en el registro):', '');
+  if (motivo === null) return;
+  if (!motivo.trim()) { showToast('El motivo es obligatorio', 'error'); return; }
+  await _spAccion('/api/caja/solicitudes/' + s.id + '/rechazar', {motivo: motivo.trim()}, 'Rechazada');
+}
+
+async function spPagar(i){
+  var s = _SP_ROWS[i]; if (!s) return;
+  if (!confirm('Pagar ' + fmtCOP(s.monto) + ' de la caja por "' + s.concepto + '"? El saldo baja ahora.')) return;
+  await _spAccion('/api/caja/solicitudes/' + s.id + '/pagar', {}, 'Pagada');
+}
+
+async function spComprobante(i){
+  var s = _SP_ROWS[i]; if (!s) return;
+  var url = prompt('Enlace del comprobante de ' + s.numero + ':', '');
+  if (url === null) return;
+  if (!url.trim()) { showToast('Falta el enlace', 'error'); return; }
+  await _spAccion('/api/caja/solicitudes/' + s.id + '/comprobante', {url: url.trim()}, 'Respaldo guardado');
+}
+
+async function _spAccion(url, body, ok){
+  try {
+    var r = await _fetchUna(url, _fetchOpts('POST', body));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
+    var d = await r.json();
+    if (!d.ok) {
+      // El backend responde con el saldo cuando no alcanza: se muestra para poder decidir.
+      var msg = d.error || '?';
+      if (d.saldo != null) msg += ' (saldo: ' + fmtCOP(d.saldo) + ')';
+      showToast(msg, 'error');
+      return;
+    }
+    showToast(ok + (d.recibo_numero ? ' - recibo ' + d.recibo_numero : ''), 'success');
+    loadPagosCaja(); loadCaja();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
+function abrirTraslado(){
+  document.getElementById('tr-monto').value = '';
+  document.getElementById('tr-cuenta').value = '';
+  document.getElementById('modal-traslado').style.display = 'flex';
+}
+
+async function guardarTraslado(){
+  var body = {
+    monto: parseFloat(document.getElementById('tr-monto').value || 0),
+    empresa: document.getElementById('tr-empresa').value,
+    cuenta: document.getElementById('tr-cuenta').value.trim()
+  };
+  if (!body.monto || body.monto <= 0) { showToast('Monto debe ser mayor a 0', 'error'); return; }
+  try {
+    var r = await _fetchUna('/api/caja/traslado', _fetchOpts('POST', body));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
+    var d = await r.json();
+    if (!d.ok) {
+      var msg = d.error || '?';
+      if (d.saldo != null) msg += ' (saldo: ' + fmtCOP(d.saldo) + ')';
+      showToast(msg, 'error'); return;
+    }
+    showToast('Consignados ' + fmtCOP(body.monto) + ' - recibo ' + d.recibo_numero, 'success');
+    cerrarModal('modal-traslado');
+    loadPagosCaja(); loadCaja();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
 }
 
 async function syncBorradores(){
