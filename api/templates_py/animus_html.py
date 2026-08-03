@@ -1700,7 +1700,12 @@ async function guardarPqrManual(){
 }
 
 // Init
-loadCaja();
+// Arranca por el MISMO despachador que usan las pestanas, no llamando a un cargador suelto.
+// Al fusionar Contraentrega dentro de Caja Menor actualice `loadTab` y deje este `loadCaja()`
+// directo: la pestana abria con el saldo cargado y la contraentrega en "Cargando..." para
+// siempre, porque `loadCod()` solo corria si te ibas a otra pestana y volvias.
+_loaded['caja'] = true;
+loadTab('caja');
 </script>
 
 <!-- Widget "Mi contraseña" removido 24-may-2026 · vive en /modulos y /hub -->

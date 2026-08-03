@@ -302,3 +302,69 @@ def test_el_selector_SUMA_al_patron_y_no_lo_reemplaza():
     html = _html()
     m = re.search(r"patron = patron \? patron \+ '\|' \+ nuevo : nuevo;", html)
     assert m, "el selector de marca deberia AGREGAR al patron con '|', no pisarlo"
+
+
+def test_el_arranque_pasa_por_el_despachador_de_pestanas():
+    """La pantalla tiene que abrir CARGADA, y eso depende del punto de entrada.
+
+    3-ago: al fusionar Contraentrega dentro de Caja Menor actualice `loadTab` y deje el init
+    llamando a `loadCaja()` DIRECTO. Resultado: la pantalla abria con el saldo cargado y la
+    seccion de contraentrega en "Cargando..." para siempre -- `loadCod()` solo corria si te
+    ibas a otra pestana y volvias. Los dos endpoints respondian 200 con datos.
+
+    Es la misma familia que M112: verifique el despachador y no el punto de ENTRADA. Cuando
+    hay un despachador, el arranque lo usa; un cargador suelto en el init queda viejo la
+    proxima vez que una pestana cargue algo mas.
+    """
+    html = _html()
+    m = re.search(r"//\s*Init\s*\n(.*?)</script>", html, re.S)
+    assert m, "no encontre el bloque Init"
+    # sin los comentarios: este mismo comentario NOMBRA `loadCaja()` al explicar el bug, y
+    # escanear el texto crudo lo contaba como una llamada (el test se cazo a si mismo)
+    init = "\n".join(l for l in m.group(1).splitlines() if not l.strip().startswith("//"))
+    assert "loadTab(" in init, "el init no pasa por loadTab · la pestana abriria a medias"
+    sueltos = [f for f in re.findall(r"\b(load[A-Z]\w+|cargar[A-Z]\w+)\(\)", init)]
+    assert not sueltos, (
+        "el init llama cargadores sueltos %s en vez de loadTab: lo que loadTab agregue "
+        "para esa pestana no correria al abrir" % sueltos)
+
+
+def test_cada_pestana_carga_todo_lo_que_muestra():
+    """Si un panel tiene una tabla que empieza en 'Cargando...', alguien tiene que llenarla.
+
+    Caza el sintoma exacto que reporto Sebastian: una seccion que se queda en 'Cargando...'
+    porque su cargador no esta enganchado a la pestana donde vive.
+    """
+    html = _html()
+    m = re.search(r"function loadTab\(name\)\s*\{(.*?)\n\}", html, re.S)
+    assert m, "no encontre loadTab"
+    despacho = m.group(1)
+
+    # cada panel -> los tbody con 'Cargando...' que contiene -> quien los llena
+    for tab in sorted(set(re.findall(r"switchTab\('([a-z]+)'\)", html))):
+        ini = html.find('id="tab-%s"' % tab)
+        assert ini > 0, tab
+        sig = [html.find('id="tab-%s"' % t) for t in
+               set(re.findall(r'id="tab-([a-z]+)"', html)) if html.find('id="tab-%s"' % t) > ini]
+        panel = html[ini:min(sig) if sig else len(html)]
+        pendientes = re.findall(r'id="([a-z-]+)"[^>]*>\s*(?:<tr>)?\s*<td[^>]*>Cargando', panel)
+        pendientes += re.findall(r'id="([a-z-]+)"[^>]*>Cargando', panel)
+        for cont in set(pendientes):
+            # el contenedor tiene que ser escrito por alguna funcion que la pestana dispara
+            escritores = re.findall(
+                r"function\s+([A-Za-z0-9_]+)[^\n]*\n(?:.(?!\nfunction ))*?getElementById\('%s'\)"
+                % re.escape(cont), html, re.S)
+            assert escritores, "nadie llena '%s' (panel de la pestana '%s')" % (cont, tab)
+            enganchado = any(e in despacho for e in escritores) or any(
+                re.search(r"\b%s\(\)" % re.escape(e), despacho) for e in escritores)
+            if not enganchado:
+                # puede llenarlo un cargador que SI esta en el despacho
+                llamados = re.findall(r"\b(load[A-Z]\w+|cargar[A-Z]\w+)\(\)", despacho)
+                cuerpos = "".join(
+                    html[html.find("function %s" % f):html.find("function %s" % f) + 2500]
+                    for f in llamados if html.find("function %s" % f) > 0)
+                enganchado = ("'%s'" % cont) in cuerpos or any(
+                    e in cuerpos for e in escritores)
+            assert enganchado, (
+                "la pestana '%s' muestra '%s' pero loadTab no dispara quien lo llena · "
+                "quedaria en 'Cargando...'" % (tab, cont))
