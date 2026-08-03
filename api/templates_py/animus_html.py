@@ -30,12 +30,12 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--c
 
 .hdr{background:var(--cx-card);border-bottom:1px solid var(--cx-border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
 .hdr-brand{display:flex;align-items:center;gap:10px;}
-.hdr-brand h1{font-size:16px;font-weight:800;color:#fff;}
+.hdr-brand h1{font-size:16px;font-weight:800;color:var(--cx-text);}
 .hdr-brand span{font-size:11px;color:var(--cx-text-mute);background:var(--cx-bg-alt);padding:2px 8px;border-radius:20px;border:1px solid var(--cx-border);}
 .hdr-user{font-size:12px;color:var(--cx-text-mute);}
 .hdr-user strong{color:var(--cx-text);}
-.back-link{font-size:12px;color:#667eea;text-decoration:none;display:flex;align-items:center;gap:4px;}
-.back-link:hover{color:#818cf8;}
+.back-link{font-size:12px;color:var(--cx-primary-text);text-decoration:none;display:flex;align-items:center;gap:4px;}
+.back-link:hover{text-decoration:underline;}
 
 .tabs-bar{background:var(--cx-card);border-bottom:1px solid var(--cx-border);display:flex;overflow-x:auto;padding:0 20px;}
 .tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s;}
@@ -67,7 +67,7 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--c
 .btn-primary:hover{filter:brightness(1.1);}
 .btn-outline{background:transparent;border:1px solid var(--cx-text-soft);color:var(--cx-text-soft);}
 .btn-outline:hover{background:var(--cx-border);}
-.btn-danger{background:var(--cx-danger-pale);color:var(--cx-danger-pale);border:1px solid var(--cx-danger);}
+.btn-danger{background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid var(--cx-danger);}
 .btn-sm{padding:5px 10px;font-size:11px;}
 
 .input,.select,.textarea{background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;font-family:inherit;width:100%;}
@@ -81,20 +81,20 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--c
 table{width:100%;border-collapse:collapse;font-size:13px;}
 table thead th{text-align:left;padding:8px 10px;color:var(--cx-text-mute);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--cx-border);background:var(--cx-bg-alt);}
 table tbody td{padding:8px 10px;color:var(--cx-text);border-bottom:1px solid var(--cx-hairline);}
-table tbody tr:hover{background:var(--cx-bg-alt)55;}
+table tbody tr:hover{background:var(--cx-bg-alt);}
 
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.05em;}
 .badge-green{background:var(--cx-success-pale);color:var(--cx-success-text);}
 .badge-red{background:var(--cx-danger-pale);color:var(--cx-danger-text);}
 .badge-yellow{background:var(--cx-warn-pale);color:var(--cx-warn-text);}
 .badge-blue{background:var(--cx-info-pale);color:var(--cx-info-text);}
-.badge-gray{background:#1f2937;color:#9ca3af;}
+.badge-gray{background:var(--cx-bg-alt);color:var(--cx-text-mute);border:1px solid var(--cx-border);}
 
 .diff-pos{color:var(--cx-success-text);font-weight:700;}
 .diff-neg{color:var(--cx-danger-text);font-weight:700;}
 .diff-zero{color:var(--cx-text-mute);}
 
-#js-error-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:var(--cx-danger-pale);color:var(--cx-danger-pale);padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid var(--cx-danger);}
+#js-error-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid var(--cx-danger);}
 #toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
 .toast{background:var(--cx-card);border:1px solid var(--cx-text-soft);color:var(--cx-text);padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;min-width:220px;max-width:360px;box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:auto;}
 .toast.success{background:var(--cx-success-pale);border-color:var(--cx-success);}
@@ -121,6 +121,17 @@ function _fetchOpts(method, body) {
     opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
   }
   return opts;
+}
+
+// M63 - una accion que INSERTA no puede dispararse dos veces: el doble click en
+// "Registrar movimiento" creaba DOS recibos y descuadraba el saldo de la caja.
+// Se llavea por metodo+URL y se suelta apenas responde el servidor.
+var _enVuelo = {};
+async function _fetchUna(url, opts) {
+  var k = ((opts && opts.method) || 'GET') + ' ' + url;
+  if (_enVuelo[k]) return null;
+  _enVuelo[k] = true;
+  try { return await fetch(url, opts); } finally { delete _enVuelo[k]; }
 }
 fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 function showToast(msg, type){
@@ -165,8 +176,8 @@ window.addEventListener('error', function(ev){
 <div class="tabs-bar">
   <button class="tab-btn active" data-tab="caja" onclick="switchTab('caja')">&#128176; Caja Menor</button>
   <button class="tab-btn" data-tab="cod" onclick="switchTab('cod')">&#128666; Contraentrega</button>
-  <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario Fisico</button>
-  <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Conteo Ciclico</button>
+  <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario Físico</button>
+  <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Conteo Cíclico</button>
   <button class="tab-btn" data-tab="pqr" onclick="switchTab('pqr')">&#128233; PQR Clientes</button>
 </div>
 
@@ -203,7 +214,7 @@ window.addEventListener('error', function(ev){
           <th>Tipo</th>
           <th>Concepto</th>
           <th style="text-align:right;">Monto</th>
-          <th>Metodo</th>
+          <th>Método</th>
           <th>Ref.</th>
           <th>Por</th>
           <th></th>
@@ -262,7 +273,7 @@ window.addEventListener('error', function(ev){
 <div id="tab-inventario" class="tab-panel">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
-      <div class="page-title">&#128230; Inventario Ciclico</div>
+      <div class="page-title">&#128230; Inventario Cíclico</div>
       <div class="page-sub">Conta fisicamente cada producto y compara con lo vendido en Shopify. Si hay diferencia, explicala (rotura, devolucion, etc.).</div>
     </div>
     <button class="btn btn-primary" onclick="abrirConteo()">+ Nuevo conteo</button>
@@ -296,7 +307,7 @@ window.addEventListener('error', function(ev){
           <th>SKU</th>
           <th>Producto</th>
           <th style="text-align:right;">Shopify</th>
-          <th style="text-align:right;">Fisico</th>
+          <th style="text-align:right;">Físico</th>
           <th style="text-align:right;">Diferencia</th>
           <th>Explicacion</th>
           <th>Por</th>
@@ -311,11 +322,11 @@ window.addEventListener('error', function(ev){
 <div id="tab-invfis" class="tab-panel">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
-      <div class="page-title">&#128202; Inventario Fisico</div>
+      <div class="page-title">&#128202; Inventario Físico</div>
       <div class="page-sub">Esperado = baseline + entradas - ventas Shopify - salidas. Si no cuadra, se ve el desglose y donde esta el error.</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-success" onclick="sembrarShopify()" title="Crea baseline=0 para todos los SKUs vendidos en Shopify · solo editas cantidad despues" style="background:var(--cx-success-pale);color:#fff;">&#127793; Sembrar SKUs Shopify</button>
+      <button class="btn btn-success" onclick="sembrarShopify()" title="Crea baseline=0 para todos los SKUs vendidos en Shopify · solo editas cantidad despues" style="background:var(--cx-success-pale);color:var(--cx-text);">&#127793; Sembrar SKUs Shopify</button>
       <button class="btn btn-outline" onclick="abrirBaseline()">+ Baseline manual</button>
       <button class="btn btn-primary" onclick="abrirEntrada()">+ Entrada</button>
       <button class="btn btn-outline" onclick="abrirSalida()">+ Salida</button>
@@ -393,7 +404,7 @@ window.addEventListener('error', function(ev){
 <div id="modal-baseline" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:#fff;">&#128202; Registrar baseline</h3>
+      <h3 style="font-size:16px;color:var(--cx-text);">&#128202; Registrar baseline</h3>
       <button onclick="cerrarModal('modal-baseline')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <div style="background:var(--cx-bg-alt);border-left:3px solid #6366f1;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--cx-text-soft);">
@@ -403,7 +414,7 @@ window.addEventListener('error', function(ev){
       <div><div class="label">SKU *</div><input id="bl-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase"></div>
       <div><div class="label">Fecha</div><input id="bl-fecha" type="date" class="input"></div>
     </div>
-    <div class="form-row full"><div><div class="label">Descripcion (opcional)</div><input id="bl-desc" class="input" placeholder="Hydra Balance 30ml"></div></div>
+    <div class="form-row full"><div><div class="label">Descripción (opcional)</div><input id="bl-desc" class="input" placeholder="Hydra Balance 30ml"></div></div>
     <div class="form-row full"><div><div class="label">Unidades fisicas que TIENES HOY *</div><input id="bl-unidades" type="number" min="0" class="input" placeholder="0"></div></div>
     <div class="form-row full"><div><div class="label">Observaciones</div><textarea id="bl-obs" class="textarea" placeholder="Como se conto, donde estaban, etc."></textarea></div></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
@@ -417,7 +428,7 @@ window.addEventListener('error', function(ev){
 <div id="modal-entrada" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:#fff;">+ Entrada de inventario</h3>
+      <h3 style="font-size:16px;color:var(--cx-text);">+ Entrada de inventario</h3>
       <button onclick="cerrarModal('modal-entrada')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <div class="form-row">
@@ -448,7 +459,7 @@ window.addEventListener('error', function(ev){
 <div id="modal-salida" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:#fff;">- Salida de inventario (NO Shopify)</h3>
+      <h3 style="font-size:16px;color:var(--cx-text);">- Salida de inventario (NO Shopify)</h3>
       <button onclick="cerrarModal('modal-salida')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <div style="background:var(--cx-bg-alt);border-left:3px solid var(--cx-warn);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--cx-text-soft);">
@@ -484,12 +495,12 @@ window.addEventListener('error', function(ev){
 <div id="modal-conteo-fisico" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:560px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:#fff;">&#128202; Registrar conteo fisico</h3>
+      <h3 style="font-size:16px;color:var(--cx-text);">&#128202; Registrar conteo físico</h3>
       <button onclick="cerrarModal('modal-conteo-fisico')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <input type="hidden" id="cf-asig-id">
-    <div id="cf-sku-info" style="background:var(--cx-bg-alt);border-left:3px solid #22d3ee;padding:14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:var(--cx-text-soft);">
-      <div id="cf-sku-titulo" style="font-size:16px;font-weight:700;color:#fff;margin-bottom:8px;">SKU</div>
+    <div id="cf-sku-info" style="background:var(--cx-bg-alt);border-left:3px solid var(--cx-info);padding:14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:var(--cx-text-soft);">
+      <div id="cf-sku-titulo" style="font-size:16px;font-weight:700;color:var(--cx-text);margin-bottom:8px;">SKU</div>
       <div id="cf-desglose"></div>
     </div>
     <div class="form-row full"><div><div class="label">Cantidad fisica contada *</div><input id="cf-cantidad" type="number" min="0" class="input" placeholder="0"></div></div>
@@ -507,7 +518,7 @@ window.addEventListener('error', function(ev){
 <div id="modal-caja" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 id="modal-caja-title" style="font-size:16px;color:#fff;">Registrar movimiento</h3>
+      <h3 id="modal-caja-title" style="font-size:16px;color:var(--cx-text);">Registrar movimiento</h3>
       <button onclick="cerrarModal('modal-caja')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <input type="hidden" id="caja-tipo">
@@ -517,7 +528,7 @@ window.addEventListener('error', function(ev){
     </div>
     <div class="form-row full"><div><div class="label">Concepto *</div><input id="caja-concepto" class="input" placeholder="Ej: Pago contraentrega orden #1234"></div></div>
     <div class="form-row">
-      <div><div class="label">Metodo</div>
+      <div><div class="label">Método</div>
         <select id="caja-metodo" class="select"><option>efectivo</option><option>transferencia</option><option>tarjeta</option><option>otro</option></select>
       </div>
       <div><div class="label">Referencia (opcional)</div><input id="caja-referencia" class="input" placeholder="N orden, factura, etc."></div>
@@ -534,7 +545,7 @@ window.addEventListener('error', function(ev){
 <div id="modal-conteo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:520px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:#fff;">&#128230; Nuevo conteo ciclico</h3>
+      <h3 style="font-size:16px;color:var(--cx-text);">&#128230; Nuevo conteo cíclico</h3>
       <button onclick="cerrarModal('modal-conteo')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <div class="form-row">
@@ -741,7 +752,8 @@ async function guardarCaja(){
   if (!body.monto || body.monto <= 0) { showToast('Monto debe ser mayor a 0', 'error'); return; }
   if (!body.concepto) { showToast('Concepto requerido', 'error'); return; }
   try {
-    const r = await fetch('/api/animus/caja', _fetchOpts('POST', body));
+    const r = await _fetchUna('/api/animus/caja', _fetchOpts('POST', body));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Movimiento registrado', 'success');
@@ -759,7 +771,8 @@ async function anularCaja(id){
   if (motivo === null) return;
   if (!motivo.trim()) { showToast('El motivo es obligatorio', 'error'); return; }
   try {
-    const r = await fetch('/api/animus/caja/' + id, _fetchOpts('DELETE', {motivo: motivo.trim()}));
+    const r = await _fetchUna('/api/animus/caja/' + id, _fetchOpts('DELETE', {motivo: motivo.trim()}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Recibo ' + (d.recibo_numero||'') + ' anulado', 'success');
@@ -871,8 +884,9 @@ async function codCobrar(i){
     if (!obs.trim()) { showToast('La diferencia necesita explicacion', 'error'); return; }
   }
   try {
-    const r = await fetch('/api/animus/contraentrega/' + encodeURIComponent(sid) + '/cobrar',
+    const r = await _fetchUna('/api/animus/contraentrega/' + encodeURIComponent(sid) + '/cobrar',
                           _fetchOpts('POST', {valor_recibido: val, observaciones: obs}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Recibo ' + d.recibo_numero + ' registrado en caja', 'success');
@@ -890,8 +904,9 @@ async function codAnular(i){
   if (motivo === null) return;
   if (!motivo.trim()) { showToast('El motivo es obligatorio', 'error'); return; }
   try {
-    const r = await fetch('/api/animus/contraentrega/' + encodeURIComponent(sid) + '/anular',
+    const r = await _fetchUna('/api/animus/contraentrega/' + encodeURIComponent(sid) + '/anular',
                           _fetchOpts('POST', {motivo: motivo.trim()}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Cobro anulado', 'success');
@@ -901,7 +916,7 @@ async function codAnular(i){
   }
 }
 
-// Inventario Ciclico
+// Inventario Cíclico
 let _SKUS_CACHE = [];
 
 async function loadInvSkus(){
@@ -947,7 +962,7 @@ async function loadInvConteos(){
     renderInvKpis(d.kpis||{});
     const body = document.getElementById('inv-conteos-body');
     if (!d.conteos.length) {
-      body.innerHTML = '<tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin conteos registrados aun.</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin conteos registrados aún.</td></tr>';
       return;
     }
     body.innerHTML = d.conteos.map(function(co){
@@ -1050,7 +1065,8 @@ async function guardarConteo(){
     explicacion: explicacion,
   };
   try {
-    const r = await fetch('/api/animus/inventario-ciclico', _fetchOpts('POST', body));
+    const r = await _fetchUna('/api/animus/inventario-ciclico', _fetchOpts('POST', body));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Conteo registrado - diferencia ' + d.diferencia, 'success');
@@ -1112,7 +1128,7 @@ function renderInvFis() {
       '<td style="text-align:right;color:var(--cx-warn-text);font-weight:600;">-' + x.shopify + '</td>' +
       '<td style="text-align:right;color:var(--cx-danger-text);font-weight:600;">-' + x.salidas + '</td>' +
       '<td style="text-align:right;color:var(--cx-primary-text);font-weight:600;">' + (x.ajustes>0?'+':'') + x.ajustes + '</td>' +
-      '<td style="text-align:right;font-weight:800;font-size:14px;color:#22d3ee;">' + x.esperado + '</td>' +
+      '<td style="text-align:right;font-weight:800;font-size:14px;color:var(--cx-info-text);">' + x.esperado + '</td>' +
       '<td><button class="btn btn-outline btn-sm" onclick="verMovsSku(\'' + (x.sku||'').replace(/[\'\\\\]/g, '') + '\')">Ver mov</button></td>' +
       '</tr>';
   }).join('');
@@ -1184,7 +1200,8 @@ async function guardarBaseline() {
   if (!payload.sku) { showToast('SKU obligatorio', 'error'); return; }
   if (isNaN(payload.unidades_baseline) || payload.unidades_baseline < 0) { showToast('Unidades invalido', 'error'); return; }
   try {
-    var r = await fetch('/api/animus/inv-fisico/baseline', _fetchOpts('POST', payload));
+    var r = await _fetchUna('/api/animus/inv-fisico/baseline', _fetchOpts('POST', payload));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     var d = await r.json();
     if (d.ok) {
       showToast('Baseline guardado: ' + payload.sku + ' = ' + payload.unidades_baseline, 'success');
@@ -1214,7 +1231,8 @@ async function guardarEntrada() {
   if (!payload.sku) { showToast('SKU obligatorio', 'error'); return; }
   if (isNaN(payload.cantidad) || payload.cantidad <= 0) { showToast('Cantidad debe ser > 0', 'error'); return; }
   try {
-    var r = await fetch('/api/animus/inv-fisico/entrada', _fetchOpts('POST', payload));
+    var r = await _fetchUna('/api/animus/inv-fisico/entrada', _fetchOpts('POST', payload));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     var d = await r.json();
     if (d.ok) {
       showToast('Entrada registrada: +' + payload.cantidad + ' uds de ' + payload.sku, 'success');
@@ -1245,7 +1263,8 @@ async function guardarSalida() {
   if (!payload.sku) { showToast('SKU obligatorio', 'error'); return; }
   if (isNaN(payload.cantidad) || payload.cantidad <= 0) { showToast('Cantidad debe ser > 0', 'error'); return; }
   try {
-    var r = await fetch('/api/animus/inv-fisico/salida', _fetchOpts('POST', payload));
+    var r = await _fetchUna('/api/animus/inv-fisico/salida', _fetchOpts('POST', payload));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     var d = await r.json();
     if (d.ok) {
       showToast('Salida registrada: -' + payload.cantidad + ' uds de ' + payload.sku, 'success');
@@ -1285,7 +1304,8 @@ async function cargarPendientesConteo() {
 async function asignarConteoHoy() {
   if (!confirm('Asignar 5 SKUs para contar hoy? Si ya hay asignaciones pendientes, no se duplican.')) return;
   try {
-    var r = await fetch('/api/animus/inv-fisico/conteo/asignar-hoy', _fetchOpts('POST', {n: 5}));
+    var r = await _fetchUna('/api/animus/inv-fisico/conteo/asignar-hoy', _fetchOpts('POST', {n: 5}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     var d = await r.json();
     if (d.ok) {
       var n = (d.asignados||[]).length || d.ya_asignados_hoy || 0;
@@ -1301,7 +1321,8 @@ async function sembrarShopify() {
   if (!confirm('Sembrar baseline=0 para TODOS los SKUs vendidos en Shopify (ultimos 30 dias)?\n\nDespues solo editas cada uno con la cantidad real que tienes fisicamente.\n\nLos SKUs que ya tienen baseline NO se tocan.')) return;
   showToast('Sembrando SKUs desde Shopify...', 'info');
   try {
-    var r = await fetch('/api/animus/inv-fisico/baseline/sembrar-desde-shopify', _fetchOpts('POST', {dias: 30}));
+    var r = await _fetchUna('/api/animus/inv-fisico/baseline/sembrar-desde-shopify', _fetchOpts('POST', {dias: 30}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     var d = await r.json();
     if (d.ok) {
       var msg = d.creados + ' SKUs nuevos sembrados';
@@ -1320,7 +1341,8 @@ async function sembrarShopify() {
 async function syncShopifyInv() {
   showToast('Sincronizando ventas Shopify...', 'info');
   try {
-    var r = await fetch('/api/animus/inv-fisico/sync-shopify', _fetchOpts('POST'));
+    var r = await _fetchUna('/api/animus/inv-fisico/sync-shopify', _fetchOpts('POST'));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     var d = await r.json();
     if (d.ok) {
       showToast(d.ventas_creadas + ' ventas Shopify reflejadas en inventario', 'success');
@@ -1347,13 +1369,13 @@ function abrirConteoFisico(asigId, sku, esperado) {
       var d = document.getElementById('cf-desglose');
       d.innerHTML =
         '<div style="display:grid;grid-template-columns:auto auto;gap:6px 16px;font-size:12px;">' +
-        '<span style="color:var(--cx-text-mute);">Baseline (' + (info.fecha_baseline||'') + ')</span><span style="text-align:right;color:#fff;font-weight:600;">' + info.baseline + '</span>' +
+        '<span style="color:var(--cx-text-mute);">Baseline (' + (info.fecha_baseline||'') + ')</span><span style="text-align:right;color:var(--cx-text);font-weight:600;">' + info.baseline + '</span>' +
         '<span style="color:var(--cx-text-mute);">+ Entradas</span><span style="text-align:right;color:var(--cx-success-text);font-weight:600;">+' + info.entradas + '</span>' +
         '<span style="color:var(--cx-text-mute);">- Ventas Shopify</span><span style="text-align:right;color:var(--cx-warn-text);font-weight:600;">-' + info.shopify + '</span>' +
         '<span style="color:var(--cx-text-mute);">- Salidas otras</span><span style="text-align:right;color:var(--cx-danger-text);font-weight:600;">-' + info.salidas + '</span>' +
         '<span style="color:var(--cx-text-mute);">+/- Ajustes</span><span style="text-align:right;color:var(--cx-primary-text);font-weight:600;">' + (info.ajustes>=0?'+':'') + info.ajustes + '</span>' +
         '<hr style="grid-column:1/-1;border:none;border-top:1px solid var(--cx-border);margin:4px 0;">' +
-        '<span style="color:#fff;font-weight:700;">= ESPERADO</span><span style="text-align:right;color:#22d3ee;font-weight:800;font-size:18px;">' + info.esperado + '</span>' +
+        '<span style="color:var(--cx-text);font-weight:700;">= ESPERADO</span><span style="text-align:right;color:var(--cx-info-text);font-weight:800;font-size:18px;">' + info.esperado + '</span>' +
         '</div>';
     });
   // Live preview de diferencia al escribir
@@ -1393,8 +1415,9 @@ async function guardarConteoFisico() {
   var motivo = document.getElementById('cf-motivo').value;
   var aplicar = document.getElementById('cf-aplicar').checked;
   try {
-    var r = await fetch('/api/animus/inv-fisico/conteo/' + asigId + '/registrar',
+    var r = await _fetchUna('/api/animus/inv-fisico/conteo/' + asigId + '/registrar',
                         _fetchOpts('POST', {cantidad_fisica: fisica, motivo_diferencia: motivo, aplicar_ajuste: aplicar}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     var d = await r.json();
     if (d.ok) {
       var msg = d.diferencia === 0 ? 'Cuadra perfecto' : ('Diferencia ' + d.diferencia + (aplicar?' · ajustado':''));
@@ -1423,7 +1446,7 @@ async function cargarDiagnostico() {
     var html = '';
     // KPIs en línea
     html += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-size:13px;">';
-    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Conteos 30d</span> <b style="color:#fff;margin-left:8px;">' + (k.total_conteos||0) + '</b></div>';
+    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Conteos 30d</span> <b style="color:var(--cx-text);margin-left:8px;">' + (k.total_conteos||0) + '</b></div>';
     html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Con diferencia</span> <b style="color:var(--cx-warn-text);margin-left:8px;">' + (k.con_dif||0) + '</b></div>';
     html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Faltantes</span> <b style="color:var(--cx-danger-text);margin-left:8px;">-' + (k.faltantes||0) + '</b></div>';
     html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Sobrantes</span> <b style="color:var(--cx-success-text);margin-left:8px;">+' + (k.sobrantes||0) + '</b></div>';
@@ -1443,7 +1466,7 @@ async function cargarDiagnostico() {
     }
     // SKUs vendidos sin baseline
     if ((d.sin_baseline||[]).length) {
-      html += '<div style="background:var(--cx-primary-soft);color:#a5b4fc;padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px;">';
+      html += '<div style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px;">';
       html += '&#9432; ' + d.sin_baseline.length + ' SKUs vendidos en Shopify (30d) SIN baseline registrado: ';
       html += '<b>' + d.sin_baseline.slice(0, 8).join(', ') + (d.sin_baseline.length > 8 ? ' y ' + (d.sin_baseline.length - 8) + ' mas' : '') + '</b>';
       html += '</div>';
@@ -1524,7 +1547,8 @@ async function gestionarPqr(id, estadoActual){
   var body = {estado:nuevo.trim()};
   if(resp) body.respuesta = resp;
   try{
-    var r = await fetch('/api/animus/pqr/'+id, _fetchOpts('PATCH', body));
+    var r = await _fetchUna('/api/animus/pqr/'+id, _fetchOpts('PATCH', body));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     var d = await r.json();
     if(r.ok && d.ok){ loadAnimusPqr(); } else alert('Error: '+(d.error||'?'));
   }catch(e){ alert('Error red: '+e.message); }
@@ -1535,7 +1559,8 @@ async function guardarPqrManual(){
   if(desc.length<5){ alert('Describe el PQR'); return; }
   var body = {tipo:document.getElementById('pqr-ani-tipo').value, contacto_nombre:document.getElementById('pqr-ani-cliente').value.trim(), descripcion:desc};
   try{
-    var r = await fetch('/api/animus/pqr', _fetchOpts('POST', body));
+    var r = await _fetchUna('/api/animus/pqr', _fetchOpts('POST', body));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
     var d = await r.json();
     if(r.ok && d.ok){ cerrarModal('modal-pqr-ani'); document.getElementById('pqr-ani-desc').value=''; document.getElementById('pqr-ani-cliente').value=''; loadAnimusPqr(); }
     else alert('Error: '+(d.error||'?'));

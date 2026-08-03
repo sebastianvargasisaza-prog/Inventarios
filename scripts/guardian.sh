@@ -89,6 +89,12 @@ CORAZON=(
   # La plata de contraentrega: incluye el guard de que ningún sync de Shopify borre la
   # marca que escribe otro (era lo que se la comía en silencio).
   "tests/test_contraentrega_caja.py"
+  # Módulo /animus (2-ago): mide el contraste de cada par (fondo, texto) en los DOS temas
+  # -el título del módulo y los 7 títulos de modal daban 1.00 en claro, y el botón Eliminar
+  # y el banner de error tenían fondo y texto en el MISMO token- y exige que toda acción que
+  # INSERTA pase por el guard anti doble-click (un doble click creaba DOS recibos de caja).
+  # No toca la BD: corre en 0,2 s.
+  "tests/test_animus_modulo_premium.py"
   # La recepcion ADMINISTRATIVA no puede exigir datos que solo Calidad toma, y el control
   # INVIMA vive en la liberacion (no se libera un lote con numero provisional).
   "tests/test_recepcion_administrativa.py"
