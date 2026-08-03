@@ -1,4 +1,4 @@
-import sqlite3, json, re, traceback, unicodedata, urllib.request
+import sqlite3, json, logging, re, traceback, unicodedata, urllib.request
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from config import DB_PATH, ADMIN_USERS, ANIMUS_ACCESS
@@ -10,6 +10,7 @@ from http_helpers import validate_money
 from tz_colombia import hoy_colombia as _hoy_col, now_colombia as _now_col
 
 bp = Blueprint("animus", __name__)
+log = logging.getLogger('animus')
 
 CALENDARIO_COSMETICO = [
     {"evento": "Día de la Mujer",       "fecha": "2026-03-08", "color": "#e91e8c", "multiplicador": 1.8},
@@ -1288,8 +1289,39 @@ def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
             ORDER BY o.creado_en DESC, o.shopify_id DESC""",
         (desde, hasta)).fetchall()
 
+    # Los BORRADORES son la otra mitad (3-ago). El pedido contraentrega se crea como borrador
+    # y se completa recién cuando la plata entra, así que hasta ahora no existía para EOS.
+    #
+    # ANTI-DOBLE-COBRO: al completarse, el borrador genera una ORDEN con otro id, y el mismo
+    # pedido físico quedaría en las dos fuentes. `order_id` guarda ese vínculo; acá se arma el
+    # conjunto de órdenes que YA vienen de un borrador para no listarlas dos veces. Se prefiere
+    # el borrador porque es donde está la marca que escribió la persona.
+    borradores, ordenes_de_borrador = [], set()
+    try:
+        borradores = conn.execute(
+            """SELECT b.shopify_id, b.nombre, b.total, b.creado_en, b.ciudad,
+                      COALESCE(b.nota,''), COALESCE(b.tags,''), COALESCE(b.estado,''),
+                      COALESCE(b.order_id,''),
+                      cc.id, cc.valor_recibido, cc.estado, cc.cobrado_por, cc.cobrado_at,
+                      COALESCE(cc.observaciones,''), cc.caja_mov_id
+                 FROM animus_shopify_borradores b
+                 LEFT JOIN animus_cod_cobros cc
+                        ON cc.shopify_id = b.shopify_id AND cc.estado <> 'anulado'
+                WHERE substr(COALESCE(b.creado_en,''),1,10) >= ?
+                  AND substr(COALESCE(b.creado_en,''),1,10) <= ?
+                ORDER BY b.creado_en DESC, b.shopify_id DESC""",
+            (desde, hasta)).fetchall()
+        ordenes_de_borrador = {str(b[8]) for b in borradores if b[8]}
+    except Exception as e:
+        # La tabla puede no existir todavía (migración 407 sin aplicar). Se declara, no se
+        # oculta: una lista sin borradores que se lea como completa contesta al revés (M100).
+        log.warning('no pude leer los borradores de contraentrega: %s', e)
+
     out = []
     for f in filas:
+        # esta orden nació de un borrador que ya está en la lista · no se cuenta dos veces
+        if str(f[0]) in ordenes_de_borrador:
+            continue
         ok, donde = es_contraentrega(f[5], f[6], f[7], patron)
         if not ok:
             continue
@@ -1313,7 +1345,37 @@ def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
             # probablemente no vuelve, o la transportadora ya la consignó y nadie la registró).
             # Se deriva de la fecha del pedido, que ya está -- no hace falta ningún dato nuevo.
             'dias_en_calle': _dias_desde(f[3]) if not cobrado else None,
+            'origen': 'orden',
         })
+
+    for b in borradores:
+        # El medio de pago no aplica: un borrador todavía no se pagó por ningún lado. Se miran
+        # la nota y las etiquetas, que es donde la persona escribe la marca.
+        ok, donde = es_contraentrega(b[5], b[6], '', patron)
+        if not ok:
+            continue
+        cobrado = b[9] is not None
+        if cobrado and not incluir_cobrados:
+            continue
+        esperado = float(b[2] or 0)
+        recibido = float(b[10] or 0) if cobrado else 0.0
+        out.append({
+            'shopify_id': b[0], 'pedido': b[1] or '', 'valor_esperado': esperado,
+            'fecha': (b[3] or '')[:10], 'ciudad': b[4] or '',
+            'detectado_por': donde, 'nota': (b[5] or '')[:200],
+            'entrega': b[7], 'estado_pago': 'borrador',
+            'cobrado': cobrado, 'valor_recibido': recibido,
+            'estado_cobro': b[11] or 'pendiente', 'cobrado_por': b[12] or '',
+            'cobrado_at': b[13] or '', 'observaciones': b[14] or '',
+            'caja_mov_id': b[15],
+            'diferencia': round(recibido - esperado, 2) if cobrado else 0.0,
+            'dias_en_calle': _dias_desde(b[3]) if not cobrado else None,
+            # Se DECLARA de dónde salió: cuando alguien pregunte por qué un pedido está en la
+            # caja, la respuesta tiene que ser verificable sin abrir el código.
+            'origen': 'borrador',
+        })
+
+    out.sort(key=lambda p: (p['fecha'] or '', str(p['shopify_id'])), reverse=True)
     return out
 
 
@@ -1473,6 +1535,204 @@ def animus_cod_diagnostico():
     })
 
 
+def sincronizar_borradores(conn, *, paginas_max=12, presupuesto_seg=45):
+    """Trae los BORRADORES de Shopify a su propia tabla. Devuelve un resumen.
+
+    Por qué existe: los pedidos contraentrega se crean como borrador y se completan recién
+    cuando la plata entra. El sync de EOS lee `orders.json`, así que hasta hoy esos pedidos no
+    existían para el sistema -- de 7.032 órdenes el detector hallaba 4, y no era el patrón.
+
+    Por qué en tabla PROPIA y no en `animus_shopify_orders`: esa tabla la leen 10 blueprints
+    para calcular la velocidad de venta y planear producción. Un borrador NO es una venta
+    todavía; meterlo ahí inflaría la demanda y haría fabricar de más.
+
+    `order_id` es el anti-doble-cobro: al completarse, el borrador genera una orden con OTRO
+    id, así que el mismo pedido físico aparecería en las dos fuentes y se podría cobrar dos
+    veces. Guardar el vínculo permite excluir la orden si el borrador ya se cobró.
+    """
+    res = {'ok': False, 'vistos': 0, 'guardados': 0, 'paginas': 0,
+           'se_corto_por': None, 'error': None}
+    try:
+        from shopify_client import _get_shopify_config
+        from http_helpers import fetch_with_retry
+    except Exception as e:
+        res['error'] = 'cliente de Shopify no disponible: %s' % e
+        return res
+    token, shop = _get_shopify_config(conn)
+    if not token or not shop:
+        res['error'] = 'Shopify no configurado (shopify_token/shopify_shop)'
+        return res
+
+    import time
+    t0 = time.monotonic()
+    ahora = _now_col().strftime('%Y-%m-%d %H:%M:%S')
+    url = "https://%s/admin/api/2024-01/draft_orders.json?limit=250" % shop
+    c = conn.cursor()
+    try:
+        while url and res['paginas'] < paginas_max:
+            # Presupuesto de pared y timeout de socket (M92): un loop de red sin tope puede
+            # retener un worker hasta que gunicorn lo mate, y eso tumba la app entera.
+            if time.monotonic() - t0 > presupuesto_seg:
+                res['se_corto_por'] = 'presupuesto de tiempo (%ss)' % presupuesto_seg
+                break
+            req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+            with fetch_with_retry(req, timeout=20, max_intentos=2) as r:
+                body = r.read()
+                link = r.headers.get('Link', '') or ''
+            for d in (json.loads(body).get('draft_orders') or []):
+                res['vistos'] += 1
+                sid = str(d.get('id') or '').strip()
+                if not sid:
+                    continue
+                addr = d.get('shipping_address') or d.get('billing_address') or {}
+                oid = d.get('order_id')
+                # UPSERT con SOLO las columnas de este sync (M108): si otro proceso escribe
+                # esta tabla mañana, ninguno puede borrar lo del otro.
+                c.execute(
+                    """INSERT INTO animus_shopify_borradores
+                       (shopify_id, nombre, total, moneda, estado, nota, tags, ciudad,
+                        creado_en, actualizado_en, order_id, sincronizado_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                       ON CONFLICT (shopify_id) DO UPDATE SET
+                         nombre=excluded.nombre, total=excluded.total, estado=excluded.estado,
+                         nota=excluded.nota, tags=excluded.tags, ciudad=excluded.ciudad,
+                         actualizado_en=excluded.actualizado_en, order_id=excluded.order_id,
+                         sincronizado_at=excluded.sincronizado_at""",
+                    (sid, (d.get('name') or '').strip(), float(d.get('total_price') or 0),
+                     (d.get('currency') or 'COP'), (d.get('status') or '').strip(),
+                     (d.get('note') or ''), (d.get('tags') or ''),
+                     (addr.get('city') or ''), (d.get('created_at') or '')[:19],
+                     (d.get('updated_at') or '')[:19],
+                     (str(oid) if oid else None), ahora))
+                res['guardados'] += 1
+            res['paginas'] += 1
+            url = None
+            for parte in link.split(','):
+                if 'rel="next"' in parte and '<' in parte:
+                    url = parte.split('<', 1)[1].split('>', 1)[0]
+                    break
+        conn.commit()
+        res['ok'] = True
+    except Exception as e:
+        conn.rollback()
+        res['error'] = 'Shopify no respondió: %s' % e
+    return res
+
+
+@bp.route("/api/animus/contraentrega/borradores/sync", methods=["POST"])
+def animus_cod_borradores_sync():
+    """Trae los borradores de Shopify (admin). Idempotente: se puede repetir sin duplicar."""
+    u, err, code = _auth()
+    if err: return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Solo admin"}), 403
+    conn = _db()
+    res = sincronizar_borradores(conn)
+    if not res['ok']:
+        return jsonify({"error": res['error'] or 'no se pudo sincronizar', **res}), 502
+    audit_log(None, usuario=u, accion='ANIMUS_BORRADORES_SYNC',
+              tabla='animus_shopify_borradores', registro_id=0,
+              despues={'vistos': res['vistos'], 'guardados': res['guardados']},
+              detalle='Sync de borradores de Shopify · %d vistos' % res['vistos'])
+    return jsonify({"ok": True, **res})
+
+
+@bp.route("/api/animus/contraentrega/borradores", methods=["GET"])
+def animus_cod_borradores():
+    """Read-only: ¿hay contraentregas viviendo como BORRADOR en Shopify?
+
+    Punto ciego encontrado el 3-ago: el sync de EOS lee `orders.json` y NUNCA `draft_orders.json`
+    (cero referencias en todo el repo). Un borrador es otro recurso: existe en Shopify, tiene su
+    nota y sus etiquetas, y **no aparece en orders hasta que alguien lo completa**. Si el flujo de
+    contraentrega es "creo el borrador, lo despacho, lo cobro y recién ahí lo marco pagado",
+    entonces esos pedidos son invisibles para EOS por construcción -- y la caja no puede estar
+    completa por más que se afine el patrón.
+
+    Esto NO sincroniza nada: pregunta, cuenta y devuelve. Decidir si los borradores entran a la
+    caja es de negocio (un borrador todavía no es una venta), así que primero se mira el tamaño.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Solo admin"}), 403
+
+    conn = _db()
+    patron = cod_patron(conn)
+    try:
+        from shopify_client import _get_shopify_config
+        from http_helpers import fetch_with_retry
+    except Exception as e:
+        return jsonify({"error": "no pude cargar el cliente de Shopify: %s" % e}), 500
+    token, shop = _get_shopify_config(conn)
+    if not token or not shop:
+        return jsonify({"error": "Shopify no configurado"}), 400
+
+    # Presupuesto de pared + tope de páginas (M92): esto corre en un request y no puede
+    # acercarse al timeout de gunicorn. Si se corta, se DECLARA (M100) -- una lista parcial
+    # que se lea como total contestaría la pregunta al revés.
+    import time
+    t0 = time.monotonic()
+    url = ("https://%s/admin/api/2024-01/draft_orders.json?limit=250&status=open" % shop)
+    vistos, con_nota, con_tags, detectados = 0, 0, 0, 0
+    muestra, tag_n, por_señal = [], {}, {'nota': 0, 'etiqueta': 0, 'medio de pago': 0}
+    paginas, corto = 0, None
+    try:
+        while url and paginas < 8:
+            if time.monotonic() - t0 > 25:
+                corto = "presupuesto de tiempo (25s)"
+                break
+            req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+            with fetch_with_retry(req, timeout=20, max_intentos=2) as r:
+                body = r.read()
+                link = r.headers.get('Link', '') or ''
+            for d in (json.loads(body).get('draft_orders') or []):
+                vistos += 1
+                nota = (d.get('note') or '').strip()
+                tags = (d.get('tags') or '').strip()
+                if nota:
+                    con_nota += 1
+                if tags:
+                    con_tags += 1
+                for t in tags.split(','):
+                    t = t.strip()
+                    if t:
+                        tag_n[t] = tag_n.get(t, 0) + 1
+                ok, donde = es_contraentrega(nota, tags, '', patron)
+                if ok:
+                    detectados += 1
+                    por_señal[donde] += 1
+                if len(muestra) < 25 and (nota or tags):
+                    muestra.append({'nombre': d.get('name') or '',
+                                    'total': d.get('total_price') or '0',
+                                    'nota': nota[:120], 'etiquetas': tags[:120],
+                                    'creado': (d.get('created_at') or '')[:10]})
+            paginas += 1
+            url = None
+            for parte in link.split(','):
+                if 'rel="next"' in parte and '<' in parte:
+                    url = parte.split('<', 1)[1].split('>', 1)[0]
+                    break
+    except Exception as e:
+        return jsonify({"error": "Shopify no respondió: %s" % e,
+                        "borradores_vistos": vistos}), 502
+
+    return jsonify({
+        "ok": True, "patron": patron,
+        "borradores_abiertos": vistos,
+        "paginas_leidas": paginas,
+        # Si esto NO es None, la respuesta es PARCIAL: un cero acá abajo no probaría nada.
+        "se_corto_por": corto,
+        "con_nota": con_nota, "con_etiquetas": con_tags,
+        "detectados_como_contraentrega": detectados,
+        "por_señal": por_señal,
+        "etiquetas": [{"valor": k, "borradores": tag_n[k]}
+                      for k in sorted(tag_n, key=lambda x: -tag_n[x])[:40]],
+        "muestra": muestra,
+        "para_que_sirve": ("Si aca aparecen contraentregas, el patron no es el problema: el sync "
+                           "de EOS solo lee orders.json y nunca draft_orders.json"),
+    })
+
+
 @bp.route("/api/animus/contraentrega/patron", methods=["PUT"])
 def animus_cod_patron_set():
     """Ajusta el patrón de detección sin desplegar (admin)."""
@@ -1510,6 +1770,19 @@ def animus_cod_cobrar(shopify_id):
         "SELECT nombre, total, COALESCE(nota,''), COALESCE(tags,''), COALESCE(gateway,''), "
         "       COALESCE(creado_en,'') FROM animus_shopify_orders WHERE shopify_id=?",
         (str(shopify_id),)).fetchone()
+    es_borrador = False
+    if not row:
+        # Puede ser un BORRADOR (3-ago): el pedido contraentrega se crea así y se completa
+        # recién cuando la plata entra, así que la mayoría se cobra estando todavía en
+        # borrador. Sin esta rama, cobrarlos daba 404 y la caja no se podía usar.
+        try:
+            row = c.execute(
+                "SELECT nombre, total, COALESCE(nota,''), COALESCE(tags,''), '', "
+                "       COALESCE(creado_en,'') FROM animus_shopify_borradores WHERE shopify_id=?",
+                (str(shopify_id),)).fetchone()
+            es_borrador = row is not None
+        except Exception as e:
+            log.warning('no pude buscar el borrador %s: %s', shopify_id, e)
     if not row:
         return jsonify({"error": "Ese pedido no está en EOS · corré el sync de Shopify"}), 404
     ok_cod, _donde = es_contraentrega(row[2], row[3], row[4], cod_patron(conn))
@@ -1550,12 +1823,16 @@ def animus_cod_cobrar(shopify_id):
 
     # La plata entra a caja por el MISMO camino que un ingreso manual: mismo correlativo, mismo
     # recibo. Dos numeradores distintos para la misma caja serían dos series que se pisan.
+    # De dónde salió queda escrito en el recibo: un borrador y una orden son dos registros
+    # distintos de Shopify, y cuando alguien audite la caja tiene que poder rastrearlo.
     recibo, mov_id = registrar_movimiento_caja(
         c, tipo='ingreso',
-        concepto='Contraentrega %s' % pedido,
+        concepto='Contraentrega %s%s' % (pedido, ' (borrador)' if es_borrador else ''),
         monto=recibido, fecha=fecha, metodo='efectivo',
         referencia=str(shopify_id),
-        observaciones=(obs or 'Cobro de pedido contraentrega'), usuario=u)
+        observaciones=(obs or ('Cobro de pedido contraentrega'
+                               + (' · creado como borrador en Shopify' if es_borrador else ''))),
+        usuario=u)
     c.execute("UPDATE animus_cod_cobros SET caja_mov_id=? WHERE id=?", (mov_id, cobro_id))
 
     audit_log(c, usuario=u, accion='ANIMUS_COD_COBRAR', tabla='animus_cod_cobros',

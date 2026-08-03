@@ -393,3 +393,142 @@ def test_elegir_una_etiqueta_hace_entrar_esos_pedidos_a_la_caja(app, db_clean):
     # y el anclaje impide que 'vmc' se lleve puesto a 'vmcx': meter plata que no es
     # contraentrega descuadra la caja contra la realidad, que es lo que hay que evitar
     assert PREFIJO + 'MARCA2' not in sids, "'vmc' matcheo dentro de 'vmcx'"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EL PUNTO CIEGO DE LOS BORRADORES (3-ago)
+# Sebastian, mostrando la pantalla donde marcan el pedido: "¿seguro no hay mas pedidos
+# contraentrega? alli donde dice notas ponen contraentrega o en etiqueta, ¿estas rastreando
+# esas dos?". Si a las dos -- pero solo sobre `orders.json`. Un BORRADOR (`draft_orders`) es
+# otro recurso de Shopify: tiene su nota y sus etiquetas, y NO aparece en orders hasta que
+# alguien lo completa. EOS no lo consultaba en ninguna parte del repo, asi que si el flujo es
+# "creo el borrador, despacho, cobro y recien ahi lo marco pagado", esos pedidos eran
+# invisibles POR CONSTRUCCION y ningun ajuste del patron los iba a encontrar.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_el_diagnostico_de_borradores_es_solo_admin(app, db_clean):
+    from .conftest import TEST_PASSWORD as _TP
+    c = app.test_client()
+    c.post("/login", data={"username": "daniela", "password": _TP},
+           headers=csrf_headers(), follow_redirects=False)
+    r = c.get('/api/animus/contraentrega/borradores')
+    assert r.status_code in (401, 403), r.status_code
+
+
+def test_sin_credenciales_avisa_en_vez_de_reventar(app, db_clean):
+    """Un diagnostico que se cae con 500 no se puede usar justo cuando hace falta."""
+    r = _admin(app).get('/api/animus/contraentrega/borradores')
+    assert r.status_code in (200, 400, 502), r.status_code
+    if r.status_code == 400:
+        assert 'Shopify' in (r.get_json() or {}).get('error', '')
+
+
+def test_el_recorrido_de_borradores_tiene_tope_y_declara_si_se_corto():
+    """M92 + M100: un loop de red dentro de un request necesita presupuesto de pared, y si se
+    corta tiene que DECIRLO -- si no, un cero parcial se lee como 'no hay ninguno', que es
+    exactamente la conclusion opuesta a la verdadera."""
+    import inspect
+    from blueprints import animus
+    src = inspect.getsource(animus.animus_cod_borradores)
+    assert 'time.monotonic()' in src, 'sin presupuesto de pared'
+    assert 'paginas < ' in src, 'sin tope de paginas'
+    assert 'se_corto_por' in src, 'no declara si devolvio una lista parcial'
+    assert 'timeout=' in src, 'peticion sin timeout de socket'
+
+
+def _sembrar_borrador(app, sufijo, *, total=100000, nota='', tags='', fecha=None,
+                      estado='open', order_id=None):
+    from database import get_db
+    from tz_colombia import hoy_colombia
+    fecha = fecha or hoy_colombia().isoformat()
+    sid = PREFIJO + 'B' + sufijo
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO animus_shopify_borradores (shopify_id, nombre, total, moneda, estado, "
+            "nota, tags, ciudad, creado_en, order_id) VALUES (?,?,?,'COP',?,?,?,'Medellin',?,?)",
+            (sid, '#D' + sufijo, total, estado, nota, tags, fecha, order_id))
+        conn.commit()
+    return sid
+
+
+def _limpiar_borradores(app):
+    from database import get_db
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM animus_shopify_borradores WHERE shopify_id LIKE ?", (PREFIJO + '%',))
+        conn.commit()
+
+
+def test_un_borrador_marcado_aparece_por_cobrar(app, db_clean):
+    """La mitad que faltaba: el pedido contraentrega se crea como BORRADOR y se completa recién
+    cuando entra la plata, así que si no se miran los borradores la caja nunca tiene qué cobrar."""
+    _limpiar(app); _limpiar_borradores(app)
+    sid = _sembrar_borrador(app, 'X1', total=120000, nota='CONTRAENTREGA llamar antes')
+    pedidos = _admin(app).get('/api/animus/contraentrega').get_json()['pedidos']
+    mio = [p for p in pedidos if p['shopify_id'] == sid]
+    assert mio, 'el borrador con la marca no salió en la lista'
+    assert mio[0]['origen'] == 'borrador', 'no declara de dónde salió'
+    assert mio[0]['cobrado'] is False and mio[0]['valor_esperado'] == 120000
+
+
+def test_un_borrador_sin_la_marca_no_entra(app, db_clean):
+    """Con dientes: si entrara cualquier borrador, la caja se llenaría de pedidos que no son
+    contraentrega y el saldo dejaría de significar algo."""
+    _limpiar(app); _limpiar_borradores(app)
+    sid = _sembrar_borrador(app, 'X2', nota='entregar en la portería')
+    pedidos = _admin(app).get('/api/animus/contraentrega').get_json()['pedidos']
+    assert not [p for p in pedidos if p['shopify_id'] == sid]
+
+
+def test_cobrar_un_borrador_lo_asienta_en_caja_con_recibo(app, db_clean):
+    _limpiar(app); _limpiar_borradores(app)
+    sid = _sembrar_borrador(app, 'X3', total=75000, tags='vip, contraentrega')
+    c = _admin(app)
+    r = c.post('/api/animus/contraentrega/%s/cobrar' % sid, json={}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    body = r.get_json()
+    assert body['recibo_numero'].startswith('RC-')
+    mov = [m for m in c.get('/api/animus/caja').get_json()['movimientos']
+           if m['referencia'] == sid]
+    assert mov and float(mov[0]['monto']) == 75000
+    # el recibo dice que vino de un borrador · sin eso no se puede auditar la caja
+    assert 'borrador' in (mov[0]['concepto'] or '').lower()
+
+
+def test_un_borrador_completado_no_se_cobra_dos_veces(app, db_clean):
+    """EL guard que importa. Al completarse, el borrador genera una ORDEN con OTRO id, así que
+    el mismo pedido físico queda en las dos fuentes. Sin el vínculo `order_id` se listaría dos
+    veces y se podría cobrar dos veces: plata contada doble en un registro de caja."""
+    _limpiar(app); _limpiar_borradores(app)
+    orden = _sembrar(app, 'ORD9', total=60000, nota='contraentrega')
+    _sembrar_borrador(app, 'X4', total=60000, nota='contraentrega',
+                      estado='completed', order_id=orden)
+
+    pedidos = _admin(app).get('/api/animus/contraentrega').get_json()['pedidos']
+    ids = [p['shopify_id'] for p in pedidos]
+    assert ids.count(orden) == 0, 'la orden que nació del borrador se listó aparte · doble cobro'
+    assert PREFIJO + 'BX4' in ids, 'se perdió el borrador que sí representa ese pedido'
+
+
+def test_los_borradores_no_tocan_la_tabla_que_alimenta_la_planeacion(app, db_clean):
+    """`animus_shopify_orders` la leen 10 blueprints para calcular velocidad de venta y planear
+    producción. Un borrador NO es una venta: si entrara ahí, inflaría la demanda y haría
+    fabricar de más. Por eso vive en tabla propia."""
+    _limpiar(app); _limpiar_borradores(app)
+    sid = _sembrar_borrador(app, 'X5', total=999999, nota='contraentrega')
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        n = conn.execute("SELECT COUNT(*) FROM animus_shopify_orders WHERE shopify_id=?",
+                         (sid,)).fetchone()[0]
+    assert n == 0, 'un borrador se coló en la tabla que alimenta la planeación de producción'
+
+
+def test_el_sync_de_borradores_es_solo_admin(app, db_clean):
+    from .conftest import TEST_PASSWORD as _TP
+    c = app.test_client()
+    c.post("/login", data={"username": "daniela", "password": _TP},
+           headers=csrf_headers(), follow_redirects=False)
+    r = c.post('/api/animus/contraentrega/borradores/sync', json={}, headers=csrf_headers())
+    assert r.status_code in (401, 403), r.status_code

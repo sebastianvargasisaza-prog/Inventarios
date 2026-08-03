@@ -10950,6 +10950,33 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         )""",
         "CREATE INDEX IF NOT EXISTS idx_pqr_descartados_fecha ON pqr_descartados(recibido_en)",
     ]),
+    (407, "Los pedidos contraentrega viven como BORRADOR en Shopify (Sebastián 3-ago: 'sí "
+          "borradores, no sólo lo que ya se colocó como pagado'). El sync de EOS lee "
+          "orders.json y NUNCA draft_orders.json, así que esos pedidos eran invisibles POR "
+          "CONSTRUCCIÓN y ningún ajuste del patrón los iba a encontrar -- de 7.032 pedidos el "
+          "detector hallaba 4. Tabla PROPIA a propósito: `animus_shopify_orders` la leen 10 "
+          "blueprints para calcular velocidad de venta y planear producción, y un borrador NO "
+          "es una venta -- meterlo ahí inflaría la demanda y haría sobre-producir. "
+          "`order_id` es el anti-doble-cobro: cuando el borrador se completa nace una orden "
+          "con OTRO id, y sin ese vínculo el mismo pedido físico se podría cobrar dos veces. "
+          "Tabla NUEVA: no toca nada de lo existente.", [
+        """CREATE TABLE IF NOT EXISTS animus_shopify_borradores (
+            shopify_id TEXT PRIMARY KEY,
+            nombre TEXT,
+            total REAL DEFAULT 0,
+            moneda TEXT DEFAULT 'COP',
+            estado TEXT,
+            nota TEXT DEFAULT '',
+            tags TEXT DEFAULT '',
+            ciudad TEXT DEFAULT '',
+            creado_en TEXT,
+            actualizado_en TEXT,
+            order_id TEXT,
+            sincronizado_at TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_animus_borr_creado ON animus_shopify_borradores(creado_en)",
+        "CREATE INDEX IF NOT EXISTS idx_animus_borr_orderid ON animus_shopify_borradores(order_id)",
+    ]),
 ]
 
 

@@ -217,6 +217,8 @@ window.addEventListener('error', function(ev){
         <input id="cod-hasta" type="date" class="input" style="width:auto;" onchange="loadCod()">
         <button class="btn btn-outline btn-sm" onclick="abrirMarcaCod()"
                 title="Elegir con que etiqueta o medio de pago se marca la contraentrega en Shopify">&#9881; Marca</button>
+        <button class="btn btn-outline btn-sm" onclick="syncBorradores()"
+                title="Trae de Shopify los pedidos que todavia son BORRADOR: la contraentrega se crea asi y se completa recien cuando entra la plata">&#128229; Borradores</button>
       </div>
     </div>
     <div class="kpi-grid" id="cod-kpis" style="margin-bottom:14px;"></div>
@@ -230,10 +232,11 @@ window.addEventListener('error', function(ev){
           <th>Ciudad</th>
           <th style="text-align:right;">Valor</th>
           <th>Marca</th>
+          <th>Origen</th>
           <th>Estado</th>
           <th></th>
         </tr></thead>
-        <tbody id="cod-body"><tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+        <tbody id="cod-body"><tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -905,6 +908,9 @@ function renderCodPedidos(rows){
       + '<td style="font-size:12px;">'+esc(p.ciudad||'-')+'</td>'
       + '<td style="text-align:right;font-weight:700;">'+fmtCOP(p.valor_esperado||0)+'</td>'
       + '<td><span class="badge badge-gray" title="'+esc(p.nota||'')+'">'+esc(p.detectado_por||'')+'</span></td>'
+      + '<td>' + (p.origen === 'borrador'
+          ? '<span class="badge badge-yellow" title="Todavia es un borrador en Shopify: se completa cuando entra la plata">borrador</span>'
+          : '<span class="badge badge-blue">orden</span>') + '</td>'
       + '<td>'+estado+'</td>'
       + '<td>'+accion+'</td>'
       + '</tr>';
@@ -915,6 +921,27 @@ function renderCodPedidos(rows){
 // El detector busca UN patron en la nota, las etiquetas y el medio de pago. Elegir aca agrega
 // el valor elegido al patron; nunca lo reemplaza, para no perder la nota "contraentrega" que
 // tambien se usa. Todo pasa por app_settings, asi que no hace falta desplegar.
+// Trae de Shopify los pedidos que todavia son BORRADOR. Es un recurso DISTINTO de las
+// ordenes (draft_orders), y ahi es donde vive la contraentrega antes de cobrarse: EOS leia
+// solo orders.json, asi que de 7.032 pedidos el detector encontraba 4 -- y no era el patron.
+async function syncBorradores(){
+  showToast('Trayendo borradores de Shopify...', 'info');
+  try {
+    const r = await _fetchUna('/api/animus/contraentrega/borradores/sync', _fetchOpts('POST', {}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    // Si se corto por presupuesto, se DICE: un numero parcial que se lea como total haria
+    // concluir que no hay mas borradores, que es lo contrario de la verdad.
+    showToast(d.guardados + ' borradores traidos'
+      + (d.se_corto_por ? ' (parcial: ' + d.se_corto_por + ', corre de nuevo)' : ''),
+      d.se_corto_por ? 'error' : 'success');
+    loadCod(); loadCaja();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
 async function abrirMarcaCod(){
   document.getElementById('modal-marca').style.display = 'flex';
   document.getElementById('marca-cuerpo').innerHTML = 'Cargando...';
