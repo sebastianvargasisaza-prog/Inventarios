@@ -4767,6 +4767,41 @@ def prog_reconciliar_batch_record():
         sobra = [{'codigo': cod, 'porcentaje': pct}
                  for cod, pct in sorted(f['items'].items()) if cod not in ref_items]
 
+        # ⚠ INTERCAMBIO CRUZADO · dos códigos que se intercambian entre sí (2-ago).
+        # En EMULSION HIDRATANTE, GEL HIDRATANTE e HYDRAPEPTIDE el batch usa `MP00301`
+        # (propylheptyl 3%) y `MP00302` (ethylhexylglycerin 0,4%), y EOS usa `MP00030` (3%) y
+        # `MP00301` (0,4%). Como `MP00301` está de los DOS lados no entra ni en `falta` ni en
+        # `sobra`: cae en `porcentaje_difiere` y `MP00302` se queda sin propuesta. El emparejador
+        # resuelve pares de a uno y no puede con un ciclo.
+        #
+        # Un código que aparece en los dos lados con porcentajes DISTINTOS está sirviendo para dos
+        # cosas distintas, así que se DESCOMPONE: su uso en el batch queda sin pareja y el de EOS
+        # también. Con eso el ciclo lo resuelve el emparejamiento por porcentaje único que ya hay.
+        #
+        # Acá NO hay umbral ni parecido -- los dos intentos anteriores fallaron justamente por
+        # preguntar "¿se parecen?" y marcaron códigos sanos. Éste pregunta "¿cierra la cuenta?":
+        # sólo se descompone si en el OTRO lado hay un código libre con EXACTAMENTE ese
+        # porcentaje. Si no, no pasa nada y el código sigue reportándose como diferencia de dosis,
+        # que es lo correcto para una diferencia real (el MP00062 de Renova Body).
+        _cruzados = set()
+        for _cod in sorted(set(ref_items) & set(f['items'])):
+            _pb, _pe = ref_items[_cod], f['items'][_cod]
+            if abs(_pb - _pe) <= 0.01 or _pb <= 0 or _pe <= 0:
+                continue
+            _hay_b = any(abs(v - _pb) <= 0.0001 for k, v in f['items'].items()
+                         if k not in ref_items)
+            _hay_e = any(abs(v - _pe) <= 0.0001 for k, v in ref_items.items()
+                         if k not in f['items'])
+            if _hay_b and _hay_e:
+                _cruzados.add(_cod)
+                falta.append({'codigo': _cod, 'porcentaje': _pb,
+                              'nombre': next((i['nombre'] for i in p['items']
+                                              if i['codigo'] == _cod), '')})
+                sobra.append({'codigo': _cod, 'porcentaje': _pe})
+        if _cruzados:
+            falta.sort(key=lambda x: x['codigo'])
+            sobra.sort(key=lambda x: x['codigo'])
+
         # ⚠ SEPARAR "otro código" de "otra fórmula" · sin esto el informe dice las cosas mal (M124).
         # La primera corrida dio "0 de 28 coinciden", que suena a catástrofe -- y casi todo era el
         # MISMO material con dos códigos: el agua es MP00286 en el batch record y MPAGUALI01 en
@@ -4829,11 +4864,25 @@ def prog_reconciliar_batch_record():
                           'nombre_batch_record': x['nombre'], 'confirmado_por': _conf,
                           'aviso': _aviso})
         sobra_real = [x for x in sobra if x['codigo'] not in sobra_usados]
+        # La otra mitad del guard del intercambio cruzado: un código descompuesto que NO llegó a
+        # formar par sigue en `falta_real`/`sobra_real`, y ahí se leería como "falta MP00301" Y
+        # "sobra MP00301" a la vez, que no significa nada. Se revierte: sale de las dos listas y
+        # vuelve a `porcentaje_difiere`, que es lo correcto cuando la diferencia es de DOSIS.
+        if _cruzados:
+            _no_cerro = ({x['codigo'] for x in falta_real} | {x['codigo'] for x in sobra_real}) & _cruzados
+            if _no_cerro:
+                _cruzados -= _no_cerro
+                falta_real = [x for x in falta_real if x['codigo'] not in _no_cerro]
+                sobra_real = [x for x in sobra_real if x['codigo'] not in _no_cerro]
         falta, sobra = falta_real, sobra_real
         # 0.01 de tolerancia: el PDF redondea a 2-3 decimales, no es una diferencia real
+        # los que se DESCOMPUSIERON por intercambio cruzado ya se reportan como par: si además
+        # salieran acá, el mismo hecho aparecería dos veces y con dos arreglos distintos.
+        # Y si la descomposición NO llegó a formar par, vuelven (el `_cruzados -= usados` de
+        # arriba los devuelve), que es lo correcto: sin pareja es una diferencia de dosis.
         difiere = [{'codigo': cod, 'batch_record': ref_items[cod], 'eos': f['items'][cod]}
                    for cod in sorted(set(ref_items) & set(f['items']))
-                   if abs(ref_items[cod] - f['items'][cod]) > 0.01]
+                   if abs(ref_items[cod] - f['items'][cod]) > 0.01 and cod not in _cruzados]
         if falta or sobra or difiere:
             n_dif += 1
         _est = ('coincide' if not (falta or sobra or difiere or pares)

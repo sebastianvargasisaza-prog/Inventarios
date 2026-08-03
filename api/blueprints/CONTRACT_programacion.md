@@ -603,7 +603,7 @@ umbral **0,90 + 0,10 de ventaja**. Medido: `AZ HYBRID/HIBRID CLEAR` = 0,93 (une)
 C+"* contra sus dos candidatos = 0,67 y 0,65 (**sigue ambiguo**, que es lo correcto: lo confirma una
 persona · M132). Va DESPUÉS de exacto y prefijo, así que no le gana a un cruce seguro.
 
-### ⚠ Limitación conocida: el INTERCAMBIO CRUZADO
+### El INTERCAMBIO CRUZADO (resuelto 2-ago)
 
 El emparejador de códigos resuelve pares de a uno. Cuando dos códigos **se intercambian entre sí**
 no puede: en `EMULSION HIDRATANTE`, `GEL HIDRATANTE` y `HYDRAPEPTIDE` el batch usa `MP00301`
@@ -611,10 +611,26 @@ no puede: en `EMULSION HIDRATANTE`, `GEL HIDRATANTE` y `HYDRAPEPTIDE` el batch u
 `MP00301` (0,4 %). Como `MP00301` aparece de los **dos** lados, no entra ni en `falta_en_eos` ni en
 `sobra_en_eos`: cae en `porcentaje_difiere`, y `MP00302` se queda sin propuesta.
 
-**Efecto en la lista del Director Técnico:** `MP00302` figura entre los "ya están bien" **porque el
-código existe en EOS** -- y en EOS es ISODODECANE. La corrección (`MP00302 → MP00301`) está
-verificada por otra vía (conjunto de productos idéntico) y hay que **agregarla a mano** a la lista
-hasta que el emparejador sepa resolver ciclos.
+**Cómo se resolvió.** Un código que aparece en los dos lados con porcentajes **distintos** está
+sirviendo para dos cosas distintas, así que se **descompone**: su uso en el batch queda sin pareja y
+el de EOS también. Con eso el ciclo lo resuelve el emparejamiento por porcentaje único que ya
+existía:
+
+```
+falta:  MP00302 @0,4  ·  MP00301 @3,0
+sobra:  MP00030 @3,0  ·  MP00301 @0,4
+        → 0,4:  MP00302 ↔ MP00301
+        → 3,0:  MP00301 ↔ MP00030
+```
+
+**Sin umbral y con reversión.** Sólo se descompone si en el otro lado hay un código libre con
+**exactamente** ese porcentaje; y si las dos mitades no llegan a formar par, se **revierte** y el
+código vuelve a `porcentaje_difiere` -- que es lo correcto para una diferencia real de dosis (el
+`MP00062` de Renova Body). Los dos intentos anteriores fallaron por preguntar *"¿se parecen?"*; éste
+pregunta *"¿cierra la cuenta?"*.
+
+Invariante que lo protege: **un código no puede FALTAR y SOBRAR a la vez en el mismo producto** --
+eso significaría que la descomposición quedó a medias.
 
 Se intentaron dos reglas automáticas para taparlo (código que el batch usa donde EOS no lo lleva; y
 lo mismo exigiendo un sustituto al porcentaje exacto) y **las dos marcaban códigos sanos**: a

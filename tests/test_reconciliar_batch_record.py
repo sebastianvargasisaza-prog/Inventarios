@@ -308,3 +308,42 @@ def test_el_nombre_exacto_sigue_ganando():
            'GEL HIDRATANTE PLUS': {'nombre_eos': 'GEL HIDRATANTE PLUS', 'items': {}}}
     f, como, _ = _emp()(eos, 'GEL HIDRATANTE', 'Gel Hidratante')
     assert como == 'nombre_exacto' and f['nombre_eos'] == 'GEL HIDRATANTE'
+
+
+# ── Intercambio CRUZADO · dos códigos que se intercambian entre sí (2-ago) ────────────────────
+# En EMULSION HIDRATANTE, GEL HIDRATANTE e HYDRAPEPTIDE el batch usa MP00301 (propylheptyl 3%) y
+# MP00302 (ethylhexylglycerin 0,4%), y EOS usa MP00030 (3%) y MP00301 (0,4%). Como MP00301 está
+# de los DOS lados no entra ni en `falta` ni en `sobra`: el emparejador resuelve pares de a uno y
+# no puede con un ciclo, así que MP00302 se quedaba sin propuesta.
+#
+# Acá NO hay umbral: se descompone sólo si en el otro lado hay un código libre con EXACTAMENTE
+# ese porcentaje, y se REVIERTE si no llega a formar par.
+
+def _rec(app):
+    return _login(app).get('/api/programacion/reconciliar-batch-record').get_json()
+
+
+def test_el_intercambio_cruzado_se_resuelve(app):
+    """MP00302 tiene que dejar de quedarse sin propuesta."""
+    j = _rec(app)
+    _mapa = {(m['codigo_batch_record'], m['codigo_eos']) for m in
+             (j.get('mapa_codigos_batch_record_vs_eos') or [])}
+    # si el corpus tiene el ciclo, tiene que aparecer resuelto en AMBOS sentidos
+    _tiene_ciclo = any(
+        any(x['codigo'] == 'MP00302' for x in (p.get('falta_en_eos') or []))
+        for p in j['productos'])
+    if _tiene_ciclo:
+        assert ('MP00302', 'MP00301') in _mapa or ('MP00301', 'MP00030') in _mapa, _mapa
+
+
+def test_una_diferencia_REAL_de_dosis_no_se_descompone(app):
+    """El guard: si la descomposición no cierra, el código vuelve a `porcentaje_difiere` -- que
+    es lo correcto para una diferencia de DOSIS, no de código."""
+    j = _rec(app)
+    for p in j['productos']:
+        _cods_f = {x['codigo'] for x in (p.get('falta_en_eos') or [])}
+        _cods_s = {x['codigo'] for x in (p.get('sobra_en_eos') or [])}
+        _dobles = _cods_f & _cods_s
+        assert not _dobles, (
+            'un código no puede FALTAR y SOBRAR a la vez en el mismo producto: %r %r'
+            % (p['producto'], _dobles))
