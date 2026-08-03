@@ -252,16 +252,28 @@ def test_el_estado_del_cobro_no_vive_en_la_tabla_que_reescribe_el_sync(app):
         % (set(cols) & prohibidas))
 
 
-def test_la_pantalla_de_animus_tiene_la_pestana_y_carga(app, db_clean):
+def test_la_pantalla_de_animus_tiene_contraentrega_y_carga(app, db_clean):
     """Un endpoint sin pantalla es un campo que en la práctica nadie llena (fue exactamente lo que
-    pasó con la densidad del granel). Si alguien quita la pestaña, esto lo caza."""
+    pasó con la densidad del granel). Si alguien lo saca de la vista, esto lo caza.
+
+    3-ago: Contraentrega dejó de ser una pestaña aparte y vive DENTRO de Caja Menor (decisión de
+    Sebastián: la contraentrega es de dónde viene el efectivo de esa caja, y cobrar un pedido ya
+    asentaba el movimiento ahí con el mismo correlativo de recibo). Lo que este test protege no
+    cambió -- que la contraentrega sea alcanzable y se cargue sola -- sólo cambió dónde vive, así
+    que se verifica contra Caja Menor en vez de contra una pestaña propia.
+    """
     c = _admin(app)
     r = c.get('/animus')
     assert r.status_code == 200, r.status_code
     html = r.data.decode('utf-8', 'replace')
-    assert 'data-tab="cod"' in html, 'desapareció la pestaña de Contraentrega'
-    assert 'loadCod' in html and 'codCobrar' in html, 'la pestaña quedó sin su carga o sin el botón'
-    assert "if (name === 'cod') loadCod();" in html, 'la pestaña no está enrutada · abriría vacía'
+    assert 'id="cod-body"' in html, 'desapareció la tabla de contraentrega'
+    assert 'loadCod' in html and 'codCobrar' in html, 'quedó sin su carga o sin el botón de cobrar'
+    # Caja Menor tiene que cargar las DOS mitades: sin loadCod() la sección abre vacía y se lee
+    # como "no hay contraentregas".
+    assert "if (name === 'caja') { loadCaja(); loadCod(); }" in html, \
+        'Caja Menor no carga la contraentrega · la sección abriría vacía'
+    # Y cobrar tiene que refrescar el saldo, que ahora está en la misma pantalla (M5).
+    assert 'loadCod(); loadCaja();' in html, 'cobrar no refresca el saldo que se ve al lado'
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -318,3 +330,66 @@ def test_la_plata_vieja_en_la_calle_llega_al_centro_de_mando(app, db_clean):
     # Grupo PROPIO: esto es plata que ENTRA. Si cayera en 'pagos' se mezclaría con lo que
     # hay que pagar, que es lo opuesto -- y ademas volveria a inundar esa seccion.
     assert cod[0].get('grupo') == 'cobros', cod[0].get('grupo')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EL REPARTO REAL DE ETIQUETAS (3-ago)
+# El detector traia 4 pedidos de 7.032 porque busca "contraentrega" y en Shopify la marcan
+# con otra palabra. El diagnostico mostraba una MUESTRA de 25 pedidos -- y como toma los mas
+# recientes, los 25 eran del mismo canal y escondian justo lo que se buscaba. Una muestra no
+# contesta "con que palabra la escriben": hace falta el reparto COMPLETO con su plata, que es
+# lo que permite elegir la marca mirando numeros en vez de recordarla.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_el_diagnostico_devuelve_el_reparto_de_etiquetas_con_su_plata(app, db_clean):
+    _limpiar(app)
+    _sembrar(app, 'REP1', total=100000, tags='CM: ENTREGADA, Facturado')
+    _sembrar(app, 'REP2', total=50000,  tags='CM: ENTREGADA, vmc')
+    _sembrar(app, 'REP3', total=25000,  tags='vmc', gateway='manual')
+
+    r = _admin(app).get('/api/animus/contraentrega/diagnostico')
+    assert r.status_code == 200, r.status_code
+    d = r.get_json()
+    porv = {e['valor']: e for e in d['etiquetas']}
+
+    # cuenta PEDIDOS por etiqueta, no filas de texto: una etiqueta que aparece en 2 pedidos vale 2
+    assert porv['CM: ENTREGADA']['pedidos'] >= 2
+    assert porv['vmc']['pedidos'] >= 2
+    # y la plata que representa, que es lo que hace comparable una etiqueta contra otra
+    assert porv['vmc']['monto'] >= 75000, porv['vmc']
+
+    # el medio de pago va por separado: es otra senal y se elige distinto
+    gws = {g['valor']: g for g in d['medios_pago']}
+    assert 'manual' in gws and gws['manual']['pedidos'] >= 1
+
+    # cada fila dice si HOY entra a la caja: sin eso no se sabe cual falta configurar
+    assert all('detecta' in e for e in d['etiquetas'])
+    assert porv['vmc']['detecta'] is False
+
+
+def test_elegir_una_etiqueta_hace_entrar_esos_pedidos_a_la_caja(app, db_clean):
+    """El camino completo del selector: se elige la marca y los pedidos aparecen por cobrar.
+
+    Es la prueba de que el patron que arma la pantalla y el que aplica el backend son el
+    MISMO (M5): si el anclaje o las mayusculas no coinciden, esto sigue devolviendo 0.
+    """
+    _limpiar(app)
+    _sembrar(app, 'MARCA1', total=90000, tags='az, CM: ENTREGADA, vmc')
+    _sembrar(app, 'MARCA2', total=10000, tags='vmcx, Facturado')   # NO debe entrar
+
+    c = _admin(app)
+    assert c.get('/api/animus/contraentrega?estado=pendiente').get_json()['pedidos'] == [] \
+        or all('MARCA' not in (p.get('shopify_id') or '')
+               for p in c.get('/api/animus/contraentrega?estado=pendiente').get_json()['pedidos'])
+
+    # el patron que construye el selector para la etiqueta 'vmc' (minusculas + anclado)
+    r = c.put('/api/animus/contraentrega/patron',
+              json={'patron': r'contraentrega|(^|,)\s*vmc\s*(,|$)'}, headers=csrf_headers())
+    assert r.status_code == 200, r.get_json()
+
+    pedidos = c.get('/api/animus/contraentrega?estado=pendiente').get_json()['pedidos']
+    sids = [p.get('shopify_id') for p in pedidos]
+    assert PREFIJO + 'MARCA1' in sids, 'la etiqueta elegida no hizo entrar el pedido'
+    # y el anclaje impide que 'vmc' se lleve puesto a 'vmcx': meter plata que no es
+    # contraentrega descuadra la caja contra la realidad, que es lo que hay que evitar
+    assert PREFIJO + 'MARCA2' not in sids, "'vmc' matcheo dentro de 'vmcx'"

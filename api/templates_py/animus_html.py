@@ -175,27 +175,72 @@ window.addEventListener('error', function(ev){
 
 <div class="tabs-bar">
   <button class="tab-btn active" data-tab="caja" onclick="switchTab('caja')">&#128176; Caja Menor</button>
-  <button class="tab-btn" data-tab="cod" onclick="switchTab('cod')">&#128666; Contraentrega</button>
   <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario Físico</button>
   <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Conteo Cíclico</button>
   <button class="tab-btn" data-tab="pqr" onclick="switchTab('pqr')">&#128233; PQR Clientes</button>
 </div>
 
-<!-- TAB: CAJA MENOR -->
+<!-- TAB: CAJA MENOR (incluye Contraentrega · 3-ago)
+     La contraentrega no es otro modulo: es de DONDE viene el efectivo de esta caja. Cobrar un
+     pedido ya asentaba el movimiento aca (mismo correlativo de recibo, enlazado por caja_mov_id),
+     asi que a nivel de datos siempre fueron una sola cosa; lo unico separado era la pantalla.
+     Junto, el tablero contesta las tres preguntas de una caja: cuanto tengo, cuanto me deben,
+     y como lo cobro -- que separadas exigian ir y volver entre pestanas. -->
 <div id="tab-caja" class="tab-panel active">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
       <div class="page-title">&#128176; Caja Menor</div>
-      <div class="page-sub">Ingresos en efectivo (ventas contraentrega) y egresos del local. Saldo acumulado.</div>
+      <div class="page-sub">El efectivo del local: lo que entra por contraentrega, lo que sale, y lo que todavía está en la calle.</div>
     </div>
     <button class="btn btn-primary" onclick="abrirRegistro('ingreso')">+ Registrar ingreso</button>
   </div>
 
   <div class="kpi-grid" id="caja-kpis"></div>
 
+  <!-- CONTRAENTREGA · la plata que todavia no entro, y el boton para hacerla entrar -->
   <div class="card">
     <div class="card-hdr">
-      <span class="card-title">Movimientos recientes</span>
+      <div>
+        <span class="card-title">&#128666; Contraentrega por cobrar</span>
+        <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px;">
+          Pedidos que se cobran al entregar. Al marcarlos, la plata entra a esta misma caja con su recibo.
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="cod-filtro" class="select" style="width:auto;" onchange="loadCod()">
+          <option value="pendiente">Falta cobrar</option>
+          <option value="">Todos</option>
+          <option value="cobrado">Ya cobrados</option>
+          <option value="descuadre">Con descuadre</option>
+        </select>
+        <input id="cod-desde" type="date" class="input" style="width:auto;" onchange="loadCod()">
+        <input id="cod-hasta" type="date" class="input" style="width:auto;" onchange="loadCod()">
+        <button class="btn btn-outline btn-sm" onclick="abrirMarcaCod()"
+                title="Elegir con que etiqueta o medio de pago se marca la contraentrega en Shopify">&#9881; Marca</button>
+      </div>
+    </div>
+    <div class="kpi-grid" id="cod-kpis" style="margin-bottom:14px;"></div>
+    <div id="cod-aviso"></div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>Pedido</th>
+          <th>Fecha</th>
+          <th style="text-align:right;">En la calle</th>
+          <th>Ciudad</th>
+          <th style="text-align:right;">Valor</th>
+          <th>Marca</th>
+          <th>Estado</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="cod-body"><tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">
+      <span class="card-title">&#128210; Movimientos de caja</span>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <select id="caja-filtro-tipo" class="select" style="width:auto;" onchange="loadCaja()">
           <option value="">Todos</option>
@@ -220,51 +265,6 @@ window.addEventListener('error', function(ev){
           <th></th>
         </tr></thead>
         <tbody id="caja-body"><tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- TAB: INVENTARIO CICLICO -->
-<div id="tab-cod" class="tab-panel">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
-    <div>
-      <div class="page-title">&#128666; Contraentrega</div>
-      <div class="page-sub">Pedidos que se cobran al entregar. Marca cuales ya entraron: la plata pasa a Caja Menor con su recibo.</div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <input id="cod-desde" type="date" class="input" style="width:auto;" onchange="loadCod()">
-      <input id="cod-hasta" type="date" class="input" style="width:auto;" onchange="loadCod()">
-    </div>
-  </div>
-
-  <div class="kpi-grid" id="cod-kpis"></div>
-
-  <div class="card">
-    <div class="card-hdr">
-      <span class="card-title">Pedidos contraentrega</span>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <select id="cod-filtro" class="select" style="width:auto;" onchange="loadCod()">
-          <option value="pendiente">Falta cobrar</option>
-          <option value="">Todos</option>
-          <option value="cobrado">Ya cobrados</option>
-          <option value="descuadre">Con descuadre</option>
-        </select>
-      </div>
-    </div>
-    <div id="cod-aviso"></div>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead><tr>
-          <th>Pedido</th>
-          <th>Fecha</th>
-          <th>Ciudad</th>
-          <th style="text-align:right;">Valor</th>
-          <th>Marca</th>
-          <th>Estado</th>
-          <th></th>
-        </tr></thead>
-        <tbody id="cod-body"><tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -515,6 +515,27 @@ window.addEventListener('error', function(ev){
 </div>
 
 <!-- MODAL: Registro caja menor -->
+<!-- MARCA DE CONTRAENTREGA (3-ago)
+     La marca la escribe una PERSONA en Shopify, asi que nadie puede afirmar de memoria con que
+     palabra la escribe -- y el detector traia 4 de 7.032 pedidos porque buscaba "contraentrega"
+     y en los datos reales las etiquetas dicen otra cosa. En vez de pedir que alguien recuerde la
+     etiqueta, se muestran las que EXISTEN con cuantos pedidos y cuanta plata lleva cada una, y
+     se elige mirando numeros. Lo elegido se SUMA al patron (no lo reemplaza): siguen valiendo la
+     nota "contraentrega" y lo que ya estaba. -->
+<div id="modal-marca" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:820px;max-width:94vw;max-height:88vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <h3 style="font-size:16px;color:var(--cx-text);">&#9881; Como se marca la contraentrega</h3>
+      <button onclick="cerrarModal('modal-marca')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:14px;">
+      Estas son las etiquetas y medios de pago que Shopify manda de verdad, con lo que representa cada uno.
+      Marca el que significa contraentrega: los pedidos entran a la caja al instante, sin desplegar nada.
+    </div>
+    <div id="marca-cuerpo" style="font-size:13px;">Cargando...</div>
+  </div>
+</div>
+
 <div id="modal-caja" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
@@ -624,8 +645,9 @@ function switchTab(name){
   if (!_loaded[name]) { _loaded[name] = true; loadTab(name); }
 }
 function loadTab(name){
-  if (name === 'caja') loadCaja();
-  else if (name === 'cod') loadCod();
+  // Caja Menor trae las dos mitades: lo que YA entro (movimientos) y lo que falta entrar
+  // (contraentrega en la calle). Sin la segunda, el saldo se lee como si no faltara nada.
+  if (name === 'caja') { loadCaja(); loadCod(); }
   else if (name === 'invfis') { cargarInvFisico(); cargarMovimientosInvFis(); }
   else if (name === 'inventario') { loadInvSkus(); loadInvConteos(); }
   else if (name === 'pqr') loadAnimusPqr();
@@ -665,14 +687,18 @@ async function loadCaja(){
 
 function renderCajaKPIs(k){
   const saldo = k.saldo_total || 0;
+  const neto  = (k.ingreso_mes||0) - (k.egreso_mes||0);
   const cards = [
-    { label: 'Saldo total caja', val: fmtCOP(saldo),
+    { label: 'Saldo en caja', val: fmtCOP(saldo),
       color: saldo >= 0 ? 'kpi-green' : 'kpi-red',
-      sub: (k.n_total||0) + ' movimientos registrados' },
-    { label: 'Ingresos hoy', val: fmtCOP(k.ingreso_hoy||0), color:'kpi-green', sub: '' },
-    { label: 'Egresos hoy', val: fmtCOP(k.egreso_hoy||0), color:'kpi-red', sub: '' },
-    { label: 'Ingresos del mes', val: fmtCOP(k.ingreso_mes||0), color:'kpi-blue', sub: '' },
-    { label: 'Egresos del mes', val: fmtCOP(k.egreso_mes||0), color:'kpi-yellow', sub: '' },
+      sub: (k.n_total||0) + ' movimientos con recibo' },
+    { label: 'Entro hoy', val: fmtCOP(k.ingreso_hoy||0), color:'kpi-green', sub: '' },
+    { label: 'Salio hoy', val: fmtCOP(k.egreso_hoy||0), color:'kpi-red', sub: '' },
+    // El NETO del mes es el numero que dice si la caja crecio o se comio la plata; entro y
+    // salio por separado no lo contestan de un vistazo.
+    { label: 'Neto del mes', val: fmtCOP(neto),
+      color: neto >= 0 ? 'kpi-blue' : 'kpi-red',
+      sub: fmtCOP(k.ingreso_mes||0) + ' entro &middot; ' + fmtCOP(k.egreso_mes||0) + ' salio' },
   ];
   document.getElementById('caja-kpis').innerHTML = cards.map(function(c){
     return '<div class="kpi-card '+c.color+'">' +
@@ -812,12 +838,19 @@ async function loadCod(){
 }
 
 function renderCodKPIs(k){
+  const anejo = k.anejo_21d || 0;
   const cards = [
-    { label: 'Falta cobrar', val: fmtCOP(k.esperado_pendiente||0), color:'kpi-yellow',
-      sub: (k.n_pendientes||0) + ' pedidos en la calle' },
-    { label: 'Entro hoy', val: fmtCOP(k.cobrado_hoy||0), color:'kpi-green', sub:'' },
-    { label: 'Entro este mes', val: fmtCOP(k.cobrado_mes||0), color:'kpi-green',
-      sub: (k.n_cobrados||0) + ' pedidos cobrados' },
+    { label: 'En la calle', val: fmtCOP(k.esperado_pendiente||0), color:'kpi-yellow',
+      sub: (k.n_pendientes||0) + ' pedidos sin cobrar' },
+    // El anejo lo calculaba el backend desde el primer dia y la pantalla no lo mostraba: sin
+    // separarlo, el total "en la calle" mezcla lo de ayer con lo que probablemente no vuelve,
+    // y no se puede actuar sobre ninguno de los dos.
+    { label: 'Anejo +21 dias', val: fmtCOP(anejo),
+      color: anejo > 0 ? 'kpi-red' : 'kpi-blue',
+      sub: anejo > 0 ? (k.n_anejos_21d||0) + ' pedidos &middot; revisar con la transportadora'
+                     : 'nada viejo en la calle' },
+    { label: 'Cobrado este mes', val: fmtCOP(k.cobrado_mes||0), color:'kpi-green',
+      sub: (k.n_cobrados||0) + ' pedidos &middot; ' + fmtCOP(k.cobrado_hoy||0) + ' hoy' },
     { label: 'Descuadre', val: fmtCOP(k.descuadre||0),
       color: (k.n_descuadres||0) ? 'kpi-red' : 'kpi-blue',
       sub: (k.n_descuadres||0) + ' con diferencia' },
@@ -856,9 +889,19 @@ function renderCodPedidos(rows){
     const accion = p.cobrado
       ? '<button class="btn btn-outline btn-sm" onclick="codAnular(' + i + ')">Anular</button>'
       : '<button class="btn btn-primary btn-sm" onclick="codCobrar(' + i + ')">Si entro</button>';
+    // Dias en la calle: un contraentrega normal se cobra en dias. A las tres semanas o la
+    // transportadora ya consigno y nadie lo registro, o esa plata no vuelve -- asi que el dato
+    // se muestra por fila, no solo agregado en el KPI, que es donde se decide a quien llamar.
+    var _dias = p.cobrado ? null : (p.dias_en_calle == null ? null : Number(p.dias_en_calle));
+    var _calle = '<span style="color:var(--cx-text-mute);">-</span>';
+    if (_dias != null) {
+      var _cl = _dias >= 21 ? 'badge-red' : (_dias >= 10 ? 'badge-yellow' : 'badge-gray');
+      _calle = '<span class="badge ' + _cl + '">' + _dias + ' d</span>';
+    }
     return '<tr>'
       + '<td style="font-weight:700;">'+esc(p.pedido||'')+'</td>'
       + '<td>'+fmtFecha(p.fecha)+'</td>'
+      + '<td style="text-align:right;">'+_calle+'</td>'
       + '<td style="font-size:12px;">'+esc(p.ciudad||'-')+'</td>'
       + '<td style="text-align:right;font-weight:700;">'+fmtCOP(p.valor_esperado||0)+'</td>'
       + '<td><span class="badge badge-gray" title="'+esc(p.nota||'')+'">'+esc(p.detectado_por||'')+'</span></td>'
@@ -866,6 +909,95 @@ function renderCodPedidos(rows){
       + '<td>'+accion+'</td>'
       + '</tr>';
   }).join('');
+}
+
+// ---- Marca de contraentrega -------------------------------------------------------------
+// El detector busca UN patron en la nota, las etiquetas y el medio de pago. Elegir aca agrega
+// el valor elegido al patron; nunca lo reemplaza, para no perder la nota "contraentrega" que
+// tambien se usa. Todo pasa por app_settings, asi que no hace falta desplegar.
+async function abrirMarcaCod(){
+  document.getElementById('modal-marca').style.display = 'flex';
+  document.getElementById('marca-cuerpo').innerHTML = 'Cargando...';
+  try {
+    const r = await fetch('/api/animus/contraentrega/diagnostico');
+    const d = await r.json();
+    if (!d.ok) {
+      document.getElementById('marca-cuerpo').innerHTML =
+        '<div style="color:var(--cx-danger-text);">' + esc(d.error || 'No se pudo leer') + '</div>';
+      return;
+    }
+    window._MARCA_PATRON = d.patron || '';
+    renderMarca(d);
+  } catch(e) {
+    document.getElementById('marca-cuerpo').innerHTML =
+      '<div style="color:var(--cx-danger-text);">Error de red: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderMarca(d){
+  function tabla(titulo, filas, campo){
+    if (!filas || !filas.length) return '';
+    var h = '<div style="font-weight:700;margin:16px 0 6px;">' + titulo + '</div>'
+          + '<div style="overflow-x:auto;"><table><thead><tr>'
+          + '<th>Valor</th><th style="text-align:right;">Pedidos</th>'
+          + '<th style="text-align:right;">Plata</th><th>Hoy</th><th></th></tr></thead><tbody>';
+    for (var i = 0; i < filas.length; i++) {
+      var f = filas[i];
+      var yaEsta = f.detecta
+        ? '<span class="badge badge-green">entra a la caja</span>'
+        : '<span class="badge badge-gray">no entra</span>';
+      var boton = f.detecta ? '' :
+        '<button class="btn btn-primary btn-sm" onclick="usarMarca(' + i + ',&quot;' + campo + '&quot;)">Es esta</button>';
+      h += '<tr>'
+        + '<td style="font-weight:600;">' + esc(f.valor) + '</td>'
+        + '<td style="text-align:right;">' + f.pedidos + '</td>'
+        + '<td style="text-align:right;font-weight:700;">' + fmtCOP(f.monto || 0) + '</td>'
+        + '<td>' + yaEsta + '</td><td>' + boton + '</td></tr>';
+    }
+    return h + '</tbody></table></div>';
+  }
+  window._MARCA_TAGS = d.etiquetas || [];
+  window._MARCA_GW   = d.medios_pago || [];
+  var res = '<div style="padding:12px 14px;background:var(--cx-bg-alt);border-radius:8px;margin-bottom:6px;">'
+    + '<b>' + (d.detectados || 0) + '</b> de <b>' + (d.pedidos_en_rango || 0) + '</b> pedidos '
+    + 'entran hoy a la caja (desde ' + esc(d.desde || '') + ').'
+    + '<div style="font-size:12px;color:var(--cx-text-mute);margin-top:4px;">'
+    + 'Por nota ' + ((d['por_señal'] || {})['nota'] || 0)
+    + ' &middot; por etiqueta ' + ((d['por_señal'] || {})['etiqueta'] || 0)
+    + ' &middot; por medio de pago ' + ((d['por_señal'] || {})['medio de pago'] || 0)
+    + '</div></div>';
+  document.getElementById('marca-cuerpo').innerHTML = res
+    + tabla('Etiquetas de Shopify (' + (d.etiquetas_distintas || 0) + ' distintas)', window._MARCA_TAGS, 'tag')
+    + tabla('Medios de pago', window._MARCA_GW, 'gw');
+}
+
+async function usarMarca(i, campo){
+  var f = (campo === 'tag' ? window._MARCA_TAGS : window._MARCA_GW)[i];
+  if (!f) return;
+  // El valor se escapa como literal: una etiqueta con parentesis o + seria una expresion
+  // regular distinta de la que el usuario ve, y terminaria metiendo a la caja pedidos que no son.
+  // En MINUSCULAS porque el detector compara contra el texto ya normalizado (_norm_txt): un
+  // patron con mayusculas nunca matchea y la eleccion no hace nada, sin un solo error a la vista.
+  var lit = String(f.valor).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Anclado a la etiqueta COMPLETA: sin esto, "vmc" matchearia dentro de "vmcx" y meteria
+  // plata que no es contraentrega -- que es justo lo que esta caja tiene que evitar.
+  var nuevo = campo === 'tag' ? '(^|,)\\s*' + lit + '\\s*(,|$)' : '^' + lit + '$';
+  var patron = (window._MARCA_PATRON || '').trim();
+  patron = patron ? patron + '|' + nuevo : nuevo;
+  // Mensaje de UNA sola linea a proposito: un salto real dentro de un confirm rompe el bloque
+  // <script> entero y deja la pantalla muerta sin un error visible.
+  if (!confirm('Marcar como contraentrega los pedidos con ' + (campo === 'tag' ? 'la etiqueta' : 'el medio de pago')
+      + ' "' + f.valor + '" · ' + f.pedidos + ' pedidos entrarian a la caja.')) return;
+  try {
+    const r = await _fetchUna('/api/animus/contraentrega/patron', _fetchOpts('PUT', {patron: patron}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast('Listo: ' + f.valor + ' ya cuenta como contraentrega', 'success');
+    abrirMarcaCod(); loadCod(); loadCaja();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
 }
 
 async function codCobrar(i){
@@ -890,7 +1022,7 @@ async function codCobrar(i){
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Recibo ' + d.recibo_numero + ' registrado en caja', 'success');
-    loadCod();
+    loadCod(); loadCaja();
   } catch(e) {
     showToast('Error de red: ' + e.message, 'error');
   }
@@ -910,7 +1042,7 @@ async function codAnular(i){
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Cobro anulado', 'success');
-    loadCod();
+    loadCod(); loadCaja();
   } catch(e) {
     showToast('Error de red: ' + e.message, 'error');
   }

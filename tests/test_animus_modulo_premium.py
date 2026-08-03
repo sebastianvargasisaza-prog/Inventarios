@@ -241,3 +241,64 @@ def test_sin_rastro_de_IA_ni_tildes_faltantes():
         # solo en texto VISIBLE (entre > y <), no en identificadores de codigo
         visibles = re.findall(r">[^<>]*\b%s\b[^<>]*<" % palabra, html)
         assert not visibles, "'%s' sin tilde en texto visible: %s" % (palabra, visibles[:2])
+
+
+# ------------------------------------------- la marca de contraentrega (3-ago)
+
+def test_el_patron_que_arma_el_selector_de_marca_se_comporta(tmp_path):
+    """El selector de marca construye la expresion que decide que pedido entra a la caja.
+
+    Se ejecuta el JS REAL de la pantalla, no una replica: una replica en Python probaria mi
+    copia, no lo que corre en el navegador. Dos bugs que este test cazo antes de desplegar:
+
+      1. El patron salia con MAYUSCULAS y el detector compara contra el texto ya normalizado
+         a minusculas (`_norm_txt`), asi que elegir "CM: ENTREGADA" no hacia absolutamente
+         nada, sin un solo error a la vista (M2: la normalizacion va identica en los dos lados).
+      2. Sin anclar a la etiqueta COMPLETA, elegir "vmc" tambien matchea "vmcx" y mete a la
+         caja plata que no es contraentrega -- justo lo que esta caja existe para evitar.
+    """
+    import shutil
+    import subprocess
+    if not shutil.which("node"):
+        pytest.skip("node no disponible")
+
+    html = _html()
+    lit = re.search(r"var lit = String\(f\.valor\)[^\n]+;", html)
+    nuevo = re.search(r"var nuevo = campo === 'tag' \? [^\n]+;", html)
+    assert lit and nuevo, "no encontre la construccion del patron en usarMarca()"
+
+    guion = """
+function construir(valor, campo){ var f = {valor: valor}; %s %s return nuevo; }
+var casos = [
+  ['vmc','tag','az, CM: ENTREGADA, vmc', true],
+  ['vmc','tag','vmcx, Facturado',        false],
+  ['vmc','tag','vmc',                    true],
+  ['CM: ENTREGADA','tag','az, CM: ENTREGADA, Facturado', true],
+  ['CM: ENTREGADA','tag','CM: EN REPARTO, Facturado',    false],
+  ['manual','gw','manual',                true],
+  ['manual','gw','Checkout Mercado Pago', false],
+  ['Mercado Pago (COD)','tag','x, Mercado Pago (COD)', true],
+  ['Mercado Pago (COD)','tag','Mercado Pago  COD',     false]
+];
+var malos = [];
+casos.forEach(function(c){
+  var pat = construir(c[0], c[1]);
+  // el detector del backend compara contra el texto normalizado a minusculas
+  if (new RegExp(pat).test(c[2].toLowerCase()) !== c[3]) malos.push(JSON.stringify(c) + ' patron=' + pat);
+});
+console.log(malos.length ? 'MALOS: ' + malos.join(' | ') : 'OK');
+""" % (lit.group(0), nuevo.group(0))
+
+    p = tmp_path / "patron.js"
+    p.write_text(guion, encoding="utf-8")
+    r = subprocess.run(["node", str(p)], capture_output=True, text=True)
+    assert r.returncode == 0, "el JS del selector no corre: %s" % r.stderr[:400]
+    assert r.stdout.strip() == "OK", r.stdout.strip()
+
+
+def test_el_selector_SUMA_al_patron_y_no_lo_reemplaza():
+    """En Shopify usan la nota 'contraentrega' Y una etiqueta. Si elegir la etiqueta
+    REEMPLAZARA el patron, los pedidos marcados por nota dejarian de entrar a la caja."""
+    html = _html()
+    m = re.search(r"patron = patron \? patron \+ '\|' \+ nuevo : nuevo;", html)
+    assert m, "el selector de marca deberia AGREGAR al patron con '|', no pisarlo"

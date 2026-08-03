@@ -1397,12 +1397,20 @@ def animus_cod_diagnostico():
     patron = cod_patron(conn)
     desde = (request.args.get("desde") or (_hoy_col() - timedelta(days=90)).isoformat())
     filas = conn.execute(
-        "SELECT COALESCE(nota,''), COALESCE(tags,''), COALESCE(gateway,''), nombre "
+        "SELECT COALESCE(nota,''), COALESCE(tags,''), COALESCE(gateway,''), nombre, "
+        "       COALESCE(total,0) "
         "FROM animus_shopify_orders "
         "WHERE substr(COALESCE(creado_en,''),1,10) >= ? "
         "  AND LOWER(COALESCE(estado,'')) <> 'cancelled'", (desde,)).fetchall()
     por_señal = {'nota': 0, 'etiqueta': 0, 'medio de pago': 0}
     sin_match, con_texto = [], 0
+    # Reparto REAL de etiquetas y medios de pago, con su plata. Es lo único que contesta "¿con
+    # qué palabra la escriben?": una MUESTRA de 25 pedidos no sirve porque los más recientes
+    # pueden ser todos del mismo canal y esconder justo el que se busca (pasó · los 25 que
+    # devolvía eran todos de Mercado Pago, o sea pagos en línea, y con eso era imposible ver
+    # si existe una etiqueta de contraentrega).
+    tag_n, tag_v = {}, {}
+    gw_n, gw_v = {}, {}
     # Contar por separado CUÁNTOS traen nota, etiqueta y medio de pago. La primera versión sólo
     # decía "con nota o etiqueta", y como casi todos los pedidos traen etiquetas de transportadora
     # ('CM: ENTREGADA', 'Facturado'), ese número daba 7.233 y no permitía ver que las NOTAS eran
@@ -1410,8 +1418,17 @@ def animus_cod_diagnostico():
     # decidir cuál de las dos está fallando.
     con_nota = con_tags = con_gw = 0
     notas_reales = []      # muestra de notas NO vacías, matcheen o no: acá se ve cómo la escriben
-    for nota, tags, gw, nombre in filas:
+    for nota, tags, gw, nombre, _total in filas:
         _n, _t, _g = (nota or '').strip(), (tags or '').strip(), (gw or '').strip()
+        _v = float(_total or 0)
+        for _tag in _t.split(','):
+            _tag = _tag.strip()
+            if _tag:
+                tag_n[_tag] = tag_n.get(_tag, 0) + 1
+                tag_v[_tag] = tag_v.get(_tag, 0.0) + _v
+        if _g:
+            gw_n[_g] = gw_n.get(_g, 0) + 1
+            gw_v[_g] = gw_v.get(_g, 0.0) + _v
         if _n:
             con_nota += 1
             if len(notas_reales) < 30:
@@ -1442,6 +1459,16 @@ def animus_cod_diagnostico():
         # Si `detectados` es 0 pero `con_nota_o_etiqueta` no lo es, la respuesta está acá:
         # se está escribiendo la marca de una forma que el patrón no contempla.
         "muestra_sin_match": sin_match,
+        # El reparto completo, ordenado por cuántos pedidos lleva cada una. Acá se elige la
+        # etiqueta mirando números (cuántos pedidos y cuánta plata) en vez de recordarla. Las
+        # que aparecen una sola vez son por-pedido (número de factura, guía) y quedan al final.
+        "etiquetas": [{"valor": k, "pedidos": tag_n[k], "monto": round(tag_v[k], 2),
+                       "detecta": bool(es_contraentrega(None, k, None, patron)[0])}
+                      for k in sorted(tag_n, key=lambda x: -tag_n[x])[:60]],
+        "etiquetas_distintas": len(tag_n),
+        "medios_pago": [{"valor": k, "pedidos": gw_n[k], "monto": round(gw_v[k], 2),
+                         "detecta": bool(es_contraentrega(None, None, k, patron)[0])}
+                        for k in sorted(gw_n, key=lambda x: -gw_n[x])[:30]],
         "como_ajustar": "PUT /api/animus/contraentrega/patron con {patron: '...'} (admin · sin deploy)",
     })
 
