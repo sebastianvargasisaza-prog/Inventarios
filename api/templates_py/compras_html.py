@@ -765,9 +765,9 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
       <div>
         <span style="font-weight:800;color:var(--cx-text);font-size:16px;letter-spacing:-.01em;">&#x1F4E6; Órdenes de compra activas</span>
-        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px">Por autorizar (Borrador / Revisada) y <b>autorizadas</b>, que siguen acá hasta que avancen · mercancía autorizada espera en <b>📦 Recepción</b> hasta que llegue · servicios y cuentas de cobro pasan a <b>💰 Por Pagar</b> · las SOLs pendientes en <b>🏭 Planta</b></div>
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px">Por autorizar (Borrador / Revisada) y <b>autorizadas</b>, que siguen acá hasta que avancen · todo lo <b>autorizado</b> pasa a <b>💰 Por Pagar</b> para pagarlo · después la mercancía se registra en <b>📦 Recepción</b> cuando llega · las SOLs pendientes en <b>🏭 Planta</b></div>
       </div>
-      <button class="btn bg" onclick="openNuevaOC('')" style="padding:9px 20px;font-size:14px;" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · al autorizar: la mercancía espera en Recepción, los servicios y cuentas de cobro van a Por Pagar">&#10133; Crear OC</button>
+      <button class="btn bg" onclick="openNuevaOC('')" style="padding:9px 20px;font-size:14px;" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · al autorizar pasa a Por Pagar">&#10133; Crear OC</button>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f1f0ee;padding-top:12px;">
       <!-- Sebastián 21-jul · quitado el filtro de ESTADOS: todas las OCs activas están "por autorizar"
@@ -1031,7 +1031,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   </div>
   <div class="mf">
     <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--cx-text-soft);margin-right:auto;cursor:pointer" title="Autoriza la OC al crearla (dentro de tu límite · si el monto la excede queda en Borrador para gerencia). Al quedar Autorizada SALE de esta lista, que muestra sólo las que faltan por autorizar: la mercancía queda esperando en Recepción y los servicios/cuentas de cobro en Por Pagar.">
-      <input type="checkbox" id="noc-autorizar" checked> Autorizar al crear (sale de esta lista: mercancía espera en Recepción, servicios van a Por Pagar)
+      <input type="checkbox" id="noc-autorizar" checked> Autorizar al crear (pasa a Por Pagar y sigue visible acá como autorizada)
     </label>
     <button class="btn bo" onclick="closeModal('m-noc')">Cancelar</button>
     <button class="btn bp" id="noc-submit-btn" onclick="submitOC()">Crear OC</button>
@@ -1319,7 +1319,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   </div>
   <div class="mf">
     <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--cx-text-soft);margin-right:auto;cursor:pointer" title="Si lo dejás marcado, la OC se autoriza al crearla (dentro de tu límite · si el monto la excede queda en Borrador para gerencia). Al quedar Autorizada SALE de esta lista y queda esperando en Recepción; pasa a Por Pagar cuando la materia prima llegue.">
-      <input type="checkbox" id="noc-mp-autorizar" checked> Autorizar al crear (queda esperando en Recepción)
+      <input type="checkbox" id="noc-mp-autorizar" checked> Autorizar al crear (pasa a Por Pagar · la mercancía se registra en Recepción cuando llegue)
     </label>
     <button class="btn bo" onclick="closeModal('m-noc-mp')">Cancelar</button>
     <button class="btn bp" onclick="crearOCMP()">&#x2713; Crear Orden de Compra</button>
@@ -3638,10 +3638,10 @@ function calcTot(){
 // llegó) y, de las Autorizadas, sólo las de PAGO DIRECTO. Una OC de materia prima autorizada
 // no está en ninguna de las dos listas: está esperando en Recepción. Por eso acá se decide
 // a dónde llevarla -- mandarla siempre a Por Pagar sería cambiar una lista vacía por otra.
-var _OC_PAGO_DIRECTO=['SVC','CC'];
-function _destinoOC(cat){
-  return _OC_PAGO_DIRECTO.indexOf(cat)>=0 ? 'por-pagar' : 'recepcion';
-}
+// Sebastian 3-ago: "nosotros pagamos para que llegue · todo lo que se autorice debe aparecer
+// en Por Pagar para ella hacerlo". Antes esto mandaba la mercancia a Recepcion, donde todavia
+// no hay nada que hacer (no ha llegado): el trabajo siguiente es PAGARLA.
+function _destinoOC(cat){ return 'por-pagar'; }
 function _irADondeQuedo(cat){
   try{
     if(_destinoOC(cat)==='por-pagar'){
@@ -7858,7 +7858,7 @@ function renderConsolBody(){
     html += porAut.map(function(x){ return renderConsolCard(x.p, x.i); }).join('');
   }
   if(aut.length){
-    html += _consolSectionHeader('🟢 Autorizadas · mercancía espera en Recepción · servicios van a Por Pagar', aut.length, '#15803d', 'linear-gradient(135deg,#f0fdf4,#ecfdf5)');
+    html += _consolSectionHeader('🟢 Autorizadas · ya están en Por Pagar para pagarlas', aut.length, '#15803d', 'linear-gradient(135deg,#f0fdf4,#ecfdf5)');
     html += aut.map(function(x){ return renderConsolCard(x.p, x.i); }).join('');
   }
   body.innerHTML = html;

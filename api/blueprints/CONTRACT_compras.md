@@ -449,3 +449,43 @@ fila en `activos` con `origen='recepcion'`, código siguiendo la convención del
 (`ANM-LT-003`, `ESP-SIL-012` · correlativo extraído en Python, nunca `CAST(SUBSTR)` · M45). **No
 lleva calificación** (una silla no se califica) y suma al valor en libros desde que se registra.
 Pestaña "Otros activos" dentro de `/recepcion` (M120).
+
+## 💰 INV-12 · TODO lo AUTORIZADO entra a Por Pagar (3-ago)
+
+Sebastián, corrigiendo la regla del negocio: *"es que nosotros pagamos para que llegue · todo
+lo que se autorice debe aparecer allí en Por Pagar para ella hacerlo · algunas cosas llegan sin
+pagar, otras sí"*.
+
+En ÁNIMUS se paga **por anticipado** para que el proveedor despache. Así que el trabajo que
+sigue a autorizar es **pagar**, no esperar. La premisa contraria -que la mercancía se paga
+contra entrega- dejaba a la OC autorizada esperando en Recepción, donde todavía no hay nada que
+hacer porque no ha llegado.
+
+**Invariante de `GET /api/compras/por-pagar`:**
+
+| Entra | Estado | Flag |
+|---|---|---|
+| Mercancía ya recibida | `Recibida` / `Parcial` | `pago_directo: false` |
+| Todo lo autorizado | `Aprobada` / `Autorizada` | `pago_directo` según categoría |
+
+- Antes exigía **además** categoría de `CATEGORIAS_PAGO_DIRECTO`, así que una OC de MERCANCÍA
+  autorizada no aparecía en **ninguna** lista accionable (Por Pagar la excluía por categoría y
+  la lista de OCs sólo mostraba Borrador/Revisada). Catalina: *"cuando da autorizar desaparecen
+  y no salen en Por Pagar"*.
+- **`Influencer/Marketing Digital` queda EXCLUIDO** en los dos lados: tiene su propio flujo en
+  Marketing (se paga sin entrar a Compras) y son 82 OCs · incluirlas enterraría el trabajo real.
+- El campo `tipo` distingue **"Pago directo (servicio)"** de **"Autorizada · pagar para que
+  despachen"**: en la segunda todavía falta que la mercancía llegue.
+
+**El badge cuenta EXACTAMENTE lo mismo que la lista deja trabajar (M5).** Antes el badge decía
+**52** y la lista traía **16**, porque el badge ya contaba todas las autorizadas y la lista
+exigía el filtro de categoría: el número prometía un trabajo que la pantalla no dejaba hacer.
+
+⚠ Verificado antes de construirlo: `pagar_oc` **acepta** una OC `Autorizada` (sólo bloquea
+`Borrador`/`Revisada`/`Cancelada`/`Rechazada`). Si el gate de pago la frenara, esta lista sería
+una pantalla que no se puede usar (M121).
+
+**Flujo completo:** autorizar → **Por Pagar** (se paga) → llega → **Recepción** (INV-21 de
+`CONTRACT_inventario.md`: el desplegable de ingreso incluye `Autorizada` y `Pagada`).
+
+Tests: `tests/test_oc_autorizada_visible.py` · `tests/test_rastro_oc.py`.

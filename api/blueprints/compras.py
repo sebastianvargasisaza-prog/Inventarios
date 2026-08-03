@@ -9577,9 +9577,23 @@ def get_por_pagar():
         for row in cur.fetchall()
     ]
 
-    # Servicios sin mercancía: Aprobada/Autorizada + categoría de pago directo
-    placeholders = ','.join('?' for _ in CATEGORIAS_PAGO_DIRECTO)
-    cur.execute(f"""
+    # TODO lo AUTORIZADO entra a Por Pagar (Sebastián 3-ago: "nosotros pagamos para que
+    # llegue · todo lo que se autorice debe aparecer allí en Por Pagar para ella hacerlo ·
+    # algunas cosas llegan sin pagar, otras sí").
+    #
+    # Antes esta consulta exigía ADEMÁS una categoría de PAGO DIRECTO, así que una OC de
+    # MERCANCÍA autorizada no aparecía en ninguna lista accionable: Por Pagar la excluía por
+    # categoría y la lista de OCs sólo mostraba Borrador/Revisada. Catalina: "cuando da
+    # autorizar desaparecen y no salen en Por Pagar". El badge del tab ya contaba TODAS las
+    # autorizadas (52) mientras la lista traía 16 -- el número prometía un trabajo que la
+    # pantalla no dejaba hacer (M5).
+    #
+    # Los INFLUENCERS quedan afuera a propósito: tienen su propio flujo en Marketing (se
+    # pagan sin entrar a Compras) y son 82 OCs · meterlas acá enterraría lo de Catalina.
+    # Se conserva `pago_directo` para distinguir el servicio -que no espera mercancía- de la
+    # mercancía que se paga por anticipado para que la despachen.
+    _pd = {str(x).strip().lower() for x in CATEGORIAS_PAGO_DIRECTO}
+    cur.execute("""
         SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total, oc.fecha,
                oc.estado, oc.observaciones,
                COALESCE(oc.fecha_recepcion, oc.fecha) as fecha_recepcion,
@@ -9590,16 +9604,19 @@ def get_por_pagar():
                COALESCE(p.nit,'') as nit
         FROM ordenes_compra oc
         LEFT JOIN proveedores p ON oc.proveedor = p.nombre
-        WHERE oc.estado IN ('Aprobada', 'Autorizada') AND
-              oc.categoria IN ({placeholders})
+        WHERE oc.estado IN ('Aprobada', 'Autorizada')
+          AND COALESCE(oc.categoria,'') NOT IN ('Influencer/Marketing Digital')
         ORDER BY oc.fecha DESC
-    """, CATEGORIAS_PAGO_DIRECTO)
+    """)
     cols = [d[0] for d in cur.description]
-    servicios = [
-        {**dict(zip(cols, row)), 'pago_directo': True,
-         'tipo': 'Pago directo (servicio)'}
-        for row in cur.fetchall()
-    ]
+    servicios = []
+    for row in cur.fetchall():
+        _o = dict(zip(cols, row))
+        _es_pd = str(_o.get('categoria') or '').strip().lower() in _pd
+        _o['pago_directo'] = _es_pd
+        _o['tipo'] = ('Pago directo (servicio)' if _es_pd
+                      else 'Autorizada · pagar para que despachen')
+        servicios.append(_o)
 
     # FIX · 23-jun-2026 · Sebastián: en Por Pagar mostrar QUÉ se paga, no solo a QUIÉN.
     # Adjunta los ítems (productos/MP) de cada OC + un resumen corto para la tarjeta.
@@ -13106,9 +13123,14 @@ def compras_dashboard_home():
     # /api/compras/por-pagar que muestra Recibida + Parcial (mercancía) +
     # Aprobada/Autorizada (pago directo servicios). Antes solo contaba
     # Autorizada · el badge subestimaba al usuario el trabajo pendiente.
+    # El badge tiene que contar EXACTAMENTE lo que la lista deja trabajar (M5). Antes contaba
+    # todas las autorizadas (52) mientras `/api/compras/por-pagar` devolvía 16, porque la lista
+    # exigía además categoría de pago directo: el número prometía un trabajo que la pantalla no
+    # dejaba hacer. Los influencers se excluyen en los dos lados (van por Marketing).
     _count('por_pagar',
         "SELECT COUNT(*) FROM ordenes_compra "
-        "WHERE estado IN ('Autorizada','Aprobada','Recibida','Parcial')")
+        "WHERE estado IN ('Autorizada','Aprobada','Recibida','Parcial') "
+        "  AND COALESCE(categoria,'') NOT IN ('Influencer/Marketing Digital')")
     _count('consol',
         "SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Borrador','Revisada','Autorizada')")
     out['counts'] = counts

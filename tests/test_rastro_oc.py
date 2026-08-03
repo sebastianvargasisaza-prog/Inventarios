@@ -167,12 +167,22 @@ def test_autorizada_de_MERCANCIA_queda_visible_en_RECEPCION(app, db_clean):
     assert fila, 'la OC autorizada de mercancía no aparece en Recepción: quedó invisible'
     assert fila[0].get('en_transito') is True, fila[0]
 
-    # y NO se cuela en Por Pagar antes de llegar (ahí se paga lo que ya se recibió)
+    # 3-ago · REGLA CORREGIDA POR SEBASTIÁN: "nosotros pagamos para que llegue · todo lo que
+    # se autorice debe aparecer allí en Por Pagar para ella hacerlo".
+    #
+    # Este test afirmaba lo contrario ("ahí se paga lo que ya se recibió") porque yo asumí el
+    # flujo al revés: que la mercancía se paga contra entrega. En ÁNIMUS se paga POR ANTICIPADO
+    # para que el proveedor despache, así que una OC autorizada deja trabajo pendiente -- pagarla
+    # -- y esconderla de Por Pagar es lo que hacía que Catalina autorizara y no la volviera a ver.
+    # No se deforma el código para que el test pase: el que estaba equivocado era el test.
     r2 = cli.get('/api/compras/por-pagar')
     assert r2.status_code == 200
     _pp = (r2.get_json() or {})
-    _nums = [x.get('numero_oc') for x in (_pp.get('items') or _pp.get('ocs') or [])]
-    assert OC not in _nums, 'mercancía sin recibir no debería estar en Por Pagar'
+    _items = _pp.get('items') or _pp.get('ocs') or []
+    fila_pp = [x for x in _items if x.get('numero_oc') == OC]
+    assert fila_pp, 'la mercancía autorizada no llegó a Por Pagar · no se podría pagar'
+    # pero se distingue del servicio: acá todavía falta que la mercancía llegue
+    assert fila_pp[0].get('pago_directo') is False, fila_pp[0]
 
 
 def test_una_CUENTA_DE_COBRO_autorizada_SI_llega_a_por_pagar(app, db_clean):

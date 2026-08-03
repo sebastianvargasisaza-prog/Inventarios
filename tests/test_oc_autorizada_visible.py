@@ -175,3 +175,94 @@ def test_la_pantalla_no_promete_que_la_mercancia_va_a_por_pagar():
     assert 'las autorizadas listas para pagar están en <b>💰 Por Pagar</b>' not in html, \
         'el subtitulo sigue prometiendo el destino equivocado para la mercancia'
     assert 'Recepción' in html, 'no dice a donde SI va la mercancia autorizada'
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TODO LO AUTORIZADO ENTRA A POR PAGAR (Sebastian 3-ago)
+# "nosotros pagamos para que llegue · todo lo que se autorice debe aparecer alli en Por Pagar
+# para ella hacerlo · algunas cosas llegan sin pagar, otras si".
+# Antes Por Pagar exigia ADEMAS categoria de PAGO DIRECTO, asi que una OC de MERCANCIA
+# autorizada no aparecia en ninguna lista accionable. Y el badge del tab ya contaba TODAS las
+# autorizadas (52) mientras la lista traia 16: el numero prometia un trabajo que la pantalla
+# no dejaba hacer (M5).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _por_pagar(app):
+    r = _admin(app).get('/api/compras/por-pagar')
+    assert r.status_code == 200, r.data[:200]
+    d = r.get_json() or {}
+    # la respuesta trae la lista unificada en `items` (con `desglose` aparte)
+    arr = d.get('items') if isinstance(d, dict) else d
+    return {x.get('numero_oc'): x for x in (arr or [])}
+
+
+def test_una_oc_de_MERCANCIA_autorizada_aparece_en_por_pagar(app, db_clean):
+    """El caso de Catalina: se paga para que despachen, asi que autorizar deja trabajo -- pagar."""
+    _limpiar(app)
+    mp = _oc(app, 'P1', estado='Autorizada', categoria='MP')
+    mee = _oc(app, 'P2', estado='Autorizada', categoria='MEE')
+    adm = _oc(app, 'P3', estado='Autorizada', categoria='ADM')
+    pp = _por_pagar(app)
+    for n in (mp, mee, adm):
+        assert n in pp, '%s autorizada no aparece en Por Pagar' % n
+    # y se distingue de un servicio: la mercancia todavia tiene que llegar
+    assert pp[mp]['pago_directo'] is False
+    assert 'despachen' in (pp[mp]['tipo'] or '').lower()
+
+
+def test_los_servicios_siguen_marcados_como_pago_directo(app, db_clean):
+    """El arreglo AMPLIA: lo que ya estaba tiene que seguir igual y con su etiqueta."""
+    _limpiar(app)
+    svc = _oc(app, 'P4', estado='Autorizada', categoria='SVC')
+    pp = _por_pagar(app)
+    assert svc in pp and pp[svc]['pago_directo'] is True
+
+
+def test_los_influencers_NO_inundan_por_pagar(app, db_clean):
+    """Tienen su propio flujo en Marketing (se pagan sin entrar a Compras) y son 82 OCs:
+    meterlas aca enterraria el trabajo de Catalina."""
+    _limpiar(app)
+    inf = _oc(app, 'P5', estado='Aprobada', categoria='Influencer/Marketing Digital')
+    assert inf not in _por_pagar(app)
+
+
+def test_una_oc_en_borrador_no_esta_en_por_pagar(app, db_clean):
+    """Con dientes: pagar algo sin autorizar es saltarse el control de autorizacion."""
+    _limpiar(app)
+    b = _oc(app, 'P6', estado='Borrador', categoria='MP')
+    r = _oc(app, 'P7', estado='Revisada', categoria='MP')
+    pp = _por_pagar(app)
+    assert b not in pp and r not in pp
+
+
+def test_el_badge_cuenta_lo_MISMO_que_la_lista_deja_trabajar(app, db_clean):
+    """M5: el badge decia 52 y la lista traia 16. Un numero que promete trabajo que la
+    pantalla no deja hacer manda a buscar lo que no esta."""
+    _limpiar(app)
+    _oc(app, 'P8', estado='Autorizada', categoria='MP')
+    _oc(app, 'P9', estado='Autorizada', categoria='SVC')
+    _oc(app, 'PA', estado='Recibida', categoria='MEE')
+    _oc(app, 'PB', estado='Aprobada', categoria='Influencer/Marketing Digital')  # no cuenta
+    c = _admin(app)
+    lista = _por_pagar(app)
+    d = c.get('/api/compras/dashboard-home').get_json()
+    badge = ((d or {}).get('counts') or {}).get('por_pagar')
+    if badge is None:
+        import pytest as _pt
+        _pt.skip('el panel no expone el contador en este entorno')
+    assert badge == len(lista), 'badge=%s vs lista=%s' % (badge, len(lista))
+
+
+def test_pagar_una_autorizada_esta_permitido(app, db_clean):
+    """Si el gate de pago la bloqueara, mostrarla en Por Pagar seria una lista que no se
+    puede usar (M121: la feature quedaria construida y sin efecto)."""
+    import inspect
+    from blueprints import compras
+    src = inspect.getsource(compras.pagar_oc) if hasattr(compras, 'pagar_oc') else ''
+    if not src:
+        import pytest as _pt
+        _pt.skip('no encontre pagar_oc por nombre')
+    import re as _re
+    m = _re.search(r"if estado_oc in \(([^)]*)\)", src)
+    assert m, 'no encontre el guard de estados de pagar_oc'
+    assert 'Autorizada' not in m.group(1), 'el gate de pago bloquea las Autorizadas'
