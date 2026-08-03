@@ -734,3 +734,55 @@ def test_el_sync_de_shopify_guarda_la_direccion():
     src = _io.open(_os.path.join(raiz, 'api', 'shopify_client.py'), encoding='utf-8').read()
     assert "addr.get('address1')" in src, 'el sync no lee la direccion'
     assert 'direccion=excluded.direccion' in src, 'el sync no la guarda al actualizar'
+
+
+def test_la_ventana_del_sync_manual_es_acotable_y_con_tope():
+    """El cron de las 6 AM trae 90 dias, pero "traer lo de hoy" desde la caja con esa ventana
+    son 7.000+ pedidos y mas de 45s reteniendo uno de los 3 workers -- y un endpoint pesado
+    llamado un par de veces satura la app entera (M43/M89). La ventana se acota, y con TOPE:
+    un `dias` sin limite desde el cliente devuelve el mismo problema por la puerta de atras.
+    """
+    import inspect
+    from blueprints import animus
+    src = inspect.getsource(animus.animus_sync)
+    assert "request.args.get('dias')" in src, 'la ventana del sync no es acotable'
+    assert 'min(int(_dias), 90)' in src, 'sin tope: el cliente podria pedir 2 anos'
+    assert 'max(1,' in src, 'sin piso: dias=0 o negativo'
+
+
+def test_el_boton_de_traer_pedidos_usa_ventana_corta_y_guard():
+    html = _html_animus()
+    assert 'traerPedidos' in html, 'no hay boton para traer pedidos sin esperar al cron'
+    import re as _re
+    m = _re.search(r"_fetchUna\('/api/animus/sync/shopify\?dias=(\d+)'", html)
+    assert m, 'el boton no acota la ventana'
+    assert int(m.group(1)) <= 30, 'ventana demasiado grande para un boton (retiene un worker)'
+
+
+def _html_animus():
+    import ast as _ast, io as _io, os as _os
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    src = _io.open(_os.path.join(raiz, 'api', 'templates_py', 'animus_html.py'),
+                   encoding='utf-8').read()
+    for n in _ast.walk(_ast.parse(src)):
+        if (isinstance(n, _ast.Assign) and isinstance(n.value, _ast.Constant)
+                and isinstance(n.value.value, str) and len(n.value.value) > 5000):
+            return n.value.value
+    raise AssertionError('no encontre ANIMUS_HTML')
+
+
+def test_los_pedidos_se_traen_DOS_veces_al_dia():
+    """Sebastian 3-ago: "deberia ser dos veces al dia el de la caja, 6 am y 12, asi pues tiene
+    el dia". Este sync es el que trae la NOTA, las ETIQUETAS y la DIRECCION -- o sea la marca
+    de CONTRAENTREGA -- asi que con una sola corrida un pedido de la manana no llegaba a la
+    caja hasta el dia siguiente.
+    """
+    import inspect, re as _re
+    from blueprints import auto_plan_jobs
+    src = inspect.getsource(auto_plan_jobs)
+    filas = _re.findall(r"\('([a-z0-9_]+)',\s*(\d+),\s*(\d+),[^)]*'job_sync_shopify'\)", src)
+    horas = sorted(int(h) for _, h, _m in filas)
+    assert horas == [6, 12], 'el sync de pedidos corre a las %s · deberia ser 6 y 12' % horas
+    # el nombre es la LLAVE del lock (cron_locks): repetido, el segundo nunca corre
+    nombres = [f[0] for f in filas]
+    assert len(set(nombres)) == len(nombres), 'dos crons con el mismo nombre: %s' % nombres

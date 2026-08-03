@@ -689,6 +689,11 @@ JOBS_SCHEDULE = [
     ('sync_stock_shopify_md', 13, 30, None, None,               'job_sync_stock_shopify_diario'),
     ('sync_stock_shopify_pm', 21, 30, None, None,               'job_sync_stock_shopify_diario'),
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
+    # Segunda pasada al mediodía (Sebastián 3-ago: "debería ser dos veces al día el de la caja,
+    # 6 am y 12, así pues tiene el día"). Este sync es el que trae la NOTA, las ETIQUETAS y la
+    # DIRECCIÓN de cada pedido -- o sea la marca de CONTRAENTREGA -- así que con una sola
+    # corrida diaria un pedido de la mañana no llegaba a la caja hasta el día siguiente.
+    ('sync_shopify_md',      12,  0, None, None,                'job_sync_shopify'),
     ('auto_asignar_areas',    6, 30, None, None,                'job_auto_asignar_areas'),
     ('b2b_recurrentes',       6, 20, None, None,                'job_b2b_recurrentes'),
     ('alerta_skus_sin_mapear', 6, 45, None, None,               'job_alerta_skus_sin_mapear'),

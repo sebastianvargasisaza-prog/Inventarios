@@ -219,6 +219,8 @@ window.addEventListener('error', function(ev){
                 title="Elegir con que etiqueta o medio de pago se marca la contraentrega en Shopify">&#9881; Marca</button>
         <button class="btn btn-primary btn-sm" onclick="importarPagados()"
                 title="Asienta en caja las contraentregas que Shopify ya da por pagadas">&#128181; Registrar cobrados</button>
+        <button class="btn btn-outline btn-sm" onclick="traerPedidos()"
+                title="Trae de Shopify los pedidos de los ultimos 7 dias. El cron ya lo hace solo a las 6 AM: esto es para no esperar">&#128260; Traer pedidos</button>
         <button class="btn btn-outline btn-sm" onclick="syncBorradores()"
                 title="Trae de Shopify los pedidos que todavia son BORRADOR: la contraentrega se crea asi y se completa recien cuando entra la plata">&#128229; Borradores</button>
       </div>
@@ -953,6 +955,23 @@ async function importarPagados(){
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast(d.registrados + ' registrados por ' + fmtCOP(d.monto)
       + ((d.ya_estaban||[]).length ? ' (' + d.ya_estaban.length + ' ya estaban)' : ''), 'success');
+    loadCod(); loadCaja();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
+// Trae los pedidos recientes de Shopify sin esperar al cron de las 6 AM. Ventana CORTA a
+// proposito: 90 dias son 7.000+ pedidos y mas de 45s reteniendo uno de los 3 workers, y un
+// endpoint pesado llamado un par de veces satura la app entera (M43/M89).
+async function traerPedidos(){
+  showToast('Trayendo pedidos de Shopify...', 'info');
+  try {
+    const r = await _fetchUna('/api/animus/sync/shopify?dias=7', _fetchOpts('POST', {dias: 7}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast((d.synced||0) + ' pedidos actualizados', 'success');
     loadCod(); loadCaja();
   } catch(e) {
     showToast('Error de red: ' + e.message, 'error');

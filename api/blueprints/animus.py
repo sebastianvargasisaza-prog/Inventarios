@@ -178,7 +178,16 @@ def animus_sync(platform):
             # incluir_movimientos=True para que cree movimientos
             # SHOPIFY_VENTA en kardex (caso exclusivo de este endpoint).
             from shopify_client import sync_shopify_orders as _sso
-            d = _sso(conn, days=90, incluir_movimientos=True)
+            # Ventana acotable (3-ago). El cron de las 6 AM trae 90 días, pero para "traer lo
+            # de hoy" desde la caja eso son 7.000+ pedidos y >45s reteniendo uno de los 3
+            # workers (M43/M89: un endpoint pesado llamado un par de veces satura la app).
+            # Con una ventana corta la misma operación tarda segundos.
+            _dias = request.args.get('dias') or (request.get_json(silent=True) or {}).get('dias')
+            try:
+                _dias = max(1, min(int(_dias), 90)) if _dias else 90
+            except (TypeError, ValueError):
+                _dias = 90
+            d = _sso(conn, days=_dias, incluir_movimientos=True)
             if not d.get('ok'):
                 return jsonify({"error": d.get('error') or 'Shopify sync falló'}), 502
             return jsonify({"ok": True, "synced": d.get('synced', 0),
