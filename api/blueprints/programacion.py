@@ -4824,7 +4824,16 @@ def prog_reconciliar_batch_record():
                 continue
             y = _sobra_por_pct[pc]
             _cb, _ce = x['codigo'], y['codigo']
-            _prueba = _conviven(_cb, _ce)
+            # ⚠ El descalificador por convivencia asume algo que en una COLISIÓN no se cumple:
+            # que un código significa lo mismo en los dos sistemas. `MP00301` es propylheptyl en
+            # el batch y ethylhexylglycerin en EOS -- son cosas distintas con el mismo número --
+            # así que "MP00301 y MP00302 conviven en el batch" NO prueba que el MP00302 del batch
+            # no sea el MP00301 de EOS.
+            # La evidencia de que un código ES una colisión ya la dio la aritmética: apareció de
+            # los DOS lados con porcentajes distintos y su descomposición cerró con parejas
+            # exactas (`_cruzados`). No depende de ningún nombre ni de ningún umbral. Cuando el
+            # destino es uno de ésos, la convivencia dentro del batch no informa y no descalifica.
+            _prueba = None if _ce in _cruzados else _conviven(_cb, _ce)
             if _prueba:
                 # no se emparejan: son materiales DISTINTOS y la diferencia es real
                 falta_real.append(x)
@@ -4834,9 +4843,12 @@ def prog_reconciliar_batch_record():
                     'prueba': ('el batch record de "%s" los lleva a los DOS como renglones '
                                'separados, así que no pueden ser el mismo material' % _prueba)})
                 continue
-            _conf, _aviso = 'solo_porcentaje', ''
+            # el par que sale de un ciclo se DECLARA como tal: es la única clase de par que
+            # puede convivir en una fórmula del batch sin ser un error (M132: el informe
+            # siempre dice CÓMO cruzó, y acá el cómo cambia la lectura del hallazgo).
+            _conf, _aviso = ('intercambio_cruzado' if _ce in _cruzados else 'solo_porcentaje'), ''
             try:
-                if c.execute("SELECT 1 FROM mp_formula_bridge WHERE COALESCE(activo,1)=1 AND "
+                if _conf != 'intercambio_cruzado' and c.execute("SELECT 1 FROM mp_formula_bridge WHERE COALESCE(activo,1)=1 AND "
                              "((formula_material_id=? AND bodega_material_id=?) OR "
                              " (formula_material_id=? AND bodega_material_id=?))",
                              (_cb, _ce, _ce, _cb)).fetchone():
@@ -4852,7 +4864,7 @@ def prog_reconciliar_batch_record():
                         "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp)) IN (?,?)",
                         (_cb, _ce)).fetchall())
                     _ia, _ib = _i.get(_cb, ''), _i.get(_ce, '')
-                    if _ia and _ib and _ia == _ib:
+                    if _ia and _ib and _ia == _ib and _conf != 'intercambio_cruzado':
                         _conf = 'mismo_inci'
                     elif not (_ia and _ib):
                         _aviso = ('no se pudo comparar el INCI: %s no está en el maestro de EOS'

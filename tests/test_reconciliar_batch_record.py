@@ -187,7 +187,8 @@ def test_cada_par_de_codigos_dice_como_se_corroboro(app, db_clean):
     j = r.get_json()
     for p in j['productos']:
         for par in p.get('mismo_material_otro_codigo') or []:
-            assert par['confirmado_por'] in ('puente', 'mismo_inci', 'solo_porcentaje'), par
+            assert par['confirmado_por'] in ('puente', 'mismo_inci', 'solo_porcentaje',
+                                             'intercambio_cruzado'), par
             assert par['codigo_batch_record'] and par['codigo_eos'], par
             assert par['codigo_batch_record'] != par['codigo_eos'], par
 
@@ -256,6 +257,10 @@ def test_ningun_par_del_mapa_puede_convivir_en_una_formula(app):
     conviven = _pqc()(_cargar_batch_records().get('productos') or [])
     j = _login(app).get('/api/programacion/reconciliar-batch-record').get_json()
     for m in j.get('mapa_codigos_batch_record_vs_eos') or []:
+        # el par que sale de un INTERCAMBIO CRUZADO es la única clase que puede convivir sin ser
+        # un error: ahí el código de EOS no significa lo mismo que el del batch (es la colisión).
+        if m.get('confirmado_por') == 'intercambio_cruzado':
+            continue
         a, b = m['codigo_batch_record'], m['codigo_eos']
         assert (min(a, b), max(a, b)) not in conviven, m
 
@@ -324,16 +329,26 @@ def _rec(app):
 
 
 def test_el_intercambio_cruzado_se_resuelve(app):
-    """MP00302 tiene que dejar de quedarse sin propuesta."""
+    """Las DOS mitades del ciclo tienen que emparejarse, no una."""
     j = _rec(app)
     _mapa = {(m['codigo_batch_record'], m['codigo_eos']) for m in
              (j.get('mapa_codigos_batch_record_vs_eos') or [])}
-    # si el corpus tiene el ciclo, tiene que aparecer resuelto en AMBOS sentidos
-    _tiene_ciclo = any(
-        any(x['codigo'] == 'MP00302' for x in (p.get('falta_en_eos') or []))
-        for p in j['productos'])
-    if _tiene_ciclo:
-        assert ('MP00302', 'MP00301') in _mapa or ('MP00301', 'MP00030') in _mapa, _mapa
+    _sin_propuesta = {x['codigo'] for p in j['productos']
+                      for x in (p.get('falta_en_eos') or [])}
+    assert 'MP00302' not in _sin_propuesta, (
+        'MP00302 se quedó sin propuesta: el ciclo cerró a medias · mapa=%r' % sorted(_mapa))
+
+
+def test_el_descalificador_NO_aplica_sobre_un_codigo_en_COLISION(app):
+    """El descalificador por convivencia asume que un código significa lo mismo en los dos
+    sistemas. En una COLISIÓN no se cumple (MP00301 = propylheptyl en el batch, ethylhexylglycerin
+    en EOS), así que ahí la convivencia dentro del batch no informa -- y bloquearía un mapeo
+    correcto. La evidencia de que es colisión la da la aritmética, no un nombre."""
+    j = _rec(app)
+    _nmm = {(x['codigo_batch_record'], x['codigo_eos'])
+            for x in (j.get('no_son_el_mismo_material') or [])}
+    assert ('MP00302', 'MP00301') not in _nmm, (
+        'se descalificó un par que es un intercambio cruzado, no dos materiales distintos')
 
 
 def test_una_diferencia_REAL_de_dosis_no_se_descompone(app):

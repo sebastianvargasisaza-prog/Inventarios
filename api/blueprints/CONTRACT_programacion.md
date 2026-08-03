@@ -719,3 +719,20 @@ Dos mitades:
 Re-versionar sigue siendo un acto de Calidad; mientras tanto la planta no se queda sin legajo. Y
 cuando lo re-versionen con el nombre nuevo, el match exacto gana y el alias deja de usarse solo.
 Tests: `tests/test_mbr_sobrevive_al_rename.py`.
+
+### El descalificador NO aplica sobre un código en COLISIÓN (2-ago)
+
+El descalificador por convivencia asume algo que en una **colisión** no se cumple: que un código
+significa lo mismo en los dos sistemas. `MP00301` es **propylheptyl** en el batch record y
+**ethylhexylglycerin** en EOS — dos cosas distintas con el mismo número. Así que *"MP00301 y
+MP00302 conviven en el batch"* **no prueba** que el `MP00302` del batch no sea el `MP00301` de EOS,
+y bloqueaba un mapeo correcto.
+
+**La evidencia de que un código ES una colisión ya la dio la aritmética**: apareció de los dos lados
+con porcentajes distintos y su descomposición cerró con parejas exactas (`_cruzados`). No depende de
+ningún nombre ni umbral — por eso no es circular.
+
+El par resultante se **declara** como `confirmado_por: 'intercambio_cruzado'`: es la única clase de
+par que puede convivir en una fórmula del batch sin ser un error, y la invariante
+"ningún par del mapa puede convivir" lo exceptúa explícitamente. El informe siempre dice **cómo**
+cruzó, y acá el cómo cambia la lectura del hallazgo (M132).
