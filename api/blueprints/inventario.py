@@ -11637,12 +11637,32 @@ def rotulos_recepcion_mee_cajas():
 @bp.route('/api/ordenes-compra/pendientes-recepcion')
 def ocs_pendientes_recepcion():
     conn = get_db(); c = conn.cursor()
+    # Este endpoint llena el desplegable de "¿qué OC estás recibiendo?" del formulario de
+    # ingreso. Filtraba `('Aprobada','Enviada','Parcial')` y AUTORIZADA no estaba -- que es
+    # justo el estado normal de una OC esperando la mercancía. Catalina 3-ago: "se me están
+    # perdiendo las órdenes autorizadas". No se perdían: estaban en /recepcion (51 OCs), pero
+    # al ir a registrar el ingreso el desplegable le ofrecía 3, y ninguna era la suya.
+    #
+    # 'Enviada' NO es un estado de `ordenes_compra`: pertenece a la máquina de estados de las
+    # COTIZACIONES (Borrador→Enviada→Recogida). Estaba de adorno.
+    #
+    # PAGADA sí entra: pagar por anticipado y recibir después es normal acá (M47), y si no
+    # aparece no hay forma de registrar esa mercancía cuando llega.
+    # Los servicios y cuentas de cobro se excluyen: nadie "recibe" un servicio, y ofrecerlos
+    # en el desplegable de ingreso al kardex invita a meter al inventario algo que no existe.
+    try:
+        from blueprints.compras import CATEGORIAS_PAGO_DIRECTO as _PD
+    except Exception:
+        _PD = ('SVC', 'CC', 'Cuenta de Cobro', 'Servicio')
+    _excl = tuple(set(_PD) | {'Influencer/Marketing Digital'})
+    _ph = ','.join('?' for _ in _excl)
     c.execute("""SELECT oc.numero_oc, oc.proveedor, oc.fecha, oc.valor_total,
                         oci.codigo_mp, oci.nombre_mp, oci.cantidad_g, oci.precio_unitario
                  FROM ordenes_compra oc
                  JOIN ordenes_compra_items oci ON oc.numero_oc = oci.numero_oc
-                 WHERE oc.estado IN ('Aprobada','Enviada','Parcial')
-                 ORDER BY oc.fecha DESC""")
+                 WHERE oc.estado IN ('Aprobada','Autorizada','Pagada','Parcial')
+                   AND COALESCE(oc.categoria,'MP') NOT IN (""" + _ph + """)
+                 ORDER BY oc.fecha DESC""", _excl)
     rows = c.fetchall()
     ocs = {}
     for r in rows:

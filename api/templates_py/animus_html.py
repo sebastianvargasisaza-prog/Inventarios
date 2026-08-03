@@ -217,6 +217,8 @@ window.addEventListener('error', function(ev){
         <input id="cod-hasta" type="date" class="input" style="width:auto;" onchange="loadCod()">
         <button class="btn btn-outline btn-sm" onclick="abrirMarcaCod()"
                 title="Elegir con que etiqueta o medio de pago se marca la contraentrega en Shopify">&#9881; Marca</button>
+        <button class="btn btn-primary btn-sm" onclick="importarPagados()"
+                title="Asienta en caja las contraentregas que Shopify ya da por pagadas">&#128181; Registrar cobrados</button>
         <button class="btn btn-outline btn-sm" onclick="syncBorradores()"
                 title="Trae de Shopify los pedidos que todavia son BORRADOR: la contraentrega se crea asi y se completa recien cuando entra la plata">&#128229; Borradores</button>
       </div>
@@ -842,9 +844,17 @@ async function loadCod(){
 
 function renderCodKPIs(k){
   const anejo = k.anejo_21d || 0;
+  const porReg = k.por_registrar || 0;
   const cards = [
+    // Shopify ya lo da por PAGADO: el mensajero cobro y alguien lo marco. Esa plata ya entro,
+    // lo unico que falta es dejarla en la caja con su recibo. Mezclarla con "en la calle"
+    // mostraba como por cobrar algo que ya se cobro.
+    { label: 'Ya cobrado, falta registrar', val: fmtCOP(porReg),
+      color: porReg > 0 ? 'kpi-green' : 'kpi-blue',
+      sub: porReg > 0 ? (k.n_por_registrar||0) + ' pedidos &middot; usa el boton Registrar'
+                      : 'nada por registrar' },
     { label: 'En la calle', val: fmtCOP(k.esperado_pendiente||0), color:'kpi-yellow',
-      sub: (k.n_pendientes||0) + ' pedidos sin cobrar' },
+      sub: (k.n_pendientes||0) + ' sin cobrar todavia' },
     // El anejo lo calculaba el backend desde el primer dia y la pantalla no lo mostraba: sin
     // separarlo, el total "en la calle" mezcla lo de ayer con lo que probablemente no vuelve,
     // y no se puede actuar sobre ninguno de los dos.
@@ -924,6 +934,31 @@ function renderCodPedidos(rows){
 // Trae de Shopify los pedidos que todavia son BORRADOR. Es un recurso DISTINTO de las
 // ordenes (draft_orders), y ahi es donde vive la contraentrega antes de cobrarse: EOS leia
 // solo orders.json, asi que de 7.032 pedidos el detector encontraba 4 -- y no era el patron.
+// Asienta en caja las contraentregas que Shopify YA da por pagadas. Se pregunta ANTES con
+// la misma lista que se va a aplicar: es plata, y un boton que escribe sin mostrar que va a
+// escribir no se puede verificar.
+async function importarPagados(){
+  try {
+    const rp = await fetch('/api/animus/contraentrega/importar-pagados');
+    const prev = await rp.json();
+    if (!prev.ok) { showToast('Error: ' + (prev.error||'?'), 'error'); return; }
+    if (!prev.n) { showToast('No hay contraentregas pagadas sin registrar', 'success'); return; }
+    const lista = (prev.pedidos||[]).slice(0, 6).map(function(x){
+      return x.pedido + ' (' + fmtCOP(x.valor) + ')'; }).join(', ');
+    if (!confirm('Registrar ' + prev.n + ' contraentrega(s) por ' + fmtCOP(prev.monto)
+        + ' en la caja? · ' + lista + (prev.n > 6 ? ' y ' + (prev.n - 6) + ' mas' : ''))) return;
+    const r = await _fetchUna('/api/animus/contraentrega/importar-pagados', _fetchOpts('POST', {}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast(d.registrados + ' registrados por ' + fmtCOP(d.monto)
+      + ((d.ya_estaban||[]).length ? ' (' + d.ya_estaban.length + ' ya estaban)' : ''), 'success');
+    loadCod(); loadCaja();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
 async function syncBorradores(){
   showToast('Trayendo borradores de Shopify...', 'info');
   try {

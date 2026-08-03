@@ -80,7 +80,11 @@ def gerencia_kpis():
     lotes_vence_60 = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM producciones WHERE fecha>=date('now', '-5 hours', 'start of month')")
     prod_mes = c.fetchone()[0] or 0
-    c.execute("SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Pendiente','Aprobada','Enviada')")
+    # Mismo defecto que el desplegable de recepción (3-ago): faltaba AUTORIZADA, que es el
+    # estado normal de una OC en curso, y sobraba 'Enviada', que es de las cotizaciones y no
+    # de las OCs. El KPI de "OCs pendientes" de gerencia mostraba una fracción de la realidad.
+    c.execute("SELECT COUNT(*) FROM ordenes_compra WHERE estado IN "
+              "('Pendiente','Borrador','Revisada','Aprobada','Autorizada','Parcial')")
     ocs_pendientes = c.fetchone()[0] or 0
     try:
         c.execute("SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Pendiente'")

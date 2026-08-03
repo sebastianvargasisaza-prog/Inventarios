@@ -918,3 +918,36 @@ haya encontrado algo. O las dos, o ninguna -- y si la primera no encontró nada,
 
 Tests: `test_colisiones_net_zero.py::test_la_herramienta_del_15jul_ya_no_puede_hacer_media_correccion`
 y `::test_avisa_cuando_no_encuentra_el_descuento_equivocado`.
+
+## 📥 INV-21 · Una OC AUTORIZADA se puede RECIBIR (3-ago)
+
+`GET /api/ordenes-compra/pendientes-recepcion` llena el desplegable de "¿qué OC estás
+recibiendo?" del formulario de ingreso. Filtraba:
+
+```sql
+WHERE oc.estado IN ('Aprobada','Enviada','Parcial')
+```
+
+**`Autorizada` no estaba** — que es justo el estado normal de una OC esperando la mercancía.
+Catalina: *"se me están perdiendo las órdenes autorizadas"*. Medido contra producción con sus
+dos OCs de ese día: `/recepcion` listaba **51** OCs y el desplegable le ofrecía **3**, ninguna
+suya. Al ir a registrar el ingreso, sus órdenes no existían.
+
+**`'Enviada'` no es un estado de `ordenes_compra`**: pertenece a la máquina de estados de las
+COTIZACIONES (`Borrador → Enviada → Recogida`). Estaba ocupando el lugar del estado que
+faltaba, y por eso el hueco pasó desapercibido.
+
+**Invariante:** el conjunto es `('Aprobada','Autorizada','Pagada','Parcial')`.
+
+- **`Pagada` entra**: pagar por anticipado y recibir después es normal acá (M47). Si no
+  aparece, esa mercancía no se puede registrar cuando llega.
+- **`Recibida` NO entra**: ya se recibió completa.
+- **Se excluyen `CATEGORIAS_PAGO_DIRECTO` + influencers**: nadie "recibe" un servicio ni una
+  cuenta de cobro, y ofrecerlos en el desplegable de ingreso al kardex invita a meter al
+  inventario algo que no existe físicamente.
+
+⚠ El mismo filtro roto vivía en el KPI de OCs pendientes de `gerencia.py` (M45: un patrón
+vive replicado en los sitios que copiaron el idiom).
+
+Tests: `tests/test_oc_autorizada_visible.py` (incluye el guard de que ningún filtro de
+`ordenes_compra` vuelva a usar el estado fantasma `'Enviada'`).

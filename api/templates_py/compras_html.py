@@ -765,9 +765,9 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
       <div>
         <span style="font-weight:800;color:var(--cx-text);font-size:16px;letter-spacing:-.01em;">&#x1F4E6; Órdenes de compra activas</span>
-        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px">OCs <b>por autorizar</b> (Borrador / Revisada) · las autorizadas listas para pagar están en <b>💰 Por Pagar</b> · las SOLs pendientes en <b>🏭 Planta</b></div>
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px">Por autorizar (Borrador / Revisada) y <b>autorizadas</b>, que siguen acá hasta que avancen · mercancía autorizada espera en <b>📦 Recepción</b> hasta que llegue · servicios y cuentas de cobro pasan a <b>💰 Por Pagar</b> · las SOLs pendientes en <b>🏭 Planta</b></div>
       </div>
-      <button class="btn bg" onclick="openNuevaOC('')" style="padding:9px 20px;font-size:14px;" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · autorizar al crear va directo a Por Pagar">&#10133; Crear OC</button>
+      <button class="btn bg" onclick="openNuevaOC('')" style="padding:9px 20px;font-size:14px;" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · al autorizar: la mercancía espera en Recepción, los servicios y cuentas de cobro van a Por Pagar">&#10133; Crear OC</button>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f1f0ee;padding-top:12px;">
       <!-- Sebastián 21-jul · quitado el filtro de ESTADOS: todas las OCs activas están "por autorizar"
@@ -7788,9 +7788,16 @@ var _consolCache = [];  // cache indexado por posición
 async function loadConsolidado(){
   var body = document.getElementById('consol-body');
   body.innerHTML = '<div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Cargando...</div>';
-  // Sin filtro de estados (Sebastián 21-jul): todas las OCs activas son "por autorizar" = Borrador + Revisada.
+  // Catalina 3-ago: "cuando da autorizar desaparecen y no salen en Por Pagar".
+  // Desaparecían de verdad: esta pantalla pedía SOLO Borrador+Revisada, así que al autorizar
+  // la OC salía del fetch y la sección "🟢 Autorizadas" -que ya existía abajo- nunca podía
+  // llenarse. El backend ya devuelve Autorizada por defecto; era la pantalla la que lo achicaba.
+  //
+  // Y no alcanzaba con mandarla a Por Pagar: esa lista trae Recibida/Parcial y, de las
+  // Autorizadas, sólo las de PAGO DIRECTO. Una OC de MERCANCÍA autorizada espera en Recepción
+  // hasta que llegue -- así que ir a buscarla a Por Pagar era buscarla donde no está.
   var estados = Array.from(document.querySelectorAll('.consol-est:checked')).map(function(el){return el.value;});
-  if(!estados.length){ estados = ['Borrador','Revisada']; }
+  if(!estados.length){ estados = ['Borrador','Revisada','Autorizada']; }
   try{
     var qs = estados.map(function(e){return 'estados='+encodeURIComponent(e);}).join('&');
     var r = await fetch('/api/compras/consolidado-proveedor?'+qs);
@@ -7851,7 +7858,7 @@ function renderConsolBody(){
     html += porAut.map(function(x){ return renderConsolCard(x.p, x.i); }).join('');
   }
   if(aut.length){
-    html += _consolSectionHeader('🟢 Autorizadas · listas para pago / recepción', aut.length, '#15803d', 'linear-gradient(135deg,#f0fdf4,#ecfdf5)');
+    html += _consolSectionHeader('🟢 Autorizadas · mercancía espera en Recepción · servicios van a Por Pagar', aut.length, '#15803d', 'linear-gradient(135deg,#f0fdf4,#ecfdf5)');
     html += aut.map(function(x){ return renderConsolCard(x.p, x.i); }).join('');
   }
   body.innerHTML = html;

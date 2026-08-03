@@ -10977,6 +10977,16 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_animus_borr_creado ON animus_shopify_borradores(creado_en)",
         "CREATE INDEX IF NOT EXISTS idx_animus_borr_orderid ON animus_shopify_borradores(order_id)",
     ]),
+    (408, "La marca de CONTRAENTREGA vive en la DIRECCIÓN DE ENVÍO (Sebastián 3-ago, mirando "
+          "Shopify: 'mira donde vi que lo han puesto siempre'). Escriben cosas como "
+          "'CONTRAENTREGA ENVIAR CON EL PROFE' en la dirección, y el buscador de Shopify los "
+          "encuentra porque busca ahí -- por eso él veía decenas y EOS 4. EOS guardaba SOLO la "
+          "ciudad de la dirección, así que la marca nunca llegó al sistema: no era el patrón "
+          "ni dónde buscaba el detector, era que el dato no se estaba capturando. Columna "
+          "aditiva; el sync la llena y el detector la suma como cuarta señal.", [
+        "ALTER TABLE animus_shopify_orders ADD COLUMN direccion TEXT DEFAULT ''",
+        "ALTER TABLE animus_shopify_borradores ADD COLUMN direccion TEXT DEFAULT ''",
+    ]),
 ]
 
 

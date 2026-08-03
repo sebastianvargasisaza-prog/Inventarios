@@ -1250,14 +1250,21 @@ def cod_patron(conn):
     return COD_PATRON_DEFAULT
 
 
-def es_contraentrega(nota, tags, gateway, patron=None):
+def es_contraentrega(nota, tags, gateway, patron=None, direccion=None):
     """¿Este pedido es contraentrega? Devuelve (bool, dónde matcheó).
 
     El "dónde" no es adorno: cuando alguien pregunte por qué un pedido entró (o no) a la caja de
     contraentrega, la respuesta tiene que ser verificable sin abrir el código.
+
+    La DIRECCIÓN es la cuarta señal y resultó ser la principal (3-ago). Escriben cosas como
+    "CONTRAENTREGA ENVIAR CON EL PROFE" en la dirección de envío; el buscador de Shopify las
+    encuentra porque busca ahí, y por eso en Shopify se veían decenas y en EOS 4. `direccion`
+    va como argumento con nombre para no correr `patron`, que ya era el cuarto posicional en
+    todas las llamadas existentes.
     """
     rx = re.compile(patron or COD_PATRON_DEFAULT)
-    for campo, valor in (('nota', nota), ('etiqueta', tags), ('medio de pago', gateway)):
+    for campo, valor in (('nota', nota), ('etiqueta', tags),
+                         ('direccion', direccion), ('medio de pago', gateway)):
         if valor and rx.search(_norm_txt(valor)):
             return True, campo
     return False, ''
@@ -1279,7 +1286,8 @@ def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
                   COALESCE(o.nota,''), COALESCE(o.tags,''), COALESCE(o.gateway,''),
                   COALESCE(o.estado,''), COALESCE(o.estado_pago,''),
                   cc.id, cc.valor_recibido, cc.estado, cc.cobrado_por, cc.cobrado_at,
-                  COALESCE(cc.observaciones,''), cc.caja_mov_id
+                  COALESCE(cc.observaciones,''), cc.caja_mov_id,
+                  COALESCE(o.direccion,'')
              FROM animus_shopify_orders o
              LEFT JOIN animus_cod_cobros cc
                     ON cc.shopify_id = o.shopify_id AND cc.estado <> 'anulado'
@@ -1302,6 +1310,7 @@ def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
             """SELECT b.shopify_id, b.nombre, b.total, b.creado_en, b.ciudad,
                       COALESCE(b.nota,''), COALESCE(b.tags,''), COALESCE(b.estado,''),
                       COALESCE(b.order_id,''),
+                      COALESCE(b.direccion,''),
                       cc.id, cc.valor_recibido, cc.estado, cc.cobrado_por, cc.cobrado_at,
                       COALESCE(cc.observaciones,''), cc.caja_mov_id
                  FROM animus_shopify_borradores b
@@ -1322,7 +1331,7 @@ def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
         # esta orden nació de un borrador que ya está en la lista · no se cuenta dos veces
         if str(f[0]) in ordenes_de_borrador:
             continue
-        ok, donde = es_contraentrega(f[5], f[6], f[7], patron)
+        ok, donde = es_contraentrega(f[5], f[6], f[7], patron, direccion=f[17])
         if not ok:
             continue
         cobrado = f[10] is not None
@@ -1351,23 +1360,23 @@ def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
     for b in borradores:
         # El medio de pago no aplica: un borrador todavía no se pagó por ningún lado. Se miran
         # la nota y las etiquetas, que es donde la persona escribe la marca.
-        ok, donde = es_contraentrega(b[5], b[6], '', patron)
+        ok, donde = es_contraentrega(b[5], b[6], '', patron, direccion=b[9])
         if not ok:
             continue
-        cobrado = b[9] is not None
+        cobrado = b[10] is not None
         if cobrado and not incluir_cobrados:
             continue
         esperado = float(b[2] or 0)
-        recibido = float(b[10] or 0) if cobrado else 0.0
+        recibido = float(b[11] or 0) if cobrado else 0.0
         out.append({
             'shopify_id': b[0], 'pedido': b[1] or '', 'valor_esperado': esperado,
             'fecha': (b[3] or '')[:10], 'ciudad': b[4] or '',
             'detectado_por': donde, 'nota': (b[5] or '')[:200],
             'entrega': b[7], 'estado_pago': 'borrador',
             'cobrado': cobrado, 'valor_recibido': recibido,
-            'estado_cobro': b[11] or 'pendiente', 'cobrado_por': b[12] or '',
-            'cobrado_at': b[13] or '', 'observaciones': b[14] or '',
-            'caja_mov_id': b[15],
+            'estado_cobro': b[12] or 'pendiente', 'cobrado_por': b[13] or '',
+            'cobrado_at': b[14] or '', 'observaciones': b[15] or '',
+            'caja_mov_id': b[16],
             'diferencia': round(recibido - esperado, 2) if cobrado else 0.0,
             'dias_en_calle': _dias_desde(b[3]) if not cobrado else None,
             # Se DECLARA de dónde salió: cuando alguien pregunte por qué un pedido está en la
@@ -1407,11 +1416,19 @@ def animus_cod_listar():
     hoy = _hoy_col().isoformat()
     mes = hoy[:7]
 
-    # Esperado PENDIENTE = la plata que está en la calle y todavía no entró. Es el número que
-    # contesta "¿estamos teniendo ese dinero?", así que se calcula sobre lo NO cobrado.
+    # PAGADO EN SHOPIFY vs EN LA CALLE (3-ago · Sebastián: "quiero que se tome todo lo que
+    # está pagado que diga contraentrega"). El flujo real es: el mensajero cobra y el pedido se
+    # marca PAGADO en Shopify. Entonces un contraentrega `paid` NO es plata en la calle: es
+    # plata que YA entró y a la caja le falta registrarla. Mezclarlos hacía que la pantalla
+    # mostrara $411.200 "por cobrar" que Shopify ya daba por cobrados (M5).
+    _pagado = lambda p: str(p.get('estado_pago') or '').lower() == 'paid'
+    por_registrar = [p for p in pedidos if not p['cobrado'] and _pagado(p)]
+    en_la_calle   = [p for p in pedidos if not p['cobrado'] and not _pagado(p)]
     kpis = {
-        'esperado_pendiente': round(sum(p['valor_esperado'] for p in pedidos if not p['cobrado']), 2),
-        'n_pendientes':       sum(1 for p in pedidos if not p['cobrado']),
+        'por_registrar':      round(sum(p['valor_esperado'] for p in por_registrar), 2),
+        'n_por_registrar':    len(por_registrar),
+        'esperado_pendiente': round(sum(p['valor_esperado'] for p in en_la_calle), 2),
+        'n_pendientes':       len(en_la_calle),
         'cobrado_hoy':        round(sum(p['valor_recibido'] for p in pedidos
                                         if p['cobrado'] and p['cobrado_at'][:10] == hoy), 2),
         'cobrado_mes':        round(sum(p['valor_recibido'] for p in pedidos
@@ -1460,11 +1477,11 @@ def animus_cod_diagnostico():
     desde = (request.args.get("desde") or (_hoy_col() - timedelta(days=90)).isoformat())
     filas = conn.execute(
         "SELECT COALESCE(nota,''), COALESCE(tags,''), COALESCE(gateway,''), nombre, "
-        "       COALESCE(total,0), LOWER(COALESCE(estado_pago,'')) "
+        "       COALESCE(total,0), LOWER(COALESCE(estado_pago,'')), COALESCE(direccion,'') "
         "FROM animus_shopify_orders "
         "WHERE substr(COALESCE(creado_en,''),1,10) >= ? "
         "  AND LOWER(COALESCE(estado,'')) <> 'cancelled'", (desde,)).fetchall()
-    por_señal = {'nota': 0, 'etiqueta': 0, 'medio de pago': 0}
+    por_señal = {'nota': 0, 'etiqueta': 0, 'direccion': 0, 'medio de pago': 0}
     sin_match, con_texto = [], 0
     # Reparto REAL de etiquetas y medios de pago, con su plata. Es lo único que contesta "¿con
     # qué palabra la escriben?": una MUESTRA de 25 pedidos no sirve porque los más recientes
@@ -1487,7 +1504,7 @@ def animus_cod_diagnostico():
     # decidir cuál de las dos está fallando.
     con_nota = con_tags = con_gw = 0
     notas_reales = []      # muestra de notas NO vacías, matcheen o no: acá se ve cómo la escriben
-    for nota, tags, gw, nombre, _total, _pago in filas:
+    for nota, tags, gw, nombre, _total, _pago, _dir in filas:
         _n, _t, _g = (nota or '').strip(), (tags or '').strip(), (gw or '').strip()
         _v = float(_total or 0)
         _impago = 1 if (_pago or '').strip() in SIN_PAGAR else 0
@@ -1511,7 +1528,7 @@ def animus_cod_diagnostico():
             con_gw += 1
         if _n or _t:
             con_texto += 1
-        ok, donde = es_contraentrega(nota, tags, gw, patron)
+        ok, donde = es_contraentrega(nota, tags, gw, patron, direccion=_dir)
         if ok:
             por_señal[donde] += 1
         elif (_n or _t) and len(sin_match) < 25:
@@ -1608,25 +1625,29 @@ def sincronizar_borradores(conn, *, dias=120, paginas_max=12, presupuesto_seg=45
                 if not sid:
                     continue
                 addr = d.get('shipping_address') or d.get('billing_address') or {}
+                _dir_b = ' '.join(x for x in (addr.get('address1') or '',
+                                              addr.get('address2') or '',
+                                              addr.get('company') or '') if x).strip()
                 oid = d.get('order_id')
                 # UPSERT con SOLO las columnas de este sync (M108): si otro proceso escribe
                 # esta tabla mañana, ninguno puede borrar lo del otro.
                 c.execute(
                     """INSERT INTO animus_shopify_borradores
                        (shopify_id, nombre, total, moneda, estado, nota, tags, ciudad,
-                        creado_en, actualizado_en, order_id, sincronizado_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                        creado_en, actualizado_en, order_id, sincronizado_at, direccion)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                        ON CONFLICT (shopify_id) DO UPDATE SET
                          nombre=excluded.nombre, total=excluded.total, estado=excluded.estado,
                          nota=excluded.nota, tags=excluded.tags, ciudad=excluded.ciudad,
                          actualizado_en=excluded.actualizado_en, order_id=excluded.order_id,
-                         sincronizado_at=excluded.sincronizado_at""",
+                         sincronizado_at=excluded.sincronizado_at,
+                         direccion=excluded.direccion""",
                     (sid, (d.get('name') or '').strip(), float(d.get('total_price') or 0),
                      (d.get('currency') or 'COP'), (d.get('status') or '').strip(),
                      (d.get('note') or ''), (d.get('tags') or ''),
                      (addr.get('city') or ''), (d.get('created_at') or '')[:19],
                      (d.get('updated_at') or '')[:19],
-                     (str(oid) if oid else None), ahora))
+                     (str(oid) if oid else None), ahora, _dir_b))
                 res['guardados'] += 1
             res['paginas'] += 1
             url = None
@@ -1640,6 +1661,84 @@ def sincronizar_borradores(conn, *, dias=120, paginas_max=12, presupuesto_seg=45
         conn.rollback()
         res['error'] = 'Shopify no respondió: %s' % e
     return res
+
+
+@bp.route("/api/animus/contraentrega/importar-pagados", methods=["GET", "POST"])
+def animus_cod_importar_pagados():
+    """Asienta en caja las contraentregas que Shopify YA da por pagadas.
+
+    Sebastián 3-ago: "quiero que se tome todo lo que está pagado que diga contraentrega".
+    El flujo real es ese: el mensajero cobra y el pedido se marca PAGADO en Shopify. Los 4
+    contraentrega detectados están los 4 en `paid`, así que esa plata YA entró y lo único que
+    faltaba era registrarla con su recibo -- pedirle a alguien que le diera "Sí entró" uno por
+    uno era pedirle que repitiera un hecho que Shopify ya tiene.
+
+    GET = vista previa (no escribe nada). POST = aplica.
+
+    NO inventa el monto: usa el total del pedido, que es lo que Shopify dice que se pagó. Y va
+    por el MISMO camino que el cobro manual (`registrar_movimiento_caja` + `animus_cod_cobros`),
+    así que comparte el correlativo de recibo y el UNIQUE que impide cobrar dos veces -- dos
+    numeradores para la misma caja serían dos series que se pisan.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+
+    conn = _db(); c = conn.cursor()
+    desde = (request.args.get("desde") or "").strip() or None
+    hasta = (request.args.get("hasta") or "").strip() or None
+    candidatos = [p for p in _cod_pedidos(conn, desde, hasta)
+                  if not p['cobrado'] and str(p.get('estado_pago') or '').lower() == 'paid']
+
+    if request.method == "GET":
+        return jsonify({
+            "ok": True, "n": len(candidatos),
+            "monto": round(sum(p['valor_esperado'] for p in candidatos), 2),
+            # La MISMA lista que se va a aplicar, no un recuento aparte: si la previa contara
+            # con un filtro distinto del que escribe, mostraría un número y haría otro (M101).
+            "pedidos": [{"pedido": p['pedido'], "fecha": p['fecha'],
+                         "valor": p['valor_esperado'], "origen": p['origen'],
+                         "marca": p['detectado_por']} for p in candidatos],
+        })
+
+    fecha_hoy = _hoy_col().isoformat()
+    hechos, saltados = [], []
+    for p in candidatos:
+        sid = str(p['shopify_id'])
+        try:
+            c.execute("""INSERT INTO animus_cod_cobros
+                  (shopify_id, pedido, valor_esperado, valor_recibido, estado,
+                   cobrado_por, cobrado_at, observaciones)
+                  VALUES (?,?,?,?,?,?,?,?)""",
+                (sid, p['pedido'], p['valor_esperado'], p['valor_esperado'], 'cobrado', u,
+                 _now_col().strftime('%Y-%m-%d %H:%M:%S'),
+                 'Importado: Shopify lo da por pagado'))
+        except sqlite3.IntegrityError:
+            # Ya estaba cobrado por otro camino · no es un error, es la garantía funcionando
+            saltados.append(p['pedido'])
+            continue
+        cobro_id = c.lastrowid
+        recibo, mov_id = registrar_movimiento_caja(
+            c, tipo='ingreso',
+            concepto='Contraentrega %s' % p['pedido'],
+            monto=p['valor_esperado'],
+            # La fecha del HECHO es la del pedido, no la de hoy: si no, todo lo viejo aterriza
+            # en el mes en curso y el período contable queda mal (M106).
+            fecha=(p['fecha'] or fecha_hoy), metodo='efectivo',
+            referencia=sid,
+            observaciones='Cobro contraentrega · Shopify lo da por pagado', usuario=u)
+        c.execute("UPDATE animus_cod_cobros SET caja_mov_id=? WHERE id=?", (mov_id, cobro_id))
+        audit_log(c, usuario=u, accion='ANIMUS_COD_IMPORTAR_PAGADO',
+                  tabla='animus_cod_cobros', registro_id=cobro_id,
+                  despues={'pedido': p['pedido'], 'monto': p['valor_esperado'],
+                           'recibo': recibo},
+                  detalle='Contraentrega %s asentada en caja · recibo %s (Shopify: pagado)'
+                          % (p['pedido'], recibo))
+        hechos.append({'pedido': p['pedido'], 'recibo': recibo,
+                       'monto': p['valor_esperado']})
+    conn.commit()
+    return jsonify({"ok": True, "registrados": len(hechos),
+                    "monto": round(sum(h['monto'] for h in hechos), 2),
+                    "ya_estaban": saltados, "detalle": hechos})
 
 
 @bp.route("/api/animus/contraentrega/borradores/sync", methods=["POST"])
@@ -1703,7 +1802,8 @@ def animus_cod_borradores():
     url = ("https://%s/admin/api/2024-01/draft_orders.json?limit=250&updated_at_min=%s"
            % (shop, _desde_iso))
     vistos, con_nota, con_tags, detectados = 0, 0, 0, 0
-    muestra, tag_n, por_señal = [], {}, {'nota': 0, 'etiqueta': 0, 'medio de pago': 0}
+    muestra, tag_n, por_señal = [], {}, {'nota': 0, 'etiqueta': 0, 'direccion': 0,
+                                        'medio de pago': 0}
     paginas, corto = 0, None
     try:
         while url and paginas < 8:
@@ -1718,6 +1818,12 @@ def animus_cod_borradores():
                 vistos += 1
                 nota = (d.get('note') or '').strip()
                 tags = (d.get('tags') or '').strip()
+                # La dirección se arma acá, con el `d` de ESTE loop: la del sync vive en otra
+                # función y usarla sería un NameError en producción (M78).
+                _ad = d.get('shipping_address') or d.get('billing_address') or {}
+                direccion = ' '.join(x for x in (_ad.get('address1') or '',
+                                                 _ad.get('address2') or '',
+                                                 _ad.get('company') or '') if x).strip()
                 if nota:
                     con_nota += 1
                 if tags:
@@ -1726,7 +1832,7 @@ def animus_cod_borradores():
                     t = t.strip()
                     if t:
                         tag_n[t] = tag_n.get(t, 0) + 1
-                ok, donde = es_contraentrega(nota, tags, '', patron)
+                ok, donde = es_contraentrega(nota, tags, '', patron, direccion=direccion)
                 if ok:
                     detectados += 1
                     por_señal[donde] += 1
@@ -1798,7 +1904,8 @@ def animus_cod_cobrar(shopify_id):
 
     row = c.execute(
         "SELECT nombre, total, COALESCE(nota,''), COALESCE(tags,''), COALESCE(gateway,''), "
-        "       COALESCE(creado_en,'') FROM animus_shopify_orders WHERE shopify_id=?",
+        "       COALESCE(creado_en,''), COALESCE(direccion,'') FROM animus_shopify_orders "
+        "WHERE shopify_id=?",
         (str(shopify_id),)).fetchone()
     es_borrador = False
     if not row:
@@ -1808,14 +1915,16 @@ def animus_cod_cobrar(shopify_id):
         try:
             row = c.execute(
                 "SELECT nombre, total, COALESCE(nota,''), COALESCE(tags,''), '', "
-                "       COALESCE(creado_en,'') FROM animus_shopify_borradores WHERE shopify_id=?",
+                "       COALESCE(creado_en,''), COALESCE(direccion,'') "
+                "FROM animus_shopify_borradores WHERE shopify_id=?",
                 (str(shopify_id),)).fetchone()
             es_borrador = row is not None
         except Exception as e:
             log.warning('no pude buscar el borrador %s: %s', shopify_id, e)
     if not row:
         return jsonify({"error": "Ese pedido no está en EOS · corré el sync de Shopify"}), 404
-    ok_cod, _donde = es_contraentrega(row[2], row[3], row[4], cod_patron(conn))
+    ok_cod, _donde = es_contraentrega(row[2], row[3], row[4], cod_patron(conn),
+                                     direccion=(row[6] if len(row) > 6 else ''))
     if not ok_cod:
         # No es un capricho: cobrar en esta caja un pedido que NO es contraentrega mete plata que
         # ya entró por la pasarela y descuadra el saldo contra la realidad.

@@ -136,6 +136,13 @@ def sync_shopify_orders(conn, *, days: int = 90,
                 # etiqueta, o el medio de pago. Se traen los tres y el detector mira los tres
                 # (`es_contraentrega`), porque depender de uno solo pierde pedidos en silencio.
                 nota = o.get('note') or ''
+                # La marca de contraentrega también se escribe en la DIRECCIÓN DE ENVÍO
+                # (3-ago · "CONTRAENTREGA ENVIAR CON EL PROFE"). El buscador de Shopify la
+                # encuentra ahí; EOS guardaba sólo la ciudad, así que esa marca nunca llegaba
+                # al sistema y el detector veía 4 pedidos donde había decenas.
+                direccion = ' '.join(x for x in (
+                    addr.get('address1') or '', addr.get('address2') or '',
+                    addr.get('company') or '') if x).strip()
                 gateway = ', '.join(o.get('payment_gateway_names') or []) or (o.get('gateway') or '')
                 # UPSERT que toca SOLO las columnas de este sync (M20). Con `INSERT OR REPLACE`
                 # toda columna no listada vuelve a su default: éste borraba los descuentos y el
@@ -146,9 +153,9 @@ def sync_shopify_orders(conn, *, days: int = 90,
                        (shopify_id, nombre, email, total, moneda, estado,
                         estado_pago, sku_items, unidades_total, ciudad,
                         pais, creado_en, synced_at, tags, customer_tags,
-                        nota, gateway)
+                        nota, gateway, direccion)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,
-                               datetime('now', '-5 hours'), ?, ?, ?, ?)
+                               datetime('now', '-5 hours'), ?, ?, ?, ?, ?)
                        ON CONFLICT(shopify_id) DO UPDATE SET
                          nombre=excluded.nombre, email=excluded.email,
                          total=excluded.total, moneda=excluded.moneda,
@@ -158,7 +165,8 @@ def sync_shopify_orders(conn, *, days: int = 90,
                          ciudad=excluded.ciudad, pais=excluded.pais,
                          creado_en=excluded.creado_en, synced_at=excluded.synced_at,
                          tags=excluded.tags, customer_tags=excluded.customer_tags,
-                         nota=excluded.nota, gateway=excluded.gateway""",
+                         nota=excluded.nota, gateway=excluded.gateway,
+                         direccion=excluded.direccion""",
                     (str(o['id']),
                      o.get('name', ''),
                      o.get('email', ''),
@@ -180,7 +188,8 @@ def sync_shopify_orders(conn, *, days: int = 90,
                      tags,
                      cust_tags,
                      nota,
-                     gateway),
+                     gateway,
+                     direccion),
                 )
                 synced += 1
             # Paginación cursor-based Link header rel=next

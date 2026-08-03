@@ -575,3 +575,162 @@ def test_el_diagnostico_dice_cuantos_de_cada_etiqueta_estan_SIN_PAGAR(app, db_cl
     por = {e['valor']: e for e in d['etiquetas']}
     assert por['marcax']['sin_pagar'] == 2 and por['marcax']['pct_sin_pagar'] == 100, por['marcax']
     assert por['yapaga']['sin_pagar'] == 0 and por['yapaga']['pct_sin_pagar'] == 0, por['yapaga']
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LO PAGADO SE REGISTRA SOLO (3-ago)
+# Sebastian: "quiero que se tome todo lo que esta pagado que diga contraentrega". El flujo
+# real es ese: el mensajero cobra y el pedido se marca PAGADO en Shopify -- los 4 detectados
+# en produccion estan los 4 en `paid`. Esa plata YA entro; pedirle a alguien que le diera
+# "Si entro" uno por uno era pedirle que repitiera un hecho que Shopify ya tiene.
+# Y mientras tanto la pantalla los mostraba como "en la calle", o sea por cobrar algo cobrado.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _marcar_pagado(app, sid):
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        conn.execute("UPDATE animus_shopify_orders SET estado_pago='paid' WHERE shopify_id=?", (sid,))
+        conn.commit()
+
+
+def test_un_contraentrega_pagado_no_cuenta_como_plata_en_la_calle(app, db_clean):
+    """Se mide sobre los pedidos PROPIOS, no sobre los KPIs globales: la BD de tests es
+    compartida y otros archivos siembran contraentregas, asi que un assert sobre el total
+    falla por contaminacion y no por el comportamiento (M103)."""
+    _limpiar(app); _limpiar_borradores(app)
+    pagado = _sembrar(app, 'PA1', total=100000, nota='contraentrega')
+    _marcar_pagado(app, pagado)
+    sin_pagar = _sembrar(app, 'PA2', total=40000, nota='contraentrega')
+
+    pedidos = _admin(app).get('/api/animus/contraentrega').get_json()['pedidos']
+    mios = {p['shopify_id']: p for p in pedidos}
+    assert str(mios[pagado]['estado_pago']).lower() == 'paid'
+    assert str(mios[sin_pagar]['estado_pago']).lower() != 'paid'
+    # y la vista previa de "registrar cobrados" toma SOLO el pagado
+    prev = _admin(app).get('/api/animus/contraentrega/importar-pagados').get_json()
+    tomados = {x['pedido'] for x in prev['pedidos']}
+    assert '#PA1' in tomados and '#PA2' not in tomados, prev
+
+
+def test_registrar_los_pagados_los_asienta_en_caja_con_su_recibo(app, db_clean):
+    _limpiar(app); _limpiar_borradores(app)
+    sid = _sembrar(app, 'PA3', total=188300, nota='Contraentrega')
+    _marcar_pagado(app, sid)
+    c = _admin(app)
+
+    prev = c.get('/api/animus/contraentrega/importar-pagados').get_json()
+    assert prev['n'] == 1 and prev['monto'] == 188300, prev
+
+    r = c.post('/api/animus/contraentrega/importar-pagados', json={}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert r.get_json()['registrados'] == 1
+
+    mov = [m for m in c.get('/api/animus/caja').get_json()['movimientos']
+           if m['referencia'] == sid]
+    assert mov and float(mov[0]['monto']) == 188300
+    assert (mov[0]['recibo_numero'] or '').startswith('RC-')
+
+
+def test_registrar_dos_veces_no_duplica_la_plata(app, db_clean):
+    """Es plata: el UNIQUE de shopify_id es lo que lo impide de verdad, no un chequeo previo."""
+    _limpiar(app); _limpiar_borradores(app)
+    sid = _sembrar(app, 'PA4', total=50000, nota='contraentrega')
+    _marcar_pagado(app, sid)
+    c = _admin(app)
+    assert c.post('/api/animus/contraentrega/importar-pagados', json={},
+                  headers=csrf_headers()).get_json()['registrados'] == 1
+    segunda = c.post('/api/animus/contraentrega/importar-pagados', json={},
+                     headers=csrf_headers()).get_json()
+    assert segunda['registrados'] == 0, 'registró dos veces el mismo pedido'
+    import os as _os, sqlite3 as _sq
+    conn = _sq.connect(_os.environ["DB_PATH"])
+    n = conn.execute("SELECT COUNT(*) FROM animus_caja_menor WHERE referencia=?", (sid,)).fetchone()[0]
+    conn.close()
+    assert n == 1, 'la plata entró dos veces a la caja'
+
+
+def test_no_registra_lo_que_NO_esta_pagado(app, db_clean):
+    """Con dientes: si tomara los no pagados, la caja diría que hay efectivo que está en la
+    calle y todavía no llegó."""
+    _limpiar(app); _limpiar_borradores(app)
+    _sembrar(app, 'PA5', total=90000, nota='contraentrega')   # sin pagar
+    c = _admin(app)
+    assert c.get('/api/animus/contraentrega/importar-pagados').get_json()['n'] == 0
+    assert c.post('/api/animus/contraentrega/importar-pagados', json={},
+                  headers=csrf_headers()).get_json()['registrados'] == 0
+
+
+def test_el_movimiento_queda_con_la_fecha_del_PEDIDO_no_la_de_hoy(app, db_clean):
+    """El período contable sale del HECHO (M106). Si todo lo viejo aterriza con fecha de hoy,
+    el mes en curso se infla con cobros de hace dos meses."""
+    _limpiar(app); _limpiar_borradores(app)
+    from datetime import timedelta as _td
+    from tz_colombia import hoy_colombia
+    viejo = (hoy_colombia() - _td(days=45)).isoformat()
+    sid = _sembrar(app, 'PA6', total=70000, nota='contraentrega', fecha=viejo)
+    _marcar_pagado(app, sid)
+    c = _admin(app)
+    c.post('/api/animus/contraentrega/importar-pagados', json={}, headers=csrf_headers())
+    mov = [m for m in c.get('/api/animus/caja').get_json()['movimientos']
+           if m['referencia'] == sid]
+    assert mov and (mov[0]['fecha'] or '')[:10] == viejo, mov
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LA MARCA VIVE EN LA DIRECCION DE ENVIO (3-ago) · LA CAUSA RAIZ
+# Sebastian, mirando Shopify: "mira donde vi que lo han puesto siempre". Escriben cosas como
+# "CONTRAENTREGA ENVIAR CON EL PROFE" en la DIRECCION. El buscador de Shopify los encuentra
+# porque busca ahi -- por eso el veia decenas de pedidos y EOS 4.
+# EOS guardaba SOLO la ciudad de la direccion, asi que la marca nunca llegaba al sistema.
+# No era el patron ni donde miraba el detector: era que el dato no se estaba capturando.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_detecta_la_marca_escrita_en_la_direccion():
+    from blueprints.animus import es_contraentrega
+    assert es_contraentrega('', '', '', direccion='CONTRAENTREGA ENVIAR CON EL PROFE')[0]
+    assert es_contraentrega('', '', '', direccion='Cra 45 #10-20 contra entrega')[0]
+    # y DICE que matcheo por ahi · sin eso nadie puede verificar por que entro a la caja
+    assert es_contraentrega('', '', '', direccion='CONTRAENTREGA')[1] == 'direccion'
+
+
+def test_una_direccion_normal_no_marca_contraentrega():
+    """Con dientes: si marcara cualquier direccion, entraria a la caja plata ya cobrada."""
+    from blueprints.animus import es_contraentrega
+    for d in ('Cra 45 #10-20 apto 301', 'Calle 9 sur, conjunto El Prado', 'SUFACTURA Cali VAC'):
+        assert not es_contraentrega('', '', '', direccion=d)[0], d
+
+
+def test_la_direccion_no_corre_el_argumento_patron():
+    """`patron` era el CUARTO posicional en todas las llamadas que ya existian. Si `direccion`
+    se hubiera metido ahi, cada llamada vieja habria pasado la direccion como patron: una
+    expresion regular arbitraria decidiendo que entra a la caja."""
+    from blueprints.animus import es_contraentrega
+    assert es_contraentrega('contraentrega', '', '', None)[0]
+    assert es_contraentrega('xyz', '', '', 'xyz')[0], 'el 4o posicional dejo de ser el patron'
+
+
+def test_un_pedido_marcado_solo_en_la_direccion_entra_a_la_caja(app, db_clean):
+    """El caso real: nota vacia, etiquetas de logistica, y la marca en la direccion."""
+    _limpiar(app); _limpiar_borradores(app)
+    sid = _sembrar(app, 'DIR1', total=111000, nota='', tags='Facturado, CM: ENTREGADA')
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        conn.execute("UPDATE animus_shopify_orders SET direccion=? WHERE shopify_id=?",
+                     ('66822895 CONTRAENTREGA ENVIAR CON EL PROFE SUFACTURA', sid))
+        conn.commit()
+    pedidos = _admin(app).get('/api/animus/contraentrega').get_json()['pedidos']
+    mio = [p for p in pedidos if p['shopify_id'] == sid]
+    assert mio, 'un pedido marcado en la direccion no entro a la caja'
+    assert mio[0]['detectado_por'] == 'direccion'
+
+
+def test_el_sync_de_shopify_guarda_la_direccion():
+    """Si el sync no la trae, el detector mira una columna siempre vacia y la feature queda
+    muerta sin un solo error (M115: el dato se pierde a mitad de camino)."""
+    import io as _io, os as _os
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    src = _io.open(_os.path.join(raiz, 'api', 'shopify_client.py'), encoding='utf-8').read()
+    assert "addr.get('address1')" in src, 'el sync no lee la direccion'
+    assert 'direccion=excluded.direccion' in src, 'el sync no la guarda al actualizar'
