@@ -967,7 +967,11 @@ function renderMarca(d){
     var h = '<div style="font-weight:700;margin:16px 0 6px;">' + titulo + '</div>'
           + '<div style="overflow-x:auto;"><table><thead><tr>'
           + '<th>Valor</th><th style="text-align:right;">Pedidos</th>'
-          + '<th style="text-align:right;">Plata</th><th>Hoy</th><th></th></tr></thead><tbody>';
+          + '<th style="text-align:right;">Plata</th>'
+          + '<th style="text-align:right;" title="Pedidos que Shopify NO da por pagados. '
+          + 'Si casi todos estan sin pagar, esa plata esta en la calle = contraentrega. '
+          + 'Si ya estan pagados, entro por otro lado y NO va a esta caja.">Sin pagar</th>'
+          + '<th>Hoy</th><th></th></tr></thead><tbody>';
     for (var i = 0; i < filas.length; i++) {
       var f = filas[i];
       var yaEsta = f.detecta
@@ -975,10 +979,17 @@ function renderMarca(d){
         : '<span class="badge badge-gray">no entra</span>';
       var boton = f.detecta ? '' :
         '<button class="btn btn-primary btn-sm" onclick="usarMarca(' + i + ',&quot;' + campo + '&quot;)">Es esta</button>';
+      // La senal que decide, con color: verde = casi todo sin pagar (plata en la calle),
+      // gris = ya pagados (esa plata entro por otro lado y no va a esta caja).
+      var pct = f.pct_sin_pagar == null ? null : Number(f.pct_sin_pagar);
+      var cel = pct == null ? '<span style="color:var(--cx-text-mute);">-</span>'
+        : '<span class="badge ' + (pct >= 80 ? 'badge-green' : (pct >= 30 ? 'badge-yellow' : 'badge-gray'))
+          + '" title="' + (f.sin_pagar||0) + ' de ' + f.pedidos + ' sin pagar">' + pct + '%</span>';
       h += '<tr>'
         + '<td style="font-weight:600;">' + esc(f.valor) + '</td>'
         + '<td style="text-align:right;">' + f.pedidos + '</td>'
         + '<td style="text-align:right;font-weight:700;">' + fmtCOP(f.monto || 0) + '</td>'
+        + '<td style="text-align:right;">' + cel + '</td>'
         + '<td>' + yaEsta + '</td><td>' + boton + '</td></tr>';
     }
     return h + '</tbody></table></div>';

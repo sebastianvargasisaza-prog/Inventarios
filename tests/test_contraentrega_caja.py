@@ -532,3 +532,46 @@ def test_el_sync_de_borradores_es_solo_admin(app, db_clean):
            headers=csrf_headers(), follow_redirects=False)
     r = c.post('/api/animus/contraentrega/borradores/sync', json={}, headers=csrf_headers())
     assert r.status_code in (401, 403), r.status_code
+
+
+def test_la_lectura_de_borradores_va_acotada_por_fecha():
+    """Shopify devuelve los borradores del mas VIEJO al mas nuevo, y hay 1.500+ abiertos desde
+    2023 que nadie cerro. Sin filtro de fecha el presupuesto de tiempo se gasta leyendo
+    borradores de hace dos anos y NUNCA se llega a los de esta semana -- que son los que hay
+    que cobrar. Medido en produccion: la primera lectura se corto en la pagina 6, entera en
+    2023-2024, y el informe parecia hablar del presente.
+    """
+    import inspect
+    from blueprints import animus
+    for fn in (animus.animus_cod_borradores, animus.sincronizar_borradores):
+        src = inspect.getsource(fn)
+        assert 'updated_at_min=' in src, (
+            '%s lee borradores sin acotar por fecha' % fn.__name__)
+
+
+def test_el_diagnostico_dice_cuantos_de_cada_etiqueta_estan_SIN_PAGAR(app, db_clean):
+    """La senal que DECIDE si una etiqueta es contraentrega, sin depender de que alguien
+    recuerde nada: Shopify ya guarda si cada pedido esta pagado.
+
+    Una etiqueta cuyos pedidos estan casi todos SIN pagar es plata en la calle (contraentrega).
+    Una cuyos pedidos ya estan pagados es plata que entro por otro lado: si se marcara como
+    contraentrega, la caja mostraria por cobrar algo ya cobrado y el saldo diria que hay
+    efectivo que no existe -- el peor error posible en un registro de caja.
+    """
+    _limpiar(app)
+    _sembrar(app, 'PG1', total=100000, tags='marcax', estado='')          # sin pagar
+    _sembrar(app, 'PG2', total=100000, tags='marcax', estado='')          # sin pagar
+    _sembrar(app, 'PG3', total=100000, tags='yapaga')                     # ver abajo
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        conn.execute("UPDATE animus_shopify_orders SET estado_pago='paid' WHERE shopify_id=?",
+                     (PREFIJO + 'PG3',))
+        conn.execute("UPDATE animus_shopify_orders SET estado_pago='pending' "
+                     "WHERE shopify_id IN (?,?)", (PREFIJO + 'PG1', PREFIJO + 'PG2'))
+        conn.commit()
+
+    d = _admin(app).get('/api/animus/contraentrega/diagnostico').get_json()
+    por = {e['valor']: e for e in d['etiquetas']}
+    assert por['marcax']['sin_pagar'] == 2 and por['marcax']['pct_sin_pagar'] == 100, por['marcax']
+    assert por['yapaga']['sin_pagar'] == 0 and por['yapaga']['pct_sin_pagar'] == 0, por['yapaga']

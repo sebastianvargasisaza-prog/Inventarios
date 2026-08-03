@@ -1460,7 +1460,7 @@ def animus_cod_diagnostico():
     desde = (request.args.get("desde") or (_hoy_col() - timedelta(days=90)).isoformat())
     filas = conn.execute(
         "SELECT COALESCE(nota,''), COALESCE(tags,''), COALESCE(gateway,''), nombre, "
-        "       COALESCE(total,0) "
+        "       COALESCE(total,0), LOWER(COALESCE(estado_pago,'')) "
         "FROM animus_shopify_orders "
         "WHERE substr(COALESCE(creado_en,''),1,10) >= ? "
         "  AND LOWER(COALESCE(estado,'')) <> 'cancelled'", (desde,)).fetchall()
@@ -1473,6 +1473,13 @@ def animus_cod_diagnostico():
     # si existe una etiqueta de contraentrega).
     tag_n, tag_v = {}, {}
     gw_n, gw_v = {}, {}
+    # ¿La plata de esos pedidos YA entró? Es lo que decide si una etiqueta es contraentrega,
+    # y no hace falta que nadie se acuerde: Shopify guarda el estado de pago de cada pedido.
+    # Una etiqueta cuyos pedidos están casi todos SIN PAGAR es plata en la calle (contraentrega);
+    # una cuyos pedidos están pagados es plata que ya entró por otro lado y NO va a esta caja
+    # -- meterla ahí haría que el saldo diga que hay efectivo que no existe.
+    tag_sin_pagar, gw_sin_pagar = {}, {}
+    SIN_PAGAR = ('pending', 'authorized', 'partially_paid', '')
     # Contar por separado CUÁNTOS traen nota, etiqueta y medio de pago. La primera versión sólo
     # decía "con nota o etiqueta", y como casi todos los pedidos traen etiquetas de transportadora
     # ('CM: ENTREGADA', 'Facturado'), ese número daba 7.233 y no permitía ver que las NOTAS eran
@@ -1480,17 +1487,20 @@ def animus_cod_diagnostico():
     # decidir cuál de las dos está fallando.
     con_nota = con_tags = con_gw = 0
     notas_reales = []      # muestra de notas NO vacías, matcheen o no: acá se ve cómo la escriben
-    for nota, tags, gw, nombre, _total in filas:
+    for nota, tags, gw, nombre, _total, _pago in filas:
         _n, _t, _g = (nota or '').strip(), (tags or '').strip(), (gw or '').strip()
         _v = float(_total or 0)
+        _impago = 1 if (_pago or '').strip() in SIN_PAGAR else 0
         for _tag in _t.split(','):
             _tag = _tag.strip()
             if _tag:
                 tag_n[_tag] = tag_n.get(_tag, 0) + 1
                 tag_v[_tag] = tag_v.get(_tag, 0.0) + _v
+                tag_sin_pagar[_tag] = tag_sin_pagar.get(_tag, 0) + _impago
         if _g:
             gw_n[_g] = gw_n.get(_g, 0) + 1
             gw_v[_g] = gw_v.get(_g, 0.0) + _v
+            gw_sin_pagar[_g] = gw_sin_pagar.get(_g, 0) + _impago
         if _n:
             con_nota += 1
             if len(notas_reales) < 30:
@@ -1524,18 +1534,24 @@ def animus_cod_diagnostico():
         # El reparto completo, ordenado por cuántos pedidos lleva cada una. Acá se elige la
         # etiqueta mirando números (cuántos pedidos y cuánta plata) en vez de recordarla. Las
         # que aparecen una sola vez son por-pedido (número de factura, guía) y quedan al final.
+        # `sin_pagar` es la columna que DECIDE: una etiqueta cuyos pedidos estan casi todos sin
+        # pagar es plata en la calle; una cuyos pedidos ya estan pagados no va a esta caja.
         "etiquetas": [{"valor": k, "pedidos": tag_n[k], "monto": round(tag_v[k], 2),
+                       "sin_pagar": tag_sin_pagar.get(k, 0),
+                       "pct_sin_pagar": round(100.0 * tag_sin_pagar.get(k, 0) / tag_n[k]),
                        "detecta": bool(es_contraentrega(None, k, None, patron)[0])}
                       for k in sorted(tag_n, key=lambda x: -tag_n[x])[:60]],
         "etiquetas_distintas": len(tag_n),
         "medios_pago": [{"valor": k, "pedidos": gw_n[k], "monto": round(gw_v[k], 2),
+                         "sin_pagar": gw_sin_pagar.get(k, 0),
+                         "pct_sin_pagar": round(100.0 * gw_sin_pagar.get(k, 0) / gw_n[k]),
                          "detecta": bool(es_contraentrega(None, None, k, patron)[0])}
                         for k in sorted(gw_n, key=lambda x: -gw_n[x])[:30]],
         "como_ajustar": "PUT /api/animus/contraentrega/patron con {patron: '...'} (admin · sin deploy)",
     })
 
 
-def sincronizar_borradores(conn, *, paginas_max=12, presupuesto_seg=45):
+def sincronizar_borradores(conn, *, dias=120, paginas_max=12, presupuesto_seg=45):
     """Trae los BORRADORES de Shopify a su propia tabla. Devuelve un resumen.
 
     Por qué existe: los pedidos contraentrega se crean como borrador y se completan recién
@@ -1566,7 +1582,14 @@ def sincronizar_borradores(conn, *, paginas_max=12, presupuesto_seg=45):
     import time
     t0 = time.monotonic()
     ahora = _now_col().strftime('%Y-%m-%d %H:%M:%S')
-    url = "https://%s/admin/api/2024-01/draft_orders.json?limit=250" % shop
+    # ACOTADO POR FECHA a propósito. Shopify devuelve los borradores del más VIEJO al más nuevo,
+    # y hay más de 1.500 abiertos desde 2023 (quedaron sin completar y nadie los cerró). Sin
+    # este filtro el presupuesto de tiempo se consume leyendo borradores de hace dos años y
+    # NUNCA se llega a los de esta semana -- que son justo los que hay que cobrar. Medido: la
+    # primera lectura se cortó en la página 6, toda en 2023-2024.
+    desde_iso = (_hoy_col() - timedelta(days=dias)).strftime('%Y-%m-%dT00:00:00Z')
+    url = ("https://%s/admin/api/2024-01/draft_orders.json?limit=250&updated_at_min=%s"
+           % (shop, desde_iso))
     c = conn.cursor()
     try:
         while url and res['paginas'] < paginas_max:
@@ -1672,7 +1695,13 @@ def animus_cod_borradores():
     # que se lea como total contestaría la pregunta al revés.
     import time
     t0 = time.monotonic()
-    url = ("https://%s/admin/api/2024-01/draft_orders.json?limit=250&status=open" % shop)
+    # Acotado por fecha: Shopify los devuelve del más VIEJO al más nuevo y hay 1.500+ abiertos
+    # desde 2023. Sin el filtro, el presupuesto se gasta leyendo borradores de hace dos años y
+    # el informe habla de 2023 mientras uno cree que habla de esta semana.
+    _dias = max(1, min(int(request.args.get('dias') or 120), 730))
+    _desde_iso = (_hoy_col() - timedelta(days=_dias)).strftime('%Y-%m-%dT00:00:00Z')
+    url = ("https://%s/admin/api/2024-01/draft_orders.json?limit=250&updated_at_min=%s"
+           % (shop, _desde_iso))
     vistos, con_nota, con_tags, detectados = 0, 0, 0, 0
     muestra, tag_n, por_señal = [], {}, {'nota': 0, 'etiqueta': 0, 'medio de pago': 0}
     paginas, corto = 0, None
@@ -1718,6 +1747,7 @@ def animus_cod_borradores():
 
     return jsonify({
         "ok": True, "patron": patron,
+        "dias": _dias, "desde": _desde_iso[:10],
         "borradores_abiertos": vistos,
         "paginas_leidas": paginas,
         # Si esto NO es None, la respuesta es PARCIAL: un cero acá abajo no probaría nada.
