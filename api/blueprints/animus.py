@@ -1294,6 +1294,58 @@ def caja_solicitudes():
                               if bajo_tope else 'Enviada a gerencia para autorizar')}), 201
 
 
+@bp.route("/api/animus/empleados", methods=["GET"])
+def animus_empleados():
+    """La gente de ANIMUS, para registrarle novedades.
+
+    La lista sale del MAESTRO de empleados y no de un campo de texto: si el nombre se escribiera
+    a mano, cada forma de escribirlo seria una persona distinta y Recursos Humanos no podria
+    agrupar nada (M115).
+
+    El `username` se resuelve por CEDULA contra `usuarios_identidad` -- es la unica llave que
+    comparten las dos tablas. Quien no tiene login igual entra a la lista con su codigo de
+    empleado: el aviso a RRHH y a gerencia sale igual, lo unico que no se puede es devolverle
+    la respuesta por la campana a alguien que no tiene donde recibirla.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    try:
+        filas = c.execute("""
+            SELECT e.codigo, TRIM(COALESCE(e.nombre,'') || ' ' || COALESCE(e.apellido,'')) AS nom,
+                   COALESCE(e.cargo,'') , COALESCE(e.empresa,''), COALESCE(e.cedula,''),
+                   COALESCE(ui.username,'')
+              FROM empleados e
+              LEFT JOIN usuarios_identidad ui
+                     ON TRIM(COALESCE(ui.cedula,'')) <> ''
+                    AND TRIM(ui.cedula) = TRIM(COALESCE(e.cedula,''))
+                    AND COALESCE(ui.activo,1) = 1
+             WHERE UPPER(COALESCE(e.estado,'')) = 'ACTIVO'
+             ORDER BY nom
+        """).fetchall()
+    except Exception as e:
+        log.warning('no pude leer el maestro de empleados: %s', e)
+        return jsonify({"ok": False, "empleados": [],
+                        "error": "No pude leer el maestro de empleados"}), 200
+
+    def _fila(r):
+        return {"username": (r[5] or r[0] or '').strip().lower(),
+                "nombre": (r[1] or '').strip() or (r[0] or ''),
+                "cargo": r[2] or '', "empresa": r[3] or '',
+                "tiene_login": bool((r[5] or '').strip())}
+
+    todos = [_fila(r) for r in filas]
+    animus = [x for x in todos if 'ANIMUS' in (x['empresa'] or '').upper()]
+    # Si el maestro no marca a nadie como de ANIMUS, se devuelven TODOS antes que un desplegable
+    # vacio -- y se DECLARA por que, para que no parezca que la lista esta bien filtrada.
+    return jsonify({"ok": True,
+                    "empleados": animus or todos,
+                    "filtrado_por_empresa": bool(animus),
+                    "aviso": '' if animus else
+                             'Ningún empleado está marcado como de ÁNIMUS en el maestro · '
+                             'se muestran todos los activos'})
+
+
 @bp.route("/api/caja/pago-directo", methods=["POST"])
 def caja_pago_directo():
     """Registrar un pago que YA se autorizo de palabra, en un solo acto.

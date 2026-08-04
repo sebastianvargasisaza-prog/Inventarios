@@ -24,7 +24,7 @@ from flask import Blueprint, jsonify, request, session, Response, redirect
 import json, logging
 from datetime import datetime
 from database import get_db
-from config import ADMIN_USERS
+from config import ADMIN_USERS, RRHH_USERS
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('bienestar', __name__)
@@ -32,6 +32,37 @@ bp = Blueprint('bienestar', __name__)
 # Jefes de area (pueden ver notificaciones del equipo y asignar capacitaciones)
 # Por ahora solo Luis Enrique (jefe planta) + admins. RH (mayra) podria sumarse.
 JEFES_AREA = {'sebastian', 'alejandro', 'luis_enrique', 'luisenrique', 'mayra'}
+
+def _destinatarios_novedad(explicito=''):
+    """A quien se le avisa una novedad de personal.
+
+    Sale de los ROLES, no de una lista escrita a mano: la anterior nombraba a `luis_enrique`,
+    que fue dado de baja (mig 375), asi que la mitad de los avisos iban a alguien que ya no
+    trabaja -- y nadie lo noto porque el aviso nunca se enviaba (ver `_avisar_novedad`).
+    """
+    if (explicito or '').strip():
+        return [x.strip().lower() for x in explicito.split(',') if x.strip()]
+    dest = {u.lower() for u in RRHH_USERS} | {u.lower() for u in ADMIN_USERS}
+    return sorted(dest)
+
+
+def _avisar_novedad(destinatarios, *, quien, empleado, tipo, asunto, nid, urgente=False):
+    """Manda la novedad a la campana de cada destinatario.
+
+    Esto FALTABA: el endpoint escribia `notificado_a` y ahi terminaba todo. Guardar a quien
+    hay que avisar no es avisar (M118) -- y una bandeja que nunca suena se ve igual que una al
+    dia (M127), asi que el hueco era invisible.
+    """
+    try:
+        from blueprints.notif import push_notif_multi
+        push_notif_multi(
+            destinatarios, 'novedad_personal',
+            '%s · %s' % (empleado or quien, asunto[:60]),
+            body='Novedad de personal (%s) registrada por %s' % (tipo, quien),
+            link='/bienestar', remitente=quien, importante=urgente)
+    except Exception as e:
+        logger.warning('no pude avisar la novedad %s: %s', nid, e)
+
 
 def _is_jefe(user):
     return (user or '').lower() in JEFES_AREA or (user or '').lower() in {u.lower() for u in ADMIN_USERS}
@@ -66,17 +97,27 @@ def notificaciones_handler():
         if not asunto:
             return jsonify({'error': 'asunto requerido'}), 400
         # Default notificar a jefes + admins
-        notificado = (d.get('notificado_a') or '').strip() or 'sebastian,luis_enrique'
+        destinos = _destinatarios_novedad(d.get('notificado_a') or '')
+        notificado = ','.join(destinos)
+        # Quien maneja el personal registra la novedad de OTRO (Sebastian 3-ago: Daniela es la
+        # encargada de los empleados de Animus). Cualquier otro solo puede hablar por si mismo:
+        # si no, cualquiera podria pedir un permiso a nombre de un companero.
+        de_quien = (d.get('empleado_username') or '').strip().lower()
+        if de_quien and de_quien != (user or '').lower() and not (
+                _is_jefe(user) or (user or '').lower() in {x.lower() for x in RRHH_USERS}):
+            return jsonify({'error': 'Solo quien maneja el personal registra novedades de otro'}), 403
+        sujeto = de_quien or user
+        sujeto_nombre = (d.get('empleado_nombre') or '').strip() or sujeto.capitalize()
         c.execute("""INSERT INTO notificaciones_empleados
             (empleado_username, empleado_nombre, tipo, asunto, descripcion,
-             fecha_inicio, fecha_fin, adjunto_url, notificado_a)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
-            (user, user.capitalize(), tipo, asunto,
+             fecha_inicio, fecha_fin, adjunto_url, notificado_a, registrado_por)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (sujeto, sujeto_nombre, tipo, asunto,
              (d.get('descripcion') or '').strip() or None,
              (d.get('fecha_inicio') or '').strip() or None,
              (d.get('fecha_fin') or '').strip() or None,
              (d.get('adjunto_url') or '').strip() or None,
-             notificado))
+             notificado, user))
         nid = c.lastrowid
         try:
             from audit_helpers import audit_log as _al
@@ -89,7 +130,14 @@ def notificaciones_handler():
         except Exception:
             pass
         conn.commit()
-        return jsonify({'ok': True, 'id': nid}), 201
+        # Despues del commit a proposito: avisar de algo que despues no quedo guardado es peor
+        # que no avisar. Es best-effort (M4: si la campana falla se logea, no tumba el registro).
+        _avisar_novedad(destinos, quien=user, empleado=sujeto_nombre, tipo=tipo,
+                        asunto=asunto, nid=nid,
+                        urgente=(tipo in ('salud', 'enfermedad', 'cita_medica')))
+        return jsonify({'ok': True, 'id': nid, 'empleado': sujeto,
+                        'notificado_a': destinos,
+                        'aviso': 'Registrada · avisamos a ' + ', '.join(destinos)}), 201
 
     # GET — filtros opcionales:
     #   ?solo_mias=1  → solo las creadas por el usuario actual
@@ -100,15 +148,21 @@ def notificaciones_handler():
     tipo = (request.args.get('tipo') or '').strip()
     where = []
     params = []
-    if solo_mias or not _is_jefe(user):
+    if solo_mias:
         where.append('empleado_username=?'); params.append(user)
+    elif not _is_jefe(user):
+        # Quien registra la novedad de OTRO tiene que poder seguirla: el filtro por empleado la
+        # dejaba invisible justo para quien la escribio (Daniela y su equipo de ÁNIMUS).
+        where.append("(empleado_username=? OR COALESCE(registrado_por,'')=?)")
+        params.extend([user, user])
     if estado:
         where.append('estado=?'); params.append(estado)
     if tipo:
         where.append('tipo=?'); params.append(tipo)
     sql = "SELECT id, empleado_username, empleado_nombre, tipo, asunto, descripcion, " \
           "fecha_inicio, fecha_fin, adjunto_url, estado, notificado_a, " \
-          "comentario_jefe, resuelto_por, resuelto_en, creado_en " \
+          "comentario_jefe, resuelto_por, resuelto_en, creado_en, " \
+          "COALESCE(registrado_por,'') AS registrado_por " \
           "FROM notificaciones_empleados"
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -117,7 +171,7 @@ def notificaciones_handler():
     cols = ['id', 'empleado_username', 'empleado_nombre', 'tipo', 'asunto',
             'descripcion', 'fecha_inicio', 'fecha_fin', 'adjunto_url',
             'estado', 'notificado_a', 'comentario_jefe', 'resuelto_por',
-            'resuelto_en', 'creado_en']
+            'resuelto_en', 'creado_en', 'registrado_por']
     return jsonify({
         'notificaciones': [dict(zip(cols, r)) for r in rows],
         'total': len(rows),

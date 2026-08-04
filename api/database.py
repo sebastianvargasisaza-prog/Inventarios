@@ -11082,6 +11082,17 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
             observaciones   TEXT DEFAULT ''
         )""",
     ]),
+    (412, "novedades de personal: quien la REGISTRO (Daniela registra las de su equipo)", [
+        # Sebastian (3-ago): "como ella es la encargada de los empleados de Animus deberia
+        # tener algo para novedades internas... y que vaya quedando la trazabilidad".
+        # `empleado_username` es de QUIEN es la novedad; sin esta columna, quien la registra a
+        # nombre de otro no vuelve a verla nunca (el filtro de la bandeja es por empleado) y
+        # ademas se pierde el rastro de quien la escribio. Aditivo: NULL = las de siempre,
+        # que las registro el propio empleado.
+        "ALTER TABLE notificaciones_empleados ADD COLUMN registrado_por TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_notif_emp_registrado "
+        "ON notificaciones_empleados(registrado_por, creado_en)",
+    ]),
 ]
 
 

@@ -89,6 +89,7 @@ CORAZON=(
   # sentido -- nadie se autoriza a sí mismo, no se paga dos veces, no se paga más de lo que hay,
   # y consignar no cuenta como gasto. Es plata saliendo de una gaveta: sin gate no está protegido.
   "tests/test_caja_solicitudes_pago.py"
+  "tests/test_animus_solicitudes_novedades.py"
   # Lo que vuelve CONFIABLE la caja: el ARQUEO contra el efectivo real (el saldo era una suma
   # que nadie habia contado nunca), el espejo a Tesoreria (la plata dejaba de verse al salir),
   # la trazabilidad de un recibo y el cierre de periodo. Es plata: sin gate no esta protegido.

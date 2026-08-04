@@ -180,6 +180,8 @@ window.addEventListener('error', function(ev){
   <button class="tab-btn active" data-tab="caja" onclick="switchTab('caja')">&#128176; Caja Menor</button>
   <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario Físico</button>
   <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Conteo Cíclico</button>
+  <button class="tab-btn" data-tab="solic" onclick="switchTab('solic')">&#128203; Solicitudes</button>
+  <button class="tab-btn" data-tab="novedades" onclick="switchTab('novedades')">&#128100; Novedades</button>
   <button class="tab-btn" data-tab="pqr" onclick="switchTab('pqr')">&#128233; PQR Clientes</button>
 </div>
 
@@ -767,6 +769,113 @@ window.addEventListener('error', function(ev){
      pago con comprobante, concepto y demas". El flujo largo (pedir-autorizar-pagar) es para lo
      que se decide con tiempo; esto es el caso del dia. Lo unico que no se afloja es decir
      QUIEN lo autorizo: sin eso el pago no se puede verificar despues. -->
+<!-- PEDIR ALGO · crea una solicitud que Catalina ve en su bandeja de usuarios -->
+<div id="modal-solic" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:640px;max-width:94vw;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+      <h3 style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;">&#128203; Pedir algo para ÁNIMUS</h3>
+      <button onclick="cerrarModal('modal-solic')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;">
+      Va a la bandeja de Compras. Vas a ver acá mismo cuándo se autoriza, cuándo se paga y
+      cuándo va en camino, y marcás vos misma que llegó.
+    </div>
+    <div class="form-row">
+      <div><label class="label">Qué se necesita</label>
+        <input id="so-nombre" class="input" placeholder="Papel burbuja, cinta, resma de papel..."></div>
+      <div><label class="label">Categoría</label>
+        <select id="so-cat" class="select">
+          <option value="Consumibles">Consumibles</option>
+          <option value="Papelería">Papelería</option>
+          <option value="Aseo">Aseo</option>
+          <option value="EPP">Dotación / EPP</option>
+          <option value="Servicios">Servicio</option>
+          <option value="Otro">Otro</option>
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div><label class="label">Cuánto</label>
+        <input id="so-cant" type="number" class="input" value="1"></div>
+      <div><label class="label">Unidad</label>
+        <select id="so-unidad" class="select">
+          <option value="und">Unidades</option>
+          <option value="rollo">Rollos</option>
+          <option value="caja">Cajas</option>
+          <option value="paquete">Paquetes</option>
+          <option value="servicio">Servicio</option>
+          <option value="g">Gramos</option>
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div><label class="label">Urgencia</label>
+        <select id="so-urg" class="select">
+          <option value="Normal">Normal</option>
+          <option value="Alta">Alta</option>
+          <option value="Urgente">Urgente</option>
+        </select></div>
+      <div><label class="label">Para cuándo</label>
+        <input id="so-fecha" type="date" class="input"></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Para qué es</label>
+        <textarea id="so-just" class="textarea" placeholder="Sin esto Compras no sabe si priorizarlo"></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-solic')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarSolicitud()">Enviar la solicitud</button>
+    </div>
+  </div>
+</div>
+
+<!-- REGISTRAR UNA NOVEDAD DEL EQUIPO -->
+<div id="modal-novedad" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:640px;max-width:94vw;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+      <h3 style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;">&#128100; Registrar una novedad</h3>
+      <button onclick="cerrarModal('modal-novedad')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;">
+      Le llega a Recursos Humanos y a Gerencia por la campana, y queda registrado quién la
+      escribió y quién la resolvió.
+    </div>
+    <div class="form-row">
+      <div><label class="label">De quién es</label>
+        <select id="nv-empleado" class="select"><option value="">Cargando...</option></select></div>
+      <div><label class="label">Tipo</label>
+        <select id="nv-tipo" class="select">
+          <option value="permiso">Permiso</option>
+          <option value="cita_medica">Cita médica</option>
+          <option value="enfermedad">Incapacidad</option>
+          <option value="licencia">Licencia</option>
+          <option value="salud">Salud</option>
+          <option value="otro">Administrativa / otra</option>
+        </select></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Asunto</label>
+        <input id="nv-asunto" class="input" placeholder="Permiso de dos horas el jueves"></div>
+    </div>
+    <div class="form-row">
+      <div><label class="label">Desde</label>
+        <input id="nv-desde" type="date" class="input"></div>
+      <div><label class="label">Hasta</label>
+        <input id="nv-hasta" type="date" class="input"></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Detalle</label>
+        <textarea id="nv-desc" class="textarea" placeholder="Lo que Recursos Humanos necesita saber para decidir"></textarea></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Soporte (incapacidad, orden médica...)</label>
+        <input id="nv-adjunto" class="input" placeholder="Enlace a la foto del documento"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-novedad')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarNovedad()">Registrar y avisar</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-pagodir" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:600px;max-width:94vw;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
@@ -915,6 +1024,79 @@ window.addEventListener('error', function(ev){
 </div>
 
 <!-- TAB: PQR CLIENTES (comercial · llega del triaje de Aseguramiento o manual) -->
+<!-- TAB: SOLICITUDES · pedir, seguir el estado, y recibir en el mismo lugar
+     El ciclo (pendiente -> OC autorizada -> pagada/en transito -> recibida) lo calcula
+     /api/solicitudes-compra/mis, que existe desde el 29-abr para esta misma necesidad. Aca
+     solo se muestra: reimplementar el calculo del paso habria creado un segundo criterio que
+     diverge del que ve Catalina (M5). -->
+<div id="tab-solic" class="tab-panel">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+    <div>
+      <div class="page-title">&#128203; Solicitudes</div>
+      <div class="page-sub">Lo que se pide para ÁNIMUS: en qué va cada cosa y dónde se marca que llegó.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <select id="sol-filtro" class="select" style="width:auto;" onchange="loadSolicitudes()">
+        <option value="abiertas">En curso</option>
+        <option value="cerradas">Cerradas</option>
+        <option value="todas">Todas</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="abrirSolicitud()">+ Pedir algo</button>
+    </div>
+  </div>
+
+  <div class="kpi-grid" id="sol-kpis"></div>
+
+  <div class="card" style="margin-top:14px;">
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>N&deg;</th><th>Fecha</th><th>Qué se pidió</th><th>Urgencia</th>
+          <th>En qué va</th><th>Proveedor</th><th></th>
+        </tr></thead>
+        <tbody id="sol-body"><tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: NOVEDADES DE PERSONAL
+     Daniela es la encargada del equipo de ANIMUS: registra permisos, citas medicas,
+     incapacidades y novedades administrativas de su gente. Se apoya en las notificaciones de
+     bienestar (mismo circuito que RRHH ya aprueba) para que el numero de ausencias de RRHH sea
+     el real y no uno paralelo. -->
+<div id="tab-novedades" class="tab-panel">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+    <div>
+      <div class="page-title">&#128100; Novedades del equipo</div>
+      <div class="page-sub">Permisos, citas médicas, incapacidades y novedades administrativas. Le llega a Recursos Humanos y a Gerencia, y queda el rastro de quién la registró y quién la resolvió.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <select id="nov-filtro" class="select" style="width:auto;" onchange="loadNovedades()">
+        <option value="">Todas</option>
+        <option value="pendiente">Sin resolver</option>
+        <option value="aprobada">Aprobadas</option>
+        <option value="rechazada">Rechazadas</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="abrirNovedad()">+ Registrar novedad</button>
+    </div>
+  </div>
+
+  <div class="kpi-grid" id="nov-kpis"></div>
+
+  <div class="card" style="margin-top:14px;">
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>De quién</th><th>Tipo</th><th>Asunto</th><th>Desde</th><th>Hasta</th>
+          <th>Estado</th><th>Resolvió</th>
+        </tr></thead>
+        <tbody id="nov-body"><tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <div id="tab-pqr" class="tab-panel">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
@@ -994,6 +1176,8 @@ function loadTab(name){
   }
   else if (name === 'invfis') { cargarInvFisico(); cargarMovimientosInvFis(); }
   else if (name === 'inventario') { loadInvSkus(); loadInvConteos(); }
+  else if (name === 'solic') loadSolicitudes();
+  else if (name === 'novedades') loadNovedades();
   else if (name === 'pqr') loadAnimusPqr();
 }
 
@@ -1011,6 +1195,256 @@ function abrirModal(id){ const m=document.getElementById(id); if(m) m.style.disp
 function cerrarModal(id){ const m=document.getElementById(id); if(m) m.style.display='none'; }
 
 // Caja Menor
+// Helpers de presentacion para las pestanas nuevas. Emiten las clases que el modulo YA
+// tiene (.kpi-grid/.kpi-card/.badge): inventar clases propias deja la pantalla sin estilo y
+// sin un solo error a la vista.
+function _kpiHtml(cards){
+  return cards.map(function(c){
+    var col = {success:'kpi-green', danger:'kpi-red', info:'kpi-blue',
+               warn:'kpi-yellow', primary:'kpi-blue'}[c.tono] || '';
+    return '<div class="kpi-card ' + col + '">'
+      + '<div class="label">' + esc(c.label) + '</div>'
+      + '<div class="val">' + c.val + '</div>'
+      + (c.sub ? '<div class="sub">' + esc(c.sub) + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function _badge(txt, tono){
+  var cl = {success:'badge-green', danger:'badge-red', info:'badge-blue',
+            warn:'badge-yellow', primary:'badge-blue'}[tono] || 'badge-gray';
+  return '<span class="badge ' + cl + '">' + esc(txt || '') + '</span>';
+}
+
+// ═══ SOLICITUDES · pedir, seguir y recibir ═══════════════════════════════════
+// El paso del ciclo lo calcula el backend (/api/solicitudes-compra/mis). Aca NO se recalcula:
+// si la pantalla dedujera su propio estado, Daniela y Catalina verian cosas distintas del
+// mismo pedido (M5 · el numero mostrado tiene que ser el que decide).
+// El COLOR sale del paso, no del hex que manda el backend: esos hex estan fijos y en tema
+// oscuro quedarian ilegibles (M104).
+var _SOL_ROWS = [];
+
+function _solTono(paso){
+  if (paso === 6) return 'success';
+  if (paso === 0) return 'danger';
+  if (paso === 4 || paso === 5) return 'info';
+  if (paso === 3) return 'primary';
+  return 'warn';
+}
+
+async function loadSolicitudes(){
+  var tb = document.getElementById('sol-body');
+  try {
+    var filtro = document.getElementById('sol-filtro').value;
+    var r = await fetch('/api/solicitudes-compra/mis?estado=' + encodeURIComponent(filtro),
+                        {credentials:'same-origin'});
+    var d = await r.json();
+    if (d.error) { tb.innerHTML = '<tr><td colspan="7" class="empty">' + esc(d.error) + '</td></tr>'; return; }
+    _SOL_ROWS = d.solicitudes || [];
+    window._SOL_ROWS = _SOL_ROWS;
+
+    var enCurso = _SOL_ROWS.filter(function(x){ return !x.cerrado; }).length;
+    var porRecibir = _SOL_ROWS.filter(function(x){ return x.puede_marcar_recibido; }).length;
+    var recibidas = _SOL_ROWS.filter(function(x){ return x.paso === 6; }).length;
+    var esperando = _SOL_ROWS.filter(function(x){ return x.paso === 1; }).length;
+    document.getElementById('sol-kpis').innerHTML = _kpiHtml([
+      {label:'En curso', val:enCurso, sub:'pedidos abiertos'},
+      {label:'Esperando autorización', val:esperando, sub:'Compras todavía no las tomó', tono:esperando?'warn':''},
+      {label:'Por recibir', val:porRecibir, sub:'ya vienen en camino', tono:porRecibir?'info':''},
+      {label:'Recibidas', val:recibidas, sub:'cerradas', tono:'success'}
+    ]);
+
+    if (!_SOL_ROWS.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="empty">Nada por acá. Con <b>Pedir algo</b> arrancás una solicitud.</td></tr>';
+      return;
+    }
+    tb.innerHTML = _SOL_ROWS.map(function(x, i){
+      var acc = x.puede_marcar_recibido
+        ? '<button class="btn btn-primary btn-sm" onclick="marcarRecibido(' + i + ')">Ya llegó</button>'
+        : (x.paso === 6 ? '<span style="color:var(--cx-success-text);font-size:12px;">recibida</span>' : '');
+      return '<tr>'
+        + '<td><b>' + esc(x.numero||'') + '</b>'
+          + (x.numero_oc ? '<div style="font-size:11px;color:var(--cx-text-mute);">' + esc(x.numero_oc) + '</div>' : '')
+        + '</td>'
+        + '<td>' + esc((x.fecha||'').slice(0,10)) + '</td>'
+        + '<td>' + esc(x.observaciones || '-') + '</td>'
+        + '<td>' + _badge(x.urgencia || 'Normal', x.urgencia === 'Urgente' ? 'danger' : (x.urgencia === 'Alta' ? 'warn' : '')) + '</td>'
+        + '<td>' + _badge(x.paso_label || '', _solTono(x.paso)) + '</td>'
+        + '<td>' + esc(x.oc_proveedor || '-') + '</td>'
+        + '<td style="text-align:right;">' + acc + '</td>'
+        + '</tr>';
+    }).join('');
+  } catch(e) {
+    tb.innerHTML = '<tr><td colspan="7" class="empty">No pude cargar: ' + esc(e.message) + '</td></tr>';
+  }
+}
+
+function abrirSolicitud(){
+  document.getElementById('so-nombre').value = '';
+  document.getElementById('so-cant').value = 1;
+  document.getElementById('so-just').value = '';
+  document.getElementById('so-fecha').value = '';
+  document.getElementById('modal-solic').style.display = 'flex';
+}
+
+async function guardarSolicitud(){
+  var nombre = document.getElementById('so-nombre').value.trim();
+  if (!nombre) { showToast('Falta qué se necesita', 'error'); return; }
+  var just = document.getElementById('so-just').value.trim();
+  var cant = parseFloat(document.getElementById('so-cant').value || 1) || 1;
+  var unidad = document.getElementById('so-unidad').value;
+  var body = {
+    empresa: 'Animus',
+    categoria: document.getElementById('so-cat').value,
+    tipo: 'Compra',
+    area: 'ANIMUS',
+    urgencia: document.getElementById('so-urg').value,
+    fecha_requerida: document.getElementById('so-fecha').value,
+    // El resumen va en observaciones porque es lo que la lista y la bandeja de Compras muestran.
+    observaciones: nombre + ' · ' + cant + ' ' + unidad + (just ? ' · ' + just : ''),
+    items: [{ codigo_mp: '', nombre_mp: nombre, cantidad_g: cant,
+              unidad: unidad, justificacion: just }]
+  };
+  try {
+    var r = await _fetchUna('/api/solicitudes-compra', _fetchOpts('POST', body));
+    if (!r) return;
+    var d = await r.json();
+    if (d.error) { showToast('Error: ' + d.error, 'error'); return; }
+    showToast('Solicitud ' + (d.numero || '') + ' enviada a Compras', 'success');
+    cerrarModal('modal-solic');
+    loadSolicitudes();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
+async function marcarRecibido(i){
+  var x = _SOL_ROWS[i];
+  if (!x) return;
+  var ok = await pedirDato({
+    titulo: 'Marcar como recibido',
+    tipo: 'confirmar',
+    sub: '¿Ya llegó lo de <b>' + esc(x.numero) + '</b>?<br>'
+       + '<span style="color:var(--cx-text-mute);">' + esc(x.observaciones || '') + '</span>',
+    confirmar: 'Sí, llegó'});
+  if (!ok) return;
+  try {
+    var r = await _fetchUna('/api/solicitudes-compra/' + encodeURIComponent(x.numero) + '/marcar-recibido-solicitante',
+                            _fetchOpts('POST', {}));
+    if (!r) return;
+    var d = await r.json();
+    if (d.error) { showToast('Error: ' + d.error, 'error'); return; }
+    showToast('Listo · ' + x.numero + ' queda como recibida', 'success');
+    loadSolicitudes();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
+// ═══ NOVEDADES DEL EQUIPO ════════════════════════════════════════════════════
+// Se apoya en las notificaciones de bienestar: mismo circuito que RRHH ya aprueba, para que
+// el conteo de ausencias de RRHH sea el real y no uno paralelo (M37).
+var _NOV_ROWS = [];
+var _NOV_TIPOS = {permiso:'Permiso', cita_medica:'Cita médica', enfermedad:'Incapacidad',
+                  licencia:'Licencia', salud:'Salud', otro:'Administrativa'};
+
+async function loadNovedades(){
+  var tb = document.getElementById('nov-body');
+  try {
+    var f = document.getElementById('nov-filtro').value;
+    var r = await fetch('/api/bienestar/notificaciones' + (f ? '?estado=' + encodeURIComponent(f) : ''),
+                        {credentials:'same-origin'});
+    var d = await r.json();
+    if (d.error) { tb.innerHTML = '<tr><td colspan="7" class="empty">' + esc(d.error) + '</td></tr>'; return; }
+    _NOV_ROWS = d.notificaciones || [];
+
+    var pend = _NOV_ROWS.filter(function(x){ return x.estado === 'pendiente'; }).length;
+    var apr = _NOV_ROWS.filter(function(x){ return x.estado === 'aprobada'; }).length;
+    var rech = _NOV_ROWS.filter(function(x){ return x.estado === 'rechazada'; }).length;
+    document.getElementById('nov-kpis').innerHTML = _kpiHtml([
+      {label:'Sin resolver', val:pend, sub:'esperan a Recursos Humanos', tono:pend?'warn':''},
+      {label:'Aprobadas', val:apr, sub:'con visto bueno', tono:'success'},
+      {label:'Rechazadas', val:rech, sub:'', tono:rech?'danger':''},
+      {label:'Registradas', val:_NOV_ROWS.length, sub:'en total'}
+    ]);
+
+    if (!_NOV_ROWS.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="empty">Sin novedades registradas.</td></tr>';
+      return;
+    }
+    tb.innerHTML = _NOV_ROWS.map(function(x){
+      var tono = x.estado === 'aprobada' ? 'success'
+               : (x.estado === 'rechazada' ? 'danger'
+               : (x.estado === 'vista' ? 'info' : 'warn'));
+      return '<tr>'
+        + '<td><b>' + esc(x.empleado_nombre || x.empleado_username || '') + '</b>'
+          + (x.registrado_por ? '<div style="font-size:11px;color:var(--cx-text-mute);">la registró ' + esc(x.registrado_por) + '</div>' : '')
+        + '</td>'
+        + '<td>' + esc(_NOV_TIPOS[x.tipo] || x.tipo || '') + '</td>'
+        + '<td>' + esc(x.asunto || '')
+          + (x.adjunto_url ? ' <span style="color:var(--cx-info-text);font-size:11px;">con soporte</span>' : '')
+        + '</td>'
+        + '<td>' + esc(x.fecha_inicio || '-') + '</td>'
+        + '<td>' + esc(x.fecha_fin || '-') + '</td>'
+        + '<td>' + _badge(x.estado || '', tono) + '</td>'
+        + '<td>' + esc(x.resuelto_por || '-')
+          + (x.comentario_jefe ? '<div style="font-size:11px;color:var(--cx-text-mute);">' + esc(x.comentario_jefe) + '</div>' : '')
+        + '</td>'
+        + '</tr>';
+    }).join('');
+  } catch(e) {
+    tb.innerHTML = '<tr><td colspan="7" class="empty">No pude cargar: ' + esc(e.message) + '</td></tr>';
+  }
+}
+
+async function abrirNovedad(){
+  document.getElementById('nv-asunto').value = '';
+  document.getElementById('nv-desc').value = '';
+  document.getElementById('nv-adjunto').value = '';
+  document.getElementById('nv-desde').value = hoyCol();
+  document.getElementById('nv-hasta').value = '';
+  var sel = document.getElementById('nv-empleado');
+  // La lista sale del maestro de empleados: escribir el nombre a mano crearia una persona
+  // distinta por cada forma de escribirla y RRHH no podria agrupar nada (M115).
+  try {
+    var r = await fetch('/api/animus/empleados', {credentials:'same-origin'});
+    var d = await r.json();
+    var gente = d.empleados || [];
+    sel.innerHTML = gente.length
+      ? gente.map(function(e){
+          return '<option value="' + esc(e.username || '') + '" data-nombre="' + esc(e.nombre || '') + '">'
+               + esc(e.nombre || e.username) + (e.cargo ? ' · ' + esc(e.cargo) : '') + '</option>';
+        }).join('')
+      : '<option value="">Sin empleados cargados</option>';
+  } catch(e) {
+    sel.innerHTML = '<option value="">No pude cargar la lista</option>';
+  }
+  document.getElementById('modal-novedad').style.display = 'flex';
+}
+
+async function guardarNovedad(){
+  var asunto = document.getElementById('nv-asunto').value.trim();
+  if (!asunto) { showToast('Falta el asunto', 'error'); return; }
+  var sel = document.getElementById('nv-empleado');
+  var opt = sel.options[sel.selectedIndex];
+  if (!sel.value) { showToast('Falta de quién es la novedad', 'error'); return; }
+  var body = {
+    empleado_username: sel.value,
+    empleado_nombre: opt ? (opt.getAttribute('data-nombre') || opt.textContent) : '',
+    tipo: document.getElementById('nv-tipo').value,
+    asunto: asunto,
+    descripcion: document.getElementById('nv-desc').value.trim(),
+    fecha_inicio: document.getElementById('nv-desde').value,
+    fecha_fin: document.getElementById('nv-hasta').value,
+    adjunto_url: document.getElementById('nv-adjunto').value.trim()
+  };
+  try {
+    var r = await _fetchUna('/api/bienestar/notificaciones', _fetchOpts('POST', body));
+    if (!r) return;
+    var d = await r.json();
+    if (d.error) { showToast('Error: ' + d.error, 'error'); return; }
+    showToast(d.aviso || 'Novedad registrada', 'success');
+    cerrarModal('modal-novedad');
+    loadNovedades();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
 async function loadCaja(){
   const tipo = document.getElementById('caja-filtro-tipo').value;
   const q    = document.getElementById('caja-filtro-q').value.trim();
