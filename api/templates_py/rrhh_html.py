@@ -699,9 +699,13 @@ async function cargarNotif() {
           (n.fecha_inicio ? '<b>Desde:</b> ' + esc(n.fecha_inicio) + ' ' : '') +
           (n.fecha_fin ? '<b>Hasta:</b> ' + esc(n.fecha_fin) : '') + '</div>';
       }
+      var quien = n.registrado_por
+        ? '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px;">la registró <b>'
+          + esc(n.registrado_por) + '</b></div>' : '';
       var safeAdj = _safeUrl(n.adjunto_url);
       var adj = safeAdj ? '<a href="' + safeAdj + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:6px;color:var(--cx-info-text);font-size:12px;">📎 Ver evidencia</a>' : '';
       var btns = '';
+      fechas = fechas + quien;
       if (n.estado === 'pendiente') {
         btns = '<div style="margin-top:10px;display:flex;gap:6px;">' +
           '<button onclick="resolverNotif(' + (parseInt(n.id)||0) + ',\'aprobada\')" style="background:var(--cx-success);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">✓ Aprobar</button>' +

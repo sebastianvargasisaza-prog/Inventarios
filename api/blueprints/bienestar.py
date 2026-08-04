@@ -179,6 +179,101 @@ def notificaciones_handler():
     })
 
 
+def _empleado_id_de(c, username):
+    """Del username de una novedad al empleado del maestro.
+
+    Son dos llaves distintas y hay que puentearlas: el desplegable manda `usuarios_identidad.
+    username` cuando la persona tiene login, y el CODIGO del empleado cuando no lo tiene (mucha
+    gente de planta no entra a EOS). Se prueban las dos, en ese orden.
+    """
+    u = (username or '').strip()
+    if not u:
+        return None
+    try:
+        r = c.execute("SELECT id FROM empleados WHERE LOWER(TRIM(COALESCE(codigo,'')))=? "
+                      "AND UPPER(COALESCE(estado,''))='ACTIVO'", (u.lower(),)).fetchone()
+        if r:
+            return r[0]
+        r = c.execute(
+            "SELECT e.id FROM empleados e JOIN usuarios_identidad ui "
+            "  ON TRIM(COALESCE(ui.cedula,''))<>'' AND TRIM(ui.cedula)=TRIM(COALESCE(e.cedula,'')) "
+            " WHERE LOWER(ui.username)=? AND UPPER(COALESCE(e.estado,''))='ACTIVO'",
+            (u.lower(),)).fetchone()
+        return r[0] if r else None
+    except Exception as e:
+        logger.warning('no pude resolver el empleado %s: %s', username, e)
+        return None
+
+
+_TIPO_AUSENCIA = {'permiso': 'Permiso', 'cita_medica': 'Cita médica',
+                  'enfermedad': 'Incapacidad', 'licencia': 'Licencia', 'salud': 'Salud'}
+
+
+def _espejar_ausencia(c, nid, fila, estado):
+    """Lleva la novedad APROBADA a `ausencias`, que es lo que Recursos Humanos cuenta.
+
+    Sin esto el indicador de ausentismo mostraba 0 aunque hubiera permisos aprobados, y la
+    pestana de Ausencias no listaba ninguno: el hecho quedaba registrado en una tabla que ese
+    calculo no mira (M37).
+
+    Se dispara al APROBAR y no al registrar: una novedad pendiente todavia no es una ausencia, y
+    contarla antes inflaria el indicador con cosas que quiza se rechacen.
+
+    Idempotente por marcador `[novedad#N]`: aprobar dos veces no duplica el dia.
+    """
+    tipo, ini, fin, usuario, asunto = fila
+    if (tipo or '') not in _TIPO_AUSENCIA:
+        return None                      # una novedad administrativa no es una ausencia
+    marca = '[novedad#%d]' % nid
+    try:
+        ya = c.execute("SELECT id FROM ausencias WHERE COALESCE(observaciones,'') LIKE ?",
+                       ('%' + marca + '%',)).fetchone()
+    except Exception as e:
+        logger.warning('no pude revisar el espejo de la novedad %s: %s', nid, e)
+        return None
+
+    if estado != 'aprobada':
+        # Si se aprobo y despues se rechazo, la ausencia deja de contar -- pero NO se borra:
+        # el rastro de que existio es lo que permite entender el numero de un mes pasado.
+        if ya:
+            try:
+                c.execute("UPDATE ausencias SET estado='Rechazada' WHERE id=?", (ya[0],))
+            except Exception as e:
+                logger.warning('no pude revertir la ausencia %s: %s', ya[0], e)
+        return None
+    if ya:
+        try:
+            c.execute("UPDATE ausencias SET estado='Aprobada' WHERE id=?", (ya[0],))
+        except Exception:
+            pass
+        return ya[0]
+
+    eid = _empleado_id_de(c, usuario)
+    if not eid:
+        # No se inventa un empleado ni se cuelga la ausencia de un id cualquiera: se DECLARA en
+        # el log para que se pueda corregir el maestro (M100/M124).
+        logger.warning('novedad %s aprobada pero "%s" no esta en el maestro de empleados '
+                       '· no se conto como ausencia', nid, usuario)
+        return None
+
+    dias = 1
+    try:
+        from datetime import date as _d
+        if ini and fin:
+            dias = max(1, (_d.fromisoformat(str(fin)[:10]) - _d.fromisoformat(str(ini)[:10])).days + 1)
+    except Exception:
+        dias = 1
+    try:
+        c.execute("INSERT INTO ausencias (empleado_id, tipo, fecha_inicio, fecha_fin, dias, "
+                  "estado, observaciones, aprobado_por) VALUES (?,?,?,?,?,'Aprobada',?,?)",
+                  (eid, _TIPO_AUSENCIA[tipo], ini or '', fin or ini or '', dias,
+                   '%s %s' % (marca, (asunto or '')[:160]), 'bienestar'))
+        return c.lastrowid
+    except Exception as e:
+        logger.warning('no pude registrar la ausencia de la novedad %s: %s', nid, e)
+        return None
+
+
 @bp.route('/api/bienestar/notificaciones/<int:nid>/resolver', methods=['POST'])
 def notificacion_resolver(nid):
     """Jefe aprueba / rechaza una notificacion."""
@@ -196,6 +291,8 @@ def notificacion_resolver(nid):
     # Buscar empleado para notificarle el resultado
     fila = c.execute("""SELECT empleado_username, asunto FROM notificaciones_empleados
                         WHERE id=?""", (nid,)).fetchone()
+    _datos = c.execute("SELECT tipo, fecha_inicio, fecha_fin, empleado_username, asunto "
+                       "FROM notificaciones_empleados WHERE id=?", (nid,)).fetchone()
     cur = c.execute("""UPDATE notificaciones_empleados
         SET estado=?, comentario_jefe=COALESCE(?, comentario_jefe),
             resuelto_por=?, resuelto_en=datetime('now', '-5 hours')
@@ -211,6 +308,14 @@ def notificacion_resolver(nid):
             detalle=f"Jefe {user} resolvió notif id={nid} → {nuevo}")
     except Exception:
         pass
+    # Un permiso aprobado tiene que llegar a los numeros de RRHH: el ausentismo se calcula
+    # desde `ausencias`, no desde acá (M37). Va ANTES del commit para que el dia y su
+    # aprobacion queden o no queden juntos.
+    if _datos:
+        try:
+            _aus = _espejar_ausencia(c, nid, tuple(_datos), nuevo)
+        except Exception as e:
+            logger.warning('no pude espejar la ausencia de la novedad %s: %s', nid, e)
     conn.commit()
     # Push notif in-app al empleado
     if fila:

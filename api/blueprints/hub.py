@@ -614,6 +614,29 @@ def centro_decisiones():
         try: conn.rollback()
         except Exception: pass
 
+    # ── PERSONAL: novedades que esperan una decision ─────────────────────────
+    # Sebastian (4-ago): "que vaya trayendo todo, permisos y cosas asi". Un permiso pedido para
+    # manana que nadie aprobo no es un pendiente administrativo: es alguien que no sabe si puede
+    # faltar. Cada fuente aislada (en PG un query fallido aborta la tx · M33).
+    try:
+        _pend = c.execute(
+            "SELECT COUNT(*) FROM notificaciones_empleados WHERE estado='pendiente'").fetchone()[0]
+        if _pend:
+            # La URGENCIA la da la FECHA, no la cantidad: lo que empieza hoy o manana no puede
+            # leerse igual que un permiso para dentro de tres semanas (M129).
+            _ya = c.execute(
+                "SELECT COUNT(*) FROM notificaciones_empleados WHERE estado='pendiente' "
+                "AND COALESCE(fecha_inicio,'') <> '' "
+                "AND date(fecha_inicio) <= date('now','-5 hours','+1 day')").fetchone()[0]
+            _det = '%d sin resolver' % _pend
+            if _ya:
+                _det += ' · %d empieza%s hoy o mañana' % (_ya, '' if _ya == 1 else 'n')
+            _add('atencion' if _ya else 'info', 'equipo',
+                 'Permisos y novedades del equipo', _det, '/rrhh', _pend)
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
     orden = {'critico': 0, 'atencion': 1, 'info': 2}
     dec.sort(key=lambda x: (orden.get(x['nivel'], 2), -(x.get('valor') or 0)))
     resumen = {'critico': sum(1 for a in dec if a['nivel'] == 'critico'),
