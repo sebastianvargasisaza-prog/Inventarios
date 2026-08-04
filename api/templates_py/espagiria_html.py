@@ -63,7 +63,7 @@ HTML = r"""
   .header { background:linear-gradient(135deg,#0c4a6e,#7c3aed); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; }
   .header h1 { margin:0; font-size:1.4em; font-weight:700; }
   .header a { color:var(--cx-primary-text); font-size:0.85em; text-decoration:none; }
-  .container { max-width:1400px; margin:0 auto; padding:24px; }
+  .container { max-width:none; width:100%; margin:0; padding:24px 20px; }
   .grid { display:grid; gap:16px; }
   .grid-4 { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
   .card { background:var(--cx-card); border:1px solid var(--cx-border); border-radius:10px; padding:18px; }

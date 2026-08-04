@@ -42,7 +42,13 @@ def _limpiar(app):
     from database import get_db
     with app.app_context():
         conn = get_db(); cur = conn.cursor()
+        for _t in ('flujo_egresos', 'flujo_ingresos'):
+            cur.execute("DELETE FROM " + _t + " WHERE fuente='caja_menor' AND referencia IN "
+                        "(SELECT recibo_numero FROM animus_caja_menor WHERE concepto LIKE ? "
+                        " OR COALESCE(subtipo,'')='traslado')", ('%ZZTEST%',))
         cur.execute("DELETE FROM animus_caja_menor WHERE concepto LIKE ?", ('%ZZTEST%',))
+        cur.execute("DELETE FROM animus_caja_menor WHERE COALESCE(subtipo,'')='traslado' "
+                    "AND registrado_por IN ('sebastian','daniela','catalina','luz','test')")
         cur.execute("DELETE FROM caja_solicitudes_pago WHERE concepto LIKE ?", ('%ZZTEST%',))
         conn.commit()
 
@@ -553,3 +559,120 @@ def test_las_tres_pantallas_piden_la_cotizacion():
                                ('espagiria', _html_espagiria(), 'ep')):
         assert 'id="%s-cotiz"' % pref in html, '%s no pide la cotizacion' % nombre
         assert 'cotizacion_url' in html, '%s no la envia' % nombre
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EL PAGO QUE YA SE AUTORIZO DE PALABRA (Sebastian, 3-ago)
+# "falta que Daniela pueda registrar un pago, es decir, se le dijo pague papel burbuja,
+#  cualquier cosa que sea de Animus, entonces registra el pago con comprobante, concepto y demas"
+# El flujo largo (pedir -> autorizar -> pagar) es para lo que se decide con tiempo. Esto es el
+# caso del dia. Lo que NO se afloja: decir QUIEN lo autorizo, o el pago no se puede verificar.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _descerrar(app):
+    """Un cierre de período es un bloqueo GLOBAL: si el test lo deja puesto, todo lo que corra
+    después en la BD compartida muere con 409 (M103)."""
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        conn.cursor().execute("DELETE FROM caja_cierres")
+        conn.commit()
+
+
+def _pago_directo(cli, **kw):
+    body = {'concepto': 'ZZTEST papel burbuja', 'monto': 45000, 'autorizado_por': 'Sebastian'}
+    body.update(kw)
+    return cli.post('/api/caja/pago-directo', json=body, headers=csrf_headers())
+
+
+def test_daniela_registra_un_pago_y_sale_de_la_caja(app, db_clean):
+    _limpiar(app); _sembrar_efectivo(app, 500000)
+    c = _cli(app, 'sebastian')
+    antes = _saldo(app)
+    r = _pago_directo(c, comprobante_url='https://x/recibo.jpg')
+    assert r.status_code == 201, r.data[:300]
+    d = r.get_json()
+    assert d['estado'] == 'pagada' and d['recibo_numero'].startswith('RC-')
+    assert d['falta_comprobante'] is False
+    assert _saldo(app) == antes - 45000, 'el pago no salió de la caja'
+
+
+def test_sin_decir_quien_autorizo_no_pasa(app, db_clean):
+    """Un pago que figura autorizado sin decir por quién es indistinguible de uno que nadie
+    autorizó · es justo el dato que lo hace verificable después."""
+    _limpiar(app); _sembrar_efectivo(app, 500000)
+    r = _pago_directo(_cli(app, 'sebastian'), autorizado_por='')
+    assert r.status_code == 400, r.data[:250]
+
+
+def test_sin_concepto_no_pasa(app, db_clean):
+    _limpiar(app); _sembrar_efectivo(app, 500000)
+    assert _pago_directo(_cli(app, 'sebastian'), concepto='').status_code == 400
+
+
+def test_queda_como_solicitud_pagada_con_la_autorizacion_declarada(app, db_clean):
+    """Vive en la MISMA lista que el resto: si viviera aparte, los pagos de palabra serían
+    justo los que nadie revisa."""
+    _limpiar(app); _sembrar_efectivo(app, 500000)
+    c = _cli(app, 'sebastian')
+    num = _pago_directo(c).get_json()['numero']
+    from database import get_db
+    with app.app_context():
+        f = get_db().execute(
+            "SELECT estado, autorizado_por, autorizacion_via, pagado_por, modulo_origen, "
+            "caja_mov_id FROM caja_solicitudes_pago WHERE numero=?", (num,)).fetchone()
+    assert f[0] == 'pagada'
+    assert f[1] == 'Sebastian' and f[2] == 'verbal'
+    assert f[3], 'no quedó quién lo pagó'
+    assert f[4] == 'caja_directo', 'no se distingue de una solicitud normal'
+    assert f[5], 'el pago no quedó ligado a su movimiento de caja'
+
+
+def test_un_pago_sin_comprobante_se_cuenta_como_tal(app, db_clean):
+    """Se permite (a veces el recibo llega después) pero NO en silencio: el KPI existe para
+    que no se acumulen."""
+    _limpiar(app); _sembrar_efectivo(app, 500000)
+    c = _cli(app, 'sebastian')
+    assert _pago_directo(c).get_json()['falta_comprobante'] is True
+    k = c.get('/api/caja/solicitudes').get_json()['sin_comprobante']
+    assert k['n'] >= 1 and k['monto'] >= 45000
+
+
+def test_no_deja_pagar_mas_de_lo_que_hay_sin_forzar(app, db_clean):
+    """Un pago que deja la caja en negativo es un pago que no ocurrió."""
+    _limpiar(app); _sembrar_efectivo(app, 10000)
+    r = _pago_directo(_cli(app, 'sebastian'), monto=999000)
+    assert r.status_code == 409 and r.get_json()['puede_forzar'] is True
+    r2 = _pago_directo(_cli(app, 'sebastian'), monto=999000, forzar=True)
+    assert r2.status_code == 201, 'con forzar debe poder registrarlo'
+
+
+def test_el_gasto_llega_a_tesoreria(app, db_clean):
+    """Salió de la caja chica, pero es gasto de la empresa igual · sin el espejo el gasto del
+    mes queda incompleto y nadie lo nota."""
+    _limpiar(app); _sembrar_efectivo(app, 500000)
+    rec = _pago_directo(_cli(app, 'sebastian')).get_json()['recibo_numero']
+    from database import get_db
+    with app.app_context():
+        f = get_db().execute("SELECT monto FROM flujo_egresos WHERE fuente='caja_menor' "
+                             "AND referencia=?", (rec,)).fetchone()
+    assert f and float(f[0]) == 45000
+
+
+def test_no_se_registra_dentro_de_un_periodo_cerrado(app, db_clean):
+    from tz_colombia import hoy_colombia
+    _limpiar(app); _sembrar_efectivo(app, 500000)
+    c = _cli(app, 'sebastian')
+    hoy = hoy_colombia().isoformat()
+    c.post('/api/caja/arqueos', json={'conteo_fisico': _saldo(app)}, headers=csrf_headers())
+    c.post('/api/caja/cierres', json={'hasta_fecha': hoy}, headers=csrf_headers())
+    r = _pago_directo(c, fecha=hoy)
+    _descerrar(app)          # un cierre bloquea a TODOS los que vengan despues
+    assert r.status_code == 409, r.data[:250]
+
+
+def test_la_pantalla_tiene_el_boton_y_el_formulario():
+    html = _html_animus()
+    assert 'abrirPagoDirecto()' in html and 'id="modal-pagodir"' in html
+    for campo in ('pd-concepto', 'pd-monto', 'pd-quien', 'pd-comprobante', 'pd-beneficiario'):
+        assert 'id="%s"' % campo in html, campo

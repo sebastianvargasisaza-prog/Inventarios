@@ -286,6 +286,8 @@ window.addEventListener('error', function(ev){
           <option value="rechazada">Rechazadas</option>
         </select>
         <button class="btn btn-primary btn-sm" onclick="abrirSolicitudPago()">+ Solicitar pago</button>
+        <button class="btn btn-success btn-sm" onclick="abrirPagoDirecto()"
+                title="Ya se pagó porque alguien lo pidió de palabra: sale de la caja y queda con su recibo">&#128179; Registrar pago</button>
         <button class="btn btn-outline btn-sm" onclick="abrirTraslado()"
                 title="Consignar efectivo de la caja a la cuenta. NO es un gasto: la plata cambia de bolsillo">&#127974; Consignar</button>
       </div>
@@ -756,6 +758,111 @@ window.addEventListener('error', function(ev){
   </div>
 </div>
 
+<!-- COBRAR UNA CONTRAENTREGA (3-ago · Daniela)
+     "a veces van y dicen 'yo transferi, le mande por Nequi', entonces no entregan efectivo".
+     Esa plata entro de verdad, pero al BANCO. Si se registrara como efectivo, el arqueo nunca
+     cuadraria: el sistema diria que hay billetes en la gaveta que nadie va a encontrar. -->
+<!-- PAGO DIRECTO · lo que ya se autorizo de palabra (Sebastian 3-ago)
+     "se le dijo pague papel burbuja, cualquier cosa que sea de Animus, entonces registra el
+     pago con comprobante, concepto y demas". El flujo largo (pedir-autorizar-pagar) es para lo
+     que se decide con tiempo; esto es el caso del dia. Lo unico que no se afloja es decir
+     QUIEN lo autorizo: sin eso el pago no se puede verificar despues. -->
+<div id="modal-pagodir" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:600px;max-width:94vw;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+      <h3 style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;">&#128179; Registrar un pago de la caja</h3>
+      <button onclick="cerrarModal('modal-pagodir')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;">
+      Para lo que ya se pagó porque alguien lo pidió de palabra. Sale de la caja en el momento
+      y queda con su recibo. <b id="pd-saldo" style="color:var(--cx-text-soft);"></b>
+    </div>
+    <div class="form-row">
+      <div><label class="label">Qué se pagó</label>
+        <input id="pd-concepto" class="input" placeholder="Papel burbuja, domicilio, cinta..."></div>
+      <div><label class="label">Cuánto</label>
+        <input id="pd-monto" type="number" class="input" oninput="pdChequearSaldo()"></div>
+    </div>
+    <div id="pd-alerta" style="font-size:12.5px;margin:2px 0 10px;min-height:18px;"></div>
+    <div class="form-row">
+      <div><label class="label">A quién se le pagó</label>
+        <input id="pd-beneficiario" class="input" placeholder="Proveedor o persona"></div>
+      <div><label class="label">Empresa</label>
+        <select id="pd-empresa" class="select">
+          <option value="ANIMUS">ANIMUS Lab</option>
+          <option value="ESPAGIRIA">Espagiria</option>
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div><label class="label">Quién lo autorizó</label>
+        <select id="pd-quien" class="select">
+          <option value="Sebastian">Sebastián (gerencia)</option>
+          <option value="Catalina">Catalina (compras)</option>
+          <option value="Luz">Luz (Espagiria)</option>
+          <option value="Alejandro">Alejandro</option>
+        </select></div>
+      <div><label class="label">Fecha del pago</label>
+        <input id="pd-fecha" type="date" class="input"></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Comprobante (foto del recibo o enlace)</label>
+        <input id="pd-comprobante" class="input" placeholder="Se puede subir después, pero queda contado como pago sin respaldo"></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Observaciones</label>
+        <textarea id="pd-obs" class="textarea" placeholder="Lo que haga falta recordar de este pago"></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-pagodir')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPagoDirecto()">Registrar el pago</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-cobro" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:520px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+      <h3 id="cob-titulo" style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;"></h3>
+      <button onclick="cerrarModal('modal-cobro')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div id="cob-sub" style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;"></div>
+    <div class="form-row">
+      <div><label class="label">Cuanto entro</label>
+        <input id="cob-monto" type="number" class="input" oninput="cobAvisarDif()"></div>
+      <div><label class="label">Como pago</label>
+        <select id="cob-metodo" class="select" onchange="cobCambiaMetodo()">
+          <option value="efectivo">Efectivo</option>
+          <option value="transferencia">Transferencia</option>
+          <option value="nequi">Nequi</option>
+          <option value="daviplata">Daviplata</option>
+        </select></div>
+    </div>
+    <div id="cob-dif" style="font-size:12.5px;margin:2px 0 10px;min-height:18px;"></div>
+    <div id="cob-no-efectivo" style="display:none;">
+      <div style="padding:10px 14px;background:var(--cx-info-pale);border-left:3px solid var(--cx-info);border-radius:8px;font-size:12px;color:var(--cx-text-soft);margin-bottom:12px;">
+        Esta plata entra al <b>banco</b>, no a la gaveta: no suma al efectivo de la caja y queda
+        registrada en Tesoreria.
+      </div>
+      <div class="form-row full">
+        <div><label class="label">Numero de la transferencia</label>
+          <input id="cob-ref" class="input" placeholder="Sin esto no se puede conciliar contra el extracto"></div>
+      </div>
+      <div class="form-row full">
+        <div><label class="label">Comprobante (foto o enlace)</label>
+          <input id="cob-comprobante" class="input" placeholder="https://..."></div>
+      </div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Observaciones</label>
+        <textarea id="cob-obs" class="textarea" placeholder="Obligatorio si el monto no coincide"></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-cobro')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCobro()">Registrar cobro</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-caja" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
@@ -924,6 +1031,7 @@ async function loadCaja(){
 
 function renderCajaKPIs(k){
   const saldo = k.saldo_total || 0;
+  window._CAJA_SALDO = saldo;   // lo leen el pago directo y el arqueo
   const neto  = (k.ingreso_mes||0) - (k.egreso_mes||0);
   const cards = [
     { label: 'Saldo en caja', val: fmtCOP(saldo),
@@ -1886,44 +1994,146 @@ async function usarMarca(i, campo){
   }
 }
 
-async function codCobrar(i){
-  const p = (window._COD_ROWS || [])[i];
+// Cobrar una contraentrega. El MEDIO decide donde aterriza la plata: efectivo va a la gaveta,
+// transferencia o Nequi van al banco. Daniela (3-ago): "a veces van y dicen 'yo transferi, le
+// mande por Nequi', entonces no entregan efectivo" -- y contarlo como efectivo haria que el
+// arqueo nunca cuadre.
+var _COB = null;
+
+function codCobrar(i){
+  var p = (window._COD_ROWS || [])[i];
   if (!p) return;
-  const sid = p.shopify_id, esperado = p.valor_esperado || 0, pedido = p.pedido || '';
-  // Se pregunta el valor en vez de asumirlo: el mensajero a veces entrega distinto, y ese
-  // descuadre es justo lo que hay que poder ver.
-  var _dias = (p.dias_en_calle == null) ? '' :
-    ' &middot; ' + p.dias_en_calle + ' dias en la calle';
-  const val = await pedirDato({
-    titulo: 'Cobrar el pedido ' + pedido,
-    sub: 'El pedido dice <b>' + fmtCOP(esperado) + '</b>' + (p.ciudad ? ' &middot; ' + esc(p.ciudad) : '') + _dias
-       + '<br>Escribi lo que entro DE VERDAD: si no coincide, la diferencia queda registrada.',
-    tipo: 'numero', valor: esperado, requerido: true, confirmar: 'Registrar cobro'
-  });
-  if (val === null) return;
-  let obs = '';
-  if (Math.abs(val - esperado) >= 1) {
-    // Un descuadre sin explicacion es justo el dato que despues nadie puede reconstruir.
-    obs = await pedirDato({
-      titulo: 'Hay una diferencia de ' + fmtCOP(val - esperado),
-      sub: 'El pedido dice ' + fmtCOP(esperado) + ' y entraron ' + fmtCOP(val)
-         + '. &iquest;Que paso? Sin esto nadie puede reconstruirlo despues.',
-      tipo: 'texto', requerido: true, msgRequerido: 'La diferencia necesita explicacion',
-      confirmar: 'Registrar con la diferencia'
-    });
-    if (obs === null) return;
+  _COB = p;
+  document.getElementById('cob-titulo').textContent = 'Cobrar el pedido ' + (p.pedido || '');
+  document.getElementById('cob-sub').innerHTML =
+    'El pedido dice <b>' + fmtCOP(p.valor_esperado || 0) + '</b>'
+    + (p.ciudad ? ' &middot; ' + esc(p.ciudad) : '')
+    + (p.dias_en_calle != null ? ' &middot; ' + p.dias_en_calle + ' dias en la calle' : '')
+    + '<br>Escribi lo que entro DE VERDAD y como pagaron.';
+  document.getElementById('cob-monto').value = p.valor_esperado || 0;
+  document.getElementById('cob-metodo').value = 'efectivo';
+  document.getElementById('cob-ref').value = '';
+  document.getElementById('cob-comprobante').value = '';
+  document.getElementById('cob-obs').value = '';
+  document.getElementById('cob-dif').innerHTML = '';
+  cobCambiaMetodo();
+  document.getElementById('modal-cobro').style.display = 'flex';
+}
+
+function cobCambiaMetodo(){
+  var m = document.getElementById('cob-metodo').value;
+  document.getElementById('cob-no-efectivo').style.display = (m === 'efectivo') ? 'none' : '';
+}
+
+function cobAvisarDif(){
+  // La diferencia se ve MIENTRAS se escribe: si hay que explicarla, que se sepa antes.
+  if (!_COB) return;
+  var v = document.getElementById('cob-monto').value;
+  var el = document.getElementById('cob-dif');
+  if (v === '') { el.innerHTML = ''; return; }
+  var dif = parseFloat(v) - (_COB.valor_esperado || 0);
+  el.innerHTML = (Math.abs(dif) < 1)
+    ? '<span style="color:var(--cx-success-text);">Coincide con el pedido.</span>'
+    : '<span style="color:var(--cx-warn-text);font-weight:700;">Diferencia de ' + fmtCOP(dif)
+      + '</span> <span style="color:var(--cx-text-mute);">&middot; explica que paso en observaciones</span>';
+}
+
+// ── PAGO DIRECTO · lo que ya se pago porque alguien lo pidio de palabra ──────
+// Sebastian (3-ago): "se le dijo pague papel burbuja ... entonces registra el pago con
+// comprobante, concepto y demas". Sale de la caja en el acto, con recibo y con quien autorizo.
+function abrirPagoDirecto(){
+  document.getElementById('pd-concepto').value = '';
+  document.getElementById('pd-monto').value = '';
+  document.getElementById('pd-beneficiario').value = '';
+  document.getElementById('pd-comprobante').value = '';
+  document.getElementById('pd-obs').value = '';
+  document.getElementById('pd-alerta').innerHTML = '';
+  document.getElementById('pd-fecha').value = hoyCol();
+  var s = (window._CAJA_SALDO != null) ? window._CAJA_SALDO : 0;
+  document.getElementById('pd-saldo').textContent = 'En la caja hay ' + fmtCOP(s) + '.';
+  document.getElementById('modal-pagodir').style.display = 'flex';
+}
+
+function pdChequearSaldo(){
+  // El aviso va MIENTRAS se escribe: enterarse de que no alcanza al apretar Registrar,
+  // despues de llenar seis campos, es la peor forma de enterarse.
+  var v = parseFloat(document.getElementById('pd-monto').value || 0);
+  var s = (window._CAJA_SALDO != null) ? window._CAJA_SALDO : 0;
+  var el = document.getElementById('pd-alerta');
+  if (!v) { el.innerHTML = ''; return; }
+  el.innerHTML = (v > s)
+    ? '<span style="color:var(--cx-warn-text);font-weight:700;">Eso supera el efectivo de la caja ('
+      + fmtCOP(s) + ')</span> <span style="color:var(--cx-text-mute);">&middot; si la plata está y el saldo no lo refleja, falta registrar un ingreso</span>'
+    : '<span style="color:var(--cx-text-mute);">Quedarían ' + fmtCOP(s - v) + ' en la caja.</span>';
+}
+
+async function guardarPagoDirecto(){
+  var concepto = document.getElementById('pd-concepto').value.trim();
+  var monto = parseFloat(document.getElementById('pd-monto').value || 0);
+  if (!concepto) { showToast('Falta qué se pagó', 'error'); return; }
+  if (!monto || monto <= 0) { showToast('Falta el monto', 'error'); return; }
+  var body = {
+    concepto: concepto, monto: monto,
+    beneficiario: document.getElementById('pd-beneficiario').value.trim(),
+    empresa: document.getElementById('pd-empresa').value,
+    autorizado_por: document.getElementById('pd-quien').value,
+    fecha: document.getElementById('pd-fecha').value,
+    comprobante_url: document.getElementById('pd-comprobante').value.trim(),
+    observaciones: document.getElementById('pd-obs').value.trim()
+  };
+  try {
+    var r = await _fetchUna('/api/caja/pago-directo', _fetchOpts('POST', body));
+    if (!r) return;                       // ya habia uno en vuelo (doble click)
+    var d = await r.json();
+    if (r.status === 409 && d.puede_forzar) {
+      var ok = await pedirDato({
+        titulo: 'La caja no alcanza',
+        tipo: 'confirmar',
+        sub: 'El saldo es <b>' + fmtCOP(d.saldo) + '</b> y el pago es <b>' + fmtCOP(d.monto)
+           + '</b>.<br>Si el efectivo está de verdad, registralo igual y después cuadrás con un arqueo.',
+        confirmar: 'Registrar igual'});
+      if (!ok) return;
+      body.forzar = true;
+      var r2 = await _fetchUna('/api/caja/pago-directo', _fetchOpts('POST', body));
+      if (!r2) return;
+      d = await r2.json();
+      if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    } else if (!d.ok) {
+      showToast('Error: ' + (d.error||'?'), 'error'); return;
+    }
+    showToast(d.aviso || ('Registrado · ' + d.numero), 'success');
+    cerrarModal('modal-pagodir');
+    loadCaja(); loadSolicitudes();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
+async function guardarCobro(){
+  if (!_COB) return;
+  var monto = parseFloat(document.getElementById('cob-monto').value || 0);
+  if (isNaN(monto) || monto < 0) { showToast('Valor invalido', 'error'); return; }
+  var metodo = document.getElementById('cob-metodo').value;
+  var ref = document.getElementById('cob-ref').value.trim();
+  var obs = document.getElementById('cob-obs').value.trim();
+  // Una transferencia sin numero no se puede conciliar despues contra el extracto.
+  if (metodo !== 'efectivo' && !ref) {
+    showToast('Falta el numero de la transferencia', 'error'); return;
+  }
+  // Un descuadre sin explicacion es el dato que despues nadie puede reconstruir.
+  if (Math.abs(monto - (_COB.valor_esperado || 0)) >= 1 && !obs) {
+    showToast('La diferencia necesita explicacion', 'error'); return;
   }
   try {
-    const r = await _fetchUna('/api/animus/contraentrega/' + encodeURIComponent(sid) + '/cobrar',
-                          _fetchOpts('POST', {valor_recibido: val, observaciones: obs}));
+    var r = await _fetchUna('/api/animus/contraentrega/' + encodeURIComponent(_COB.shopify_id) + '/cobrar',
+      _fetchOpts('POST', {valor_recibido: monto, observaciones: obs, metodo: metodo,
+                          referencia_pago: ref,
+                          comprobante_url: document.getElementById('cob-comprobante').value.trim()}));
     if (!r) return;   // ya habia uno en vuelo (doble click)
-    const d = await r.json();
+    var d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
-    showToast('Recibo ' + d.recibo_numero + ' registrado en caja', 'success');
+    showToast('Recibo ' + d.recibo_numero + ' · ' + (d.aviso || ''), 'success');
+    cerrarModal('modal-cobro');
     loadCod(); loadCaja();
-  } catch(e) {
-    showToast('Error de red: ' + e.message, 'error');
-  }
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
 }
 
 async function codAnular(i){

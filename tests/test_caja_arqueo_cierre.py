@@ -48,12 +48,16 @@ def _limpiar(app):
 
 
 def _saldo(app):
+    """Delega en el helper canonico a proposito (M1).
+
+    Antes esta funcion repetia el SUM a mano, y cuando el saldo paso a contar solo el efectivo
+    la copia se quedo vieja: el arqueo comparaba dos numeros distintos y el cierre fallaba por
+    un cambio correcto. Un test que replica la logica que verifica deja de verificarla.
+    """
     from database import get_db
     with app.app_context():
-        conn = get_db()
-        return float(conn.execute(
-            "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END),0) "
-            "FROM animus_caja_menor WHERE COALESCE(anulado,0)=0").fetchone()[0] or 0)
+        from blueprints.animus import caja_saldo
+        return caja_saldo(get_db())
 
 
 _SEMILLA = [0]

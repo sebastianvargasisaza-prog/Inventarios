@@ -1294,6 +1294,112 @@ def caja_solicitudes():
                               if bajo_tope else 'Enviada a gerencia para autorizar')}), 201
 
 
+@bp.route("/api/caja/pago-directo", methods=["POST"])
+def caja_pago_directo():
+    """Registrar un pago que YA se autorizo de palabra, en un solo acto.
+
+    Sebastian (3-ago): *"falta que Daniela pueda registrar un pago, es decir, se le dijo pague
+    papel burbuja -- cualquier cosa que sea de Animus -- entonces registra el pago con
+    comprobante, concepto y demas"*.
+
+    El flujo largo (pedir -> autorizar -> pagar) es para lo que se decide con tiempo. Esto es el
+    caso real del dia: alguien le dijo que pagara y ella ya pago. Obligarla a crear la solicitud,
+    autorizarsela y despues pagarsela seria teatro -- y el teatro termina en que no lo registra.
+
+    Lo que NO se afloja es la trazabilidad, porque es justo lo que hace que un pago sin papel sea
+    verificable despues: queda como una solicitud igual que las demas, pero declarando que la
+    autorizacion fue VERBAL y de QUIEN. Un pago que aparece autorizado sin decir por quien es
+    indistinguible de uno que nadie autorizo.
+    """
+    u, err, code = _caja_auth()
+    if err: return err, code
+    if not _caja_puede_pagar(u):
+        return jsonify({"error": "Solo quien maneja la caja registra pagos"}), 403
+    conn = get_db()
+    d = request.get_json(silent=True) or {}
+
+    concepto = (d.get("concepto") or "").strip()
+    if not concepto:
+        return jsonify({"error": "Concepto requerido · sin eso el egreso no dice qué se pagó"}), 400
+    try:
+        monto = float(d.get("monto") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Monto inválido"}), 400
+    if monto <= 0:
+        return jsonify({"error": "El monto debe ser mayor a 0"}), 400
+    empresa = (d.get("empresa") or "ANIMUS").strip().upper()
+    if empresa not in EMPRESAS_CAJA:
+        return jsonify({"error": "Empresa inválida · debe ser ANIMUS o ESPAGIRIA"}), 400
+    # Quien lo autorizo es el dato que convierte "pagué esto" en un registro verificable.
+    quien = (d.get("autorizado_por") or "").strip()
+    if not quien:
+        return jsonify({"error": "Falta quién autorizó el pago · un pago autorizado sin decir "
+                                 "por quién no se puede verificar después"}), 400
+
+    fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
+    if _caja_bloqueado_por_cierre(conn, fecha):
+        return jsonify({"error": "Esa fecha está en un período ya cerrado · para corregir se "
+                                 "registra un movimiento nuevo, no se toca lo cerrado",
+                        "cerrada_hasta": caja_fecha_cerrada(conn)}), 409
+
+    saldo = caja_saldo(conn)
+    if monto > saldo and not d.get("forzar"):
+        return jsonify({"error": "No hay efectivo suficiente en la caja",
+                        "saldo": round(saldo, 2), "monto": monto, "puede_forzar": True,
+                        "aviso": "Si el efectivo está y el saldo no lo refleja, primero "
+                                 "registrá el ingreso que falta"}), 409
+
+    ahora = _now_col().strftime('%Y-%m-%d %H:%M:%S')
+    metodo = (d.get("metodo") or "efectivo").strip()
+    comprobante = (d.get("comprobante_url") or "").strip()
+    beneficiario = (d.get("beneficiario") or "").strip()
+    c = conn.cursor()
+    prefijo = 'SP-%s-' % _hoy_col().strftime('%Y')
+
+    def _insertar():
+        n = siguiente_correlativo(c, 'caja_solicitudes_pago', 'numero', prefijo)
+        numero = '%s%04d' % (prefijo, n)
+        c.execute("""INSERT INTO caja_solicitudes_pago
+            (numero, empresa, concepto, monto, beneficiario, modulo_origen, estado,
+             solicitado_por, solicitado_at, observaciones,
+             autorizado_por, autorizado_at, autorizacion_via,
+             pagado_por, pagado_at, metodo_pago, comprobante_url)
+            VALUES (?,?,?,?,?,?,'pagada',?,?,?,?,?,?,?,?,?,?)""",
+            (numero, empresa, concepto, monto, beneficiario, 'caja_directo',
+             u, ahora, (d.get("observaciones") or "").strip(),
+             quien, ahora, (d.get("autorizacion_via") or "verbal").strip(),
+             u, ahora, metodo, comprobante))
+        return numero, c.lastrowid
+
+    numero, sid = intentar_insert_con_retry(_insertar, columna='numero')
+    _concepto_mov = concepto + ((' · ' + beneficiario) if beneficiario else '')
+    recibo, mov_id = registrar_movimiento_caja(
+        c, tipo='egreso', concepto=_concepto_mov, monto=monto, fecha=fecha, metodo=metodo,
+        referencia=numero, observaciones=(d.get("observaciones") or "").strip(),
+        usuario=u, empresa=empresa, subtipo='gasto', origen='directo', solicitud_id=sid)
+    c.execute("UPDATE caja_solicitudes_pago SET caja_mov_id=? WHERE id=?", (mov_id, sid))
+    if comprobante:
+        c.execute("UPDATE animus_caja_menor SET comprobante_url=?, comprobante_at=? WHERE id=?",
+                  (comprobante, ahora, mov_id))
+    # El gasto existe para la empresa aunque haya salido de la caja chica.
+    _tesoreria_espejo(c, tipo='egreso', fecha=fecha, concepto=_concepto_mov, monto=monto,
+                      empresa=empresa, referencia=recibo, usuario=u, categoria='Caja menor')
+    audit_log(c, usuario=u, accion='CAJA_PAGO_DIRECTO', tabla='caja_solicitudes_pago',
+              registro_id=sid,
+              despues={'numero': numero, 'monto': monto, 'empresa': empresa,
+                       'concepto': concepto, 'autorizado_por': quien, 'recibo': recibo,
+                       'con_comprobante': bool(comprobante)},
+              detalle='Pago directo %s por %s · autorizó %s · recibo %s'
+                      % (numero, monto, quien, recibo))
+    conn.commit()
+    return jsonify({"ok": True, "id": sid, "numero": numero, "estado": "pagada",
+                    "recibo_numero": recibo, "caja_mov_id": mov_id,
+                    "falta_comprobante": not comprobante,
+                    "saldo": round(caja_saldo(conn), 2),
+                    "aviso": ('Registrado · recibo ' + recibo) if comprobante else
+                             ('Registrado · recibo ' + recibo + ' · falta subir el comprobante')}), 201
+
+
 @bp.route("/api/caja/solicitudes/<int:sid>/autorizar", methods=["POST"])
 def caja_solicitud_autorizar(sid):
     u, err, code = _caja_auth()
@@ -1510,14 +1616,44 @@ def caja_traslado_cuenta():
 # cosas que debería tener para que sea premium y confiable".
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Lo que NO paso por la gaveta: la plata entro, pero a la cuenta, no al efectivo.
+MEDIOS_NO_EFECTIVO = ('transferencia', 'nequi', 'daviplata', 'tarjeta', 'consignacion')
+
+
+def es_efectivo(metodo):
+    """¿Ese medio de pago pone billetes en la gaveta?
+
+    Daniela (3-ago, via Sebastián): *"a veces van y dicen 'yo transferí, le mandé por Nequi',
+    entonces no entregan efectivo"*. Esa plata entró de verdad, pero al BANCO -- y contarla en
+    el saldo de la caja haría que el arqueo nunca cuadre: el sistema diría que hay unos billetes
+    en la gaveta que nadie va a encontrar.
+
+    ⚠ Esto SOLO decide sobre los INGRESOS. En un EGRESO el medio dice como salio la plata, no si
+    salio: una consignacion es exactamente el acto de sacar los billetes de la gaveta y llevarlos
+    al banco, asi que descontarla es obligatorio. Filtrar los dos lados por igual dejaba el
+    traslado sin efecto sobre el saldo y el arqueo quedaba descuadrado por el mismo monto.
+    """
+    return str(metodo or 'efectivo').strip().lower() not in MEDIOS_NO_EFECTIVO
+
+
 def caja_saldo(conn, empresa=None):
-    """El saldo de la caja. Un solo helper para que todos los que deciden usen el MISMO número.
+    """El EFECTIVO que hay en la gaveta. Un solo helper para que todos usen el MISMO número.
 
     Existe como función y no inline porque ya hay cinco sitios que preguntan "¿cuánta plata
     hay?" (pagar, consignar, el listado, el arqueo, el cierre) y si cada uno arma su propio
     SUM terminan divergiendo en silencio -- que es exactamente el drift que M1 previene.
+
+    Cuenta SOLO lo que paso por la gaveta: un cobro por transferencia o Nequi entro al banco,
+    no al efectivo, y sumarlo aca volveria imposible cuadrar el arqueo. Las filas viejas no
+    traen medio y cuentan como efectivo, que es lo que eran.
     """
-    cond, args = ["COALESCE(anulado,0)=0"], []
+    _ph = ','.join('?' for _ in MEDIOS_NO_EFECTIVO)
+    cond = ["COALESCE(anulado,0)=0",
+            # El medio descarta un INGRESO que no paso por la gaveta. Todo EGRESO descuenta:
+            # sacar la plata para consignarla tambien la saca del efectivo.
+            "(tipo<>'ingreso' OR LOWER(COALESCE(NULLIF(TRIM(metodo),''),'efectivo')) "
+            "NOT IN (" + _ph + "))"]
+    args = list(MEDIOS_NO_EFECTIVO)
     if empresa:
         cond.append("UPPER(COALESCE(empresa,'ANIMUS'))=?"); args.append(empresa.upper())
     row = conn.execute(
@@ -2800,6 +2936,16 @@ def animus_cod_cobrar(shopify_id):
     estado = 'descuadre' if abs(dif) >= 1 else 'cobrado'
     fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
     pedido = row[0] or str(shopify_id)
+    # El MEDIO decide DONDE aterriza la plata: efectivo va a la gaveta, transferencia o Nequi
+    # van al banco. Sin esta distincion el arqueo nunca cuadraria.
+    metodo = (d.get("metodo") or "efectivo").strip().lower()
+    ref_pago = (d.get("referencia_pago") or "").strip()
+    comprobante = (d.get("comprobante_url") or "").strip()
+    if not es_efectivo(metodo) and not ref_pago:
+        # Una transferencia sin numero no se puede conciliar despues contra el extracto: es
+        # justo el dato que hace verificable que esa plata existe.
+        return jsonify({"error": "Falta el numero de la transferencia · sin eso no se puede "
+                                 "conciliar contra el banco"}), 400
 
     # El UNIQUE de shopify_id es lo que impide cobrar dos veces el mismo pedido: el chequeo
     # previo no sirve con 3 workers (los dos pasarían). Se intenta y se traduce el choque.
@@ -2819,14 +2965,28 @@ def animus_cod_cobrar(shopify_id):
     # recibo. Dos numeradores distintos para la misma caja serían dos series que se pisan.
     # De dónde salió queda escrito en el recibo: un borrador y una orden son dos registros
     # distintos de Shopify, y cuando alguien audite la caja tiene que poder rastrearlo.
+    _obs = (obs or ('Cobro de pedido contraentrega'
+                    + (' · creado como borrador en Shopify' if es_borrador else '')))
+    if ref_pago:
+        _obs = (_obs + ' · ' + metodo + ' ref ' + ref_pago).strip()
     recibo, mov_id = registrar_movimiento_caja(
         c, tipo='ingreso',
         concepto='Contraentrega %s%s' % (pedido, ' (borrador)' if es_borrador else ''),
-        monto=recibido, fecha=fecha, metodo='efectivo',
-        referencia=str(shopify_id),
-        observaciones=(obs or ('Cobro de pedido contraentrega'
-                               + (' · creado como borrador en Shopify' if es_borrador else ''))),
-        usuario=u)
+        monto=recibido, fecha=fecha, metodo=metodo,
+        referencia=str(shopify_id), observaciones=_obs, usuario=u,
+        origen='contraentrega')
+    if comprobante:
+        c.execute("UPDATE animus_caja_menor SET comprobante_url=?, comprobante_at=? WHERE id=?",
+                  (comprobante, _now_col().strftime('%Y-%m-%d %H:%M:%S'), mov_id))
+    # Si no fue efectivo, la plata entro al BANCO: se espeja a Tesoreria igual que una
+    # consignacion. Sin esto ese ingreso no existe en ningun lado -- ni en la gaveta ni en el
+    # flujo -- y el cobro quedaria registrado sin que la plata aparezca.
+    if not es_efectivo(metodo):
+        _tesoreria_espejo(c, tipo='ingreso', fecha=fecha,
+                          concepto='Contraentrega %s por %s%s' % (pedido, metodo,
+                                                                 (' ref ' + ref_pago) if ref_pago else ''),
+                          monto=recibido, empresa='ANIMUS', referencia=recibo, usuario=u,
+                          categoria='Contraentrega')
     c.execute("UPDATE animus_cod_cobros SET caja_mov_id=? WHERE id=?", (mov_id, cobro_id))
 
     audit_log(c, usuario=u, accion='ANIMUS_COD_COBRAR', tabla='animus_cod_cobros',
@@ -2836,7 +2996,10 @@ def animus_cod_cobrar(shopify_id):
               detalle='Contraentrega %s cobrada · recibo %s · %s' % (pedido, recibo, estado))
     conn.commit()
     return jsonify({"ok": True, "pedido": pedido, "recibo_numero": recibo,
-                    "estado": estado, "diferencia": dif, "caja_mov_id": mov_id})
+                    "estado": estado, "diferencia": dif, "caja_mov_id": mov_id,
+                    "metodo": metodo, "en_efectivo": es_efectivo(metodo),
+                    "aviso": ('Entro a la caja' if es_efectivo(metodo)
+                              else 'Entro al banco por ' + metodo + ' · NO suma al efectivo de la gaveta')})
 
 
 @bp.route("/api/animus/contraentrega/<path:shopify_id>/anular", methods=["POST"])

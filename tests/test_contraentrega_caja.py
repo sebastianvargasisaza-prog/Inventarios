@@ -37,6 +37,9 @@ def _limpiar(app):
     from database import get_db
     with app.app_context():
         conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM flujo_ingresos WHERE fuente='caja_menor' AND referencia IN "
+                    "(SELECT recibo_numero FROM animus_caja_menor WHERE referencia LIKE ?)",
+                    (PREFIJO + '%',))
         cur.execute("DELETE FROM animus_cod_cobros WHERE shopify_id LIKE ?", (PREFIJO + '%',))
         cur.execute("DELETE FROM animus_caja_menor WHERE referencia LIKE ?", (PREFIJO + '%',))
         cur.execute("DELETE FROM animus_shopify_orders WHERE shopify_id LIKE ?", (PREFIJO + '%',))
@@ -793,3 +796,113 @@ def test_los_pedidos_se_traen_DOS_veces_al_dia():
     # el nombre es la LLAVE del lock (cron_locks): repetido, el segundo nunca corre
     nombres = [f[0] for f in filas]
     assert len(set(nombres)) == len(nombres), 'dos crons con el mismo nombre: %s' % nombres
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NO TODO LO QUE SE COBRA ES EFECTIVO (Daniela, 3-ago, via Sebastian)
+# "a veces van y dicen 'yo transferi, le mande por Nequi', entonces no entregan efectivo".
+# Esa plata entro de verdad -- pero al BANCO, no a la gaveta. Contarla en el saldo de la caja
+# haria que el ARQUEO nunca cuadre: el sistema diria que hay billetes que nadie va a encontrar.
+# El hueco ya existia: el modal ofrecia "transferencia" desde antes y el saldo no filtraba.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _saldo_caja(app):
+    from database import get_db
+    with app.app_context():
+        from blueprints.animus import caja_saldo
+        return caja_saldo(get_db())
+
+
+def test_un_cobro_en_EFECTIVO_sube_el_saldo(app, db_clean):
+    _limpiar(app)
+    sid = _sembrar(app, 'EF1', total=100000, nota='contraentrega')
+    antes = _saldo_caja(app)
+    r = _admin(app).post('/api/animus/contraentrega/%s/cobrar' % sid,
+                         json={'metodo': 'efectivo'}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:250]
+    assert r.get_json()['en_efectivo'] is True
+    assert _saldo_caja(app) == antes + 100000
+
+
+def test_un_cobro_por_TRANSFERENCIA_no_toca_el_efectivo(app, db_clean):
+    """La plata entro, pero al banco. Si sumara al saldo, el arqueo nunca cuadraria."""
+    _limpiar(app)
+    sid = _sembrar(app, 'TR1', total=250000, nota='contraentrega')
+    antes = _saldo_caja(app)
+    r = _admin(app).post('/api/animus/contraentrega/%s/cobrar' % sid,
+                         json={'metodo': 'transferencia', 'referencia_pago': 'TRX-9911'},
+                         headers=csrf_headers())
+    assert r.status_code == 200, r.data[:250]
+    d = r.get_json()
+    assert d['en_efectivo'] is False
+    assert _saldo_caja(app) == antes, 'una transferencia sumo al efectivo de la gaveta'
+
+
+def test_la_transferencia_SI_entra_al_banco_en_tesoreria(app, db_clean):
+    """Si no, ese ingreso no existe en ningun lado: ni en la gaveta ni en el flujo."""
+    _limpiar(app)
+    sid = _sembrar(app, 'TR2', total=180000, nota='contraentrega')
+    r = _admin(app).post('/api/animus/contraentrega/%s/cobrar' % sid,
+                         json={'metodo': 'nequi', 'referencia_pago': 'NQ-123'},
+                         headers=csrf_headers())
+    assert r.status_code == 200
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        fila = conn.execute("SELECT monto FROM flujo_ingresos WHERE fuente='caja_menor' "
+                            "AND referencia=?", (r.get_json()['recibo_numero'],)).fetchone()
+    assert fila and float(fila[0]) == 180000, 'la transferencia no llego a Tesoreria'
+
+
+def test_una_transferencia_SIN_numero_no_pasa(app, db_clean):
+    """Sin el numero no se puede conciliar contra el extracto: es lo que hace verificable que
+    esa plata existe."""
+    _limpiar(app)
+    sid = _sembrar(app, 'TR3', total=50000, nota='contraentrega')
+    r = _admin(app).post('/api/animus/contraentrega/%s/cobrar' % sid,
+                         json={'metodo': 'transferencia'}, headers=csrf_headers())
+    assert r.status_code == 400, r.data[:250]
+
+
+def test_el_comprobante_queda_en_el_movimiento(app, db_clean):
+    _limpiar(app)
+    sid = _sembrar(app, 'TR4', total=70000, nota='contraentrega')
+    r = _admin(app).post('/api/animus/contraentrega/%s/cobrar' % sid,
+                         json={'metodo': 'nequi', 'referencia_pago': 'NQ-9',
+                               'comprobante_url': 'https://x/foto.jpg'},
+                         headers=csrf_headers())
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        u = conn.execute("SELECT comprobante_url FROM animus_caja_menor WHERE id=?",
+                         (r.get_json()['caja_mov_id'],)).fetchone()[0]
+    assert u == 'https://x/foto.jpg'
+
+
+def test_las_filas_VIEJAS_sin_metodo_siguen_contando_como_efectivo(app, db_clean):
+    """Lo que ya estaba registrado era efectivo: el cambio no puede reescribir el pasado."""
+    from database import get_db
+    from tz_colombia import hoy_colombia
+    _limpiar(app)
+    antes = _saldo_caja(app)
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("INSERT INTO animus_caja_menor (fecha, tipo, concepto, monto, metodo, "
+                    "registrado_por, recibo_numero) VALUES (?,'ingreso',?,?,'',?,?)",
+                    (hoy_colombia().isoformat(), 'ZZCOD vieja sin metodo', 33000, 'test',
+                     'RC-VIEJA-1'))
+        conn.commit()
+    assert _saldo_caja(app) == antes + 33000
+    with app.app_context():
+        conn = get_db()
+        conn.cursor().execute("DELETE FROM animus_caja_menor WHERE recibo_numero='RC-VIEJA-1'")
+        conn.commit()
+
+
+def test_la_pantalla_pregunta_COMO_pagaron():
+    html = _html_animus()
+    assert 'id="cob-metodo"' in html and 'transferencia' in html and 'nequi' in html.lower()
+    assert 'id="cob-ref"' in html, 'no pide el numero de la transferencia'
+    assert 'id="cob-comprobante"' in html, 'no pide el comprobante'
+    # y avisa que esa plata NO entra a la gaveta
+    assert 'no suma al efectivo' in html.lower() or 'entra al <b>banco</b>' in html
