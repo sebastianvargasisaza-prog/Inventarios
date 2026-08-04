@@ -44,18 +44,51 @@ def _salud(lotes, stock_uds=0.0, vel=VEL):
 
 # ── el clasificador mide lo que dice ─────────────────────────────────────────
 
-def test_una_cadena_bien_espaciada_deja_EXACTAMENTE_el_buffer(app, db_clean):
-    """Cadencia = lo que dura un lote · el colchón tiene que dar los 20 días del buffer, ni
-    más ni menos. Si diera otra cosa, todo el resto del veredicto estaría corrido."""
+def test_una_cadena_bien_espaciada_deja_el_buffer_y_NO_CRECE(app, db_clean):
+    """Cadencia ≈ lo que dura un lote · el colchón tiene que quedar en los 20 días del buffer y
+    QUEDARSE AHÍ. Lo que importa no es el valor exacto de un lote (la cadencia entera nunca cae
+    justo en los 27,2 días que dura el lote) sino que no CREZCA: si crece, la cadena acumula
+    stock sola, que es el defecto que se está corrigiendo."""
     from blueprints.plan import BUFFER_REORDEN_DIAS
     dura = int(_uds(20) / VEL)          # 400 uds / 14.7 = 27 días
     r = _salud(_cadena(6, dura, 20), stock_uds=_uds(20))
     assert r['medible'] is True
     assert r['n_sobra'] == 0 and r['n_tarde'] == 0
     assert r['n_sano'] == 6
-    for d in r['lotes'].values():
-        assert d['colchon'] == BUFFER_REORDEN_DIAS, \
-            'una cadena perfecta debería dejar %sd de colchón' % BUFFER_REORDEN_DIAS
+    cols = [d['colchon'] for _, d in sorted(r['lotes'].items())]
+    assert all(abs(c - BUFFER_REORDEN_DIAS) <= 2 for c in cols), \
+        'una cadena bien espaciada debería rondar los %sd de colchón: %s' % (BUFFER_REORDEN_DIAS, cols)
+    assert max(cols) - min(cols) <= 2, 'el colchón se está moviendo solo: %s' % cols
+
+
+def test_el_colchon_NO_se_acumula_ciclo_tras_ciclo(app, db_clean):
+    """Con dientes, y es EL defecto que motivó todo esto: dimensionar cada lote para durar la
+    cadencia + 20 días hace que se ganen 20 días de stock por ciclo, y se acumulan. Medido con
+    los números reales de HYDRABALANCE: 20 → 40 → 60 → … → 200 días al lote 11."""
+    from blueprints.plan import BUFFER_REORDEN_DIAS as B
+    cad = 61
+    vel_kg = VEL * ML / 1000.0
+    kg_viejo = round(vel_kg * (cad + B), 1)      # la fórmula vieja
+    kg_nuevo = round(vel_kg * cad, 1)            # repone lo que se vende en la cadencia
+    kg_primero = round(kg_nuevo + vel_kg * B, 1)  # el primero trae el colchón
+
+    # Los dos arrancan SIN stock (el caso real: se programa cuando ya no queda). Sembrar además
+    # un lote entero de stock inicial daría colchón doble y mediría otra cosa.
+    viejo = _salud(_cadena(11, cad, kg_viejo), stock_uds=0)
+    cols_v = [d['colchon'] for _, d in sorted(viejo['lotes'].items())]
+    assert viejo['sobreproduce'] is True, 'la fórmula vieja tiene que salir marcada'
+    assert cols_v[-1] - cols_v[0] > 100, 'el colchón viejo debería dispararse: %s' % cols_v
+
+    lotes = _cadena(11, cad, kg_nuevo)
+    lotes[0]['kg'] = kg_primero
+    nuevo = _salud(lotes, stock_uds=0)
+    cols_n = [d['colchon'] for _, d in sorted(nuevo['lotes'].items())]
+    assert nuevo['sobreproduce'] is False
+    # El primer lote llega tarde a propósito en este escenario (se arranca sin stock): lo que se
+    # mide es que de ahí en adelante el colchón se queda QUIETO en el buffer.
+    regimen = cols_n[1:]
+    assert max(regimen) - min(regimen) <= 2, 'el colchón nuevo se mueve solo: %s' % cols_n
+    assert abs(max(regimen) - B) <= 1, 'el primer lote no dejó el colchón en %sd: %s' % (B, cols_n)
 
 
 def test_producir_al_DOBLE_de_ritmo_marca_sobreproduccion(app, db_clean):

@@ -27231,13 +27231,21 @@ async function ckMarcar(itemId, estado){
         ? Math.round(_decG.cadencia_dias / 30.44 * 10) / 10
         : (_ceM ? _ceM.meses : 2);
       var _velDiaM = p.velocidad_kg_dia || 0;
-      // Sebastián 11-jul · el kg por default = lo NECESARIO para durar la cadencia + 20d de reorden (no venta×meses
-      // pelado ni el kg de la cadena vieja): velocidad_kg_dia × (interval + 20). El usuario lo puede editar.
+      // ⚠ EL KILAJE (Sebastián 4-ago · medido lote a lote antes de cambiarlo). Hasta hoy el
+      // default era `velocidad × (cadencia + 20)`: cada lote duraba 20 días MÁS que la cadencia,
+      // pero el siguiente llegaba a la cadencia → se ganaban 20 días de stock por ciclo, y se
+      // acumulaban: el colchón iba 73 → 92 → 111 → … → 263 días al lote 11. Eso es lo que hacía
+      // que 23 de 28 productos salieran marcados "sobra-stock": plata parada en producto
+      // terminado, creciendo sola.
+      // El buffer de 20 días es del CUÁNDO, no del CUÁNTO: ya se aplica al fijar la primera
+      // producción (cae 20 días antes de agotarse). Sumarlo también al tamaño lo cuenta dos
+      // veces. En régimen, cada lote repone exactamente lo que se vende en la cadencia y el
+      // colchón se queda quieto donde el arranque lo dejó.
       var _intM = (_decG && _decG.cadencia_dias)
         ? _decG.cadencia_dias : Math.max(Math.round(_mesesM * 30.44), 15);
       var _kgM = (_decG && _decG.kg_objetivo_lote)
         ? _decG.kg_objetivo_lote
-        : ((_velDiaM > 0) ? (Math.round(_velDiaM * (_intM + 20) * 10) / 10)
+        : ((_velDiaM > 0) ? (Math.round(_velDiaM * _intM * 10) / 10)
                           : (_ceM ? _ceM.kg.toFixed(1) : _partKg));
       var _aniosM = (_decG && _decG.horizonte_dias)
         ? Math.max(1, Math.min(3, Math.round(_decG.horizonte_dias / 365))) : 2;
@@ -27471,7 +27479,14 @@ async function ckMarcar(itemId, estado){
       }catch(e){}
     }
     var nLotes = Math.max(1, Math.floor((horizonte - dhp) / intervalDias) + 1);
-    return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, dhp:dhp, dhpManual:_manual, dhpCap:_dhpCap, nLotes:nLotes, horizonte:horizonte};
+    // El PRIMER lote trae el colchón de 20 días (por eso va más grande); los demás reponen lo
+    // que se vende en la cadencia. Si el usuario escribió los kg a mano, se respeta la
+    // proporción que él eligió: la cuenta le suma el colchón a SU número, no lo reemplaza.
+    var _velKg = p.velocidad_kg_dia || 0;
+    var kgPrimero = (_velKg > 0.0001)
+      ? Math.round((kg + _velKg * 20) * 10) / 10
+      : kg;
+    return {partida:partida, kg:kg, kgPrimero:kgPrimero, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, dhp:dhp, dhpManual:_manual, dhpCap:_dhpCap, nLotes:nLotes, horizonte:horizonte};
   }
   // Sebastián 11-jul · sincronizar meses↔días (el usuario piensa en días para la cadencia)
   // Sebastián 11-jul · auto-calcular el kg NECESARIO para durar la cadencia (+20d de reorden). Sirve para
@@ -27608,16 +27623,21 @@ async function ckMarcar(itemId, estado){
       if(_udsDia > 0.001 && _ml > 0){
         // Sebastián 11-jul · REGLA DE REORDEN: producís 20 días ANTES de agotarte → cada lote debe cubrir
         // la cadencia + 20 días (ej. cada 45d → el lote debe durar 65d), no solo la cadencia.
+        // Sebastián 4-ago · el buffer de 20 días es del CUÁNDO, no del CUÁNTO: ya se aplica al
+        // fijar la primera producción. Sumarlo también al tamaño de CADA lote lo contaba dos
+        // veces y el colchón crecía solo (73 → 92 → 111 → … → 263 días al lote 11). En régimen
+        // cada lote repone lo que se vende en la cadencia y el colchón se queda quieto.
         var BUFFER_REORDEN = 20;
-        var _cubreDias = cc.intervalDias + BUFFER_REORDEN;
-        var _kgRef = _udsDia * _cubreDias * _ml / 1000;
+        var _kgRef = _udsDia * cc.intervalDias * _ml / 1000;
         var _dif = cc.kg - _kgRef;
         var _tag = (_kgRef > 0 && Math.abs(_dif) >= _kgRef * 0.1)
-          ? (_dif > 0 ? ' · tu lote deja <b style="color:var(--cx-info-text)">+' + _dif.toFixed(0) + ' kg</b> de colchón'
-                      : ' · tu lote queda <b style="color:var(--cx-danger-text)">' + _dif.toFixed(0) + ' kg</b> CORTO')
-          : ' · tu lote calza justo ✓';
+          ? (_dif > 0 ? ' · el tuyo deja <b style="color:var(--cx-info-text)">+' + _dif.toFixed(0) + ' kg</b> de más, y eso se ACUMULA en cada ciclo'
+                      : ' · el tuyo queda <b style="color:var(--cx-danger-text)">' + _dif.toFixed(0) + ' kg</b> CORTO')
+          : ' · calza justo ✓';
         _ref = '📊 Vende ~<b>' + Math.round(_udsDia * 30.44) + ' uds/mes</b> de <b>' + (Math.round(_ml * 10) / 10) + ' ml</b><br>'
-          + '🎯 Producís <b>20d antes</b> de agotarte → cada lote debe cubrir <b>' + cc.intervalDias + ' + 20 = ' + _cubreDias + ' días</b> → ~<b>' + _kgRef.toFixed(0) + ' kg</b>' + _tag + '<br>';
+          + '🎯 En régimen cada lote repone lo que vendés en <b>' + cc.intervalDias + ' días</b> → ~<b>' + _kgRef.toFixed(0) + ' kg</b>' + _tag + '<br>'
+          + '🛡️ El <b>primer</b> lote va de <b>' + (cc.kgPrimero || cc.kg).toFixed(1) + ' kg</b>: trae los <b>'
+          + BUFFER_REORDEN + ' días</b> de colchón. Se ganan una vez y después se mantienen solos.<br>';
       } else {
         _ref = '<span style="color:var(--cx-text-faint)">📊 Sin ventas/ml mapeados para la referencia · poné el kg a criterio.</span><br>';
       }
@@ -27720,6 +27740,10 @@ async function ckMarcar(itemId, estado){
     try{
       var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
       var bodyObj = {producto: p.producto_nombre, ancla_fecha: cc.partida, kg_por_lote: cc.kg,
+                     // El colchón de 20 días se gana UNA vez: el primer lote va más grande y de
+                     // ahí en adelante cada uno repone lo que se vende en la cadencia. Antes los
+                     // 20 días se sumaban a TODOS los lotes y el stock se acumulaba solo.
+                     kg_primer_lote: cc.kgPrimero,
                      interval_dias: cc.intervalDias, dias_hasta_primera: cc.dhp, anios: cc.anios,
                      crear_origen: true, kg_origen: kgOrigen};
       var r = await fetch('/api/plan/programar-cadencia-producto', {method:'POST', credentials:'same-origin',

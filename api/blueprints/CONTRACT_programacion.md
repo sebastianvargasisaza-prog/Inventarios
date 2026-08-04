@@ -896,3 +896,56 @@ otra ya escribía.
   normalizador la decisión existiría en la base y no llegaría nunca a la pantalla.
 
 Tests: `tests/test_decision_se_guarda.py` (en el gate).
+
+## 📐 PROG-N+10 · Las reglas de programación, escritas donde se aplican (4-ago)
+
+Sebastián las dictó así: *"el sistema automático coloca las producciones 20 días antes de que se
+agote, esa es la regla primordial · no programa sábados, domingos ni festivos · intenta un lote
+por día, si es necesario dos · no pone más de 200 kilos por día"*, y después: *"no es tope duro,
+se puede pasar · incluso siempre prefiere producir lunes, miércoles y viernes para que tengan
+martes y jueves de otras actividades"*.
+
+**Lo que se encontró antes de tocar nada:**
+
+| Regla | Estado real |
+|---|---|
+| 20 días antes de agotarse | El modal la aplicaba · **"recalcular horizonte desde este lote" NO** (ponía el primer lote a una cadencia exacta del ancla) · el cron de sugeridas usa 25 · el plan automático diario, ninguno |
+| Ni fin de semana ni festivo | Correcto en la cadena · el calendario de festivos verificado hasta 2028 |
+| Preferir lun/mié/vie | **Construida en `_proxima_fecha_habil(prefer_mwf=True)` y la cadena llamaba SIN ella** (M121: una capacidad que nadie activa no existe) |
+| Máximo 200 kg/día | **No existía.** Sólo "2 lotes/día" + "≥100 kg va solo". En `_proxima_fecha_habil` eso implica <200 de rebote, pero **los generadores tienen su propio contador** y sólo miraban cantidad de lotes: dos de 150 kg = 300 kg en una jornada |
+
+**Invariantes:**
+- `BUFFER_REORDEN_DIAS = 20` es la fuente única. `first_offset_dias` por defecto es
+  `interval_dias − BUFFER_REORDEN_DIAS` en los dos caminos que crean cadena.
+- `MAX_KG_POR_DIA_PREFERIDO = 200.0` es **preferencia, no muro**: se saltean los días que se
+  pasarían, y si no aparece ninguno se acepta igual (`_respetar_kg=False` en la segunda vuelta,
+  con log). Un lote que por sí solo pasa el tope se coloca: frenar una producción por una
+  preferencia de carga es peor que el problema.
+- El cupo por kilos vive en **tres** lugares y los tres tienen que moverse juntos (M45):
+  `_proxima_fecha_habil`, `_tomar_slot` (proyección 2 años) y `_slot` (plan desde hoy).
+- Los dos caminos que crean cadena pasan `prefer_mwf=True`.
+
+**+ El kilaje, y por qué tuvo que cambiar en DOS pantallas a la vez.** El default era
+`velocidad × (cadencia + 20)`: cada lote duraba 20 días más que la cadencia y el siguiente
+llegaba a la cadencia, así que se ganaban 20 días de stock **por ciclo** y se acumulaban
+(colchón 20 → 40 → 60 → … → 200 al lote 11 · medido con los números de HYDRABALANCE). Eso es lo
+que marcaba 23 de 28 productos como "sobra-stock".
+
+El buffer es del **cuándo**, no del **cuánto**: ya se aplica al fijar la primera producción.
+Ahora el **primer** lote de la cadena va más grande (`kg_primer_lote`, trae el colchón) y de ahí
+en adelante cada uno repone lo que se vende en la cadencia — el colchón se queda **plano en 20**.
+
+⚠ El tablero `/api/plan/salud-cadenas` comparaba contra `vel × (cad + 20)`. Cambiar sólo el modal
+habría dejado las cadenas nuevas leídas como **CORTAS**, gritando al revés. Se movió la
+referencia **a la vez**, y además el veredicto de ese tablero ahora sale de `salud_cadena` — la
+misma simulación que pinta Necesidades — para que las dos pantallas no puedan volver a decir
+cosas distintas del mismo producto (M1/M5/M99).
+
+⚠ **Defecto propio que encontró la medición, no la lectura:** `salud_cadena` llevaba la cobertura
+como FECHA y le sumaba timedeltas con fracción de día. Cada vuelta truncaba las horas y el
+redondeo se **acumulaba**: una cadena perfectamente dimensionada perdía ~1 día de colchón por
+ciclo y a los diez lotes parecía degradarse sola (19 → 18 → … → 10). Ahora la cobertura se lleva
+como días (float) y sólo se convierte a fecha al reportar.
+
+Tests: `tests/test_reglas_programacion.py` (en el gate · los tres guards probados desactivando
+la regla y viendo el rojo).

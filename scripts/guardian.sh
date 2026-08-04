@@ -159,6 +159,11 @@ CORAZON=(
   # entre los dos primeros lotes futuros, asi que al mover un lote cambiaba sola y con un solo
   # lote volvia al default. El modal gemelo del calendario SI la guardaba: la asimetria era el bug.
   "tests/test_decision_se_guarda.py"
+  # Las reglas de programacion que dicto Sebastian, escritas donde se aplican: 20 dias antes de
+  # agotarse (el camino "recalcular horizonte" NO la aplicaba), preferir lun/mie/vie (el helper
+  # lo tenia y la cadena llamaba sin ello), y el tope de 200 kg/dia (que no existia: los
+  # generadores contaban lotes, no kilos, asi que dos de 150 dejaban 300 kg en un dia).
+  "tests/test_reglas_programacion.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

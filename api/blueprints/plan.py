@@ -96,17 +96,26 @@ def salud_cadena(lotes, *, velocidad_uds_dia, ml_unidad, stock_uds, hoy,
         vivos.append((fd, l))
     vivos.sort(key=lambda x: x[0])
 
-    cobertura_hasta = hoy + _td(days=float(stock_uds or 0) / vel)
+    # ⚠ La cobertura se lleva como DÍAS (float) desde hoy, no como fecha. Sumarle a un `date`
+    # un timedelta con fracción trunca las horas en CADA vuelta, y ese redondeo se acumula: una
+    # cadena perfectamente dimensionada perdía ~1 día de colchón por ciclo y a los diez lotes
+    # parecía estar degradándose sola (19 → 18 → … → 10) cuando en realidad estaba quieta.
+    # Lo cazó medir el modelo nuevo lote a lote, no leer el código.
+    cob_dias = float(stock_uds or 0) / vel
     res = dict(vacio, medible=True)
     for fd, l in vivos:
-        llegada = fd + _td(days=pipeline_dias)
-        cobertura_antes = cobertura_hasta
+        dias_hasta_llegada = (fd - hoy).days + pipeline_dias
+        cob_antes = cob_dias
+        cobertura_antes = hoy + _td(days=int(cob_antes))
         uds_lote = (float(l.get('kg') or 0) * 1000.0) / ml
         dias_lote = int(round(uds_lote / vel))
         # Sólo los lotes de hoy en adelante tienen salud PREDICTIVA: sobre uno del pasado
         # el veredicto ya no es accionable (no se puede adelantar lo que ya pasó).
         if (fd - hoy).days >= -1:
-            colchon = (cobertura_antes - llegada).days
+            # Redondear, no truncar: una cadena perfecta deja 19,95 días de colchón y truncando
+            # se leía "justo · 19d" -- o sea el modelo bien hecho quedaba clasificado como
+            # ajustado por medio día de aritmética.
+            colchon = int(round(cob_antes - dias_hasta_llegada))
             if colchon < 0:
                 estado = 'tarde'
             elif colchon < buffer_dias:
@@ -126,8 +135,8 @@ def salud_cadena(lotes, *, velocidad_uds_dia, ml_unidad, stock_uds, hoy,
             res['n_' + estado] = res.get('n_' + estado, 0) + 1
             if res['colchon_max'] is None or colchon > res['colchon_max']:
                 res['colchon_max'] = colchon
-        base = cobertura_antes if cobertura_antes > llegada else llegada
-        cobertura_hasta = base + _td(days=uds_lote / vel)
+        base = cob_antes if cob_antes > dias_hasta_llegada else float(dias_hasta_llegada)
+        cob_dias = base + (uds_lote / vel)
 
     # 3 lotes es el mismo corte que ya usaba la pantalla: uno o dos holgados pueden ser un
     # arranque de temporada; tres seguidos ya es la cadencia, no una excepción.
@@ -6532,6 +6541,10 @@ def plan_salud_cadenas():
             _deliberados[_npf_sc(_r[0] or '')] = _r[1]
     except Exception as _e:
         __import__('logging').getLogger('plan').warning('salud-cadenas: no se pudo leer las decisiones deliberadas: %s', _e)
+    # "Hoy" anclado a Colombia (M24): la simulación de la cadena parte de acá, y con el UTC del
+    # server después de las 19:00 locales arrancaría un día adelantado.
+    from datetime import date as _dsc, timedelta as _tsc, datetime as _dtsc
+    _hoy_sc = (_dtsc.utcnow() - _tsc(hours=5)).date()
     items, sin_cadena_prods = [], []
     resumen = {'sobre': 0, 'corto': 0, 'ok': 0, 'lanzamiento': 0, 'deliberado': 0,
                'sin_datos': 0, 'sin_cadena': 0, 'sin_ventas': 0}
@@ -6585,7 +6598,13 @@ def plan_salud_cadenas():
                               'kg_lote_programado': kg_lote or None, 'cadencia_dias': cad,
                               'kg_requerido_lote': None, 'motivo': 'sin ventas mapeadas o sin ml'})
                 continue
-            kg_req = round(vel * (cad + BUFFER_REORDEN) * ml / 1000.0, 2)
+            # ⚠ La referencia cambió el 4-ago junto con el modal Programar, y TENÍA que cambiar
+            # con él: el kg de referencia era `vel × (cadencia + 20)`, o sea el buffer sumado al
+            # tamaño de CADA lote. Al pasar el modal a `vel × cadencia` (el buffer se gana una
+            # vez, en el primer lote, no en todos), este tablero habría leído las cadenas nuevas
+            # como CORTAS -- gritando exactamente al revés. Dos pantallas con la misma regla
+            # escrita en dos lados se separan sola (M99): la referencia es una.
+            kg_req = round(vel * cad * ml / 1000.0, 2)
             ratio = (kg_lote / kg_req) if kg_req > 0 else 0
             # días que dura UN lote en góndola · lo que el usuario siente como "sobra"
             dur_lote = round((kg_lote * 1000.0 / ml) / vel) if vel > 0 else 0
@@ -6603,7 +6622,10 @@ def plan_salud_cadenas():
             #   Suero Vit C+ 67d vs 50 → 17d de más = redondeo · no se marca
             #   LIP SERUM   127d vs 40 → 87d de más = sobre-producción real
             # Se exige que fallen LAS DOS cosas: proporción alta Y exceso material en días.
-            _dias_cubre = cad + BUFFER_REORDEN
+            # Lo que de verdad importa no es el ratio de un lote suelto: es cuántos días de
+            # stock GANA cada ciclo, porque eso se acumula. Un lote que dura más que la cadencia
+            # deja ese sobrante en góndola y el siguiente llega igual.
+            _dias_cubre = cad
             _dias_exceso = dur_lote - _dias_cubre
             # ⚠ La tendencia numérica es `tendencia_pct`. El campo `tendencia` es una ETIQUETA de
             # texto ('aceleracion_fuerte', 'caida_fuerte'…) que devuelve velocidad_blended_uds_dia:
@@ -6624,12 +6646,33 @@ def plan_salud_cadenas():
                 _motivo_delib = _deliberados.get(_npf_sc(prod))
             except Exception:
                 _motivo_delib = None
-            if ratio >= 1.3 and _dias_exceso >= 30:
+            # ⚠ EL VEREDICTO SALE DE `salud_cadena` (4-ago), el mismo cálculo que pinta
+            # Necesidades. Antes esta pantalla clasificaba con su propio par de umbrales sobre un
+            # lote suelto (ratio + días de exceso) y la otra simulaba la cadena hacia adelante:
+            # dos reglas para el mismo hecho terminan diciendo cosas distintas del mismo producto
+            # (M1/M5/M99). La simulación además es la que ve lo que un lote suelto no muestra:
+            # que el sobrante se ACUMULA ciclo tras ciclo.
+            _sal = {}
+            try:
+                _sal = salud_cadena(
+                    [{'id': x.get('id'), 'fecha': x.get('fecha'), 'kg': x.get('kg'),
+                      'estado': x.get('estado') or 'pendiente'} for x in fut],
+                    velocidad_uds_dia=vel, ml_unidad=ml,
+                    stock_uds=float(p.get('stock_uds_total') or 0), hoy=_hoy_sc) or {}
+            except Exception as _esal:
+                log.warning('salud-cadenas: no pude simular %s: %s', prod, _esal)
+                _sal = {}
+            if not _sal.get('medible'):
+                # Sin simulación no se inventa un veredicto: se cae al ratio, que al menos mide
+                # algo real, y el motivo viaja para que se sepa que no es la cuenta buena.
+                est = 'sobre' if (ratio >= 1.3 and _dias_exceso >= 30) else (
+                      'corto' if ratio <= 0.9 else 'ok')
+            elif _sal.get('sobreproduce'):
                 if _motivo_delib is not None:
                     est = 'deliberado'          # el dueño ya lo decidió · no es un hallazgo
                 else:
                     est = 'lanzamiento' if _tend >= 0.08 else 'sobre'
-            elif ratio <= 0.9:
+            elif _sal.get('llega_tarde') or ratio <= 0.9:
                 est = 'corto'
             else:
                 est = 'ok'
@@ -14038,14 +14081,24 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
         except Exception:
             _floor_d = None
 
-    def _tomar_slot(desde):
+    # ⚠ El cupo se mide en LOTES y en KILOS (Sebastián 4-ago: *"no pone más de 200 kilos por
+    # día"*). Contar sólo lotes deja pasar dos de 150 kg = 300 kg en una jornada, que es
+    # exactamente el hueco que tenía este generador: `_proxima_fecha_habil` sí lo cuida, pero
+    # esta función tiene su propio contador y no lo replicaba (M45).
+    # Es preferencia, no muro: un lote que por sí solo pasa el tope se coloca igual.
+    slots_kg = {}
+
+    def _tomar_slot(desde, kg=0.0):
         if _floor_d and desde < _floor_d:
             desde = _floor_d  # piso: no colocar lotes antes del ancla (ej. agosto)
         fd = _ap._next_dia_produccion(desde)
+        _kg = float(kg or 0)
         for _ in range(160):
             iso = fd.isoformat()
-            if slots.get(iso, 0) < LOTES_MAX:
+            _cabe_kg = (slots_kg.get(iso, 0.0) + _kg) <= MAX_KG_POR_DIA_PREFERIDO                 or _kg > MAX_KG_POR_DIA_PREFERIDO
+            if slots.get(iso, 0) < LOTES_MAX and _cabe_kg:
                 slots[iso] = slots.get(iso, 0) + 1
+                slots_kg[iso] = slots_kg.get(iso, 0.0) + _kg
                 return fd
             fd = _ap._next_dia_produccion(fd + _td(days=1))
         return fd
@@ -14141,7 +14194,8 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
                 # 'cualquier llegada futura' un producto espera a que llegue su lote en vuelo.
                 upcoming = any(ad > d for ad in arrivals)
                 if not upcoming:
-                    prod_date = _tomar_slot(max(hoy + _td(days=1), hoy + _td(days=d)))
+                    prod_date = _tomar_slot(max(hoy + _td(days=1), hoy + _td(days=d)),
+                                            kg=float(lote_size_kg or 0))
                     # Guardrail de horizonte: si el ajuste a día hábil empujó el lote más
                     # allá de los `dias` (2 años), no lo crees → la proyección queda
                     # ESTRICTAMENTE dentro del horizonte (nunca lotes fuera de la ventana).
@@ -14238,12 +14292,18 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
         if r[0]:
             slots[r[0]] = r[1]
 
-    def _slot(desde):
+    # Mismo cupo por kilos que el gemelo de arriba (M45: si toco uno, toco los dos).
+    slots_kg = {}
+
+    def _slot(desde, kg=0.0):
         fd = _ap._next_dia_produccion(desde)
+        _kg = float(kg or 0)
         for _ in range(220):
             iso = fd.isoformat()
-            if slots.get(iso, 0) < LOTES_MAX:
+            _cabe_kg = (slots_kg.get(iso, 0.0) + _kg) <= MAX_KG_POR_DIA_PREFERIDO                 or _kg > MAX_KG_POR_DIA_PREFERIDO
+            if slots.get(iso, 0) < LOTES_MAX and _cabe_kg:
                 slots[iso] = slots.get(iso, 0) + 1
+                slots_kg[iso] = slots_kg.get(iso, 0.0) + _kg
                 return fd
             fd = _ap._next_dia_produccion(fd + _td(days=1))
         return fd
@@ -14325,7 +14385,7 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
             _dias_cob = 0.0
         off = int(max(0, min(round(_dias_cob - BUFFER_REORDEN_DIAS), cad)))
         while off <= prod_dias and n < 130:
-            prod_date = _slot(max(hoy, hoy + _td(days=off)))
+            prod_date = _slot(max(hoy, hoy + _td(days=off)), kg=float(lote_kg or 0))
             _obs = ('Plan manual desde hoy · 1 lote cubre el horizonte (~' + format(cad_real, '.0f') + 'd)'
                     if _emite_uno else
                     'Plan manual desde hoy · cadencia ~' + str(cad) + 'd · demanda ' + format(demand_g, '.0f') + ' g/d')
@@ -14518,7 +14578,14 @@ def plan_programar_cadencia_desde_lote(lote_id):
         interval_dias = int(round(min(meses, 12.0) * 30.44))
     interval_dias = max(7, min(interval_dias, 400))
     if first_offset_dias <= 0:
-        first_offset_dias = interval_dias
+        # ⚠ LA REGLA DE LOS 20 DÍAS (Sebastián 4-ago: *"el sistema automático coloca las
+        # producciones 20 días antes de que se agote, esa es la regla primordial"*). Este camino
+        # -- "recalcular horizonte desde este lote" -- NO la aplicaba: ponía el primer lote a una
+        # cadencia exacta del ancla, sin mirar cuándo se agota lo que ya está hecho. Es la misma
+        # regla que el modal de Necesidades, escrita en un solo lugar (`BUFFER_REORDEN_DIAS`).
+        # Nunca se atrasa más de UNA cadencia desde el ancla: si el lote ancla es grande porque
+        # otro cliente se lleva parte, hay que respetar el ritmo que el usuario pidió.
+        first_offset_dias = max(1, interval_dias - BUFFER_REORDEN_DIAS)
     first_offset_dias = max(1, min(first_offset_dias, 400))
     try:
         kg_por_lote = float(body.get("kg_por_lote") or 0)
@@ -14620,7 +14687,12 @@ def plan_programar_cadencia_desde_lote(lote_id):
         _target = max(f_ancla + _tdC(days=_off), _hoy_co)
         # Sebastián 11-jul · CAPACIDAD DIARIA (espejo del gemelo producto): máx 2 lotes/día · lote ≥100kg va
         # SOLO · nunca finde/festivo · corre al próximo día hábil con cupo.
-        f_k = _proxima_fecha_habil(c, _target, lote_kg=(kg_por_lote + kg_otro_lote), producto_nombre=producto) or _dia_habil(_target)
+        # prefer_mwf: Sebastián 4-ago · *"siempre prefiere producir lunes, miércoles y viernes
+        # para que tengan martes y jueves de otras actividades"*. Es preferencia, no regla: el
+        # helper acepta martes/jueves si los preferidos están saturados.
+        f_k = _proxima_fecha_habil(c, _target, prefer_mwf=True,
+                                   lote_kg=(kg_por_lote + kg_otro_lote),
+                                   producto_nombre=producto) or _dia_habil(_target)
         # dedup: NO caer sobre un lote PRESERVADO del mismo producto (B2B/ejecutado/completado · #5) ni sobre la propia cadena.
         if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < 2 for _fu in _usadas):
             _saltados += 1
@@ -14706,6 +14778,19 @@ def plan_programar_cadencia_producto():
     # Sebastián 10-jul · COLOCAR LA PRODUCCIÓN FUENTE/ORIGEN: cuando el usuario marca una fecha de partida
     # (aunque sea PASADA · "ya la produje"), la creamos en el calendario como el punto de origen desde el
     # que cuenta la cadencia. kg_origen = lo realmente producido en esa fecha (puede diferir del kg de la cadena).
+    # ⚠ EL COLCHÓN SE GANA UNA VEZ (Sebastián 4-ago). En régimen cada lote repone lo que se
+    # vende en la cadencia, así el colchón se queda quieto en vez de acumularse ciclo tras ciclo
+    # (el default viejo, velocidad x (cadencia + 20), sumaba 20 días de stock cada vez). Pero
+    # ese colchón hay que GANARLO: el PRIMER lote de la cadena va más grande, y de ahí en
+    # adelante todos iguales. Si no viene, se usa el mismo kg de la cadena (compatible con
+    # cualquier caller viejo).
+    try:
+        kg_primer_lote = float(body.get("kg_primer_lote") or 0)
+    except Exception:
+        kg_primer_lote = 0.0
+    if kg_primer_lote <= 0:
+        kg_primer_lote = kg_por_lote
+    kg_primer_lote = min(kg_primer_lote, 2000.0)
     _crear_origen = bool(body.get("crear_origen"))
     try:
         kg_origen = float(body.get("kg_origen") or 0)
@@ -14811,7 +14896,12 @@ def plan_programar_cadencia_producto():
         # Sebastián 11-jul · CAPACIDAD DIARIA: máx 2 lotes/día · lote ≥100kg va SOLO · nunca finde/festivo.
         # _proxima_fecha_habil cuenta lo ya agendado (otros productos + los de esta cadena ya insertados en
         # la misma tx) y corre al próximo día hábil con CUPO. Fallback día hábil simple si no encuentra.
-        f_k = _proxima_fecha_habil(c, _target, lote_kg=(kg_por_lote + kg_otro), producto_nombre=producto) or _dia_habil(_target)
+        # Misma preferencia que el gemelo de arriba (M45: si toco uno, toco los dos).
+        # El primer lote de la cadena (k=0) trae el colchón; los demás reponen la cadencia.
+        _kg_este = kg_primer_lote if k == 0 else kg_por_lote
+        f_k = _proxima_fecha_habil(c, _target, prefer_mwf=True,
+                                   lote_kg=(_kg_este + kg_otro),
+                                   producto_nombre=producto) or _dia_habil(_target)
         # dedup: NO caer sobre un lote PRESERVADO del mismo producto (B2B/ejecutado/completado · ±1 día · #5) ni
         # sobre otro lote de la propia cadena. La capacidad cruzada (otros productos) ya la maneja _proxima_fecha_habil.
         if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < 2 for _fu in _usadas):
@@ -14825,7 +14915,7 @@ def plan_programar_cadencia_producto():
             "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
             "cantidad_kg, meses_cobertura, kg_otro_cliente, cadencia_dias) "
             "VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?, ?, ?)",
-            (producto, f_k.isoformat(), round(kg_por_lote + kg_otro, 2), meses_col,
+            (producto, f_k.isoformat(), round(_kg_este + kg_otro, 2), meses_col,
              round(kg_otro, 2), interval_dias))
         creados.append(f_k.isoformat())
         _usadas.append(f_k)
@@ -25227,6 +25317,13 @@ def _valida_fecha_iso(s):
 DIAS_HABILES = {0, 1, 2, 3, 4}        # lun=0 ... vie=4
 DIAS_PREFERIDOS = {0, 2, 4}            # lun, mié, vie (para canónico)
 MAX_PRODUCCIONES_POR_DIA = 2
+# Sebastián 4-ago: *"no pone más de 200 kilos por día"*, y aclarado después: *"no es tope duro,
+# se puede pasar"*. Hasta hoy el único límite era la CANTIDAD de lotes (2/día) y el "lote de
+# 100 kg va solo", así que un día podía quedar con 300 kg (dos de 150) o con 400 (uno solo) sin
+# que nada lo notara. Esto es una PREFERENCIA: el buscador de fecha corre el lote al día
+# siguiente si se pasa, pero si no encuentra hueco lo deja igual -- frenar una producción por
+# esto sería peor que el problema.
+MAX_KG_POR_DIA_PREFERIDO = 200.0
 # Para que el mensaje de rechazo diga QUÉ día es (un "2026-08-01 no es hábil" no ayuda).
 _NOMBRE_DIA = {0: 'lunes', 1: 'martes', 2: 'miércoles', 3: 'jueves',
                4: 'viernes', 5: 'sábado', 6: 'domingo'}
@@ -25376,7 +25473,7 @@ def _es_producto_complejo(producto_nombre, conn=None):
 
 
 def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400,
-                         lote_kg=None, producto_nombre=None):
+                         lote_kg=None, producto_nombre=None, _respetar_kg=True):
     """Devuelve la próxima fecha date que cumpla:
     - Día hábil (lun-vie, no fines de semana, NO festivo colombiano)
     - Cuenta de producciones activas ese día < MAX_PRODUCCIONES_POR_DIA
@@ -25420,16 +25517,34 @@ def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400,
             ).fetchall()
             count = len(rows)
             ya_hay_grande = any((r[1] or 0) >= LOTE_GRANDE_KG for r in rows)
+            # Los kilos que ya tiene ese día. Contar lotes no alcanza: dos de 150 kg pasaban el
+            # "máximo 2 por día" y dejaban 300 kg en una jornada.
+            kg_dia = sum(float(r[1] or 0) for r in rows)
+            _kg_nuevo = float(lote_kg or 0)
+            # Preferencia, no muro (Sebastián: "no es tope duro, se puede pasar"): en la primera
+            # vuelta se saltean los días que se pasarían de 200 kg; si no aparece ninguno libre,
+            # la segunda vuelta los acepta. Así el plan se acomoda solo cuando puede, y nunca
+            # deja un producto sin fecha por una preferencia de carga.
+            _cabe_kg = (kg_dia + _kg_nuevo) <= MAX_KG_POR_DIA_PREFERIDO or _kg_nuevo > MAX_KG_POR_DIA_PREFERIDO
 
             if es_grande:
                 # Lote grande · solo permitido si día está vacío
-                if count == 0:
+                if count == 0 and (_cabe_kg or not _respetar_kg):
                     return cur
             else:
                 # Lote normal · permitido si <MAX y NO hay grande ya
-                if count < MAX_PRODUCCIONES_POR_DIA and not ya_hay_grande:
+                if count < MAX_PRODUCCIONES_POR_DIA and not ya_hay_grande \
+                        and (_cabe_kg or not _respetar_kg):
                     return cur
         cur = cur + _td(days=1)
+    # Segunda vuelta SIN la preferencia de kilos ni la de lun/mié/vie: es mejor un día cargado
+    # que un producto sin programar. Se avisa en el log para que se pueda ver por qué.
+    if _respetar_kg or prefer_mwf:
+        log.info('capacidad: no hubo día que respetara la preferencia (200 kg/día · lun-mié-vie) '
+                 'para %s desde %s · se acomoda igual', producto_nombre or '?', fecha_obj)
+        return _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False,
+                                    max_lookahead=max_lookahead, lote_kg=lote_kg,
+                                    producto_nombre=producto_nombre, _respetar_kg=False)
     return None
 
 
