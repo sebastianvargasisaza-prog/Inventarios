@@ -150,6 +150,15 @@ CORAZON=(
   # testearla. Y las tarjetas de Necesidades sumaban 26 sobre 28 SKUs: los 2 que faltaban
   # eran productos que VENDEN y el plan no ve por falta de mapeo.
   "tests/test_salud_cadena_necesidades.py"
+  # El modal Programar decia "materias primas OK, listo para producir" contestando por UN lote
+  # del maestro de formulas y sumando stock EN CUARENTENA como si fuera usable -- y sin mirar
+  # los envases. Ahora contesta por los kg que se van a programar, con el stock que la
+  # produccion puede consumir de verdad, y con frasco/tapa/caja/etiqueta.
+  "tests/test_disponibilidad_para_kg.py"
+  # La decision "30 kg cada 2 meses" no se guardaba: el modal la reconstruia midiendo los dias
+  # entre los dos primeros lotes futuros, asi que al mover un lote cambiaba sola y con un solo
+  # lote volvia al default. El modal gemelo del calendario SI la guardaba: la asimetria era el bug.
+  "tests/test_decision_se_guarda.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

@@ -824,3 +824,75 @@ dice en **unidades** cuánto se vendió bajo SKU huérfanos en 30 días — el c
 cuánto duele; las unidades sí (M124).
 
 Tests: `tests/test_salud_cadena_necesidades.py` (en el gate).
+
+## 🔎 PROG-N+8 · "¿Alcanza para ESTE lote?" · MP y envases (4-ago)
+
+Sebastián, sobre el modal Programar: *"que diga la materia prima si alcanza para la próxima
+producción y los envases"*. El bloque verde que había decía **"Materias primas OK · 26 items con
+stock suficiente para 1 lote · listo para producir"** y era la afirmación más confiada de la
+pantalla siendo la más incompleta:
+
+- calculaba contra **un lote del `lote_size_kg` del maestro**, no contra los kilos que el usuario
+  está por programar (fórmula de 35 kg + cadena de 60 → contestaba por 35);
+- sumaba el stock con un `SUM` **crudo que NO excluye** cuarentena, cuarentena extendida, vencido,
+  rechazado, agotado ni bloqueado → decía "listo" con material que el FEFO no puede consumir;
+- usaba `cantidad_g_por_lote` en vez del **porcentaje** (la base que ya produjo descuentos ~1000×
+  cortos · M16/M50/M71);
+- **no miraba los envases**: se podía tener las 26 materias primas y no tener con qué envasar.
+
+**Helper canónico:** `plan.disponibilidad_para_kg(conn, producto, kg)` → `{kg, mp{...},
+envases{...}}`, y el endpoint `GET /api/plan/disponibilidad-para-kg?producto=&kg=`.
+
+**Invariantes:**
+- La regla de explosión es la MISMA que usa el descuento real: **porcentaje-first reescalado al
+  kg pedido**; `cantidad_g_por_lote` sólo de fallback y siempre reescalado por `kg / lote_base`,
+  nunca crudo. Si el modal usara otra regla, aprobaría un lote que después no descuenta igual.
+- El stock sale de `_get_mp_stock` (canónico, 6 estados excluidos) y de `_get_mee_stock`. Lo que
+  se excluye **se enumera** en `mp['excluye']` (M124).
+- Lo pendiente en compras se lee **en bloque** (`_pendiente_en_compras_bulk`): este endpoint se
+  llama en cada tecla de kg y por-ítem serían ~30 consultas por pulsación (M43).
+- Las MP con `controla_stock=0` (el agua del lab) no se chequean.
+- **Envases:** frasco, tapa, caja y **etiqueta** (mig 346) desde `producto_presentaciones`. El
+  bulk se reparte entre presentaciones **pesando por volumen** (uds × ml, M72), no por share de
+  unidades. Sin ventas de referencia el reparto cae a estimado-por-volumen y **lo declara** en
+  `fuente_reparto`. Sin presentación o sin envase asignado devuelve `SIN_PRESENTACION` /
+  `SIN_ENVASE` con motivo, nunca un número inventado.
+- **⚠ La serigrafía se INFORMA, no se resta.** Cuando un envase se manda a marcar, su Salida ya se
+  registró, así que `_get_mee_stock` **no lo cuenta**. Restarlo otra vez sería descontarlo dos
+  veces: exactamente el doble descuento que reportó Catalina (PROG-N+6). Se muestran dos
+  cantidades aparte: `en_marcacion` (afuera, estado `enviado`) y `esperando_arte` (volvió, entró
+  en cuarentena, estado `recibido`).
+
+Tests: `tests/test_disponibilidad_para_kg.py` (en el gate · el de cuarentena probado con el bug
+viejo reintroducido a propósito).
+
+## 💾 PROG-N+9 · La decisión de producción se GUARDA (4-ago)
+
+Sebastián: *"digo 30 kilos cada 2 meses, guardar · ¿cómo garantizamos que se replique y que
+cuando se abra aparezca?"*.
+
+No se guardaba. El modal la **reconstruía** midiendo los días entre los dos primeros lotes
+futuros (`_cadenaExistente`), así que mentía en cinco escenarios: al mover un lote la cadencia
+cambiaba sola; al quedar un solo lote futuro volvía al default de 2 meses; al cancelar lotes,
+igual; una cadena creada por los generadores (`eos_canonico`/`eos_proyeccion`) era **invisible**;
+y el corrimiento a día hábil ya distorsionaba la medición ("cada 60 días" se leía 1,9 ó 2,1
+meses).
+
+**Lo llamativo: el modal GEMELO del calendario sí la guardaba**, en `sku_planeacion_config` vía
+`POST /api/programacion/decision-produccion`. Dos pantallas que hacen lo mismo con dos
+comportamientos distintos: el arreglo no fue inventar una tabla, fue que ésta escriba donde la
+otra ya escribía.
+
+**Invariantes:**
+- Al crear la cadena, el modal guarda `cadencia_dias`, `kg_objetivo_lote` y `horizonte_dias`.
+  Va **después** de crear la cadena y es best-effort: si falla, la cadena ya quedó bien y no se
+  le tumba al usuario lo que sí funcionó.
+- **NUNCA manda `mix_mode`.** Ese endpoint descongela el mix cuando el campo CAMBIA, y mandar el
+  default desde acá borraría un mix puesto en `fijo` a propósito (M85).
+- Al abrir, la precedencia es: **decisión guardada → lo que se deduce de los lotes → default**.
+  El payload de `/api/plan/necesidades` trae `decision_guardada` por producto (`None` si el
+  producto no tiene: no se inventa una decisión que nadie tomó).
+- El cruce producto↔decisión usa `_norm_prod_fuerte` en los dos lados (M2): con otro
+  normalizador la decisión existiría en la base y no llegaría nunca a la pantalla.
+
+Tests: `tests/test_decision_se_guarda.py` (en el gate).

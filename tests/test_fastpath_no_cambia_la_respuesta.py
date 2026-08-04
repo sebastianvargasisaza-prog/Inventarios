@@ -101,9 +101,14 @@ def test_el_completado_de_SKUs_no_tiene_tope_arbitrario():
     ruta = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
                          'api', 'blueprints', 'plan.py')
     src = open(ruta, encoding='utf-8').read()
-    m = re.search(r'_faltan\s*=\s*(.+)', src)
-    assert m, 'no encontré el cálculo de los SKUs faltantes'
-    linea = m.group(1)
+    # La búsqueda va ANCLADA al fast-path (`_conocidos`), no a la primera línea del archivo que
+    # diga `_faltan =`: cualquier variable con ese nombre en otra función la secuestraba y el
+    # guard terminaba midiendo código que no tiene nada que ver (pasó el 4-ago con el helper de
+    # disponibilidad). Un trinquete que apunta al lugar equivocado deja de proteger sin avisar.
+    cands = [mm for mm in re.finditer(r'_faltan\s*=\s*(.+)', src) if '_conocidos' in mm.group(1)]
+    assert cands, 'no encontré el cálculo de los SKUs faltantes del fast-path'
+    assert len(cands) == 1, 'hay más de un cálculo de faltantes · ¿cuál manda? (M1)'
+    linea = cands[0].group(1)
     assert '[:40]' not in linea and '[:20]' not in linea and '[:50]' not in linea, (
         'volvió el tope arbitrario: %s' % linea)
     assert 'sorted(' in linea, (

@@ -27161,8 +27161,20 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
     }
 
+    // ── ¿Con qué cuento para el lote que estoy por programar? ──
+    // Sebastián 4-ago: *"que diga la materia prima si alcanza para la próxima producción y los
+    // envases"*. Este contenedor lo llena `_dispCargar` con la respuesta del backend, que sí
+    // contesta por LOS KILOS de la cadena y sí mira los envases. El bloque viejo de abajo queda
+    // como respaldo hasta que la primera respuesta llegue: si lo sacara, la ficha quedaría con
+    // un hueco mientras carga.
+    html += '<div id="nec-disp" data-prod="' + escapeHtmlNec(p.producto_nombre || '') + '"></div>';
+
     // ── Match materias primas · ¿puede fabricarse? ──
     // Sebastián 13-may-2026: bloque CRÍTICO antes de programar
+    // ⚠ Este bloque contesta por UN lote del maestro de fórmulas y su stock NO excluye
+    // cuarentena. Queda SÓLO como respaldo mientras carga la respuesta real (`nec-disp`), que
+    // lo oculta apenas llega. No borrarlo: sin él la ficha muestra un hueco al abrir.
+    html += '<div id="nec-disp-viejo">';
     if (p.mps_status === 'OK') {
       html += '<div style="background:var(--cx-success-pale);border-left:4px solid var(--cx-success);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--cx-success-text)">';
       html += '🧪 <strong>Materias primas OK</strong> · ' + p.mps_total_items + ' items con stock suficiente para 1 lote · listo para producir';
@@ -27198,6 +27210,7 @@ async function ckMarcar(itemId, estado){
       });
       html += '</tbody></table><div style="font-size:10px;color:var(--cx-text-faint);margin-top:4px">🆕 sin mov = código sin movimientos en el kardex (nuevo o sin recibir) · revisá que esté bien mapeado.</div></div></details>';
     }
+    html += '</div>';   // cierra nec-disp-viejo
 
     // ═══════ PROGRAMAR PRODUCCIÓN · CANÓNICO MANUAL (Sebastián 10-jul) ═══════
     // Modelo nuevo (Alejandro no quiere sugerencias): la programación vive SOLO desde el punto de
@@ -27205,16 +27218,29 @@ async function ckMarcar(itemId, estado){
     // sin "adelantar", sin próxima sugerida. Punto de partida → cada X meses → Y kg/lote → 1 o 2 años.
     {
       var _ceM = _cadenaExistente(p);   // si ya hay cadena, mostrarla (solo informativo)
+      // La DECISIÓN guardada manda sobre lo que se deduce midiendo los lotes: si movés uno, la
+      // medición cambia sola y el modal te mostraba una cadencia que vos nunca elegiste.
+      var _decG = p.decision_guardada || null;
       // Punto de origen: la última producción real (editable) · si no hay, hoy.
       var _hoyCo = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
       var _partFecha = (p.ultima_produccion_fecha || _hoyCo).slice(0, 10);
       var _partKg = (p.ultima_produccion_kg != null && p.ultima_produccion_kg > 0) ? p.ultima_produccion_kg : (p.lote_bulk_kg || 30);
-      var _mesesM = _ceM ? _ceM.meses : 2;
+      // Orden de precedencia: lo que el usuario GUARDÓ · después lo que se deduce de los lotes ·
+      // por último el default. Antes la decisión guardada ni se miraba.
+      var _mesesM = _decG && _decG.cadencia_dias
+        ? Math.round(_decG.cadencia_dias / 30.44 * 10) / 10
+        : (_ceM ? _ceM.meses : 2);
       var _velDiaM = p.velocidad_kg_dia || 0;
       // Sebastián 11-jul · el kg por default = lo NECESARIO para durar la cadencia + 20d de reorden (no venta×meses
       // pelado ni el kg de la cadena vieja): velocidad_kg_dia × (interval + 20). El usuario lo puede editar.
-      var _intM = Math.max(Math.round(_mesesM * 30.44), 15);
-      var _kgM = (_velDiaM > 0) ? (Math.round(_velDiaM * (_intM + 20) * 10) / 10) : (_ceM ? _ceM.kg.toFixed(1) : _partKg);
+      var _intM = (_decG && _decG.cadencia_dias)
+        ? _decG.cadencia_dias : Math.max(Math.round(_mesesM * 30.44), 15);
+      var _kgM = (_decG && _decG.kg_objetivo_lote)
+        ? _decG.kg_objetivo_lote
+        : ((_velDiaM > 0) ? (Math.round(_velDiaM * (_intM + 20) * 10) / 10)
+                          : (_ceM ? _ceM.kg.toFixed(1) : _partKg));
+      var _aniosM = (_decG && _decG.horizonte_dias)
+        ? Math.max(1, Math.min(3, Math.round(_decG.horizonte_dias / 365))) : 2;
       html += '<div style="background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:10px;padding:14px;margin:14px 0">';
       html += '<div style="font-size:14px;font-weight:800;color:var(--cx-primary-text);margin-bottom:8px">🏭 Producción</div>';
       // 📈 Venta esperada/mes (Sebastián 20-jul · mig 365): override cuando Shopify reciente engaña.
@@ -27247,7 +27273,16 @@ async function ckMarcar(itemId, estado){
       html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
       html += '<span style="font-size:12px;color:var(--cx-primary-text);font-weight:700">Cada <input id="cm-meses" type="number" min="0.5" max="12" step="0.5" value="' + _mesesM + '" oninput="_cmSyncFromMeses(' + idx + ')" style="width:44px;padding:3px 4px;border:1px solid var(--cx-primary-light);border-radius:4px;text-align:center;font-weight:700"> meses <span style="color:var(--cx-text-faint);font-weight:600">o</span> <input id="cm-dias" type="number" min="15" max="400" value="' + Math.round(_mesesM * 30.44) + '" oninput="_cmSyncFromDias(' + idx + ')" title="cadencia exacta en días (ej. 45)" style="width:48px;padding:3px 4px;border:1px solid var(--cx-primary-light);border-radius:4px;text-align:center;font-weight:700"> días</span>';
       html += '<span style="font-size:12px;color:var(--cx-primary-text);font-weight:700">· <input id="cm-kg" type="number" min="0.1" step="0.1" value="' + _kgM + '" oninput="_cmPreview(' + idx + ')" title="kg de cada lote de la cadena (editable)" style="width:62px;padding:3px 4px;border:1px solid var(--cx-primary);border-radius:4px;text-align:center;font-weight:800;color:var(--cx-primary-text)"> kg/lote</span>';
-      html += '<span style="font-size:12px;color:var(--cx-primary-text);font-weight:700">· Horizonte <select id="cm-anios" onchange="_cmPreview(' + idx + ')" style="padding:3px 4px;border:1px solid var(--cx-primary-light);border-radius:4px;font-weight:700"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></span>';
+      html += '<span style="font-size:12px;color:var(--cx-primary-text);font-weight:700">· Horizonte <select id="cm-anios" onchange="_cmPreview(' + idx + ')" style="padding:3px 4px;border:1px solid var(--cx-primary-light);border-radius:4px;font-weight:700">'
+        + [1,2,3].map(function(a){ return '<option value="' + a + '"' + (a === _aniosM ? ' selected' : '') + '>' + a + ' año' + (a===1?'':'s') + '</option>'; }).join('')
+        + '</select></span>';
+      // Que se vea que esto NO es un default: es lo que el usuario decidió y el sistema guardó.
+      if (_decG && (_decG.cadencia_dias || _decG.kg_objetivo_lote)) {
+        html += '<div style="font-size:10.5px;color:var(--cx-success-text);margin:-4px 0 8px;font-weight:700">💾 Tu decisión guardada: '
+          + (_decG.kg_objetivo_lote ? _decG.kg_objetivo_lote + ' kg' : 'kg sin fijar')
+          + ' cada ' + (_decG.cadencia_dias ? _decG.cadencia_dias + ' días' : 'cadencia sin fijar')
+          + '. Cambiala abajo y volvé a crear la cadena.</div>';
+      }
       html += '</div>';
       html += '<div id="cm-preview-' + idx + '" style="font-size:11px;color:var(--cx-primary-text);background:var(--cx-card);border:1px solid var(--cx-primary-soft);border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:8px"></div>';
       html += '<button onclick="programarCadenaManual(' + idx + ')" style="background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Crear cadena en el calendario</button>';
@@ -27463,6 +27498,102 @@ async function ckMarcar(itemId, estado){
     _cmAutoKg(idx);
     _cmPreview(idx);
   }
+  // ═══ ¿Con qué cuento para ESTE lote? (Sebastián 4-ago) ═══════════════════════
+  // El bloque viejo contestaba por un lote del maestro de fórmulas, sumaba stock en cuarentena
+  // como si fuera usable y no miraba los envases. Este pregunta al backend por los kilos que
+  // están en pantalla, y se vuelve a preguntar cuando el usuario los cambia.
+  function _dispPinta(d){
+    var cont = document.getElementById('nec-disp'); if(!cont || !d) return;
+    // El bloque viejo era el respaldo mientras cargaba · con la respuesta real ya sobra.
+    var viejo = document.getElementById('nec-disp-viejo');
+    if(viejo) viejo.style.display = 'none';
+    function caja(titulo, estado, cuerpo, nota){
+      var ok = (estado === 'OK');
+      var gris = (estado === 'SIN_FORMULA' || estado === 'SIN_PRESENTACION' || estado === 'SIN_ENVASE' || estado === 'SIN_DATO');
+      var bg = gris ? 'var(--cx-border-soft)' : (ok ? 'var(--cx-success-pale)' : 'var(--cx-danger-pale)');
+      var bd = gris ? 'var(--cx-text-faint)' : (ok ? 'var(--cx-success)' : 'var(--cx-danger)');
+      var fg = gris ? 'var(--cx-text-mute)' : (ok ? 'var(--cx-success-text)' : 'var(--cx-danger-text)');
+      return '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-left:4px solid ' + bd
+        + ';border-radius:10px;padding:11px 13px">'
+        + '<div style="font-size:12px;font-weight:800;color:' + fg + ';margin-bottom:5px">' + titulo + '</div>'
+        + cuerpo
+        + (nota ? '<div style="font-size:10.5px;color:var(--cx-text-mute);margin-top:6px;line-height:1.45">' + nota + '</div>' : '')
+        + '</div>';
+    }
+    var mp = d.mp || {}, en = d.envases || {};
+    // MATERIA PRIMA
+    var mpCuerpo;
+    if(mp.estado === 'SIN_FORMULA'){
+      mpCuerpo = '<div style="font-size:11.5px;color:var(--cx-text-mute)">' + (mp.nota || 'sin fórmula') + '</div>';
+    } else {
+      var faltan = (mp.items || []).filter(function(i){ return i.estado === 'FALTA'; });
+      mpCuerpo = '<div style="font-size:11.5px;color:var(--cx-text-soft)">'
+        + (mp.n_faltan ? ('Faltan <b>' + mp.n_faltan + '</b> de ' + mp.n_total + ' materias primas.')
+                       : ('Las <b>' + mp.n_total + '</b> alcanzan para los ' + (d.kg || 0) + ' kg.'))
+        + ((mp.n_en_camino || 0) > 0 ? ' · <b>' + mp.n_en_camino + '</b> ya pedida(s), aún sin llegar.' : '')
+        + '</div>';
+      if(faltan.length){
+        mpCuerpo += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:7px">';
+        faltan.slice(0, 8).forEach(function(i){
+          mpCuerpo += '<tr style="border-top:1px solid rgba(128,120,150,.2)">'
+            + '<td style="padding:3px 0"><span style="font-family:ui-monospace;font-size:10px;color:var(--cx-text-mute)">' + escapeHtmlNec(i.codigo) + '</span> ' + escapeHtmlNec(i.nombre) + '</td>'
+            + '<td style="padding:3px 0;text-align:right;font-weight:700;white-space:nowrap">falta ' + Math.round(i.falta_g).toLocaleString('es-CO') + ' g</td></tr>';
+        });
+        mpCuerpo += '</table>';
+        if(faltan.length > 8) mpCuerpo += '<div style="font-size:10.5px;color:var(--cx-text-mute);margin-top:4px">… y ' + (faltan.length - 8) + ' más</div>';
+      }
+    }
+    // ENVASES
+    var enCuerpo;
+    if((en.items || []).length === 0){
+      enCuerpo = '<div style="font-size:11.5px;color:var(--cx-text-mute)">' + escapeHtmlNec(en.nota || 'sin datos de envase') + '</div>';
+    } else {
+      enCuerpo = '<div style="font-size:11.5px;color:var(--cx-text-soft)">'
+        + (en.n_faltan ? ('Faltan <b>' + en.n_faltan + '</b> de ' + en.items.length + ' componentes.')
+                       : ('Los <b>' + en.items.length + '</b> componentes alcanzan.'))
+        + '</div><table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:7px">';
+      en.items.forEach(function(i){
+        var extra = '';
+        if(i.en_marcacion > 0) extra += ' <span title="Salieron de la planta a marcar · ya no están en el kardex" style="color:var(--cx-warn-text);font-weight:700">· ' + i.en_marcacion.toLocaleString('es-CO') + ' en serigrafía</span>';
+        if(i.esperando_arte > 0) extra += ' <span title="Volvieron de marcar y esperan el visto bueno de arte · todavía no cuentan" style="color:var(--cx-info-text);font-weight:700">· ' + i.esperando_arte.toLocaleString('es-CO') + ' esperando arte</span>';
+        enCuerpo += '<tr style="border-top:1px solid rgba(128,120,150,.2)">'
+          + '<td style="padding:3px 0">' + i.tipo + ' <span style="font-family:ui-monospace;font-size:10px;color:var(--cx-text-mute)">' + escapeHtmlNec(i.codigo) + '</span>' + extra + '</td>'
+          + '<td style="padding:3px 0;text-align:right;white-space:nowrap;font-weight:700;color:' + (i.estado === 'FALTA' ? 'var(--cx-danger-text)' : 'var(--cx-text)') + '">'
+          + i.hay.toLocaleString('es-CO') + ' / ' + i.necesarias.toLocaleString('es-CO')
+          + (i.falta ? ' <span style="font-size:10px">(faltan ' + i.falta.toLocaleString('es-CO') + ')</span>' : '')
+          + '</td></tr>';
+      });
+      enCuerpo += '</table>';
+    }
+    cont.innerHTML =
+      '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:800;margin:2px 0 7px">'
+      + '🔎 Con qué cuento <span style="font-weight:600;color:var(--cx-text-faint)">para el lote de '
+      + (d.kg || 0) + ' kg que estás por programar</span></div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-bottom:12px">'
+      + caja('🧪 Materia prima', mp.estado, mpCuerpo, mp.nota)
+      + caja('📦 Envases', en.estado, enCuerpo, en.nota)
+      + '</div>';
+  }
+  // Una sola consulta en vuelo por vez: el usuario teclea los kg y esto se dispara en cada
+  // tecla. Sin el debounce y el token, tres consultas concurrentes ocupan los 3 workers (M43).
+  window._DISP_T = null; window._DISP_SEQ = 0;
+  function _dispCargar(kg){
+    var cont = document.getElementById('nec-disp'); if(!cont) return;
+    var prod = cont.getAttribute('data-prod') || '';
+    if(!prod || !(kg > 0)) return;
+    clearTimeout(window._DISP_T);
+    window._DISP_T = setTimeout(async function(){
+      var mio = ++window._DISP_SEQ;
+      try{
+        var r = await fetch('/api/plan/disponibilidad-para-kg?producto=' + encodeURIComponent(prod)
+                            + '&kg=' + encodeURIComponent(kg), {credentials:'same-origin'});
+        var d = await r.json();
+        if(mio !== window._DISP_SEQ) return;   // llegó una respuesta vieja · la descarto
+        if(d && d.ok) _dispPinta(d);
+      }catch(e){ /* el bloque de respaldo sigue a la vista */ }
+    }, 350);
+  }
+
   function _cmPreview(idx){
     var el = document.getElementById('cm-preview-' + idx); if(!el) return;
     var p = window._NEC_PRODUCTOS_CACHE[idx];
@@ -27498,6 +27629,9 @@ async function ckMarcar(itemId, estado){
       : (cc.dhpCap
          ? 'la 1ª nueva <b>una cadencia después</b> del origen (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'-') + '</b>'
          : 'la 1ª nueva cuando se agota lo fabricado (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'-') + '</b>');
+    // Lo que cuenta es el lote que se va a hacer: si cambian los kg, la pregunta "¿alcanza?"
+    // cambia con ellos. Va acá porque _cmPreview corre en cada tecla de kg/meses/días.
+    try{ _dispCargar(cc.kg); }catch(e){}
     el.innerHTML = _ref
       + '📦 Un lote de <b>' + cc.kg.toFixed(1) + ' kg</b> cada <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> (~' + cc.intervalDias + ' días)<br>'
       + '🗓️ Partida <b>' + cc.partida + '</b> · ' + _firstTxt + ', luego cada ' + cc.intervalDias + 'd · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';
@@ -27598,6 +27732,18 @@ async function ckMarcar(itemId, estado){
       }
       if(!r.ok){ window._cadenaBusy = false; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
       window._cadenaBusy = false;
+      // GUARDAR LA DECISIÓN (Sebastián 4-ago: *"¿cómo garantizamos que se replique y que cuando
+      // se abra aparezca?"*). Hasta ahora sólo quedaban los lotes y el modal deducía la cadencia
+      // midiéndolos: al mover uno cambiaba sola. Va DESPUÉS de crear la cadena y es best-effort
+      // -- si esto falla, la cadena ya quedó bien y no se le tumba al usuario lo que funcionó.
+      // ⚠ NO se manda `mix_mode`: ese endpoint descongela el mix cuando el campo CAMBIA, y
+      // mandar el default desde acá borraría un mix puesto en 'fijo' a propósito (M85).
+      try{
+        await fetch('/api/programacion/decision-produccion', {method:'POST', credentials:'same-origin',
+          headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+          body: JSON.stringify({producto: p.producto_nombre, cadencia_dias: cc.intervalDias,
+                                kg_objetivo_lote: cc.kg, horizonte_dias: cc.anios * 365})});
+      }catch(e){ /* la cadena ya se creó · la decisión se puede volver a guardar */ }
       var _cr = d.creados || 0, _esp = d.esperados || _cr;
       _toastCadena('✓ ' + (p.producto_nombre || '') + ' · ' + (d.origen_creado ? 'fuente ' + (d.origen_fecha||'') + ' + ' : '') + _cr + '/' + _esp + ' lotes');
       if(d.aviso){ alert('⚠ ' + (p.producto_nombre || '') + '\\n\\n' + d.aviso); }

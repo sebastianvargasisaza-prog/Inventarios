@@ -136,6 +136,268 @@ def salud_cadena(lotes, *, velocidad_uds_dia, ml_unidad, stock_uds, hoy,
     return res
 
 
+def disponibilidad_para_kg(conn, producto, kg):
+    """¿Alcanza la materia prima Y los envases para producir EXACTAMENTE estos kilos?
+
+    Sebastián 4-ago, sobre el modal Programar: *"que diga la materia prima si alcanza para la
+    próxima producción y los envases"*. Lo que había contestaba otra pregunta y con datos
+    inflados:
+
+      · calculaba contra UN lote del tamaño del maestro de fórmulas, no contra los kilos que el
+        usuario está por programar (si la fórmula dice 35 kg y vos armás una cadena de 60, te
+        contestaba por 35);
+      · sumaba el stock con una consulta CRUDA que NO excluye cuarentena, vencido, rechazado ni
+        bloqueado -- o sea decía "listo para producir" con material que el FEFO no puede
+        consumir;
+      · usaba los gramos por lote en vez del porcentaje de la fórmula, que es la base que ya
+        produjo descuentos ~1000x cortos (M16/M50/M71);
+      · y NO miraba los envases: podés tener las 26 materias primas y no tener con qué envasar.
+
+    Devuelve `{'kg', 'mp': {...}, 'envases': {...}}`. Lo que el cálculo EXCLUYE se enumera en
+    `mp['excluye']` y `envases['nota']`: un total que deja cosas afuera sin nombrarlas se lee
+    como un faltante y es lo que impide entender por qué no cuadra (M124).
+    """
+    from blueprints.programacion import (
+        _get_mee_stock, _get_mp_stock, _resolver_material_bodega)
+
+    kg = float(kg or 0)
+    out = {'kg': round(kg, 2),
+           'mp': {'estado': 'SIN_DATO', 'items': [], 'n_total': 0, 'n_faltan': 0,
+                  'n_en_camino': 0, 'excluye': [], 'nota': ''},
+           'envases': {'estado': 'SIN_DATO', 'items': [], 'n_faltan': 0, 'nota': '',
+                       'fuente_reparto': ''}}
+    if kg <= 0:
+        out['mp']['nota'] = 'sin kilos que verificar'
+        out['envases']['nota'] = 'sin kilos que verificar'
+        return out
+
+    c = conn.cursor() if hasattr(conn, 'cursor') else conn
+
+    # ── MATERIA PRIMA ────────────────────────────────────────────────────────
+    # La regla es la MISMA que usa el descuento real (M16/M50/M71): porcentaje-first
+    # reescalado al kg pedido; los gramos por lote quedan de fallback y SIEMPRE reescalados,
+    # nunca crudos. Si el modal usara otra regla, aprobaría un lote que después no descuenta
+    # igual.
+    try:
+        _lote_base = c.execute(
+            "SELECT COALESCE(lote_size_kg,0) FROM formula_headers "
+            " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+            " ORDER BY id DESC LIMIT 1", (producto,)).fetchone()
+        lote_base = float((_lote_base[0] if _lote_base else 0) or 0)
+        filas = c.execute("""
+            SELECT material_id, material_nombre, COALESCE(porcentaje,0), COALESCE(cantidad_g_por_lote,0)
+              FROM formula_items
+             WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))
+               AND TRIM(producto_nombre) NOT IN (
+                   SELECT TRIM(producto_nombre) FROM formula_headers WHERE COALESCE(activo,1)=0)
+        """, (producto,)).fetchall()
+    except Exception as _ef:
+        log.warning('disponibilidad: no pude leer la fórmula de %s: %s', producto, _ef)
+        filas, lote_base = [], 0.0
+
+    if not filas:
+        out['mp']['estado'] = 'SIN_FORMULA'
+        out['mp']['nota'] = 'sin fórmula activa · no se puede calcular la materia prima'
+    else:
+        stock_mp = _get_mp_stock(conn) or {}
+        # Lo que el stock canónico DEJA AFUERA, dicho con nombre propio.
+        out['mp']['excluye'] = ['cuarentena', 'cuarentena extendida', 'vencido',
+                                'rechazado', 'agotado', 'bloqueado']
+        acc = {}
+        for cod, nom, pct, g_lote in filas:
+            _p, _g = float(pct or 0), float(g_lote or 0)
+            if _p > 0:
+                g_total = (_p / 100.0) * kg * 1000.0
+            elif _g > 0 and lote_base > 0:
+                g_total = _g * (kg / lote_base)
+            else:
+                continue          # sin % ni lote base no se puede reescalar: no se inventa
+            cod_b = _resolver_material_bodega(c, cod or '', nom or '') or (cod or '')
+            if not cod_b:
+                continue
+            a = acc.setdefault(cod_b, {'codigo': cod_b, 'codigo_formula': cod or '',
+                                       'nombre': nom or '', 'necesario_g': 0.0})
+            a['necesario_g'] += g_total
+
+        # el agua del lab y todo lo de fabricación propia no se chequea (mig 218)
+        try:
+            infinitas = {str(r[0]).strip().upper() for r in c.execute(
+                "SELECT codigo_mp FROM maestro_mps WHERE COALESCE(controla_stock,1)=0").fetchall()}
+        except Exception:
+            infinitas = set()
+        infinitas.add('MPAGUALI01')
+
+        # Lo ya pedido se trae de UNA pasada: preguntarlo por ítem son ~30 consultas por
+        # apertura del modal, y este endpoint se llama cada vez que el usuario toca los kg
+        # (M43: lo pesado en la ruta de carga satura los 3 workers).
+        try:
+            from blueprints.compras import _pendiente_en_compras_bulk
+            pendientes = _pendiente_en_compras_bulk(c) or {}
+        except Exception as _epc:
+            log.warning('disponibilidad: no pude leer lo pendiente en compras: %s', _epc)
+            pendientes = {}
+
+        items, n_faltan, n_camino = [], 0, 0
+        for cod_b, a in sorted(acc.items()):
+            if cod_b.strip().upper() in infinitas:
+                continue
+            disp = float(stock_mp.get(cod_b, stock_mp.get(cod_b.upper(), 0)) or 0)
+            pend = float(pendientes.get(cod_b, pendientes.get(cod_b.upper(), 0)) or 0)
+            falta_fisico = a['necesario_g'] - disp
+            falta_real = falta_fisico - pend
+            if falta_real > 0.01:
+                est = 'FALTA'; n_faltan += 1
+            elif falta_fisico > 0.01:
+                est = 'EN_CAMINO'; n_camino += 1
+            else:
+                est = 'OK'
+            items.append({'codigo': cod_b, 'nombre': a['nombre'],
+                          'necesario_g': round(a['necesario_g'], 1),
+                          'disponible_g': round(disp, 1),
+                          'pendiente_g': round(pend, 1),
+                          'falta_g': round(max(falta_real, 0), 1),
+                          'estado': est})
+        out['mp'].update({
+            'items': items, 'n_total': len(items), 'n_faltan': n_faltan,
+            'n_en_camino': n_camino,
+            'estado': 'FALTA' if n_faltan else 'OK',
+            'nota': ('el stock NO cuenta lo que está en cuarentena, vencido ni rechazado: '
+                     'es el mismo que puede consumir la producción'),
+        })
+
+    # ── ENVASES ──────────────────────────────────────────────────────────────
+    out['envases'] = _envases_para_kg(c, conn, producto, kg)
+    return out
+
+
+def _envases_para_kg(c, conn, producto, kg):
+    """Frasco, tapa, caja y etiqueta que hacen falta para producir `kg` de este producto.
+
+    El bulk se reparte entre las presentaciones PESANDO POR VOLUMEN (uds × ml), no por el
+    share de unidades: una unidad de 30 ml se lleva el triple de granel que una de 10, así que
+    aplicar el share de unidades al kg sub-asigna la presentación grande (M72).
+
+    Y la serigrafía se INFORMA, no se resta: cuando un envase se manda a marcar, su Salida ya
+    se registró, así que el stock canónico NO lo cuenta. Restarlo otra vez sería descontarlo
+    dos veces -- que es exactamente el doble descuento que reportó Catalina.
+    """
+    from blueprints.programacion import _get_mee_stock
+
+    res = {'estado': 'SIN_DATO', 'items': [], 'n_faltan': 0, 'nota': '', 'fuente_reparto': ''}
+    try:
+        pres = c.execute(
+            "SELECT COALESCE(volumen_ml,0), COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), "
+            "       COALESCE(caja_codigo,''), COALESCE(etiqueta_codigo,''), "
+            "       COALESCE(ventas_mes_referencia,0), COALESCE(cantidad_fija_uds,0) "
+            "  FROM producto_presentaciones "
+            " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1",
+            (producto,)).fetchall()
+    except Exception as _ep:
+        log.warning('disponibilidad: no pude leer las presentaciones de %s: %s', producto, _ep)
+        res['nota'] = 'no se pudo leer la configuración de envases'
+        return res
+
+    pres = [p for p in pres if float(p[0] or 0) > 0]
+    if not pres:
+        res['estado'] = 'SIN_PRESENTACION'
+        res['nota'] = ('este producto no tiene presentación configurada · sin volumen y envase '
+                       'no hay forma de saber cuántos frascos hacen falta')
+        return res
+
+    # Peso de cada presentación = ventas × volumen. Sin ventas de referencia el reparto cae a
+    # uniforme-pesado-por-volumen y se DECLARA: es un número estimado, no medido.
+    total_peso = sum(float(p[5] or 0) * float(p[0] or 0) for p in pres)
+    res['fuente_reparto'] = 'ventas por presentación' if total_peso > 0 else 'estimado por volumen'
+    if total_peso <= 0:
+        total_peso = sum(float(p[0] or 0) for p in pres)
+        pesos = [float(p[0] or 0) / total_peso for p in pres] if total_peso > 0 else []
+    else:
+        pesos = [(float(p[5] or 0) * float(p[0] or 0)) / total_peso for p in pres]
+
+    necesarias = {}   # codigo -> {'tipo', 'uds'}
+    for pr, w in zip(pres, pesos):
+        vol = float(pr[0] or 0)
+        if vol <= 0 or w <= 0:
+            continue
+        kg_p = kg * w
+        uds = int(round((kg_p * 1000.0) / vol))
+        if uds <= 0:
+            continue
+        for cod, tipo in ((pr[1], 'frasco'), (pr[2], 'tapa'),
+                          (pr[3], 'caja'), (pr[4], 'etiqueta')):
+            cod = (cod or '').strip()
+            if not cod:
+                continue
+            n = necesarias.setdefault(cod.upper(), {'codigo': cod, 'tipo': tipo, 'uds': 0})
+            n['uds'] += uds
+
+    if not necesarias:
+        res['estado'] = 'SIN_ENVASE'
+        res['nota'] = ('la presentación no tiene envase asignado · mapealo en Presentaciones o '
+                       'no se puede saber si alcanza')
+        return res
+
+    stock_mee = _get_mee_stock(conn) or {}
+    # Lo que está AFUERA en serigrafía y lo que volvió pero espera el visto bueno de arte: son
+    # dos cantidades distintas y ninguna cuenta como disponible. Se muestran para que se
+    # entienda por qué el saldo es el que es.
+    afuera, esperando = {}, {}
+    try:
+        for r in c.execute(
+            "SELECT UPPER(TRIM(base_codigo)), COALESCE(SUM(cantidad_enviada),0) "
+            "  FROM marcacion_ordenes WHERE LOWER(COALESCE(estado,''))='enviado' "
+            " GROUP BY UPPER(TRIM(base_codigo))").fetchall():
+            afuera[r[0]] = float(r[1] or 0)
+        for r in c.execute(
+            "SELECT UPPER(TRIM(serigrafiado_codigo)), COALESCE(SUM(cantidad_recibida),0) "
+            "  FROM marcacion_ordenes WHERE LOWER(COALESCE(estado,''))='recibido' "
+            " GROUP BY UPPER(TRIM(serigrafiado_codigo))").fetchall():
+            esperando[r[0]] = float(r[1] or 0)
+    except Exception as _em:
+        # Si no se puede leer la marcación se sigue, pero se DECLARA: sin esto el saldo se ve
+        # más bajo de lo explicable y nadie entiende por qué (M100).
+        log.warning('disponibilidad: no pude leer marcación: %s', _em)
+        res['nota'] = 'no pude revisar qué hay en serigrafía'
+
+    items, n_faltan = [], 0
+    for k, n in sorted(necesarias.items(), key=lambda x: (x[1]['tipo'], x[0])):
+        hay = float(stock_mee.get(k, 0) or 0)
+        falta = n['uds'] - hay
+        items.append({
+            'codigo': n['codigo'], 'tipo': n['tipo'], 'necesarias': n['uds'],
+            'hay': int(round(hay)), 'falta': int(round(max(falta, 0))),
+            'en_marcacion': int(round(afuera.get(k, 0))),
+            'esperando_arte': int(round(esperando.get(k, 0))),
+            'estado': 'FALTA' if falta > 0.5 else 'OK',
+        })
+        if falta > 0.5:
+            n_faltan += 1
+    res.update({'items': items, 'n_faltan': n_faltan,
+                'estado': 'FALTA' if n_faltan else 'OK'})
+    if not res['nota']:
+        res['nota'] = ('lo que está en serigrafía ya salió del kardex: se muestra aparte, '
+                       'no se suma al disponible')
+    return res
+
+
+@bp.route("/api/plan/disponibilidad-para-kg")
+def plan_disponibilidad_para_kg():
+    """¿Alcanza MP y envases para producir estos kilos? · lo consulta el modal Programar."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    producto = (request.args.get("producto") or "").strip()
+    if not producto:
+        return jsonify({"error": "producto requerido"}), 400
+    try:
+        kg = float(request.args.get("kg") or 0)
+    except Exception:
+        kg = 0.0
+    conn = get_db()
+    return jsonify(dict(disponibilidad_para_kg(conn, producto, kg), ok=True, producto=producto))
+
+
 def _require_admin_or_compras():
     user = session.get("compras_user", "")
     if not user:
@@ -4374,6 +4636,28 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         __import__('logging').getLogger('plan').warning(
             'necesidades: no se pudo leer sobreproduccion_deliberada: %s', _esp)
 
+    # La DECISIÓN guardada del producto ("30 kg cada 2 meses, por 2 años"). Sebastián 4-ago:
+    # *"¿cómo garantizamos que se replique y que cuando se abra aparezca?"*. Hasta ahora el
+    # modal la RECONSTRUÍA midiendo los días entre los dos primeros lotes futuros: si movías un
+    # lote la cadencia cambiaba sola, y si quedaba uno solo volvía al default de 2 meses. Ahora
+    # se lee de donde el modal del calendario ya la guarda, y esto manda sobre la medición.
+    _decision_prod = {}
+    try:
+        from blueprints.programacion import _norm_prod_fuerte as _npf_dc
+        for _rdc in c.execute(
+            "SELECT producto_nombre, cadencia_dias, kg_objetivo_lote, horizonte_dias "
+            "  FROM sku_planeacion_config").fetchall():
+            if _rdc[1] is None and _rdc[2] is None and _rdc[3] is None:
+                continue          # fila sin decisión: no se inventa una
+            _decision_prod[_npf_dc(_rdc[0] or '')] = {
+                'cadencia_dias': int(_rdc[1]) if _rdc[1] else None,
+                'kg_objetivo_lote': float(_rdc[2]) if _rdc[2] else None,
+                'horizonte_dias': int(_rdc[3]) if _rdc[3] else None,
+            }
+    except Exception as _edc:
+        __import__('logging').getLogger('plan').warning(
+            'necesidades: no se pudo leer la decisión guardada: %s', _edc)
+
     # 2. Mapeo producto → sku_principal (para Shopify)
     # Estructura sku_producto_map: sku → producto_nombre
     # FIX 24-may PM · cargamos también es_regalo (mig 170) para excluir
@@ -4977,6 +5261,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             _sobreprod_motivo = _sobreprod_ok.get(_npf_sp(prod_nombre))
         except Exception:
             _sobreprod_motivo = None
+        try:
+            _decision_guardada = _decision_prod.get(_npf_dc(prod_nombre))
+        except Exception:
+            _decision_guardada = None
         _tendencia_pct = 0.0
         if _ov_vel is None and vel_60d > 0.001:
             # clamp a ±200% · una racha corta no debe disparar decisiones absurdas
@@ -5347,6 +5635,9 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "tendencia_pct": _tendencia_pct,
             # decisión del dueño: sobre-producir a propósito (mig 378) · el chip no lo alerta
             "sobreproduccion_deliberada": _sobreprod_motivo,
+            # La decisión GUARDADA (cadencia, kg, horizonte) · manda sobre la que el modal
+            # deducía midiendo los lotes. None = este producto todavía no tiene decisión.
+            "decision_guardada": _decision_guardada,
             "vel_uds_mes_predictiva": round(velocidad_uds_dia * 30, 0),
             "ml_unidad": ml_promedio,
             "ml_inferido": ml_inferido,  # FIX #2 · True = heurística por nombre, no SKU real
