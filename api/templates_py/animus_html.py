@@ -348,6 +348,8 @@ window.addEventListener('error', function(ev){
   </div>
 </div>
 
+</div>   <!-- cierra tab-caja · faltaba desde antes de la fusion -->
+
 <div id="tab-invfis" class="tab-panel">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
@@ -449,10 +451,7 @@ window.addEventListener('error', function(ev){
       </table>
     </div>
   </div>
-</div>
 
-<!-- TAB: INVENTARIO FISICO (modelo nuevo · ecuacion contable) -->
-  </div>
 
 
   <!-- DIAGNOSTICO -->
@@ -516,6 +515,7 @@ window.addEventListener('error', function(ev){
       </table>
     </div>
   </div>
+</div>   <!-- fin del sub-panel Conteo del dia -->
 </div>
 
 <!-- MODAL: Baseline -->
@@ -1623,7 +1623,8 @@ async function loadSolicitudes(){
   var tb = document.getElementById('sol-body');
   try {
     var filtro = document.getElementById('sol-filtro').value;
-    var r = await fetch('/api/solicitudes-compra/mis?estado=' + encodeURIComponent(filtro),
+    var r = await fetch('/api/solicitudes-compra/mis?ambito=animus&estado='
+                        + encodeURIComponent(filtro),
                         {credentials:'same-origin'});
     var d = await r.json();
     if (d.error) { tb.innerHTML = '<tr><td colspan="7" class="empty">' + esc(d.error) + '</td></tr>'; return; }

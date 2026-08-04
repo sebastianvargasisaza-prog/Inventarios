@@ -301,3 +301,67 @@ def test_las_dos_pestanas_quedaron_fusionadas_en_una():
     assert 'id="inv-exist"' in html and 'id="inv-conteo"' in html
     assert 'function invTab(' in html
     assert 'id="exi-body"' in html and 'id="modal-causa"' in html
+
+
+# ── QUE NINGUNA PESTAÑA QUEDE DENTRO DE OTRA ─────────────────────────────────
+# El 4-ago la fusión dejó `tab-invfis` ANIDADO dentro de `tab-caja`: con Caja abierta el
+# inventario aparecía pegado al final, y al abrir Inventario la pantalla salía EN BLANCO (un
+# padre oculto oculta al hijo, pase lo que pase con su clase `active`).
+#
+# La causa venía de ANTES: a `tab-caja` le faltaba un `</div>` y `tab-inventario` estaba
+# anidado adentro haciendo de tapón. Al sacar esa pestaña, el hueco quedó a la vista.
+#
+# El balance global de divs daba CERO y el node-check pasaba: ninguno de los dos ve un panel
+# metido dentro de otro. Lo único que lo detecta es medir el ANIDAMIENTO.
+
+def _paneles(html):
+    import re
+    def cierre(ini):
+        d = 0
+        for m in re.finditer(r'<div\b|</div>', html[ini:]):
+            d += 1 if m.group(0).startswith('<div') else -1
+            if d == 0:
+                return ini + m.end()
+        return None
+    ids = re.findall(r'<div id="(tab-[a-z]+)" class="tab-panel', html)
+    return {p: (html.index('<div id="%s" class="tab-panel' % p),
+                cierre(html.index('<div id="%s" class="tab-panel' % p))) for p in ids}
+
+
+def test_ninguna_pestana_queda_dentro_de_otra():
+    html = _html_animus()
+    p = _paneles(html)
+    assert len(p) >= 5, 'faltan paneles: %s' % sorted(p)
+    for a, (ia, fa) in p.items():
+        assert fa, 'el panel %s nunca cierra' % a
+        for b, (ib, _) in p.items():
+            if a != b:
+                assert not (ia < ib < fa), '%s quedó ANIDADO dentro de %s · nunca se vería' % (b, a)
+
+
+def test_cada_boton_de_pestana_tiene_su_panel():
+    """Un botón que apunta a un panel inexistente deja la pantalla en blanco: `switchTab` apaga
+    todos los paneles ANTES de encender el destino (M112)."""
+    import re
+    html = _html_animus()
+    for t in sorted(set(re.findall(r"switchTab\('([a-z]+)'\)", html))):
+        assert '<div id="tab-%s"' % t in html, 'switchTab(%r) no tiene panel' % t
+
+
+def test_los_bloques_del_conteo_viven_en_su_sub_pestana():
+    """Sueltos en la pestaña se veían en las DOS sub-pestañas, que es justo lo que la
+    sub-pestaña viene a evitar."""
+    import re
+    html = _html_animus()
+    def cierre(ini):
+        d = 0
+        for m in re.finditer(r'<div\b|</div>', html[ini:]):
+            d += 1 if m.group(0).startswith('<div') else -1
+            if d == 0:
+                return ini + m.end()
+    ic = html.index('<div id="inv-conteo"'); fc = cierre(ic)
+    ie = html.index('<div id="inv-exist"'); fe = cierre(ie)
+    for blq in ('Conteos pendientes hoy', 'Inventario esperado por SKU', 'Movimientos recientes'):
+        i = html.index(blq)
+        assert ic < i < fc, '%r quedó fuera de la sub-pestaña Conteo del día' % blq
+    assert ie < html.index('id="exi-body"') < fe

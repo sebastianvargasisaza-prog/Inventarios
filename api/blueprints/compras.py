@@ -5278,6 +5278,17 @@ def mis_solicitudes_con_ciclo():
         sql_solic += """
           AND COALESCE(s.categoria,'') NOT IN ('Cuenta de Cobro','Influencer/Marketing Digital')
           AND LOWER(COALESCE(s.area,'')) NOT IN ('marketing','marketing/animus')"""
+    # ?ambito=animus → sólo lo que se pide DESDE el módulo de ÁNIMUS (Sebastián 4-ago: "no
+    # entiendo por qué quedó esto acá, si no tiene nada que ver: es solicitudes de compras que
+    # Daniela haga para ÁNIMUS"). Sin este filtro la pestaña mostraba las SOL auto-generadas
+    # de PLANTA (materias primas del plan de producción), que son de Alejandro y Catalina y no
+    # tienen nada que hacer en la pantalla de Daniela.
+    # Las categorías de planta son las MISMAS que definen `fuente=planta` (INV-1 · las 3 fuentes
+    # son mutuamente excluyentes): filtrar por otro criterio las haría solaparse.
+    if (request.args.get('ambito') or '').strip().lower() == 'animus':
+        sql_solic += """
+          AND COALESCE(s.categoria,'') NOT IN ('Materia Prima','Empaque','Material de Empaque')
+          AND (UPPER(COALESCE(s.empresa,''))='ANIMUS' OR UPPER(COALESCE(s.area,''))='ANIMUS')"""
     sql_solic += " ORDER BY s.fecha DESC LIMIT 200"
     rows = c.execute(sql_solic, params_solic).fetchall()
 

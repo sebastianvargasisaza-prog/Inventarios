@@ -212,3 +212,49 @@ def test_la_pantalla_tiene_la_pestana_de_novedades():
     for campo in ('nv-empleado', 'nv-tipo', 'nv-asunto', 'nv-desde', 'nv-adjunto'):
         assert 'id="%s"' % campo in html, campo
     assert "name === 'novedades'" in html
+
+
+def test_la_pestana_NO_trae_las_solicitudes_de_planta(app, db_clean):
+    """Sebastián (4-ago): "no entiendo por qué quedó esto acá, si no tiene nada que ver: es
+    solicitudes de compras que Daniela haga para ÁNIMUS".
+
+    La pestaña mostraba las SOL auto-generadas de PLANTA (materias primas del plan de
+    producción) porque el endpoint sólo filtra por solicitante. Las categorías de planta son
+    las mismas que definen `fuente=planta`: filtrar por otro criterio las haría solaparse
+    (INV-1 · las 3 fuentes son mutuamente excluyentes)."""
+    from database import get_db
+    _limpiar(app)
+    c = _cli(app)
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        # una de planta (no debe salir) y una de ÁNIMUS (sí)
+        cur.execute("INSERT INTO solicitudes_compra (numero, fecha, estado, solicitante, "
+                    "observaciones, area, empresa, categoria) VALUES "
+                    "(?, date('now','-5 hours'), 'Pendiente', 'daniela', ?, 'Produccion', "
+                    "'Espagiria', 'Materia Prima')", (MARCA + '-PLANTA', MARCA + ' auto-generada MP'))
+        cur.execute("INSERT INTO solicitudes_compra (numero, fecha, estado, solicitante, "
+                    "observaciones, area, empresa, categoria) VALUES "
+                    "(?, date('now','-5 hours'), 'Pendiente', 'daniela', ?, 'ANIMUS', "
+                    "'Animus', 'Consumibles')", (MARCA + '-ANIMUS', MARCA + ' papel burbuja'))
+        conn.commit()
+    nums = [x['numero'] for x in
+            c.get('/api/solicitudes-compra/mis?ambito=animus').get_json()['solicitudes']]
+    assert MARCA + '-ANIMUS' in nums, 'no trae lo que Daniela pide para ÁNIMUS'
+    assert MARCA + '-PLANTA' not in nums, 'trae las solicitudes de materia prima de planta'
+
+
+def test_sin_el_ambito_la_bandeja_de_Catalina_no_cambia(app, db_clean):
+    """Con dientes: el filtro es ADITIVO · si cambiara el default, Catalina dejaría de ver las
+    solicitudes de planta en su bandeja."""
+    from database import get_db
+    _limpiar(app)
+    c = _cli(app)
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("INSERT INTO solicitudes_compra (numero, fecha, estado, solicitante, "
+                    "observaciones, area, empresa, categoria) VALUES "
+                    "(?, date('now','-5 hours'), 'Pendiente', 'daniela', ?, 'Produccion', "
+                    "'Espagiria', 'Materia Prima')", (MARCA + '-PL2', MARCA + ' auto MP'))
+        conn.commit()
+    nums = [x['numero'] for x in c.get('/api/solicitudes-compra/mis').get_json()['solicitudes']]
+    assert MARCA + '-PL2' in nums, 'el filtro dejó de ser aditivo'
