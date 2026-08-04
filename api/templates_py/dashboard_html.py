@@ -614,7 +614,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div class="grid" style="margin-bottom:24px;grid-template-columns:repeat(3,1fr);">
       <div class="card" style="border-left:4px solid var(--cx-danger);cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs sin stock</h3><p id="kpi-mps-sin-stock" style="color:var(--cx-danger-text);font-size:1.8em;">-</p><div style="font-size:10px;color:var(--cx-text-mute);">críticas - bloquean producción</div></div>
-      <div class="card" id="card-alertas" style="border-left:4px solid var(--cx-warn);cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs bajo mínimo</h3><p id="alertas-count" style="color:#e65100;font-size:1.8em;">-</p><div style="font-size:10px;color:var(--cx-text-mute);">incluye las en cero</div></div>
+      <div class="card" id="card-alertas" style="border-left:4px solid var(--cx-warn);cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs bajo mínimo</h3><p id="alertas-count" style="color:#e65100;font-size:1.8em;">-</p><div style="font-size:10px;color:var(--cx-text-mute);">incluye las en cero</div><div id="alertas-sinmin" style="font-size:10px;margin-top:3px;"></div></div>
       <!-- Dashboard PRO · click → Bodega MP → Stock filtrado por VENCIDO -->
       <div class="card" style="border-left:4px solid var(--cx-danger);cursor:pointer;" onclick="switchGroup('bar-bodegaMP','stock',null);setTimeout(function(){var s=document.getElementById('stock-search');if(s){s.value='';s.dispatchEvent(new Event('input'));}},150);" title="Ver lotes vencidos en Bodega"><h3>Lotes vencidos</h3><p id="kpi-lotes-vencidos" style="color:var(--cx-danger-text);font-size:1.8em;">-</p><div style="font-size:10px;color:var(--cx-text-mute);">en bodega - dar de baja</div></div>
     </div>
@@ -642,8 +642,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div class="grid" style="margin-bottom:20px;grid-template-columns:repeat(3,1fr);">
       <div class="card"><h3>Stock total</h3><p id="stock-total" style="font-size:1.4em;">-</p><div style="font-size:10px;color:var(--cx-text-mute);">en gramos · MPs activas</div></div>
-      <div class="card"><h3>Lotes en bodega</h3><p id="materiales-count" style="font-size:1.4em;">-</p><div style="font-size:10px;color:var(--cx-text-mute);">total movimientos registrados</div></div>
-      <div class="card"><h3>Producciones (histórico)</h3><p id="producciones-count" style="font-size:1.4em;">-</p><div style="font-size:10px;color:var(--cx-text-mute);">producciones realizadas total</div></div>
+      <div class="card"><h3>Lotes en bodega</h3><p id="materiales-count" style="font-size:1.4em;">-</p><div style="font-size:10px;color:var(--cx-text-mute);">con material disponible</div></div>
+      <div class="card"><h3>Producciones (histórico)</h3><p id="producciones-count" style="font-size:1.4em;">-</p><div style="font-size:10px;color:var(--cx-text-mute);">directas + terminadas desde el calendario</div></div>
     </div>
 
     <!-- Dashboard PRO #2 · Bloque "Planta AHORA" · 20-may-2026 -->
@@ -4689,7 +4689,10 @@ async function loadDashboard(){
   try{
     var r=await fetch('/api/inventario'), d=await r.json();
     document.getElementById('stock-total').textContent=Math.round(d.stock_total||0).toLocaleString('es-CO')+' g';
-    document.getElementById('materiales-count').textContent=d.movimientos||'0';
+    // La tarjeta dice "Lotes en bodega": se llena con LOTES, no con el COUNT de la tabla de
+    // movimientos, que era lo que habia (M5 · el numero mostrado tiene que ser el que dice).
+    document.getElementById('materiales-count').textContent =
+      (d.lotes_bodega != null ? d.lotes_bodega : (d.movimientos||0)).toLocaleString('es-CO');
     var elProx=document.getElementById('producciones-proximas-count');
     if(elProx){
       var nProx = d.producciones_proximas||0;
@@ -4729,6 +4732,17 @@ async function loadDashboard(){
     fetch('/api/alertas-reabastecimiento').then(function(r2){return r2.json();}).then(function(ar){
       var n=ar.alertas?ar.alertas.length:0;
       var el=document.getElementById('alertas-count');
+    // Lo que esta alerta NO puede ver: una MP sin minimo definido no aparece nunca, ni cayendo
+    // a cero, porque la consulta filtra `stock_minimo > 0`. Decirlo aca es lo que la convierte
+    // en algo accionable (poner el minimo) en vez de un punto ciego.
+    var _sm = document.getElementById('alertas-sinmin');
+    if (_sm) {
+      var _n = d.mps_sin_minimo || 0;
+      _sm.innerHTML = _n
+        ? '<span style="color:var(--cx-warn-text);">' + _n + ' sin mínimo definido &middot; '
+          + 'no entran a esta alerta</span>'
+        : '';
+    }
       if(el) el.textContent=n>0?n+' alertas!':'OK';
       var panel=document.getElementById('dash-alertas-rapidas');
       if(panel&&n>0){

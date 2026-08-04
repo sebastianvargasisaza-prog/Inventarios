@@ -283,7 +283,39 @@ def get_inventario():
 
     # ── CONTEXTO (totales / composición) ──────────────────────────────
     mov = _safe('SELECT COUNT(*) FROM movimientos')
-    prod_historico = _safe('SELECT COUNT(*) FROM producciones')
+
+    # LOTES en bodega = lotes DISTINTOS que todavia tienen material usable. Antes esta tarjeta
+    # mostraba `mov` (el COUNT de toda la tabla `movimientos`): entradas, salidas y ajustes de
+    # la historia entera, incluidos lotes agotados hace meses. Un lote tiene muchos movimientos,
+    # asi que el rotulo decia "lotes" y el numero era otra cosa por completo (M5).
+    # El umbral 0.01 y los 6 estados excluidos son el criterio canonico de "usable" (M21/#4):
+    # contar distinto aca haria que esta tarjeta discrepe de Bodega y del FEFO.
+    lotes_bodega = _safe("""
+        SELECT COUNT(*) FROM (
+            SELECT material_id, lote
+              FROM movimientos
+             WHERE (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN
+                    ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
+             GROUP BY material_id, lote
+            HAVING SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste')
+                            THEN cantidad
+                            WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -')
+                            THEN -cantidad ELSE 0 END) > 0.01
+        ) t
+    """)
+
+    # PRODUCCIONES historico = las directas (tabla `producciones`) MAS las que se terminaron
+    # desde el calendario. El espejo va de `producciones` al calendario y no al reves (M37), asi
+    # que contar solo la primera tabla se pierde todo el flujo programado -- que es el que mas
+    # se usa. Las del calendario que SON espejo llevan el marcador [fab#N] y se descuentan, o se
+    # contarian dos veces.
+    prod_directas = _safe('SELECT COUNT(*) FROM producciones')
+    prod_calendario = _safe("""
+        SELECT COUNT(*) FROM produccion_programada
+         WHERE COALESCE(fin_real_at,'') <> ''
+           AND COALESCE(observaciones,'') NOT LIKE '%[fab#%'
+    """)
+    prod_historico = int(prod_directas or 0) + int(prod_calendario or 0)
     stock_total = _safe("SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) FROM movimientos")
     alrt = _safe('SELECT COUNT(*) FROM alertas')
 
@@ -312,6 +344,18 @@ def get_inventario():
     """)
     mps_sin_stock = _mps[0] if _mps and _mps[0] is not None else 0
     mps_bajo_min = _mps[1] if _mps and len(_mps) > 1 and _mps[1] is not None else 0
+
+    # ⚠ Las dos consultas de arriba filtran `stock_minimo > 0`. Eso es correcto -- son alertas de
+    # PUNTO DE REORDEN y sin mínimo no hay punto -- pero deja un hueco silencioso: una MP activa
+    # con mínimo en 0 no aparece NUNCA, ni cayendo a cero. Si no se dice, esa MP es un punto
+    # ciego permanente (M100/M124: lo que un cálculo excluye se enumera y se dice por qué).
+    # Se excluyen las que no controlan stock (el agua del lab · mig 218): esas tienen mínimo 0
+    # a propósito y meterlas sería ruido.
+    mps_sin_minimo = _safe("""
+        SELECT COUNT(*) FROM maestro_mps
+         WHERE activo=1 AND COALESCE(controla_stock,1) <> 0
+           AND COALESCE(stock_minimo,0) <= 0
+    """)
     # Lotes vencidos · Sebastian 5-may-2026 (audit zero-error dashboard):
     # ANTES usaba estado_lote='VENCIDO' estatico que NO se actualiza
     # automaticamente cuando un lote vence (queda como 'VIGENTE' aunque
@@ -411,7 +455,12 @@ def get_inventario():
     _payload = {
         # Compatibilidad con frontend viejo
         'total_items': mov, 'movimientos': mov,
+        # el numero de LOTES va aparte: `movimientos` se sigue mandando porque el frontend
+        # viejo lo usa, pero la tarjeta que dice "lotes" ya no se llena con el
+        'lotes_bodega': int(lotes_bodega or 0),
         'producciones': prod_historico,
+        'producciones_directas': int(prod_directas or 0),
+        'producciones_calendario': int(prod_calendario or 0),
         'producciones_historico': prod_historico,
         'producciones_proximas': prod_proximas,
         'alertas': alrt,
@@ -424,6 +473,8 @@ def get_inventario():
             'ahora': {
                 'mps_sin_stock':   mps_sin_stock,
                 'mps_bajo_minimo': mps_bajo_min,
+                # Cuantas MP quedan FUERA de las dos alertas de arriba por no tener minimo.
+                'mps_sin_minimo': int(mps_sin_minimo or 0),
                 'lotes_vencidos':  lotes_vencidos,
             },
             'cerca': {

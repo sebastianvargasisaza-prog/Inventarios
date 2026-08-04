@@ -94,6 +94,7 @@ CORAZON=(
   "tests/test_animus_pqr_premium.py"
   "tests/test_rrhh_permiso_cuenta.py"
   "tests/test_sin_consultas_fantasma.py"
+  "tests/test_planta_kpis_dicen_la_verdad.py"
   # Lo que vuelve CONFIABLE la caja: el ARQUEO contra el efectivo real (el saldo era una suma
   # que nadie habia contado nunca), el espejo a Tesoreria (la plata dejaba de verse al salir),
   # la trazabilidad de un recibo y el cierre de periodo. Es plata: sin gate no esta protegido.
