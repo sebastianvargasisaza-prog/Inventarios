@@ -1145,13 +1145,13 @@ def centro_notificaciones():
     # ── Tecnica: SGDs (SOPs) que requieren revision en <30 dias ──
     try:
         for r in c.execute("""
-            SELECT id, codigo, nombre, fecha_proxima_revision, responsable_revision,
-                   julianday(fecha_proxima_revision) - julianday('now') as dias
-            FROM documentos_sgd
-            WHERE estado='Vigente'
-              AND COALESCE(fecha_proxima_revision,'') != ''
-              AND fecha_proxima_revision <= date('now', '-5 hours', '+30 day')
-            ORDER BY fecha_proxima_revision ASC LIMIT 10
+            SELECT id, codigo, nombre, proxima_revision, responsable_revision,
+                   julianday(proxima_revision) - julianday('now') as dias
+            FROM sgd_documentos
+            WHERE UPPER(COALESCE(estado,''))='VIGENTE'
+              AND COALESCE(proxima_revision,'') != ''
+              AND proxima_revision <= date('now', '-5 hours', '+30 day')
+            ORDER BY proxima_revision ASC LIMIT 10
         """).fetchall():
             dias = int(r['dias']) if r['dias'] is not None else 0
             sev = 'alta' if dias <= 0 else ('media' if dias <= 14 else 'info')
@@ -1434,13 +1434,22 @@ def centro_operaciones_data():
 
     # ─── DIRECCION TECNICA ──────────────────────────────────────────────
     try:
+        # ⚠ 4-ago: este bloque nombraba TRES tablas que no existen (`formulas_maestras`,
+        # `registros_invima`, `documentos_sgd`). Envuelto en un try, no daba error: el tablero
+        # del CEO mostraba el bloque vacio y se leia como "no hay nada que mirar" (M12a/M96).
+        # Las reales son `formula_headers` y `sgd_documentos`.
         out['tecnica'] = {
-            'formulas_vigentes': c.execute("SELECT COUNT(*) FROM formulas_maestras WHERE estado='Vigente'").fetchone()[0] or 0,
-            'invima_vigentes':   c.execute("SELECT COUNT(*) FROM registros_invima WHERE estado='Vigente'").fetchone()[0] or 0,
-            'sgd_vencen_30d':    c.execute("""SELECT COUNT(*) FROM documentos_sgd
-                                             WHERE estado='Vigente'
-                                               AND COALESCE(fecha_proxima_revision,'') != ''
-                                               AND fecha_proxima_revision <= date('now', '-5 hours', '+30 day')""").fetchone()[0] or 0,
+            'formulas_vigentes': c.execute(
+                "SELECT COUNT(*) FROM formula_headers WHERE COALESCE(activo,1)=1").fetchone()[0] or 0,
+            # Los registros INVIMA no estan modelados en EOS todavia. Se DECLARA en vez de
+            # mostrar 0: un cero se lee como "ninguno vigente", que es lo contrario de "no lo
+            # llevamos aca" (M124).
+            'invima_vigentes': None,
+            'invima_aviso': 'Los registros INVIMA no se llevan en EOS todavía',
+            'sgd_vencen_30d':    c.execute("""SELECT COUNT(*) FROM sgd_documentos
+                                             WHERE UPPER(COALESCE(estado,''))='VIGENTE'
+                                               AND COALESCE(proxima_revision,'') != ''
+                                               AND proxima_revision <= date('now', '-5 hours', '+30 day')""").fetchone()[0] or 0,
         }
     except Exception:
         out['tecnica'] = {}

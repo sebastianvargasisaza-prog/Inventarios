@@ -2120,13 +2120,16 @@ def sugerir_mp(codigo_mp):
 
     try:
         # Ultimo precio en historial
-        ult = c.execute("""SELECT precio_unitario, proveedor, fecha, numero_oc
+        ult = c.execute("""SELECT precio_kg, proveedor, fecha, numero_oc
                           FROM precios_mp_historico
                           WHERE codigo_mp=?
                           ORDER BY fecha DESC, id DESC LIMIT 1""",
                        (codigo_mp,)).fetchone()
         if ult:
+            # La columna es precio_kg ($/kg). Se expone tambien con el nombre que dice la
+            # unidad: meter un $/kg en un campo de $/g infla la OC 1000 veces (M83).
             out['precio_ultimo'] = ult[0]
+            out['precio_ultimo_kg'] = ult[0]
             out['proveedor_ultimo'] = ult[1]
             out['fecha_ultimo'] = ult[2]
             out['oc_ultima'] = ult[3]
@@ -2136,7 +2139,7 @@ def sugerir_mp(codigo_mp):
     try:
         # Top proveedores por uso historico (ultimas 50 compras del MP)
         rows = c.execute("""
-            SELECT proveedor, COUNT(*) as veces, AVG(precio_unitario) as precio_avg
+            SELECT proveedor, COUNT(*) as veces, AVG(precio_kg) as precio_avg
             FROM precios_mp_historico
             WHERE codigo_mp=? AND COALESCE(proveedor,'') != ''
             GROUP BY proveedor
@@ -2144,7 +2147,9 @@ def sugerir_mp(codigo_mp):
             LIMIT 5
         """, (codigo_mp,)).fetchall()
         out['top_proveedores'] = [
-            {'proveedor': r[0], 'veces_usado': r[1], 'precio_promedio': round(r[2] or 0, 2)}
+            # el promedio es en $/kg, igual que la columna de la que sale
+            {'proveedor': r[0], 'veces_usado': r[1], 'precio_promedio': round(r[2] or 0, 2),
+             'unidad': '$/kg'}
             for r in rows
         ]
     except Exception:
@@ -12408,7 +12413,8 @@ def compras_trazabilidad_oc(numero_oc):
     # 4. Pagos
     try:
         rows = c.execute(
-            """SELECT fecha, monto, COALESCE(medio,''), COALESCE(referencia,''),
+            """SELECT fecha_pago, monto, COALESCE(medio,''),
+                      COALESCE(numero_transaccion,''),
                       COALESCE(numero_factura_proveedor,'')
                FROM pagos_oc WHERE numero_oc=?""",
             (numero_oc,),
@@ -12537,8 +12543,8 @@ def _scorecard_proveedor_dict(c, nombre_prov):
     # 4. variacion_precio_12m_pct
     try:
         r = c.execute(
-            """SELECT AVG(CASE WHEN date(fecha) >= date('now','-5 hours','-90 days') THEN precio_unitario END),
-                      AVG(CASE WHEN date(fecha) <  date('now','-5 hours','-275 days') THEN precio_unitario END)
+            """SELECT AVG(CASE WHEN date(fecha) >= date('now','-5 hours','-90 days') THEN precio_kg END),
+                      AVG(CASE WHEN date(fecha) <  date('now','-5 hours','-275 days') THEN precio_kg END)
                FROM precios_mp_historico
                WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
                  AND date(fecha) >= date('now','-5 hours','-365 days')""",
@@ -13310,7 +13316,7 @@ def compras_dashboard_ejecutivo():
             """SELECT ronda_id, SUM(CASE WHEN estado='Recibida' THEN 1 ELSE 0 END) as recibidas,
                       COUNT(*) as total
                FROM cotizaciones
-               WHERE date(fecha_creacion) >= date('now','-5 hours','-30 days')
+               WHERE date(fecha_solicitud) >= date('now','-5 hours','-30 days')
                GROUP BY ronda_id
                HAVING recibidas < 2""",
         ).fetchall()
