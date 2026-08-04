@@ -2228,22 +2228,45 @@ def animus_caja_listar():
     mes = hoy[:7]
     # Un movimiento ANULADO no suma al saldo ni a los KPIs (sigue existiendo y se ve en la lista,
     # que es justamente el punto de anular en vez de borrar).
+    # ⚠ SOLO EFECTIVO (Sebastian 4-ago): "el unico que registra ingreso de plata es si eligen
+    # efectivo". Un cobro por transferencia/Nequi/tarjeta entro al BANCO, no a la gaveta, asi que
+    # no puede sumar al saldo ni al "entro hoy" -- si suma, el arqueo no cuadra nunca y el guard
+    # de pago deja gastar billetes que no estan.
+    # El medio decide sobre el INGRESO nada mas: todo EGRESO descuenta, porque sacar la plata
+    # para consignarla tambien la saca del efectivo (ver `es_efectivo`).
+    _phm = ','.join('?' for _ in MEDIOS_NO_EFECTIVO)
+    _ES_EFE = ("LOWER(COALESCE(NULLIF(TRIM(metodo),''),'efectivo')) NOT IN (" + _phm + ")")
     kpis = c.execute("""
         SELECT
-          COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END), 0) as saldo_total,
-          COALESCE(SUM(CASE WHEN tipo='ingreso' AND fecha=? THEN monto ELSE 0 END), 0) as ingreso_hoy,
+          COALESCE(SUM(CASE WHEN tipo='ingreso' AND fecha=? AND """ + _ES_EFE + """
+                            THEN monto ELSE 0 END), 0) as ingreso_hoy,
           COALESCE(SUM(CASE WHEN tipo='egreso'  AND fecha=? THEN monto ELSE 0 END), 0) as egreso_hoy,
-          COALESCE(SUM(CASE WHEN tipo='ingreso' AND substr(fecha,1,7)=? THEN monto ELSE 0 END), 0) as ingreso_mes,
+          COALESCE(SUM(CASE WHEN tipo='ingreso' AND substr(fecha,1,7)=? AND """ + _ES_EFE + """
+                            THEN monto ELSE 0 END), 0) as ingreso_mes,
           COALESCE(SUM(CASE WHEN tipo='egreso'  AND substr(fecha,1,7)=? THEN monto ELSE 0 END), 0) as egreso_mes,
+          -- Lo que el calculo DEJA AFUERA se dice, no se esconde (M124): es plata que entro
+          -- de verdad, solo que al banco, y sin nombrarla el numero parece un faltante.
+          COALESCE(SUM(CASE WHEN tipo='ingreso' AND fecha=? AND NOT (""" + _ES_EFE + """)
+                            THEN monto ELSE 0 END), 0) as ingreso_hoy_banco,
+          COALESCE(SUM(CASE WHEN tipo='ingreso' AND substr(fecha,1,7)=? AND NOT (""" + _ES_EFE + """)
+                            THEN monto ELSE 0 END), 0) as ingreso_mes_banco,
           COUNT(*) as n_total
         FROM animus_caja_menor
         WHERE COALESCE(anulado,0) = 0
-    """, (hoy, hoy, mes, mes)).fetchone()
+    """, ([hoy] + list(MEDIOS_NO_EFECTIVO) + [hoy, mes] + list(MEDIOS_NO_EFECTIVO)
+          + [mes, hoy] + list(MEDIOS_NO_EFECTIVO)
+          + [mes] + list(MEDIOS_NO_EFECTIVO))).fetchone()
+
+    _k = dict(kpis) if kpis else {}
+    # El saldo NO se recalcula aca: delega en el helper canonico, el mismo que usan pagar,
+    # consignar, arquear y cerrar. Dos SUM para el mismo hecho divergen en silencio (M1), y aca
+    # el que se mostraba estaba inflado con la plata del banco.
+    _k['saldo_total'] = round(caja_saldo(conn), 2)
 
     return jsonify({
         "ok": True,
         "movimientos": movs,
-        "kpis": dict(kpis) if kpis else {},
+        "kpis": _k,
     })
 
 

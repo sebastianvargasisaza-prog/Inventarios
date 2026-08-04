@@ -117,6 +117,19 @@ HTML = r"""
   .pg-ficha { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px 16px; margin:14px 0; }
   .pg-ficha .lbl { font-size:9.5px; font-weight:700; color:var(--cx-text-mute); text-transform:uppercase; letter-spacing:.05em; }
   .pg-ficha .val { font-size:13px; color:var(--cx-text); margin-top:2px; word-break:break-word; }
+  /* La ficha va POR PARTES (Sebastián 4-ago): quién es y qué publicó · qué se le debe · a dónde
+     se consigna. Trece campos seguidos en una sola grilla se leen como un muro, y el dato que
+     de verdad se copia -- la cuenta -- queda perdido entre el resto. */
+  .pg-bloque { margin:14px 0 0; }
+  .pg-bloque-tit { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--cx-text-mute); display:flex; align-items:center; gap:9px; margin-bottom:2px; }
+  .pg-bloque-tit::after { content:''; flex:1; height:1px; background:var(--cx-hairline); }
+  .pg-bloque .pg-ficha { margin:9px 0 0; }
+  .pg-banco { background:var(--cx-bg-alt); border:1px solid var(--cx-hairline);
+    border-radius:12px; padding:11px 14px 13px; margin-top:9px; }
+  .pg-banco .pg-ficha { margin:0; }
+  .pg-banco .val { font-variant-numeric:tabular-nums; }
+  .pg-ficha .pg-cuenta .val { font-size:15px; font-weight:800; letter-spacing:.01em; }
   .pg-alerta { background:var(--cx-danger-pale); color:var(--cx-danger-text); border-radius:10px;
     padding:10px 13px; font-size:12.5px; margin-bottom:9px; line-height:1.45; }
   #decisiones .dec-card { display:flex; align-items:center; gap:14px; text-decoration:none;
@@ -515,9 +528,21 @@ function pintarPagos(){
   cont.innerHTML=lista.map(function(p,ix){ return _pgFila(p,ix); }).join('');
 }
 
-function _pgDato(lbl,val){
+function _pgDato(lbl,val,cls){
   if(val===null||val===undefined||val==='') return '';
-  return '<div><div class="lbl">'+lbl+'</div><div class="val">'+_esc(String(val))+'</div></div>';
+  return '<div'+(cls?' class="'+cls+'"':'')+'><div class="lbl">'+lbl+'</div>'
+       + '<div class="val">'+_esc(String(val))+'</div></div>';
+}
+
+// Un bloque de la ficha. Si todos sus campos vinieron vacíos NO se pinta el título: un
+// encabezado sobre una franja en blanco se lee como "falta el dato" y no como "no aplica".
+function _pgBloque(titulo, campos, cls){
+  var cuerpo=campos.join('');
+  if(!cuerpo.trim()) return '';
+  return '<div class="pg-bloque">'
+    + '<div class="pg-bloque-tit">'+titulo+'</div>'
+    + '<div class="'+(cls||'')+'"><div class="pg-ficha">'+cuerpo+'</div></div>'
+  + '</div>';
 }
 
 function _pgFila(p, ix){
@@ -542,27 +567,39 @@ function _pgFila(p, ix){
       +'</div>';
     }).join('');
 
-    var banco = (window._PG_DATA && window._PG_DATA.ve_datos_bancarios)
-      ? [_pgDato('Banco',p.banco), _pgDato('Tipo de cuenta',p.tipo_cuenta),
-         _pgDato('Número de cuenta',p.cuenta_bancaria), _pgDato('Cédula / NIT',p.cedula_nit)].join('')
-      : '<div style="grid-column:1/-1;font-size:12px;color:var(--cx-text-mute)">Los datos bancarios sólo los ve un administrador o la contadora.</div>';
+    // Los datos bancarios van en su propio bloque, en su recuadro: es lo que se copia al banco
+    // y hasta ahora quedaba mezclado con la fecha de publicación y el número de orden.
+    var puedeVerBanco = !!(window._PG_DATA && window._PG_DATA.ve_datos_bancarios);
+    var bloqueBanco = puedeVerBanco
+      ? _pgBloque('Para consignar', [
+          _pgDato('Banco', p.banco),
+          _pgDato('Tipo de cuenta', p.tipo_cuenta),
+          _pgDato('Número de cuenta', p.cuenta_bancaria, 'pg-cuenta'),
+          _pgDato('Cédula / NIT', p.cedula_nit)
+        ], 'pg-banco')
+      : '<div class="pg-bloque"><div class="pg-bloque-tit">Para consignar</div>'
+        + '<div class="pg-banco" style="font-size:12px;color:var(--cx-text-mute)">'
+        + 'Los datos bancarios sólo los ve un administrador o la contadora.</div></div>';
 
     cuerpo='<div class="pg-body">'
       + alertas
-      + '<div class="pg-ficha">'
-        + _pgDato('Creador', p.influencer_nombre)
-        + _pgDato('Red', p.usuario_red? '@'+p.usuario_red : p.red_social)
-        + _pgDato('Ciudad', p.ciudad)
-        + _pgDato('Monto a pagar', _pgMoneda(p.valor))
-        + _pgDato('Qué se le paga', p.entregable || p.concepto)
-        + _pgDato('Fecha de publicación', p.fecha_publicacion || 'sin fecha')
-        + _pgDato('Solicitado', String(p.fecha||'').slice(0,10))
-        + _pgDato('Vence', p.vence_pago_at)
-        + _pgDato('Orden', p.numero_oc)
-        + _pgDato('Email', p.email)
-        + _pgDato('Teléfono', p.telefono)
-        + banco
-      + '</div>'
+      + _pgBloque('Quién es y qué publicó', [
+          _pgDato('Creador', p.influencer_nombre),
+          _pgDato('Red', p.usuario_red? '@'+p.usuario_red : p.red_social),
+          _pgDato('Ciudad', p.ciudad),
+          _pgDato('Qué se le paga', p.entregable || p.concepto),
+          _pgDato('Fecha de publicación', p.fecha_publicacion || 'sin fecha'),
+          _pgDato('Email', p.email),
+          _pgDato('Teléfono', p.telefono)
+        ])
+      + _pgBloque('El cobro', [
+          _pgDato('Monto a pagar', _pgMoneda(p.valor)),
+          _pgDato('Solicitado', String(p.fecha||'').slice(0,10)),
+          _pgDato('Vence', p.vence_pago_at),
+          _pgDato('Orden', p.numero_oc)
+        ])
+      + bloqueBanco
+      + '<div style="height:14px"></div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
         + (p.numero_oc
             ? '<button onclick="event.stopPropagation();pagarDesdeBandeja('+ix+')" style="background:var(--cx-primary);color:#fff;border:none;border-radius:9px;padding:9px 20px;font-size:13px;font-weight:800;cursor:pointer">Pagar '+_pgMoneda(p.valor)+'</button>'

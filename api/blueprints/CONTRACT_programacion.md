@@ -736,3 +736,40 @@ El par resultante se **declara** como `confirmado_por: 'intercambio_cruzado'`: e
 par que puede convivir en una fórmula del batch sin ser un error, y la invariante
 "ningún par del mapa puede convivir" lo exceptúa explícitamente. El informe siempre dice **cómo**
 cruzó, y acá el cómo cambia la lectura del hallazgo (M132).
+
+## 🏷️ PROG-N+6 · El envase que fue a serigrafía se descuenta UNA vez (4-ago)
+
+Catalina: *"descuenta doble"*. El ciclo es: Compras manda el envase BASE a marcar → sale de la
+planta → vuelve con OTRO código (el serigrafiado) → Calidad lo libera → se usa para producir.
+Dos causas independientes, las dos verificadas contra el código:
+
+**A · El descuento de envasado seguía apuntando al BASE.** `_descontar_mee_envasado` toma el
+código de `produccion_checklist`, que se pre-llena desde `producto_presentaciones` — y ése es el
+base. Pero el base **ya salió del kardex** cuando se envió a marcar, así que descontarlo otra vez
+lo cuenta dos veces; y el serigrafiado, que es el que de verdad se consume, **no se descontaba
+nunca**: su stock sólo crecía. `marcacion_cambiar_envase` existía, pero es manual y nada lo ataba
+al ciclo.
+
+**Invariante:** si para ESA producción hay una `marcacion_ordenes` con ese `base_codigo` en
+estado `recibido` o `liberado`, el descuento del ítem de envase se redirige al
+`serigrafiado_codigo` de esa orden. La redirección **no adivina** (M19): la orden guarda
+`produccion_id` + `base_codigo` + `serigrafiado_codigo`, así que "este base, para esta
+producción, volvió como aquel" es un hecho registrado. Y **sólo cuenta si ya volvió**: con la
+orden en `enviado` el envase todavía está afuera y no está para usarse, así que se sigue
+descontando el base. El resultado declara `codigo_descontado` y `redirigido_de_marcacion` — si el
+código cambia en silencio, nadie puede entender el kardex después.
+
+**B · Crear la orden no tenía guard anti-duplicado.** "Solicitar alistamiento" (admin.py) llama
+al **mismo** endpoint `POST /api/programacion/marcacion-orden/enviar`, que insertaba sin mirar si
+ya había una orden abierta: dos clics = dos órdenes = dos Salidas del base. **El CAS protege
+TRANSICIONES, no la CREACIÓN (M63).** Ahora, si ya existe una orden `enviado` para el mismo
+(base, serigrafiado, producción), responde **409 `MARCACION_YA_ABIERTA`** con la cantidad y la
+fecha de la que ya está. No prohíbe: mandar otra tanda del mismo envase es legítimo, y se pasa
+con `forzar: true`.
+
+⚠ **Trampa de fixture (costó tres corridas):** `aplicar_movimiento_mee` clampea la Salida contra
+`maestro_mee.stock_actual`, **no** contra `SUM(movimientos_mee)`. Sembrar el stock sólo como
+movimiento y dejar la columna en 0 hace que registre una **Salida de 0** — sin un solo error a la
+vista, y el test mide otra cosa.
+
+Tests: `tests/test_marcacion_no_descuenta_doble.py` (en el gate).

@@ -136,6 +136,15 @@ CORAZON=(
   # motivo, nunca la borra. Antes se borraba y por eso la bandeja de Rechazados salia en 0:
   # quien pidio el pago no tenia forma de saber por que no se lo pagaron.
   "tests/test_centro_pagos_bandeja.py"
+  # El envase que va a serigrafia se descontaba DOS veces (Catalina): produccion volvia a
+  # descontar el BASE, que ya habia salido al enviarlo a marcar, y el serigrafiado -- el que
+  # de verdad se usa -- no se consumia nunca. Ademas "Solicitar alistamiento" llama al MISMO
+  # endpoint que enviar, sin guard: dos clics = dos ordenes = dos Salidas.
+  "tests/test_marcacion_no_descuenta_doble.py"
+  # Las tarjetas de la caja sumaban transferencia/Nequi/tarjeta como si fueran billetes: la
+  # pantalla mostraba un saldo y el servidor decidia con otro (caja_saldo), y ese hero es el
+  # numero contra el que se valida un pago. Solo el EFECTIVO entra a la gaveta.
+  "tests/test_caja_kpis_solo_efectivo.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

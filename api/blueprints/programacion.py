@@ -13596,6 +13596,31 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
             continue
         # override del lote (admin) reemplaza el envase default SOLO en el item de envase (M55/M5)
         _cod_efectivo = _env_override if (es_envase and _env_override) else mee_cod
+        # ⚠ MARCACION (Catalina 4-ago · "descuenta doble"): si ese envase se mando a serigrafia
+        # para ESTA produccion, el BASE ya salio del kardex al enviarlo. Descontarlo otra vez
+        # aca lo cuenta dos veces, y ademas el serigrafiado -- que es el que de verdad se usa --
+        # no se consume nunca y su stock solo crece.
+        # No se adivina: la orden guarda produccion_id + base + serigrafiado, asi que "volvio
+        # como aquel" es un hecho registrado (M19). Solo cuenta si YA VOLVIO (recibido o
+        # liberado): si todavia esta afuera, el envase no esta para usarse.
+        _redirigido_de = ''
+        if es_envase and _cod_efectivo:
+            try:
+                _mo = c.execute(
+                    "SELECT serigrafiado_codigo FROM marcacion_ordenes "
+                    " WHERE produccion_id=? AND UPPER(TRIM(base_codigo))=UPPER(TRIM(?)) "
+                    "   AND LOWER(COALESCE(estado,'')) IN ('recibido','liberado') "
+                    "   AND UPPER(TRIM(COALESCE(serigrafiado_codigo,'')))<>UPPER(TRIM(base_codigo)) "
+                    " ORDER BY id DESC LIMIT 1",
+                    (produccion_id, _cod_efectivo)).fetchone()
+                if _mo and (_mo[0] or '').strip():
+                    _redirigido_de = _cod_efectivo
+                    _cod_efectivo = (_mo[0] or '').strip()
+            except Exception as _e:
+                # Si el chequeo no puede correr se sigue con el codigo original, pero se DECLARA:
+                # un fallo mudo aca vuelve a descontar doble sin que nadie lo note (M4/M94).
+                log.warning('no pude revisar la marcacion de %s (prod %s): %s',
+                            _cod_efectivo, produccion_id, _e)
         try:
             aplicar_movimiento_mee(
                 c.connection, _cod_efectivo, 'Salida', cant_real,
@@ -13612,6 +13637,9 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                  WHERE id = ?
             """, (fecha_iso, user, cant_real, item_id))
             descontados.append({
+                # el codigo que de verdad se descontó, y de cuál se redirigió (si aplica)
+                'codigo_descontado': _cod_efectivo,
+                'redirigido_de_marcacion': _redirigido_de,
                 'codigo': mee_cod,
                 'descripcion': desc or '',
                 'tipo_item': tipo_item or '',
@@ -16362,6 +16390,33 @@ def marcacion_orden_enviar():
         return jsonify({'error': 'Stock insuficiente del base ' + base + ': hay ' + ('%g' % _stock_base) +
                         ', se quieren enviar ' + ('%g' % cantidad) + '. Recibí/ajustá el envase o reenviá con forzar=true.',
                         'codigo': 'STOCK_INSUFICIENTE', 'stock': _stock_base}), 422
+    # ⚠ ANTI-DOBLE (Catalina 4-ago · "descuenta doble"): "Solicitar alistamiento" llama a ESTE
+    # mismo endpoint, y hasta ahora insertaba la orden sin mirar si ya habia una abierta. Dos
+    # clics = dos ordenes = dos Salidas del base. El CAS protege TRANSICIONES, no la CREACION
+    # (M63): lo que hace falta es el guard.
+    # Un reenvio legitimo existe (mandar otra tanda del mismo envase), asi que NO se prohibe:
+    # se avisa con lo que ya hay y se pasa con `forzar`.
+    if not d.get('forzar'):
+        try:
+            _ya = c.execute(
+                "SELECT id, cantidad_enviada, fecha_envio FROM marcacion_ordenes "
+                " WHERE UPPER(TRIM(base_codigo))=UPPER(TRIM(?)) "
+                "   AND UPPER(TRIM(serigrafiado_codigo))=UPPER(TRIM(?)) "
+                "   AND LOWER(COALESCE(estado,''))='enviado' "
+                "   AND ((produccion_id IS NULL AND ? IS NULL) OR produccion_id=?) "
+                " ORDER BY id DESC LIMIT 1",
+                (base, serig, prod_id, prod_id)).fetchone()
+        except Exception as _e:
+            log.warning('no pude revisar ordenes de marcacion abiertas: %s', _e)
+            _ya = None
+        if _ya:
+            return jsonify({
+                'error': 'Ese envase YA está en marcación para esta producción · si mandás otra '
+                         'tanda, confirmá para no descontarlo dos veces',
+                'codigo': 'MARCACION_YA_ABIERTA',
+                'orden_id': _ya[0], 'cantidad_enviada': _ya[1], 'fecha_envio': _ya[2],
+                'puede_forzar': True}), 409
+
     # Salida del base (sale a marcar)
     try:
         c.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones) "

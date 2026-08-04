@@ -284,3 +284,41 @@ def test_si_PQR_recibio_hoy_no_molesta(app, db_clean):
     c = _login(app)
     dec = c.get('/api/centro/decisiones').get_json().get('decisiones') or []
     assert not [d for d in dec if 'PQR' in (d.get('titulo') or '')]
+
+
+# ── la ficha se lee POR PARTES (Sebastián 4-ago) ─────────────────────────────
+
+def _fuente_bandeja():
+    import io
+    import os
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return io.open(os.path.join(raiz, 'api/templates_py/centro_operaciones_html.py'),
+                   encoding='utf-8').read()
+
+
+def test_la_ficha_va_en_bloques_y_el_banco_aparte():
+    """*"puede ir por partes: datos del creador arriba, datos bancarios abajo, o sea que la
+    lectura sea mejor"*. Trece campos en una sola grilla se leen como un muro."""
+    src = _fuente_bandeja()
+    for titulo in ("'Quién es y qué publicó'", "'El cobro'", "'Para consignar'"):
+        assert '_pgBloque(' + titulo in src, 'falta el bloque %s' % titulo
+    assert '.pg-banco' in src, 'los datos bancarios no tienen su propio recuadro'
+    # el número de cuenta es lo que se copia al banco: no puede ir del mismo tamaño que el resto
+    assert "'pg-cuenta'" in src and '.pg-ficha .pg-cuenta .val' in src
+
+
+def test_no_se_perdio_ningun_campo_al_reordenar():
+    """Con dientes: reacomodar 13 campos en 3 bloques es justo donde se cae uno sin que nadie
+    lo note (M112) · y el que falte sería el que hace falta para pagar."""
+    src = _fuente_bandeja()
+    for campo in ('Creador', 'Red', 'Ciudad', 'Monto a pagar', 'Qué se le paga',
+                  'Fecha de publicación', 'Solicitado', 'Vence', 'Orden', 'Email',
+                  'Teléfono', 'Banco', 'Tipo de cuenta', 'Número de cuenta', 'Cédula / NIT'):
+        assert "_pgDato('" + campo + "'" in src, 'se perdió el campo %s de la ficha' % campo
+
+
+def test_el_gate_de_habeas_data_sigue_puesto():
+    """Mover el banco a su propio bloque no puede aflojar quién lo ve (Ley 1581)."""
+    src = _fuente_bandeja()
+    assert 've_datos_bancarios' in src
+    assert 'sólo los ve un administrador o la contadora' in src

@@ -1546,14 +1546,23 @@ function renderCajaKPIs(k){
   const cards = [
     { label: 'Saldo en caja', val: fmtCOP(saldo),
       color: saldo >= 0 ? 'kpi-green' : 'kpi-red',
-      sub: (k.n_total||0) + ' movimientos con recibo' },
-    { label: 'Entro hoy', val: fmtCOP(k.ingreso_hoy||0), color:'kpi-green', sub: '' },
+      sub: 'efectivo en la gaveta &middot; ' + (k.n_total||0) + ' movimientos con recibo' },
+    // Estas dos cifras son EFECTIVO: lo que de verdad esta en la gaveta. Lo que entro por
+    // transferencia/Nequi/tarjeta se dice aparte -- entro de verdad, pero al banco, y callarlo
+    // hace que el numero se lea como un faltante.
+    { label: 'Entro hoy', val: fmtCOP(k.ingreso_hoy||0), color:'kpi-green',
+      sub: (k.ingreso_hoy_banco||0) > 0
+             ? ('en efectivo &middot; ' + fmtCOP(k.ingreso_hoy_banco) + ' entro al banco')
+             : 'en efectivo' },
     { label: 'Salio hoy', val: fmtCOP(k.egreso_hoy||0), color:'kpi-red', sub: '' },
     // El NETO del mes es el numero que dice si la caja crecio o se comio la plata; entro y
     // salio por separado no lo contestan de un vistazo.
     { label: 'Neto del mes', val: fmtCOP(neto),
       color: neto >= 0 ? 'kpi-blue' : 'kpi-red',
-      sub: fmtCOP(k.ingreso_mes||0) + ' entro &middot; ' + fmtCOP(k.egreso_mes||0) + ' salio' },
+      sub: fmtCOP(k.ingreso_mes||0) + ' entro &middot; ' + fmtCOP(k.egreso_mes||0) + ' salio'
+           + ((k.ingreso_mes_banco||0) > 0
+                ? ' &middot; ' + fmtCOP(k.ingreso_mes_banco) + ' al banco'
+                : '') },
   ];
   // El SALDO va solo y grande: es el numero por el que se abre una caja. Los otros tres
   // acompanan. Cuatro tarjetas identicas obligaban a leer las cuatro para encontrar esa.
