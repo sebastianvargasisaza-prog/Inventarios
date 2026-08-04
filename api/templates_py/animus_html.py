@@ -698,6 +698,7 @@ window.addEventListener('error', function(ev){
       Le llega a Recursos Humanos y a Gerencia por la campana, y queda registrado quién la
       escribió y quién la resolvió.
     </div>
+    <div id="nv-aviso-gente"></div>
     <div class="form-row">
       <div><label class="label">De quién es</label>
         <select id="nv-empleado" class="select"><option value="">Cargando...</option></select></div>
@@ -727,7 +728,14 @@ window.addEventListener('error', function(ev){
     </div>
     <div class="form-row full">
       <div><label class="label">Soporte (incapacidad, orden médica...)</label>
-        <input id="nv-adjunto" class="input" placeholder="Enlace a la foto del documento"></div>
+        <input id="nv-foto" type="file" class="input" accept="image/*,.pdf"
+               capture="environment" onchange="subirSoporte()"
+               style="padding:9px 12px;">
+        <input type="hidden" id="nv-adjunto">
+        <div id="nv-foto-estado" style="font-size:12px;color:var(--cx-text-mute);margin-top:6px;">
+          Sacale una foto o eligela del celular &middot; la ve Recursos Humanos y gerencia
+        </div>
+      </div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-outline" onclick="cerrarModal('modal-novedad')">Cancelar</button>
@@ -1385,7 +1393,7 @@ async function loadNovedades(){
         + '</td>'
         + '<td>' + esc(_NOV_TIPOS[x.tipo] || x.tipo || '') + '</td>'
         + '<td>' + esc(x.asunto || '')
-          + (x.adjunto_url ? ' <span style="color:var(--cx-info-text);font-size:11px;">con soporte</span>' : '')
+          + (x.adjunto_url ? ' <a href="' + esc(x.adjunto_url) + '" target="_blank" style="color:var(--cx-info-text);font-size:11px;">ver soporte</a>' : '')
         + '</td>'
         + '<td>' + esc(x.fecha_inicio || '-') + '</td>'
         + '<td>' + esc(x.fecha_fin || '-') + '</td>'
@@ -1406,6 +1414,9 @@ async function abrirNovedad(){
   document.getElementById('nv-adjunto').value = '';
   document.getElementById('nv-desde').value = hoyCol();
   document.getElementById('nv-hasta').value = '';
+  document.getElementById('nv-foto').value = '';
+  document.getElementById('nv-foto-estado').innerHTML =
+    'Sacale una foto o eligela del celular &middot; la ve Recursos Humanos y gerencia';
   var sel = document.getElementById('nv-empleado');
   // La lista sale del maestro de empleados: escribir el nombre a mano crearia una persona
   // distinta por cada forma de escribirla y RRHH no podria agrupar nada (M115).
@@ -1419,10 +1430,46 @@ async function abrirNovedad(){
                + esc(e.nombre || e.username) + (e.cargo ? ' · ' + esc(e.cargo) : '') + '</option>';
         }).join('')
       : '<option value="">Sin empleados cargados</option>';
+    // A quien no se encontro en el maestro se DICE: si no, esa persona simplemente no aparece
+    // en el desplegable y nadie sabe por que.
+    var av = document.getElementById('nv-aviso-gente');
+    if (av) av.innerHTML = d.aviso
+      ? '<div style="padding:8px 12px;background:var(--cx-warn-pale);border-left:3px solid var(--cx-warn);border-radius:8px;font-size:12px;color:var(--cx-warn-text);margin-bottom:12px;">'
+        + esc(d.aviso) + '</div>' : '';
   } catch(e) {
     sel.innerHTML = '<option value="">No pude cargar la lista</option>';
   }
   document.getElementById('modal-novedad').style.display = 'flex';
+}
+
+async function subirSoporte(){
+  var inp = document.getElementById('nv-foto');
+  var est = document.getElementById('nv-foto-estado');
+  var f = inp.files && inp.files[0];
+  if (!f) { document.getElementById('nv-adjunto').value = ''; return; }
+  est.innerHTML = 'Subiendo <b>' + esc(f.name) + '</b>...';
+  try {
+    var fd = new FormData();
+    fd.append('foto', f);
+    var t = await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json();
+    var r = await fetch('/api/animus/novedades/soporte',
+      {method:'POST', credentials:'same-origin', body: fd,
+       headers: {'X-CSRF-Token': t.csrf_token}});
+    var d = await r.json();
+    if (!d.ok) {
+      // Un "subido" que no subio nada es peor que un error: el soporte se daria por guardado.
+      document.getElementById('nv-adjunto').value = '';
+      inp.value = '';
+      est.innerHTML = '<span style="color:var(--cx-danger-text);">' + esc(d.error || 'No se pudo subir') + '</span>';
+      return;
+    }
+    document.getElementById('nv-adjunto').value = d.url;
+    est.innerHTML = '<span style="color:var(--cx-success-text);">Listo</span> &middot; '
+      + '<a href="' + esc(d.url) + '" target="_blank" style="color:var(--cx-info-text);">ver la foto</a>';
+  } catch(e) {
+    document.getElementById('nv-adjunto').value = '';
+    est.innerHTML = '<span style="color:var(--cx-danger-text);">Error de red al subir</span>';
+  }
 }
 
 async function guardarNovedad(){

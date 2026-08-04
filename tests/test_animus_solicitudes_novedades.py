@@ -258,3 +258,108 @@ def test_sin_el_ambito_la_bandeja_de_Catalina_no_cambia(app, db_clean):
         conn.commit()
     nums = [x['numero'] for x in c.get('/api/solicitudes-compra/mis').get_json()['solicitudes']]
     assert MARCA + '-PL2' in nums, 'el filtro dejó de ser aditivo'
+
+
+# ── SOLO LA GENTE DE ÁNIMUS · Y EL SOPORTE COMO FOTO (4-ago) ─────────────────
+
+def test_el_desplegable_trae_SOLO_a_la_gente_de_animus(app, db_clean):
+    """Sebastián: *"aquí solo deben salir Daniela Murillo, Karol, Valentina, Jeferson, Álvaro y
+    Samyra"*. Quién pertenece a ÁNIMUS es una DECISIÓN, no algo deducible del maestro (que no
+    los distingue): vive en `app_settings` para corregirla sin desplegar."""
+    from database import get_db
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM empleados WHERE codigo LIKE 'ZZE%'")
+        for cod, nom, ape in (('ZZE1', 'ZzKarol', 'Perez'), ('ZZE2', 'ZzJeferson', 'Ruiz'),
+                              ('ZZE3', 'ZzNadie', 'DeAnimus')):
+            cur.execute("INSERT INTO empleados (codigo, nombre, apellido, estado, cargo) "
+                        "VALUES (?,?,?,'Activo','Op')", (cod, nom, ape))
+        cur.execute("INSERT INTO app_settings (clave, valor) VALUES "
+                    "('animus_personal','ZzKarol,ZzJeferson') "
+                    "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor")
+        conn.commit()
+    d = _cli(app).get('/api/animus/empleados').get_json()
+    nombres = [e['nombre'] for e in d['empleados']]
+    assert d['filtrada'] is True
+    assert any('ZzKarol' in n for n in nombres), 'no trajo a quien sí es de ÁNIMUS · %s' % d
+    assert any('ZzJeferson' in n for n in nombres)
+    assert not any('ZzNadie' in n for n in nombres), 'trajo gente que no es de ÁNIMUS'
+
+
+def test_a_quien_NO_encuentra_en_el_maestro_lo_DECLARA(app, db_clean):
+    """Si no, esa persona simplemente no aparece en el desplegable y nadie sabe por qué
+    (M100 · lo que no se pudo resolver se dice, no se calla)."""
+    from database import get_db
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM empleados WHERE codigo LIKE 'ZZE%'")
+        cur.execute("INSERT INTO empleados (codigo, nombre, apellido, estado) "
+                    "VALUES ('ZZE1','ZzKarol','Perez','Activo')")
+        cur.execute("INSERT INTO app_settings (clave, valor) VALUES "
+                    "('animus_personal','ZzKarol,ZzSamyra') "
+                    "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor")
+        conn.commit()
+    d = _cli(app).get('/api/animus/empleados').get_json()
+    assert 'ZzSamyra' in d['sin_cruzar']
+    assert 'ZzSamyra' in d['aviso'], 'no avisa a quién no encontró'
+
+
+def test_sin_lista_configurada_lo_DICE_en_vez_de_filtrar_a_ciegas(app, db_clean):
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        conn.cursor().execute("UPDATE app_settings SET valor='' WHERE clave='animus_personal'")
+        conn.commit()
+    d = _cli(app).get('/api/animus/empleados').get_json()
+    assert d['filtrada'] is False and d['aviso']
+
+
+def test_el_soporte_se_SUBE_no_se_pega_un_enlace():
+    """Un campo de enlace obliga a que la foto ya viva en algún lado; nadie tiene una URL de la
+    incapacidad, la tiene en el celular."""
+    html = _html_animus()
+    assert 'id="nv-foto"' in html and 'type="file"' in html
+    assert 'subirSoporte()' in html
+    assert 'capture="environment"' in html, 'no deja sacar la foto con la cámara'
+    # y el soporte se puede VER desde la lista, no es sólo una etiqueta
+    assert 'ver soporte' in html
+
+
+def test_una_subida_que_falla_NO_deja_el_soporte_como_guardado(app, db_clean):
+    """Un "subido" que no subió nada es peor que un error: el soporte se daría por guardado."""
+    html = _html_animus()
+    i = html.index('async function subirSoporte(')
+    cuerpo = html[i:i + 2000]
+    assert "document.getElementById('nv-adjunto').value = ''" in cuerpo, \
+        'ante un error no limpia el campo · la novedad quedaría diciendo que tiene soporte'
+
+
+def test_espagiria_tiene_la_misma_pestana_de_novedades():
+    """Sebastián: *"en el módulo Espagiria también coloca lo mismo que hicimos en el de ÁNIMUS,
+    las solicitudes de permisos tal cual"*. Usa los MISMOS endpoints: dos tablas darían dos
+    bandejas de RRHH y dos números de ausencias (M1/M37)."""
+    import ast as _ast, io as _io, os as _os
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    src = _io.open(_os.path.join(raiz, 'api', 'templates_py', 'espagiria_html.py'),
+                   encoding='utf-8').read()
+    html = max((n.value.value for n in _ast.walk(_ast.parse(src))
+                if isinstance(n, _ast.Assign) and isinstance(n.value, _ast.Constant)
+                and isinstance(n.value.value, str) and len(n.value.value) > 5000), key=len)
+    assert 'id="esp-tab-novedades"' in html and "esw('novedades')" in html
+    assert 'id="modal-env"' in html and 'guardarNovedadEsp()' in html
+    assert '/api/bienestar/notificaciones' in html, 'no usa el circuito compartido de RRHH'
+    assert "name === 'novedades'" in html, 'el conmutador no la carga'
+
+
+def test_el_modal_de_solicitar_pago_deja_subir_la_factura():
+    """Sebastián: *"que puedan anexar una foto si es algo que tiene ya factura"*. Se conserva
+    además el campo de enlace: una cotización que llegó por correo ya tiene URL y obligar a
+    bajarla y volver a subirla sería absurdo."""
+    import ast as _ast, io as _io, os as _os
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    for arch, pfx in (('espagiria_html.py', 'ep'), ('compras_html.py', 'cp')):
+        src = _io.open(_os.path.join(raiz, 'api', 'templates_py', arch), encoding='utf-8').read()
+        assert 'id="%s-foto"' % pfx in src, '%s no deja subir la factura' % arch
+        assert 'carpeta=cotizaciones' in src, '%s no manda la foto a su carpeta' % arch
+        assert 'id="%s-cotiz"' % pfx in src, '%s perdió el campo de enlace' % arch
+        assert 'width:620px;' in src, '%s: el modal no se agrandó' % arch

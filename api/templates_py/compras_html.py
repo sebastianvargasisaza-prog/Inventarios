@@ -817,7 +817,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 
 <!-- MODAL · solicitar pago desde caja (Compras) -->
 <div id="modal-cp" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:520px;max-width:92vw;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:16px;padding:26px;width:620px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
       <h3 style="font-size:16px;color:var(--cx-text);margin:0;">&#128184; Solicitar pago con caja menor</h3>
       <button onclick="document.getElementById('modal-cp').style.display='none'"
@@ -843,6 +843,15 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <div style="margin-bottom:10px;">
       <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">A quién se le paga</label>
       <input id="cp-benef" class="in" style="width:100%" placeholder="Proveedor o persona">
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Factura o cotizaci&oacute;n (foto)</label>
+      <input id="cp-foto" type="file" accept="image/*,.pdf" capture="environment"
+             onchange="cpSubirFoto()"
+             style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:9px 12px;font-size:13px;">
+      <div id="cp-foto-estado" style="font-size:11.5px;color:var(--cx-text-mute);margin-top:5px;">
+        Sacale una foto a la factura o eleg&iacute;la del celular &middot; justifica el monto ANTES de autorizar
+      </div>
     </div>
     <div style="margin-bottom:10px;">
       <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Cotizacion o pantallazo del precio</label>
@@ -7940,6 +7949,35 @@ function cpAbrirSolicitud(){
   });
   document.getElementById('cp-tope-aviso').innerHTML = '';
   document.getElementById('modal-cp').style.display = 'flex';
+}
+
+// Sube la factura o cotizacion. Un campo de ENLACE obliga a que el archivo ya viva en algun
+// lado; nadie tiene una URL de la factura, la tiene en el celular.
+async function cpSubirFoto(){
+  var inp = document.getElementById('cp-foto');
+  var est = document.getElementById('cp-foto-estado');
+  var f = inp.files && inp.files[0];
+  if (!f) return;
+  est.innerHTML = 'Subiendo...';
+  try {
+    var fd = new FormData(); fd.append('foto', f);
+    var t = await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json();
+    var r = await fetch('/api/archivo/subir?carpeta=cotizaciones',
+      {method:'POST', credentials:'same-origin', body: fd, headers:{'X-CSRF-Token': t.csrf_token}});
+    var d = await r.json();
+    if (!d.ok) {
+      // Un "subido" que no subio nada es peor que un error: la cotizacion se daria por adjunta.
+      inp.value = '';
+      est.innerHTML = '<span style="color:var(--cx-danger-text);">' + (d.error || 'No se pudo subir') + '</span>';
+      return;
+    }
+    document.getElementById('cp-cotiz').value = d.url;
+    est.innerHTML = '<span style="color:var(--cx-success-text);">Listo</span> &middot; '
+      + '<a href="' + d.url + '" target="_blank" style="color:var(--cx-info-text);">ver</a>';
+  } catch(e) {
+    inp.value = '';
+    est.innerHTML = '<span style="color:var(--cx-danger-text);">Error de red al subir</span>';
+  }
 }
 
 function cpAvisarTope(){

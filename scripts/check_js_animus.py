@@ -29,6 +29,8 @@ fetch parseFloat parseInt isNaN isFinite encodeURIComponent decodeURIComponent
 Number String Boolean Array Object JSON Math Date Promise RegExp Error Map Set Symbol
 setTimeout setInterval clearTimeout clearInterval requestAnimationFrame
 alert confirm prompt console document window localStorage sessionStorage navigator location
+FormData Blob File FileReader URL Image Audio Notification AbortController Headers Request
+Response WebSocket IntersectionObserver MutationObserver ResizeObserver CustomEvent Event
 """.split())
 
 

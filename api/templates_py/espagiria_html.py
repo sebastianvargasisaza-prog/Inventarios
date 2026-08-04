@@ -8,9 +8,72 @@ HTML = r"""
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Espagiria - Panel Asistente Gerencia</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
+<!-- MODAL · registrar una novedad del equipo (Espagiria) -->
+<div id="modal-env" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:26px;width:620px;max-width:94vw;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <h3 style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;">&#128100; Registrar una novedad</h3>
+      <button onclick="document.getElementById('modal-env').style.display='none'"
+              style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;">
+      Le llega a Recursos Humanos y a Gerencia por la campana, y queda registrado qui&eacute;n la escribi&oacute; y qui&eacute;n la resolvi&oacute;.
+    </div>
+    <div id="env-aviso-gente"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div>
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">De qui&eacute;n es</label>
+        <select id="env-empleado" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:10px 12px;font-size:13px;"><option value="">Cargando...</option></select>
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Tipo</label>
+        <select id="env-tipo" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:10px 12px;font-size:13px;">
+          <option value="permiso">Permiso</option>
+          <option value="cita_medica">Cita m&eacute;dica</option>
+          <option value="enfermedad">Incapacidad</option>
+          <option value="licencia">Licencia</option>
+          <option value="salud">Salud</option>
+          <option value="otro">Administrativa / otra</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Asunto</label>
+      <input id="env-asunto" placeholder="Permiso de dos horas el jueves" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:10px 12px;font-size:13px;">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+      <div>
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Desde</label>
+        <input id="env-desde" type="date" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:10px 12px;font-size:13px;">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Hasta</label>
+        <input id="env-hasta" type="date" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:10px 12px;font-size:13px;">
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Detalle</label>
+      <textarea id="env-desc" placeholder="Lo que Recursos Humanos necesita saber para decidir" style="width:100%;min-height:70px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:10px 12px;font-size:13px;"></textarea>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Soporte (incapacidad, orden m&eacute;dica...)</label>
+      <input id="env-foto" type="file" accept="image/*,.pdf" capture="environment" onchange="envSubirSoporte()"
+             style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:9px 12px;font-size:13px;">
+      <input type="hidden" id="env-adjunto">
+      <div id="env-foto-estado" style="font-size:11.5px;color:var(--cx-text-mute);margin-top:5px;">Sacale una foto o eleg&iacute;la del celular &middot; la ve Recursos Humanos y gerencia</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="document.getElementById('modal-env').style.display='none'"
+              style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:10px 18px;font-size:13px;cursor:pointer;">Cancelar</button>
+      <button onclick="guardarNovedadEsp()"
+              style="background:var(--cx-primary-grad,var(--cx-primary));border:none;color:#fff;border-radius:9px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;">Registrar y avisar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL · solicitar pago desde caja (Espagiria) -->
 <div id="modal-ep" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:520px;max-width:92vw;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:16px;padding:26px;width:620px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
       <h3 style="font-size:16px;color:var(--cx-text);margin:0;">&#128184; Solicitar pago con caja menor</h3>
       <button onclick="document.getElementById('modal-ep').style.display='none'"
@@ -36,6 +99,15 @@ HTML = r"""
     <div style="margin-bottom:10px;">
       <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">A qui&eacute;n se le paga</label>
       <input id="ep-benef" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Proveedor o persona">
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Factura o cotizaci&oacute;n (foto)</label>
+      <input id="ep-foto" type="file" accept="image/*,.pdf" capture="environment"
+             onchange="epSubirFoto()"
+             style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:9px 12px;font-size:13px;">
+      <div id="ep-foto-estado" style="font-size:11.5px;color:var(--cx-text-mute);margin-top:5px;">
+        Sacale una foto a la factura o eleg&iacute;la del celular &middot; justifica el monto ANTES de autorizar
+      </div>
     </div>
     <div style="margin-bottom:10px;">
       <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Cotizacion o pantallazo del precio</label>
@@ -143,6 +215,7 @@ HTML = r"""
     <button class="esp-tab" data-tab="clientes" onclick="esw('clientes')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">👥 Clientes 360</button>
     <button class="esp-tab" data-tab="cartera" onclick="esw('cartera')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">💰 Cartera</button>
     <button class="esp-tab" data-tab="cajapagos" onclick="esw('cajapagos')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;" title="Pedir un pago con el efectivo de la caja menor">&#128184; Pagos de caja</button>
+<button class="esp-tab" data-tab="novedades" onclick="esw('novedades')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;" title="Pedir un pago con el efectivo de la caja menor">&#128100; Novedades</button>
   </div>
 
   <div class="container">
@@ -302,6 +375,41 @@ HTML = r"""
     </div><!-- /tab clientes -->
 
     <!-- TAB CARTERA -->
+    <div id="esp-tab-novedades" class="esp-pane" style="display:none;">
+      <!-- NOVEDADES DEL EQUIPO (4-ago · Sebastian: "en Espagiria tambien coloca lo mismo que
+           hicimos en el de ANIMUS, las solicitudes de permisos tal cual").
+           Usa los MISMOS endpoints de bienestar: si Espagiria tuviera su propia tabla, RRHH
+           tendria dos bandejas y el numero de ausencias dejaria de ser uno solo. -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+        <div>
+          <div style="font-size:20px;font-weight:800;color:var(--cx-text);">&#128100; Novedades del equipo</div>
+          <div style="font-size:13px;color:var(--cx-text-mute);margin-top:3px;">Permisos, citas m&eacute;dicas, incapacidades y novedades administrativas. Le llega a Recursos Humanos y a Gerencia, y queda el rastro de qui&eacute;n la registr&oacute; y qui&eacute;n la resolvi&oacute;.</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <select id="env-filtro" onchange="cargarNovedadesEsp()"
+                  style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:8px 12px;font-size:13px;">
+            <option value="">Todas</option>
+            <option value="pendiente">Sin resolver</option>
+            <option value="aprobada">Aprobadas</option>
+            <option value="rechazada">Rechazadas</option>
+          </select>
+          <button onclick="abrirNovedadEsp()"
+                  style="background:var(--cx-primary-grad,var(--cx-primary));border:none;color:#fff;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;">+ Registrar novedad</button>
+        </div>
+      </div>
+      <div class="grid grid-4" id="env-kpis" style="margin-bottom:14px;"></div>
+      <div class="card">
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="text-align:left;color:var(--cx-text-mute);font-size:11px;text-transform:uppercase;letter-spacing:.05em;">
+              <th style="padding:8px;">De qui&eacute;n</th><th>Tipo</th><th>Asunto</th>
+              <th>Desde</th><th>Hasta</th><th>Estado</th><th>Resolvi&oacute;</th>
+            </tr></thead>
+            <tbody id="env-body"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
     <div id="esp-tab-cajapagos" class="esp-pane" style="display:none;">
       <!-- SOLICITAR PAGO DESDE CAJA MENOR (3-ago · Sebastián: "lo mismo a luz en su modulo
            de espagiria"). Luz PIDE acá; gerencia autoriza y quien maneja la caja paga.
@@ -522,11 +630,145 @@ function esw(name) {
   if (name === 'lab') cargarLab();
   if (name === 'clientes') cargarClientes();
   if (name === 'cajapagos') cargarPagosCaja();
+  if (name === 'novedades') cargarNovedadesEsp();
 }
 
 // ════════════════════════════════════════════════════════════════
 // LAB EN VIVO
 // ════════════════════════════════════════════════════════════════
+// ── NOVEDADES DEL EQUIPO (4-ago) ────────────────────────────────────────────
+// Mismos endpoints que ANIMUS: el circuito de aprobacion, el aviso a RRHH y la trazabilidad
+// son UNO solo. Dos tablas darian dos bandejas y dos numeros de ausencias (M1/M37).
+var _ENV_TIPOS = {permiso:'Permiso', cita_medica:'Cita medica', enfermedad:'Incapacidad',
+                  licencia:'Licencia', salud:'Salud', otro:'Administrativa'};
+
+function _envEsc(x){
+  return String(x == null ? '' : x).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function cargarNovedadesEsp(){
+  var tb = document.getElementById('env-body');
+  try {
+    var f = document.getElementById('env-filtro').value;
+    var r = await fetch('/api/bienestar/notificaciones' + (f ? '?estado=' + encodeURIComponent(f) : ''),
+                        {credentials:'same-origin'});
+    var d = await r.json();
+    if (d.error) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">' + _envEsc(d.error) + '</td></tr>'; return; }
+    var filas = d.notificaciones || [];
+    var pend = filas.filter(function(x){ return x.estado === 'pendiente'; }).length;
+    var apr = filas.filter(function(x){ return x.estado === 'aprobada'; }).length;
+    var rech = filas.filter(function(x){ return x.estado === 'rechazada'; }).length;
+    document.getElementById('env-kpis').innerHTML = [
+      ['Sin resolver', pend, 'esperan a Recursos Humanos', pend ? 'var(--cx-warn-text)' : ''],
+      ['Aprobadas', apr, 'con visto bueno', 'var(--cx-success-text)'],
+      ['Rechazadas', rech, '', rech ? 'var(--cx-danger-text)' : ''],
+      ['Registradas', filas.length, 'en total', '']
+    ].map(function(k){
+      return '<div class="card"><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.05em;">' + k[0] + '</div>'
+           + '<div style="font-size:1.7em;font-weight:800;color:' + (k[3] || 'var(--cx-text)') + ';">' + k[1] + '</div>'
+           + '<div style="font-size:11.5px;color:var(--cx-text-mute);">' + k[2] + '</div></div>';
+    }).join('');
+    if (!filas.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">Sin novedades registradas.</td></tr>'; return; }
+    tb.innerHTML = filas.map(function(x){
+      var col = x.estado === 'aprobada' ? 'var(--cx-success-text)'
+              : (x.estado === 'rechazada' ? 'var(--cx-danger-text)'
+              : (x.estado === 'vista' ? 'var(--cx-info-text)' : 'var(--cx-warn-text)'));
+      return '<tr style="border-top:1px solid var(--cx-border);">'
+        + '<td style="padding:8px;"><b>' + _envEsc(x.empleado_nombre || x.empleado_username) + '</b>'
+        +   (x.registrado_por ? '<div style="font-size:11px;color:var(--cx-text-mute);">la registro ' + _envEsc(x.registrado_por) + '</div>' : '')
+        + '</td>'
+        + '<td>' + _envEsc(_ENV_TIPOS[x.tipo] || x.tipo) + '</td>'
+        + '<td>' + _envEsc(x.asunto)
+        +   (x.adjunto_url ? ' <a href="' + _envEsc(x.adjunto_url) + '" target="_blank" style="color:var(--cx-info-text);font-size:11px;">ver soporte</a>' : '')
+        + '</td>'
+        + '<td>' + _envEsc(x.fecha_inicio || '-') + '</td>'
+        + '<td>' + _envEsc(x.fecha_fin || '-') + '</td>'
+        + '<td style="color:' + col + ';font-weight:700;">' + _envEsc(x.estado) + '</td>'
+        + '<td>' + _envEsc(x.resuelto_por || '-') + '</td></tr>';
+    }).join('');
+  } catch(e) {
+    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">No pude cargar: ' + _envEsc(e.message) + '</td></tr>';
+  }
+}
+
+async function abrirNovedadEsp(){
+  document.getElementById('env-asunto').value = '';
+  document.getElementById('env-desc').value = '';
+  document.getElementById('env-adjunto').value = '';
+  document.getElementById('env-foto').value = '';
+  document.getElementById('env-foto-estado').innerHTML = 'Sacale una foto o elegila del celular &middot; la ve Recursos Humanos y gerencia';
+  var d0 = new Date(Date.now() - 5 * 3600 * 1000);
+  document.getElementById('env-desde').value = d0.toISOString().slice(0, 10);
+  document.getElementById('env-hasta').value = '';
+  var sel = document.getElementById('env-empleado');
+  try {
+    var r = await fetch('/api/animus/empleados', {credentials:'same-origin'});
+    var d = await r.json();
+    var gente = d.empleados || [];
+    sel.innerHTML = gente.length
+      ? gente.map(function(e){
+          return '<option value="' + _envEsc(e.username) + '" data-nombre="' + _envEsc(e.nombre) + '">'
+               + _envEsc(e.nombre || e.username) + (e.cargo ? ' &middot; ' + _envEsc(e.cargo) : '') + '</option>';
+        }).join('')
+      : '<option value="">Sin empleados cargados</option>';
+  } catch(e) { sel.innerHTML = '<option value="">No pude cargar la lista</option>'; }
+  document.getElementById('modal-env').style.display = 'flex';
+}
+
+async function envSubirSoporte(){
+  var inp = document.getElementById('env-foto');
+  var est = document.getElementById('env-foto-estado');
+  var f = inp.files && inp.files[0];
+  if (!f) { document.getElementById('env-adjunto').value = ''; return; }
+  est.innerHTML = 'Subiendo...';
+  try {
+    var fd = new FormData(); fd.append('foto', f);
+    var t = await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json();
+    var r = await fetch('/api/archivo/subir?carpeta=novedades',
+      {method:'POST', credentials:'same-origin', body: fd, headers:{'X-CSRF-Token': t.csrf_token}});
+    var d = await r.json();
+    if (!d.ok) {
+      inp.value = ''; document.getElementById('env-adjunto').value = '';
+      est.innerHTML = '<span style="color:var(--cx-danger-text);">' + _envEsc(d.error || 'No se pudo subir') + '</span>';
+      return;
+    }
+    document.getElementById('env-adjunto').value = d.url;
+    est.innerHTML = '<span style="color:var(--cx-success-text);">Listo</span> &middot; <a href="' + _envEsc(d.url) + '" target="_blank" style="color:var(--cx-info-text);">ver la foto</a>';
+  } catch(e) {
+    inp.value = ''; document.getElementById('env-adjunto').value = '';
+    est.innerHTML = '<span style="color:var(--cx-danger-text);">Error de red al subir</span>';
+  }
+}
+
+async function guardarNovedadEsp(){
+  var asunto = document.getElementById('env-asunto').value.trim();
+  if (!asunto) { alert('Falta el asunto'); return; }
+  var sel = document.getElementById('env-empleado');
+  if (!sel.value) { alert('Falta de quien es la novedad'); return; }
+  var opt = sel.options[sel.selectedIndex];
+  try {
+    var t = await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json();
+    var r = await fetch('/api/bienestar/notificaciones', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': t.csrf_token},
+      body: JSON.stringify({
+        empleado_username: sel.value,
+        empleado_nombre: opt ? (opt.getAttribute('data-nombre') || opt.textContent) : '',
+        tipo: document.getElementById('env-tipo').value,
+        asunto: asunto,
+        descripcion: document.getElementById('env-desc').value.trim(),
+        fecha_inicio: document.getElementById('env-desde').value,
+        fecha_fin: document.getElementById('env-hasta').value,
+        adjunto_url: document.getElementById('env-adjunto').value.trim()
+      })});
+    var d = await r.json();
+    if (d.error) { alert('Error: ' + d.error); return; }
+    document.getElementById('modal-env').style.display = 'none';
+    cargarNovedadesEsp();
+  } catch(e) { alert('Error de red: ' + e.message); }
+}
+
 // ── PAGOS CON CAJA MENOR desde Espagiria (3-ago) ──────────────────────────────
 // Luz PIDE acá; gerencia autoriza en su módulo y quien maneja la caja paga en el suyo.
 // La lista se filtra a ESPAGIRIA: no tiene por qué ver los gastos de ÁNIMUS.
@@ -610,6 +852,35 @@ function epAbrir(){
   });
   document.getElementById('ep-tope-aviso').innerHTML = '';
   document.getElementById('modal-ep').style.display = 'flex';
+}
+
+// Sube la factura o cotizacion. Un campo de ENLACE obliga a que el archivo ya viva en algun
+// lado; nadie tiene una URL de la factura, la tiene en el celular.
+async function epSubirFoto(){
+  var inp = document.getElementById('ep-foto');
+  var est = document.getElementById('ep-foto-estado');
+  var f = inp.files && inp.files[0];
+  if (!f) return;
+  est.innerHTML = 'Subiendo...';
+  try {
+    var fd = new FormData(); fd.append('foto', f);
+    var t = await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json();
+    var r = await fetch('/api/archivo/subir?carpeta=cotizaciones',
+      {method:'POST', credentials:'same-origin', body: fd, headers:{'X-CSRF-Token': t.csrf_token}});
+    var d = await r.json();
+    if (!d.ok) {
+      // Un "subido" que no subio nada es peor que un error: la cotizacion se daria por adjunta.
+      inp.value = '';
+      est.innerHTML = '<span style="color:var(--cx-danger-text);">' + (d.error || 'No se pudo subir') + '</span>';
+      return;
+    }
+    document.getElementById('ep-cotiz').value = d.url;
+    est.innerHTML = '<span style="color:var(--cx-success-text);">Listo</span> &middot; '
+      + '<a href="' + d.url + '" target="_blank" style="color:var(--cx-info-text);">ver</a>';
+  } catch(e) {
+    inp.value = '';
+    est.innerHTML = '<span style="color:var(--cx-danger-text);">Error de red al subir</span>';
+  }
 }
 
 function epAvisarTope(){

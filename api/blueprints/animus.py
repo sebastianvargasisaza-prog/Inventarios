@@ -1335,15 +1335,128 @@ def animus_empleados():
                 "tiene_login": bool((r[5] or '').strip())}
 
     todos = [_fila(r) for r in filas]
-    animus = [x for x in todos if 'ANIMUS' in (x['empresa'] or '').upper()]
-    # Si el maestro no marca a nadie como de ANIMUS, se devuelven TODOS antes que un desplegable
-    # vacio -- y se DECLARA por que, para que no parezca que la lista esta bien filtrada.
-    return jsonify({"ok": True,
-                    "empleados": animus or todos,
-                    "filtrado_por_empresa": bool(animus),
-                    "aviso": '' if animus else
-                             'Ningún empleado está marcado como de ÁNIMUS en el maestro · '
-                             'se muestran todos los activos'})
+
+    # QUIEN pertenece a ANIMUS es una decision, no un dato derivable: el maestro no los
+    # distingue. La lista vive en app_settings para corregirla sin desplegar.
+    try:
+        _r = c.execute("SELECT valor FROM app_settings WHERE clave='animus_personal'").fetchone()
+        crudo = (_r[0] if _r else '') or ''
+    except Exception as e:
+        log.warning('no pude leer la lista de personal de ANIMUS: %s', e)
+        crudo = ''
+    crudo = crudo.strip()
+    nombres = [x.strip() for x in crudo.split(',') if x.strip()]
+
+    def _norm(x):
+        import unicodedata
+        x = unicodedata.normalize('NFKD', (x or '')).encode('ascii', 'ignore').decode()
+        return ' '.join(x.lower().split())
+
+    if not nombres:
+        # sin lista configurada se devuelven todos, y se DECLARA (una lista filtrada por una
+        # configuracion vacia se veria igual que una bien filtrada)
+        return jsonify({"ok": True, "empleados": todos, "filtrada": False,
+                        "aviso": 'No hay lista de personal de ÁNIMUS configurada · '
+                                 'se muestran todos los activos'})
+
+    elegidos, sin_cruzar = [], []
+    for n in nombres:
+        nn = _norm(n)
+        # el nombre configurado puede ser el de pila ("Karol") y el maestro traer el completo
+        cand = [e for e in todos if nn == _norm(e['nombre'])] or \
+               [e for e in todos if nn and nn in _norm(e['nombre'])]
+        if len(cand) == 1:
+            elegidos.append(dict(cand[0], nombre_config=n))
+        elif len(cand) > 1:
+            # ambiguo: no se elige por parecido · se declara para que lo resuelva una persona
+            sin_cruzar.append('%s (coincide con %d del maestro)' % (n, len(cand)))
+        else:
+            sin_cruzar.append(n)
+
+    return jsonify({
+        "ok": True,
+        "empleados": elegidos,
+        "filtrada": True,
+        "configurados": nombres,
+        "sin_cruzar": sin_cruzar,
+        # Lo que NO cruzo se dice: si no, esa persona simplemente no aparece en el desplegable
+        # y nadie sabe por que (M100 · un chequeo que no pudo correr tiene que declararlo).
+        "aviso": ('No encontré en el maestro de empleados a: ' + ', '.join(sin_cruzar))
+                 if sin_cruzar else ''})
+
+
+@bp.route("/api/animus/novedades/soporte", methods=["POST"])
+@bp.route("/api/archivo/subir", methods=["POST"])
+def animus_novedad_soporte():
+    """Sube la FOTO del soporte (incapacidad, orden médica) y devuelve su enlace.
+
+    Sebastián: *"no debería ser link sino agregar la foto, y esa foto debe cargar en Recursos
+    Humanos y a CEO"*. Un campo de enlace obliga a que la foto ya viva en algún lado; nadie
+    tiene una URL de la incapacidad, la tiene en el celular.
+
+    El archivo va a R2 y se sirve desde EOS, así la misma foto la ve Recursos Humanos y la ve
+    gerencia desde la notificación. Si R2 no está configurado se DICE: un "subido" que no subió
+    nada es peor que un error, porque el soporte se da por guardado y no está.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    f = request.files.get('foto') or request.files.get('file')
+    if not f or not f.filename:
+        return jsonify({"error": "Falta la foto"}), 400
+    nombre = (f.filename or '').lower()
+    ext = next((e for e in ('.jpg', '.jpeg', '.png', '.webp', '.pdf') if nombre.endswith(e)), '')
+    if not ext:
+        return jsonify({"error": "Formato no admitido · una foto (jpg, png, webp) o un PDF"}), 400
+    datos = f.read()
+    if not datos:
+        return jsonify({"error": "El archivo llegó vacío"}), 400
+    if len(datos) > 8 * 1024 * 1024:
+        return jsonify({"error": "La foto pesa más de 8 MB · sacala con menos resolución"}), 400
+
+    try:
+        from r2_storage import r2_put, r2_configurado
+    except Exception as e:
+        log.warning('no pude cargar r2_storage: %s', e)
+        return jsonify({"error": "El almacenamiento de archivos no está disponible"}), 503
+    if not r2_configurado():
+        return jsonify({"error": "El almacenamiento de archivos no está configurado · "
+                                 "el soporte no se puede guardar todavía"}), 503
+
+    carpeta = (request.args.get('carpeta') or 'novedades').strip().lower()
+    if carpeta not in ('novedades', 'cotizaciones', 'comprobantes'):
+        return jsonify({"error": "Carpeta inválida"}), 400
+    import hashlib
+    sello = hashlib.sha1((f.filename + str(len(datos))).encode('utf-8')).hexdigest()[:10]
+    key = '%s/%s-%s%s' % (carpeta, _now_col().strftime('%Y%m%d%H%M%S'), sello, ext)
+    tipo = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+            'webp': 'image/webp', 'pdf': 'application/pdf'}[ext.lstrip('.')]
+    if not r2_put(key, datos, content_type=tipo):
+        return jsonify({"error": "No pude guardar la foto · intentá de nuevo"}), 502
+    return jsonify({"ok": True, "key": key, "url": "/api/animus/soporte/" + key,
+                    "nombre": f.filename, "bytes": len(datos)})
+
+
+@bp.route("/api/animus/soporte/<path:key>", methods=["GET"])
+def animus_soporte_ver(key):
+    """Sirve el soporte subido. Detrás del login: es un documento de salud de un empleado."""
+    u, err, code = _auth()
+    if err: return err, code
+    if not key.split('/')[0] in ('novedades', 'cotizaciones', 'comprobantes') or '..' in key:
+        return jsonify({"error": "Ruta inválida"}), 400
+    try:
+        from r2_storage import r2_get
+        datos = r2_get(key)
+    except Exception as e:
+        log.warning('no pude leer el soporte %s: %s', key, e)
+        datos = None
+    if datos is None:
+        return jsonify({"error": "Ese soporte no está disponible"}), 404
+    tipo = ('application/pdf' if key.endswith('.pdf')
+            else 'image/png' if key.endswith('.png')
+            else 'image/webp' if key.endswith('.webp') else 'image/jpeg')
+    from flask import Response
+    return Response(datos, mimetype=tipo,
+                    headers={'Cache-Control': 'private, max-age=3600'})
 
 
 @bp.route("/api/caja/pago-directo", methods=["POST"])

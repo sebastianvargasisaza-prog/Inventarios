@@ -11106,6 +11106,18 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_conteo_investigacion "
         "ON animus_conteos_asignados(investigacion, contado_en)",
     ]),
+    (414, "novedades: quienes pertenecen a ANIMUS (lista editable, no un dato derivable)", [
+        # Sebastian (4-ago): "solo deben salir Daniela Murillo, Karol, Valentina, Jeferson,
+        # Alvaro y Samyra". El maestro de empleados no distingue la empresa para esta gente, y
+        # QUIEN pertenece a ANIMUS es una decision del negocio, no algo que se pueda deducir de
+        # los datos. Va como ajuste para corregirla sin desplegar el dia que entre o salga
+        # alguien -- si estuviera en el codigo, cada cambio de personal seria un despliegue.
+        "INSERT INTO app_settings (clave, valor) VALUES ('animus_personal', "
+        "'Daniela Murillo,Karol,Valentina,Jeferson,Alvaro,Samyra') "
+        "ON CONFLICT (clave) DO NOTHING",
+        # el soporte de una novedad ahora es un archivo subido, no un enlace tecleado
+        "ALTER TABLE notificaciones_empleados ADD COLUMN adjunto_key TEXT",
+    ]),
 ]
 
 
