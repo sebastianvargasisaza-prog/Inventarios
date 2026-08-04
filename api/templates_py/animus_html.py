@@ -265,6 +265,8 @@ window.addEventListener('error', function(ev){
                 title="Elegir con que etiqueta o medio de pago se marca la contraentrega en Shopify">&#9881; Marca</button>
         <button class="btn btn-primary btn-sm" onclick="importarPagados()"
                 title="Asienta en caja las contraentregas que Shopify ya da por pagadas">&#128181; Registrar cobrados</button>
+        <button class="btn btn-outline btn-sm" onclick="abrirCorteCod()"
+                title="La lista arranca desde una fecha · lo anterior se oculta, no se borra">&#128198; Desde cuándo</button>
         <button class="btn btn-outline btn-sm" onclick="traerPedidos()"
                 title="Trae de Shopify los pedidos de los ultimos 7 dias. El cron ya lo hace solo a las 6 AM: esto es para no esperar">&#128260; Traer pedidos</button>
         <button class="btn btn-outline btn-sm" onclick="syncBorradores()"
@@ -272,6 +274,7 @@ window.addEventListener('error', function(ev){
       </div>
     </div>
     <div class="kpi-grid" id="cod-kpis" style="margin-bottom:14px;"></div>
+    <div id="cod-corte"></div>
     <div id="cod-aviso"></div>
     <div style="overflow-x:auto;">
       <table>
@@ -812,21 +815,30 @@ window.addEventListener('error', function(ev){
           <option value="transferencia">Transferencia</option>
           <option value="nequi">Nequi</option>
           <option value="daviplata">Daviplata</option>
+          <option value="tarjeta_credito">Tarjeta de crédito</option>
+          <option value="tarjeta_debito">Tarjeta débito</option>
         </select></div>
     </div>
     <div id="cob-dif" style="font-size:12.5px;margin:2px 0 10px;min-height:18px;"></div>
     <div id="cob-no-efectivo" style="display:none;">
       <div style="padding:10px 14px;background:var(--cx-info-pale);border-left:3px solid var(--cx-info);border-radius:8px;font-size:12px;color:var(--cx-text-soft);margin-bottom:12px;">
         Esta plata entra al <b>banco</b>, no a la gaveta: no suma al efectivo de la caja y queda
-        registrada en Tesoreria.
+        registrada en Tesoreria. Si fue con <b>tarjeta</b>, el pago se confirma en Shopify.
       </div>
       <div class="form-row full">
-        <div><label class="label">Numero de la transferencia</label>
+        <div><label id="cob-ref-lbl" class="label">Numero de la transferencia</label>
           <input id="cob-ref" class="input" placeholder="Sin esto no se puede conciliar contra el extracto"></div>
       </div>
       <div class="form-row full">
-        <div><label class="label">Comprobante (foto o enlace)</label>
-          <input id="cob-comprobante" class="input" placeholder="https://..."></div>
+        <div><label class="label">Foto del comprobante</label>
+          <input id="cob-foto" type="file" class="input" accept="image/*,.pdf"
+                 capture="environment" onchange="subirComprobanteCobro()"
+                 style="padding:9px 12px;">
+          <input type="hidden" id="cob-comprobante">
+          <div id="cob-foto-estado" style="font-size:12px;color:var(--cx-text-mute);margin-top:6px;">
+            La que manda el mensajero por WhatsApp &middot; queda pegada a este cobro
+          </div>
+        </div>
       </div>
     </div>
     <div class="form-row full">
@@ -1671,6 +1683,65 @@ async function anularCaja(id){
 }
 
 // Contraentrega
+// ── DESDE CUANDO se miran los contraentrega (Daniela, 4-ago) ────────────────
+// "Quiere empezar desde hoy y eliminar todos los anteriores asi no se enrreda".
+// Arrancar limpia es correcto; BORRAR no: `animus_shopify_orders` la leen diez partes del
+// sistema y de ahi sale la velocidad de venta que alimenta el plan de produccion (regla 0.7).
+// La fecha de corte hace lo mismo desde su silla, sin tocar un dato.
+function pintarCorteCod(d){
+  var el = document.getElementById('cod-corte');
+  if (!el) return;
+  if (!d || !d.fecha_inicio) { el.innerHTML = ''; return; }
+  var atras = (d.quedan_atras || {});
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 14px;'
+    + 'background:var(--cx-info-pale);border-left:3px solid var(--cx-info);border-radius:8px;'
+    + 'font-size:12.5px;color:var(--cx-text-soft);margin-bottom:12px;">'
+    + '<span>Mostrando los pedidos desde el <b>' + esc(d.fecha_inicio) + '</b>.</span>'
+    // Lo que queda atras se DICE con su monto: si desapareciera en silencio, nadie sabria
+    // despues que habia plata sin registrar (M124/M129).
+    + (atras.n ? '<span style="color:var(--cx-warn-text);">Quedaron <b>' + atras.n
+                 + '</b> anteriores sin cobrar por ' + fmtCOP(atras.monto || 0)
+                 + ' &middot; siguen guardados.</span>' : '')
+    + '<button class="btn btn-outline btn-sm" style="margin-left:auto;" onclick="quitarCorteCod()">Ver todo otra vez</button>'
+    + '</div>';
+}
+
+async function abrirCorteCod(){
+  try {
+    var d = await (await fetch('/api/animus/contraentrega/fecha-inicio',
+                               {credentials:'same-origin'})).json();
+    var atras = d.quedan_atras || {};
+    var ok = await pedirDato({
+      titulo: 'Empezar desde hoy',
+      tipo: 'confirmar',
+      sub: 'La lista va a mostrar sólo los pedidos <b>del ' + esc(d.hoy) + ' en adelante</b>.'
+         + '<br><br><b>No se borra nada.</b> Los anteriores siguen guardados y siguen contando '
+         + 'para la velocidad de venta y el plan de producción: sólo salen de esta pantalla, y '
+         + 'se pueden volver a ver cuando quieras.'
+         + (atras.n ? '<br><br><span style="color:var(--cx-warn-text);">Quedarían atrás <b>'
+                      + atras.n + '</b> sin cobrar por <b>' + fmtCOP(atras.monto || 0)
+                      + '</b>.</span>' : ''),
+      confirmar: 'Empezar desde hoy'});
+    if (!ok) return;
+    await guardarCorteCod(d.hoy);
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function quitarCorteCod(){ await guardarCorteCod(''); }
+
+async function guardarCorteCod(fecha){
+  try {
+    var r = await _fetchUna('/api/animus/contraentrega/fecha-inicio',
+                            _fetchOpts('PUT', {fecha_inicio: fecha}));
+    if (!r) return;
+    var d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast(d.aviso || 'Listo', 'success');
+    loadCod();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
 async function loadCod(){
   const qs = [];
   const d1 = document.getElementById('cod-desde').value;
@@ -1684,6 +1755,7 @@ async function loadCod(){
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     renderCodKPIs(d.kpis||{});
+    pintarCorteCod({fecha_inicio: d.fecha_inicio, quedan_atras: d.quedan_atras});
     renderCodPedidos(d.pedidos||[]);
     // Si no aparece NINGUN pedido, casi siempre es que la marca se escribe distinta a lo que
     // el detector busca. Decirlo aca evita que alguien concluya "no hay contraentregas".
@@ -1755,6 +1827,28 @@ function renderCodPedidos(rows){
       estado = '<span class="badge badge-green">Cobrado</span>'
         + '<div style="font-size:10px;color:var(--cx-text-mute);margin-top:2px;">'
         + esc(p.cobrado_por||'') + ' &middot; ' + esc((p.cobrado_at||'').slice(0,10)) + '</div>';
+    }
+    // COMO pago, la NOTA y la FOTO del mensajero, pegadas al pedido. Sin esto la lista no dice
+    // si esa plata entro a la gaveta o al banco, y la explicacion del descuadre quedaba
+    // escrita en un campo invisible.
+    if (p.cobrado) {
+      var _med = (p.metodo || '').toLowerCase();
+      if (_med && _med !== 'efectivo') {
+        estado += '<div style="margin-top:3px;"><span class="badge badge-blue">'
+          + esc(({transferencia:'transferencia', nequi:'Nequi', daviplata:'Daviplata',
+                  tarjeta_credito:'tarjeta crédito', tarjeta_debito:'tarjeta débito',
+                  consignacion:'consignación'})[_med] || _med)
+          + '</span> <span style="font-size:10px;color:var(--cx-text-mute);">al banco</span></div>';
+      }
+      if (p.observaciones) {
+        estado += '<div style="font-size:11px;color:var(--cx-text-soft);margin-top:4px;'
+          + 'max-width:280px;line-height:1.35;white-space:normal;">'
+          + esc(p.observaciones) + '</div>';
+      }
+      if (p.comprobante_url) {
+        estado += '<div style="margin-top:3px;"><a href="' + esc(p.comprobante_url)
+          + '" target="_blank" style="font-size:11px;color:var(--cx-info-text);">ver comprobante</a></div>';
+      }
     }
     const accion = p.cobrado
       ? '<button class="btn btn-outline btn-sm" onclick="codAnular(' + i + ')">Anular</button>'
@@ -2524,15 +2618,52 @@ function codCobrar(i){
   document.getElementById('cob-metodo').value = 'efectivo';
   document.getElementById('cob-ref').value = '';
   document.getElementById('cob-comprobante').value = '';
+  document.getElementById('cob-foto').value = '';
+  document.getElementById('cob-foto-estado').innerHTML =
+    'La que manda el mensajero por WhatsApp &middot; queda pegada a este cobro';
   document.getElementById('cob-obs').value = '';
   document.getElementById('cob-dif').innerHTML = '';
   cobCambiaMetodo();
   document.getElementById('modal-cobro').style.display = 'flex';
 }
 
+async function subirComprobanteCobro(){
+  var inp = document.getElementById('cob-foto');
+  var est = document.getElementById('cob-foto-estado');
+  var f = inp.files && inp.files[0];
+  if (!f) { document.getElementById('cob-comprobante').value = ''; return; }
+  est.innerHTML = 'Subiendo <b>' + esc(f.name) + '</b>...';
+  try {
+    var fd = new FormData(); fd.append('foto', f);
+    var t = await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json();
+    var r = await fetch('/api/archivo/subir?carpeta=comprobantes',
+      {method:'POST', credentials:'same-origin', body: fd, headers:{'X-CSRF-Token': t.csrf_token}});
+    var d = await r.json();
+    if (!d.ok) {
+      // Un "subido" que no subio nada es peor que un error: el cobro quedaria diciendo que
+      // tiene respaldo y no lo tiene.
+      inp.value = ''; document.getElementById('cob-comprobante').value = '';
+      est.innerHTML = '<span style="color:var(--cx-danger-text);">' + esc(d.error || 'No se pudo subir') + '</span>';
+      return;
+    }
+    document.getElementById('cob-comprobante').value = d.url;
+    est.innerHTML = '<span style="color:var(--cx-success-text);">Listo</span> &middot; '
+      + '<a href="' + esc(d.url) + '" target="_blank" style="color:var(--cx-info-text);">ver la foto</a>';
+  } catch(e) {
+    inp.value = ''; document.getElementById('cob-comprobante').value = '';
+    est.innerHTML = '<span style="color:var(--cx-danger-text);">Error de red al subir</span>';
+  }
+}
+
 function cobCambiaMetodo(){
   var m = document.getElementById('cob-metodo').value;
   document.getElementById('cob-no-efectivo').style.display = (m === 'efectivo') ? 'none' : '';
+  // Con tarjeta el pago se confirma en Shopify: no hay "numero de transferencia" que pedir,
+  // asi que el rotulo lo dice y el guard de mas abajo no lo exige.
+  var lbl = document.getElementById('cob-ref-lbl');
+  if (lbl) lbl.textContent = (m === 'tarjeta_credito' || m === 'tarjeta_debito')
+    ? 'Referencia del pago (opcional · se confirma en Shopify)'
+    : 'Numero de la transferencia';
 }
 
 function cobAvisarDif(){
@@ -2624,8 +2755,10 @@ async function guardarCobro(){
   var metodo = document.getElementById('cob-metodo').value;
   var ref = document.getElementById('cob-ref').value.trim();
   var obs = document.getElementById('cob-obs').value.trim();
-  // Una transferencia sin numero no se puede conciliar despues contra el extracto.
-  if (metodo !== 'efectivo' && !ref) {
+  // Una transferencia sin numero no se puede conciliar despues contra el extracto. La TARJETA
+  // se exceptua: ese pago se confirma en Shopify, no hay comprobante que pedirle al cliente.
+  var _esTarjeta = (metodo === 'tarjeta_credito' || metodo === 'tarjeta_debito');
+  if (metodo !== 'efectivo' && !_esTarjeta && !ref) {
     showToast('Falta el numero de la transferencia', 'error'); return;
   }
   // Un descuadre sin explicacion es el dato que despues nadie puede reconstruir.

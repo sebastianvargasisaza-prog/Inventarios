@@ -906,3 +906,131 @@ def test_la_pantalla_pregunta_COMO_pagaron():
     assert 'id="cob-comprobante"' in html, 'no pide el comprobante'
     # y avisa que esa plata NO entra a la gaveta
     assert 'no suma al efectivo' in html.lower() or 'entra al <b>banco</b>' in html
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LO QUE PIDIO DANIELA (4-ago, via Sebastian)
+#   · "empezar desde hoy, solo los contraentrega desde hoy, y eliminar todos los anteriores"
+#   · "pagaron con tarjeta de credito, se confirma en Shopify el pago"
+#   · "que puedan cargar la foto que el mensajero envie"
+#   · "que le salga lo que anoto al registrar el pago, para saber que paso con cada pago"
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _corte(app, fecha):
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        conn.cursor().execute(
+            "INSERT INTO app_settings (clave, valor) VALUES ('cod_fecha_inicio', ?) "
+            "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor", (fecha,))
+        conn.commit()
+
+
+def test_la_fecha_de_corte_oculta_lo_viejo_SIN_borrarlo(app, db_clean):
+    """Daniela pidió arrancar limpia. Lo que NO se puede es BORRAR: `animus_shopify_orders` la
+    leen diez partes del sistema y de ahí sale la velocidad de venta que alimenta el plan de
+    producción (regla 0.7). El corte hace lo mismo desde su silla sin tocar un dato."""
+    from tz_colombia import hoy_colombia
+    _limpiar(app)
+    viejo = _sembrar(app, 'OLD1', total=99000, nota='contraentrega', fecha='2026-06-01')
+    nuevo = _sembrar(app, 'NEW1', total=50000, nota='contraentrega',
+                     fecha=hoy_colombia().isoformat())
+    c = _admin(app)
+    _corte(app, hoy_colombia().isoformat())
+    ids = [p['shopify_id'] for p in c.get('/api/animus/contraentrega').get_json()['pedidos']]
+    assert nuevo in ids, 'no trae los de hoy'
+    assert viejo not in ids, 'el corte no ocultó los anteriores'
+    # PERO el pedido sigue existiendo: es lo que separa ocultar de borrar
+    from database import get_db
+    with app.app_context():
+        n = get_db().execute("SELECT COUNT(*) FROM animus_shopify_orders WHERE shopify_id=?",
+                             (viejo,)).fetchone()[0]
+    assert n == 1, 'BORRÓ el pedido en vez de ocultarlo'
+    _corte(app, '')
+
+
+def test_el_corte_DICE_cuanto_queda_atras(app, db_clean):
+    """Si lo anterior desapareciera en silencio, nadie sabría después que había plata sin
+    registrar (M124/M129)."""
+    from tz_colombia import hoy_colombia
+    _limpiar(app)
+    _sembrar(app, 'OLD2', total=99000, nota='contraentrega', fecha='2026-06-01')
+    c = _admin(app)
+    r = c.put('/api/animus/contraentrega/fecha-inicio',
+              json={'fecha_inicio': hoy_colombia().isoformat()}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:250]
+    d = r.get_json()
+    assert d['quedan_atras']['n'] >= 1, 'no cuenta lo que queda atrás'
+    assert d['quedan_atras']['monto'] >= 99000, 'no dice por cuánta plata'
+    assert 'siguen guardados' in d['aviso']
+    _corte(app, '')
+
+
+def test_quitar_el_corte_devuelve_todo(app, db_clean):
+    """Reversible: si se ocultara para siempre, sería un borrado con otro nombre."""
+    from tz_colombia import hoy_colombia
+    _limpiar(app)
+    viejo = _sembrar(app, 'OLD3', total=99000, nota='contraentrega', fecha='2026-06-01')
+    c = _admin(app)
+    _corte(app, hoy_colombia().isoformat())
+    assert viejo not in [p['shopify_id'] for p in
+                         c.get('/api/animus/contraentrega').get_json()['pedidos']]
+    c.put('/api/animus/contraentrega/fecha-inicio', json={'fecha_inicio': ''},
+          headers=csrf_headers())
+    assert viejo in [p['shopify_id'] for p in
+                     c.get('/api/animus/contraentrega').get_json()['pedidos']]
+
+
+def test_una_fecha_de_corte_invalida_se_ignora(app, db_clean):
+    """Con dientes: una fecha basura leída como futuro dejaría la pantalla VACÍA y parecería
+    que no hay pedidos."""
+    _limpiar(app)
+    sid = _sembrar(app, 'OK1', total=50000, nota='contraentrega')
+    _corte(app, 'basura')
+    ids = [p['shopify_id'] for p in
+           _admin(app).get('/api/animus/contraentrega').get_json()['pedidos']]
+    assert sid in ids, 'una fecha inválida escondió todo'
+    _corte(app, '')
+
+
+def test_la_TARJETA_no_entra_al_efectivo_y_no_exige_referencia(app, db_clean):
+    """Daniela: *"pagaron con tarjeta de crédito, se confirma en Shopify el pago"*. Esa plata no
+    va a la gaveta, y no hay comprobante de transferencia que pedirle al cliente."""
+    from blueprints.animus import es_efectivo
+    assert not es_efectivo('tarjeta_credito') and not es_efectivo('tarjeta_debito')
+    _limpiar(app)
+    sid = _sembrar(app, 'TJ1', total=80000, nota='contraentrega')
+    antes = _saldo_caja(app)
+    r = _admin(app).post('/api/animus/contraentrega/%s/cobrar' % sid,
+                         json={'metodo': 'tarjeta_credito'}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:250]
+    assert r.get_json()['en_efectivo'] is False
+    assert _saldo_caja(app) == antes, 'una tarjeta sumó al efectivo de la gaveta'
+
+
+def test_la_lista_muestra_la_NOTA_el_medio_y_la_foto(app, db_clean):
+    """Daniela: *"que le salga lo que anotó al registrar el pago, que sean visibles todas, para
+    saber qué pasó con cada pago"*. Se guardaba y no se mostraba en ningún lado."""
+    _limpiar(app)
+    sid = _sembrar(app, 'NOTA1', total=100000, nota='contraentrega')
+    c = _admin(app)
+    c.post('/api/animus/contraentrega/%s/cobrar' % sid,
+           json={'valor_recibido': 90000, 'metodo': 'nequi', 'referencia_pago': 'NQ-1',
+                 'comprobante_url': 'https://x/foto.jpg',
+                 'observaciones': 'El cliente pagó de menos, quedó debiendo 10 mil'},
+           headers=csrf_headers())
+    fila = [p for p in c.get('/api/animus/contraentrega').get_json()['pedidos']
+            if p['shopify_id'] == sid][0]
+    assert 'debiendo' in (fila['observaciones'] or ''), 'la nota no llega a la lista'
+    assert fila['metodo'] == 'nequi', 'la lista no dice cómo pagaron'
+    assert fila['comprobante_url'], 'la lista no trae la foto del comprobante'
+
+
+def test_la_pantalla_pide_la_FOTO_del_mensajero():
+    html = _html_animus()
+    assert 'id="cob-foto"' in html and 'subirComprobanteCobro()' in html
+    assert 'capture="environment"' in html, 'no deja sacar la foto con la cámara'
+    assert 'carpeta=comprobantes' in html
+    assert 'tarjeta_credito' in html, 'falta la tarjeta como medio'
+    # y la lista pinta lo anotado
+    assert 'p.observaciones' in html and 'p.comprobante_url' in html

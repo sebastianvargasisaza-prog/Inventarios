@@ -1782,7 +1782,8 @@ def caja_traslado_cuenta():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Lo que NO paso por la gaveta: la plata entro, pero a la cuenta, no al efectivo.
-MEDIOS_NO_EFECTIVO = ('transferencia', 'nequi', 'daviplata', 'tarjeta', 'consignacion')
+MEDIOS_NO_EFECTIVO = ('transferencia', 'nequi', 'daviplata', 'tarjeta',
+                      'tarjeta_credito', 'tarjeta_debito', 'consignacion')
 
 
 def es_efectivo(metodo):
@@ -2443,10 +2444,12 @@ def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
                   COALESCE(o.estado,''), COALESCE(o.estado_pago,''),
                   cc.id, cc.valor_recibido, cc.estado, cc.cobrado_por, cc.cobrado_at,
                   COALESCE(cc.observaciones,''), cc.caja_mov_id,
-                  COALESCE(o.direccion,'')
+                  COALESCE(o.direccion,''),
+                  COALESCE(cm.metodo,''), COALESCE(cm.comprobante_url,'')
              FROM animus_shopify_orders o
              LEFT JOIN animus_cod_cobros cc
                     ON cc.shopify_id = o.shopify_id AND cc.estado <> 'anulado'
+             LEFT JOIN animus_caja_menor cm ON cm.id = cc.caja_mov_id
             WHERE substr(COALESCE(o.creado_en,''),1,10) >= ?
               AND substr(COALESCE(o.creado_en,''),1,10) <= ?
               AND LOWER(COALESCE(o.estado,'')) <> 'cancelled'
@@ -2504,6 +2507,9 @@ def _cod_pedidos(conn, desde=None, hasta=None, incluir_cobrados=True):
             'estado_cobro': f[12] or 'pendiente', 'cobrado_por': f[13] or '',
             'cobrado_at': f[14] or '', 'observaciones': f[15] or '',
             'caja_mov_id': f[16],
+            # Como pagaron y la foto del mensajero: sin esto la lista no dice si esa plata
+            # entro a la gaveta o al banco, ni deja ver el respaldo.
+            'metodo': f[18] or '', 'comprobante_url': f[19] or '',
             'diferencia': round(recibido - esperado, 2) if cobrado else 0.0,
             # Cuántos días lleva esa plata en la calle. Sin esto, "esperado pendiente" es un
             # bulto: no distingue un pedido de ayer (normal) de uno de hace 45 días (esa plata
@@ -2558,6 +2564,82 @@ def _dias_desde(fecha_txt):
         return None
 
 
+def cod_fecha_inicio(conn):
+    """Desde qué fecha se miran los pedidos contraentrega.
+
+    Daniela pidió arrancar limpia. Vive en `app_settings` y no en el código porque es una
+    decisión de ella -- corregirla no puede exigir un despliegue.
+
+    Vacía = se ve todo (el comportamiento de siempre).
+    """
+    try:
+        r = conn.execute(
+            "SELECT valor FROM app_settings WHERE clave='cod_fecha_inicio'").fetchone()
+        v = ((r[0] if r else '') or '').strip()
+        # Si quedó basura se ignora en vez de esconder TODO: una fecha inválida leída como
+        # futuro dejaría la pantalla vacía y parecería que no hay pedidos.
+        return v if (len(v) == 10 and v[4] == '-' and v[7] == '-') else ''
+    except Exception as e:
+        log.warning('no pude leer la fecha de corte de contraentrega: %s', e)
+        return ''
+
+
+@bp.route("/api/animus/contraentrega/fecha-inicio", methods=["GET", "PUT"])
+def animus_cod_fecha_inicio():
+    """Fija (o quita) la fecha desde la que se miran los pedidos contraentrega.
+
+    NO borra nada: los pedidos anteriores siguen en la base y siguen alimentando la velocidad
+    de venta y el plan de producción. Sólo dejan de aparecer en esta pantalla.
+
+    La respuesta DICE cuántos quedan atrás y por cuánta plata: si desaparecieran en silencio,
+    nadie podría saber después que había plata sin registrar.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+
+    def _quedan_atras(corte):
+        """Cuántos pedidos contraentrega sin cobrar quedan antes del corte, y por cuánto."""
+        if not corte:
+            return {"n": 0, "monto": 0.0}
+        try:
+            # Explícito y lejos: el helper por defecto mira 90 días, y lo que se quiere contar
+            # acá es TODO lo que queda atrás del corte, no sólo el último trimestre.
+            pend = _cod_pedidos(conn, '2020-01-01', _hoy_col().isoformat())
+        except Exception as e:
+            log.warning('no pude contar lo que queda atrás del corte: %s', e)
+            return {"n": None, "monto": None}
+        viejos = [p for p in pend
+                  if not p.get('cobrado') and (p.get('fecha') or '')[:10] < corte]
+        return {"n": len(viejos),
+                "monto": round(sum(p.get('valor_esperado') or 0 for p in viejos), 2)}
+
+    if request.method == "GET":
+        corte = cod_fecha_inicio(conn)
+        return jsonify({"ok": True, "fecha_inicio": corte, "hoy": _hoy_col().isoformat(),
+                        "quedan_atras": _quedan_atras(corte)})
+
+    d = request.get_json(silent=True) or {}
+    nueva = (d.get("fecha_inicio") or "").strip()
+    if nueva and not (len(nueva) == 10 and nueva[4] == '-' and nueva[7] == '-'):
+        return jsonify({"error": "La fecha va como AAAA-MM-DD"}), 400
+    antes = cod_fecha_inicio(conn)
+    c.execute("INSERT INTO app_settings (clave, valor) VALUES ('cod_fecha_inicio', ?) "
+              "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor", (nueva,))
+    atras = _quedan_atras(nueva)
+    audit_log(c, usuario=u, accion='ANIMUS_COD_FECHA_INICIO', tabla='app_settings',
+              registro_id=None, antes={'fecha_inicio': antes},
+              despues={'fecha_inicio': nueva, 'quedan_atras': atras},
+              detalle='Contraentrega se mira desde %s (antes %s) · quedan atrás %s pedidos'
+                      % (nueva or 'siempre', antes or 'siempre', atras.get('n')))
+    conn.commit()
+    return jsonify({"ok": True, "fecha_inicio": nueva, "quedan_atras": atras,
+                    "aviso": ('Se ven los pedidos desde el %s · los %s anteriores sin cobrar '
+                              'siguen guardados, sólo salen de esta pantalla'
+                              % (nueva, atras.get('n'))) if nueva
+                             else 'Se vuelven a ver todos los pedidos'})
+
+
 @bp.route("/api/animus/contraentrega", methods=["GET"])
 def animus_cod_listar():
     """Pedidos contraentrega + cuánta plata se espera y cuánta entró de verdad."""
@@ -2568,6 +2650,11 @@ def animus_cod_listar():
     filtro = (request.args.get("estado") or "").strip().lower()
 
     conn = _db()
+    # La fecha de corte manda sobre el rango pedido: si Daniela arrancó desde hoy, no tiene
+    # sentido que un filtro de la pantalla vuelva a traer lo viejo.
+    _corte = cod_fecha_inicio(conn)
+    if _corte and (not desde or desde < _corte):
+        desde = _corte
     pedidos = _cod_pedidos(conn, desde, hasta)
     hoy = _hoy_col().isoformat()
     mes = hoy[:7]
@@ -2611,6 +2698,7 @@ def animus_cod_listar():
 
     return jsonify({"ok": True, "pedidos": pedidos, "kpis": kpis,
                     "patron": cod_patron(conn),
+                    "fecha_inicio": _corte,
                     "rango": {"desde": desde or (_hoy_col() - timedelta(days=90)).isoformat(),
                               "hasta": hasta or hoy}})
 
@@ -3106,9 +3194,12 @@ def animus_cod_cobrar(shopify_id):
     metodo = (d.get("metodo") or "efectivo").strip().lower()
     ref_pago = (d.get("referencia_pago") or "").strip()
     comprobante = (d.get("comprobante_url") or "").strip()
-    if not es_efectivo(metodo) and not ref_pago:
-        # Una transferencia sin numero no se puede conciliar despues contra el extracto: es
-        # justo el dato que hace verificable que esa plata existe.
+    # Una transferencia sin numero no se puede conciliar despues contra el extracto: es justo
+    # el dato que hace verificable que esa plata existe. La TARJETA se exceptua porque ese pago
+    # lo confirma Shopify (Daniela, 4-ago): no hay comprobante que pedirle al cliente, y
+    # exigirlo dejaria el cobro imposible de registrar.
+    _tarjeta = metodo in ('tarjeta', 'tarjeta_credito', 'tarjeta_debito')
+    if not es_efectivo(metodo) and not _tarjeta and not ref_pago:
         return jsonify({"error": "Falta el numero de la transferencia · sin eso no se puede "
                                  "conciliar contra el banco"}), 400
 

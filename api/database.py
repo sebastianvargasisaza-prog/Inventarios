@@ -11130,6 +11130,13 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_animus_pqr_descartado "
         "ON animus_pqr(descartado, creado_en)",
     ]),
+    (416, "contraentrega: fecha de corte para arrancar limpio sin borrar nada", [
+        # Daniela (4-ago): "empezar desde hoy, solo los contraentrega desde hoy". Vacia por
+        # defecto = se ve todo, que es el comportamiento de siempre: la migracion no cambia
+        # nada por si sola, la fecha la pone ella desde la pantalla cuando quiera arrancar.
+        "INSERT INTO app_settings (clave, valor) VALUES ('cod_fecha_inicio','') "
+        "ON CONFLICT (clave) DO NOTHING",
+    ]),
 ]
 
 
