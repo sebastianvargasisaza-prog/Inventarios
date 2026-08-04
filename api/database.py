@@ -11039,6 +11039,49 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "INSERT INTO app_settings (clave, valor) VALUES ('caja_tope_sin_autorizar', '200000') "
         "ON CONFLICT (clave) DO NOTHING",
     ]),
+    (410, "La COTIZACIÓN se adjunta al PEDIR, no al pagar (Sebastián 3-ago: 'aquí quizás puede "
+          "cargar de una vez la cotización, el pantallazo que confirma cuánto vale'). Es otro "
+          "documento que el comprobante y llega en otro momento: la cotización justifica el "
+          "MONTO antes de autorizar -- sin ella, quien autoriza aprueba una cifra que nadie "
+          "respaldó -- y el comprobante prueba que el pago OCURRIÓ, que sólo existe después. "
+          "Columna aditiva; va aparte de la 409 porque esa ya corrió en producción y editarla "
+          "no la vuelve a ejecutar (M111).", [
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN cotizacion_url TEXT DEFAULT ''",
+    ]),
+    (411, "Lo que le faltaba a la caja para ser confiable (Sebastián 3-ago). "
+          "ARQUEO: el saldo era una SUMA de movimientos que nadie había contado nunca contra "
+          "la gaveta -- si faltaba plata, el sistema seguía diciendo su número. El efectivo "
+          "FÍSICO es la verdad (igual que el conteo cíclico contra el kardex): el arqueo lo "
+          "cuenta, exige el motivo de la diferencia y ajusta los libros a la realidad con un "
+          "movimiento propio, para que el saldo vuelva a significar 'lo que hay en la gaveta'. "
+          "CIERRE: nada impedía editar o anular un movimiento de hace tres meses; a partir de "
+          "un cierre lo anterior queda congelado y corregir exige una contrapartida nueva, no "
+          "tocar lo viejo. Tablas NUEVAS: no tocan nada.", [
+        """CREATE TABLE IF NOT EXISTS caja_arqueos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero          TEXT UNIQUE,
+            fecha           TEXT NOT NULL,
+            empresa         TEXT DEFAULT '',
+            saldo_sistema   REAL NOT NULL,
+            conteo_fisico   REAL NOT NULL,
+            diferencia      REAL NOT NULL,
+            motivo          TEXT DEFAULT '',
+            ajuste_mov_id   INTEGER,
+            realizado_por   TEXT NOT NULL,
+            realizado_at    TEXT NOT NULL,
+            observaciones   TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_caja_arqueo_fecha ON caja_arqueos(fecha)",
+        """CREATE TABLE IF NOT EXISTS caja_cierres (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hasta_fecha     TEXT NOT NULL UNIQUE,
+            saldo_cierre    REAL NOT NULL,
+            arqueo_id       INTEGER,
+            cerrado_por     TEXT NOT NULL,
+            cerrado_at      TEXT NOT NULL,
+            observaciones   TEXT DEFAULT ''
+        )""",
+    ]),
 ]
 
 

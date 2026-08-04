@@ -1220,8 +1220,22 @@ def caja_solicitudes():
         sr = conn.execute(
             "SELECT COUNT(*), COALESCE(SUM(monto),0) FROM caja_solicitudes_pago "
             "WHERE estado='pagada' AND COALESCE(comprobante_url,'')=''").fetchone()
+        # El SALDO va en la respuesta: sin el, alguien pide un pago que la caja no puede
+        # cubrir y se entera recien cuando quien paga se lo rechaza. Se descuenta lo ya
+        # autorizado y sin pagar, que es plata comprometida aunque todavia este en la gaveta.
+        try:
+            _saldo = caja_saldo(conn)
+            _comprometido = float(conn.execute(
+                "SELECT COALESCE(SUM(monto),0) FROM caja_solicitudes_pago "
+                "WHERE estado='autorizada'").fetchone()[0] or 0)
+        except Exception as e:
+            log.warning('no pude calcular el saldo de caja: %s', e)
+            _saldo, _comprometido = 0.0, 0.0
         return jsonify({"ok": True, "solicitudes": filas, "kpis": kpis,
                         "tope": caja_tope_sin_autorizar(conn),
+                        "saldo": round(_saldo, 2),
+                        "comprometido": round(_comprometido, 2),
+                        "disponible": round(_saldo - _comprometido, 2),
                         "sin_comprobante": {"n": int(sr[0] or 0),
                                             "monto": round(float(sr[1] or 0), 2)}})
 
@@ -1255,14 +1269,15 @@ def caja_solicitudes():
         c.execute("""INSERT INTO caja_solicitudes_pago
             (numero, empresa, concepto, monto, beneficiario, modulo_origen, estado,
              solicitado_por, solicitado_at, observaciones,
-             autorizado_por, autorizado_at, autorizacion_via)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             autorizado_por, autorizado_at, autorizacion_via, cotizacion_url)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (numero, empresa, concepto, monto, (d.get("beneficiario") or "").strip(),
              (d.get("modulo_origen") or "").strip(),
              'autorizada' if bajo_tope else 'solicitada',
              u, ahora, (d.get("observaciones") or "").strip(),
              (u if bajo_tope else None), (ahora if bajo_tope else None),
-             ('bajo el tope de %s' % int(tope)) if bajo_tope else ''))
+             ('bajo el tope de %s' % int(tope)) if bajo_tope else '',
+             (d.get("cotizacion_url") or "").strip()))
         return numero, c.lastrowid
 
     numero, sid = intentar_insert_con_retry(_insertar, columna='numero')
@@ -1359,9 +1374,7 @@ def caja_solicitud_pagar(sid):
     monto = float(row[3] or 0)
     # Un pago que deja la caja en negativo es un pago que no ocurrió: el efectivo de la gaveta
     # no puede ser menor que cero. Se avisa con el saldo real para que se pueda decidir.
-    saldo = float(c.execute(
-        "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END),0) "
-        "FROM animus_caja_menor WHERE COALESCE(anulado,0)=0").fetchone()[0] or 0)
+    saldo = caja_saldo(conn)
     if monto > saldo and not d.get("forzar"):
         return jsonify({"error": "No hay efectivo suficiente en la caja",
                         "saldo": round(saldo, 2), "monto": monto,
@@ -1379,12 +1392,23 @@ def caja_solicitud_pagar(sid):
         return jsonify({"error": "Esa solicitud ya fue pagada por otra persona"}), 409
 
     fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
+    if _caja_bloqueado_por_cierre(conn, fecha):
+        conn.rollback()
+        return jsonify({"error": "Esa fecha está en un período ya cerrado · para corregir se "
+                                 "registra un movimiento nuevo, no se toca lo cerrado",
+                        "cerrada_hasta": caja_fecha_cerrada(conn)}), 409
     concepto = row[2] + ((' · ' + row[4]) if row[4] else '')
     recibo, mov_id = registrar_movimiento_caja(
         c, tipo='egreso', concepto=concepto, monto=monto, fecha=fecha, metodo=metodo,
         referencia=row[0], observaciones=(d.get("observaciones") or "").strip(),
         usuario=u, empresa=row[1], subtipo='gasto', solicitud_id=sid)
     c.execute("UPDATE caja_solicitudes_pago SET caja_mov_id=? WHERE id=?", (mov_id, sid))
+    # El gasto EXISTE para la empresa aunque se haya pagado de la caja chica: sin el espejo,
+    # el gasto del mes en Tesorería queda incompleto y nadie lo nota (best-effort · si falla
+    # no tumba el pago, pero se declara en el log).
+    _tesoreria_espejo(c, tipo='egreso', fecha=fecha, concepto=concepto, monto=monto,
+                      empresa=row[1], referencia=recibo, usuario=u,
+                      categoria='Caja menor')
     audit_log(c, usuario=u, accion='CAJA_SOLICITUD_PAGAR', tabla='caja_solicitudes_pago',
               registro_id=sid, antes={'estado': 'autorizada'},
               despues={'estado': 'pagada', 'monto': monto, 'recibo': recibo},
@@ -1450,13 +1474,14 @@ def caja_traslado_cuenta():
     if empresa not in EMPRESAS_CAJA:
         return jsonify({"error": "Empresa inválida"}), 400
     conn = _db(); c = conn.cursor()
-    saldo = float(c.execute(
-        "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END),0) "
-        "FROM animus_caja_menor WHERE COALESCE(anulado,0)=0").fetchone()[0] or 0)
+    saldo = caja_saldo(conn)
     if monto > saldo and not d.get("forzar"):
         return jsonify({"error": "No hay efectivo suficiente para consignar",
                         "saldo": round(saldo, 2), "puede_forzar": True}), 409
     fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
+    if _caja_bloqueado_por_cierre(conn, fecha):
+        return jsonify({"error": "Esa fecha está en un período ya cerrado",
+                        "cerrada_hasta": caja_fecha_cerrada(conn)}), 409
     cuenta = (d.get("cuenta") or "").strip()
     recibo, mov_id = registrar_movimiento_caja(
         c, tipo='egreso',
@@ -1464,6 +1489,12 @@ def caja_traslado_cuenta():
         monto=monto, fecha=fecha, metodo='transferencia',
         referencia=cuenta, observaciones=(d.get("observaciones") or "").strip(),
         usuario=u, empresa=empresa, subtipo='traslado')
+    # La plata no desaparece: sale de la gaveta y ENTRA al banco. Sin este espejo, Tesorería
+    # ve una consignación sin origen y la caja una salida sin destino.
+    _tesoreria_espejo(c, tipo='ingreso', fecha=fecha,
+                      concepto='Consignación desde caja menor' + ((' · ' + cuenta) if cuenta else ''),
+                      monto=monto, empresa=empresa, referencia=recibo, usuario=u,
+                      categoria='Traslado de caja')
     audit_log(c, usuario=u, accion='CAJA_TRASLADO_CUENTA', tabla='animus_caja_menor',
               registro_id=mov_id,
               despues={'monto': monto, 'cuenta': cuenta, 'empresa': empresa, 'recibo': recibo},
@@ -1471,6 +1502,388 @@ def caja_traslado_cuenta():
     conn.commit()
     return jsonify({"ok": True, "recibo_numero": recibo, "caja_mov_id": mov_id,
                     "saldo_antes": round(saldo, 2), "saldo_despues": round(saldo - monto, 2)})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ARQUEO · CIERRE · TRAZABILIDAD · TESORERÍA (3-ago)
+# Sebastián: "piensa qué más falta en esta caja menor · trazabilidad, unión con tesorería ·
+# cosas que debería tener para que sea premium y confiable".
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def caja_saldo(conn, empresa=None):
+    """El saldo de la caja. Un solo helper para que todos los que deciden usen el MISMO número.
+
+    Existe como función y no inline porque ya hay cinco sitios que preguntan "¿cuánta plata
+    hay?" (pagar, consignar, el listado, el arqueo, el cierre) y si cada uno arma su propio
+    SUM terminan divergiendo en silencio -- que es exactamente el drift que M1 previene.
+    """
+    cond, args = ["COALESCE(anulado,0)=0"], []
+    if empresa:
+        cond.append("UPPER(COALESCE(empresa,'ANIMUS'))=?"); args.append(empresa.upper())
+    row = conn.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END),0) "
+        "FROM animus_caja_menor WHERE " + " AND ".join(cond), args).fetchone()
+    return float(row[0] or 0)
+
+
+def caja_fecha_cerrada(conn):
+    """Hasta qué fecha está cerrada la caja (o None). Lo anterior no se toca."""
+    try:
+        row = conn.execute(
+            "SELECT MAX(hasta_fecha) FROM caja_cierres").fetchone()
+        return (row[0] or None) if row else None
+    except Exception as e:
+        log.warning('no pude leer el cierre de caja: %s', e)
+        return None
+
+
+def _caja_bloqueado_por_cierre(conn, fecha):
+    """True si esa fecha cae en un período ya cerrado.
+
+    Un cierre que se puede editar hacia atrás no es un cierre: el saldo con el que se cerró
+    dejaría de reconstruirse y el arqueo firmado de ese día pasaría a hablar de otra cosa.
+    """
+    cerrada = caja_fecha_cerrada(conn)
+    return bool(cerrada and str(fecha or '')[:10] <= cerrada)
+
+
+def _tesoreria_espejo(c, *, tipo, fecha, concepto, monto, empresa, referencia, usuario,
+                      categoria):
+    """Espeja un movimiento de caja al flujo de Tesorería.
+
+    Sin esto la plata se pierde de vista al salir de la caja: consignar la sacaba de la gaveta
+    y no la metía en ningún lado, y un gasto de caja no llegaba al flujo de egresos -- así que
+    el gasto del mes quedaba incompleto y la consignación aparecía en el banco sin origen.
+
+    Idempotente por `referencia` (el número de recibo, que es UNIQUE): si el mismo recibo ya
+    se espejó, no se duplica. Es best-effort: si Tesorería falla, el movimiento de caja NO se
+    cae -- pero se declara en el log, nunca en silencio (M4).
+
+    El PERÍODO sale de la fecha del HECHO, no del reloj (M106): si no, un pago registrado hoy
+    con fecha de la semana pasada caería en el mes en curso.
+    """
+    tabla = 'flujo_ingresos' if tipo == 'ingreso' else 'flujo_egresos'
+    try:
+        ya = c.execute(
+            "SELECT 1 FROM " + tabla + " WHERE fuente='caja_menor' AND referencia=? LIMIT 1",
+            (referencia,)).fetchone()
+        if ya:
+            return None
+        c.execute(
+            "INSERT INTO " + tabla + " (fecha, empresa, concepto, categoria, monto, periodo, "
+            "fuente, referencia, creado_por, observaciones) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (fecha, empresa, concepto, categoria, monto, str(fecha or '')[:7],
+             'caja_menor', referencia, usuario, 'Espejo automatico desde caja menor'))
+        return c.lastrowid
+    except Exception as e:
+        log.warning('no pude espejar %s a Tesoreria (%s): %s', referencia, tabla, e)
+        return None
+
+
+@bp.route("/api/caja/arqueos", methods=["GET", "POST"])
+def caja_arqueos():
+    """GET: historial. POST: contar el efectivo y cuadrar la caja contra la realidad."""
+    u, err, code = _caja_auth()
+    if err: return err, code
+    conn = _db()
+
+    if request.method == "GET":
+        cur = conn.execute("SELECT * FROM caja_arqueos ORDER BY fecha DESC, id DESC LIMIT 100")
+        cols = [x[0] for x in cur.description]
+        filas = [dict(zip(cols, r)) for r in cur.fetchall()]
+        ult = filas[0] if filas else None
+        return jsonify({
+            "ok": True, "arqueos": filas,
+            "saldo_actual": round(caja_saldo(conn), 2),
+            "ultimo": ult,
+            # Días sin contar la plata: una caja que lleva semanas sin arquear tiene un saldo
+            # que nadie verificó, y eso hay que poder verlo sin abrir el historial.
+            "dias_sin_arqueo": _dias_desde(ult['fecha']) if ult else None,
+            "cerrada_hasta": caja_fecha_cerrada(conn),
+        })
+
+    if not _caja_puede_pagar(u):
+        return jsonify({"error": "Solo quien maneja la caja puede arquearla"}), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        fisico = float(d.get("conteo_fisico"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Escribí cuánto efectivo contaste"}), 400
+    if fisico < 0:
+        return jsonify({"error": "El conteo no puede ser negativo"}), 400
+
+    c = conn.cursor()
+    fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
+    if _caja_bloqueado_por_cierre(conn, fecha):
+        return jsonify({"error": "Esa fecha está en un período ya cerrado",
+                        "cerrada_hasta": caja_fecha_cerrada(conn)}), 409
+    sistema = caja_saldo(conn)
+    dif = round(fisico - sistema, 2)
+    motivo = (d.get("motivo") or "").strip()
+    # Una diferencia sin explicación es justo el dato que después nadie puede reconstruir: es
+    # el momento en que se sabe qué pasó, no un mes más tarde.
+    if abs(dif) >= 1 and not motivo:
+        return jsonify({"error": "Contaste %s y el sistema dice %s · explicá la diferencia"
+                                 % (f'{fisico:,.0f}', f'{sistema:,.0f}'),
+                        "saldo_sistema": round(sistema, 2), "diferencia": dif}), 400
+
+    ahora = _now_col().strftime('%Y-%m-%d %H:%M:%S')
+    prefijo = 'ARQ-%s-' % (fecha[:4] if len(fecha) >= 4 and fecha[:4].isdigit()
+                           else _hoy_col().strftime('%Y'))
+
+    def _insertar():
+        n = siguiente_correlativo(c, 'caja_arqueos', 'numero', prefijo)
+        numero = '%s%04d' % (prefijo, n)
+        c.execute("""INSERT INTO caja_arqueos
+            (numero, fecha, empresa, saldo_sistema, conteo_fisico, diferencia, motivo,
+             realizado_por, realizado_at, observaciones)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (numero, fecha, (d.get("empresa") or "").strip().upper(), sistema, fisico, dif,
+             motivo, u, ahora, (d.get("observaciones") or "").strip()))
+        return numero, c.lastrowid
+
+    numero, aid = intentar_insert_con_retry(_insertar, columna='numero')
+
+    # El efectivo FÍSICO es la verdad: los libros se ajustan a la realidad, no al revés. Va
+    # con subtipo propio para que un faltante de caja no se lea como un gasto del mes.
+    mov_id = None
+    if abs(dif) >= 1:
+        recibo, mov_id = registrar_movimiento_caja(
+            c, tipo=('ingreso' if dif > 0 else 'egreso'),
+            concepto='Ajuste por arqueo %s · %s' % (numero, motivo[:80]),
+            monto=abs(dif), fecha=fecha, metodo='efectivo', referencia=numero,
+            observaciones=motivo, usuario=u,
+            empresa=(d.get("empresa") or 'ANIMUS'), subtipo='ajuste_arqueo')
+        c.execute("UPDATE caja_arqueos SET ajuste_mov_id=? WHERE id=?", (mov_id, aid))
+
+    audit_log(c, usuario=u, accion='CAJA_ARQUEO', tabla='caja_arqueos', registro_id=aid,
+              despues={'numero': numero, 'sistema': sistema, 'fisico': fisico,
+                       'diferencia': dif, 'motivo': motivo},
+              detalle='Arqueo %s · sistema %s · contado %s · diferencia %s'
+                      % (numero, sistema, fisico, dif))
+    conn.commit()
+    return jsonify({"ok": True, "numero": numero, "saldo_sistema": round(sistema, 2),
+                    "conteo_fisico": fisico, "diferencia": dif,
+                    "ajuste_mov_id": mov_id,
+                    "saldo_despues": round(caja_saldo(conn), 2),
+                    "aviso": ('Cuadrada' if abs(dif) < 1 else
+                              ('Sobraban %s · se registraron' % f'{dif:,.0f}' if dif > 0
+                               else 'Faltaban %s · se registró el faltante' % f'{abs(dif):,.0f}'))}), 201
+
+
+@bp.route("/api/caja/cierres", methods=["GET", "POST"])
+def caja_cierres():
+    """Cierra la caja hasta una fecha: lo anterior queda congelado."""
+    u, err, code = _caja_auth()
+    if err: return err, code
+    conn = _db()
+    if request.method == "GET":
+        cur = conn.execute("SELECT * FROM caja_cierres ORDER BY hasta_fecha DESC LIMIT 50")
+        cols = [x[0] for x in cur.description]
+        return jsonify({"ok": True, "cierres": [dict(zip(cols, r)) for r in cur.fetchall()],
+                        "cerrada_hasta": caja_fecha_cerrada(conn)})
+
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Solo gerencia cierra un período"}), 403
+    d = request.get_json(silent=True) or {}
+    hasta = (d.get("hasta_fecha") or "").strip()[:10]
+    if not hasta:
+        return jsonify({"error": "Falta la fecha de cierre"}), 400
+    ya = caja_fecha_cerrada(conn)
+    if ya and hasta <= ya:
+        return jsonify({"error": "Ya está cerrada hasta %s" % ya}), 409
+    # Cerrar sin haber contado la plata es sellar un número que nadie verificó.
+    ult = conn.execute(
+        "SELECT numero, fecha, diferencia FROM caja_arqueos WHERE fecha<=? "
+        "ORDER BY fecha DESC, id DESC LIMIT 1", (hasta,)).fetchone()
+    if not ult and not d.get("forzar"):
+        return jsonify({"error": "No hay ningún arqueo hasta esa fecha · cerrar sin contar el "
+                                 "efectivo es sellar un número que nadie verificó",
+                        "puede_forzar": True}), 409
+
+    c = conn.cursor()
+    saldo = caja_saldo(conn)
+    ahora = _now_col().strftime('%Y-%m-%d %H:%M:%S')
+    c.execute("INSERT INTO caja_cierres (hasta_fecha, saldo_cierre, arqueo_id, cerrado_por, "
+              "cerrado_at, observaciones) VALUES (?,?,?,?,?,?)",
+              (hasta, saldo, None, u, ahora, (d.get("observaciones") or "").strip()))
+    cid = c.lastrowid
+    audit_log(c, usuario=u, accion='CAJA_CERRAR_PERIODO', tabla='caja_cierres',
+              registro_id=cid, despues={'hasta': hasta, 'saldo': saldo},
+              detalle='Caja cerrada hasta %s con saldo %s' % (hasta, saldo))
+    conn.commit()
+    return jsonify({"ok": True, "hasta_fecha": hasta, "saldo_cierre": round(saldo, 2),
+                    "arqueo_previo": (ult[0] if ult else None)}), 201
+
+
+@bp.route("/api/caja/trazabilidad/<path:recibo>", methods=["GET"])
+def caja_trazabilidad(recibo):
+    """El recorrido COMPLETO de un movimiento de caja, en una sola vista.
+
+    Hoy los datos están, pero repartidos: el movimiento en una tabla, la solicitud que lo
+    originó en otra, la cotización y el comprobante en esa, el pedido de contraentrega en una
+    tercera y el rastro en `audit_log`. Reconstruir un pago exigía ir juntando de a pedazos, y
+    lo que cuesta reconstruir en la práctica no se audita nunca.
+    """
+    u, err, code = _caja_auth()
+    if err: return err, code
+    conn = _db()
+    cur = conn.execute("SELECT * FROM animus_caja_menor WHERE recibo_numero=?", (recibo,))
+    cols = [x[0] for x in cur.description]
+    row = cur.fetchone()
+    if not row:
+        return jsonify({"error": "No existe el recibo %s" % recibo}), 404
+    mov = dict(zip(cols, row))
+    out = {"ok": True, "movimiento": mov, "solicitud": None, "pedido": None, "arqueo": None,
+           "tesoreria": None, "auditoria": []}
+
+    if mov.get('solicitud_id'):
+        cs = conn.execute("SELECT * FROM caja_solicitudes_pago WHERE id=?",
+                          (mov['solicitud_id'],))
+        c2 = [x[0] for x in cs.description]
+        r2 = cs.fetchone()
+        if r2:
+            out['solicitud'] = dict(zip(c2, r2))
+
+    # Contraentrega: el movimiento referencia el shopify_id del pedido que lo originó
+    if mov.get('referencia'):
+        try:
+            cp = conn.execute(
+                "SELECT cc.pedido, cc.valor_esperado, cc.valor_recibido, cc.estado, "
+                "       cc.cobrado_por, cc.cobrado_at, cc.observaciones "
+                "FROM animus_cod_cobros cc WHERE cc.shopify_id=?", (mov['referencia'],))
+            c3 = [x[0] for x in cp.description]
+            r3 = cp.fetchone()
+            if r3:
+                out['pedido'] = dict(zip(c3, r3))
+        except Exception as e:
+            log.warning('trazabilidad: no pude leer el cobro de %s: %s', recibo, e)
+        try:
+            ca = conn.execute("SELECT * FROM caja_arqueos WHERE numero=?", (mov['referencia'],))
+            c4 = [x[0] for x in ca.description]
+            r4 = ca.fetchone()
+            if r4:
+                out['arqueo'] = dict(zip(c4, r4))
+        except Exception as e:
+            log.warning('trazabilidad: no pude leer el arqueo de %s: %s', recibo, e)
+
+    # El espejo en Tesorería, si lo hubo
+    for tabla, tipo in (('flujo_ingresos', 'ingreso'), ('flujo_egresos', 'egreso')):
+        try:
+            rt = conn.execute(
+                "SELECT id, fecha, concepto, monto, categoria, periodo FROM " + tabla +
+                " WHERE fuente='caja_menor' AND referencia=? LIMIT 1", (recibo,)).fetchone()
+            if rt:
+                out['tesoreria'] = {'tabla': tabla, 'tipo': tipo, 'id': rt[0], 'fecha': rt[1],
+                                    'concepto': rt[2], 'monto': float(rt[3] or 0),
+                                    'categoria': rt[4], 'periodo': rt[5]}
+                break
+        except Exception as e:
+            log.warning('trazabilidad: no pude leer %s: %s', tabla, e)
+
+    # El rastro Part 11: quién tocó qué y cuándo
+    try:
+        refs = [str(mov['id'])]
+        if mov.get('solicitud_id'):
+            refs.append(str(mov['solicitud_id']))
+        ph = ','.join('?' for _ in refs)
+        au = conn.execute(
+            "SELECT usuario, accion, fecha, detalle FROM audit_log "
+            "WHERE registro_id IN (" + ph + ") AND (tabla='animus_caja_menor' OR "
+            "      tabla='caja_solicitudes_pago' OR tabla='caja_arqueos') "
+            "ORDER BY fecha DESC LIMIT 40", refs).fetchall()
+        out['auditoria'] = [{'usuario': a[0], 'accion': a[1], 'fecha': a[2],
+                             'detalle': a[3]} for a in au]
+    except Exception as e:
+        log.warning('trazabilidad: no pude leer el audit de %s: %s', recibo, e)
+        out['auditoria_error'] = str(e)
+    return jsonify(out)
+
+
+@bp.route("/api/caja/solicitudes/<int:sid>/sobrante", methods=["POST"])
+def caja_solicitud_sobrante(sid):
+    """Devuelve a la caja lo que sobró de un pago ya hecho.
+
+    Se autorizaron 200.000, el pago costó 180.000: esos 20.000 vuelven a la gaveta. Sin esto
+    el saldo del sistema queda 20.000 por debajo de la realidad y el próximo arqueo lo reporta
+    como un sobrante inexplicable.
+    """
+    u, err, code = _caja_auth()
+    if err: return err, code
+    if not _caja_puede_pagar(u):
+        return jsonify({"error": "No estás autorizado para mover la caja"}), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        monto = float(d.get("monto") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Monto inválido"}), 400
+    if monto <= 0:
+        return jsonify({"error": "El monto debe ser mayor a 0"}), 400
+    conn = _db(); c = conn.cursor()
+    row = c.execute("SELECT numero, monto, estado, empresa FROM caja_solicitudes_pago "
+                    "WHERE id=?", (sid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Esa solicitud no existe"}), 404
+    if row[2] != 'pagada':
+        return jsonify({"error": "Solo se devuelve el sobrante de un pago YA hecho"}), 409
+    if monto > float(row[1] or 0):
+        # Devolver más de lo que salió no es un sobrante: es meter plata de otro lado.
+        return jsonify({"error": "El sobrante no puede superar lo que se pagó (%s)"
+                                 % f'{float(row[1] or 0):,.0f}'}), 400
+    fecha = (d.get("fecha") or _hoy_col().isoformat()).strip()
+    recibo, mov_id = registrar_movimiento_caja(
+        c, tipo='ingreso', concepto='Sobrante de %s' % row[0], monto=monto, fecha=fecha,
+        metodo='efectivo', referencia=row[0],
+        observaciones=(d.get("observaciones") or "Devolución de lo que sobró del pago"),
+        usuario=u, empresa=row[3] or 'ANIMUS', subtipo='sobrante', solicitud_id=sid)
+    audit_log(c, usuario=u, accion='CAJA_SOBRANTE', tabla='caja_solicitudes_pago',
+              registro_id=sid, despues={'monto': monto, 'recibo': recibo},
+              detalle='Sobrante de %s devuelto a la caja: %s' % (row[0], monto))
+    conn.commit()
+    return jsonify({"ok": True, "recibo_numero": recibo, "caja_mov_id": mov_id,
+                    "saldo": round(caja_saldo(conn), 2)})
+
+
+@bp.route("/api/caja/reporte", methods=["GET"])
+def caja_reporte():
+    """Qué entró y qué salió, separado por EMPRESA y por tipo.
+
+    Una sola gaveta con plata de dos empresas necesita poder separarse para contabilidad. Y el
+    TRASLADO se reporta aparte del gasto: consignar no es gastar, y mezclarlos infla los gastos
+    del mes con plata que está en el banco.
+    """
+    u, err, code = _caja_auth()
+    if err: return err, code
+    conn = _db()
+    desde = (request.args.get("desde") or "").strip() or (_hoy_col().replace(day=1)).isoformat()
+    hasta = (request.args.get("hasta") or "").strip() or _hoy_col().isoformat()
+    rows = conn.execute(
+        "SELECT UPPER(COALESCE(empresa,'ANIMUS')), tipo, COALESCE(NULLIF(subtipo,''),'otro'), "
+        "       COUNT(*), COALESCE(SUM(monto),0) "
+        "FROM animus_caja_menor "
+        "WHERE COALESCE(anulado,0)=0 AND substr(fecha,1,10) BETWEEN ? AND ? "
+        "GROUP BY UPPER(COALESCE(empresa,'ANIMUS')), tipo, COALESCE(NULLIF(subtipo,''),'otro')",
+        (desde, hasta)).fetchall()
+    out = {}
+    for emp, tipo, sub, n, monto in rows:
+        e = out.setdefault(emp, {'ingresos': 0.0, 'egresos': 0.0, 'traslados': 0.0,
+                                 'gastos': 0.0, 'detalle': []})
+        m = float(monto or 0)
+        if tipo == 'ingreso':
+            e['ingresos'] += m
+        else:
+            e['egresos'] += m
+            if sub == 'traslado':
+                e['traslados'] += m
+            else:
+                e['gastos'] += m
+        e['detalle'].append({'tipo': tipo, 'subtipo': sub, 'n': int(n or 0), 'monto': m})
+    for e in out.values():
+        for k in ('ingresos', 'egresos', 'traslados', 'gastos'):
+            e[k] = round(e[k], 2)
+        e['neto'] = round(e['ingresos'] - e['egresos'], 2)
+    return jsonify({"ok": True, "desde": desde, "hasta": hasta, "por_empresa": out,
+                    "saldo_actual": round(caja_saldo(conn), 2)})
 
 
 @bp.route("/api/animus/caja", methods=["GET"])
@@ -1593,7 +2006,8 @@ def animus_caja_eliminar(mov_id):
     conn = _db()
     c = conn.cursor()
     antes_row = c.execute(
-        "SELECT tipo, concepto, monto, COALESCE(recibo_numero,''), COALESCE(anulado,0) "
+        "SELECT tipo, concepto, monto, COALESCE(recibo_numero,''), COALESCE(anulado,0), "
+        "       solicitud_id, COALESCE(subtipo,'') "
         "FROM animus_caja_menor WHERE id=?", (mov_id,)
     ).fetchone()
     if not antes_row:
@@ -1603,6 +2017,11 @@ def animus_caja_eliminar(mov_id):
     if int(antes_row[4] or 0):
         return jsonify({"error": "Ese recibo ya está anulado",
                         "recibo_numero": antes_row[3]}), 409
+    _fmov = c.execute("SELECT fecha FROM animus_caja_menor WHERE id=?", (mov_id,)).fetchone()
+    if _fmov and _caja_bloqueado_por_cierre(conn, _fmov[0]):
+        return jsonify({"error": "Ese movimiento está en un período ya cerrado · para "
+                                 "corregir se registra uno nuevo, no se toca lo cerrado",
+                        "cerrada_hasta": caja_fecha_cerrada(conn)}), 409
     # CAS: la condición de estado va en el WHERE · con 3 workers dos anulaciones concurrentes
     # pasarían ambas el chequeo de arriba y la segunda pisaría el motivo de la primera.
     c.execute("UPDATE animus_caja_menor SET anulado=1, anulado_por=?, anulado_motivo=?, "
@@ -1611,6 +2030,28 @@ def animus_caja_eliminar(mov_id):
     if c.rowcount == 0:
         conn.rollback()
         return jsonify({"error": "Ese recibo ya está anulado"}), 409
+    # Anular el movimiento sin deshacer lo que provoco deja el sistema contandose historias
+    # distintas: la solicitud diciendo "pagada" con la plata de vuelta en la caja, y Tesoreria
+    # con un gasto que ya no existe. Una reversa a medias es peor que ninguna (M134).
+    _revertido = {}
+    _sol_id = antes_row[5]
+    if _sol_id:
+        # Vuelve a AUTORIZADA: sigue aprobada, lo que se deshizo es el pago. Con CAS para que
+        # dos anulaciones concurrentes no la muevan dos veces.
+        c.execute("UPDATE caja_solicitudes_pago SET estado='autorizada', pagado_por=NULL, "
+                  "pagado_at=NULL, caja_mov_id=NULL WHERE id=? AND estado='pagada'", (_sol_id,))
+        if c.rowcount:
+            _revertido['solicitud'] = _sol_id
+    if antes['recibo']:
+        for _tabla in ('flujo_egresos', 'flujo_ingresos'):
+            try:
+                c.execute("DELETE FROM " + _tabla + " WHERE fuente='caja_menor' AND referencia=?",
+                          (antes['recibo'],))
+                if c.rowcount:
+                    _revertido['tesoreria'] = _tabla
+            except Exception as _e:
+                log.warning('no pude revertir el espejo de %s en %s: %s',
+                            antes['recibo'], _tabla, _e)
     try:
         audit_log(c, usuario=u, accion='ANIMUS_CAJA_ANULAR',
                   tabla='animus_caja_menor', registro_id=mov_id,
@@ -1620,7 +2061,9 @@ def animus_caja_eliminar(mov_id):
     except Exception:
         pass
     conn.commit()
-    return jsonify({"ok": True, "anulado": mov_id, "recibo_numero": antes['recibo']})
+    return jsonify({"ok": True, "anulado": mov_id, "recibo_numero": antes['recibo'],
+                    "revertido": _revertido,
+                    "saldo": round(caja_saldo(conn), 2)})
 
 
 # ════════════════════════════════════════════════════════════════════

@@ -180,7 +180,12 @@ def test_toda_mutacion_pasa_por_el_guard_anti_doble_click():
     guardadas = re.findall(r"_fetchUna\([^;]*?_fetchOpts\('(?:POST|DELETE|PATCH|PUT)'", html, re.S)
     assert len(guardadas) >= 14, "esperaba al menos 14 mutaciones protegidas, hay %d" % len(guardadas)
     # y cada una descarta la respuesta nula (el segundo disparo en vuelo)
-    assert html.count("if (!r) return;") >= len(guardadas)
+    # El guard puede llamarse `r`, `r2`, ... segun cuantas mutaciones tenga la funcion: se
+    # cuenta la FORMA, no el nombre. Contar el literal marcaba en rojo un guard que si estaba.
+    guards = len(re.findall(r"if \(!r\d*\) return;", html))
+    assert guards >= len(guardadas), (
+        "%d mutaciones protegidas pero solo %d descartan la respuesta nula" %
+        (len(guardadas), guards))
 
 
 def test_el_guard_existe_y_se_suelta_siempre():

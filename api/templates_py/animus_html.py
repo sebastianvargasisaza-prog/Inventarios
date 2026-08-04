@@ -41,6 +41,9 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--c
 .tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s;}
 .tab-btn:hover{color:var(--cx-text);}
 .tab-btn.active{color:var(--cx-success-text);border-bottom-color:var(--cx-success);}
+.sub-btn{padding:9px 18px;font-size:13px;font-weight:700;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;border-radius:8px 8px 0 0;transition:.15s;}
+.sub-btn:hover{color:var(--cx-text);background:var(--cx-bg-alt);}
+.sub-btn.active{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);}
 .tab-panel{display:none;padding:24px 20px;}
 .tab-panel.active{display:block;}
 
@@ -192,11 +195,25 @@ window.addEventListener('error', function(ev){
       <div class="page-title">&#128176; Caja Menor</div>
       <div class="page-sub">El efectivo del local: lo que entra por contraentrega, lo que sale, y lo que todavía está en la calle.</div>
     </div>
-    <button class="btn btn-primary" onclick="abrirRegistro('ingreso')">+ Registrar ingreso</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="abrirArqueo()"
+                title="Contar el efectivo real y cuadrar la caja contra la realidad">&#129518; Arquear</button>
+        <button class="btn btn-outline" onclick="cerrarPeriodo()"
+                title="Congelar todo hasta una fecha · despues de cerrar, corregir exige un movimiento nuevo">&#128274; Cerrar periodo</button>
+        <button class="btn btn-primary" onclick="abrirRegistro('ingreso')">+ Registrar ingreso</button>
+      </div>
   </div>
 
+  <div id="caja-aviso-arqueo"></div>
   <div class="kpi-grid" id="caja-kpis"></div>
 
+
+  <div class="subtabs" style="display:flex;gap:4px;border-bottom:1px solid var(--cx-border);margin:18px 0 18px;">
+    <button class="sub-btn active" data-sub="cod" onclick="subTab('cod')">&#128666; Contraentrega</button>
+    <button class="sub-btn" data-sub="mov" onclick="subTab('mov')">&#128184; La caja</button>
+  </div>
+
+  <div id="sub-cod" class="sub-panel">
   <!-- CONTRAENTREGA · la plata que todavia no entro, y el boton para hacerla entrar -->
   <div class="card">
     <div class="card-hdr">
@@ -245,6 +262,9 @@ window.addEventListener('error', function(ev){
     </div>
   </div>
 
+  </div>
+
+  <div id="sub-mov" class="sub-panel" style="display:none;">
   <!-- PAGOS DESDE CAJA (3-ago) · solicitar -> autorizar -> pagar
        La caja no solo recibe: paga. Quien pide (Catalina/Luz), quien autoriza (gerencia) y
        quien paga (Daniela) son tres personas distintas, y el registro es UNO que cambia de
@@ -371,6 +391,7 @@ window.addEventListener('error', function(ev){
 </div>
 
 <!-- TAB: INVENTARIO FISICO (modelo nuevo · ecuacion contable) -->
+  </div>
 <div id="tab-invfis" class="tab-panel">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
@@ -613,9 +634,17 @@ window.addEventListener('error', function(ev){
         <input id="sp-beneficiario" class="input" placeholder="Proveedor o persona"></div>
     </div>
     <div class="form-row full">
+      <div><label class="label">Cotizacion o pantallazo del precio</label>
+        <input id="sp-cotiz" class="input" placeholder="Enlace de la cotizacion (opcional pero recomendado)">
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;">
+          Justifica el monto ANTES de autorizar &middot; sin esto se aprueba una cifra que nadie respaldo
+        </div></div>
+    </div>
+    <div class="form-row full">
       <div><label class="label">Observaciones</label>
         <textarea id="sp-obs" class="textarea" placeholder="Opcional"></textarea></div>
     </div>
+    <div id="sp-saldo-aviso" style="font-size:12px;margin-bottom:8px;"></div>
     <div id="sp-tope-aviso" style="font-size:12px;margin-bottom:12px;"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-outline" onclick="cerrarModal('modal-sp')">Cancelar</button>
@@ -652,6 +681,78 @@ window.addEventListener('error', function(ev){
       <button class="btn btn-outline" onclick="cerrarModal('modal-traslado')">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarTraslado()">Consignar</button>
     </div>
+  </div>
+</div>
+
+<!-- PEDIR DATO · modal reusable (3-ago) · reemplaza los prompt()/confirm() nativos.
+     Un prompt del navegador no se puede estilar, no muestra contexto y bloquea el hilo.
+     Este devuelve una promesa, asi que el codigo que lo llama se lee igual que antes. -->
+<div id="modal-pedir" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1200;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:460px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px;">
+      <h3 id="pedir-titulo" style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;letter-spacing:-.01em;"></h3>
+      <button onclick="_pedirCerrar(null)" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;line-height:1;">&times;</button>
+    </div>
+    <div id="pedir-sub" style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;"></div>
+    <div id="pedir-campo" style="margin-bottom:8px;"></div>
+    <div id="pedir-error" style="font-size:12px;color:var(--cx-danger-text);min-height:16px;margin-bottom:10px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="_pedirCerrar(null)">Cancelar</button>
+      <button class="btn btn-primary" id="pedir-ok" onclick="_pedirAceptar()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ARQUEO · contar el efectivo real (3-ago)
+     El saldo era una SUMA que nadie habia contado nunca contra la gaveta: si faltaba plata,
+     el sistema seguia diciendo su numero. El efectivo FISICO es la verdad. -->
+<div id="modal-arqueo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1100;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:520px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+      <h3 style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;">&#129518; Arqueo de caja</h3>
+      <button onclick="cerrarModal('modal-arqueo')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;">
+      Conta el efectivo que hay en la gaveta y escribilo tal cual. Si no coincide con el
+      sistema, la diferencia queda registrada con su motivo y los libros se ajustan a la
+      realidad &mdash; porque la plata que esta es la verdad, no la que el sistema calculo.
+    </div>
+    <div style="background:var(--cx-bg-alt);border-radius:10px;padding:14px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+        <span style="color:var(--cx-text-mute);">El sistema dice</span>
+        <span id="arq-sistema" style="font-weight:800;color:var(--cx-text);">-</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;">
+        <span style="color:var(--cx-text-mute);">Ultimo arqueo</span>
+        <span id="arq-ultimo" style="color:var(--cx-text-soft);">-</span>
+      </div>
+    </div>
+    <div class="form-row">
+      <div><label class="label">Cuanto contaste</label>
+        <input id="arq-fisico" type="number" class="input" placeholder="0" oninput="arqAvisarDif()"></div>
+      <div><label class="label">Fecha</label>
+        <input id="arq-fecha" type="date" class="input"></div>
+    </div>
+    <div id="arq-dif" style="font-size:13px;margin:4px 0 10px;min-height:20px;"></div>
+    <div class="form-row full">
+      <div><label class="label">Motivo de la diferencia</label>
+        <textarea id="arq-motivo" class="textarea" placeholder="Obligatorio si no cuadra"></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-arqueo')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarArqueo()">Registrar arqueo</button>
+    </div>
+  </div>
+</div>
+
+<!-- TRAZABILIDAD · todo el recorrido de un recibo en una vista -->
+<div id="modal-traza" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1100;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:720px;max-width:94vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+      <h3 id="traza-titulo" style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;">Recorrido</h3>
+      <button onclick="cerrarModal('modal-traza')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div id="traza-cuerpo" style="font-size:13px;">Cargando...</div>
   </div>
 </div>
 
@@ -763,10 +864,27 @@ function switchTab(name){
   if (panel) panel.classList.add('active');
   if (!_loaded[name]) { _loaded[name] = true; loadTab(name); }
 }
+// Sub-pestanas de Caja Menor (3-ago · Sebastian: "deberia ir caja menor en dos subpestanas").
+// Dos trabajos distintos -cobrar lo que esta en la calle y manejar la plata que hay- obligaban
+// a scrollear 46 filas para pasar de uno al otro.
+// Conmutador PROPIO: `switchTab` apaga todos los `.tab-panel` y dejaria la pantalla en blanco.
+function subTab(name){
+  document.querySelectorAll('.sub-btn').forEach(function(b){
+    b.classList.toggle('active', b.dataset.sub === name);
+  });
+  document.querySelectorAll('.sub-panel').forEach(function(p){
+    p.style.display = (p.id === 'sub-' + name) ? '' : 'none';
+  });
+  try { localStorage.setItem('caja-sub', name); } catch(e){}
+}
+
 function loadTab(name){
   // Caja Menor trae las dos mitades: lo que YA entro (movimientos) y lo que falta entrar
   // (contraentrega en la calle). Sin la segunda, el saldo se lee como si no faltara nada.
-  if (name === 'caja') { loadCaja(); loadCod(); loadPagosCaja(); }
+  if (name === 'caja') {
+    loadCaja(); loadCod(); loadPagosCaja(); cargarAvisoArqueo();
+    try { var _sb = localStorage.getItem('caja-sub'); if (_sb) subTab(_sb); } catch(e){}
+  }
   else if (name === 'invfis') { cargarInvFisico(); cargarMovimientosInvFis(); }
   else if (name === 'inventario') { loadInvSkus(); loadInvConteos(); }
   else if (name === 'pqr') loadAnimusPqr();
@@ -845,7 +963,10 @@ function renderCajaMovs(rows){
       ? '<span class="diff-pos">+' + fmtCOP(m.monto) + '</span>'
       : '<span class="diff-neg">-' + fmtCOP(m.monto) + '</span>';
     const recibo = m.recibo_numero
-      ? '<span style="font-family:ui-monospace,monospace;font-weight:700;font-size:12px;">'+esc(m.recibo_numero)+'</span>'
+      ? '<a href="#" onclick="verTraza(&quot;'+esc(m.recibo_numero)+'&quot;);return false;"'
+        + ' title="Ver todo el recorrido de este movimiento"'
+        + ' style="font-family:ui-monospace,monospace;font-weight:700;font-size:12px;color:var(--cx-primary-text);text-decoration:none;">'
+        + esc(m.recibo_numero)+'</a>'
       : '<span style="color:var(--cx-text-mute);font-size:11px;">sin numero</span>';
     const motivo = anul
       ? '<div style="font-size:10px;color:var(--cx-danger-text);margin-top:2px;">Anulado por '
@@ -912,9 +1033,13 @@ async function guardarCaja(){
 async function anularCaja(id){
   // El recibo NO se borra: se anula y queda a la vista. Por eso se pide el motivo, que se
   // guarda en el recibo y en la auditoria (un correlativo con hojas arrancadas no prueba nada).
-  const motivo = prompt('Motivo de la anulacion (queda en el recibo):', '');
+  const motivo = await pedirDato({
+    titulo: 'Anular el cobro',
+    sub: 'El recibo NO se borra: queda anulado y a la vista, con el motivo. Asi un hueco en la numeracion nunca puede pasar desapercibido.',
+    tipo: 'texto', requerido: true, msgRequerido: 'El motivo es obligatorio',
+    confirmar: 'Anular'
+  });
   if (motivo === null) return;
-  if (!motivo.trim()) { showToast('El motivo es obligatorio', 'error'); return; }
   try {
     const r = await _fetchUna('/api/animus/caja/' + id, _fetchOpts('DELETE', {motivo: motivo.trim()}));
     if (!r) return;   // ya habia uno en vuelo (doble click)
@@ -1059,8 +1184,13 @@ async function importarPagados(){
     if (!prev.n) { showToast('No hay contraentregas pagadas sin registrar', 'success'); return; }
     const lista = (prev.pedidos||[]).slice(0, 6).map(function(x){
       return x.pedido + ' (' + fmtCOP(x.valor) + ')'; }).join(', ');
-    if (!confirm('Registrar ' + prev.n + ' contraentrega(s) por ' + fmtCOP(prev.monto)
-        + ' en la caja? · ' + lista + (prev.n > 6 ? ' y ' + (prev.n - 6) + ' mas' : ''))) return;
+    if (!await pedirDato({
+      titulo: 'Registrar ' + prev.n + ' cobros en la caja',
+      sub: '<b>' + fmtCOP(prev.monto) + '</b> que Shopify ya da por pagados.<br>'
+         + '<span style="color:var(--cx-text-mute);">' + esc(lista)
+         + (prev.n > 6 ? ' y ' + (prev.n - 6) + ' mas' : '') + '</span>'
+         + '<br>Cada uno entra con su recibo y la fecha del pedido.',
+      tipo: 'confirmar', confirmar: 'Registrar ' + prev.n})) return;
     const r = await _fetchUna('/api/animus/contraentrega/importar-pagados', _fetchOpts('POST', {}));
     if (!r) return;   // ya habia uno en vuelo (doble click)
     const d = await r.json();
@@ -1094,7 +1224,315 @@ async function traerPedidos(){
 // Un solo registro que cambia de estado y tres personas distintas tocandolo. Cada boton
 // aparece SOLO para quien puede ejecutarlo: un boton que responde 403 es peor que no tenerlo,
 // porque quien lo aprieta cree que hizo algo.
-var _SP_ROWS = [], _SP_TOPE = 200000;
+var _SP_ROWS = [], _SP_TOPE = 200000, _SP_DISPONIBLE = null;
+
+// ── PEDIR DATO · reemplaza prompt()/confirm() ─────────────────────────────────
+// Un prompt del navegador no se puede estilar, no deja mostrar el contexto al lado (el valor
+// esperado, el saldo, de que pedido se trata) y bloquea el hilo. Este devuelve una PROMESA,
+// asi que quien lo llama se lee igual que antes: `var v = await pedirDato({...})`.
+var _pedirResolver = null;
+
+function pedirDato(opt){
+  opt = opt || {};
+  document.getElementById('pedir-titulo').textContent = opt.titulo || '';
+  document.getElementById('pedir-sub').innerHTML = opt.sub || '';
+  document.getElementById('pedir-error').textContent = '';
+  document.getElementById('pedir-ok').textContent = opt.confirmar || 'Confirmar';
+  var campo = document.getElementById('pedir-campo');
+  if (opt.tipo === 'confirmar') {
+    campo.innerHTML = '';
+  } else if (opt.tipo === 'texto') {
+    campo.innerHTML = '<textarea id="pedir-texto" class="textarea" placeholder="'
+      + esc(opt.placeholder || '') + '"></textarea>';
+  } else {
+    campo.innerHTML = '<input id="pedir-input" type="' + (opt.tipo === 'numero' ? 'number' : 'text')
+      + '" class="input" value="' + esc(opt.valor == null ? '' : String(opt.valor)) + '"'
+      + ' placeholder="' + esc(opt.placeholder || '') + '">';
+  }
+  document.getElementById('modal-pedir').style.display = 'flex';
+  var inp = _pedirCampo();
+  if (inp) { inp.focus(); if (inp.select) inp.select(); }
+  // Enter confirma y Escape cancela: es lo que hacia el prompt nativo y se espera que siga.
+  window._pedirKey = function(ev){
+    if (ev.key === 'Enter' && opt.tipo !== 'texto') { ev.preventDefault(); _pedirAceptar(); }
+    if (ev.key === 'Escape') _pedirCerrar(null);
+  };
+  document.addEventListener('keydown', window._pedirKey);
+  window._pedirOpt = opt;
+  return new Promise(function(res){ _pedirResolver = res; });
+}
+
+// El campo es un input o un textarea segun el tipo · nunca los dos a la vez.
+function _pedirCampo(){
+  return document.getElementById('pedir-input') || document.getElementById('pedir-texto');
+}
+
+function _pedirAceptar(){
+  var opt = window._pedirOpt || {};
+  if (opt.tipo === 'confirmar') { _pedirCerrar(true); return; }
+  var inp = _pedirCampo();
+  var v = inp ? inp.value.trim() : '';
+  // La validacion vive ACA y no en cada caller: un dato invalido no cierra el modal, para no
+  // perder lo que la persona ya escribio.
+  if (opt.requerido && !v) {
+    document.getElementById('pedir-error').textContent = opt.msgRequerido || 'Este dato es obligatorio';
+    return;
+  }
+  if (opt.tipo === 'numero' && v !== '') {
+    var n = parseFloat(String(v).replace(/[^0-9.-]/g, ''));
+    if (isNaN(n) || n < 0) {
+      document.getElementById('pedir-error').textContent = 'Escribi un numero valido';
+      return;
+    }
+    _pedirCerrar(n); return;
+  }
+  _pedirCerrar(v);
+}
+
+function _pedirCerrar(valor){
+  document.getElementById('modal-pedir').style.display = 'none';
+  if (window._pedirKey) { document.removeEventListener('keydown', window._pedirKey); window._pedirKey = null; }
+  var r = _pedirResolver; _pedirResolver = null;
+  if (r) r(valor);
+}
+
+// ── ARQUEO · CIERRE · TRAZABILIDAD ────────────────────────────────────────────
+// El saldo era una SUMA de movimientos que nadie habia contado nunca contra la gaveta. El
+// arqueo lo cuenta: si no cuadra, la diferencia queda con su motivo y los libros se ajustan a
+// la realidad (el efectivo fisico es la verdad, igual que el conteo ciclico contra el kardex).
+var _ARQ_SISTEMA = 0;
+
+async function cargarAvisoArqueo(){
+  var el = document.getElementById('caja-aviso-arqueo');
+  if (!el) return;
+  try {
+    var d = await (await fetch('/api/caja/arqueos')).json();
+    if (!d.ok) { el.innerHTML = ''; return; }
+    _ARQ_SISTEMA = d.saldo_actual || 0;
+    var dias = d.dias_sin_arqueo;
+    var partes = [];
+    // Una caja que lleva semanas sin arquear tiene un saldo que nadie verifico, y eso tiene
+    // que verse sin abrir el historial.
+    if (dias == null) {
+      partes.push('<b>La caja nunca se ha arqueado.</b> El saldo es un calculo que nadie conto contra la gaveta.');
+    } else if (dias >= 7) {
+      partes.push('Hace <b>' + dias + ' dias</b> que no se cuenta el efectivo.');
+    }
+    if (d.cerrada_hasta) {
+      partes.push('Cerrada hasta <b>' + esc(d.cerrada_hasta) + '</b>: lo anterior no se toca.');
+    }
+    if (!partes.length) { el.innerHTML = ''; return; }
+    var urgente = (dias == null || dias >= 7);
+    el.innerHTML = '<div style="padding:12px 16px;border-radius:10px;margin-bottom:14px;font-size:13px;'
+      + 'background:' + (urgente ? 'var(--cx-warn-pale)' : 'var(--cx-info-pale)') + ';'
+      + 'border-left:3px solid ' + (urgente ? 'var(--cx-warn)' : 'var(--cx-info)') + ';'
+      + 'color:var(--cx-text-soft);">' + partes.join(' &middot; ')
+      + (urgente ? ' <a href="#" onclick="abrirArqueo();return false;" style="color:var(--cx-primary-text);font-weight:700;">Arquear ahora</a>' : '')
+      + '</div>';
+  } catch(e) { el.innerHTML = ''; }
+}
+
+// Cerrar el periodo: lo anterior queda congelado. No es un boton de todos los dias, pero sin
+// el la feature no existe -- el backend estaba y nadie podia usarlo (M94).
+async function cerrarPeriodo(){
+  var hasta = await pedirDato({
+    titulo: 'Cerrar la caja hasta una fecha',
+    sub: 'Todo lo anterior queda congelado: corregir algo cerrado va a exigir un movimiento '
+       + 'NUEVO, no editar el viejo.<br>Conviene arquear antes: cerrar sin contar el efectivo '
+       + 'es sellar un numero que nadie verifico.',
+    tipo: 'texto', valor: new Date(Date.now() - 5*3600*1000).toISOString().slice(0,10),
+    placeholder: 'AAAA-MM-DD', requerido: true, confirmar: 'Cerrar'
+  });
+  if (hasta === null) return;
+  try {
+    var r = await _fetchUna('/api/caja/cierres', _fetchOpts('POST', {hasta_fecha: hasta}));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
+    var d = await r.json();
+    if (!d.ok) {
+      // Si falta el arqueo, el backend ofrece forzar · se pregunta en vez de fallar seco.
+      if (d.puede_forzar) {
+        var ok = await pedirDato({
+          titulo: 'No hay ningun arqueo hasta esa fecha',
+          sub: 'Cerrar sin contar el efectivo sella un numero que nadie verifico. '
+             + '&iquest;Cerrar igual?',
+          tipo: 'confirmar', confirmar: 'Cerrar sin arquear'});
+        if (!ok) return;
+        var r2 = await _fetchUna('/api/caja/cierres',
+                                 _fetchOpts('POST', {hasta_fecha: hasta, forzar: true}));
+        if (!r2) return;
+        var d2 = await r2.json();
+        if (!d2.ok) { showToast('Error: ' + (d2.error||'?'), 'error'); return; }
+        showToast('Cerrada hasta ' + d2.hasta_fecha + ' con saldo ' + fmtCOP(d2.saldo_cierre), 'success');
+        loadCaja(); cargarAvisoArqueo();
+        return;
+      }
+      showToast('Error: ' + (d.error||'?'), 'error'); return;
+    }
+    showToast('Cerrada hasta ' + d.hasta_fecha + ' con saldo ' + fmtCOP(d.saldo_cierre), 'success');
+    loadCaja(); cargarAvisoArqueo();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
+async function abrirArqueo(){
+  document.getElementById('arq-fisico').value = '';
+  document.getElementById('arq-motivo').value = '';
+  document.getElementById('arq-dif').innerHTML = '';
+  document.getElementById('arq-fecha').value = new Date(Date.now() - 5*3600*1000)
+    .toISOString().slice(0,10);
+  document.getElementById('modal-arqueo').style.display = 'flex';
+  try {
+    var d = await (await fetch('/api/caja/arqueos')).json();
+    _ARQ_SISTEMA = d.saldo_actual || 0;
+    document.getElementById('arq-sistema').textContent = fmtCOP(_ARQ_SISTEMA);
+    document.getElementById('arq-ultimo').textContent = d.ultimo
+      ? (d.ultimo.numero + ' · ' + (d.ultimo.fecha || '') +
+         (d.dias_sin_arqueo != null ? ' (' + d.dias_sin_arqueo + ' dias)' : ''))
+      : 'nunca se ha arqueado';
+  } catch(e) {
+    document.getElementById('arq-sistema').textContent = '?';
+  }
+}
+
+function arqAvisarDif(){
+  // La diferencia se muestra MIENTRAS se escribe: si hay que explicarla, que se sepa antes de
+  // darle a guardar y no despues de un error.
+  var v = document.getElementById('arq-fisico').value;
+  var el = document.getElementById('arq-dif');
+  if (v === '') { el.innerHTML = ''; return; }
+  var dif = parseFloat(v) - _ARQ_SISTEMA;
+  if (Math.abs(dif) < 1) {
+    el.innerHTML = '<span style="color:var(--cx-success-text);font-weight:700;">Cuadra exacto.</span>';
+  } else if (dif < 0) {
+    el.innerHTML = '<span style="color:var(--cx-danger-text);font-weight:700;">Faltan '
+      + fmtCOP(Math.abs(dif)) + '</span> <span style="color:var(--cx-text-mute);">· explica que paso</span>';
+  } else {
+    el.innerHTML = '<span style="color:var(--cx-warn-text);font-weight:700;">Sobran '
+      + fmtCOP(dif) + '</span> <span style="color:var(--cx-text-mute);">· explica de donde salieron</span>';
+  }
+}
+
+async function guardarArqueo(){
+  var fisico = document.getElementById('arq-fisico').value;
+  if (fisico === '') { showToast('Escribi cuanto contaste', 'error'); return; }
+  var body = {
+    conteo_fisico: parseFloat(fisico),
+    fecha: document.getElementById('arq-fecha').value,
+    motivo: document.getElementById('arq-motivo').value.trim()
+  };
+  try {
+    var r = await _fetchUna('/api/caja/arqueos', _fetchOpts('POST', body));
+    if (!r) return;   // ya habia uno en vuelo (doble click)
+    var d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast(d.numero + ' · ' + (d.aviso||''), d.diferencia === 0 ? 'success' : 'error');
+    cerrarModal('modal-arqueo');
+    loadCaja(); cargarAvisoArqueo();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
+// ── TRAZABILIDAD ─────────────────────────────────────────────────────────────
+// Los datos siempre estuvieron, pero repartidos en cinco tablas. Lo que cuesta reconstruir en
+// la practica no se audita nunca.
+async function verTraza(recibo){
+  document.getElementById('traza-titulo').textContent = 'Recorrido de ' + recibo;
+  document.getElementById('traza-cuerpo').innerHTML = 'Cargando...';
+  document.getElementById('modal-traza').style.display = 'flex';
+  try {
+    var r = await fetch('/api/caja/trazabilidad/' + encodeURIComponent(recibo));
+    var d = await r.json();
+    if (!d.ok) {
+      document.getElementById('traza-cuerpo').innerHTML =
+        '<div style="color:var(--cx-danger-text);">' + esc(d.error || 'No se pudo leer') + '</div>';
+      return;
+    }
+    document.getElementById('traza-cuerpo').innerHTML = renderTraza(d);
+  } catch(e) {
+    document.getElementById('traza-cuerpo').innerHTML =
+      '<div style="color:var(--cx-danger-text);">Error: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderTraza(d){
+  function bloque(titulo, filas){
+    if (!filas.length) return '';
+    var h = '<div style="font-weight:800;font-size:13px;color:var(--cx-text);margin:16px 0 6px;">' + titulo + '</div>'
+          + '<div style="background:var(--cx-bg-alt);border-radius:10px;padding:12px;">';
+    filas.forEach(function(f){
+      h += '<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:12.5px;">'
+        + '<span style="color:var(--cx-text-mute);">' + f[0] + '</span>'
+        + '<span style="color:var(--cx-text);text-align:right;">' + f[1] + '</span></div>';
+    });
+    return h + '</div>';
+  }
+  function val(x){ return (x == null || x === '') ? '<span style="color:var(--cx-text-mute);">-</span>' : esc(String(x)); }
+  var m = d.movimiento || {};
+  var h = bloque('&#128181; El movimiento', [
+    ['Recibo', '<b>' + val(m.recibo_numero) + '</b>'],
+    ['Fecha', val((m.fecha||'').slice(0,10))],
+    ['Tipo', val(m.tipo) + (m.subtipo ? ' · ' + val(m.subtipo) : '')],
+    ['Concepto', val(m.concepto)],
+    ['Monto', '<b>' + fmtCOP(m.monto || 0) + '</b>'],
+    ['Empresa', val(m.empresa)],
+    ['Registro', val(m.registrado_por)],
+    ['Anulado', m.anulado ? '<span style="color:var(--cx-danger-text);font-weight:700;">si · ' + val(m.anulado_motivo) + '</span>' : 'no']
+  ]);
+  var s = d.solicitud;
+  if (s) {
+    h += bloque('&#128203; La solicitud que lo origino', [
+      ['Numero', '<b>' + val(s.numero) + '</b>'],
+      ['Pidio', val(s.solicitado_por) + ' · ' + val((s.solicitado_at||'').slice(0,16))],
+      ['Autorizo', val(s.autorizado_por) + (s.autorizacion_via ? ' (' + val(s.autorizacion_via) + ')' : '')],
+      ['Pago', val(s.pagado_por) + ' · ' + val((s.pagado_at||'').slice(0,16))],
+      ['Cotizacion', s.cotizacion_url ? '<a href="' + esc(s.cotizacion_url) + '" target="_blank" style="color:var(--cx-primary-text);">ver</a>' : '<span style="color:var(--cx-danger-text);">sin cotizacion</span>'],
+      ['Comprobante', s.comprobante_url ? '<a href="' + esc(s.comprobante_url) + '" target="_blank" style="color:var(--cx-primary-text);">ver</a>' : '<span style="color:var(--cx-danger-text);">falta</span>']
+    ]);
+  }
+  var p = d.pedido;
+  if (p) {
+    h += bloque('&#128666; El pedido de contraentrega', [
+      ['Pedido', '<b>' + val(p.pedido) + '</b>'],
+      ['Esperado', fmtCOP(p.valor_esperado || 0)],
+      ['Recibido', fmtCOP(p.valor_recibido || 0)],
+      ['Diferencia', (Math.abs((p.valor_recibido||0) - (p.valor_esperado||0)) < 1)
+        ? 'sin diferencia'
+        : '<span style="color:var(--cx-danger-text);">' + fmtCOP((p.valor_recibido||0) - (p.valor_esperado||0)) + ' · ' + val(p.observaciones) + '</span>'],
+      ['Cobro', val(p.cobrado_por) + ' · ' + val((p.cobrado_at||'').slice(0,16))]
+    ]);
+  }
+  var a = d.arqueo;
+  if (a) {
+    h += bloque('&#129518; El arqueo que lo genero', [
+      ['Arqueo', '<b>' + val(a.numero) + '</b> · ' + val(a.fecha)],
+      ['El sistema decia', fmtCOP(a.saldo_sistema || 0)],
+      ['Se conto', fmtCOP(a.conteo_fisico || 0)],
+      ['Diferencia', fmtCOP(a.diferencia || 0)],
+      ['Motivo', val(a.motivo)],
+      ['Lo hizo', val(a.realizado_por)]
+    ]);
+  }
+  var t = d.tesoreria;
+  h += bloque('&#127974; En Tesoreria', t ? [
+    ['Movimiento', val(t.tipo) + ' · ' + fmtCOP(t.monto || 0)],
+    ['Categoria', val(t.categoria)],
+    ['Periodo', val(t.periodo)]
+  ] : [['Espejo', '<span style="color:var(--cx-text-mute);">este movimiento no espeja a Tesoreria</span>']]);
+
+  var au = d.auditoria || [];
+  if (au.length) {
+    var f = '<div style="font-weight:800;font-size:13px;color:var(--cx-text);margin:16px 0 6px;">&#128220; Quien toco que</div>'
+          + '<div style="background:var(--cx-bg-alt);border-radius:10px;padding:12px;">';
+    au.forEach(function(x){
+      f += '<div style="padding:4px 0;font-size:12px;border-bottom:1px solid var(--cx-hairline);">'
+        + '<b style="color:var(--cx-text);">' + esc(x.usuario||'') + '</b> '
+        + '<span style="color:var(--cx-primary-text);">' + esc(x.accion||'') + '</span> '
+        + '<span style="color:var(--cx-text-mute);">' + esc((x.fecha||'').slice(0,16)) + '</span>'
+        + (x.detalle ? '<div style="color:var(--cx-text-soft);">' + esc(x.detalle) + '</div>' : '')
+        + '</div>';
+    });
+    h += f + '</div>';
+  }
+  return h;
+}
 
 async function loadPagosCaja(){
   var est = (document.getElementById('sp-filtro')||{value:''}).value;
@@ -1104,6 +1542,7 @@ async function loadPagosCaja(){
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     _SP_ROWS = d.solicitudes || [];
     _SP_TOPE = d.tope || 200000;
+    _SP_DISPONIBLE = d.disponible == null ? null : d.disponible;
     renderPagosKPIs(d);
     renderPagosBody();
   } catch(e) {
@@ -1154,6 +1593,8 @@ function renderPagosBody(){
     } else if (s.estado === 'pagada' && !s.comprobante_url) {
       acc += '<button class="btn btn-outline btn-sm" onclick="spComprobante('+i+')">Subir respaldo</button>';
     }
+    var cot = s.cotizacion_url
+      ? ' <a href="' + esc(s.cotizacion_url) + '" target="_blank" class="badge badge-blue" title="Cotizacion">cotiz</a>' : '';
     var resp = '<span style="color:var(--cx-text-mute);">-</span>';
     if (s.estado === 'pagada') {
       resp = s.comprobante_url
@@ -1172,7 +1613,7 @@ function renderPagosBody(){
       + '<td style="text-align:right;font-weight:700;">'+fmtCOP(s.monto||0)+'</td>'
       + '<td style="font-size:12px;">'+esc(s.solicitado_por||'')+'</td>'
       + '<td><span class="badge '+badge+'">'+etiqueta+'</span>'+via+'</td>'
-      + '<td>'+resp+'</td>'
+      + '<td>'+resp+cot+'</td>'
       + '<td>'+acc+'</td>'
       + '</tr>';
   }).join('');
@@ -1183,15 +1624,29 @@ function abrirSolicitudPago(){
   document.getElementById('sp-monto').value = '';
   document.getElementById('sp-beneficiario').value = '';
   document.getElementById('sp-obs').value = '';
+  document.getElementById('sp-cotiz').value = '';
   document.getElementById('sp-tope-aviso').innerHTML = '';
+  document.getElementById('sp-saldo-aviso').innerHTML = '';
   document.getElementById('modal-sp').style.display = 'flex';
 }
 
 function spAvisarTope(){
-  // Se dice ANTES de enviar si va a necesitar autorizacion: que el usuario sepa si el pago
-  // queda listo o si va a esperar a alguien.
+  // Se dice ANTES de enviar dos cosas: si va a necesitar autorizacion, y si la caja tiene con
+  // que pagarlo. Sin lo segundo alguien pide un pago que la caja no cubre y se entera recien
+  // cuando quien paga se lo rechaza.
   var m = parseFloat(document.getElementById('sp-monto').value || 0);
   var el = document.getElementById('sp-tope-aviso');
+  var es = document.getElementById('sp-saldo-aviso');
+  if (es) {
+    if (!m || _SP_DISPONIBLE == null) es.innerHTML = '';
+    else if (m <= _SP_DISPONIBLE)
+      es.innerHTML = '<span style="color:var(--cx-success-text);">La caja tiene '
+        + fmtCOP(_SP_DISPONIBLE) + ' disponible: alcanza.</span>';
+    else
+      es.innerHTML = '<span style="color:var(--cx-danger-text);">La caja solo tiene '
+        + fmtCOP(_SP_DISPONIBLE) + ' disponible (ya descontado lo autorizado sin pagar). '
+        + 'Se puede pedir igual, pero no se va a poder pagar hasta que entre plata.</span>';
+  }
   if (!m) { el.innerHTML = ''; return; }
   el.innerHTML = m <= _SP_TOPE
     ? '<span style="color:var(--cx-success-text);">Bajo el tope de ' + fmtCOP(_SP_TOPE) + ': queda lista para pagar sin esperar autorizacion.</span>'
@@ -1205,6 +1660,7 @@ async function guardarSolicitudPago(){
     empresa: document.getElementById('sp-empresa').value,
     beneficiario: document.getElementById('sp-beneficiario').value.trim(),
     observaciones: document.getElementById('sp-obs').value.trim(),
+    cotizacion_url: document.getElementById('sp-cotiz').value.trim(),
     modulo_origen: 'caja'
   };
   if (!body.concepto) { showToast('Concepto requerido', 'error'); return; }
@@ -1222,7 +1678,12 @@ async function guardarSolicitudPago(){
 
 async function spAutorizar(i){
   var s = _SP_ROWS[i]; if (!s) return;
-  if (!confirm('Autorizar el pago de ' + fmtCOP(s.monto) + ' por "' + s.concepto + '"?')) return;
+  if (!await pedirDato({titulo: 'Autorizar el pago',
+    sub: '<b>' + fmtCOP(s.monto) + '</b> &middot; ' + esc(s.concepto)
+       + (s.beneficiario ? '<br>A: ' + esc(s.beneficiario) : '')
+       + '<br>Pidio: ' + esc(s.solicitado_por || '') + ' &middot; ' + esc(s.empresa || '')
+       + '<br><span style="color:var(--cx-text-mute);">Autorizar no saca la plata: la saca quien pague.</span>',
+    tipo: 'confirmar', confirmar: 'Autorizar'})) return;
   await _spAccion('/api/caja/solicitudes/' + s.id + '/autorizar', {}, 'Autorizada');
 }
 
@@ -1230,23 +1691,35 @@ async function spRechazar(i){
   var s = _SP_ROWS[i]; if (!s) return;
   // El motivo es obligatorio: sin el, quien pidio no sabe que corregir y quien audita no sabe
   // por que no se pago.
-  var motivo = prompt('Motivo del rechazo (queda en el registro):', '');
+  var motivo = await pedirDato({
+    titulo: 'Rechazar ' + (s.numero || ''),
+    sub: 'Quien lo pidio va a ver este motivo en su pantalla, asi que decile que corregir.',
+    tipo: 'texto', requerido: true, msgRequerido: 'El motivo es obligatorio',
+    confirmar: 'Rechazar'
+  });
   if (motivo === null) return;
-  if (!motivo.trim()) { showToast('El motivo es obligatorio', 'error'); return; }
   await _spAccion('/api/caja/solicitudes/' + s.id + '/rechazar', {motivo: motivo.trim()}, 'Rechazada');
 }
 
 async function spPagar(i){
   var s = _SP_ROWS[i]; if (!s) return;
-  if (!confirm('Pagar ' + fmtCOP(s.monto) + ' de la caja por "' + s.concepto + '"? El saldo baja ahora.')) return;
+  if (!await pedirDato({titulo: 'Pagar desde la caja',
+    sub: '<b>' + fmtCOP(s.monto) + '</b> &middot; ' + esc(s.concepto)
+       + (s.beneficiario ? '<br>A: ' + esc(s.beneficiario) : '')
+       + '<br><span style="color:var(--cx-warn-text);">El saldo baja ahora. El comprobante lo podes subir despues.</span>',
+    tipo: 'confirmar', confirmar: 'Pagar'})) return;
   await _spAccion('/api/caja/solicitudes/' + s.id + '/pagar', {}, 'Pagada');
 }
 
 async function spComprobante(i){
   var s = _SP_ROWS[i]; if (!s) return;
-  var url = prompt('Enlace del comprobante de ' + s.numero + ':', '');
+  var url = await pedirDato({
+    titulo: 'Respaldo de ' + (s.numero || ''),
+    sub: 'Pega el enlace de la foto o el archivo del pago (' + fmtCOP(s.monto) + ').',
+    tipo: 'texto', requerido: true, msgRequerido: 'Falta el enlace',
+    placeholder: 'https://...', confirmar: 'Guardar respaldo'
+  });
   if (url === null) return;
-  if (!url.trim()) { showToast('Falta el enlace', 'error'); return; }
   await _spAccion('/api/caja/solicitudes/' + s.id + '/comprobante', {url: url.trim()}, 'Respaldo guardado');
 }
 
@@ -1395,8 +1868,12 @@ async function usarMarca(i, campo){
   patron = patron ? patron + '|' + nuevo : nuevo;
   // Mensaje de UNA sola linea a proposito: un salto real dentro de un confirm rompe el bloque
   // <script> entero y deja la pantalla muerta sin un error visible.
-  if (!confirm('Marcar como contraentrega los pedidos con ' + (campo === 'tag' ? 'la etiqueta' : 'el medio de pago')
-      + ' "' + f.valor + '" · ' + f.pedidos + ' pedidos entrarian a la caja.')) return;
+  if (!await pedirDato({
+    titulo: 'Marcar como contraentrega',
+    sub: (campo === 'tag' ? 'La etiqueta' : 'El medio de pago') + ' <b>' + esc(f.valor) + '</b>'
+       + '<br><b>' + f.pedidos + '</b> pedidos entrarian a la caja (' + fmtCOP(f.monto || 0) + ').'
+       + '<br><span style="color:var(--cx-text-mute);">Se SUMA a lo que ya detecta, no lo reemplaza.</span>',
+    tipo: 'confirmar', confirmar: 'Usar esta marca'})) return;
   try {
     const r = await _fetchUna('/api/animus/contraentrega/patron', _fetchOpts('PUT', {patron: patron}));
     if (!r) return;   // ya habia uno en vuelo (doble click)
@@ -1415,14 +1892,26 @@ async function codCobrar(i){
   const sid = p.shopify_id, esperado = p.valor_esperado || 0, pedido = p.pedido || '';
   // Se pregunta el valor en vez de asumirlo: el mensajero a veces entrega distinto, y ese
   // descuadre es justo lo que hay que poder ver.
-  const txt = prompt('Cuanto entro por ' + pedido + '? (el pedido dice ' + fmtCOP(esperado) + ')', esperado);
-  if (txt === null) return;
-  const val = parseFloat(String(txt).replace(/[^0-9.-]/g, ''));
-  if (isNaN(val) || val < 0) { showToast('Valor invalido', 'error'); return; }
+  var _dias = (p.dias_en_calle == null) ? '' :
+    ' &middot; ' + p.dias_en_calle + ' dias en la calle';
+  const val = await pedirDato({
+    titulo: 'Cobrar el pedido ' + pedido,
+    sub: 'El pedido dice <b>' + fmtCOP(esperado) + '</b>' + (p.ciudad ? ' &middot; ' + esc(p.ciudad) : '') + _dias
+       + '<br>Escribi lo que entro DE VERDAD: si no coincide, la diferencia queda registrada.',
+    tipo: 'numero', valor: esperado, requerido: true, confirmar: 'Registrar cobro'
+  });
+  if (val === null) return;
   let obs = '';
   if (Math.abs(val - esperado) >= 1) {
-    obs = prompt('Hay una diferencia de ' + fmtCOP(val - esperado) + '. Que paso?', '') || '';
-    if (!obs.trim()) { showToast('La diferencia necesita explicacion', 'error'); return; }
+    // Un descuadre sin explicacion es justo el dato que despues nadie puede reconstruir.
+    obs = await pedirDato({
+      titulo: 'Hay una diferencia de ' + fmtCOP(val - esperado),
+      sub: 'El pedido dice ' + fmtCOP(esperado) + ' y entraron ' + fmtCOP(val)
+         + '. &iquest;Que paso? Sin esto nadie puede reconstruirlo despues.',
+      tipo: 'texto', requerido: true, msgRequerido: 'La diferencia necesita explicacion',
+      confirmar: 'Registrar con la diferencia'
+    });
+    if (obs === null) return;
   }
   try {
     const r = await _fetchUna('/api/animus/contraentrega/' + encodeURIComponent(sid) + '/cobrar',
@@ -1441,9 +1930,12 @@ async function codAnular(i){
   const p = (window._COD_ROWS || [])[i];
   if (!p) return;
   const sid = p.shopify_id;
-  const motivo = prompt('Motivo de la anulacion (queda en el recibo):', '');
+  const motivo = await pedirDato({
+    titulo: 'Anular el cobro de ' + (p.pedido || ''),
+    sub: 'El recibo NO se borra: queda anulado y a la vista con su motivo. Un hueco en la numeracion nunca puede pasar desapercibido.',
+    tipo: 'texto', requerido: true, msgRequerido: 'El motivo es obligatorio', confirmar: 'Anular'
+  });
   if (motivo === null) return;
-  if (!motivo.trim()) { showToast('El motivo es obligatorio', 'error'); return; }
   try {
     const r = await _fetchUna('/api/animus/contraentrega/' + encodeURIComponent(sid) + '/anular',
                           _fetchOpts('POST', {motivo: motivo.trim()}));
@@ -1595,7 +2087,11 @@ async function guardarConteo(){
   const explicacion = document.getElementById('conteo-explicacion').value.trim();
   const dif = fi - sh;
   if (dif !== 0 && !explicacion) {
-    if (!confirm('Hay diferencia de '+dif+' unidades sin explicacion. Guardar igual?')) return;
+    if (!await pedirDato({titulo: 'Hay una diferencia sin explicar',
+      sub: '<b>' + dif + ' unidades</b> de diferencia y no pusiste el motivo.<br>'
+         + '<span style="color:var(--cx-text-mute);">Sin explicacion, despues nadie puede '
+         + 'reconstruir si fue rotura, devolucion o faltante.</span>',
+      tipo: 'confirmar', confirmar: 'Guardar igual'})) return;
   }
   const body = {
     sku: sku,
@@ -1843,7 +2339,9 @@ async function cargarPendientesConteo() {
 }
 
 async function asignarConteoHoy() {
-  if (!confirm('Asignar 5 SKUs para contar hoy? Si ya hay asignaciones pendientes, no se duplican.')) return;
+  if (!await pedirDato({titulo: 'Asignar 5 SKUs para contar hoy',
+    sub: 'Si ya hay asignaciones pendientes no se duplican.',
+    tipo: 'confirmar', confirmar: 'Asignar'})) return;
   try {
     var r = await _fetchUna('/api/animus/inv-fisico/conteo/asignar-hoy', _fetchOpts('POST', {n: 5}));
     if (!r) return;   // ya habia uno en vuelo (doble click)
@@ -1859,7 +2357,11 @@ async function asignarConteoHoy() {
 }
 
 async function sembrarShopify() {
-  if (!confirm('Sembrar baseline=0 para TODOS los SKUs vendidos en Shopify (ultimos 30 dias)?\n\nDespues solo editas cada uno con la cantidad real que tienes fisicamente.\n\nLos SKUs que ya tienen baseline NO se tocan.')) return;
+  if (!await pedirDato({titulo: 'Sembrar baseline en cero',
+    sub: 'Para TODOS los SKUs vendidos en Shopify en los ultimos 30 dias.<br>'
+       + 'Despues editas cada uno con la cantidad real que tenes fisicamente.<br>'
+       + '<span style="color:var(--cx-text-mute);">Los SKUs que ya tienen baseline NO se tocan.</span>',
+    tipo: 'confirmar', confirmar: 'Sembrar'})) return;
   showToast('Sembrando SKUs desde Shopify...', 'info');
   try {
     var r = await _fetchUna('/api/animus/inv-fisico/baseline/sembrar-desde-shopify', _fetchOpts('POST', {dias: 30}));
@@ -2082,9 +2584,13 @@ async function loadAnimusPqr(){
   }catch(e){ box.innerHTML='<p style="color:var(--cx-danger-text);text-align:center;padding:14px">Error: '+e.message+'</p>'; }
 }
 async function gestionarPqr(id, estadoActual){
-  var nuevo = prompt('Nuevo estado (nuevo / en_proceso / resuelto / cerrado):', estadoActual);
+  var nuevo = await pedirDato({titulo: 'Cambiar el estado del PQR',
+    sub: 'Escribi uno de: <b>nuevo</b> &middot; <b>en_proceso</b> &middot; <b>resuelto</b> &middot; <b>cerrado</b>',
+    tipo: 'texto', valor: estadoActual, requerido: true, confirmar: 'Cambiar'});
   if(!nuevo) return;
-  var resp = prompt('Respuesta/nota al cliente (opcional):')||'';
+  var resp = (await pedirDato({titulo: 'Respuesta o nota al cliente',
+    sub: 'Opcional &middot; queda en el registro del PQR.',
+    tipo: 'texto', confirmar: 'Guardar'})) || '';
   var body = {estado:nuevo.trim()};
   if(resp) body.respuesta = resp;
   try{

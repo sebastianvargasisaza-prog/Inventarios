@@ -38,6 +38,11 @@ HTML = r"""
       <input id="ep-benef" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Proveedor o persona">
     </div>
     <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Cotizacion o pantallazo del precio</label>
+      <input id="ep-cotiz" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Enlace de la cotizacion (opcional pero recomendado)">
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;">Justifica el monto ANTES de autorizar</div>
+    </div>
+    <div style="margin-bottom:10px;">
       <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Observaciones</label>
       <textarea id="ep-obs" style="width:100%;min-height:60px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Opcional"></textarea>
     </div>
@@ -46,7 +51,7 @@ HTML = r"""
       <button onclick="document.getElementById('modal-ep').style.display='none'"
               style="background:transparent;border:1px solid var(--cx-text-soft);color:var(--cx-text-soft);border-radius:8px;padding:8px 16px;cursor:pointer;">Cancelar</button>
       <button onclick="epGuardar()"
-              style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-weight:700;cursor:pointer;">Enviar solicitud</button>
+              style="background:var(--cx-primary-grad);color:var(--cx-text);border:none;border-radius:8px;padding:8px 18px;font-weight:700;cursor:pointer;">Enviar solicitud</button>
     </div>
   </div>
 </div>
@@ -57,17 +62,17 @@ HTML = r"""
   body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--cx-bg-alt); color:var(--cx-text); }
   .header { background:linear-gradient(135deg,#0c4a6e,#7c3aed); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; }
   .header h1 { margin:0; font-size:1.4em; font-weight:700; }
-  .header a { color:#a5f3fc; font-size:0.85em; text-decoration:none; }
+  .header a { color:var(--cx-primary-text); font-size:0.85em; text-decoration:none; }
   .container { max-width:1400px; margin:0 auto; padding:24px; }
   .grid { display:grid; gap:16px; }
   .grid-4 { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
   .card { background:var(--cx-card); border:1px solid var(--cx-border); border-radius:10px; padding:18px; }
   .card h3 { margin:0 0 8px; font-size:0.78em; color:var(--cx-text-mute); text-transform:uppercase; letter-spacing:0.06em; font-weight:600; }
-  .card .val { font-size:1.9em; font-weight:700; color:#fff; }
+  .card .val { font-size:1.9em; font-weight:700; color:var(--cx-text); }
   .card .sub { font-size:0.8em; color:var(--cx-text-mute); margin-top:4px; }
-  .section-title { font-size:1.05em; font-weight:700; color:#fff; margin:28px 0 12px; padding-bottom:6px; border-bottom:2px solid var(--cx-border); }
-  .alert { background:#3f0f0f; border-left:4px solid var(--cx-danger); padding:10px 14px; margin-bottom:8px; border-radius:6px; font-size:13px; }
-  .alert.media { background:#1e1b3b; border-left-color:var(--cx-warn); }
+  .section-title { font-size:1.05em; font-weight:700; color:var(--cx-text); margin:28px 0 12px; padding-bottom:6px; border-bottom:2px solid var(--cx-border); }
+  .alert { background:var(--cx-danger-pale); border-left:4px solid var(--cx-danger); padding:10px 14px; margin-bottom:8px; border-radius:6px; font-size:13px; }
+  .alert.media { background:var(--cx-warn-pale); border-left-color:var(--cx-warn); }
   .alert .title { font-weight:600; color:var(--cx-danger-text); margin-bottom:3px; }
   .alert.media .title { color:var(--cx-warn-text); }
   .alert .accion { font-size:11px; color:var(--cx-text-mute); margin-top:4px; font-style:italic; }
@@ -101,7 +106,7 @@ HTML = r"""
     table, table tbody, table tr, table td { display:block; width:100%; }
     table tr { background:var(--cx-bg-alt); border-radius:8px; padding:10px; margin-bottom:8px; border:1px solid var(--cx-border); }
     table td { border-bottom:none; padding:4px 0; font-size:12px; }
-    table td:first-child { font-weight:700; color:#fff; font-size:13px; padding-bottom:6px; }
+    table td:first-child { font-weight:700; color:var(--cx-text); font-size:13px; padding-bottom:6px; }
     .alert { padding:10px 12px; font-size:12px; }
     .alert .title { font-size:13px; }
   }
@@ -132,7 +137,7 @@ HTML = r"""
 
   <!-- TABS -->
   <div style="background:var(--cx-card);border-bottom:1px solid var(--cx-border);padding:0 28px;display:flex;gap:0;overflow-x:auto;">
-    <button class="esp-tab active" data-tab="inicio" onclick="esw('inicio')" style="background:none;border:none;color:#a5f3fc;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid #06b6d4;white-space:nowrap;">⚡ Inicio</button>
+    <button class="esp-tab active" data-tab="inicio" onclick="esw('inicio')" style="background:none;border:none;color:var(--cx-primary-text);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid #06b6d4;white-space:nowrap;">⚡ Inicio</button>
     <button class="esp-tab" data-tab="dash" onclick="esw('dash')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">📊 Dashboard</button>
     <button class="esp-tab" data-tab="lab" onclick="esw('lab')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">🔬 Lab en Vivo</button>
     <button class="esp-tab" data-tab="clientes" onclick="esw('clientes')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">👥 Clientes 360</button>
@@ -145,12 +150,12 @@ HTML = r"""
     <div id="esp-tab-inicio" class="esp-pane">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:12px;">
         <div>
-          <div style="font-size:1.4em;font-weight:700;color:#fff;">⚡ Lo urgente del día</div>
+          <div style="font-size:1.4em;font-weight:700;color:var(--cx-text);">⚡ Lo urgente del día</div>
           <div style="font-size:13px;color:var(--cx-text-mute);">Resumen de lo que necesita tu acción ahora</div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button onclick="abrirPedidoRapido()" style="background:var(--cx-success-pale);border:none;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">+ Pedido rápido</button>
-          <button onclick="cargarQA()" style="background:var(--cx-primary-soft);border:none;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">↻</button>
+          <button onclick="abrirPedidoRapido()" style="background:var(--cx-success-pale);border:1px solid var(--cx-success);color:var(--cx-success-text);padding:10px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">+ Pedido rápido</button>
+          <button onclick="cargarQA()" style="background:var(--cx-primary-soft);border:1px solid var(--cx-primary);color:var(--cx-primary-text);padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">↻</button>
         </div>
       </div>
       <div id="qa-content"><div class="empty">Cargando...</div></div>
@@ -208,12 +213,12 @@ HTML = r"""
     <div id="esp-tab-lab" class="esp-pane" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <div>
-          <div style="font-size:1.2em;font-weight:700;color:#fff;">🔬 Lab en Vivo</div>
+          <div style="font-size:1.2em;font-weight:700;color:var(--cx-text);">🔬 Lab en Vivo</div>
           <div style="font-size:12px;color:var(--cx-text-mute);">Snapshot de la planta espagiría AHORA · auto-refresh cada 60s</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="lab-ts" style="font-size:11px;color:var(--cx-text-mute);"></span>
-          <button onclick="cargarLab()" style="background:var(--cx-primary-soft);border:none;color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
+          <button onclick="cargarLab()" style="background:var(--cx-primary-soft);border:1px solid var(--cx-primary);color:var(--cx-primary-text);padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
         </div>
       </div>
 
@@ -276,7 +281,7 @@ HTML = r"""
     <div id="esp-tab-clientes" class="esp-pane" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <div>
-          <div style="font-size:1.2em;font-weight:700;color:#fff;">👥 Clientes Maquila 360</div>
+          <div style="font-size:1.2em;font-weight:700;color:var(--cx-text);">👥 Clientes Maquila 360</div>
           <div style="font-size:12px;color:var(--cx-text-mute);">Vista completa de cada cliente · click en uno para ver ficha 360</div>
         </div>
         <input id="cli-search" type="text" placeholder="Buscar cliente..." oninput="filtrarClientes()" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:6px;font-size:13px;max-width:240px;">
@@ -288,7 +293,7 @@ HTML = r"""
       <div id="cli-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;padding:20px;">
         <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:24px;width:900px;max-width:95vw;max-height:90vh;overflow-y:auto;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-            <h2 id="cli-modal-title" style="margin:0;font-size:1.3em;color:#fff;">Cliente</h2>
+            <h2 id="cli-modal-title" style="margin:0;font-size:1.3em;color:var(--cx-text);">Cliente</h2>
             <button onclick="cerrarCliModal()" style="background:none;border:none;color:var(--cx-text-mute);font-size:24px;cursor:pointer;">&times;</button>
           </div>
           <div id="cli-modal-body"><div class="empty">Cargando...</div></div>
@@ -311,7 +316,7 @@ HTML = r"""
           </div>
         </div>
         <button onclick="epAbrir()"
-                style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;border:none;
+                style="background:var(--cx-primary-grad);color:var(--cx-text);border:none;
                        border-radius:8px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer;">
           &#10133; Solicitar pago</button>
       </div>
@@ -322,10 +327,10 @@ HTML = r"""
     <div id="esp-tab-cartera" class="esp-pane" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:12px;">
         <div>
-          <div style="font-size:1.4em;font-weight:700;color:#fff;">💰 Cartera Maquila</div>
+          <div style="font-size:1.4em;font-weight:700;color:var(--cx-text);">💰 Cartera Maquila</div>
           <div style="font-size:12px;color:var(--cx-text-mute);">Pedidos entregados con estado de pago · cruza con flujo_ingresos por número</div>
         </div>
-        <button onclick="cargarCartera()" style="background:var(--cx-primary-soft);border:none;color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
+        <button onclick="cargarCartera()" style="background:var(--cx-primary-soft);border:1px solid var(--cx-primary);color:var(--cx-primary-text);padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
       </div>
       <div class="grid grid-4" id="cart-kpis"></div>
       <div class="section-title" style="margin-top:18px;">📊 Por cliente</div>
@@ -338,7 +343,7 @@ HTML = r"""
     <div id="pr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;padding:20px;">
       <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-          <h2 style="margin:0;font-size:1.2em;color:#fff;">📦 Nuevo pedido maquila</h2>
+          <h2 style="margin:0;font-size:1.2em;color:var(--cx-text);">📦 Nuevo pedido maquila</h2>
           <button onclick="cerrarPedidoRapido()" style="background:none;border:none;color:var(--cx-text-mute);font-size:24px;cursor:pointer;">&times;</button>
         </div>
         <div style="margin-bottom:14px;">
@@ -371,7 +376,7 @@ HTML = r"""
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
           <button onclick="cerrarPedidoRapido()" style="background:none;border:1px solid var(--cx-border);color:var(--cx-text-mute);padding:10px 16px;border-radius:6px;font-size:13px;cursor:pointer;">Cancelar</button>
-          <button onclick="guardarPedidoRapido()" style="background:var(--cx-success-pale);border:none;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">Crear pedido</button>
+          <button onclick="guardarPedidoRapido()" style="background:var(--cx-success-pale);border:1px solid var(--cx-success);color:var(--cx-success-text);padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">Crear pedido</button>
         </div>
       </div>
     </div>
@@ -440,7 +445,7 @@ async function cargar() {
         cList.innerHTML = '<table><thead><tr><th>Compromiso</th><th>Resp.</th><th>Estado</th></tr></thead><tbody>' +
           d.compromisos_ultimo_comite.map(t =>
             '<tr><td>' + _esc(t.titulo) + '</td>' +
-            '<td style="font-size:11px;color:#a5f3fc;">'+_esc(t.responsables||'-')+'</td>' +
+            '<td style="font-size:11px;color:var(--cx-info-text);">'+_esc(t.responsables||'-')+'</td>' +
             '<td><span class="badge estado-'+(t.estado||'').toLowerCase().substring(0,4)+'">'+_esc(t.estado||'-')+'</span></td></tr>'
           ).join('') + '</tbody></table>';
       }
@@ -479,7 +484,7 @@ async function cargar() {
       rList.innerHTML = '<table><thead><tr><th>Tarea</th><th>Resp.</th><th>Días</th></tr></thead><tbody>' +
         p.reincidentes.map(t =>
           '<tr><td style="font-size:12px;">'+_esc(t.titulo)+'</td>' +
-          '<td style="font-size:11px;color:#a5f3fc;">'+_esc(t.responsables||'-')+'</td>' +
+          '<td style="font-size:11px;color:var(--cx-info-text);">'+_esc(t.responsables||'-')+'</td>' +
           '<td style="color:var(--cx-danger-text);font-weight:700;">'+Math.round(t.dias_abierta)+'</td></tr>'
         ).join('') + '</tbody></table>';
     }
@@ -507,8 +512,8 @@ setInterval(cargar, 5*60*1000); // refresh cada 5 min
 function esw(name) {
   document.querySelectorAll('.esp-tab').forEach(function(t){
     var on = t.dataset.tab === name;
-    t.style.color = on ? '#a5f3fc' : '#64748b';
-    t.style.borderBottomColor = on ? '#06b6d4' : 'transparent';
+    t.style.color = on ? 'var(--cx-primary-text)' : 'var(--cx-text-mute)';
+    t.style.borderBottomColor = on ? 'var(--cx-primary)' : 'transparent';
     t.classList.toggle('active', on);
   });
   document.querySelectorAll('.esp-pane').forEach(function(p){
@@ -600,7 +605,7 @@ function epRenderLista(rows){
 }
 
 function epAbrir(){
-  ['ep-concepto','ep-monto','ep-benef','ep-obs'].forEach(function(id){
+  ['ep-concepto','ep-monto','ep-benef','ep-obs','ep-cotiz'].forEach(function(id){
     var el = document.getElementById(id); if(el) el.value = '';
   });
   document.getElementById('ep-tope-aviso').innerHTML = '';
@@ -623,6 +628,7 @@ async function epGuardar(){
     empresa: (document.getElementById('ep-empresa')||{value:'ESPAGIRIA'}).value,
     beneficiario: (document.getElementById('ep-benef')||{value:''}).value.trim(),
     observaciones: (document.getElementById('ep-obs')||{value:''}).value.trim(),
+    cotizacion_url: (document.getElementById('ep-cotiz')||{value:''}).value.trim(),
     modulo_origen: 'espagiria'
   };
   if(!body.concepto){ alert('Concepto requerido'); return; }
@@ -663,7 +669,7 @@ async function cargarLab() {
         d.producciones_en_curso.map(function(p){
           return '<tr><td>' + _esc(p.producto||'') + '<div style="font-size:10px;color:var(--cx-text-mute);">' + (p.lotes||1) + ' lote' + ((p.lotes||1)===1?'':'s') + ' · ' + (p.cantidad_kg||0) + 'kg</div></td>' +
             '<td><span class="badge estado-prog">' + (p.area_codigo||'-') + '</span></td>' +
-            '<td style="font-size:11px;color:#a5f3fc;">' + _esc(p.operario_elaboracion || p.operario_dispensacion || '-') + '</td>' +
+            '<td style="font-size:11px;color:var(--cx-info-text);">' + _esc(p.operario_elaboracion || p.operario_dispensacion || '-') + '</td>' +
             '<td style="font-size:10px;color:var(--cx-text-mute);">' + _esc((p.inicio_real_at||'').substring(11,16)) + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
@@ -781,10 +787,10 @@ function renderClientes() {
     var act = (c.pedidos_activos||0) > 0 ? '<span class="badge media" style="margin-left:6px;">' + c.pedidos_activos + ' activos</span>' : '';
     var ult = c.ultimo_ped ? ('Último: ' + (c.ultimo_ped||'').substring(0,10)) : 'Sin pedidos';
     return '<div class="card" style="cursor:pointer;border-left:4px solid #06b6d4;" onclick="verCli360(' + c.id + ')">' +
-      '<h3 style="text-transform:none;letter-spacing:0;color:#fff;font-size:0.95em;margin-bottom:6px;">' + _esc(c.nombre||'') + marca + act + '</h3>' +
+      '<h3 style="text-transform:none;letter-spacing:0;color:var(--cx-text);font-size:0.95em;margin-bottom:6px;">' + _esc(c.nombre||'') + marca + act + '</h3>' +
       '<div style="font-size:11px;color:var(--cx-text-mute);">' + _esc(c.empresa_grupo||'-') + '</div>' +
       '<div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;">' +
-        '<div><div style="font-size:10px;color:var(--cx-text-mute);">PEDIDOS</div><div style="font-size:1.1em;font-weight:700;color:#fff;">' + (c.total_pedidos||0) + '</div></div>' +
+        '<div><div style="font-size:10px;color:var(--cx-text-mute);">PEDIDOS</div><div style="font-size:1.1em;font-weight:700;color:var(--cx-text);">' + (c.total_pedidos||0) + '</div></div>' +
         '<div><div style="font-size:10px;color:var(--cx-text-mute);">VALOR TOTAL</div><div style="font-size:1.1em;font-weight:700;color:var(--cx-success-text);">$' + fmtNum(Math.round(c.valor_total||0)) + '</div></div>' +
       '</div>' +
       '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:8px;">' + ult + '</div>' +
@@ -807,7 +813,7 @@ async function verCli360(id) {
     html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">TELÉFONO</div><div>' + _esc(d.cliente.telefono||'-') + '</div></div>';
     html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">EMPRESA GRUPO</div><div>' + _esc(d.cliente.empresa_grupo||'-') + '</div></div>';
     if (d.cliente.es_marca_propia) html += '<div style="grid-column:1/-1;"><span class="badge baja">MARCA PROPIA HHA</span></div>';
-    if (d.cliente.comparte_formula_con) html += '<div style="grid-column:1/-1;font-size:11px;color:#a5f3fc;">📋 Comparte fórmula con: ' + _esc(d.cliente.comparte_formula_con) + '</div>';
+    if (d.cliente.comparte_formula_con) html += '<div style="grid-column:1/-1;font-size:11px;color:var(--cx-info-text);">📋 Comparte fórmula con: ' + _esc(d.cliente.comparte_formula_con) + '</div>';
     if (d.cliente.notas) html += '<div style="grid-column:1/-1;font-size:11px;color:var(--cx-text-mute);font-style:italic;">' + _esc(d.cliente.notas) + '</div>';
     html += '</div>';
     // KPIs
@@ -895,9 +901,9 @@ async function cargarQA() {
       var bgc = s.severidad === 'alta' ? '#3f0f0f' : '#1e1b3b';
       html += '<div class="card" style="border-left:4px solid ' + col + ';background:' + bgc + 'aa;margin-bottom:14px;">' +
               '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px;">' +
-                '<div><div style="font-size:1.05em;font-weight:700;color:#fff;">' + _esc(s.titulo) + '</div>' +
+                '<div><div style="font-size:1.05em;font-weight:700;color:var(--cx-text);">' + _esc(s.titulo) + '</div>' +
                 '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px;">→ ' + _esc(s.accion) + '</div></div>' +
-                '<a href="' + _esc(s.link) + '" style="background:rgba(255,255,255,0.1);color:#fff;padding:6px 12px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:700;">Ir &rarr;</a>' +
+                '<a href="' + _esc(s.link) + '" style="background:var(--cx-bg-alt);color:var(--cx-text);padding:6px 12px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:700;">Ir &rarr;</a>' +
               '</div>';
       // Mini lista
       if (s.items && s.items.length) {
@@ -986,7 +992,7 @@ async function cargarCartera() {
     var k = d.kpis || {};
     document.getElementById('cart-kpis').innerHTML =
       '<div class="card"><h3>📋 Pedidos entregados</h3><div class="val">' + (k.total_pedidos||0) + '</div></div>' +
-      '<div class="card"><h3>💵 Total facturado</h3><div class="val" style="color:#fff;">$' + fmtNum(Math.round(k.total_facturado||0)) + '</div></div>' +
+      '<div class="card"><h3>💵 Total facturado</h3><div class="val" style="color:var(--cx-text);">$' + fmtNum(Math.round(k.total_facturado||0)) + '</div></div>' +
       '<div class="card"><h3>✅ Pagado</h3><div class="val" style="color:var(--cx-success-text);">$' + fmtNum(Math.round(k.total_pagado||0)) + '</div></div>' +
       '<div class="card"><h3>🚨 Vencido +30d</h3><div class="val" style="color:var(--cx-danger-text);">$' + fmtNum(Math.round(k.total_vencido_30d||0)) + '</div></div>';
     // Por cliente

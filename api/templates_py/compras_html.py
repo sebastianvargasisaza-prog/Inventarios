@@ -845,6 +845,11 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <input id="cp-benef" class="in" style="width:100%" placeholder="Proveedor o persona">
     </div>
     <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Cotizacion o pantallazo del precio</label>
+      <input id="cp-cotiz" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Enlace de la cotizacion (opcional pero recomendado)">
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;">Justifica el monto ANTES de autorizar</div>
+    </div>
+    <div style="margin-bottom:10px;">
       <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Observaciones</label>
       <textarea id="cp-obs" class="in" style="width:100%;min-height:60px;" placeholder="Opcional"></textarea>
     </div>
@@ -7930,7 +7935,7 @@ function cpRenderLista(rows){
 }
 
 function cpAbrirSolicitud(){
-  ['cp-concepto','cp-monto','cp-benef','cp-obs'].forEach(function(id){
+  ['cp-concepto','cp-monto','cp-benef','cp-obs','cp-cotiz'].forEach(function(id){
     var el = document.getElementById(id); if(el) el.value = '';
   });
   document.getElementById('cp-tope-aviso').innerHTML = '';
@@ -7954,6 +7959,7 @@ async function cpGuardar(){
     empresa: (document.getElementById('cp-empresa')||{value:'ANIMUS'}).value,
     beneficiario: (document.getElementById('cp-benef')||{value:''}).value.trim(),
     observaciones: (document.getElementById('cp-obs')||{value:''}).value.trim(),
+    cotizacion_url: (document.getElementById('cp-cotiz')||{value:''}).value.trim(),
     modulo_origen: 'compras'
   };
   if(!body.concepto){ alert('Concepto requerido'); return; }

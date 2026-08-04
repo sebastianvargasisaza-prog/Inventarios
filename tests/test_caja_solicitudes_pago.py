@@ -440,6 +440,18 @@ def test_la_solicitud_desde_compras_queda_marcada_con_su_ORIGEN(app, db_clean):
     assert org == 'compras'
 
 
+def _html_animus():
+    import ast as _ast, io as _io, os as _os
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    src = _io.open(_os.path.join(raiz, 'api', 'templates_py', 'animus_html.py'),
+                   encoding='utf-8').read()
+    for n in _ast.walk(_ast.parse(src)):
+        if (isinstance(n, _ast.Assign) and isinstance(n.value, _ast.Constant)
+                and isinstance(n.value.value, str) and len(n.value.value) > 5000):
+            return n.value.value
+    raise AssertionError('no encontre ANIMUS_HTML')
+
+
 def _html_espagiria():
     import ast as _ast, io as _io, os as _os
     raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
@@ -483,3 +495,61 @@ def test_el_filtro_por_empresa_funciona_de_verdad(app, db_clean):
     d = _cli(app, 'luz').get('/api/caja/solicitudes?empresa=ESPAGIRIA').get_json()
     empresas = {s['empresa'] for s in d['solicitudes']}
     assert empresas <= {'ESPAGIRIA'}, 'el filtro por empresa no se aplica: %s' % empresas
+
+
+# ── la cotizacion y el saldo (3-ago · Sebastian revisando la pantalla) ────────
+# "aqui quizas puede cargar de una vez la cotizacion, el pantallazo que confirma cuanto vale,
+#  deberia salirle su caja menor si tiene plata para eso"
+
+def test_la_cotizacion_se_adjunta_al_PEDIR(app, db_clean):
+    """Es otro documento que el comprobante y llega en otro momento: la cotizacion justifica
+    el MONTO antes de autorizar (sin ella se aprueba una cifra que nadie respaldo); el
+    comprobante prueba que el pago OCURRIO, que solo existe despues."""
+    _limpiar(app); _tope(app, 1000)
+    r = _crear(_cli(app, 'catalina'), monto=800000,
+               cotizacion_url='https://x/cotiz.pdf')
+    assert r.status_code == 201, r.data[:250]
+    sid = r.get_json()['id']
+    from database import get_db
+    with app.app_context():
+        conn = get_db()
+        u = conn.execute("SELECT cotizacion_url FROM caja_solicitudes_pago WHERE id=?",
+                         (sid,)).fetchone()[0]
+    assert u == 'https://x/cotiz.pdf'
+
+
+def test_el_listado_dice_cuanta_plata_hay_disponible(app, db_clean):
+    """Sin esto alguien pide un pago que la caja no puede cubrir y se entera recien cuando
+    quien paga se lo rechaza.
+
+    Se mide el DELTA y no el valor absoluto: la BD de tests es compartida y otros archivos
+    dejan movimientos en la caja, asi que un assert sobre el total falla por contaminacion y
+    no por el comportamiento (M103)."""
+    _limpiar(app); _tope(app, 1000)
+    c = _cli(app, 'catalina')
+    antes = c.get('/api/caja/solicitudes').get_json()
+    assert 'saldo' in antes and 'disponible' in antes and 'comprometido' in antes
+    _sembrar_efectivo(app, 1000000)
+    despues = c.get('/api/caja/solicitudes').get_json()
+    assert despues['saldo'] == antes['saldo'] + 1000000
+
+
+def test_lo_autorizado_sin_pagar_ya_NO_esta_disponible(app, db_clean):
+    """Es plata comprometida aunque siga en la gaveta: si el disponible la ignorara, dos
+    personas pedirian contra el mismo efectivo y la segunda se quedaria sin con que."""
+    _limpiar(app); _tope(app, 5000000); _sembrar_efectivo(app, 1000000)
+    c = _cli(app, 'catalina')
+    antes = c.get('/api/caja/solicitudes').get_json()['disponible']
+    _crear(c, monto=400000)          # bajo el tope -> nace autorizada, sin pagar
+    despues = c.get('/api/caja/solicitudes').get_json()['disponible']
+    assert despues == antes - 400000, 'el disponible no descuenta lo ya comprometido'
+
+
+def test_las_tres_pantallas_piden_la_cotizacion():
+    """Si el campo existe en el backend pero no en la pantalla, nadie lo va a llenar (M115:
+    un dato que se captura a medias termina inventado o vacio)."""
+    for nombre, html, pref in (('caja', _html_animus(), 'sp'),
+                               ('compras', _html_compras(), 'cp'),
+                               ('espagiria', _html_espagiria(), 'ep')):
+        assert 'id="%s-cotiz"' % pref in html, '%s no pide la cotizacion' % nombre
+        assert 'cotizacion_url' in html, '%s no la envia' % nombre
