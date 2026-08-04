@@ -3425,40 +3425,67 @@ def _sync_shopify_a_movimientos(conn):
     return creados
 
 
+def _esperado_bulk(c, skus=None):
+    """El stock esperado de TODOS los SKU con baseline, en dos consultas.
+
+    esperado = baseline + entradas - ventas Shopify - salidas + ajustes (contando solo lo
+    posterior a la fecha del baseline, que es desde cuando el conteo tiene sentido).
+
+    Existe en bloque porque el helper de a-uno hace dos consultas por SKU: recorrerlo sobre el
+    catalogo entero son cientos de viajes en la carga de una pantalla (M43). La formula vive
+    ACA y nada mas: `_calcular_esperado` delega, para que no haya dos definiciones del mismo
+    numero divergiendo en silencio (M1/M5).
+    """
+    base = {}
+    q = "SELECT sku, unidades_baseline, fecha_baseline FROM animus_inventario_baseline"
+    args = []
+    if skus:
+        q += " WHERE sku IN (" + ','.join('?' for _ in skus) + ")"
+        args = list(skus)
+    for r in c.execute(q, args).fetchall():
+        base[r[0]] = {'baseline': int(r[1] or 0), 'fecha_baseline': r[2]}
+    if not base:
+        return {}
+
+    # Los movimientos se agregan de una sola vez y se filtran por la fecha del baseline de SU
+    # sku en Python: el corte es por fila, asi que un WHERE global traeria de mas o de menos.
+    sums = {k: {'entradas': 0, 'salidas': 0, 'shopify': 0, 'ajustes': 0} for k in base}
+    q2 = ("SELECT sku, tipo, COALESCE(SUM(cantidad),0), fecha FROM animus_inventario_movimientos "
+          "GROUP BY sku, tipo, fecha")
+    for sku, tipo, cant, fecha in c.execute(q2).fetchall():
+        b = base.get(sku)
+        if not b or not fecha or (b['fecha_baseline'] and fecha < b['fecha_baseline']):
+            continue
+        t = (tipo or '').upper()
+        if t == 'ENTRADA':        sums[sku]['entradas'] += int(cant or 0)
+        elif t == 'SALIDA':       sums[sku]['salidas'] += int(cant or 0)
+        elif t == 'SHOPIFY_VENTA': sums[sku]['shopify'] += int(cant or 0)
+        elif t == 'AJUSTE':       sums[sku]['ajustes'] += int(cant or 0)
+
+    out = {}
+    for sku, b in base.items():
+        s_ = sums[sku]
+        out[sku] = {
+            'sku': sku,
+            'baseline': b['baseline'],
+            'fecha_baseline': b['fecha_baseline'],
+            'entradas': s_['entradas'],
+            'salidas': s_['salidas'],
+            'shopify': s_['shopify'],
+            'ajustes': s_['ajustes'],
+            'esperado': (b['baseline'] + s_['entradas'] - s_['shopify']
+                         - s_['salidas'] + s_['ajustes']),
+        }
+    return out
+
+
 def _calcular_esperado(c, sku):
-    """Retorna stock_esperado(sku) = baseline + entradas - shopify - salidas.
+    """Retorna stock_esperado(sku) = baseline + entradas - shopify - salidas + ajustes.
 
     Si el SKU no tiene baseline, retorna None (debe registrarse uno primero).
+    Delega en `_esperado_bulk` para que la formula viva en un solo lugar (M1).
     """
-    base_row = c.execute(
-        "SELECT unidades_baseline, fecha_baseline FROM animus_inventario_baseline WHERE sku=?",
-        (sku,)).fetchone()
-    if not base_row:
-        return None
-    baseline = int(base_row['unidades_baseline'] or 0)
-    fecha_b = base_row['fecha_baseline']
-    # Sumas posteriores al baseline
-    sums_row = c.execute("""
-        SELECT
-          COALESCE(SUM(CASE WHEN tipo='ENTRADA' THEN cantidad ELSE 0 END),0) as entradas,
-          COALESCE(SUM(CASE WHEN tipo='SALIDA' THEN cantidad ELSE 0 END),0) as salidas,
-          COALESCE(SUM(CASE WHEN tipo='SHOPIFY_VENTA' THEN cantidad ELSE 0 END),0) as shopify,
-          COALESCE(SUM(CASE WHEN tipo='AJUSTE' THEN cantidad ELSE 0 END),0) as ajustes
-        FROM animus_inventario_movimientos
-        WHERE sku=? AND fecha >= ?
-    """, (sku, fecha_b)).fetchone()
-    s = dict(sums_row) if sums_row else {'entradas': 0, 'salidas': 0, 'shopify': 0, 'ajustes': 0}
-    esperado = baseline + int(s['entradas'] or 0) - int(s['shopify'] or 0) - int(s['salidas'] or 0) + int(s['ajustes'] or 0)
-    return {
-        'sku': sku,
-        'baseline': baseline,
-        'fecha_baseline': fecha_b,
-        'entradas': int(s['entradas'] or 0),
-        'salidas': int(s['salidas'] or 0),
-        'shopify': int(s['shopify'] or 0),
-        'ajustes': int(s['ajustes'] or 0),
-        'esperado': esperado,
-    }
+    return (_esperado_bulk(c, [sku]) or {}).get(sku)
 
 
 @bp.route("/api/animus/inv-fisico/baseline", methods=["GET", "POST"])
@@ -3625,39 +3652,32 @@ def animus_inv_fisico_esperado_todos():
 
 # ── CONTEO CICLICO Fase 2 ─────────────────────────────────────────
 
-@bp.route("/api/animus/inv-fisico/conteo/asignar-hoy", methods=["POST"])
-def animus_inv_fisico_asignar_hoy():
-    """Asigna N SKUs para contar HOY. Llamado por cron o manualmente.
+def asignar_conteo_hoy(conn, *, n=5, asignar_a='daniela', usuario='cron'):
+    """Elige los SKU que hay que contar HOY y los asigna.
 
-    Algoritmo prioridad:
-      1. SKUs sin baseline (urgente · sembrar primero)
-      2. SKUs con mas dias sin contar
-      3. SKUs con mas movimientos recientes (volatiles)
+    Prioridad: los que llevan mas dias sin contarse y, a igualdad, los que mas se movieron
+    (un SKU que rota mucho tiene mas formas de descuadrarse).
 
-    Body opcional: {n: int default 5, asignar_a: usuario default 'daniela'}
+    Vive como funcion y no dentro del endpoint porque el CRON tambien la necesita, y el cron no
+    puede entrar por HTTP: el endpoint exige sesion. Duplicar la prioridad daria dos criterios
+    distintos de "que toca contar hoy" (M1/M3).
+
+    Idempotente: si ya hay pendientes de hoy no re-asigna (fecha anclada a Colombia · M24), asi
+    que correrlo dos veces no duplica la tarea del dia.
     """
-    u, err, code = _auth()
-    if err: return err, code
-    d = request.get_json(silent=True) or {}
-    try:
-        n = int(d.get("n", 5))
-    except (TypeError, ValueError):
-        n = 5
-    n = max(1, min(n, 20))
-    asignar_a = (d.get("asignar_a") or "daniela").strip().lower()
-    conn = _db(); c = conn.cursor()
-
+    n = max(1, min(int(n or 5), 20))
+    asignar_a = (asignar_a or 'daniela').strip().lower()
+    c = conn.cursor()
     # ¿Ya hay asignaciones pendientes para hoy?
     pendientes = c.execute("""
         SELECT sku FROM animus_conteos_asignados
          WHERE fecha_asignado = date('now', '-5 hours') AND estado = 'pendiente'
     """).fetchall()
     if pendientes:
-        return jsonify({
-            "ok": True, "ya_asignados_hoy": len(pendientes),
-            "skus": [r['sku'] for r in pendientes],
-            "mensaje": "Ya hay SKUs asignados hoy."
-        })
+        return {"ok": True, "ya_asignados_hoy": len(pendientes),
+                "asignados": [],
+                "skus": [r['sku'] for r in pendientes],
+                "mensaje": "Ya hay SKUs asignados hoy."}
 
     # Score: dias_sin_contar * 1.0 + volatilidad (mov ultimos 7d) * 0.5
     candidatos = c.execute("""
@@ -3701,13 +3721,28 @@ def animus_inv_fisico_asignar_hoy():
             'dias_sin_contar': round(r['dias_sin_contar'], 1),
             'movs_7d': r['movs_7d'],
         })
-    audit_log(c, usuario=u, accion='ANIMUS_CONTEO_ASIGNAR',
+    audit_log(c, usuario=usuario, accion='ANIMUS_CONTEO_ASIGNAR',
               tabla='animus_conteos_asignados', registro_id=None,
               despues={'n': len(asignados), 'asignar_a': asignar_a},
               detalle=f"Asignados {len(asignados)} SKUs a {asignar_a}: " +
                        ', '.join(x['sku'] for x in asignados))
     conn.commit()
-    return jsonify({"ok": True, "asignados": asignados, "asignar_a": asignar_a})
+    return {"ok": True, "asignados": asignados, "asignar_a": asignar_a}
+
+
+@bp.route("/api/animus/inv-fisico/conteo/asignar-hoy", methods=["POST"])
+def animus_inv_fisico_asignar_hoy():
+    """Asigna N SKUs para contar HOY. Lo llama el boton; el cron usa el helper directo."""
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json(silent=True) or {}
+    try:
+        n = int(d.get("n", 5))
+    except (TypeError, ValueError):
+        n = 5
+    conn = _db()
+    res = asignar_conteo_hoy(conn, n=n, asignar_a=(d.get("asignar_a") or "daniela"), usuario=u)
+    return jsonify(res)
 
 
 @bp.route("/api/animus/inv-fisico/conteo/pendientes", methods=["GET"])
@@ -3770,20 +3805,18 @@ def animus_inv_fisico_conteo_registrar(asig_id):
     esperado = info['esperado']
     diferencia = fisica - esperado
 
-    # Si hay diferencia y no se da motivo y >| 2 |, requerir motivo
-    if abs(diferencia) > 2 and not motivo:
-        return jsonify({
-            "error": "Diferencia significativa requiere motivo",
-            "diferencia": diferencia, "esperado": esperado, "fisica": fisica,
-            "desglose": info,
-        }), 400
+    # CUALQUIER diferencia abre una investigacion (Sebastian: "si hay menos o mas de una le
+    # genera una causa raiz, deben buscar por que"). NO se exige el motivo aca a proposito: en
+    # el momento de contar todavia no se sabe por que falta -- justamente por eso se investiga.
+    # Lo que no se permite es que la diferencia quede sin nadie a cargo.
+    investigacion = 'abierta' if diferencia != 0 else 'no_aplica'
 
     c.execute("""UPDATE animus_conteos_asignados
                  SET cantidad_fisica=?, cantidad_esperada=?,
-                     diferencia=?, motivo_diferencia=?,
+                     diferencia=?, motivo_diferencia=?, investigacion=?,
                      estado='contado', contado_en=datetime('now', '-5 hours')
                  WHERE id=?""",
-              (fisica, esperado, diferencia, motivo, asig_id))
+              (fisica, esperado, diferencia, motivo, investigacion, asig_id))
 
     # Registrar movimiento CONTEO
     c.execute("""INSERT INTO animus_inventario_movimientos
@@ -3806,6 +3839,22 @@ def animus_inv_fisico_conteo_registrar(asig_id):
               detalle=f"Conteo {asig['sku']}: fisica={fisica} esperado={esperado} dif={diferencia}" +
                        (f" · ajustado" if aplicar_ajuste else ""))
     conn.commit()
+    # El aviso sale DESPUES del commit: avisar de algo que despues no quedo guardado es peor que
+    # no avisar. Best-effort (M4: si la campana falla se logea, no tumba el conteo).
+    if diferencia != 0:
+        try:
+            from blueprints.notif import push_notif_multi
+            from config import ADMIN_USERS as _AU
+            _signo = 'faltan' if diferencia < 0 else 'sobran'
+            push_notif_multi(
+                sorted({x.lower() for x in _AU} | {'daniela'}),
+                'inventario_discrepancia',
+                'Inventario %s: %s %d unidades' % (asig['sku'], _signo, abs(diferencia)),
+                body='Contado %d contra %d esperadas. Hay que encontrar la causa.'
+                     % (fisica, esperado),
+                link='/animus', remitente=u, importante=abs(diferencia) > 2)
+        except Exception as e:
+            log.warning('no pude avisar la discrepancia de %s: %s', asig['sku'], e)
     return jsonify({
         "ok": True,
         "sku": asig['sku'],
@@ -3814,7 +3863,135 @@ def animus_inv_fisico_conteo_registrar(asig_id):
         "diferencia": diferencia,
         "desglose": info,
         "aplicado_ajuste": aplicar_ajuste,
-        "alerta": "Diferencia detectada · revisar" if diferencia != 0 else None,
+        "investigacion": investigacion,
+        "alerta": ("%s %d unidades · queda una causa raíz por resolver"
+                   % ('Faltan' if diferencia < 0 else 'Sobran', abs(diferencia)))
+                  if diferencia != 0 else None,
+    })
+
+
+@bp.route("/api/animus/inv-fisico/conteo/<int:asig_id>/causa-raiz", methods=["POST"])
+def animus_conteo_causa_raiz(asig_id):
+    """Cierra la investigacion de una diferencia con su causa y que se hizo.
+
+    Existe porque una diferencia sin explicacion, a las dos semanas, ya no se puede reconstruir:
+    nadie recuerda si fue un despacho sin registrar, una devolucion o un robo. El estado
+    'abierta' es lo que impide que se acumulen en silencio.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json(silent=True) or {}
+    causa = (d.get("causa_raiz") or "").strip()
+    if len(causa) < 10:
+        return jsonify({"error": "Escribí qué pasó · una causa de dos palabras no sirve para "
+                                 "entender el faltante dentro de un mes"}), 400
+    accion = (d.get("accion_correctiva") or "").strip()
+    conn = _db(); c = conn.cursor()
+    fila = c.execute("SELECT sku, diferencia, COALESCE(investigacion,'') FROM "
+                     "animus_conteos_asignados WHERE id=?", (asig_id,)).fetchone()
+    if not fila:
+        return jsonify({"error": "Ese conteo no existe"}), 404
+    if fila[2] == 'cerrada':
+        return jsonify({"error": "Esa diferencia ya fue explicada"}), 409
+    # CAS: dos personas explicando la misma diferencia no se pisan (M27).
+    c.execute("UPDATE animus_conteos_asignados SET investigacion='cerrada', causa_raiz=?, "
+              "accion_correctiva=?, causa_raiz_por=?, causa_raiz_at=datetime('now','-5 hours') "
+              "WHERE id=? AND COALESCE(investigacion,'')='abierta'",
+              (causa, accion, u, asig_id))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "Esa diferencia ya fue explicada por otra persona"}), 409
+    audit_log(c, usuario=u, accion='ANIMUS_CONTEO_CAUSA_RAIZ',
+              tabla='animus_conteos_asignados', registro_id=asig_id,
+              antes={'investigacion': 'abierta'},
+              despues={'investigacion': 'cerrada', 'sku': fila[0],
+                       'diferencia': fila[1], 'causa': causa[:300]},
+              detalle='Causa de la diferencia de %s (%s uds): %s'
+                      % (fila[0], fila[1], causa[:120]))
+    conn.commit()
+    return jsonify({"ok": True, "sku": fila[0], "investigacion": "cerrada"})
+
+
+@bp.route("/api/animus/inv-fisico/existencias", methods=["GET"])
+def animus_inv_existencias():
+    """Todos los SKU de Shopify con lo que dice Shopify y lo que espera EOS.
+
+    Sebastian: "que aparezcan todos los SKU de Shopify con la cantidad que dice Shopify que
+    hay". La pantalla comparaba el esperado de EOS contra el conteo pero nunca contra Shopify
+    -- que es el numero con el que se VENDE. Un SKU podia estar bien en EOS y mal en Shopify y
+    nadie lo notaba hasta que se vendia algo que no habia.
+
+    Shopify sale del resolver canonico `_resolved_stock_por_sku` (M1): arma su propio SUM aca
+    seria el drift de siempre -- ya paso con el stock de PT, que se contaba doble (CC + SHOPIFY).
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+
+    shopify = {}
+    aviso = ''
+    try:
+        from blueprints.programacion import _resolved_stock_por_sku
+        shopify = _resolved_stock_por_sku(conn, empresa='ANIMUS') or {}
+    except Exception as e:
+        log.warning('no pude leer el stock de Shopify: %s', e)
+        aviso = 'No pude leer el stock de Shopify · la columna queda vacía, no en cero'
+
+    # Lo que EOS espera, por SKU con baseline
+    esperados = {}
+    for _sku, _info in (_esperado_bulk(c) or {}).items():
+        _k = (_sku or '').strip().upper()
+        if _k:
+            esperados[_k] = _info
+
+    # Ultimo conteo por SKU + investigaciones abiertas
+    ultimo, abiertas = {}, {}
+    for r in c.execute(
+            "SELECT sku, MAX(contado_en) FROM animus_conteos_asignados "
+            "WHERE estado='contado' GROUP BY sku").fetchall():
+        ultimo[(r[0] or '').strip().upper()] = r[1]
+    for r in c.execute(
+            "SELECT id, sku, diferencia, cantidad_fisica, cantidad_esperada, contado_en "
+            "FROM animus_conteos_asignados WHERE COALESCE(investigacion,'')='abierta' "
+            "ORDER BY contado_en DESC").fetchall():
+        abiertas.setdefault((r[1] or '').strip().upper(), []).append(
+            {'id': r[0], 'diferencia': r[2], 'fisica': r[3], 'esperada': r[4],
+             'contado_en': r[5]})
+
+    filas = []
+    for sku in sorted(set(shopify) | set(esperados)):
+        sh = shopify.get(sku) or {}
+        uds_sh = int(sh.get('uds') or 0) if sh else None
+        esp = esperados.get(sku)
+        uds_eos = int(esp['esperado']) if esp else None
+        # La diferencia solo tiene sentido si existen los DOS numeros: sin baseline, un cero
+        # de EOS no significa "no hay", significa "no sabemos" (M124).
+        dif = (uds_sh - uds_eos) if (uds_sh is not None and uds_eos is not None) else None
+        filas.append({
+            'sku': sku,
+            'descripcion': (sh.get('descripcion') or (esp or {}).get('descripcion') or ''),
+            'shopify': uds_sh,
+            'esperado_eos': uds_eos,
+            'diferencia': dif,
+            'sin_baseline': esp is None,
+            'fuente_shopify': sh.get('fuente') or '',
+            'ultimo_conteo': ultimo.get(sku),
+            'investigaciones_abiertas': abiertas.get(sku, []),
+        })
+
+    _con_dif = [f for f in filas if f['diferencia'] not in (None, 0)]
+    _sin_base = [f for f in filas if f['sin_baseline']]
+    return jsonify({
+        "ok": True,
+        "filas": filas,
+        "kpis": {
+            "skus": len(filas),
+            "sin_baseline": len(_sin_base),
+            "con_diferencia": len(_con_dif),
+            "investigaciones_abiertas": sum(len(f['investigaciones_abiertas']) for f in filas),
+            "nunca_contados": sum(1 for f in filas if not f['ultimo_conteo']),
+        },
+        "aviso": aviso,
     })
 
 
@@ -4141,6 +4318,156 @@ def animus_pqr_listar():
     return jsonify({"pqr": items, "resumen": resumen})
 
 
+def _pqr_pedidos_del_cliente(c, *, email='', telefono='', nombre='', limite=8):
+    """Los pedidos de ANIMUS que podrian ser de ese cliente, del mas confiable al menos.
+
+    Tres senales, igual que el detector de contraentrega: correo (exacto), telefono (solo los
+    digitos, porque se escribe de mil formas) y nombre normalizado. Cada candidato dice POR CUAL
+    cruzo: sin eso nadie puede verificar por que se le adjudico un pedido a una queja.
+
+    NO adjudica: devuelve candidatos. Emparejar por parecido en un registro de servicio al
+    cliente termina respondiendole a la persona equivocada sobre el pedido de otra (M19/M130).
+    """
+    def _dig(x):
+        return ''.join(ch for ch in str(x or '') if ch.isdigit())[-10:]
+
+    email = (email or '').strip().lower()
+    tel = _dig(telefono)
+    nom = ' '.join((nombre or '').strip().lower().split())
+    if not (email or tel or nom):
+        return []
+
+    filas = c.execute(
+        "SELECT shopify_id, nombre, total, estado, estado_pago, creado_en, "
+        "       COALESCE(email,''), COALESCE(direccion,'') "
+        "  FROM animus_shopify_orders "
+        " WHERE COALESCE(creado_en,'') >= date('now','-5 hours','-180 day') "
+        " ORDER BY creado_en DESC LIMIT 4000").fetchall()
+
+    out = []
+    for r in filas:
+        cruce = ''
+        _dir = ' '.join((r[7] or '').strip().lower().split())
+        if email and (r[6] or '').strip().lower() == email:
+            cruce = 'correo'
+        elif tel and tel in _dig(r[7]):
+            cruce = 'teléfono'
+        elif nom and len(nom) >= 6 and nom in _dir:
+            # El nombre del cliente NO vive en la orden (la tabla guarda `nombre` = el número
+            # del pedido). Se busca en la dirección de envío, que es donde de hecho aparece.
+            # Se exigen 6 caracteres para que un nombre corto no matchee media base, y aun así
+            # es la señal MENOS confiable: por eso va última y el candidato dice por cuál cruzó.
+            cruce = 'nombre'
+        if not cruce:
+            continue
+        out.append({'pedido': r[1] or str(r[0]), 'shopify_id': r[0],
+                    'total': float(r[2] or 0), 'estado': r[3] or '',
+                    'estado_pago': r[4] or '', 'fecha': (r[5] or '')[:10],
+                    'cruzo_por': cruce})
+        if len(out) >= limite:
+            break
+    # el correo manda sobre el telefono y este sobre el nombre
+    _orden = {'correo': 0, 'teléfono': 1, 'nombre': 2}
+    out.sort(key=lambda x: (_orden.get(x['cruzo_por'], 9), x['fecha']), reverse=False)
+    return out
+
+
+@bp.route("/api/animus/pqr/<int:pid>/pedidos-cliente", methods=["GET"])
+def animus_pqr_pedidos_cliente(pid):
+    """Los pedidos que podrian ser de quien puso la queja, para adjudicar el correcto."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    r = c.execute("SELECT contacto_email, contacto_telefono, contacto_nombre, "
+                  "COALESCE(pedido_numero,'') FROM animus_pqr WHERE id=?", (pid,)).fetchone()
+    if not r:
+        return jsonify({"error": "Ese PQR no existe"}), 404
+    try:
+        cand = _pqr_pedidos_del_cliente(c, email=r[0], telefono=r[1], nombre=r[2])
+    except Exception as e:
+        log.warning('no pude cruzar los pedidos del PQR %s: %s', pid, e)
+        return jsonify({"ok": False, "candidatos": [], "ya_asignado": r[3],
+                        "aviso": "No pude cruzar contra los pedidos"}), 200
+    return jsonify({"ok": True, "candidatos": cand, "ya_asignado": r[3],
+                    "aviso": '' if cand else
+                             'Ningún pedido cruza por correo, teléfono ni nombre · '
+                             'se puede escribir el número a mano'})
+
+
+@bp.route("/api/animus/pqr/indicador", methods=["GET"])
+def animus_pqr_indicador():
+    """Que esta pasando con el servicio, en numeros que se puedan mirar de un vistazo.
+
+    Sebastian: "PQR debe dar finalmente un indicador que se refleje en el dashboard de ANIMUS y
+    sume a CEO para saber que esta pasando".
+
+    El numero que importa no es cuantas quejas hay -- eso sube solo si se vende mas -- sino
+    **cuantas por cada 100 pedidos**: eso si dice si el servicio empeoro. Y al lado, el tiempo
+    que tardamos en responder y los motivos que mas pesan, que es lo que dice DONDE mirar.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    try:
+        dias = max(7, min(int(request.args.get('dias') or 30), 365))
+    except (TypeError, ValueError):
+        dias = 30
+    conn = _db(); c = conn.cursor()
+    corte = "date('now','-5 hours','-%d day')" % dias
+
+    n_pqr = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE date(creado_en) >= " + corte).fetchone()[0]
+    abiertos = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE estado IN ('nuevo','en_proceso')").fetchone()[0]
+    sin_tocar = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE estado='nuevo'").fetchone()[0]
+    n_ped = c.execute("SELECT COUNT(*) FROM animus_shopify_orders WHERE date(creado_en) >= "
+                      + corte + " AND LOWER(COALESCE(estado,'')) NOT IN "
+                      "('cancelled','cancelado','voided')").fetchone()[0]
+
+    # Tasa por 100 pedidos · sin pedidos NO es cero, es "no se puede calcular" (M33/M124)
+    tasa = round(n_pqr * 100.0 / n_ped, 2) if n_ped else None
+
+    # Cuanto tardamos en responder (solo los que YA se respondieron · el resto no tiene dato)
+    dias_resp, n_resp = [], 0
+    for cr, rp in c.execute(
+            "SELECT creado_en, respondido_en FROM animus_pqr "
+            "WHERE COALESCE(respondido_en,'') <> '' AND date(creado_en) >= " + corte).fetchall():
+        try:
+            from datetime import date as _d
+            a = _d.fromisoformat(str(cr)[:10]); b = _d.fromisoformat(str(rp)[:10])
+            dias_resp.append(max(0, (b - a).days)); n_resp += 1
+        except Exception:
+            continue
+    prom = round(sum(dias_resp) / len(dias_resp), 1) if dias_resp else None
+
+    # El motivo que mas pesa es lo que dice DONDE mirar
+    por_tipo = [{'tipo': t, 'n': n} for t, n in c.execute(
+        "SELECT COALESCE(tipo,'otro'), COUNT(*) FROM animus_pqr WHERE date(creado_en) >= "
+        + corte + " GROUP BY COALESCE(tipo,'otro') ORDER BY COUNT(*) DESC LIMIT 6").fetchall()]
+
+    # El mas viejo sin resolver: un aviso que no ENVEJECE a la vista se vuelve ruido (M129)
+    viejo = c.execute("SELECT codigo, tipo, creado_en FROM animus_pqr "
+                      "WHERE estado IN ('nuevo','en_proceso') ORDER BY creado_en ASC "
+                      "LIMIT 1").fetchone()
+    dias_viejo = None
+    if viejo:
+        try:
+            from datetime import date as _d
+            dias_viejo = (_hoy_col() - _d.fromisoformat(str(viejo[2])[:10])).days
+        except Exception:
+            dias_viejo = None
+
+    return jsonify({
+        "ok": True, "dias": dias,
+        "pqr": n_pqr, "pedidos": n_ped,
+        "tasa_por_100": tasa,
+        "abiertos": abiertos, "sin_tocar": sin_tocar,
+        "dias_respuesta_promedio": prom, "respondidos": n_resp,
+        "por_tipo": por_tipo,
+        "mas_viejo": ({"codigo": viejo[0], "tipo": viejo[1], "dias": dias_viejo}
+                      if viejo else None),
+        "aviso": '' if n_ped else
+                 'Sin pedidos en el período · la tasa por 100 no se puede calcular',
+    })
+
+
 @bp.route("/api/animus/pqr/<int:pid>", methods=["PATCH"])
 def animus_pqr_actualizar(pid):
     u, err, code = _auth()
@@ -4164,6 +4491,10 @@ def animus_pqr_actualizar(pid):
         campos.append("prioridad=?"); vals.append(pr)
     if "asignado_a" in d:
         campos.append("asignado_a=?"); vals.append((d.get("asignado_a") or "")[:80] or None)
+    # La columna existia desde una migracion vieja y NADA la escribia: se podia leer el numero
+    # de pedido de una queja que nunca se habia podido guardar.
+    if "pedido_numero" in d:
+        campos.append("pedido_numero=?"); vals.append((d.get("pedido_numero") or "")[:80] or None)
     if "respuesta" in d:
         campos.append("respuesta=?"); vals.append((d.get("respuesta") or "")[:3000])
         campos.append("respondido_por=?"); vals.append(u)

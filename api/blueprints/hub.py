@@ -566,6 +566,54 @@ def centro_decisiones():
         try: conn.rollback()
         except Exception: pass
 
+    # ── SERVICIO AL CLIENTE (PQR de ANIMUS) ──────────────────────────────────
+    # Cada fuente va aislada: en PG un query fallido aborta la transaccion entera (M33).
+    try:
+        _viejo = c.execute(
+            "SELECT codigo, tipo, creado_en FROM animus_pqr "
+            "WHERE estado IN ('nuevo','en_proceso') ORDER BY creado_en ASC LIMIT 1").fetchone()
+        _sin_tocar = c.execute(
+            "SELECT COUNT(*) FROM animus_pqr WHERE estado='nuevo'").fetchone()[0]
+        if _viejo:
+            from datetime import date as _dd
+            try:
+                _dias = (_dd.fromisoformat(str(_viejo[2])[:10])
+                         - _dd.fromisoformat(hoy)).days * -1
+            except Exception:
+                _dias = None
+            # La gravedad la da la EDAD, no la cantidad: una sola queja de hace 40 dias es peor
+            # que veinte de hoy (M129).
+            if _dias is not None and _dias >= 3:
+                _add('critico' if _dias >= 7 else 'atencion', 'clientes',
+                     'Clientes esperando respuesta',
+                     '%s lleva %d dias sin resolverse%s' % (
+                         _viejo[0], _dias,
+                         (' · %d sin tocar' % _sin_tocar) if _sin_tocar else ''),
+                     '/animus', _sin_tocar or 1)
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
+    try:
+        # Quejas por cada 100 pedidos, este mes contra el anterior. Comparar los CONTEOS pelados
+        # diria que el servicio empeoro cada vez que se vende mas.
+        def _tasa(desde, hasta):
+            q = ("SELECT COUNT(*) FROM %s WHERE date(creado_en) >= date('now','-5 hours','-%d day') "
+                 "AND date(creado_en) < date('now','-5 hours','-%d day')")
+            n_p = c.execute(q % ('animus_pqr', desde, hasta)).fetchone()[0]
+            n_o = c.execute((q % ('animus_shopify_orders', desde, hasta))
+                            + " AND LOWER(COALESCE(estado,'')) NOT IN "
+                              "('cancelled','cancelado','voided')").fetchone()[0]
+            return (n_p * 100.0 / n_o) if n_o >= 20 else None   # sin volumen, la tasa es ruido
+        _act, _ant = _tasa(30, 0), _tasa(60, 30)
+        if _act is not None and _ant is not None and _ant > 0 and _act >= _ant * 1.5 and _act >= 2:
+            _add('atencion', 'clientes', 'Las quejas subieron contra el mes pasado',
+                 '%.1f por cada 100 pedidos, contra %.1f el mes anterior' % (_act, _ant),
+                 '/animus', int(_act))
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
     orden = {'critico': 0, 'atencion': 1, 'info': 2}
     dec.sort(key=lambda x: (orden.get(x['nivel'], 2), -(x.get('valor') or 0)))
     resumen = {'critico': sum(1 for a in dec if a['nivel'] == 'critico'),

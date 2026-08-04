@@ -2211,42 +2211,19 @@ def job_animus_conteo_diario(app):
             if pend and pend[0] > 0:
                 return True, {'mensaje': f'Ya hay {pend[0]} asignaciones pendientes hoy'}, 0
 
-            # Ranking SKUs (mismo algoritmo que el endpoint asignar-hoy)
-            n = 5
-            candidatos = c.execute("""
-                WITH baseline_skus AS (
-                    SELECT sku FROM animus_inventario_baseline
-                ),
-                ultimo_conteo AS (
-                    SELECT sku, MAX(fecha_asignado) as ult
-                      FROM animus_conteos_asignados
-                     WHERE estado = 'contado'
-                     GROUP BY sku
-                ),
-                volatilidad AS (
-                    SELECT sku, COUNT(*) as movs
-                      FROM animus_inventario_movimientos
-                     WHERE fecha >= date('now', '-5 hours', '-7 day')
-                     GROUP BY sku
-                )
-                SELECT b.sku,
-                       COALESCE(julianday('now') - julianday(uc.ult), 999) as dias_sin_contar,
-                       COALESCE(v.movs, 0) as movs_7d
-                  FROM baseline_skus b
-                  LEFT JOIN ultimo_conteo uc ON uc.sku = b.sku
-                  LEFT JOIN volatilidad v ON v.sku = b.sku
-                  ORDER BY dias_sin_contar DESC, movs_7d DESC
-                  LIMIT ?
-            """, (n,)).fetchall()
-            if not candidatos:
+            # DELEGA en el helper canónico (3-ago · M1/M3). Antes replicaba el ranking del
+            # endpoint ("mismo algoritmo que asignar-hoy") y esa copia arrastraba un bug REAL:
+            # su INSERT NO fijaba `fecha_asignado`, así que tomaba el default de columna
+            # date('now') -- que es UTC -- mientras el chequeo de idempotencia de arriba compara
+            # contra Colombia. De noche las dos fechas no coinciden, así que el cron volvía a
+            # asignar todos los días sobre lo ya asignado: ésa es la explicación de los cientos
+            # de conteos pendientes acumulados. El endpoint lo tenía arreglado desde el 12-jun;
+            # la copia no. Una regla en dos lugares diverge en silencio.
+            from blueprints.animus import asignar_conteo_hoy
+            res = asignar_conteo_hoy(conn, n=5, asignar_a='daniela', usuario='cron')
+            asignados = [x['sku'] for x in (res.get('asignados') or [])]
+            if not asignados:
                 return True, {'mensaje': 'Sin SKUs con baseline · pedirle a Daniela que cargue baseline primero'}, 0
-            asignados = []
-            for r in candidatos:
-                c.execute("""INSERT INTO animus_conteos_asignados
-                             (sku, asignado_a, estado) VALUES (?, 'daniela', 'pendiente')""",
-                          (r[0],))
-                asignados.append(r[0])
-            conn.commit()
         except Exception as e:
             log.exception('animus_conteo_diario read fallo: %s', e)
             return False, {'error': str(e)[:200]}, 0

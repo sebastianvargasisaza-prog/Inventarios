@@ -11093,6 +11093,19 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_notif_emp_registrado "
         "ON notificaciones_empleados(registrado_por, creado_en)",
     ]),
+    (413, "conteo ciclico: la diferencia abre una CAUSA RAIZ que hay que cerrar", [
+        # Sebastian (3-ago): "si hay menos o mas de una le genera una causa raiz, deben buscar
+        # por que". Antes la diferencia se guardaba en `motivo_diferencia` y ahi moria: no habia
+        # forma de saber cuales seguian sin explicar. La investigacion es un ESTADO que se abre
+        # solo y que alguien tiene que cerrar, no un campo de texto opcional.
+        "ALTER TABLE animus_conteos_asignados ADD COLUMN investigacion TEXT",
+        "ALTER TABLE animus_conteos_asignados ADD COLUMN causa_raiz TEXT",
+        "ALTER TABLE animus_conteos_asignados ADD COLUMN causa_raiz_por TEXT",
+        "ALTER TABLE animus_conteos_asignados ADD COLUMN causa_raiz_at TEXT",
+        "ALTER TABLE animus_conteos_asignados ADD COLUMN accion_correctiva TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_conteo_investigacion "
+        "ON animus_conteos_asignados(investigacion, contado_en)",
+    ]),
 ]
 
 

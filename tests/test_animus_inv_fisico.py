@@ -348,6 +348,17 @@ def test_registrar_conteo_cuadra(app, db_clean):
 
 
 def test_registrar_conteo_diferencia_grande_requiere_motivo(app, db_clean):
+    """REESCRITO 3-ago · la regla cambio por decision de Sebastian.
+
+    Antes: solo una diferencia de MAS de 2 unidades exigia motivo, y sin motivo se rechazaba
+    el registro. Ahora: *"si hay menos o mas de una le genera una causa raiz, deben buscar por
+    que"* -- o sea, CUALQUIER diferencia abre una investigacion, y el motivo NO se exige al
+    registrar (en ese momento todavia no se sabe por que falta: justamente por eso se investiga).
+    Lo que no se permite es que la diferencia quede sin nadie a cargo.
+
+    El cambio es mas estricto en cobertura (1 unidad ahora cuenta) y mas permisivo en el
+    momento del registro, que es lo que se pidio.
+    """
     cs = _login(app, "sebastian")
     sku = "TEST-DIFF"
     cs.post("/api/animus/inv-fisico/baseline",
@@ -360,17 +371,23 @@ def test_registrar_conteo_diferencia_grande_requiere_motivo(app, db_clean):
             (sku,))
         asig_id = cur.lastrowid
         conn.commit(); conn.close()
-        # Diferencia grande sin motivo → 400
+        # La diferencia se registra y ABRE la investigacion
         r = cs.post(f"/api/animus/inv-fisico/conteo/{asig_id}/registrar",
                     json={"cantidad_fisica": 30}, headers=csrf_headers())
-        assert r.status_code == 400
-        # Con motivo → 200
-        r2 = cs.post(f"/api/animus/inv-fisico/conteo/{asig_id}/registrar",
-                     json={"cantidad_fisica": 30, "motivo_diferencia": "Daño en bodega"},
-                     headers=csrf_headers())
-        assert r2.status_code == 200
-        d = r2.get_json()
+        assert r.status_code == 200, r.data[:250]
+        d = r.get_json()
         assert d["diferencia"] == -20
+        assert d["investigacion"] == "abierta", 'la diferencia quedo sin nadie a cargo'
+        assert d["alerta"], 'una discrepancia sin aviso se lee igual que un conteo que cuadro'
+        # Y no se cierra con dos palabras: dentro de un mes nadie podria reconstruir que paso
+        r2 = cs.post(f"/api/animus/inv-fisico/conteo/{asig_id}/causa-raiz",
+                     json={"causa_raiz": "no"}, headers=csrf_headers())
+        assert r2.status_code == 400
+        r3 = cs.post(f"/api/animus/inv-fisico/conteo/{asig_id}/causa-raiz",
+                     json={"causa_raiz": "Se dañaron 20 unidades en bodega por humedad",
+                           "accion_correctiva": "Se movio el estante lejos de la pared"},
+                     headers=csrf_headers())
+        assert r3.status_code == 200 and r3.get_json()["investigacion"] == "cerrada"
     finally:
         _cleanup(sku)
         conn = sqlite3.connect(os.environ["DB_PATH"])

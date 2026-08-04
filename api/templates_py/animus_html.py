@@ -86,6 +86,9 @@ table thead th{text-align:left;padding:8px 10px;color:var(--cx-text-mute);font-s
 table tbody td{padding:8px 10px;color:var(--cx-text);border-bottom:1px solid var(--cx-hairline);}
 table tbody tr:hover{background:var(--cx-bg-alt);}
 
+.inv-btn{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;font-size:13px;font-weight:600;color:var(--cx-text-mute);cursor:pointer;}
+.inv-btn:hover{color:var(--cx-text);}
+.inv-btn.active{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.05em;}
 .badge-green{background:var(--cx-success-pale);color:var(--cx-success-text);}
 .badge-red{background:var(--cx-danger-pale);color:var(--cx-danger-text);}
@@ -178,8 +181,7 @@ window.addEventListener('error', function(ev){
 
 <div class="tabs-bar">
   <button class="tab-btn active" data-tab="caja" onclick="switchTab('caja')">&#128176; Caja Menor</button>
-  <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario Físico</button>
-  <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Conteo Cíclico</button>
+  <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario</button>
   <button class="tab-btn" data-tab="solic" onclick="switchTab('solic')">&#128203; Solicitudes</button>
   <button class="tab-btn" data-tab="novedades" onclick="switchTab('novedades')">&#128100; Novedades</button>
   <button class="tab-btn" data-tab="pqr" onclick="switchTab('pqr')">&#128233; PQR Clientes</button>
@@ -346,7 +348,62 @@ window.addEventListener('error', function(ev){
   </div>
 </div>
 
-<div id="tab-inventario" class="tab-panel">
+<div id="tab-invfis" class="tab-panel">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+    <div>
+      <div class="page-title">&#128202; Inventario</div>
+      <div class="page-sub">Esperado = baseline + entradas - ventas Shopify - salidas. Si no cuadra, se ve el desglose y donde esta el error.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-success" onclick="sembrarShopify()" title="Crea baseline=0 para todos los SKUs vendidos en Shopify · solo editas cantidad despues" style="background:var(--cx-success-pale);color:var(--cx-text);">&#127793; Sembrar SKUs Shopify</button>
+      <button class="btn btn-outline" onclick="abrirBaseline()">+ Baseline manual</button>
+      <button class="btn btn-primary" onclick="abrirEntrada()">+ Entrada</button>
+      <button class="btn btn-outline" onclick="abrirSalida()">+ Salida</button>
+      <button class="btn btn-outline" onclick="syncShopifyInv()" title="Refleja ventas Shopify ya descargadas en inv fisico">&#128260; Sync Shopify</button>
+      <button class="btn btn-outline" onclick="asignarConteoHoy()" title="Asigna SKUs al azar a contar hoy">&#128202; Asignar conteo hoy</button>
+    </div>
+  </div>
+
+  <div id="invfis-resumen" class="kpi-grid"></div>
+
+  <!-- SUB-PESTANAS (3-ago · Sebastian: "inventario fisico y conteo ciclico debemos fusionarlos")
+       Existencias contesta "cuanto hay y cuanto deberia haber"; el conteo del dia es el trabajo
+       concreto. Separadas en dos pestanas obligaban a ir y volver para lo mismo. -->
+  <div style="display:flex;gap:4px;border-bottom:1px solid var(--cx-border);margin:18px 0;">
+    <button class="inv-btn active" data-inv="exist" onclick="invTab('exist')">&#128202; Existencias</button>
+    <button class="inv-btn" data-inv="conteo" onclick="invTab('conteo')">&#128230; Conteo del día</button>
+  </div>
+
+  <div id="inv-exist" class="inv-panel">
+    <div class="kpi-grid" id="exi-kpis" style="margin-bottom:14px;"></div>
+    <div id="exi-aviso"></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="font-weight:700;color:var(--cx-text);">Todos los SKU de Shopify</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label style="font-size:12px;color:var(--cx-text-mute);display:flex;align-items:center;gap:5px;">
+            <input type="checkbox" id="exi-solo-dif" onchange="renderExistencias()"> Solo los que no cuadran
+          </label>
+          <button class="btn btn-outline btn-sm" onclick="cargarExistencias()">&#8635; Refrescar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead><tr>
+            <th>SKU</th><th>Producto</th>
+            <th style="text-align:right;">Dice Shopify</th>
+            <th style="text-align:right;">Espera EOS</th>
+            <th style="text-align:right;">Diferencia</th>
+            <th>Último conteo</th><th>Causa raíz</th>
+          </tr></thead>
+          <tbody id="exi-body"><tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="inv-conteo" class="inv-panel" style="display:none;">
+
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
       <div class="page-title">&#128230; Inventario Cíclico</div>
@@ -396,23 +453,7 @@ window.addEventListener('error', function(ev){
 
 <!-- TAB: INVENTARIO FISICO (modelo nuevo · ecuacion contable) -->
   </div>
-<div id="tab-invfis" class="tab-panel">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
-    <div>
-      <div class="page-title">&#128202; Inventario Físico</div>
-      <div class="page-sub">Esperado = baseline + entradas - ventas Shopify - salidas. Si no cuadra, se ve el desglose y donde esta el error.</div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-success" onclick="sembrarShopify()" title="Crea baseline=0 para todos los SKUs vendidos en Shopify · solo editas cantidad despues" style="background:var(--cx-success-pale);color:var(--cx-text);">&#127793; Sembrar SKUs Shopify</button>
-      <button class="btn btn-outline" onclick="abrirBaseline()">+ Baseline manual</button>
-      <button class="btn btn-primary" onclick="abrirEntrada()">+ Entrada</button>
-      <button class="btn btn-outline" onclick="abrirSalida()">+ Salida</button>
-      <button class="btn btn-outline" onclick="syncShopifyInv()" title="Refleja ventas Shopify ya descargadas en inv fisico">&#128260; Sync Shopify</button>
-      <button class="btn btn-outline" onclick="asignarConteoHoy()" title="Asigna SKUs al azar a contar hoy">&#128202; Asignar conteo hoy</button>
-    </div>
-  </div>
 
-  <div id="invfis-resumen" class="kpi-grid"></div>
 
   <!-- DIAGNOSTICO -->
   <div class="card" id="invfis-diag-card" style="display:none;">
@@ -770,6 +811,86 @@ window.addEventListener('error', function(ev){
      que se decide con tiempo; esto es el caso del dia. Lo unico que no se afloja es decir
      QUIEN lo autorizo: sin eso el pago no se puede verificar despues. -->
 <!-- PEDIR ALGO · crea una solicitud que Catalina ve en su bandeja de usuarios -->
+<!-- CAUSA RAIZ · "si hay menos o mas de una le genera una causa raiz, deben buscar por que"
+     Una diferencia sin explicacion, a las dos semanas, ya no se puede reconstruir: nadie
+     recuerda si fue un despacho sin registrar, una devolucion o un faltante real. -->
+<!-- GESTIONAR UN PQR · que sirva para algo
+     Antes solo cambiaba el estado, y habia que TECLEARLO. Ahora trae el PEDIDO del cliente
+     (cruzado por correo, telefono o direccion), deja responder, y deja el rastro de quien
+     respondio y cuando. -->
+<div id="modal-pqrges" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:720px;max-width:95vw;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+      <h3 id="pq-titulo" style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;"></h3>
+      <button onclick="cerrarModal('modal-pqrges')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div id="pq-contacto" style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:14px;line-height:1.5;"></div>
+
+    <div style="padding:12px 14px;background:var(--cx-bg-alt);border-radius:10px;font-size:13px;color:var(--cx-text-soft);line-height:1.55;margin-bottom:16px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute);margin-bottom:5px;">Lo que escribió</div>
+      <div id="pq-desc"></div>
+    </div>
+
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute);margin-bottom:6px;">Su pedido</div>
+    <div id="pq-pedidos" style="margin-bottom:16px;">
+      <div style="color:var(--cx-text-mute);font-size:12.5px;">Buscando sus pedidos...</div>
+    </div>
+
+    <div class="form-row">
+      <div><label class="label">Número de pedido</label>
+        <input id="pq-pedido" class="input" placeholder="Se llena al elegir arriba, o se escribe"></div>
+      <div><label class="label">Estado</label>
+        <select id="pq-estado" class="select">
+          <option value="nuevo">Nuevo</option>
+          <option value="en_proceso">En proceso</option>
+          <option value="resuelto">Resuelto</option>
+          <option value="cerrado">Cerrado</option>
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div><label class="label">Prioridad</label>
+        <select id="pq-prioridad" class="select">
+          <option value="alta">Alta</option>
+          <option value="media">Media</option>
+          <option value="baja">Baja</option>
+        </select></div>
+      <div><label class="label">Quién lo atiende</label>
+        <input id="pq-asignado" class="input" placeholder="Quién se hace cargo"></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">Respuesta al cliente</label>
+        <textarea id="pq-respuesta" class="textarea" style="min-height:90px;" placeholder="Lo que se le contestó · queda con quién respondió y cuándo"></textarea></div>
+    </div>
+    <div id="pq-hist" style="font-size:11.5px;color:var(--cx-text-mute);margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-pqrges')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPqrGestion()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-causa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:560px;max-width:94vw;box-shadow:0 20px 60px rgba(0,0,0,.35);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+      <h3 id="cr-titulo" style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;"></h3>
+      <button onclick="cerrarModal('modal-causa')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div id="cr-sub" style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;"></div>
+    <div class="form-row full">
+      <div><label class="label">¿Por qué pasó?</label>
+        <textarea id="cr-causa" class="textarea" placeholder="Un despacho que no se registró, una devolución, producto dañado, error al contar..."></textarea></div>
+    </div>
+    <div class="form-row full">
+      <div><label class="label">¿Qué se hizo para que no vuelva a pasar?</label>
+        <textarea id="cr-accion" class="textarea" placeholder="Opcional, pero es lo que hace que el conteo sirva de algo"></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-causa')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCausaRaiz()">Cerrar la investigación</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-solic" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:640px;max-width:94vw;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
@@ -1106,6 +1227,14 @@ window.addEventListener('error', function(ev){
     <button class="btn btn-primary" onclick="abrirPqrManual()">+ Registrar PQR</button>
   </div>
   <div class="kpi-grid" id="pqr-ani-kpis"></div>
+
+  <!-- INDICADOR (Sebastian 3-ago: "PQR debe dar finalmente un indicador que se refleje en el
+       dashboard de ANIMUS y sume a CEO para saber que esta pasando")
+       El numero que importa no es CUANTAS quejas hay -- eso sube solo si se vende mas -- sino
+       cuantas por cada 100 pedidos: eso si dice si el servicio empeoro. -->
+  <div class="card" id="pqr-indicador" style="margin:14px 0;">
+    <div style="color:var(--cx-text-mute);font-size:12.5px;">Cargando el indicador...</div>
+  </div>
   <div style="margin:8px 0;display:flex;gap:6px;flex-wrap:wrap">
     <select id="pqr-ani-festado" onchange="loadAnimusPqr()" style="padding:6px 10px;border:1px solid var(--cx-hairline,#cbd5e1);border-radius:6px">
       <option value="">Todos los estados</option>
@@ -1174,11 +1303,16 @@ function loadTab(name){
     loadCaja(); loadCod(); loadPagosCaja(); cargarAvisoArqueo();
     try { var _sb = localStorage.getItem('caja-sub'); if (_sb) subTab(_sb); } catch(e){}
   }
-  else if (name === 'invfis') { cargarInvFisico(); cargarMovimientosInvFis(); }
-  else if (name === 'inventario') { loadInvSkus(); loadInvConteos(); }
+  else if (name === 'invfis') {
+    // La pestana fusionada trae las dos mitades: que dice cada sistema (existencias) y el
+    // trabajo del dia (conteo). Separadas obligaban a ir y volver para lo mismo.
+    cargarInvFisico(); cargarMovimientosInvFis(); loadInvSkus(); loadInvConteos();
+    cargarExistencias();
+    try { var _iv = localStorage.getItem('inv-sub'); if (_iv) invTab(_iv); } catch(e){}
+  }
   else if (name === 'solic') loadSolicitudes();
   else if (name === 'novedades') loadNovedades();
-  else if (name === 'pqr') loadAnimusPqr();
+  else if (name === 'pqr') { loadAnimusPqr(); cargarPqrIndicador(); }
 }
 
 function fmtCOP(n){
@@ -1214,6 +1348,259 @@ function _badge(txt, tono){
   var cl = {success:'badge-green', danger:'badge-red', info:'badge-blue',
             warn:'badge-yellow', primary:'badge-blue'}[tono] || 'badge-gray';
   return '<span class="badge ' + cl + '">' + esc(txt || '') + '</span>';
+}
+
+// ═══ PQR · indicador, pedido del cliente y gestionar ════════════════════════
+var _PQR_ACTUAL = null;
+
+// El vocabulario de tipos YA existe en la pagina (_PQR_TIPO_LBL): un segundo diccionario
+// diverge en cuanto alguien agregue un tipo, y la pantalla mostraria dos nombres distintos.
+function _pqrTipo(t){ return (window._PQR_TIPO_LBL || {})[t] || t; }
+
+async function cargarPqrIndicador(){
+  var el = document.getElementById('pqr-indicador');
+  if (!el) return;
+  try {
+    var r = await fetch('/api/animus/pqr/indicador?dias=30', {credentials:'same-origin'});
+    var d = await r.json();
+    if (!d.ok) { el.style.display = 'none'; return; }
+    // Sin pedidos la tasa NO es cero: es "no se puede calcular". Un cero se leeria como
+    // "el servicio esta perfecto", que es lo contrario de lo que pasa (M124).
+    var tasa = (d.tasa_por_100 === null || d.tasa_por_100 === undefined)
+      ? '<span style="color:var(--cx-text-mute);font-size:.5em;">sin datos</span>'
+      : d.tasa_por_100;
+    var resp = (d.dias_respuesta_promedio === null || d.dias_respuesta_promedio === undefined)
+      ? '<span style="color:var(--cx-text-mute);font-size:.5em;">sin responder</span>'
+      : d.dias_respuesta_promedio + ' d';
+    var tipos = (d.por_tipo || []).slice(0,4).map(function(t){
+      return '<span class="badge badge-gray" style="margin-right:5px;">' + esc(_pqrTipo(t.tipo)) + ' ' + t.n + '</span>';
+    }).join('');
+    // Un aviso que no ENVEJECE a la vista se vuelve ruido (M129): el mas viejo lleva su edad.
+    var viejo = d.mas_viejo
+      ? '<div style="margin-top:10px;font-size:12.5px;color:' + ((d.mas_viejo.dias > 7) ? 'var(--cx-danger-text)' : 'var(--cx-text-mute)') + ';">'
+        + 'El más viejo sin resolver: <b>' + esc(d.mas_viejo.codigo) + '</b>'
+        + ((d.mas_viejo.dias != null) ? ' · lleva <b>' + d.mas_viejo.dias + ' días</b>' : '')
+        + '</div>'
+      : '';
+    function _bloque(rot, val, sub, color){
+      return '<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute);">' + rot + '</div>'
+        + '<div style="font-size:1.9em;font-weight:800;line-height:1.2;color:' + (color || 'var(--cx-text)') + ';">' + val + '</div>'
+        + '<div style="font-size:11.5px;color:var(--cx-text-mute);">' + sub + '</div></div>';
+    }
+    el.style.display = '';
+    el.innerHTML =
+      '<div style="display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;">'
+      + _bloque('PQR por cada 100 pedidos', tasa, d.pqr + ' quejas sobre ' + d.pedidos + ' pedidos (30 días)')
+      + _bloque('Tardamos en responder', resp, d.respondidos + ' respondidas')
+      + _bloque('Sin tocar', d.sin_tocar, d.abiertos + ' abiertas en total',
+                d.sin_tocar ? 'var(--cx-warn-text)' : 'var(--cx-success-text)')
+      + '<div style="flex:1;min-width:210px;"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute);margin-bottom:6px;">Por qué se quejan</div>'
+      + (tipos || '<span style="color:var(--cx-text-mute);font-size:12px;">sin datos</span>') + '</div>'
+      + '</div>' + viejo
+      + (d.aviso ? '<div style="margin-top:8px;font-size:12px;color:var(--cx-warn-text);">' + esc(d.aviso) + '</div>' : '');
+  } catch(e) { el.style.display = 'none'; }
+}
+
+function gestionarPqr(id){
+  var p = (window._PQR_ROWS || []).filter(function(x){ return x.id === id; })[0];
+  if (!p) return;
+  _PQR_ACTUAL = p;
+  document.getElementById('pq-titulo').textContent = (p.codigo || p.id) + ' · ' + _pqrTipo(p.tipo);
+  document.getElementById('pq-contacto').innerHTML =
+    '<b>' + esc(p.contacto_nombre || 'Sin nombre') + '</b>'
+    + (p.contacto_email ? ' · ' + esc(p.contacto_email) : '')
+    + (p.contacto_telefono ? ' · ' + esc(p.contacto_telefono) : '')
+    + (p.canal ? ' · llegó por ' + esc(p.canal) : '');
+  document.getElementById('pq-desc').textContent = p.descripcion || '';
+  document.getElementById('pq-pedido').value = p.pedido_numero || '';
+  document.getElementById('pq-estado').value = p.estado || 'nuevo';
+  document.getElementById('pq-prioridad').value = p.prioridad || 'media';
+  document.getElementById('pq-asignado').value = p.asignado_a || '';
+  document.getElementById('pq-respuesta').value = p.respuesta || '';
+  document.getElementById('pq-hist').innerHTML = p.respondido_por
+    ? 'Respondió ' + esc(p.respondido_por) + (p.respondido_en ? ' el ' + esc(p.respondido_en) : '')
+    : '';
+  document.getElementById('pq-pedidos').innerHTML =
+    '<div style="color:var(--cx-text-mute);font-size:12.5px;">Buscando sus pedidos...</div>';
+  document.getElementById('modal-pqrges').style.display = 'flex';
+  cargarPedidosDelCliente(id);
+}
+
+async function cargarPedidosDelCliente(id){
+  var el = document.getElementById('pq-pedidos');
+  try {
+    var r = await fetch('/api/animus/pqr/' + id + '/pedidos-cliente', {credentials:'same-origin'});
+    var d = await r.json();
+    var cand = d.candidatos || [];
+    if (!cand.length) {
+      el.innerHTML = '<div style="color:var(--cx-text-mute);font-size:12.5px;">'
+        + esc(d.aviso || 'No encontré pedidos de este cliente') + '</div>';
+      return;
+    }
+    // Se MUESTRAN como candidatos y no se adjudica solo: adjudicarle el pedido equivocado a una
+    // queja termina respondiendole a alguien sobre el pedido de otro (M19).
+    el.innerHTML = cand.map(function(x){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
+        + 'padding:8px 12px;border:1px solid var(--cx-border);border-radius:8px;margin-bottom:6px;">'
+        + '<div><b>' + esc(x.pedido) + '</b> <span style="color:var(--cx-text-mute);font-size:11.5px;">'
+        + esc(x.fecha) + ' · ' + fmtCOP(x.total) + ' · cruzó por ' + esc(x.cruzo_por) + '</span></div>'
+        + '<button class="btn btn-outline btn-sm" onclick="elegirPedidoPqr(&quot;' + esc(x.pedido) + '&quot;)">Es este</button>'
+        + '</div>';
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--cx-text-mute);font-size:12.5px;">No pude buscar sus pedidos</div>';
+  }
+}
+
+function elegirPedidoPqr(num){
+  document.getElementById('pq-pedido').value = num;
+  showToast('Pedido ' + num + ' · se guarda al dar Guardar', 'success');
+}
+
+async function guardarPqrGestion(){
+  if (!_PQR_ACTUAL) return;
+  var body = {
+    estado: document.getElementById('pq-estado').value,
+    prioridad: document.getElementById('pq-prioridad').value,
+    asignado_a: document.getElementById('pq-asignado').value.trim(),
+    pedido_numero: document.getElementById('pq-pedido').value.trim()
+  };
+  var resp = document.getElementById('pq-respuesta').value.trim();
+  if (resp && resp !== (_PQR_ACTUAL.respuesta || '')) body.respuesta = resp;
+  // Cerrar sin haber escrito nada deja al cliente sin respuesta y el caso marcado como resuelto.
+  if ((body.estado === 'resuelto' || body.estado === 'cerrado') && !resp) {
+    showToast('Escribí qué se le contestó antes de cerrarlo', 'error'); return;
+  }
+  try {
+    var r = await _fetchUna('/api/animus/pqr/' + _PQR_ACTUAL.id, _fetchOpts('PATCH', body));
+    if (!r) return;
+    var d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast('Guardado · ' + (_PQR_ACTUAL.codigo || ''), 'success');
+    cerrarModal('modal-pqrges');
+    loadAnimusPqr(); cargarPqrIndicador();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
+// ═══ INVENTARIO · sub-pestanas ══════════════════════════════════════════════
+// Conmutador PROPIO: `switchTab` apaga TODOS los .tab-panel y dejaria la pantalla en blanco.
+function invTab(name){
+  document.querySelectorAll('.inv-btn').forEach(function(b){
+    b.classList.toggle('active', b.dataset.inv === name);
+  });
+  document.querySelectorAll('.inv-panel').forEach(function(pn){ pn.style.display = 'none'; });
+  var el = document.getElementById('inv-' + name);
+  if (el) el.style.display = '';
+  try { localStorage.setItem('inv-sub', name); } catch(e){}
+  if (name === 'exist' && !window._EXI_CARGADO) cargarExistencias();
+}
+
+// ═══ EXISTENCIAS · lo que dice Shopify contra lo que espera EOS ══════════════
+// Sebastian: "que aparezcan todos los SKU de Shopify con la cantidad que dice Shopify que hay".
+// Antes solo se comparaba el esperado de EOS contra el conteo: un SKU podia estar bien en EOS y
+// mal en Shopify -- que es el numero con el que se VENDE -- y nadie lo veia.
+var _EXI = [];
+
+async function cargarExistencias(){
+  var tb = document.getElementById('exi-body');
+  try {
+    var r = await fetch('/api/animus/inv-fisico/existencias', {credentials:'same-origin'});
+    var d = await r.json();
+    if (!d.ok) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">' + esc(d.error||'No pude cargar') + '</td></tr>'; return; }
+    _EXI = d.filas || [];
+    window._EXI_CARGADO = true;
+    var k = d.kpis || {};
+    document.getElementById('exi-kpis').innerHTML = _kpiHtml([
+      {label:'SKU en Shopify', val:k.skus||0, sub:'catálogo completo'},
+      {label:'No cuadran', val:k.con_diferencia||0, sub:'Shopify contra EOS',
+       tono:(k.con_diferencia?'danger':'success')},
+      {label:'Causas sin resolver', val:k.investigaciones_abiertas||0,
+       sub:'diferencias sin explicar', tono:(k.investigaciones_abiertas?'warn':'success')},
+      {label:'Nunca contados', val:k.nunca_contados||0, sub:'sin un conteo físico todavía',
+       tono:(k.nunca_contados?'warn':'')}
+    ]);
+    // Un chequeo que no pudo correr se DECLARA: si no, su columna vacia se lee como "cuadra".
+    document.getElementById('exi-aviso').innerHTML = d.aviso
+      ? '<div style="padding:10px 14px;background:var(--cx-warn-pale);border-left:3px solid var(--cx-warn);border-radius:8px;font-size:12.5px;color:var(--cx-warn-text);margin-bottom:12px;">' + esc(d.aviso) + '</div>'
+      : '';
+    renderExistencias();
+  } catch(e) {
+    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">No pude cargar: ' + esc(e.message) + '</td></tr>';
+  }
+}
+
+function renderExistencias(){
+  var tb = document.getElementById('exi-body');
+  var soloDif = document.getElementById('exi-solo-dif').checked;
+  var filas = soloDif
+    ? _EXI.filter(function(x){ return x.diferencia !== null && x.diferencia !== 0; })
+    : _EXI;
+  if (!filas.length) {
+    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">'
+      + (soloDif ? 'Todo cuadra.' : 'Sin SKU todavía. Con <b>Sembrar SKUs Shopify</b> se traen.')
+      + '</td></tr>';
+    return;
+  }
+  tb.innerHTML = filas.map(function(x){
+    // Sin baseline, el cero de EOS no significa "no hay": significa "no sabemos" (M124).
+    var eos = x.sin_baseline
+      ? '<span style="color:var(--cx-text-mute);font-size:11px;">sin baseline</span>'
+      : x.esperado_eos;
+    var dif = '-';
+    if (x.diferencia !== null && x.diferencia !== undefined) {
+      dif = (x.diferencia === 0)
+        ? '<span style="color:var(--cx-success-text);">cuadra</span>'
+        : '<b style="color:var(--cx-danger-text);">' + (x.diferencia > 0 ? '+' : '') + x.diferencia + '</b>';
+    }
+    var abiertas = x.investigaciones_abiertas || [];
+    var causa = abiertas.length
+      ? abiertas.map(function(a){
+          return '<button class="btn btn-outline btn-sm" onclick="abrirCausaRaiz(' + a.id + ',&quot;'
+               + esc(x.sku) + '&quot;,' + a.diferencia + ')">Explicar ' + (a.diferencia > 0 ? '+' : '') + a.diferencia + '</button>';
+        }).join(' ')
+      : '<span style="color:var(--cx-text-mute);font-size:11px;">-</span>';
+    return '<tr>'
+      + '<td><b>' + esc(x.sku) + '</b></td>'
+      + '<td>' + esc(x.descripcion || '-') + '</td>'
+      + '<td style="text-align:right;">' + (x.shopify === null ? '-' : x.shopify) + '</td>'
+      + '<td style="text-align:right;">' + eos + '</td>'
+      + '<td style="text-align:right;">' + dif + '</td>'
+      + '<td>' + esc((x.ultimo_conteo || '').slice(0,10) || 'nunca') + '</td>'
+      + '<td>' + causa + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+// ═══ CAUSA RAIZ ═════════════════════════════════════════════════════════════
+var _CR_ID = null;
+
+function abrirCausaRaiz(id, sku, dif){
+  _CR_ID = id;
+  document.getElementById('cr-titulo').textContent = 'Por qué no cuadra ' + sku;
+  document.getElementById('cr-sub').innerHTML =
+    (dif < 0 ? 'Faltan <b>' + Math.abs(dif) + '</b>' : 'Sobran <b>' + dif + '</b>')
+    + ' unidades contra lo que el sistema esperaba.<br>'
+    + 'Dentro de un mes nadie va a poder reconstruir qué pasó: por eso se escribe ahora.';
+  document.getElementById('cr-causa').value = '';
+  document.getElementById('cr-accion').value = '';
+  document.getElementById('modal-causa').style.display = 'flex';
+}
+
+async function guardarCausaRaiz(){
+  if (!_CR_ID) return;
+  var causa = document.getElementById('cr-causa').value.trim();
+  if (causa.length < 10) { showToast('Escribí qué pasó · con dos palabras no se entiende después', 'error'); return; }
+  try {
+    var r = await _fetchUna('/api/animus/inv-fisico/conteo/' + _CR_ID + '/causa-raiz',
+      _fetchOpts('POST', {causa_raiz: causa,
+                          accion_correctiva: document.getElementById('cr-accion').value.trim()}));
+    if (!r) return;
+    var d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast('Investigación cerrada · ' + d.sku, 'success');
+    cerrarModal('modal-causa');
+    cargarExistencias();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
 }
 
 // ═══ SOLICITUDES · pedir, seguir y recibir ═══════════════════════════════════
@@ -3197,6 +3584,8 @@ loadTab = function(name) {
 // ── PQR Clientes (comercial) ──────────────────────────────────────────
 var _PQR_TIPO_LBL = {envio:'Envío',producto_equivocado:'Producto equivocado',faltante:'Faltante',devolucion:'Devolución',servicio:'Servicio',facturacion:'Facturación',comercial:'Comercial',otro:'Otro'};
 var _PQR_EST_LBL = {nuevo:['Nuevo','#d97706'],en_proceso:['En proceso','#0ea5e9'],resuelto:['Resuelto','#16a34a'],cerrado:['Cerrado','#64748b']};
+window._PQR_TIPO_LBL = _PQR_TIPO_LBL;
+
 async function loadAnimusPqr(){
   var box = document.getElementById('pqr-ani-list');
   var est = (document.getElementById('pqr-ani-festado')||{}).value || '';
@@ -3211,6 +3600,7 @@ async function loadAnimusPqr(){
       '<div class="kpi-card"><div class="label">Resueltos</div><div class="val" style="color:var(--cx-success-text)">'+(s.resuelto||0)+'</div></div>'+
       '<div class="kpi-card"><div class="label">Cerrados</div><div class="val">'+(s.cerrado||0)+'</div></div>';
     var items = d.pqr||[];
+    window._PQR_ROWS = items;   // el modal las busca por id
     if(!items.length){ box.innerHTML='<p style="color:var(--cx-text-faint);text-align:center;padding:14px">Sin PQR.</p>'; return; }
     box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.86em"><thead><tr style="text-align:left;color:var(--cx-text-faint);font-size:0.85em"><th style="padding:6px">Código</th><th>Tipo</th><th>Cliente</th><th>Descripción</th><th>Estado</th><th>Acción</th></tr></thead><tbody>'
       + items.map(function(p){
@@ -3222,27 +3612,10 @@ async function loadAnimusPqr(){
           +'<td>'+(p.contacto_nombre||'-')+'</td>'
           +'<td style="max-width:320px">'+(p.descripcion||'').replace(/</g,'&lt;')+(p.pedido_numero?'<div style="font-size:0.82em;color:var(--cx-info-text)">📦 Pedido '+String(p.pedido_numero).replace(/</g,'&lt;')+'</div>':'')+'</td>'
           +'<td><span style="color:'+est[1]+';font-weight:700">'+est[0]+'</span></td>'
-          +'<td><button class="btn btn-outline" style="padding:3px 8px;font-size:0.8em" onclick="gestionarPqr('+p.id+',\''+p.estado+'\')">Gestionar</button></td>'
+          +'<td><button class="btn btn-outline" style="padding:3px 8px;font-size:0.8em" onclick="gestionarPqr('+p.id+')">Gestionar</button></td>'
           +'</tr>';
       }).join('') + '</tbody></table>';
   }catch(e){ box.innerHTML='<p style="color:var(--cx-danger-text);text-align:center;padding:14px">Error: '+e.message+'</p>'; }
-}
-async function gestionarPqr(id, estadoActual){
-  var nuevo = await pedirDato({titulo: 'Cambiar el estado del PQR',
-    sub: 'Escribi uno de: <b>nuevo</b> &middot; <b>en_proceso</b> &middot; <b>resuelto</b> &middot; <b>cerrado</b>',
-    tipo: 'texto', valor: estadoActual, requerido: true, confirmar: 'Cambiar'});
-  if(!nuevo) return;
-  var resp = (await pedirDato({titulo: 'Respuesta o nota al cliente',
-    sub: 'Opcional &middot; queda en el registro del PQR.',
-    tipo: 'texto', confirmar: 'Guardar'})) || '';
-  var body = {estado:nuevo.trim()};
-  if(resp) body.respuesta = resp;
-  try{
-    var r = await _fetchUna('/api/animus/pqr/'+id, _fetchOpts('PATCH', body));
-    if (!r) return;   // ya habia uno en vuelo (doble click)
-    var d = await r.json();
-    if(r.ok && d.ok){ loadAnimusPqr(); } else alert('Error: '+(d.error||'?'));
-  }catch(e){ alert('Error red: '+e.message); }
 }
 function abrirPqrManual(){ abrirModal('modal-pqr-ani'); }
 async function guardarPqrManual(){
