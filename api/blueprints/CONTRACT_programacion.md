@@ -773,3 +773,54 @@ movimiento y dejar la columna en 0 hace que registre una **Salida de 0** — sin
 vista, y el test mide otra cosa.
 
 Tests: `tests/test_marcacion_no_descuenta_doble.py` (en el gate).
+
+## 📉 PROG-N+7 · La salud de la cadena la calcula el SERVIDOR (4-ago)
+
+Sebastián, revisando Necesidades: nueve de once cadenas decían **"sobra-stock"**. El rótulo era
+correcto, pero **la cuenta vivía sólo en el navegador** (`_saludCadena` en `dashboard_html.py`):
+se veía lote por lote adentro del modal, y nada del servidor podía contar cuántos productos
+estaban mal dimensionados, alertarlo, ni testearlo. Un número que decide plata y que ningún test
+puede tocar es un número sin red.
+
+**Helper canónico:** `plan.salud_cadena(lotes, *, velocidad_uds_dia, ml_unidad, stock_uds, hoy)`
+— función PURA (sin BD, testeable sola). Modelo, lote por lote en orden de fecha:
+
+- la cobertura de hoy se agota en `stock_uds / velocidad`;
+- un lote producido el día F entra a la góndola el día `F + PIPELINE_GONDOLA_DIAS` (7);
+- `colchon` = días entre esa llegada y el agotamiento de la cobertura previa;
+- el lote extiende la cobertura desde `max(cobertura_previa, llegada)` — si llegó tarde, la
+  cobertura arranca en su llegada, no antes.
+
+**Estados:** `tarde` (colchón < 0 · quiebre) · `justo` (< `BUFFER_REORDEN_DIAS`) · `sano` (entre
+el buffer y lo que dura un lote) · `sobra` (colchón > lo que dura un lote · la cadencia va a más
+del doble de la velocidad real).
+
+**Medido antes de creerle:** una cadena con cadencia = duración del lote deja **exactamente 20
+días** de colchón y sale sana en los 6 lotes; a la mitad de cadencia marca 6 de 8 en `sobra`; con
+cadencia más larga que el lote marca `tarde`, nunca `sobra`. O sea que el clasificador discrimina
+y no dispara de más: cuando dice "sobra-stock", se produce de verdad más seguido de lo que dura
+un lote.
+
+**Invariantes:**
+- Sin velocidad **no hay veredicto**: devuelve `medible: False` + `motivo`. Un "todo bien"
+  inventado sobre un producto sin ventas es peor que la ausencia del dato (M100).
+- Los lotes `cancelado`/`completado` **no aportan cobertura** (un cancelado no va a llegar).
+- Un lote con fecha pasada **no recibe veredicto** (no se puede adelantar el pasado) pero **sí
+  suma cobertura**: su producto está en la góndola.
+- Devuelve `fecha_sugerida` por lote (`cobertura − buffer − pipeline`) porque el botón
+  "⏩ Adelantar" la necesita: al mover el cálculo al servidor, sin ese campo el botón quedaba
+  vivo y mudo (M112).
+- La sobre-producción **deliberada** (`sku_planeacion_config.sobreproduccion_deliberada`, mig
+  378) se cuenta aparte y **no alerta**: una alerta sobre lo ya decidido se vuelve ruido (M98).
+
+**En el resumen de `/api/plan/necesidades`:** `n_cadenas_sobreproducen`, `n_cadenas_tarde`,
+`n_cadenas_sobreproducen_a_proposito`, `n_cadenas_sin_medir`. La pantalla pinta lo que el backend
+dice; su cálculo local queda sólo como respaldo para una respuesta vieja en caché.
+
+**+ El punto ciego del mapeo, ahora visible.** Las tarjetas de Necesidades sumaban 26 sobre 28
+SKU: los dos que faltaban eran `SIN_MAPEO`, o sea productos que **venden en Shopify y el plan no
+ve**. Estaban en un chip chiquito al costado de la fila. Ahora hay tarjeta propia, y debajo se
+dice en **unidades** cuánto se vendió bajo SKU huérfanos en 30 días — el conteo de SKU no dice
+cuánto duele; las unidades sí (M124).
+
+Tests: `tests/test_salud_cadena_necesidades.py` (en el gate).

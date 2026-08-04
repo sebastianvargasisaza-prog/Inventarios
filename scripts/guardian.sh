@@ -145,6 +145,11 @@ CORAZON=(
   # pantalla mostraba un saldo y el servidor decidia con otro (caja_saldo), y ese hero es el
   # numero contra el que se valida un pago. Solo el EFECTIVO entra a la gaveta.
   "tests/test_caja_kpis_solo_efectivo.py"
+  # La salud de la cadena (llega tarde / sobra-stock) se calculaba SOLO en el navegador: se
+  # veia lote por lote dentro del modal y nada del servidor podia contarla, alertarla ni
+  # testearla. Y las tarjetas de Necesidades sumaban 26 sobre 28 SKUs: los 2 que faltaban
+  # eran productos que VENDEN y el plan no ve por falta de mapeo.
+  "tests/test_salud_cadena_necesidades.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

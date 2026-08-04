@@ -2715,7 +2715,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <button onclick="syncStockAhora(this)" title="Trae el stock ACTUAL de Shopify: Ánimus Lab = góndola vendible · Espagiria = por entrar (producido en el lab, sin entregar). Úsalo tras producir o entregar para ver los números al día." style="background:var(--cx-info);color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🔄 Sync stock</button>
       </div>
     </div>
-    <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
+    <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+    <!-- Lo que el plan NO ve: ventas de SKU sin mapear y cadenas sin diagnostico. Va debajo de
+         las tarjetas porque es la letra chica del numero de arriba, no una tarjeta mas. -->
+    <div id="nec-avisos-ciegos" style="margin-bottom:14px"></div>
     <!-- Sebastián 13-may-2026: sección "Próximas agendadas" eliminada
          (queda el endpoint /api/plan/proximas por si la reactivamos
          después). El chip "📅 Ya agendado" sigue dentro del modal
@@ -26205,20 +26208,67 @@ async function ckMarcar(itemId, estado){
   function renderResumenNec(res) {
     if (!res) return;
     const items = [
-      ['🔴 Crítico', res.n_critico, '#dc2626'],
-      ['🟠 Urgente', res.n_urgente, '#ea580c'],
-      ['🟡 Vigilar', res.n_vigilar, '#ca8a04'],
-      ['🔵 Por entrar', res.n_por_entrar, '#0891b2'],
-      ['🟢 OK', res.n_ok, '#16a34a'],
-      ['⚪ Sin ventas', res.n_sin_ventas, '#64748b'],
-      ['📦 Pedidos B2B', res.n_pedidos_b2b_pendientes, '#1e40af'],
+      ['🔴 Crítico', res.n_critico, '#dc2626', 'Se agota antes del umbral crítico.'],
+      ['🟠 Urgente', res.n_urgente, '#ea580c', 'Entra en zona de alerta.'],
+      ['🟡 Vigilar', res.n_vigilar, '#ca8a04', 'Todavía alcanza, pero conviene mirarlo.'],
+      ['🔵 Por entrar', res.n_por_entrar, '#0891b2', 'Hay producto de Espagiria por entrar a la góndola.'],
+      ['🟢 OK', res.n_ok, '#16a34a', 'Cobertura sana.'],
+      ['⚪ Sin ventas', res.n_sin_ventas, '#64748b', 'No registró ventas en la ventana.'],
+      ['📦 Pedidos B2B', res.n_pedidos_b2b_pendientes, '#1e40af', 'Pedidos de cliente pendientes de producir.'],
     ];
-    document.getElementById('nec-resumen').innerHTML = items.map(it =>
-      '<div style="background:var(--cx-card,#fff);border:1px solid var(--cx-hairline,#ece9f5);border-top:3px solid '+it[2]+';border-radius:14px;padding:14px 18px;flex:1;min-width:120px;text-align:center;box-shadow:0 1px 3px rgba(16,15,45,.06),0 12px 26px -14px rgba(16,15,45,.14)">'
+    // Sebastián 4-ago: las tarjetas sumaban 26 sobre 28 SKUs y los 2 que faltaban eran los que
+    // MÁS importan. Un producto sin mapeo VENDE y el plan no lo ve, así que no puede quedar sólo
+    // en un chip chiquito al costado de la fila (M124: lo que el cálculo deja afuera se dice).
+    if ((res.n_sin_mapeo || 0) > 0) {
+      items.push(['❓ Sin mapeo', res.n_sin_mapeo, '#b45309',
+        'Venden en Shopify pero sus SKU no están en sku_producto_map: sus ventas NO cuentan '
+        + 'para la velocidad ni para el plan. Abrí el producto y mapealo.']);
+    }
+    // Cadenas mal dimensionadas. Esta cuenta vivía SOLO en el navegador: se veía lote por lote
+    // dentro del modal y no había forma de saber cuántos productos estaban así.
+    if ((res.n_cadenas_sobreproducen || 0) > 0) {
+      items.push(['🔵 Sobre-producen', res.n_cadenas_sobreproducen, '#0e7490',
+        'La cadena programada mete lotes cuando todavía sobra stock: se produce más seguido de '
+        + 'lo que dura un lote y queda plata parada en producto terminado. Espaciá la cadencia '
+        + 'o bajá los kg por lote.']);
+    }
+    if ((res.n_cadenas_tarde || 0) > 0) {
+      items.push(['⏰ Llegan tarde', res.n_cadenas_tarde, '#b91c1c',
+        'Tienen al menos un lote que entra a la góndola DESPUÉS de que se agote el stock: '
+        + 'eso es un quiebre. Abrí Programar y adelantalo.']);
+    }
+    var html = items.map(it =>
+      '<div title="' + (it[3] || '') + '" style="background:var(--cx-card,#fff);border:1px solid var(--cx-hairline,#ece9f5);border-top:3px solid '+it[2]+';border-radius:14px;padding:14px 18px;flex:1;min-width:120px;text-align:center;box-shadow:0 1px 3px rgba(16,15,45,.06),0 12px 26px -14px rgba(16,15,45,.14)">'
       + '<div style="font-size:11px;color:var(--cx-text-mute,#64748b);font-weight:700;letter-spacing:.02em">'+it[0]+'</div>'
       + '<div style="font-size:26px;font-weight:800;color:'+it[2]+';line-height:1.1;margin-top:3px">'+it[1]+'</div>'
       + '</div>'
     ).join('');
+    document.getElementById('nec-resumen').innerHTML = html;
+
+    // Debajo de las tarjetas, lo que el plan NO está viendo, en unidades. El conteo de SKU no
+    // dice cuánto duele; las unidades sí.
+    var av = document.getElementById('nec-avisos-ciegos');
+    if (av) {
+      var partes = [];
+      if ((res.uds_huerfanas_total_30d || 0) > 0) {
+        partes.push('<b>' + (res.uds_huerfanas_total_30d).toLocaleString('es-CO') + ' unidades</b> '
+          + 'se vendieron en 30 días bajo ' + (res.n_skus_huerfanos_vendiendo || 0)
+          + ' SKU que no están mapeados: esas ventas <b>no entran</b> a ninguna velocidad, '
+          + 'así que el plan produce de menos.');
+      }
+      if ((res.n_cadenas_sin_medir || 0) > 0) {
+        partes.push((res.n_cadenas_sin_medir) + ' cadena(s) no se pudieron medir (sin velocidad '
+          + 'de venta): no están sanas ni enfermas, están <b>sin diagnóstico</b>.');
+      }
+      if ((res.n_cadenas_sobreproducen_a_proposito || 0) > 0) {
+        partes.push((res.n_cadenas_sobreproducen_a_proposito) + ' sobre-producen '
+          + '<b>a propósito</b> (decisión guardada) y por eso no cuentan como alerta.');
+      }
+      av.innerHTML = partes.length
+        ? '<div style="background:var(--cx-warn-pale,#fef9c3);border-left:4px solid var(--cx-warn,#d97706);border-radius:10px;padding:10px 14px;margin-top:10px;font-size:12.5px;color:var(--cx-text-soft,#475569);line-height:1.55">'
+          + partes.map(function(t){ return '<div>· ' + t + '</div>'; }).join('') + '</div>'
+        : '';
+    }
   }
 
   // Cache global productos · key = índice numérico estable (codigo_pt
@@ -26642,6 +26692,18 @@ async function ckMarcar(itemId, estado){
   function _saludCadena(lotes, p){
     var out = {};
     if(!p) return out;
+    // La salud la calcula el BACKEND (plan.salud_cadena · M1: un solo cálculo, y así se puede
+    // contar, alertar y testear). Esto de abajo queda como respaldo para una respuesta vieja
+    // en caché que todavía no traiga el campo; el día que el backend siempre lo mande, sobra.
+    var _sv = p.salud_cadena;
+    if (_sv && _sv.medible && _sv.lotes) {
+      Object.keys(_sv.lotes).forEach(function(k){
+        var d = _sv.lotes[k] || {};
+        out[isNaN(+k) ? k : +k] = {colchon: d.colchon, diasLote: d.dias_lote, estado: d.estado,
+                                   fechaSugerida: d.fecha_sugerida || '', coverBefore: null};
+      });
+      return out;
+    }
     var vel = p.velocidad_uds_dia || 0;
     if(!(vel > 0.001)) return out;
     var ml = p.ml_unidad || 30;
@@ -26700,7 +26762,9 @@ async function ckMarcar(itemId, estado){
         else { _sc = '#0891b2'; _sl = '🔵 sobra-stock · ' + _cc + 'd'; _ti = 'Cuando este lote entra ya tenés ' + _cc + ' días de stock (más de lo que dura UN lote ≈' + _dl + 'd) → la cadena SOBRE-PRODUCE · espaciá la cadencia.'; }
         saludBadge = '<span title="' + _ti + '" style="background:' + _sc + '1a;color:' + _sc + ';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:800;border:1px solid ' + _sc + '40">' + _sl + '</span>';
         if (_cc < 20 && (lt.estado === 'pendiente' || lt.estado === 'programado')) {
-          const _fSug = _fechaAdelanto(_sd.coverBefore);
+          // La fecha la manda el backend (fecha_sugerida = cobertura − 20 buffer − 7 pipeline);
+          // el cálculo local sigue de respaldo. Sin una de las dos el botón queda vivo y mudo.
+          const _fSug = _sd.fechaSugerida || _fechaAdelanto(_sd.coverBefore);
           if (_fSug && _fSug < f) {
             adelantarBtn = '<button onclick="adelantarPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + _fSug + '&#39;)" title="Adelantar este lote a ' + _fSug + ' para recuperar el colchón de 20 días" style="background:var(--cx-danger);color:#fff;border:none;padding:0 10px;height:28px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">⏩ Adelantar</button>';
           }

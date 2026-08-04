@@ -40,6 +40,101 @@ log = logging.getLogger("plan")
 # Antes había 20 y 25 mezclados → fechas inconsistentes (auditoría motor 1-jul · M70).
 BUFFER_REORDEN_DIAS = 20
 
+# Días entre que un lote se produce y aparece disponible en la góndola de Shopify.
+PIPELINE_GONDOLA_DIAS = 7
+
+
+def salud_cadena(lotes, *, velocidad_uds_dia, ml_unidad, stock_uds, hoy,
+                 buffer_dias=BUFFER_REORDEN_DIAS, pipeline_dias=PIPELINE_GONDOLA_DIAS):
+    """¿La cadena programada de un producto llega a tiempo, o sobre-produce?
+
+    Sebastián 4-ago, mirando Necesidades: nueve de once cadenas decían "sobra-stock". Esta
+    cuenta EXISTÍA pero vivía sólo en el navegador, así que nada del servidor podía medirla,
+    alertarla ni testearla: se veía en pantalla y no se podía contar cuántas cadenas están
+    mal dimensionadas ni cuánta plata queda parada. Ahora la calcula el backend (una sola
+    versión · M1) y la pantalla pinta lo que el backend dice (M5).
+
+    El modelo, lote por lote y en orden de fecha:
+      · la cobertura de hoy se agota en `stock_uds / velocidad`;
+      · un lote producido el día F entra a la góndola el día F + pipeline;
+      · `colchon` = días entre que ese lote entra y la cobertura previa se agota;
+      · el lote extiende la cobertura desde el máximo entre lo que había y su llegada
+        (si llegó tarde, la cobertura arranca en su llegada, no antes).
+
+    Estados (mismo criterio que la pantalla usaba):
+      · `tarde`  · colchón < 0 · el lote llega DESPUÉS del quiebre;
+      · `justo`  · colchón < buffer (20d) · llega, pero sin margen;
+      · `sano`   · colchón entre el buffer y lo que dura UN lote;
+      · `sobra`  · colchón > lo que dura un lote · cuando entra ya tenés más stock del que
+        ese lote aporta, o sea la cadencia va a MÁS del doble de la velocidad real: plata
+        parada en producto terminado.
+
+    Sin velocidad no se puede opinar (dividir por cero) y se DECLARA: `medible: False`.
+    Un veredicto inventado sobre un producto sin ventas es peor que decir "no sé" (M100).
+    """
+    from datetime import date as _date, timedelta as _td
+    vacio = {'medible': False, 'motivo': '', 'lotes': {},
+             'n_tarde': 0, 'n_justo': 0, 'n_sano': 0, 'n_sobra': 0,
+             'colchon_max': None, 'sobreproduce': False, 'llega_tarde': False}
+    vel = float(velocidad_uds_dia or 0)
+    if vel <= 0.001:
+        vacio['motivo'] = 'sin velocidad de venta'
+        return vacio
+    ml = float(ml_unidad or 30) or 30.0
+
+    # Sólo lotes vivos y con fecha: un cancelado o completado no aporta cobertura futura.
+    vivos = []
+    for l in (lotes or []):
+        est = str(l.get('estado') or '').lower()
+        f = str(l.get('fecha') or '')[:10]
+        if est in ('cancelado', 'completado') or not f:
+            continue
+        try:
+            fd = _date.fromisoformat(f)
+        except Exception:
+            continue
+        vivos.append((fd, l))
+    vivos.sort(key=lambda x: x[0])
+
+    cobertura_hasta = hoy + _td(days=float(stock_uds or 0) / vel)
+    res = dict(vacio, medible=True)
+    for fd, l in vivos:
+        llegada = fd + _td(days=pipeline_dias)
+        cobertura_antes = cobertura_hasta
+        uds_lote = (float(l.get('kg') or 0) * 1000.0) / ml
+        dias_lote = int(round(uds_lote / vel))
+        # Sólo los lotes de hoy en adelante tienen salud PREDICTIVA: sobre uno del pasado
+        # el veredicto ya no es accionable (no se puede adelantar lo que ya pasó).
+        if (fd - hoy).days >= -1:
+            colchon = (cobertura_antes - llegada).days
+            if colchon < 0:
+                estado = 'tarde'
+            elif colchon < buffer_dias:
+                estado = 'justo'
+            elif colchon <= dias_lote:
+                estado = 'sano'
+            else:
+                estado = 'sobra'
+            res['lotes'][l.get('id')] = {
+                'colchon': colchon, 'dias_lote': dias_lote, 'estado': estado,
+                # La fecha en que se agotaría la cobertura ANTES de este lote: es la que usa
+                # el botón "adelantar" para proponer día (cobertura − buffer − pipeline). Sin
+                # ella el botón queda sin fecha, o sea vivo y mudo (M112).
+                'cobertura_antes': cobertura_antes.isoformat(),
+                'fecha_sugerida': (cobertura_antes
+                                   - _td(days=buffer_dias + pipeline_dias)).isoformat()}
+            res['n_' + estado] = res.get('n_' + estado, 0) + 1
+            if res['colchon_max'] is None or colchon > res['colchon_max']:
+                res['colchon_max'] = colchon
+        base = cobertura_antes if cobertura_antes > llegada else llegada
+        cobertura_hasta = base + _td(days=uds_lote / vel)
+
+    # 3 lotes es el mismo corte que ya usaba la pantalla: uno o dos holgados pueden ser un
+    # arranque de temporada; tres seguidos ya es la cadencia, no una excepción.
+    res['sobreproduce'] = res['n_sobra'] >= 3
+    res['llega_tarde'] = res['n_tarde'] > 0
+    return res
+
 
 def _require_admin_or_compras():
     user = session.get("compras_user", "")
@@ -3651,6 +3746,25 @@ def plan_necesidades():
         "skus_huerfanos_vendiendo": skus_huerfanos,  # solo top 50
         "skus_huerfanos_detalle": skus_huerfanos_detalle,  # [{sku, uds_30d}] top 50
         "uds_huerfanas_total_30d": uds_huerfanas_total,  # ⚠ ventas que NO entran al cálculo de velocidad
+        # Cadenas mal dimensionadas · se cuentan ACÁ para que la pantalla no tenga que
+        # recorrer producto por producto y para que se pueda alertar desde el servidor.
+        # La sobre-producción DELIBERADA (mig 378) no cuenta: es una decisión del dueño y
+        # una alerta sobre lo ya decidido se vuelve ruido y deja de mirarse (M98).
+        "n_cadenas_sobreproducen": sum(
+            1 for p in productos_animus
+            if (p.get("salud_cadena") or {}).get("sobreproduce")
+            and not p.get("sobreproduccion_deliberada")),
+        "n_cadenas_tarde": sum(
+            1 for p in productos_animus if (p.get("salud_cadena") or {}).get("llega_tarde")),
+        "n_cadenas_sobreproducen_a_proposito": sum(
+            1 for p in productos_animus
+            if (p.get("salud_cadena") or {}).get("sobreproduce")
+            and p.get("sobreproduccion_deliberada")),
+        # Lo que NO se pudo medir se dice: sin velocidad no hay veredicto posible, y una
+        # cuenta que calla sus huecos se lee como "todas sanas".
+        "n_cadenas_sin_medir": sum(
+            1 for p in productos_animus
+            if p.get("planificacion") and not (p.get("salud_cadena") or {}).get("medible")),
         "n_clientes_b2b": len(b2b_por_cliente),
         "n_pedidos_b2b_pendientes": sum(len(c["pedidos"]) for c in b2b_por_cliente.values()),
         "kg_total_b2b_pendientes": round(sum(c["kg_total"] for c in b2b_por_cliente.values()), 2),
@@ -5899,6 +6013,22 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         prod = p["producto_nombre"]
         agendados = plan_por_producto.get(prod, [])
         p["planificacion"] = agendados
+        # Salud de la cadena calculada ACÁ, no en el navegador: así se puede contar cuántas
+        # están mal dimensionadas, alertarlas y testearlas. La pantalla pinta esto (M1/M5).
+        try:
+            p["salud_cadena"] = salud_cadena(
+                agendados,
+                velocidad_uds_dia=p.get("velocidad_uds_dia"),
+                ml_unidad=p.get("ml_unidad"),
+                stock_uds=p.get("stock_uds_total"),
+                hoy=hoy)
+        except Exception as _esc:
+            # Si no se puede calcular se DECLARA, nunca se devuelve un veredicto sano falso:
+            # un "todo bien" inventado es peor que la ausencia del dato (M100/M124).
+            log.warning('no pude medir la salud de la cadena de %s: %s', prod, _esc)
+            p["salud_cadena"] = {'medible': False, 'motivo': 'error al calcular', 'lotes': {},
+                                 'n_tarde': 0, 'n_justo': 0, 'n_sano': 0, 'n_sobra': 0,
+                                 'colchon_max': None, 'sobreproduce': False, 'llega_tarde': False}
         proximo = next((a for a in agendados if a["estado"] != 'esperando_recurso'), None)
         # M14 · marcar si el "próximo lote" tiene fecha PASADA (programado y nunca
         # ejecutado) → es un lote ATRASADO, no una reposición que viene. La UI lo
