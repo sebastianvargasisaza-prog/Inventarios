@@ -35,7 +35,31 @@ chmod +x "$HOOKS_DIR/pre-commit"
 cat > "$HOOKS_DIR/pre-push" <<'EOF'
 #!/usr/bin/env bash
 # Auto-generated por scripts/install_hooks.sh
-bash "$(git rev-parse --show-toplevel)/scripts/guardian.sh" --quick
+#
+# Sebastian 3-ago: "quiero que resolvamos tantas demoras porque no avanzamos mucho".
+# El gate corria DOS veces por cada despliegue -- una a mano y otra aca -- sobre el MISMO
+# arbol, ~17 minutos duplicados que no agregaban ninguna seguridad. Ahora, si el guardian ya
+# aprobo EXACTAMENTE este arbol hace poco, no se repite.
+#
+# El hash del arbol (`git write-tree`) es exacto: si cambio un byte de un archivo, cambia el
+# hash y la suite corre completa. Y el sello CADUCA a la hora, para que un "ya paso" viejo
+# nunca autorice un push del dia siguiente.
+ROOT="$(git rev-parse --show-toplevel)"
+SELLO="$ROOT/.git/eos/gate-ok"
+TREE=$(git write-tree 2>/dev/null || echo "")
+
+if [ -n "$TREE" ] && [ -f "$SELLO" ]; then
+  read -r SELLO_TREE SELLO_TS < "$SELLO"
+  AHORA=$(date +%s)
+  EDAD=$(( AHORA - ${SELLO_TS:-0} ))
+  if [ "$SELLO_TREE" = "$TREE" ] && [ "$EDAD" -lt 3600 ]; then
+    echo "OK: el guardian ya aprobo este arbol hace ${EDAD}s, no se repite la suite."
+    echo "    Si cambia un solo archivo, el hash cambia y vuelve a correr completa."
+    exit 0
+  fi
+fi
+
+bash "$ROOT/scripts/guardian.sh" --quick
 EOF
 chmod +x "$HOOKS_DIR/pre-push"
 

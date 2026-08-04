@@ -530,6 +530,23 @@ if "$PYTHON_BIN" -m pytest "${TESTS[@]}" -q --tb=line 2>&1 | tail -10; then
   echo "✅ GUARDIAN APROBÓ · golden paths verdes en $((END - START))s"
   echo "    push permitido."
   echo ""
+  # Sello del ARBOL que aprobó (3-ago · el gate corría DOS veces por despliegue: una a mano y
+  # otra en el hook del push, sobre el mismo árbol y sin agregar nada · ~17 min duplicados).
+  # El hash del árbol es exacto: si cambia un byte de un archivo, cambia el hash, y el hook
+  # vuelve a correr la suite completa. No es un atajo: es no repetir la MISMA verificación.
+  # El hash va sobre los ARCHIVOS EN DISCO (indice temporal), que es lo que la suite acaba de
+  # probar. Con `git write-tree` a secas seria el del indice, y un cambio sin `git add` dejaria
+  # el sello valido para un codigo que nunca se testeo.
+  _TMPIDX="$(mktemp)"
+  GIT_INDEX_FILE="$_TMPIDX" git read-tree HEAD 2>/dev/null
+  GIT_INDEX_FILE="$_TMPIDX" git add -A 2>/dev/null
+  _TREE=$(GIT_INDEX_FILE="$_TMPIDX" git write-tree 2>/dev/null || echo "")
+  rm -f "$_TMPIDX"
+  if [ -n "$_TREE" ]; then
+    mkdir -p "$REPO_ROOT/.git/eos"
+    printf '%s %s
+' "$_TREE" "$(date +%s)" > "$REPO_ROOT/.git/eos/gate-ok"
+  fi
   exit 0
 else
   END=$(date +%s)
