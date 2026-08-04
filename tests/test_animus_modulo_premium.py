@@ -157,10 +157,18 @@ def test_ningun_color_a_mano_salvo_el_texto_del_boton_verde():
     tema (M104); en cualquier otro lugar es un valor que ignora el tema."""
     src = io.open(TPL, encoding="utf-8").read()
     sueltos = re.findall(r"(?:background|color|border[a-z-]*)\s*:\s*#[0-9a-fA-F]{3,8}", src)
-    # el unico admitido es el del boton primario (blanco sobre gradiente verde)
-    assert len(sueltos) <= 1, "colores a mano que ignoran el tema: %s" % sueltos
-    if sueltos:
-        assert ".btn-primary{background:linear-gradient(135deg,#10b981,#059669);color:#fff;}" in src
+    # Los admitidos se ENUMERAN, no se cuentan con holgura: un techo con margen se afloja solo
+    # y deja de apretar (M104). Los dos son el mismo caso -- texto blanco sobre un relleno de
+    # color, que no depende del tema:
+    #   1. el boton primario (blanco sobre el gradiente verde)
+    #   2. la tarjeta del SALDO de caja (blanco sobre el gradiente violeta) · 4-ago
+    ADMITIDOS = [
+        ".btn-primary{background:linear-gradient(135deg,#10b981,#059669);color:#fff;}",
+        "border-radius:16px;padding:22px 24px;color:#fff;",   # .caja-saldo
+    ]
+    assert len(sueltos) <= len(ADMITIDOS), "colores a mano que ignoran el tema: %s" % sueltos
+    for esperado in ADMITIDOS[:len(sueltos)]:
+        assert esperado in src, "el color a mano admitido cambio de lugar: %s" % esperado
 
 
 # ------------------------------------------------- anti doble-click (dinero)

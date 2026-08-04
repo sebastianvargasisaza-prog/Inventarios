@@ -1,4 +1,15 @@
-"""Inventario fusionado: Shopify contra EOS, y causa raíz ante cualquier diferencia (3-ago).
+"""Inventario de ÁNIMUS: la API y los guards de estructura del módulo.
+
+⚠ 4-ago: Sebastián retiró la PESTAÑA de Inventario de /animus ("la veo innecesaria, eso de
+inventario está en Shopify"). Se podó la interfaz, NO los datos: los endpoints y las tablas
+siguen intactos, así que estos tests siguen valiendo y volver a mostrarla no exige reconstruir
+nada (regla 0.7). Lo que se apagó además es el cron diario, que si no seguiría asignando conteos
+y avisándole a Daniela sobre una pantalla que ya no existe.
+
+Los guards de ESTRUCTURA se quedan y aplican a todo el módulo: son los que faltaban cuando una
+pestaña quedó anidada dentro de otra y cuando llamé a una función que no existía.
+
+Contexto original (3-ago): fusión de Inventario Físico y Conteo Cíclico.
 
 Sebastián: *"inventario físico y conteo cíclico me parece que debemos fusionarlos. Cómo debería
 ser: que aparezcan todos los SKU de Shopify, aparezcan allí con la cantidad que dice Shopify que
@@ -292,27 +303,6 @@ def test_asignar_dos_veces_el_mismo_dia_no_duplica(app, db_clean):
 
 # ── LA PANTALLA ──────────────────────────────────────────────────────────────
 
-def test_las_dos_pestanas_quedaron_fusionadas_en_una():
-    html = _html_animus()
-    assert 'id="tab-inventario"' not in html, 'quedó la pestaña vieja de Conteo Cíclico'
-    assert "switchTab('inventario')" not in html, 'quedó un botón apuntando a una pestaña que ya no existe'
-    assert 'id="tab-invfis"' in html
-    # y las dos mitades viven adentro, con conmutador propio
-    assert 'id="inv-exist"' in html and 'id="inv-conteo"' in html
-    assert 'function invTab(' in html
-    assert 'id="exi-body"' in html and 'id="modal-causa"' in html
-
-
-# ── QUE NINGUNA PESTAÑA QUEDE DENTRO DE OTRA ─────────────────────────────────
-# El 4-ago la fusión dejó `tab-invfis` ANIDADO dentro de `tab-caja`: con Caja abierta el
-# inventario aparecía pegado al final, y al abrir Inventario la pantalla salía EN BLANCO (un
-# padre oculto oculta al hijo, pase lo que pase con su clase `active`).
-#
-# La causa venía de ANTES: a `tab-caja` le faltaba un `</div>` y `tab-inventario` estaba
-# anidado adentro haciendo de tapón. Al sacar esa pestaña, el hueco quedó a la vista.
-#
-# El balance global de divs daba CERO y el node-check pasaba: ninguno de los dos ve un panel
-# metido dentro de otro. Lo único que lo detecta es medir el ANIDAMIENTO.
 
 def _paneles(html):
     import re
@@ -331,7 +321,8 @@ def _paneles(html):
 def test_ninguna_pestana_queda_dentro_de_otra():
     html = _html_animus()
     p = _paneles(html)
-    assert len(p) >= 5, 'faltan paneles: %s' % sorted(p)
+    # 4 desde el 4-ago: se retiro la pestana Inventario
+    assert len(p) >= 4, 'faltan paneles: %s' % sorted(p)
     for a, (ia, fa) in p.items():
         assert fa, 'el panel %s nunca cierra' % a
         for b, (ib, _) in p.items():
@@ -348,20 +339,17 @@ def test_cada_boton_de_pestana_tiene_su_panel():
         assert '<div id="tab-%s"' % t in html, 'switchTab(%r) no tiene panel' % t
 
 
-def test_los_bloques_del_conteo_viven_en_su_sub_pestana():
-    """Sueltos en la pestaña se veían en las DOS sub-pestañas, que es justo lo que la
-    sub-pestaña viene a evitar."""
-    import re
-    html = _html_animus()
-    def cierre(ini):
-        d = 0
-        for m in re.finditer(r'<div\b|</div>', html[ini:]):
-            d += 1 if m.group(0).startswith('<div') else -1
-            if d == 0:
-                return ini + m.end()
-    ic = html.index('<div id="inv-conteo"'); fc = cierre(ic)
-    ie = html.index('<div id="inv-exist"'); fe = cierre(ie)
-    for blq in ('Conteos pendientes hoy', 'Inventario esperado por SKU', 'Movimientos recientes'):
-        i = html.index(blq)
-        assert ic < i < fc, '%r quedó fuera de la sub-pestaña Conteo del día' % blq
-    assert ie < html.index('id="exi-body"') < fe
+
+def test_toda_funcion_llamada_esta_definida():
+    """El 4-ago llamé a `hoyCol()` en dos modales y esa función nunca existió: los botones de
+    Novedades y de Registrar pago no hacían NADA.
+
+    Lo verifiqué buscando el nombre en la página — y encontré mi propia LLAMADA, no la
+    definición. El `node --check` pasa (la sintaxis es válida) y el balance de divs da cero:
+    ninguno de los dos ve una función que no existe."""
+    import sys, os
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.join(raiz, 'scripts'))
+    from check_js_animus import funciones_sin_definir
+    faltan = funciones_sin_definir()
+    assert not faltan, 'se llaman y no existen: %s' % ', '.join(faltan)

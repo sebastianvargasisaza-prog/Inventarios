@@ -525,20 +525,26 @@ def test_diagnostico_endpoint(app, db_clean):
         assert k in d
 
 
-def test_pagina_animus_tiene_tab_inv_fisico(app, db_clean):
-    """La UI debe exponer el tab nuevo + modales."""
+def test_la_pestana_de_inventario_YA_NO_esta_en_animus(app, db_clean):
+    """REESCRITO 4-ago · Sebastián retiró la pestaña: *"la veo innecesaria la verdad, eso de
+    inventario está en Shopify"*.
+
+    Se podó la INTERFAZ, no los datos: los endpoints y las tablas siguen intactos (regla 0.7),
+    así que el resto de este archivo -- que prueba la API -- sigue valiendo tal cual.
+
+    Lo que este test fija ahora es que la poda fue COMPLETA: al retirar una pantalla es fácil
+    dejar un botón vivo apuntando a un modal borrado, y eso no da error, simplemente no hace
+    nada (M112). El guard general vive en `test_animus_inventario_fusion.py`.
+    """
     cs = _login(app, "sebastian")
-    r = cs.get("/animus")
-    body = r.get_data(as_text=True)
-    assert 'data-tab="invfis"' in body
-    assert 'id="tab-invfis"' in body
-    assert 'id="modal-baseline"' in body
-    assert 'id="modal-entrada"' in body
-    assert 'id="modal-salida"' in body
-    assert 'cargarInvFisico' in body
-    assert 'guardarBaseline' in body
-    assert 'guardarEntrada' in body
-    assert 'guardarSalida' in body
+    body = cs.get("/animus").get_data(as_text=True)
+    assert 'data-tab="invfis"' not in body, 'quedó el botón de una pestaña que ya no existe'
+    assert 'id="tab-invfis"' not in body
+    for muerto in ('modal-baseline', 'modal-entrada', 'modal-salida', 'modal-conteo-fisico'):
+        assert 'id="%s"' % muerto not in body, 'quedó el modal %s sin pantalla' % muerto
+    # y las 4 que sí quedan siguen ahí
+    for viva in ('tab-caja', 'tab-solic', 'tab-novedades', 'tab-pqr'):
+        assert 'id="%s"' % viva in body, 'se llevó por delante %s' % viva
 
 
 def test_entrada_audita(app, db_clean):

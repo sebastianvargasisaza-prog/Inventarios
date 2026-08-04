@@ -86,6 +86,32 @@ table thead th{text-align:left;padding:8px 10px;color:var(--cx-text-mute);font-s
 table tbody td{padding:8px 10px;color:var(--cx-text);border-bottom:1px solid var(--cx-hairline);}
 table tbody tr:hover{background:var(--cx-bg-alt);}
 
+
+/* ── Caja Menor premium (4-ago) ──────────────────────────────────────────────
+   El saldo es EL numero de una caja: va grande y solo. Los otros tres lo
+   acompanan en una fila secundaria. Cuatro tarjetas iguales obligaban a leer
+   las cuatro para encontrar la que importa. */
+.caja-hero{display:grid;grid-template-columns:minmax(280px,1.15fr) 2fr;gap:16px;align-items:stretch;margin-bottom:18px;}
+@media (max-width:900px){.caja-hero{grid-template-columns:1fr;}}
+.caja-saldo{position:relative;overflow:hidden;background:var(--cx-primary-grad,linear-gradient(135deg,var(--cx-primary),var(--cx-primary-dark,var(--cx-primary))));border-radius:16px;padding:22px 24px;color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.16);}
+.caja-saldo::after{content:'';position:absolute;right:-40px;top:-40px;width:170px;height:170px;border-radius:50%;background:rgba(255,255,255,.10);}
+.caja-saldo .rot{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;opacity:.85;}
+.caja-saldo .cifra{font-size:2.6em;font-weight:800;line-height:1.05;margin:6px 0 2px;font-variant-numeric:tabular-nums;letter-spacing:-.02em;}
+.caja-saldo .pie{font-size:12px;opacity:.85;}
+.caja-mini{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+@media (max-width:640px){.caja-mini{grid-template-columns:1fr;}}
+.caja-mini .m{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;justify-content:center;}
+.caja-mini .rot{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--cx-text-mute);}
+.caja-mini .cifra{font-size:1.55em;font-weight:800;line-height:1.15;margin-top:4px;font-variant-numeric:tabular-nums;}
+.caja-mini .pie{font-size:11.5px;color:var(--cx-text-mute);margin-top:2px;}
+/* Los montos de una tabla se comparan de arriba abajo: sin ancho fijo de cifra
+   las columnas bailan renglon a renglon y hay que leer numero por numero. */
+table td.monto,table th.monto{text-align:right;font-variant-numeric:tabular-nums;}
+
+/* ── formularios con jerarquia ─────────────────────────────────────────────── */
+.fm-seccion{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--cx-text-mute);margin:16px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--cx-border);}
+.fm-seccion:first-child{margin-top:0;}
+.fm-destacado input,.fm-destacado select{font-size:1.05em;font-weight:600;}
 .inv-btn{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;font-size:13px;font-weight:600;color:var(--cx-text-mute);cursor:pointer;}
 .inv-btn:hover{color:var(--cx-text);}
 .inv-btn.active{color:var(--cx-primary-text);border-bottom-color:var(--cx-primary);}
@@ -181,7 +207,6 @@ window.addEventListener('error', function(ev){
 
 <div class="tabs-bar">
   <button class="tab-btn active" data-tab="caja" onclick="switchTab('caja')">&#128176; Caja Menor</button>
-  <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario</button>
   <button class="tab-btn" data-tab="solic" onclick="switchTab('solic')">&#128203; Solicitudes</button>
   <button class="tab-btn" data-tab="novedades" onclick="switchTab('novedades')">&#128100; Novedades</button>
   <button class="tab-btn" data-tab="pqr" onclick="switchTab('pqr')">&#128233; PQR Clientes</button>
@@ -350,287 +375,19 @@ window.addEventListener('error', function(ev){
 
 </div>   <!-- cierra tab-caja · faltaba desde antes de la fusion -->
 
-<div id="tab-invfis" class="tab-panel">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
-    <div>
-      <div class="page-title">&#128202; Inventario</div>
-      <div class="page-sub">Esperado = baseline + entradas - ventas Shopify - salidas. Si no cuadra, se ve el desglose y donde esta el error.</div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-success" onclick="sembrarShopify()" title="Crea baseline=0 para todos los SKUs vendidos en Shopify · solo editas cantidad despues" style="background:var(--cx-success-pale);color:var(--cx-text);">&#127793; Sembrar SKUs Shopify</button>
-      <button class="btn btn-outline" onclick="abrirBaseline()">+ Baseline manual</button>
-      <button class="btn btn-primary" onclick="abrirEntrada()">+ Entrada</button>
-      <button class="btn btn-outline" onclick="abrirSalida()">+ Salida</button>
-      <button class="btn btn-outline" onclick="syncShopifyInv()" title="Refleja ventas Shopify ya descargadas en inv fisico">&#128260; Sync Shopify</button>
-      <button class="btn btn-outline" onclick="asignarConteoHoy()" title="Asigna SKUs al azar a contar hoy">&#128202; Asignar conteo hoy</button>
-    </div>
-  </div>
 
-  <div id="invfis-resumen" class="kpi-grid"></div>
-
-  <!-- SUB-PESTANAS (3-ago · Sebastian: "inventario fisico y conteo ciclico debemos fusionarlos")
-       Existencias contesta "cuanto hay y cuanto deberia haber"; el conteo del dia es el trabajo
-       concreto. Separadas en dos pestanas obligaban a ir y volver para lo mismo. -->
-  <div style="display:flex;gap:4px;border-bottom:1px solid var(--cx-border);margin:18px 0;">
-    <button class="inv-btn active" data-inv="exist" onclick="invTab('exist')">&#128202; Existencias</button>
-    <button class="inv-btn" data-inv="conteo" onclick="invTab('conteo')">&#128230; Conteo del día</button>
-  </div>
-
-  <div id="inv-exist" class="inv-panel">
-    <div class="kpi-grid" id="exi-kpis" style="margin-bottom:14px;"></div>
-    <div id="exi-aviso"></div>
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-        <div style="font-weight:700;color:var(--cx-text);">Todos los SKU de Shopify</div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <label style="font-size:12px;color:var(--cx-text-mute);display:flex;align-items:center;gap:5px;">
-            <input type="checkbox" id="exi-solo-dif" onchange="renderExistencias()"> Solo los que no cuadran
-          </label>
-          <button class="btn btn-outline btn-sm" onclick="cargarExistencias()">&#8635; Refrescar</button>
-        </div>
-      </div>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead><tr>
-            <th>SKU</th><th>Producto</th>
-            <th style="text-align:right;">Dice Shopify</th>
-            <th style="text-align:right;">Espera EOS</th>
-            <th style="text-align:right;">Diferencia</th>
-            <th>Último conteo</th><th>Causa raíz</th>
-          </tr></thead>
-          <tbody id="exi-body"><tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <div id="inv-conteo" class="inv-panel" style="display:none;">
-
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
-    <div>
-      <div class="page-title">&#128230; Inventario Cíclico</div>
-      <div class="page-sub">Conta fisicamente cada producto y compara con lo vendido en Shopify. Si hay diferencia, explicala (rotura, devolucion, etc.).</div>
-    </div>
-    <button class="btn btn-primary" onclick="abrirConteo()">+ Nuevo conteo</button>
-  </div>
-
-  <div class="kpi-grid" id="inv-kpis"></div>
-
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">SKUs vendidos en Shopify (para contar)</span></div>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead><tr>
-          <th>SKU</th>
-          <th style="text-align:right;">Pedidos</th>
-          <th style="text-align:right;">Vendidas (acumulado)</th>
-          <th>Ultima venta</th>
-          <th>Ultimo conteo</th>
-          <th></th>
-        </tr></thead>
-        <tbody id="inv-skus-body"><tr><td colspan="6" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Historial de conteos</span></div>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead><tr>
-          <th>Fecha</th>
-          <th>SKU</th>
-          <th>Producto</th>
-          <th style="text-align:right;">Shopify</th>
-          <th style="text-align:right;">Físico</th>
-          <th style="text-align:right;">Diferencia</th>
-          <th>Explicacion</th>
-          <th>Por</th>
-        </tr></thead>
-        <tbody id="inv-conteos-body"><tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-
-
-  <!-- DIAGNOSTICO -->
-  <div class="card" id="invfis-diag-card" style="display:none;">
-    <div class="card-hdr">
-      <span class="card-title">&#127919; Diagnostico de discrepancias (90d)</span>
-      <button class="btn btn-outline btn-sm" onclick="cargarDiagnostico()">Refrescar</button>
-    </div>
-    <div id="invfis-diag-content" style="padding:8px 0;"></div>
-  </div>
-
-  <!-- CONTEOS PENDIENTES -->
-  <div class="card" id="invfis-conteos-card" style="border-left:4px solid #6366f1;">
-    <div class="card-hdr">
-      <span class="card-title">&#9888; Conteos pendientes hoy</span>
-      <span id="invfis-conteos-count" style="font-size:11px;color:var(--cx-text-mute);"></span>
-    </div>
-    <div id="invfis-pendientes" style="padding:8px 0;">
-      <div style="color:var(--cx-text-mute);text-align:center;padding:14px;font-size:13px;">Sin conteos pendientes</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-hdr">
-      <span class="card-title">Inventario esperado por SKU</span>
-      <input id="invfis-q" class="input" style="max-width:220px" placeholder="Buscar SKU..." oninput="renderInvFis()">
-    </div>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead><tr>
-          <th>SKU</th>
-          <th>Baseline</th>
-          <th>Fecha</th>
-          <th style="text-align:right;">Entradas</th>
-          <th style="text-align:right;">Shopify</th>
-          <th style="text-align:right;">Salidas</th>
-          <th style="text-align:right;">Ajustes</th>
-          <th style="text-align:right;">Esperado</th>
-          <th></th>
-        </tr></thead>
-        <tbody id="invfis-tbody"><tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
-      </table>
-    </div>
-    <div id="pg-invfis"></div>
-  </div>
-
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Movimientos recientes</span></div>
-    <div style="overflow-x:auto;">
-      <table>
-        <thead><tr>
-          <th>Fecha</th>
-          <th>SKU</th>
-          <th>Tipo</th>
-          <th style="text-align:right;">Cantidad</th>
-          <th>Origen</th>
-          <th>Motivo</th>
-          <th>Por</th>
-        </tr></thead>
-        <tbody id="invfis-mov-body"><tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-</div>   <!-- fin del sub-panel Conteo del dia -->
-</div>
 
 <!-- MODAL: Baseline -->
-<div id="modal-baseline" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:var(--cx-text);">&#128202; Registrar baseline</h3>
-      <button onclick="cerrarModal('modal-baseline')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div style="background:var(--cx-bg-alt);border-left:3px solid #6366f1;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--cx-text-soft);">
-      El baseline es la cantidad fisica que tienes HOY de un SKU. A partir de aqui el sistema rastrea entradas y salidas. Si ya hay baseline para este SKU, se actualiza.
-    </div>
-    <div class="form-row">
-      <div><div class="label">SKU *</div><input id="bl-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase"></div>
-      <div><div class="label">Fecha</div><input id="bl-fecha" type="date" class="input"></div>
-    </div>
-    <div class="form-row full"><div><div class="label">Descripción (opcional)</div><input id="bl-desc" class="input" placeholder="Hydra Balance 30ml"></div></div>
-    <div class="form-row full"><div><div class="label">Unidades fisicas que TIENES HOY *</div><input id="bl-unidades" type="number" min="0" class="input" placeholder="0"></div></div>
-    <div class="form-row full"><div><div class="label">Observaciones</div><textarea id="bl-obs" class="textarea" placeholder="Como se conto, donde estaban, etc."></textarea></div></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
-      <button class="btn btn-outline" onclick="cerrarModal('modal-baseline')">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarBaseline()">Guardar baseline</button>
-    </div>
-  </div>
-</div>
+
 
 <!-- MODAL: Entrada -->
-<div id="modal-entrada" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:var(--cx-text);">+ Entrada de inventario</h3>
-      <button onclick="cerrarModal('modal-entrada')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div class="form-row">
-      <div><div class="label">SKU *</div><input id="en-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase"></div>
-      <div><div class="label">Fecha</div><input id="en-fecha" type="date" class="input"></div>
-    </div>
-    <div class="form-row">
-      <div><div class="label">Cantidad *</div><input id="en-cantidad" type="number" min="1" class="input" placeholder="0"></div>
-      <div><div class="label">Origen *</div>
-        <select id="en-origen" class="select">
-          <option value="produccion">Produccion (lote nuevo)</option>
-          <option value="devolucion">Devolucion cliente</option>
-          <option value="ajuste">Ajuste positivo</option>
-          <option value="otro">Otro</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-row full"><div><div class="label">Referencia (lote, factura)</div><input id="en-ref" class="input" placeholder="LOTE-001 / FAC-XX"></div></div>
-    <div class="form-row full"><div><div class="label">Motivo / Notas</div><textarea id="en-motivo" class="textarea" placeholder="Detalles..."></textarea></div></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
-      <button class="btn btn-outline" onclick="cerrarModal('modal-entrada')">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarEntrada()">Guardar entrada</button>
-    </div>
-  </div>
-</div>
+
 
 <!-- MODAL: Salida -->
-<div id="modal-salida" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:480px;max-width:92vw;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:var(--cx-text);">- Salida de inventario (NO Shopify)</h3>
-      <button onclick="cerrarModal('modal-salida')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div style="background:var(--cx-bg-alt);border-left:3px solid var(--cx-warn);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--cx-text-soft);">
-      Las ventas de Shopify se descuentan automaticamente. Esto es para SALIDAS QUE NO SON SHOPIFY: regalos, daños, vencidos, ventas presenciales, devoluciones a planta.
-    </div>
-    <div class="form-row">
-      <div><div class="label">SKU *</div><input id="sa-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase"></div>
-      <div><div class="label">Fecha</div><input id="sa-fecha" type="date" class="input"></div>
-    </div>
-    <div class="form-row">
-      <div><div class="label">Cantidad *</div><input id="sa-cantidad" type="number" min="1" class="input" placeholder="0"></div>
-      <div><div class="label">Origen *</div>
-        <select id="sa-origen" class="select">
-          <option value="presencial">Venta presencial</option>
-          <option value="regalo">Regalo / muestra</option>
-          <option value="dano">Daño / rotura</option>
-          <option value="vencido">Vencido</option>
-          <option value="devolucion_planta">Devolucion a planta</option>
-          <option value="otro">Otro</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-row full"><div><div class="label">Referencia</div><input id="sa-ref" class="input" placeholder="Pedido, persona, etc."></div></div>
-    <div class="form-row full"><div><div class="label">Motivo / Notas</div><textarea id="sa-motivo" class="textarea" placeholder="Detalles..."></textarea></div></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
-      <button class="btn btn-outline" onclick="cerrarModal('modal-salida')">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarSalida()">Guardar salida</button>
-    </div>
-  </div>
-</div>
+
 
 <!-- MODAL: Registrar conteo de SKU asignado -->
-<div id="modal-conteo-fisico" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:560px;max-width:92vw;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:var(--cx-text);">&#128202; Registrar conteo físico</h3>
-      <button onclick="cerrarModal('modal-conteo-fisico')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <input type="hidden" id="cf-asig-id">
-    <div id="cf-sku-info" style="background:var(--cx-bg-alt);border-left:3px solid var(--cx-info);padding:14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:var(--cx-text-soft);">
-      <div id="cf-sku-titulo" style="font-size:16px;font-weight:700;color:var(--cx-text);margin-bottom:8px;">SKU</div>
-      <div id="cf-desglose"></div>
-    </div>
-    <div class="form-row full"><div><div class="label">Cantidad fisica contada *</div><input id="cf-cantidad" type="number" min="0" class="input" placeholder="0"></div></div>
-    <div id="cf-diff-preview" style="display:none;padding:14px;border-radius:8px;font-size:14px;font-weight:700;margin-bottom:14px;text-align:center;"></div>
-    <div class="form-row full" id="cf-motivo-row" style="display:none;"><div><div class="label">Motivo de la diferencia *</div><textarea id="cf-motivo" class="textarea" placeholder="Robo, daño, devolucion no registrada, regalo no anotado, error mapeo Shopify..."></textarea></div></div>
-    <div class="form-row full"><label style="display:flex;align-items:center;gap:8px;color:var(--cx-text-soft);font-size:13px;"><input type="checkbox" id="cf-aplicar"> Aplicar ajuste para que el sistema cuadre con tu conteo</label></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
-      <button class="btn btn-outline" onclick="cerrarModal('modal-conteo-fisico')">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarConteoFisico()">Guardar conteo</button>
-    </div>
-  </div>
-</div>
+
 
 <!-- MODAL: Registro caja menor -->
 <!-- MARCA DE CONTRAENTREGA (3-ago)
@@ -869,27 +626,7 @@ window.addEventListener('error', function(ev){
   </div>
 </div>
 
-<div id="modal-causa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:560px;max-width:94vw;box-shadow:0 20px 60px rgba(0,0,0,.35);">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
-      <h3 id="cr-titulo" style="font-size:17px;font-weight:800;color:var(--cx-text);margin:0;"></h3>
-      <button onclick="cerrarModal('modal-causa')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div id="cr-sub" style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;"></div>
-    <div class="form-row full">
-      <div><label class="label">¿Por qué pasó?</label>
-        <textarea id="cr-causa" class="textarea" placeholder="Un despacho que no se registró, una devolución, producto dañado, error al contar..."></textarea></div>
-    </div>
-    <div class="form-row full">
-      <div><label class="label">¿Qué se hizo para que no vuelva a pasar?</label>
-        <textarea id="cr-accion" class="textarea" placeholder="Opcional, pero es lo que hace que el conteo sirva de algo"></textarea></div>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="btn btn-outline" onclick="cerrarModal('modal-causa')">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarCausaRaiz()">Cerrar la investigación</button>
-    </div>
-  </div>
-</div>
+
 
 <div id="modal-solic" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1150;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:16px;padding:24px;width:640px;max-width:94vw;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);">
@@ -901,7 +638,8 @@ window.addEventListener('error', function(ev){
       Va a la bandeja de Compras. Vas a ver acá mismo cuándo se autoriza, cuándo se paga y
       cuándo va en camino, y marcás vos misma que llegó.
     </div>
-    <div class="form-row">
+    <div class="fm-seccion">Qué se necesita</div>
+    <div class="form-row fm-destacado">
       <div><label class="label">Qué se necesita</label>
         <input id="so-nombre" class="input" placeholder="Papel burbuja, cinta, resma de papel..."></div>
       <div><label class="label">Categoría</label>
@@ -927,6 +665,7 @@ window.addEventListener('error', function(ev){
           <option value="g">Gramos</option>
         </select></div>
     </div>
+    <div class="fm-seccion">Para cuándo y para qué</div>
     <div class="form-row">
       <div><label class="label">Urgencia</label>
         <select id="so-urg" class="select">
@@ -1120,29 +859,7 @@ window.addEventListener('error', function(ev){
 </div>
 
 <!-- MODAL: Conteo ciclico -->
-<div id="modal-conteo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:14px;padding:22px;width:520px;max-width:92vw;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:var(--cx-text);">&#128230; Nuevo conteo cíclico</h3>
-      <button onclick="cerrarModal('modal-conteo')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div class="form-row">
-      <div><div class="label">SKU *</div><input id="conteo-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase;"></div>
-      <div><div class="label">Fecha</div><input id="conteo-fecha" type="date" class="input"></div>
-    </div>
-    <div class="form-row full"><div><div class="label">Nombre del producto (opcional)</div><input id="conteo-nombre" class="input" placeholder="Ej: Limpiador hidratante 30 g"></div></div>
-    <div class="form-row">
-      <div><div class="label">Cantidad segun Shopify *</div><input id="conteo-shopify" type="number" min="0" class="input" placeholder="0"></div>
-      <div><div class="label">Cantidad fisica (contada) *</div><input id="conteo-fisica" type="number" min="0" class="input" placeholder="0"></div>
-    </div>
-    <div id="conteo-diff-preview" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:10px;"></div>
-    <div class="form-row full"><div><div class="label">Explicacion de la diferencia (si aplica)</div><textarea id="conteo-explicacion" class="textarea" placeholder="Rotura, devolucion no registrada, regalo, robo, error de carga..."></textarea></div></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
-      <button class="btn btn-outline" onclick="cerrarModal('modal-conteo')">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarConteo()">Guardar conteo</button>
-    </div>
-  </div>
-</div>
+
 
 <!-- TAB: PQR CLIENTES (comercial · llega del triaje de Aseguramiento o manual) -->
 <!-- TAB: SOLICITUDES · pedir, seguir el estado, y recibir en el mismo lugar
@@ -1303,13 +1020,6 @@ function loadTab(name){
     loadCaja(); loadCod(); loadPagosCaja(); cargarAvisoArqueo();
     try { var _sb = localStorage.getItem('caja-sub'); if (_sb) subTab(_sb); } catch(e){}
   }
-  else if (name === 'invfis') {
-    // La pestana fusionada trae las dos mitades: que dice cada sistema (existencias) y el
-    // trabajo del dia (conteo). Separadas obligaban a ir y volver para lo mismo.
-    cargarInvFisico(); cargarMovimientosInvFis(); loadInvSkus(); loadInvConteos();
-    cargarExistencias();
-    try { var _iv = localStorage.getItem('inv-sub'); if (_iv) invTab(_iv); } catch(e){}
-  }
   else if (name === 'solic') loadSolicitudes();
   else if (name === 'novedades') loadNovedades();
   else if (name === 'pqr') { loadAnimusPqr(); cargarPqrIndicador(); }
@@ -1348,6 +1058,15 @@ function _badge(txt, tono){
   var cl = {success:'badge-green', danger:'badge-red', info:'badge-blue',
             warn:'badge-yellow', primary:'badge-blue'}[tono] || 'badge-gray';
   return '<span class="badge ' + cl + '">' + esc(txt || '') + '</span>';
+}
+
+// "Hoy" en Colombia, para pre-llenar fechas.
+// NO se usa `new Date().toISOString()`: eso da la fecha UTC, y despues de las 19:00 en Colombia
+// ya rodo al dia siguiente -- el modal de caja llego a pre-llenar el dia de MANANA (M106/M24).
+// Se corre el reloj -5h y recien ahi se toma la fecha.
+function hoyCol(){
+  var d = new Date(Date.now() - 5 * 3600 * 1000);
+  return d.toISOString().slice(0, 10);
 }
 
 // ═══ PQR · indicador, pedido del cliente y gestionar ════════════════════════
@@ -1484,16 +1203,7 @@ async function guardarPqrGestion(){
 
 // ═══ INVENTARIO · sub-pestanas ══════════════════════════════════════════════
 // Conmutador PROPIO: `switchTab` apaga TODOS los .tab-panel y dejaria la pantalla en blanco.
-function invTab(name){
-  document.querySelectorAll('.inv-btn').forEach(function(b){
-    b.classList.toggle('active', b.dataset.inv === name);
-  });
-  document.querySelectorAll('.inv-panel').forEach(function(pn){ pn.style.display = 'none'; });
-  var el = document.getElementById('inv-' + name);
-  if (el) el.style.display = '';
-  try { localStorage.setItem('inv-sub', name); } catch(e){}
-  if (name === 'exist' && !window._EXI_CARGADO) cargarExistencias();
-}
+
 
 // ═══ EXISTENCIAS · lo que dice Shopify contra lo que espera EOS ══════════════
 // Sebastian: "que aparezcan todos los SKU de Shopify con la cantidad que dice Shopify que hay".
@@ -1501,107 +1211,16 @@ function invTab(name){
 // mal en Shopify -- que es el numero con el que se VENDE -- y nadie lo veia.
 var _EXI = [];
 
-async function cargarExistencias(){
-  var tb = document.getElementById('exi-body');
-  try {
-    var r = await fetch('/api/animus/inv-fisico/existencias', {credentials:'same-origin'});
-    var d = await r.json();
-    if (!d.ok) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">' + esc(d.error||'No pude cargar') + '</td></tr>'; return; }
-    _EXI = d.filas || [];
-    window._EXI_CARGADO = true;
-    var k = d.kpis || {};
-    document.getElementById('exi-kpis').innerHTML = _kpiHtml([
-      {label:'SKU en Shopify', val:k.skus||0, sub:'catálogo completo'},
-      {label:'No cuadran', val:k.con_diferencia||0, sub:'Shopify contra EOS',
-       tono:(k.con_diferencia?'danger':'success')},
-      {label:'Causas sin resolver', val:k.investigaciones_abiertas||0,
-       sub:'diferencias sin explicar', tono:(k.investigaciones_abiertas?'warn':'success')},
-      {label:'Nunca contados', val:k.nunca_contados||0, sub:'sin un conteo físico todavía',
-       tono:(k.nunca_contados?'warn':'')}
-    ]);
-    // Un chequeo que no pudo correr se DECLARA: si no, su columna vacia se lee como "cuadra".
-    document.getElementById('exi-aviso').innerHTML = d.aviso
-      ? '<div style="padding:10px 14px;background:var(--cx-warn-pale);border-left:3px solid var(--cx-warn);border-radius:8px;font-size:12.5px;color:var(--cx-warn-text);margin-bottom:12px;">' + esc(d.aviso) + '</div>'
-      : '';
-    renderExistencias();
-  } catch(e) {
-    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">No pude cargar: ' + esc(e.message) + '</td></tr>';
-  }
-}
 
-function renderExistencias(){
-  var tb = document.getElementById('exi-body');
-  var soloDif = document.getElementById('exi-solo-dif').checked;
-  var filas = soloDif
-    ? _EXI.filter(function(x){ return x.diferencia !== null && x.diferencia !== 0; })
-    : _EXI;
-  if (!filas.length) {
-    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cx-text-mute);">'
-      + (soloDif ? 'Todo cuadra.' : 'Sin SKU todavía. Con <b>Sembrar SKUs Shopify</b> se traen.')
-      + '</td></tr>';
-    return;
-  }
-  tb.innerHTML = filas.map(function(x){
-    // Sin baseline, el cero de EOS no significa "no hay": significa "no sabemos" (M124).
-    var eos = x.sin_baseline
-      ? '<span style="color:var(--cx-text-mute);font-size:11px;">sin baseline</span>'
-      : x.esperado_eos;
-    var dif = '-';
-    if (x.diferencia !== null && x.diferencia !== undefined) {
-      dif = (x.diferencia === 0)
-        ? '<span style="color:var(--cx-success-text);">cuadra</span>'
-        : '<b style="color:var(--cx-danger-text);">' + (x.diferencia > 0 ? '+' : '') + x.diferencia + '</b>';
-    }
-    var abiertas = x.investigaciones_abiertas || [];
-    var causa = abiertas.length
-      ? abiertas.map(function(a){
-          return '<button class="btn btn-outline btn-sm" onclick="abrirCausaRaiz(' + a.id + ',&quot;'
-               + esc(x.sku) + '&quot;,' + a.diferencia + ')">Explicar ' + (a.diferencia > 0 ? '+' : '') + a.diferencia + '</button>';
-        }).join(' ')
-      : '<span style="color:var(--cx-text-mute);font-size:11px;">-</span>';
-    return '<tr>'
-      + '<td><b>' + esc(x.sku) + '</b></td>'
-      + '<td>' + esc(x.descripcion || '-') + '</td>'
-      + '<td style="text-align:right;">' + (x.shopify === null ? '-' : x.shopify) + '</td>'
-      + '<td style="text-align:right;">' + eos + '</td>'
-      + '<td style="text-align:right;">' + dif + '</td>'
-      + '<td>' + esc((x.ultimo_conteo || '').slice(0,10) || 'nunca') + '</td>'
-      + '<td>' + causa + '</td>'
-      + '</tr>';
-  }).join('');
-}
+
+
 
 // ═══ CAUSA RAIZ ═════════════════════════════════════════════════════════════
 var _CR_ID = null;
 
-function abrirCausaRaiz(id, sku, dif){
-  _CR_ID = id;
-  document.getElementById('cr-titulo').textContent = 'Por qué no cuadra ' + sku;
-  document.getElementById('cr-sub').innerHTML =
-    (dif < 0 ? 'Faltan <b>' + Math.abs(dif) + '</b>' : 'Sobran <b>' + dif + '</b>')
-    + ' unidades contra lo que el sistema esperaba.<br>'
-    + 'Dentro de un mes nadie va a poder reconstruir qué pasó: por eso se escribe ahora.';
-  document.getElementById('cr-causa').value = '';
-  document.getElementById('cr-accion').value = '';
-  document.getElementById('modal-causa').style.display = 'flex';
-}
 
-async function guardarCausaRaiz(){
-  if (!_CR_ID) return;
-  var causa = document.getElementById('cr-causa').value.trim();
-  if (causa.length < 10) { showToast('Escribí qué pasó · con dos palabras no se entiende después', 'error'); return; }
-  try {
-    var r = await _fetchUna('/api/animus/inv-fisico/conteo/' + _CR_ID + '/causa-raiz',
-      _fetchOpts('POST', {causa_raiz: causa,
-                          accion_correctiva: document.getElementById('cr-accion').value.trim()}));
-    if (!r) return;
-    var d = await r.json();
-    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
-    showToast('Investigación cerrada · ' + d.sku, 'success');
-    cerrarModal('modal-causa');
-    cargarExistencias();
-  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
-}
+
+
 
 // ═══ SOLICITUDES · pedir, seguir y recibir ═══════════════════════════════════
 // El paso del ciclo lo calcula el backend (/api/solicitudes-compra/mis). Aca NO se recalcula:
@@ -1867,13 +1486,25 @@ function renderCajaKPIs(k){
       color: neto >= 0 ? 'kpi-blue' : 'kpi-red',
       sub: fmtCOP(k.ingreso_mes||0) + ' entro &middot; ' + fmtCOP(k.egreso_mes||0) + ' salio' },
   ];
-  document.getElementById('caja-kpis').innerHTML = cards.map(function(c){
-    return '<div class="kpi-card '+c.color+'">' +
-      '<div class="label">'+c.label+'</div>' +
-      '<div class="val">'+c.val+'</div>' +
-      (c.sub ? '<div class="sub">'+c.sub+'</div>' : '') +
-    '</div>';
-  }).join('');
+  // El SALDO va solo y grande: es el numero por el que se abre una caja. Los otros tres
+  // acompanan. Cuatro tarjetas identicas obligaban a leer las cuatro para encontrar esa.
+  var _p = cards[0], _r = cards.slice(1);
+  document.getElementById('caja-kpis').innerHTML =
+    '<div class="caja-hero">'
+    + '<div class="caja-saldo">'
+    +   '<div class="rot">' + _p.label + '</div>'
+    +   '<div class="cifra">' + _p.val + '</div>'
+    +   '<div class="pie">' + (_p.sub || '') + '</div>'
+    + '</div>'
+    + '<div class="caja-mini">'
+    +   _r.map(function(c){
+          var col = c.color === 'kpi-red' ? 'var(--cx-danger-text)'
+                  : (c.color === 'kpi-green' ? 'var(--cx-success-text)' : 'var(--cx-text)');
+          return '<div class="m"><div class="rot">' + c.label + '</div>'
+               + '<div class="cifra" style="color:' + col + ';">' + c.val + '</div>'
+               + (c.sub ? '<div class="pie">' + c.sub + '</div>' : '') + '</div>';
+        }).join('')
+    + '</div></div>';
 }
 
 function renderCajaMovs(rows){
@@ -2984,603 +2615,63 @@ async function codAnular(i){
 // Inventario Cíclico
 let _SKUS_CACHE = [];
 
-async function loadInvSkus(){
-  try {
-    const r = await fetch('/api/animus/inventario-ciclico/skus');
-    const d = await r.json();
-    if (!d.ok) { showToast('Error skus: ' + (d.error||'?'), 'error'); return; }
-    _SKUS_CACHE = d.skus || [];
-    const body = document.getElementById('inv-skus-body');
-    if (!_SKUS_CACHE.length) {
-      body.innerHTML = '<tr><td colspan="6" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin SKUs vendidos en Shopify aun. Sincroniza Shopify desde marketing primero.</td></tr>';
-      return;
-    }
-    body.innerHTML = _SKUS_CACHE.map(function(s){
-      const ult = s.ultimo_conteo;
-      let ultStr = '<span style="color:var(--cx-text-mute);">Nunca contado</span>';
-      if (ult) {
-        const diffStr = ult.diferencia === 0 ? '<span class="diff-zero">0</span>'
-          : (ult.diferencia > 0 ? '<span class="diff-pos">+'+ult.diferencia+'</span>'
-                                : '<span class="diff-neg">'+ult.diferencia+'</span>');
-        ultStr = '<span style="font-size:11px;color:var(--cx-text-mute);">'+fmtFecha(ult.fecha)+': fisico '+ult.cantidad_fisica+' &middot; dif '+diffStr+'</span>';
-      }
-      const skuEsc = esc(s.sku).replace(/'/g,'’');
-      return '<tr>' +
-        '<td style="font-family:monospace;font-weight:700;">'+esc(s.sku)+'</td>' +
-        '<td style="text-align:right;">'+s.n_orders+'</td>' +
-        '<td style="text-align:right;font-weight:700;color:var(--cx-info-text);">'+s.uds_vendidas+'</td>' +
-        '<td style="font-size:11px;color:var(--cx-text-mute);">'+fmtFecha(s.ultima_venta)+'</td>' +
-        '<td>'+ultStr+'</td>' +
-        '<td><button class="btn btn-primary btn-sm" data-sku="'+esc(s.sku)+'" data-uds="'+s.uds_vendidas+'" onclick="abrirConteoSkuFromBtn(this)">Contar</button></td>' +
-      '</tr>';
-    }).join('');
-  } catch(e) {
-    showToast('Error skus: ' + e.message, 'error');
-  }
-}
 
-async function loadInvConteos(){
-  try {
-    const r = await fetch('/api/animus/inventario-ciclico');
-    const d = await r.json();
-    if (!d.ok) { showToast('Error conteos: ' + (d.error||'?'), 'error'); return; }
-    renderInvKpis(d.kpis||{});
-    const body = document.getElementById('inv-conteos-body');
-    if (!d.conteos.length) {
-      body.innerHTML = '<tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin conteos registrados aún.</td></tr>';
-      return;
-    }
-    body.innerHTML = d.conteos.map(function(co){
-      const dif = co.diferencia;
-      const difStr = dif === 0 ? '<span class="diff-zero">0</span>'
-        : (dif > 0 ? '<span class="diff-pos">+'+dif+'</span>' : '<span class="diff-neg">'+dif+'</span>');
-      return '<tr>' +
-        '<td>'+fmtFecha(co.fecha_conteo)+'</td>' +
-        '<td style="font-family:monospace;font-weight:700;">'+esc(co.sku)+'</td>' +
-        '<td>'+esc(co.producto_nombre||'-')+'</td>' +
-        '<td style="text-align:right;color:var(--cx-info-text);">'+co.cantidad_shopify+'</td>' +
-        '<td style="text-align:right;font-weight:700;">'+co.cantidad_fisica+'</td>' +
-        '<td style="text-align:right;font-weight:700;">'+difStr+'</td>' +
-        '<td style="font-size:11px;color:var(--cx-text-soft);max-width:240px;">'+esc(co.explicacion||'')+'</td>' +
-        '<td style="font-size:11px;color:var(--cx-text-mute);">'+esc(co.registrado_por||'')+'</td>' +
-      '</tr>';
-    }).join('');
-  } catch(e) {
-    showToast('Error conteos: ' + e.message, 'error');
-  }
-}
 
-function renderInvKpis(k){
-  const cards = [
-    { label:'Conteos totales', val: k.n_total||0, color:'kpi-blue', sub:'' },
-    { label:'Conteos con diferencia', val: k.n_con_dif||0, color:'kpi-yellow', sub:'' },
-    { label:'Unidades faltantes', val: k.uds_faltantes||0, color:'kpi-red', sub:'Acumulado' },
-    { label:'Unidades sobrantes', val: k.uds_sobrantes||0, color:'kpi-green', sub:'Acumulado' },
-  ];
-  document.getElementById('inv-kpis').innerHTML = cards.map(function(c){
-    return '<div class="kpi-card '+c.color+'">' +
-      '<div class="label">'+c.label+'</div>' +
-      '<div class="val">'+c.val+'</div>' +
-      (c.sub ? '<div class="sub">'+c.sub+'</div>' : '') +
-    '</div>';
-  }).join('');
-}
 
-function abrirConteo(){
-  ['sku','nombre','shopify','fisica','explicacion'].forEach(function(f){
-    const el = document.getElementById('conteo-'+f);
-    if (el) el.value = '';
-  });
-  document.getElementById('conteo-fecha').value = new Date().toISOString().slice(0,10);
-  document.getElementById('conteo-diff-preview').style.display='none';
-  // Wire up live preview de diferencia
-  const fisica = document.getElementById('conteo-fisica');
-  fisica.oninput = actualizarPreviewDiff;
-  abrirModal('modal-conteo');
-}
 
-function abrirConteoSkuFromBtn(btn){
-  const sku = btn.getAttribute('data-sku');
-  const uds = parseInt(btn.getAttribute('data-uds')||0);
-  abrirConteo();
-  document.getElementById('conteo-sku').value = sku;
-  document.getElementById('conteo-shopify').value = uds;
-  setTimeout(function(){ document.getElementById('conteo-fisica').focus(); }, 100);
-}
 
-function actualizarPreviewDiff(){
-  const sh = parseInt(document.getElementById('conteo-shopify').value || 0);
-  const fi = parseInt(document.getElementById('conteo-fisica').value || 0);
-  const dif = fi - sh;
-  const prev = document.getElementById('conteo-diff-preview');
-  if (isNaN(fi) || document.getElementById('conteo-fisica').value === '') {
-    prev.style.display = 'none';
-    return;
-  }
-  prev.style.display = 'block';
-  if (dif === 0) {
-    prev.style.background = '#064e3b'; prev.style.color = '#34d399';
-    prev.textContent = 'OK: cuadra perfecto - 0 unidades de diferencia';
-  } else if (dif < 0) {
-    prev.style.background = '#7f1d1d'; prev.style.color = '#fca5a5';
-    prev.textContent = 'FALTAN ' + Math.abs(dif) + ' unidades. Explica la diferencia abajo.';
-  } else {
-    prev.style.background = '#78350f'; prev.style.color = '#fcd34d';
-    prev.textContent = 'SOBRAN ' + dif + ' unidades. Explica la diferencia abajo.';
-  }
-}
 
-async function guardarConteo(){
-  const sku = document.getElementById('conteo-sku').value.trim().toUpperCase();
-  if (!sku) { showToast('SKU requerido', 'error'); return; }
-  const sh = parseInt(document.getElementById('conteo-shopify').value || 0);
-  const fi = parseInt(document.getElementById('conteo-fisica').value || 0);
-  if (isNaN(fi)) { showToast('Cantidad fisica requerida', 'error'); return; }
-  const explicacion = document.getElementById('conteo-explicacion').value.trim();
-  const dif = fi - sh;
-  if (dif !== 0 && !explicacion) {
-    if (!await pedirDato({titulo: 'Hay una diferencia sin explicar',
-      sub: '<b>' + dif + ' unidades</b> de diferencia y no pusiste el motivo.<br>'
-         + '<span style="color:var(--cx-text-mute);">Sin explicacion, despues nadie puede '
-         + 'reconstruir si fue rotura, devolucion o faltante.</span>',
-      tipo: 'confirmar', confirmar: 'Guardar igual'})) return;
-  }
-  const body = {
-    sku: sku,
-    producto_nombre: document.getElementById('conteo-nombre').value.trim(),
-    fecha_conteo: document.getElementById('conteo-fecha').value,
-    cantidad_shopify: sh,
-    cantidad_fisica: fi,
-    explicacion: explicacion,
-  };
-  try {
-    const r = await _fetchUna('/api/animus/inventario-ciclico', _fetchOpts('POST', body));
-    if (!r) return;   // ya habia uno en vuelo (doble click)
-    const d = await r.json();
-    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
-    showToast('Conteo registrado - diferencia ' + d.diferencia, 'success');
-    cerrarModal('modal-conteo');
-    loadInvSkus();
-    loadInvConteos();
-  } catch(e) {
-    showToast('Error de red: ' + e.message, 'error');
-  }
-}
+
+
+
+
+
+
+
 
 // ════════════════════════════════════════════════════════════════
 // INVENTARIO FISICO (Fase 1 UI)
 // ════════════════════════════════════════════════════════════════
 var INVFIS_DATA = [];
 
-async function cargarInvFisico() {
-  try {
-    var r = await fetch('/api/animus/inv-fisico/esperado');
-    var d = await r.json();
-    INVFIS_DATA = d.items || [];
-    renderInvFis();
-  } catch(e) { showToast('Error cargando inv fisico: ' + e.message, 'error'); }
-}
 
-function renderInvFis() {
-  var q = (document.getElementById('invfis-q')||{value:''}).value.toLowerCase();
-  var tb = document.getElementById('invfis-tbody');
-  var resumen = document.getElementById('invfis-resumen');
-  var data = q ? INVFIS_DATA.filter(function(x){
-    return (x.sku||'').toLowerCase().indexOf(q) >= 0;
-  }) : INVFIS_DATA;
 
-  if (resumen) {
-    var totEsp = data.reduce(function(s,x){ return s + (x.esperado||0); }, 0);
-    var totBase = data.reduce(function(s,x){ return s + (x.baseline||0); }, 0);
-    var totEnt = data.reduce(function(s,x){ return s + (x.entradas||0); }, 0);
-    var totShop = data.reduce(function(s,x){ return s + (x.shopify||0); }, 0);
-    resumen.innerHTML =
-      '<div class="kpi"><div class="kpi-label">SKUs activos</div><div class="kpi-val">' + data.length + '</div></div>' +
-      '<div class="kpi"><div class="kpi-label">Stock esperado</div><div class="kpi-val">' + totEsp + '</div></div>' +
-      '<div class="kpi"><div class="kpi-label">Total baseline</div><div class="kpi-val">' + totBase + '</div></div>' +
-      '<div class="kpi"><div class="kpi-label">Entradas registradas</div><div class="kpi-val good">+' + totEnt + '</div></div>' +
-      '<div class="kpi"><div class="kpi-label">Vendido Shopify</div><div class="kpi-val warn">-' + totShop + '</div></div>';
-  }
 
-  if (!data.length) {
-    tb.innerHTML = '<tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">' +
-      (q ? 'Sin coincidencias' : 'Aun no hay SKUs con baseline. Click "+ Baseline" para empezar.') +
-      '</td></tr>';
-    return;
-  }
-  tb.innerHTML = data.map(function(x) {
-    return '<tr>' +
-      '<td><b>' + (x.sku||'') + '</b></td>' +
-      '<td>' + x.baseline + '</td>' +
-      '<td style="font-size:11px;color:var(--cx-text-mute);">' + (x.fecha_baseline||'') + '</td>' +
-      '<td style="text-align:right;color:var(--cx-success-text);font-weight:600;">+' + x.entradas + '</td>' +
-      '<td style="text-align:right;color:var(--cx-warn-text);font-weight:600;">-' + x.shopify + '</td>' +
-      '<td style="text-align:right;color:var(--cx-danger-text);font-weight:600;">-' + x.salidas + '</td>' +
-      '<td style="text-align:right;color:var(--cx-primary-text);font-weight:600;">' + (x.ajustes>0?'+':'') + x.ajustes + '</td>' +
-      '<td style="text-align:right;font-weight:800;font-size:14px;color:var(--cx-info-text);">' + x.esperado + '</td>' +
-      '<td><button class="btn btn-outline btn-sm" onclick="verMovsSku(\'' + (x.sku||'').replace(/[\'\\\\]/g, '') + '\')">Ver mov</button></td>' +
-      '</tr>';
-  }).join('');
-}
 
-async function cargarMovimientosInvFis() {
-  try {
-    var r = await fetch('/api/animus/inv-fisico/movimientos');
-    var d = await r.json();
-    var tb = document.getElementById('invfis-mov-body');
-    var movs = d.movimientos || [];
-    if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin movimientos</td></tr>'; return; }
-    tb.innerHTML = movs.slice(0, 100).map(function(m) {
-      var col = m.tipo === 'ENTRADA' ? '#4ade80' :
-                m.tipo === 'SHOPIFY_VENTA' ? '#fbbf24' :
-                m.tipo === 'SALIDA' ? '#f87171' :
-                m.tipo === 'AJUSTE' ? '#a78bfa' : '#94a3b8';
-      var sign = (m.tipo === 'ENTRADA' || m.tipo === 'BASELINE') ? '+' :
-                 (m.tipo === 'AJUSTE' ? '' : '-');
-      return '<tr>' +
-        '<td style="font-size:12px;">' + (m.fecha||'') + '</td>' +
-        '<td><b>' + esc(m.sku||'') + '</b></td>' +
-        '<td><span style="background:' + col + '22;color:' + col + ';padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">' + esc(m.tipo||'') + '</span></td>' +
-        '<td style="text-align:right;color:' + col + ';font-weight:700;">' + sign + (m.cantidad||0) + '</td>' +
-        '<td style="font-size:12px;color:var(--cx-text-soft);">' + esc(m.origen||'') + '</td>' +
-        '<td style="font-size:12px;color:var(--cx-text-mute);">' + esc(m.motivo||'') + '</td>' +
-        '<td style="font-size:11px;color:var(--cx-text-mute);">' + esc(m.usuario||'') + '</td>' +
-        '</tr>';
-    }).join('');
-  } catch(e) { console.error(e); }
-}
 
-function verMovsSku(sku) {
-  document.getElementById('invfis-q').value = sku;
-  fetch('/api/animus/inv-fisico/movimientos?sku=' + encodeURIComponent(sku))
-    .then(function(r){return r.json();})
-    .then(function(d){
-      var tb = document.getElementById('invfis-mov-body');
-      var movs = d.movimientos || [];
-      if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin movimientos para ' + esc(sku) + '</td></tr>'; return; }
-      tb.innerHTML = movs.map(function(m) {
-        var col = m.tipo === 'ENTRADA' ? '#4ade80' :
-                  m.tipo === 'SHOPIFY_VENTA' ? '#fbbf24' :
-                  m.tipo === 'SALIDA' ? '#f87171' :
-                  m.tipo === 'AJUSTE' ? '#a78bfa' : '#94a3b8';
-        var sign = (m.tipo === 'ENTRADA' || m.tipo === 'BASELINE') ? '+' : (m.tipo === 'AJUSTE' ? '' : '-');
-        return '<tr><td>' + (m.fecha||'') + '</td><td><b>' + esc(m.sku||'') + '</b></td><td>' + esc(m.tipo||'') + '</td><td style="text-align:right;color:' + col + ';font-weight:700;">' + sign + (m.cantidad||0) + '</td><td>' + esc(m.origen||'') + '</td><td>' + esc(m.motivo||'') + '</td><td>' + esc(m.usuario||'') + '</td></tr>';
-      }).join('');
-    });
-  renderInvFis();
-}
 
-function abrirBaseline() {
-  document.getElementById('bl-sku').value = '';
-  document.getElementById('bl-desc').value = '';
-  document.getElementById('bl-unidades').value = '';
-  document.getElementById('bl-obs').value = '';
-  document.getElementById('bl-fecha').value = new Date().toISOString().slice(0,10);
-  document.getElementById('modal-baseline').style.display = 'flex';
-}
-async function guardarBaseline() {
-  var payload = {
-    sku: (document.getElementById('bl-sku').value||'').toUpperCase().trim(),
-    descripcion: document.getElementById('bl-desc').value,
-    unidades_baseline: parseInt(document.getElementById('bl-unidades').value, 10),
-    fecha_baseline: document.getElementById('bl-fecha').value,
-    observaciones: document.getElementById('bl-obs').value,
-  };
-  if (!payload.sku) { showToast('SKU obligatorio', 'error'); return; }
-  if (isNaN(payload.unidades_baseline) || payload.unidades_baseline < 0) { showToast('Unidades invalido', 'error'); return; }
-  try {
-    var r = await _fetchUna('/api/animus/inv-fisico/baseline', _fetchOpts('POST', payload));
-    if (!r) return;   // ya habia uno en vuelo (doble click)
-    var d = await r.json();
-    if (d.ok) {
-      showToast('Baseline guardado: ' + payload.sku + ' = ' + payload.unidades_baseline, 'success');
-      cerrarModal('modal-baseline');
-      cargarInvFisico();
-    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
-  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
-}
 
-function abrirEntrada() {
-  document.getElementById('en-sku').value = '';
-  document.getElementById('en-cantidad').value = '';
-  document.getElementById('en-ref').value = '';
-  document.getElementById('en-motivo').value = '';
-  document.getElementById('en-fecha').value = new Date().toISOString().slice(0,10);
-  document.getElementById('modal-entrada').style.display = 'flex';
-}
-async function guardarEntrada() {
-  var payload = {
-    sku: (document.getElementById('en-sku').value||'').toUpperCase().trim(),
-    cantidad: parseInt(document.getElementById('en-cantidad').value, 10),
-    origen: document.getElementById('en-origen').value,
-    fecha: document.getElementById('en-fecha').value,
-    referencia: document.getElementById('en-ref').value,
-    motivo: document.getElementById('en-motivo').value,
-  };
-  if (!payload.sku) { showToast('SKU obligatorio', 'error'); return; }
-  if (isNaN(payload.cantidad) || payload.cantidad <= 0) { showToast('Cantidad debe ser > 0', 'error'); return; }
-  try {
-    var r = await _fetchUna('/api/animus/inv-fisico/entrada', _fetchOpts('POST', payload));
-    if (!r) return;   // ya habia uno en vuelo (doble click)
-    var d = await r.json();
-    if (d.ok) {
-      showToast('Entrada registrada: +' + payload.cantidad + ' uds de ' + payload.sku, 'success');
-      cerrarModal('modal-entrada');
-      cargarInvFisico();
-      cargarMovimientosInvFis();
-    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
-  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
-}
 
-function abrirSalida() {
-  document.getElementById('sa-sku').value = '';
-  document.getElementById('sa-cantidad').value = '';
-  document.getElementById('sa-ref').value = '';
-  document.getElementById('sa-motivo').value = '';
-  document.getElementById('sa-fecha').value = new Date().toISOString().slice(0,10);
-  document.getElementById('modal-salida').style.display = 'flex';
-}
-async function guardarSalida() {
-  var payload = {
-    sku: (document.getElementById('sa-sku').value||'').toUpperCase().trim(),
-    cantidad: parseInt(document.getElementById('sa-cantidad').value, 10),
-    origen: document.getElementById('sa-origen').value,
-    fecha: document.getElementById('sa-fecha').value,
-    referencia: document.getElementById('sa-ref').value,
-    motivo: document.getElementById('sa-motivo').value,
-  };
-  if (!payload.sku) { showToast('SKU obligatorio', 'error'); return; }
-  if (isNaN(payload.cantidad) || payload.cantidad <= 0) { showToast('Cantidad debe ser > 0', 'error'); return; }
-  try {
-    var r = await _fetchUna('/api/animus/inv-fisico/salida', _fetchOpts('POST', payload));
-    if (!r) return;   // ya habia uno en vuelo (doble click)
-    var d = await r.json();
-    if (d.ok) {
-      showToast('Salida registrada: -' + payload.cantidad + ' uds de ' + payload.sku, 'success');
-      cerrarModal('modal-salida');
-      cargarInvFisico();
-      cargarMovimientosInvFis();
-    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
-  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
-}
+
+
+
+
+
+
+
+
 
 // ════════════════════════════════════════════════════════════════
 // CONTEO CICLICO Fase 2 (asignaciones + registro)
 // ════════════════════════════════════════════════════════════════
-async function cargarPendientesConteo() {
-  try {
-    var r = await fetch('/api/animus/inv-fisico/conteo/pendientes');
-    var d = await r.json();
-    var pend = d.pendientes || [];
-    var el = document.getElementById('invfis-pendientes');
-    var cnt = document.getElementById('invfis-conteos-count');
-    if (cnt) cnt.textContent = pend.length ? (pend.length + ' SKUs por contar') : '';
-    if (!pend.length) {
-      el.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:14px;font-size:13px;">Sin conteos pendientes &middot; Click "Asignar conteo hoy" para empezar</div>';
-      return;
-    }
-    el.innerHTML = pend.map(function(p) {
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--cx-border);">' +
-        '<div><b style="color:var(--cx-text);">' + esc(p.sku||'') + '</b> ' +
-        '<span style="color:var(--cx-text-mute);font-size:12px;margin-left:8px;">esperado: ' + (p.esperado!=null?p.esperado:'?') + '</span>' +
-        '<span style="color:var(--cx-text-mute);font-size:11px;margin-left:8px;">' + esc(p.fecha_asignado||'') + '</span></div>' +
-        '<button class="btn btn-primary btn-sm" onclick="abrirConteoFisico(' + p.id + ', \'' + (p.sku||'').replace(/[\'\\\\]/g,'') + '\', ' + (p.esperado||0) + ')">Contar</button>' +
-        '</div>';
-    }).join('');
-  } catch(e) { console.error(e); }
-}
 
-async function asignarConteoHoy() {
-  if (!await pedirDato({titulo: 'Asignar 5 SKUs para contar hoy',
-    sub: 'Si ya hay asignaciones pendientes no se duplican.',
-    tipo: 'confirmar', confirmar: 'Asignar'})) return;
-  try {
-    var r = await _fetchUna('/api/animus/inv-fisico/conteo/asignar-hoy', _fetchOpts('POST', {n: 5}));
-    if (!r) return;   // ya habia uno en vuelo (doble click)
-    var d = await r.json();
-    if (d.ok) {
-      var n = (d.asignados||[]).length || d.ya_asignados_hoy || 0;
-      showToast(n + ' SKUs asignados', 'success');
-      cargarPendientesConteo();
-    } else {
-      showToast('Error: ' + (d.error||'?'), 'error');
-    }
-  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
-}
 
-async function sembrarShopify() {
-  if (!await pedirDato({titulo: 'Sembrar baseline en cero',
-    sub: 'Para TODOS los SKUs vendidos en Shopify en los ultimos 30 dias.<br>'
-       + 'Despues editas cada uno con la cantidad real que tenes fisicamente.<br>'
-       + '<span style="color:var(--cx-text-mute);">Los SKUs que ya tienen baseline NO se tocan.</span>',
-    tipo: 'confirmar', confirmar: 'Sembrar'})) return;
-  showToast('Sembrando SKUs desde Shopify...', 'info');
-  try {
-    var r = await _fetchUna('/api/animus/inv-fisico/baseline/sembrar-desde-shopify', _fetchOpts('POST', {dias: 30}));
-    if (!r) return;   // ya habia uno en vuelo (doble click)
-    var d = await r.json();
-    if (d.ok) {
-      var msg = d.creados + ' SKUs nuevos sembrados';
-      if (d.ya_tenian > 0) msg += ' · ' + d.ya_tenian + ' ya tenian baseline';
-      showToast(msg, 'success');
-      if (d.creados > 0) {
-        alert('✓ ' + d.creados + ' SKUs creados con baseline=0:\n\n' + (d.skus_creados||[]).join(', ') + '\n\nAhora cada uno necesita su cantidad fisica real. Click en "+ Baseline manual" para editarlos uno por uno · o usa el botón "+ Baseline" para corregir cantidades.');
-      } else if (d.mensaje) {
-        alert(d.mensaje);
-      }
-      cargarInvFisico();
-    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
-  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
-}
 
-async function syncShopifyInv() {
-  showToast('Sincronizando ventas Shopify...', 'info');
-  try {
-    var r = await _fetchUna('/api/animus/inv-fisico/sync-shopify', _fetchOpts('POST'));
-    if (!r) return;   // ya habia uno en vuelo (doble click)
-    var d = await r.json();
-    if (d.ok) {
-      showToast(d.ventas_creadas + ' ventas Shopify reflejadas en inventario', 'success');
-      cargarInvFisico();
-      cargarMovimientosInvFis();
-    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
-  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
-}
+
+
+
+
 
 var CONTEO_DESGLOSE = null;
-function abrirConteoFisico(asigId, sku, esperado) {
-  document.getElementById('cf-asig-id').value = asigId;
-  document.getElementById('cf-sku-titulo').textContent = sku;
-  document.getElementById('cf-cantidad').value = '';
-  document.getElementById('cf-motivo').value = '';
-  document.getElementById('cf-aplicar').checked = false;
-  document.getElementById('cf-diff-preview').style.display = 'none';
-  document.getElementById('cf-motivo-row').style.display = 'none';
-  // Cargar desglose
-  fetch('/api/animus/inv-fisico/esperado/' + encodeURIComponent(sku))
-    .then(function(r){return r.json();})
-    .then(function(info){
-      CONTEO_DESGLOSE = info;
-      var d = document.getElementById('cf-desglose');
-      d.innerHTML =
-        '<div style="display:grid;grid-template-columns:auto auto;gap:6px 16px;font-size:12px;">' +
-        '<span style="color:var(--cx-text-mute);">Baseline (' + (info.fecha_baseline||'') + ')</span><span style="text-align:right;color:var(--cx-text);font-weight:600;">' + info.baseline + '</span>' +
-        '<span style="color:var(--cx-text-mute);">+ Entradas</span><span style="text-align:right;color:var(--cx-success-text);font-weight:600;">+' + info.entradas + '</span>' +
-        '<span style="color:var(--cx-text-mute);">- Ventas Shopify</span><span style="text-align:right;color:var(--cx-warn-text);font-weight:600;">-' + info.shopify + '</span>' +
-        '<span style="color:var(--cx-text-mute);">- Salidas otras</span><span style="text-align:right;color:var(--cx-danger-text);font-weight:600;">-' + info.salidas + '</span>' +
-        '<span style="color:var(--cx-text-mute);">+/- Ajustes</span><span style="text-align:right;color:var(--cx-primary-text);font-weight:600;">' + (info.ajustes>=0?'+':'') + info.ajustes + '</span>' +
-        '<hr style="grid-column:1/-1;border:none;border-top:1px solid var(--cx-border);margin:4px 0;">' +
-        '<span style="color:var(--cx-text);font-weight:700;">= ESPERADO</span><span style="text-align:right;color:var(--cx-info-text);font-weight:800;font-size:18px;">' + info.esperado + '</span>' +
-        '</div>';
-    });
-  // Live preview de diferencia al escribir
-  var input = document.getElementById('cf-cantidad');
-  input.oninput = function() {
-    var fisica = parseInt(input.value, 10);
-    if (isNaN(fisica) || !CONTEO_DESGLOSE) {
-      document.getElementById('cf-diff-preview').style.display = 'none';
-      document.getElementById('cf-motivo-row').style.display = 'none';
-      return;
-    }
-    var diff = fisica - CONTEO_DESGLOSE.esperado;
-    var prev = document.getElementById('cf-diff-preview');
-    prev.style.display = 'block';
-    if (diff === 0) {
-      prev.style.background = '#064e3b';
-      prev.style.color = '#4ade80';
-      prev.innerHTML = '&#10003; Cuadra perfecto · esperado=' + CONTEO_DESGLOSE.esperado + ' · fisico=' + fisica;
-      document.getElementById('cf-motivo-row').style.display = 'none';
-    } else {
-      var col = Math.abs(diff) > 2 ? '#7f1d1d' : '#78350f';
-      var fc  = Math.abs(diff) > 2 ? '#fca5a5' : '#fbbf24';
-      prev.style.background = col;
-      prev.style.color = fc;
-      prev.innerHTML = (diff>0?'&#9650; +':'&#9660; ') + diff + ' diferencia · esperado=' + CONTEO_DESGLOSE.esperado + ' · fisico=' + fisica;
-      // motivo obligatorio si > |2|
-      document.getElementById('cf-motivo-row').style.display = Math.abs(diff) > 2 ? 'block' : 'none';
-    }
-  };
-  document.getElementById('modal-conteo-fisico').style.display = 'flex';
-}
 
-async function guardarConteoFisico() {
-  var asigId = parseInt(document.getElementById('cf-asig-id').value, 10);
-  var fisica = parseInt(document.getElementById('cf-cantidad').value, 10);
-  if (isNaN(fisica) || fisica < 0) { showToast('Cantidad invalida', 'error'); return; }
-  var motivo = document.getElementById('cf-motivo').value;
-  var aplicar = document.getElementById('cf-aplicar').checked;
-  try {
-    var r = await _fetchUna('/api/animus/inv-fisico/conteo/' + asigId + '/registrar',
-                        _fetchOpts('POST', {cantidad_fisica: fisica, motivo_diferencia: motivo, aplicar_ajuste: aplicar}));
-    if (!r) return;   // ya habia uno en vuelo (doble click)
-    var d = await r.json();
-    if (d.ok) {
-      var msg = d.diferencia === 0 ? 'Cuadra perfecto' : ('Diferencia ' + d.diferencia + (aplicar?' · ajustado':''));
-      showToast(d.sku + ': ' + msg, d.diferencia === 0 ? 'success' : 'warning');
-      cerrarModal('modal-conteo-fisico');
-      cargarPendientesConteo();
-      cargarInvFisico();
-      cargarMovimientosInvFis();
-    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
-  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
-}
+
+
 
 // ════════════════════════════════════════════════════════════════
 // DIAGNOSTICO Fase 3
 // ════════════════════════════════════════════════════════════════
-async function cargarDiagnostico() {
-  try {
-    var r = await fetch('/api/animus/inv-fisico/diagnostico');
-    var d = await r.json();
-    var card = document.getElementById('invfis-diag-card');
-    var c = document.getElementById('invfis-diag-content');
-    var k = d.kpis || {};
-    var hay_dato = (k.total_conteos > 0) || (d.patrones_detectados||[]).length > 0 || (d.sin_baseline||[]).length > 0;
-    if (!hay_dato) { card.style.display = 'none'; return; }
-    card.style.display = 'block';
-    var html = '';
-    // KPIs en línea
-    html += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-size:13px;">';
-    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Conteos 30d</span> <b style="color:var(--cx-text);margin-left:8px;">' + (k.total_conteos||0) + '</b></div>';
-    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Con diferencia</span> <b style="color:var(--cx-warn-text);margin-left:8px;">' + (k.con_dif||0) + '</b></div>';
-    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Faltantes</span> <b style="color:var(--cx-danger-text);margin-left:8px;">-' + (k.faltantes||0) + '</b></div>';
-    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Sobrantes</span> <b style="color:var(--cx-success-text);margin-left:8px;">+' + (k.sobrantes||0) + '</b></div>';
-    html += '</div>';
-    // Patrones detectados
-    if ((d.patrones_detectados||[]).length) {
-      html += '<div style="font-size:12px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Patrones detectados</div>';
-      d.patrones_detectados.forEach(function(p) {
-        var col = p.severidad === 'alta' ? '#7f1d1d' : '#78350f';
-        var fc  = p.severidad === 'alta' ? '#fca5a5' : '#fbbf24';
-        var icon = p.severidad === 'alta' ? '&#9888;' : '&#x1F50D;';
-        html += '<div style="background:' + col + ';color:' + fc + ';padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px;">' +
-                icon + ' ' + p.mensaje + '</div>';
-      });
-    } else {
-      html += '<div style="background:var(--cx-success-pale);color:var(--cx-success-text);padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;">&#10003; Sin patrones de discrepancia detectados</div>';
-    }
-    // SKUs vendidos sin baseline
-    if ((d.sin_baseline||[]).length) {
-      html += '<div style="background:var(--cx-primary-soft);color:var(--cx-primary-text);padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px;">';
-      html += '&#9432; ' + d.sin_baseline.length + ' SKUs vendidos en Shopify (30d) SIN baseline registrado: ';
-      html += '<b>' + d.sin_baseline.slice(0, 8).join(', ') + (d.sin_baseline.length > 8 ? ' y ' + (d.sin_baseline.length - 8) + ' mas' : '') + '</b>';
-      html += '</div>';
-    }
-    // Top problemáticos
-    if ((d.top_problematicos||[]).length) {
-      html += '<div style="font-size:12px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px 0;">Top SKUs problematicos (90d)</div>';
-      html += '<table style="width:100%;font-size:13px;"><thead><tr style="color:var(--cx-text-mute);">';
-      html += '<th style="text-align:left;padding:6px;">SKU</th>';
-      html += '<th style="text-align:right;padding:6px;">Veces contado</th>';
-      html += '<th style="text-align:right;padding:6px;">Con diferencia</th>';
-      html += '<th style="text-align:right;padding:6px;">Suma diferencia</th>';
-      html += '<th style="text-align:right;padding:6px;">Abs diff</th>';
-      html += '</tr></thead><tbody>';
-      d.top_problematicos.forEach(function(t) {
-        var col = t.suma_dif < 0 ? '#f87171' : '#4ade80';
-        html += '<tr style="border-top:1px solid var(--cx-border);">';
-        html += '<td style="padding:6px;"><b>' + t.sku + '</b></td>';
-        html += '<td style="text-align:right;padding:6px;">' + t.veces_contado + '</td>';
-        html += '<td style="text-align:right;padding:6px;color:var(--cx-warn-text);">' + t.veces_con_dif + '/' + t.veces_contado + '</td>';
-        html += '<td style="text-align:right;padding:6px;color:' + col + ';font-weight:700;">' + (t.suma_dif > 0 ? '+' : '') + t.suma_dif + '</td>';
-        html += '<td style="text-align:right;padding:6px;">' + t.abs_dif + '</td>';
-        html += '</tr>';
-      });
-      html += '</tbody></table>';
-    }
-    c.innerHTML = html;
-  } catch(e) { console.error(e); }
-}
 
-// Hook into loadTab para cargar pendientes al entrar al tab
-var _origLoadTab_invfis = loadTab;
-loadTab = function(name) {
-  _origLoadTab_invfis(name);
-  if (name === 'invfis') {
-    cargarPendientesConteo();
-    cargarDiagnostico();
-  }
-};
+
 
 // ── PQR Clientes (comercial) ──────────────────────────────────────────
 var _PQR_TIPO_LBL = {envio:'Envío',producto_equivocado:'Producto equivocado',faltante:'Faltante',devolucion:'Devolución',servicio:'Servicio',facturacion:'Facturación',comercial:'Comercial',otro:'Otro'};

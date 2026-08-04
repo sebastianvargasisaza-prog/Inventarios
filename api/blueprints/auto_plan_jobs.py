@@ -781,7 +781,8 @@ JOBS_SCHEDULE = [
     # ⭐ Zero-Error · diario 8:00 · validación profunda matemática (8 checks)
     ('validacion_profunda',   8,  0, None, None,                'job_validacion_profunda'),
     # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
-    ('animus_conteo_diario',  8,  0, [0,1,2,3,4], None,         'job_animus_conteo_diario'),
+    # APAGADO 4-ago: se retiro la pestana Inventario de /animus. Reactivar es descomentar.
+    # ('animus_conteo_diario',  8,  0, [0,1,2,3,4], None,         'job_animus_conteo_diario'),
     # ⭐ Aseguramiento · diario 8:00 · alerta desviaciones en plazos críticos (ASG-PRO-001)
     ('desv_plazos',           8,  0, None, None,                'job_desv_plazos'),
     # ⭐ Aseguramiento · diario 8:30 · alerta control de cambios en plazos vencidos (ASG-PRO-007)
