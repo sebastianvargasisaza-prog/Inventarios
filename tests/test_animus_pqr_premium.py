@@ -234,3 +234,146 @@ def test_una_queja_de_HOY_no_molesta_al_CEO(app, db_clean):
     frescas = [x for x in d['decisiones']
                if x.get('grupo') == 'clientes' and 'esperando respuesta' in x.get('titulo', '')]
     assert not frescas, 'una queja de hoy no es una decisión del gerente'
+
+
+# ── LAS DOS PREGUNTAS DE SEBASTIÁN (4-ago) ───────────────────────────────────
+# "cuando se resuelva van desapareciendo, ¿dónde quedan?" y "¿cómo generan datos esos PQR?"
+# Las dos eran síntomas del mismo defecto: la pantalla no explicaba su propio comportamiento.
+
+def test_los_contadores_sirven_para_ENCONTRAR_los_resueltos():
+    """Se resuelven y salen de la vista por el filtro, pero eso no se veía en ningún lado.
+    Ahora el contador es un botón: la pregunta se contesta sola en vez de exigir que alguien
+    descubra el desplegable de arriba."""
+    html = _html_animus()
+    assert 'function filtrarPqr(' in html
+    i = html.index('var tarjetas = [')
+    tabla = html[i:i + 700]
+    for estado in ('nuevo', 'en_proceso', 'resuelto', 'cerrado'):
+        assert "'%s'" % estado in tabla, 'el contador de %s no está' % estado
+    assert 'onclick="filtrarPqr(' in html, 'los contadores no son clicables'
+    # y el segundo click vuelve a todos: no deja a nadie atrapado en un filtro
+    i = html.index('function filtrarPqr(')
+    assert "sel.value === estado" in html[i:i + 600], 'el filtro no se puede quitar'
+
+
+def test_la_pantalla_dice_DE_DONDE_vienen():
+    """Entran solos por el webhook de GoHighLevel cuando un cliente escribe. No estaba dicho en
+    ninguna parte, y de ahí la pregunta."""
+    html = _html_animus()
+    assert 'GoHighLevel' in html, 'no dice de dónde salen los PQR'
+    assert 'id="pqr-ultimo"' in html, 'no muestra cuándo entró el último'
+
+
+def test_la_lista_muestra_la_ANTIGUEDAD():
+    """Un reclamo de hace 40 días no puede leerse igual que uno de hoy · un aviso que no
+    envejece a la vista se vuelve ruido (M129)."""
+    html = _html_animus()
+    i = html.index('async function loadAnimusPqr(')
+    cuerpo = html[i:i + 6000]
+    assert 'hace ' in cuerpo and '86400000' in cuerpo, 'la lista no muestra cuántos días lleva'
+    assert 'var(--cx-danger-text)' in cuerpo, 'lo viejo no se distingue de lo de hoy'
+
+
+def test_la_lista_muestra_el_pedido_cuando_lo_hay():
+    html = _html_animus()
+    i = html.index('async function loadAnimusPqr(')
+    assert 'p.pedido_numero' in html[i:i + 6000], 'el pedido adjudicado no se ve en la lista'
+
+
+# ── LO QUE NO ES UNA QUEJA SALE (pero se puede devolver) · 4-ago ─────────────
+# Sebastián: *"elimina todos los que están, esto no es PQR: 'Más promos... me encantaría ser
+# creadora para su marca' / 'Quiero saber método de pago y en cuánto tiempo llegan'"*.
+# Son CONSULTAS DE VENTA. Una bandeja llena de eso entierra las quejas de verdad y le infla el
+# indicador al servicio (M138: un registro lleno de ruido no queda incompleto, queda FALSO).
+
+def _filtro():
+    from blueprints.animus import _pqr_es_consulta
+    return _pqr_es_consulta
+
+
+def test_reconoce_las_consultas_que_Sebastian_marco(app):
+    f = _filtro()
+    for m in ("Mas promos, justo ayer no alcance. Me encantaria ser creadora para su marca",
+              "Quiero saber metodo de pago y en cuanto tiempo llegan vivo en barranquilla",
+              "Este producto que concentracion tiene de retinal",
+              "Y me gustaria saber el modo de uso de los productos"):
+        assert f(m), 'no reconoció como consulta: %s' % m[:50]
+
+
+def test_NUNCA_toca_un_reclamo_real(app):
+    """Lo que manda: botar una queja de verdad es mucho peor que dejar pasar una consulta. Por
+    eso las pistas de reclamo se evalúan PRIMERO y ganan siempre."""
+    f = _filtro()
+    for m in ("Hola, revisando el numero de guia aparece como entregado, pero a mi no llego el pedido.",
+              "Me llego el blush pero no me llego el lip serum",
+              "ya me llego el pedido pero la crema viene en una presentacion distinta",
+              "Mira que me rechaza el pago",
+              "Disculpa, hice un pedido el 15 de julio y aun no llega",
+              # el caso que MÁS importa: pregunta algo Y además reclama
+              "Quiero saber el metodo de pago pero ademas mi pedido no ha llegado"):
+        assert not f(m), '¡SE IRÍA UN RECLAMO REAL!: %s' % m[:60]
+
+
+def test_descartar_saca_de_la_bandeja_pero_NO_borra(app, db_clean):
+    _limpiar(app)
+    c = _cli(app)
+    pid = _pqr(c, descripcion=MARCA + ' quiero saber metodo de pago')
+    r = c.post('/api/animus/pqr/%d/descartar' % pid,
+               json={'motivo': 'Es una consulta de venta'}, headers=csrf_headers())
+    assert r.status_code == 200
+    # sale de la bandeja
+    assert pid not in [x['id'] for x in c.get('/api/animus/pqr').get_json()['pqr']]
+    # pero SIGUE existiendo y se puede ver
+    d = c.get('/api/animus/pqr?estado=descartado').get_json()
+    fila = [x for x in d['pqr'] if x['id'] == pid]
+    assert fila, 'el descartado desapareció · no se puede revisar si estuvo bien sacarlo'
+    assert fila[0]['descartado_motivo'] == 'Es una consulta de venta'
+    # y se devuelve
+    assert c.post('/api/animus/pqr/%d/descartar' % pid, json={'recuperar': True},
+                  headers=csrf_headers()).status_code == 200
+    assert pid in [x['id'] for x in c.get('/api/animus/pqr').get_json()['pqr']]
+
+
+def test_descartar_SIN_motivo_no_pasa(app, db_clean):
+    """Sin motivo nadie puede revisar después si estuvo bien sacarlo."""
+    _limpiar(app)
+    c = _cli(app)
+    pid = _pqr(c)
+    assert c.post('/api/animus/pqr/%d/descartar' % pid, json={},
+                  headers=csrf_headers()).status_code == 400
+
+
+def test_la_limpieza_masiva_MUESTRA_antes_de_aplicar(app, db_clean):
+    """Un botón que saca 191 filas sin decir cuáles es un botón que nadie debería apretar."""
+    _limpiar(app)
+    c = _cli(app)
+    _pqr(c, descripcion=MARCA + ' quiero saber cuanto cuesta el serum')
+    _pqr(c, descripcion=MARCA + ' mi pedido no ha llegado hace 20 dias')
+    d = c.get('/api/animus/pqr/consultas').get_json()
+    assert d['ok'] is True and d['n'] >= 1
+    textos = ' '.join(x['descripcion'] for x in d['candidatos'])
+    assert 'cuanto cuesta' in textos
+    assert 'no ha llegado' not in textos, 'propuso descartar un reclamo real'
+    for x in d['candidatos']:
+        assert x['motivo'] and x['fecha'], 'un candidato sin motivo no se puede revisar'
+
+
+def test_el_indicador_NO_cuenta_lo_descartado(app, db_clean):
+    """Si contara, la tasa por 100 pedidos mediría ruido y diría que el servicio empeoró."""
+    _limpiar(app)
+    c = _cli(app)
+    pid = _pqr(c, descripcion=MARCA + ' quiero saber el precio')
+    antes = c.get('/api/animus/pqr/indicador').get_json()['pqr']
+    c.post('/api/animus/pqr/%d/descartar' % pid, json={'motivo': 'consulta de venta'},
+           headers=csrf_headers())
+    assert c.get('/api/animus/pqr/indicador').get_json()['pqr'] == antes - 1
+
+
+def test_la_lista_trae_la_FECHA_y_lo_de_hoy_primero(app, db_clean):
+    """Sebastián: *"falta la fecha del PQR y filtra mejor, que empiecen desde hoy"*."""
+    html = _html_animus()
+    i = html.index('async function loadAnimusPqr(')
+    cuerpo = html[i:i + 7000]
+    assert "<th>Fecha</th>" in cuerpo, 'la lista no muestra la fecha'
+    assert "p.creado_en||'').slice(0,10)" in cuerpo
+    assert 'descartarPqr(' in html and 'limpiarConsultasPqr(' in html

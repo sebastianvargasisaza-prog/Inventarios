@@ -4418,17 +4418,163 @@ def animus_pqr_listar():
     estado = (request.args.get("estado") or "").strip()
     sql = ("SELECT id, codigo, canal, contacto_nombre, contacto_email, contacto_telefono, tipo, "
            "descripcion, prioridad, estado, asignado_a, respuesta, respondido_por, respondido_en, "
-           "pedido_numero, creado_en FROM animus_pqr")
+           "pedido_numero, creado_en, COALESCE(descartado,0) AS descartado, "
+           "COALESCE(descartado_motivo,'') AS descartado_motivo FROM animus_pqr")
     params = []
-    if estado in _PQR_A_ESTADOS:
-        sql += " WHERE estado=?"; params.append(estado)
-    sql += " ORDER BY CASE prioridad WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, id DESC LIMIT 300"
+    cond = []
+    # Lo descartado sale de la bandeja pero NO se pierde: `?estado=descartado` lo trae de vuelta
+    # para poder recuperarlo (M138 · lo que se excluye se puede volver a mirar).
+    if estado == 'descartado':
+        cond.append("COALESCE(descartado,0)=1")
+    else:
+        cond.append("COALESCE(descartado,0)=0")
+        if estado in _PQR_A_ESTADOS:
+            cond.append("estado=?"); params.append(estado)
+    sql += " WHERE " + " AND ".join(cond)
+    # Lo de HOY primero (Sebastian: "que empiecen desde hoy"). La prioridad ordena DENTRO del
+    # dia: un reclamo alta de hace un mes no puede tapar lo que entro esta manana.
+    sql += (" ORDER BY substr(COALESCE(creado_en,''),1,10) DESC, "
+            "CASE prioridad WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, id DESC LIMIT 300")
     rows = c.execute(sql, params).fetchall()
     items = [dict(r) for r in rows]
     resumen = {}
     for e in _PQR_A_ESTADOS:
-        resumen[e] = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE estado=?", (e,)).fetchone()[0]
+        resumen[e] = c.execute(
+            "SELECT COUNT(*) FROM animus_pqr WHERE estado=? AND COALESCE(descartado,0)=0",
+            (e,)).fetchone()[0]
+    resumen['descartado'] = c.execute(
+        "SELECT COUNT(*) FROM animus_pqr WHERE COALESCE(descartado,0)=1").fetchone()[0]
     return jsonify({"pqr": items, "resumen": resumen})
+
+
+# Lo que llega por el canal de PQR y NO es una queja: son consultas de VENTA. Una persona
+# preguntando el precio o pidiendo ser creadora no tiene nada que reclamar, y su presencia
+# entierra las quejas de verdad e infla el indicador del servicio (M138).
+_CONSULTA_PISTAS = (
+    'quiero saber', 'quisiera saber', 'me gustaria saber', 'cuanto cuesta', 'cuanto vale',
+    'que precio', 'cual es el precio', 'metodo de pago', 'metodos de pago', 'formas de pago',
+    'hacen envios', 'hacen envio', 'tienen disponible', 'hay disponible', 'donde compro',
+    'donde puedo comprar', 'quiero comprar', 'me interesa', 'informacion', 'info',
+    'ser creadora', 'ser creador', 'ser embajadora', 'colaboracion', 'trabajar con ustedes',
+    'promo', 'promocion', 'descuento', 'catalogo', 'como se usa', 'modo de uso',
+    'para que sirve', 'que concentracion', 'recomiendan', 'me recomiendan',
+    # preguntas de tiempo y de stock ANTES de comprar. Ojo: "cuando llega MI pedido" es un
+    # reclamo y lo atrapan las pistas de reclamo, que se evaluan primero y ganan siempre.
+    'cuanto tarda', 'cuanto demora', 'cuanto se demora', 'cuanto tiempo',
+    'cuando tendran', 'tendran en stock', 'tendran disponible', 'hay stock', 'en stock',
+    'vuelve a estar', 'cuando lo tienen', 'lo tienen disponible',
+)
+# Si el mensaje trae alguna de estas, HAY algo que atender aunque tambien pregunte cosas.
+_RECLAMO_PISTAS = (
+    'no llego', 'no ha llegado', 'no me llego', 'no lo he recibido', 'demora', 'tarda',
+    'equivocad', 'no era', 'faltante', 'falta', 'me falto', 'incompleto', 'roto', 'dañad',
+    'daniad', 'reembolso', 'devolu', 'rechaz', 'error', 'reclamo', 'queja', 'mal ',
+    'nunca me', 'no me han', 'no responden', 'no contestan', 'cancelad', 'cobrar', 'cobro',
+    'doble cobro', 'vencid', 'brote', 'alergi', 'irritaci', 'reaccion',
+)
+
+
+def _pqr_es_consulta(descripcion, tipo=''):
+    """¿Ese mensaje es una CONSULTA de venta y no un reclamo? Devuelve el motivo, o ''.
+
+    Conservador a proposito: si el mensaje trae CUALQUIER señal de reclamo, no se toca -- botar
+    una queja real es mucho peor que dejar pasar una consulta. Por eso las pistas de reclamo se
+    evaluan PRIMERO y ganan siempre.
+    """
+    import re as _re
+    import unicodedata as _ud
+    t = (descripcion or '').strip()
+    if not t:
+        return ''
+    n = _ud.normalize('NFKD', t.lower()).encode('ascii', 'ignore').decode()
+    n = _re.sub(r'\s+', ' ', _re.sub(r'[^a-z0-9 ]+', ' ', n)).strip()
+    if any(k in n for k in _RECLAMO_PISTAS):
+        return ''
+    for k in _CONSULTA_PISTAS:
+        if k in n:
+            return 'consulta de venta ("%s")' % k
+    return ''
+
+
+@bp.route("/api/animus/pqr/consultas", methods=["GET", "POST"])
+def animus_pqr_consultas():
+    """Propone (GET) y descarta (POST) lo que no es una queja sino una consulta de venta.
+
+    El GET MUESTRA exactamente qué se va a sacar y cuántos son. Un botón que saca 191 filas sin
+    mostrar cuáles es un botón que nadie debería apretar.
+
+    Y el POST DESCARTA, no borra: quedan con su motivo y se recuperan de a uno. Un descarte
+    masivo irreversible sobre registros de clientes es lo que no se puede deshacer si el
+    criterio estuvo mal.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    filas = c.execute(
+        "SELECT id, codigo, tipo, descripcion, contacto_nombre, creado_en FROM animus_pqr "
+        "WHERE COALESCE(descartado,0)=0 AND estado IN ('nuevo','en_proceso') "
+        "ORDER BY id DESC LIMIT 500").fetchall()
+    props = []
+    for r in filas:
+        motivo = _pqr_es_consulta(r[3], r[2])
+        if motivo:
+            props.append({'id': r[0], 'codigo': r[1], 'tipo': r[2],
+                          'descripcion': (r[3] or '')[:220],
+                          'cliente': r[4] or '', 'fecha': (r[5] or '')[:10],
+                          'motivo': motivo})
+
+    if request.method == "GET":
+        return jsonify({"ok": True, "candidatos": props, "n": len(props),
+                        "revisados": len(filas),
+                        "aviso": ('Ninguno parece una consulta de venta'
+                                  if not props else
+                                  'Se pueden recuperar después desde el filtro Descartados')})
+
+    ids = request.get_json(silent=True) or {}
+    ids = ids.get('ids')
+    objetivo = [p for p in props if (not ids or p['id'] in ids)]
+    if not objetivo:
+        return jsonify({"ok": True, "descartados": 0,
+                        "aviso": "No había nada que descartar"})
+    ahora = _now_col().strftime('%Y-%m-%d %H:%M:%S')
+    for pr in objetivo:
+        c.execute("UPDATE animus_pqr SET descartado=1, descartado_motivo=?, descartado_por=?, "
+                  "descartado_at=? WHERE id=? AND COALESCE(descartado,0)=0",
+                  (pr['motivo'], u, ahora, pr['id']))
+    audit_log(c, usuario=u, accion='ANIMUS_PQR_DESCARTAR_CONSULTAS', tabla='animus_pqr',
+              registro_id=None,
+              despues={'n': len(objetivo), 'codigos': [p['codigo'] for p in objetivo][:40]},
+              detalle='Descartadas %d consultas de venta (recuperables)' % len(objetivo))
+    conn.commit()
+    return jsonify({"ok": True, "descartados": len(objetivo),
+                    "aviso": 'Salieron de la bandeja · se recuperan desde el filtro Descartados'})
+
+
+@bp.route("/api/animus/pqr/<int:pid>/descartar", methods=["POST"])
+def animus_pqr_descartar(pid):
+    """Saca UN PQR de la bandeja (no lo borra) o lo devuelve."""
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json(silent=True) or {}
+    recuperar = bool(d.get("recuperar"))
+    conn = _db(); c = conn.cursor()
+    if recuperar:
+        c.execute("UPDATE animus_pqr SET descartado=0, descartado_motivo=NULL WHERE id=?", (pid,))
+        accion, det = 'ANIMUS_PQR_RECUPERAR', 'Recuperado a la bandeja'
+    else:
+        motivo = (d.get("motivo") or '').strip()
+        if len(motivo) < 4:
+            return jsonify({"error": "Decí por qué no es un PQR · sin motivo nadie puede "
+                                     "revisar después si estuvo bien sacarlo"}), 400
+        c.execute("UPDATE animus_pqr SET descartado=1, descartado_motivo=?, descartado_por=?, "
+                  "descartado_at=? WHERE id=?",
+                  (motivo, u, _now_col().strftime('%Y-%m-%d %H:%M:%S'), pid))
+        accion, det = 'ANIMUS_PQR_DESCARTAR', 'Descartado: ' + motivo[:120]
+    if c.rowcount == 0:
+        return jsonify({"error": "Ese PQR no existe"}), 404
+    audit_log(c, usuario=u, accion=accion, tabla='animus_pqr', registro_id=pid, detalle=det)
+    conn.commit()
+    return jsonify({"ok": True, "descartado": not recuperar})
 
 
 def _pqr_pedidos_del_cliente(c, *, email='', telefono='', nombre='', limite=8):
@@ -4527,9 +4673,12 @@ def animus_pqr_indicador():
     conn = _db(); c = conn.cursor()
     corte = "date('now','-5 hours','-%d day')" % dias
 
-    n_pqr = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE date(creado_en) >= " + corte).fetchone()[0]
-    abiertos = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE estado IN ('nuevo','en_proceso')").fetchone()[0]
-    sin_tocar = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE estado='nuevo'").fetchone()[0]
+    n_pqr = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE COALESCE(descartado,0)=0 "
+                      "AND date(creado_en) >= " + corte).fetchone()[0]
+    abiertos = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE COALESCE(descartado,0)=0 "
+                         "AND estado IN ('nuevo','en_proceso')").fetchone()[0]
+    sin_tocar = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE COALESCE(descartado,0)=0 "
+                          "AND estado='nuevo'").fetchone()[0]
     n_ped = c.execute("SELECT COUNT(*) FROM animus_shopify_orders WHERE date(creado_en) >= "
                       + corte + " AND LOWER(COALESCE(estado,'')) NOT IN "
                       "('cancelled','cancelado','voided')").fetchone()[0]

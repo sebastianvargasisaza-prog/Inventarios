@@ -951,6 +951,16 @@ window.addEventListener('error', function(ev){
     </div>
     <button class="btn btn-primary" onclick="abrirPqrManual()">+ Registrar PQR</button>
   </div>
+  <!-- De donde salen (Sebastian: "como generan datos esos PQR?"). No estaba dicho en ningun
+       lado, y por eso la duda: entran SOLOS por el webhook de GoHighLevel cuando un cliente
+       escribe. Nadie los teclea. -->
+  <div style="display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--cx-info-pale);border-left:3px solid var(--cx-info);border-radius:8px;font-size:12.5px;color:var(--cx-text-soft);margin-bottom:14px;">
+    <span>Entran solos cuando un cliente escribe (GoHighLevel) y se clasifican automáticamente.
+    El bot&oacute;n <b>Registrar PQR</b> es para lo que llega por otra v&iacute;a.</span>
+    <span id="pqr-ultimo" style="margin-left:auto;color:var(--cx-text-mute);white-space:nowrap;"></span>
+    <button class="btn btn-outline btn-sm" onclick="limpiarConsultasPqr()"
+            title="Saca de la bandeja las consultas de venta · no las borra">&#129529; Limpiar consultas</button>
+  </div>
   <div class="kpi-grid" id="pqr-ani-kpis"></div>
 
   <!-- INDICADOR (Sebastian 3-ago: "PQR debe dar finalmente un indicador que se refleje en el
@@ -967,7 +977,7 @@ window.addEventListener('error', function(ev){
       <option value="en_proceso">En proceso</option>
       <option value="resuelto">Resueltos</option>
       <option value="cerrado">Cerrados</option>
-    </select>
+    <option value="descartado">Descartados</option></select>
     <button class="btn btn-outline" onclick="loadAnimusPqr()">&#x21BB; Refrescar</button>
   </div>
   <div id="pqr-ani-list"><p style="color:var(--cx-text-faint);text-align:center;padding:14px">Cargando...</p></div>
@@ -2725,6 +2735,59 @@ var _PQR_TIPO_LBL = {envio:'Envío',producto_equivocado:'Producto equivocado',fa
 var _PQR_EST_LBL = {nuevo:['Nuevo','#d97706'],en_proceso:['En proceso','#0ea5e9'],resuelto:['Resuelto','#16a34a'],cerrado:['Cerrado','#64748b']};
 window._PQR_TIPO_LBL = _PQR_TIPO_LBL;
 
+async function descartarPqr(id, devolver){
+  var body = {recuperar: !!devolver};
+  if (!devolver) {
+    var motivo = await pedirDato({
+      titulo: 'Sacar de la bandeja',
+      tipo: 'texto',
+      sub: 'Sale de la lista pero <b>no se borra</b>: se puede devolver desde el contador '
+         + '<i>Descartados</i>.<br>¿Por qué no es un PQR?',
+      valor: 'No es una queja: es una consulta de venta',
+      requerido: true, confirmar: 'Sacar'});
+    if (!motivo) return;
+    body.motivo = motivo;
+  }
+  try {
+    var r = await _fetchUna('/api/animus/pqr/' + id + '/descartar', _fetchOpts('POST', body));
+    if (!r) return;
+    var d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast(devolver ? 'Devuelto a la bandeja' : 'Sacado · se puede devolver', 'success');
+    loadAnimusPqr(); cargarPqrIndicador();
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
+async function limpiarConsultasPqr(){
+  // MUESTRA antes de aplicar: un boton que saca 191 filas sin decir cuales es un boton que
+  // nadie deberia apretar.
+  try {
+    var d = await (await fetch('/api/animus/pqr/consultas', {credentials:'same-origin'})).json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    if (!d.n) { showToast('Ninguno parece una consulta de venta', 'success'); return; }
+    var muestra = d.candidatos.slice(0, 6).map(function(x){
+      return '<div style="padding:6px 0;border-bottom:1px solid var(--cx-border);">'
+        + '<b>' + esc(x.codigo) + '</b> <span style="color:var(--cx-text-mute);">' + esc(x.fecha) + '</span><br>'
+        + '<span style="color:var(--cx-text-soft);">' + esc(x.descripcion.slice(0,110)) + '</span></div>';
+    }).join('');
+    var ok = await pedirDato({
+      titulo: 'Sacar ' + d.n + ' que no son quejas',
+      tipo: 'confirmar',
+      sub: 'Son consultas de venta (precio, formas de pago, ser creadora). '
+         + '<b>No se borran</b>: quedan en <i>Descartados</i> y se pueden devolver.<br><br>'
+         + '<div style="max-height:210px;overflow:auto;font-size:12px;">' + muestra
+         + (d.n > 6 ? '<div style="padding:6px 0;color:var(--cx-text-mute);">y ' + (d.n-6) + ' más...</div>' : '')
+         + '</div>',
+      confirmar: 'Sacar los ' + d.n});
+    if (!ok) return;
+    var r = await _fetchUna('/api/animus/pqr/consultas', _fetchOpts('POST', {}));
+    if (!r) return;
+    var res = await r.json();
+    showToast(res.aviso || ('Salieron ' + res.descartados), 'success');
+    loadAnimusPqr(); cargarPqrIndicador();
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
 async function loadAnimusPqr(){
   var box = document.getElementById('pqr-ani-list');
   var est = (document.getElementById('pqr-ani-festado')||{}).value || '';
@@ -2733,29 +2796,90 @@ async function loadAnimusPqr(){
     var d = await r.json();
     if(!r.ok) throw new Error(d.error||'error');
     var s = d.resumen||{};
-    document.getElementById('pqr-ani-kpis').innerHTML =
-      '<div class="kpi-card"><div class="label">Nuevos</div><div class="val" style="color:var(--cx-warn-text)">'+(s.nuevo||0)+'</div></div>'+
-      '<div class="kpi-card"><div class="label">En proceso</div><div class="val" style="color:var(--cx-info-text)">'+(s.en_proceso||0)+'</div></div>'+
-      '<div class="kpi-card"><div class="label">Resueltos</div><div class="val" style="color:var(--cx-success-text)">'+(s.resuelto||0)+'</div></div>'+
-      '<div class="kpi-card"><div class="label">Cerrados</div><div class="val">'+(s.cerrado||0)+'</div></div>';
+
+    // Los contadores son BOTONES: "¿donde quedan los resueltos?" se contesta apretando
+    // Resueltos, en vez de exigir que alguien descubra el filtro de arriba.
+    var tarjetas = [
+      ['nuevo', 'Nuevos', s.nuevo||0, 'sin tocar todavía', 'var(--cx-warn-text)'],
+      ['en_proceso', 'En proceso', s.en_proceso||0, 'alguien las está atendiendo', 'var(--cx-info-text)'],
+      ['resuelto', 'Resueltos', s.resuelto||0, 'ya se le respondió al cliente', 'var(--cx-success-text)'],
+      ['cerrado', 'Cerrados', s.cerrado||0, 'sin nada más que hacer', 'var(--cx-text-mute)'],
+      ['descartado', 'Descartados', s.descartado||0, 'no eran quejas · se pueden devolver', 'var(--cx-text-mute)']
+    ];
+    document.getElementById('pqr-ani-kpis').innerHTML = tarjetas.map(function(t){
+      var activo = (est === t[0]);
+      return '<div class="kpi-card" onclick="filtrarPqr(\'' + t[0] + '\')" title="Ver solo estos"'
+        + ' style="cursor:pointer;' + (activo ? 'border-color:var(--cx-primary);box-shadow:0 0 0 2px var(--cx-primary-pale);' : '') + '">'
+        + '<div class="label">' + t[1] + '</div>'
+        + '<div class="val" style="color:' + t[4] + '">' + t[2] + '</div>'
+        + '<div class="sub">' + t[3] + (activo ? ' &middot; <b>viendo</b>' : '') + '</div>'
+        + '</div>';
+    }).join('');
+
     var items = d.pqr||[];
     window._PQR_ROWS = items;   // el modal las busca por id
-    if(!items.length){ box.innerHTML='<p style="color:var(--cx-text-faint);text-align:center;padding:14px">Sin PQR.</p>'; return; }
-    box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.86em"><thead><tr style="text-align:left;color:var(--cx-text-faint);font-size:0.85em"><th style="padding:6px">Código</th><th>Tipo</th><th>Cliente</th><th>Descripción</th><th>Estado</th><th>Acción</th></tr></thead><tbody>'
+    // Cuando entro el ultimo: si el buzon enmudece, una bandeja vacia se ve igual que una al
+    // dia -- y asi estuvo seis semanas sin que nadie lo notara (M127).
+    var ult = items.length ? (items[0].creado_en||'').slice(0,10) : '';
+    var elu = document.getElementById('pqr-ultimo');
+    if (elu) elu.textContent = ult ? ('último: ' + ult) : '';
+
+    if(!items.length){
+      box.innerHTML = '<p style="color:var(--cx-text-mute);text-align:center;padding:26px;">'
+        + (est ? 'Ninguno en ese estado. <a href="#" onclick="filtrarPqr(\'\');return false;" style="color:var(--cx-info-text);">Ver todos</a>'
+               : 'Sin PQR todavía.') + '</p>';
+      return;
+    }
+
+    var hoy = new Date(Date.now() - 5*3600*1000);
+    box.innerHTML = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">'
+      + '<thead><tr style="text-align:left;color:var(--cx-text-mute);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--cx-border);">'
+      + '<th style="padding:9px 8px;">Código</th><th>Fecha</th><th>Tipo</th><th>Cliente</th>'
+      + '<th>Lo que dice</th><th>Estado</th><th style="text-align:right;">Acción</th></tr></thead><tbody>'
       + items.map(function(p){
-        var est = _PQR_EST_LBL[p.estado]||[p.estado,'#64748b'];
-        var pr = p.prioridad==='alta'?' 🔴':(p.prioridad==='baja'?'':' 🟡');
-        return '<tr style="border-top:1px solid var(--cx-hairline,#e2e8f0)">'
-          +'<td style="padding:6px"><b>'+(p.codigo||p.id)+'</b>'+pr+'</td>'
-          +'<td>'+(_PQR_TIPO_LBL[p.tipo]||p.tipo)+'</td>'
-          +'<td>'+(p.contacto_nombre||'-')+'</td>'
-          +'<td style="max-width:320px">'+(p.descripcion||'').replace(/</g,'&lt;')+(p.pedido_numero?'<div style="font-size:0.82em;color:var(--cx-info-text)">📦 Pedido '+String(p.pedido_numero).replace(/</g,'&lt;')+'</div>':'')+'</td>'
-          +'<td><span style="color:'+est[1]+';font-weight:700">'+est[0]+'</span></td>'
-          +'<td><button class="btn btn-outline" style="padding:3px 8px;font-size:0.8em" onclick="gestionarPqr('+p.id+')">Gestionar</button></td>'
-          +'</tr>';
-      }).join('') + '</tbody></table>';
-  }catch(e){ box.innerHTML='<p style="color:var(--cx-danger-text);text-align:center;padding:14px">Error: '+e.message+'</p>'; }
+        var e = _PQR_EST_LBL[p.estado]||[p.estado,''];
+        var tono = p.estado==='resuelto' ? 'badge-green'
+                 : (p.estado==='en_proceso' ? 'badge-blue'
+                 : (p.estado==='cerrado' ? 'badge-gray' : 'badge-yellow'));
+        // La ANTIGUEDAD a la vista: un reclamo de hace 40 dias no puede leerse igual que uno
+        // de hoy, y un aviso que no envejece se vuelve ruido (M129).
+        var dias = null;
+        try { dias = Math.max(0, Math.round((hoy - new Date((p.creado_en||'').slice(0,10)))/86400000)); } catch(_e){}
+        var edad = (dias == null) ? ''
+          : '<div style="font-size:10.5px;color:' + (dias>7 ? 'var(--cx-danger-text)' : 'var(--cx-text-mute)') + ';">'
+            + (dias===0 ? 'hoy' : 'hace ' + dias + ' d') + '</div>';
+        var prio = p.prioridad==='alta'
+          ? '<span class="badge badge-red" style="margin-left:5px;">alta</span>' : '';
+        return '<tr style="border-bottom:1px solid var(--cx-border);">'
+          + '<td style="padding:10px 8px;vertical-align:top;"><b>' + esc(p.codigo||p.id) + '</b>' + prio + '</td>'
+          + '<td style="vertical-align:top;white-space:nowrap;">' + esc((p.creado_en||'').slice(0,10)) + edad + '</td>'
+          + '<td style="vertical-align:top;">' + esc(_PQR_TIPO_LBL[p.tipo]||p.tipo) + '</td>'
+          + '<td style="vertical-align:top;">' + esc(p.contacto_nombre||'-')
+          +   (p.pedido_numero ? '<div style="font-size:11px;color:var(--cx-info-text);">' + esc(p.pedido_numero) + '</div>' : '')
+          + '</td>'
+          + '<td style="max-width:460px;vertical-align:top;line-height:1.45;color:var(--cx-text-soft);">' + esc(p.descripcion||'') + '</td>'
+          + '<td style="vertical-align:top;"><span class="badge ' + tono + '">' + esc(e[0]) + '</span>'
+          +   (p.respondido_por ? '<div style="font-size:10.5px;color:var(--cx-text-mute);margin-top:3px;">' + esc(p.respondido_por) + '</div>' : '')
+          + '</td>'
+          + '<td style="text-align:right;vertical-align:top;white-space:nowrap;">'
+          +   (p.descartado
+                ? '<button class="btn btn-outline btn-sm" onclick="descartarPqr(' + p.id + ',1)">Devolver</button>'
+                : '<button class="btn btn-outline btn-sm" onclick="gestionarPqr(' + p.id + ')">Gestionar</button>'
+                  + ' <button class="btn btn-outline btn-sm" title="No es un PQR" onclick="descartarPqr(' + p.id + ',0)">No es PQR</button>')
+          + '</td>'
+          + '</tr>';
+      }).join('') + '</tbody></table></div>';
+  }catch(e){ box.innerHTML='<p style="color:var(--cx-danger-text);text-align:center;padding:14px">Error: '+esc(e.message)+'</p>'; }
 }
+
+function filtrarPqr(estado){
+  var sel = document.getElementById('pqr-ani-festado');
+  // Si ya se esta viendo ese estado, el segundo click vuelve a todos: el contador funciona
+  // como interruptor y no deja al usuario atrapado en un filtro que no sabe como sacar.
+  if (sel) sel.value = (sel.value === estado) ? '' : estado;
+  loadAnimusPqr();
+}
+
 function abrirPqrManual(){ abrirModal('modal-pqr-ani'); }
 async function guardarPqrManual(){
   var desc = document.getElementById('pqr-ani-desc').value.trim();

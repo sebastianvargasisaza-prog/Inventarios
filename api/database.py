@@ -11118,6 +11118,18 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         # el soporte de una novedad ahora es un archivo subido, no un enlace tecleado
         "ALTER TABLE notificaciones_empleados ADD COLUMN adjunto_key TEXT",
     ]),
+    (415, "PQR: lo que no es una queja se DESCARTA (reversible), no se borra", [
+        # Sebastian (4-ago): "elimina todos los que estan, esto no es PQR" -- y los ejemplos que
+        # dio son CONSULTAS DE VENTA ("metodo de pago", "quiero ser creadora"), no reclamos.
+        # Va en columna propia y no como un estado nuevo: sumar un valor al CHECK obliga a
+        # revisar cada whitelist que lo consume (M116) y a reconstruir la tabla.
+        "ALTER TABLE animus_pqr ADD COLUMN descartado INTEGER DEFAULT 0",
+        "ALTER TABLE animus_pqr ADD COLUMN descartado_motivo TEXT",
+        "ALTER TABLE animus_pqr ADD COLUMN descartado_por TEXT",
+        "ALTER TABLE animus_pqr ADD COLUMN descartado_at TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_animus_pqr_descartado "
+        "ON animus_pqr(descartado, creado_en)",
+    ]),
 ]
 
 
