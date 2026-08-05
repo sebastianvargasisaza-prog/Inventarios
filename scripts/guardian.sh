@@ -175,6 +175,10 @@ CORAZON=(
   # vencida hace 5 dias igual que una al dia); Estacionalidad marcaba pico en TODOS y promediaba
   # el mes en curso como si estuviera completo; y una lista decia "todo cubierto" sin calcular.
   "tests/test_calendario_no_miente.py"
+  # El calendario dejo de CARGAR ("Cannot set properties of null"): al retirar el autoplan se
+  # borraron los botones y quedo vivo el codigo que los toca. El node-check NO lo ve: un
+  # getElementById sobre un id inexistente es sintaxis valida y solo revienta al EJECUTAR.
+  "tests/test_calendario_carga.py"
   # Los dos modales (Necesidades y Calendario) contestaban lo mismo preguntandole a endpoints
   # DISTINTOS: uno por un lote del maestro de formulas y el otro por los kg reales de la cadena.
   # Ahora comparten el calculo, y ese bloque muestra las presentaciones con la foto del envase

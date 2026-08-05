@@ -20406,7 +20406,12 @@ async function cargar(){
       agendadas: dAgendadas.producciones || [],
       festivos: festivosSet,
     };
-    document.getElementById('btn-aplicar').disabled = true;  // no hay sugerencias hasta apretar IA
+    // El autoplan se retiro (Sebastian: "ya no lo usamos") y con el su boton. Este acceso
+    // quedo vivo y reventaba la carga ENTERA del calendario con "Cannot set properties of
+    // null": podar es borrar el PAR completo, y el node-check no lo ve porque un
+    // getElementById sobre un id inexistente es sintaxis valida (M112).
+    var _btnAp0 = document.getElementById('btn-aplicar');
+    if (_btnAp0) _btnAp0.disabled = true;
     // Sebastián 15-may-2026: "no veo nada en calendario". Causa: el
     // calendario abría en el mes actual (mayo) que está vacío · el plan
     // arranca meses adelante. Auto-saltar al primer mes con lotes.
@@ -20922,7 +20927,8 @@ function renderListaSugerencias(){
     const msg = _hayPlan
       ? 'El plan corrió y no propuso lotes nuevos para este horizonte.'
       : 'Todavía no se calcularon sugerencias para este horizonte · esto NO quiere decir que esté todo cubierto. Corré el plan para saberlo.';
-    document.getElementById('sugerencias-lista').innerHTML = '<div class="muted" style="padding:20px;text-align:center">' + msg + '</div>';
+    var _lst0 = document.getElementById('sugerencias-lista');
+    if (_lst0) _lst0.innerHTML = '<div class="muted" style="padding:20px;text-align:center">' + msg + '</div>';
     return;
   }
   let html = '<div class="suggest-list">';
@@ -20940,7 +20946,8 @@ function renderListaSugerencias(){
     html += '</div>';
   });
   html += '</div>';
-  document.getElementById('sugerencias-lista').innerHTML = html;
+  var _lst1 = document.getElementById('sugerencias-lista');
+  if (_lst1) _lst1.innerHTML = html;
 }
 
 function moverSugerencia(i){
@@ -20965,7 +20972,8 @@ function ignorarSugerencia(i){
     feedbackIA(it.decision_id, 'ignorada', null, null, null);
   }
   PLAN_DATA.plan.plan_items.splice(i, 1);
-  document.getElementById('btn-aplicar').disabled = PLAN_DATA.plan.plan_items.length === 0;
+  var _btnAp1 = document.getElementById('btn-aplicar');
+  if (_btnAp1) _btnAp1.disabled = PLAN_DATA.plan.plan_items.length === 0;
   render();
 }
 
@@ -24228,7 +24236,8 @@ async function autoplanIA(){
       if (PLAN_DATA && PLAN_DATA.plan){
         PLAN_DATA.plan.plan_items = [];
         PLAN_DATA.plan.total_producciones = 0;
-        document.getElementById('btn-aplicar').disabled = true;
+        var _btnAp2 = document.getElementById('btn-aplicar');
+        if (_btnAp2) _btnAp2.disabled = true;
       }
       render();
       return;
@@ -24246,10 +24255,12 @@ async function autoplanIA(){
       from_ia: true,
     }));
     PLAN_DATA.plan.total_producciones = n;
-    document.getElementById('btn-aplicar').disabled = false;
+    var _btnAp3 = document.getElementById('btn-aplicar');
+    if (_btnAp3) _btnAp3.disabled = false;
     // Sebastián 14-may-2026: mostrar botón "Aplicar plan IA anual"
     // cuando hay sugerencias IA cargadas
-    document.getElementById('btn-ia-anual').style.display = 'inline-block';
+    var _btnAn = document.getElementById('btn-ia-anual');
+    if (_btnAn) _btnAn.style.display = 'inline-block';
     const cacheTag = d.cache_hit ? ' <span style="background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af);padding:1px 5px;border-radius:3px;font-size:10px">cache 24h</span>' : '';
     // Confianza promedio para mostrar
     const confs = sugerencias.map(s => s.confianza || 0).filter(c => c > 0);
