@@ -16738,7 +16738,17 @@ def marcacion_ordenes_lista():
             out.append({'id': r[0], 'base': r[1], 'serigrafiado': r[2], 'producto': r[3], 'metodo': r[4],
                         'proveedor': r[5], 'cantidad_enviada': r[6], 'cantidad_recibida': r[7],
                         'fecha_envio': r[8], 'fecha_retorno': r[9], 'estado': r[10],
-                        'fecha_alistar': _fa, 'dias_restantes': _dias, 'hora_alistar': r[12], 'urgencia': (r[13] or _urg)})
+                        'fecha_alistar': _fa, 'dias_restantes': _dias, 'hora_alistar': r[12],
+                        # ⚠ EL SEMÁFORO ESTABA MUERTO (4-ago). Era `r[13] or _urg`, y `r[13]` es la
+                        # columna `urgencia`, que se escribe UNA vez al crear la orden con el valor
+                        # 'media' y NUNCA se recalcula. Como 'media' siempre tiene valor, el `or`
+                        # nunca llegaba al cálculo real: TODO salía amarillo, y una orden vencida
+                        # hace cinco días se pintaba igual que una recién creada -- con el texto
+                        # diciendo "hace 5d" al lado. El estado del tiempo se DERIVA de la fecha,
+                        # no se teclea (M109: un indicador que alguien debe recordar actualizar
+                        # termina viejo). La marca manual se conserva aparte, por si se usa.
+                        'urgencia': _urg,
+                        'urgencia_manual': (r[13] or '')})
     except Exception as e:
         return jsonify({'error': str(e)[:200], 'items': []}), 500
     return jsonify({'items': out, 'total': len(out)})

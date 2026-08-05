@@ -6699,7 +6699,7 @@ def plan_salud_cadenas():
     return jsonify({'ok': True, 'resumen': resumen, 'items': items,
                     # qué producto SE VENDE y no tiene ni un lote programado (va al quiebre)
                     'sin_cadena_productos': sin_cadena_prods,
-                    'regla': 'kg_requerido = vende_uds_dia x (cadencia + 20) x ml / 1000',
+                    'regla': 'kg_requerido = vende_uds_dia x cadencia x ml / 1000 (el colchón de 20 dias lo trae el PRIMER lote, no todos)',
                     'nota': 'read-only · no modifica el calendario'})
 
 
@@ -6746,7 +6746,15 @@ def plan_factibilidad():
         dias = max(1, min(365, int(request.args.get("dias", 30))))
     except Exception:
         dias = 30
-    solo_fijo = str(request.args.get('solo_fijo', '1')).lower() in ('1', 'true', 'yes')
+    # ⚠ EL MISMO UNIVERSO QUE ABASTECIMIENTO (4-ago). El default era `solo_fijo=1`, o sea que
+    # esta pantalla contaba ÚNICAMENTE lo fijado a mano mientras Abastecimiento -- la pestaña de
+    # al lado -- cuenta además lo proyectado, lo sugerido y lo manual. En un plan armado con
+    # "Proyectar 2 años" (casi todo `eos_proyeccion`), Factibilidad decía "nada que comprar, el
+    # plan es ejecutable" y Abastecimiento mostraba déficit al mismo tiempo. Y el subtítulo
+    # promete "¿alcanzan las MP para TODO lo programado?", que era justo lo que no hacía.
+    # Se puede volver a lo Fijo con ?solo_fijo=1, pero el default responde la pregunta del
+    # rótulo (M5 · el número mostrado es el que decide).
+    solo_fijo = str(request.args.get('solo_fijo', '0')).lower() in ('1', 'true', 'yes')
     # FIX 11-jun · Sebastián: "factibilidad debe mostrar desde el día que estoy viendo,
     # hoy primero". Por defecto FORWARD-ONLY (hoy → +dias) · no arrastra el pasado
     # (lotes viejos 'pendiente' del mes anterior = zombies que ensuciaban y descolocaban
@@ -6942,12 +6950,14 @@ def plan_factibilidad():
         params_fechas.append(desde)
         params_fechas.append(piso_atraso)
     where_fechas += ")"
-    where_origen = ""
-    if solo_fijo:
-        where_origen = (
-            " AND COALESCE(origen,'') IN "
-            "     ('eos_plan','eos_b2b','eos_retroactivo')"
-        )
+    # La lista de orígenes es la MISMA que usa `abastecimiento_consumo_horizontes`: si las dos
+    # pantallas miran distinto universo, se contradicen sobre el mismo calendario.
+    _ORIG_FIJO = ('eos_plan', 'eos_b2b', 'eos_retroactivo')
+    _ORIG_TODO = _ORIG_FIJO + ('eos_canonico', 'auto_plan', 'sugerido',
+                               'eos_proyeccion', 'manual')
+    _origenes = _ORIG_FIJO if solo_fijo else _ORIG_TODO
+    where_origen = (" AND COALESCE(origen,'') IN ('"
+                    + "','".join(_origenes) + "')")
     # FIX audit 24-may-2026 noche · alineado con consumo-horizontes ·
     # 'esperando_recurso' es lote pausado por falta de MP · si lo cuento
     # como consumo de MP el cálculo es circular (ese lote NO se va a
@@ -7172,6 +7182,12 @@ def plan_factibilidad():
     return jsonify({
         "horizonte_dias": dias,
         "solo_fijo": solo_fijo,
+        # Qué se contó, dicho con nombre propio: un veredicto de "es ejecutable" sin decir
+        # sobre qué universo es lo que hacía que esta pantalla y Abastecimiento se
+        # contradijeran sin que nadie entendiera por qué (M124).
+        "origenes_contados": list(_origenes),
+        "universo": ('sólo lo fijado a mano' if solo_fijo
+                     else 'todo lo programado (fijo + proyectado + sugerido)'),
         "incluir_atrasadas": incluir_atrasadas,
         "resumen": {
             "total": len(producciones),
@@ -15265,12 +15281,22 @@ def _estacionalidad_ventas(conn, meses_atras=24, umbral_pico=1.3):
             prod_ym[prod][(y, mo)] = prod_ym[prod].get((y, mo), 0) + qty
             glob_ym[(y, mo)] = glob_ym.get((y, mo), 0) + qty
 
+    # ⚠ EL MES EN CURSO NO ES UN MES (4-ago). Se estaba promediando como si estuviera completo:
+    # el 4 de agosto, agosto entraba con 4 días de venta contra los 31 de los agostos anteriores,
+    # así que el índice del mes actual salía hundido y el producto parecía tener un valle donde
+    # sólo hay un mes a medias. Un dato parcial comparado contra datos completos no es un dato
+    # bajo: es un dato incompleto, y tratarlos igual es lo que hace que la curva mienta.
+    _ym_curso = (hoy.year, hoy.month)
+
     def _curva(ym):
         # promedio de uds por OCURRENCIA de cada mes calendario (normaliza multi-año) + índice mes/promedio
         tot = [0.0] * 12
         años_por_mes = [set() for _ in range(12)]
         total = 0
         for (y, m), u in ym.items():
+            if (y, m) == _ym_curso:
+                total += u      # suma al total histórico, pero NO promedia el mes a medias
+                continue
             tot[m - 1] += u
             años_por_mes[m - 1].add(y)
             total += u
@@ -15298,8 +15324,13 @@ def _estacionalidad_ventas(conn, meses_atras=24, umbral_pico=1.3):
     _prev12 = set(_ventana_ym(_py, _pm, 12))
 
     def _crecimiento(ym):
-        u_last = sum(u for (y, m), u in ym.items() if (y, m) in _last12)
-        u_prev = sum(u for (y, m), u in ym.items() if (y, m) in _prev12)
+        # ⚠ El mes EN CURSO se excluye de las dos ventanas: entra completo en la de arriba y no
+        # en la de abajo, así que el año contra año salía SIEMPRE subestimado -- y ese número
+        # alimenta el acelerador de compras, o sea que se compraba de menos por un mes a medias.
+        u_last = sum(u for (y, m), u in ym.items()
+                     if (y, m) in _last12 and (y, m) != _ym_curso)
+        u_prev = sum(u for (y, m), u in ym.items()
+                     if (y, m) in _prev12 and (y, m) != _ym_curso)
         disp = u_prev > 0
         yoy = round((u_last / u_prev - 1.0) * 100.0, 1) if disp else None
         return {'yoy_pct': yoy, 'uds_12m': u_last, 'uds_prev_12m': u_prev, 'disponible': disp}
@@ -15312,7 +15343,13 @@ def _estacionalidad_ventas(conn, meses_atras=24, umbral_pico=1.3):
         usa_global = meses_con_dato < 6   # poco histórico → respaldo global
         ind_ef = g_indice if usa_global else indice
         picos = [i + 1 for i in range(12) if ind_ef[i] >= umbral_pico]
+        # ⚠ `pico_max_mes` es el mes MÁS ALTO, que existe siempre · no es lo mismo que un PICO.
+        # La pantalla lo pintaba con 🔥 sin comparar contra el umbral, así que TODOS los
+        # productos salían con pico, incluso con índice 1,00 (o sea, plano). La lista correcta
+        # (`picos`, que sí respeta el umbral) se calculaba y no se usaba. Ahora el máximo sólo
+        # viaja como pico si de verdad lo es; si no, se declara que no hay estacionalidad.
         _mx = max(range(12), key=lambda i: ind_ef[i]) if any(ind_ef) else None
+        _es_pico = bool(_mx is not None and ind_ef[_mx] >= umbral_pico)
         crec = _crecimiento(ym)
         # el crecimiento efectivo cae al global si el producto no tiene 2 años para comparar (M70 respaldo)
         crec_ef = crec if crec['disponible'] else g_crec
@@ -15320,8 +15357,13 @@ def _estacionalidad_ventas(conn, meses_atras=24, umbral_pico=1.3):
             'producto': prod, 'uds_total': total, 'meses_con_dato': meses_con_dato,
             'curva_uds': curva, 'indice': indice, 'indice_efectivo': ind_ef,
             'usa_global': usa_global, 'picos': picos,
-            'pico_max_mes': (_mx + 1) if _mx is not None else None,
-            'pico_max_indice': round(ind_ef[_mx], 2) if _mx is not None else 0.0,
+            # `pico_max_mes` sólo viene si SUPERA el umbral · `mes_mas_alto` es informativo y
+            # existe siempre (no confundir "el más alto" con "tiene un pico")
+            'pico_max_mes': ((_mx + 1) if _es_pico else None),
+            'pico_max_indice': (round(ind_ef[_mx], 2) if _es_pico else 0.0),
+            'tiene_estacionalidad': _es_pico,
+            'mes_mas_alto': (_mx + 1) if _mx is not None else None,
+            'indice_mes_mas_alto': round(ind_ef[_mx], 2) if _mx is not None else 0.0,
             'crecimiento': crec, 'crecimiento_efectivo': crec_ef,
             'crec_usa_global': (not crec['disponible']),
         })
@@ -15617,7 +15659,14 @@ function barsHtml(curva, indEf, umbral){
   return h + '</div>';
 }
 function picoBadge(p){
-  if(!p.pico_max_mes) return '';
+  // El backend ya sólo manda `pico_max_mes` si SUPERA el umbral · antes se pintaba 🔥 en todos
+  // los productos porque se usaba el mes más alto, que existe siempre aunque la curva sea plana.
+  if(!p.pico_max_mes) {
+    // Sin pico no se calla: decir "no tiene estacionalidad" es información, un hueco no.
+    return (p.mes_mas_alto
+      ? '<span class="pico" style="opacity:.6;font-weight:600">sin estacionalidad marcada</span>'
+      : '');
+  }
   var hot = p.pico_max_indice>=2;
   return '<span class="pico'+(hot?' hot':'')+'">&#128293; '+MES[p.pico_max_mes-1]+' '+p.pico_max_indice.toFixed(1)+'&times;</span>';
 }
@@ -15644,7 +15693,14 @@ async function cargar(){
       + '<div class="puds">'+(g.uds_total||0).toLocaleString('es-CO')+' uds · '+(g.meses_con_dato||0)+' meses con dato</div></div>'
       + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
       + crecBadge(g.crecimiento, false)
-      + picoBadge({pico_max_mes: gArgMax(g.indice), pico_max_indice: Math.max.apply(null, g.indice||[0])})+'</div></div>'
+      + picoBadge((function(){
+          // Misma regla que el backend aplica por producto: el mes más alto sólo es PICO si
+          // supera el umbral. Antes esta tarjeta lo pintaba siempre.
+          var _im = gArgMax(g.indice), _mx = Math.max.apply(null, g.indice||[0]);
+          return (_mx >= umbral)
+            ? {pico_max_mes: _im, pico_max_indice: _mx}
+            : {pico_max_mes: null, mes_mas_alto: _im};
+        })())+'</div></div>'
       + barsHtml(g.curva_uds||[], g.indice||[], umbral) + '</div>';
     if(!(d.productos||[]).length){ html += '<div class="empty">Sin ventas mapeadas en el histórico. Verificá que los SKU de Shopify estén mapeados a productos.</div>'; }
     (d.productos||[]).forEach(function(p){
@@ -20426,9 +20482,16 @@ function render(){
   // KPIs
   const k = PLAN_DATA.plan;
   let html = '';
-  html += '<span class="kpi"><div class="kpi-lbl">📅 Sugeridas</div><div class="kpi-val" style="color:var(--cx-success-text, #16a34a)">' + (k.total_producciones || 0) + '</div></span>';
-  html += '<span class="kpi"><div class="kpi-lbl">🗑 Cancelables</div><div class="kpi-val" style="color:var(--cx-danger-text, #dc2626)">' + ((k.cancelables_calendar || []).length) + '</div></span>';
-  html += '<span class="kpi"><div class="kpi-lbl">⚠ Sin fórmula</div><div class="kpi-val" style="color:var(--cx-warn-text, #ca8a04)">' + ((k.sin_formula || []).length) + '</div></span>';
+  // ⚠ Estos tres salen de `PLAN_DATA.plan`, que SÓLO llena el autoplan con IA · y ese botón
+  // está oculto, así que mostraban 0 · 0 · 0 de forma permanente sin haber calculado nada.
+  // Un cero que nadie calculó se lee como "no hay nada que hacer" y es lo contrario de la
+  // verdad: es "no se miró" (M100/M124). Si el plan IA no se corrió, no se pintan.
+  const _planIA = !!(k && (k.total_producciones != null || (k.plan_items || []).length));
+  if (_planIA) {
+    html += '<span class="kpi"><div class="kpi-lbl">📅 Sugeridas</div><div class="kpi-val" style="color:var(--cx-success-text, #16a34a)">' + (k.total_producciones || 0) + '</div></span>';
+    html += '<span class="kpi"><div class="kpi-lbl">🗑 Cancelables</div><div class="kpi-val" style="color:var(--cx-danger-text, #dc2626)">' + ((k.cancelables_calendar || []).length) + '</div></span>';
+    html += '<span class="kpi"><div class="kpi-lbl">⚠ Sin fórmula</div><div class="kpi-val" style="color:var(--cx-warn-text, #ca8a04)">' + ((k.sin_formula || []).length) + '</div></span>';
+  }
   html += '<span class="kpi"><div class="kpi-lbl">📅 Ya agendadas</div><div class="kpi-val" style="color:var(--cx-text-soft, #475569)">' + (PLAN_DATA.agendadas.length || 0) + '</div></span>';
   // KPI productos únicos detectados (diag visual del bug)
   try {
@@ -20654,7 +20717,12 @@ async function cargarAlertasVentas(){
       + 'Estas ventas NO cuentan en la velocidad → las necesidades de esos productos salen subestimadas.'
       + (top ? '<div style="font-size:11px;margin-top:4px;opacity:.85">Top: ' + top + '</div>' : '')
       + '</div>'
-      + '<a href="/herramientas#skus-huerfanos" style="background:var(--cx-warn, #f59e0b);color:#fff;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700">Mapear SKUs</a>'
+      // ⚠ El enlace apuntaba a `/herramientas#skus-huerfanos`, una ruta que NO EXISTE (esa
+      // pantalla se movió a un modal del dashboard). Era la ÚNICA acción que ofrecía el aviso,
+      // así que quien quería mapear los SKU llegaba a un 404 (M112: un botón que no lleva a
+      // ningún lado es invisible desde afuera). Ahora abre Necesidades, que es donde el
+      // producto sin mapeo se mapea en línea, sin salir de la pantalla.
+      + '<a href="/inventarios#tab-necesidades" target="_top" style="background:var(--cx-warn, #f59e0b);color:#fff;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700">Mapear SKUs</a>'
       + '</div>';
   }catch(e){ wrap.innerHTML=''; }
 }
@@ -20740,27 +20808,39 @@ function _alertaAccionBtn(a, idx){
 }
 
 function abrirGenerarDesdeAlerta(producto, kg, fecha){
-  // Reusa el modal generar producción si existe en parent · sino fallback
-  if (window.parent && typeof window.parent.abrirGenerarProduccion === 'function'){
-    try { window.parent.abrirGenerarProduccion(producto, kg, fecha); return; } catch(e){}
-  }
-  // Fallback · abrir cargar lote vía endpoint admin lote-manual
-  const ok = confirm('¿Programar lote de ' + producto + '?\\n\\n' +
-                     kg + 'kg · fecha sugerida ' + fecha +
-                     '\\n\\nSe creará como FIJO (eos_plan).');
-  if (!ok) return;
-  fetch('/api/plan/lote-manual', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]*)/)||['',''])[1] || ''},
-    body: JSON.stringify({producto_nombre: producto, kg: kg, fecha: fecha}),
-  }).then(r => r.json()).then(d => {
-    if (d.ok || d.id) {
-      alert('✓ Lote programado · ID ' + (d.id || '?'));
-      cargar();
-    } else {
-      alert('No se pudo programar · ' + (d.error || 'usá Necesidades para crearlo manual'));
-    }
-  }).catch(e => alert('Error: ' + e.message));
+  // ⚠ ESTE BOTÓN FALLABA SIEMPRE (4-ago). Llamaba a `parent.abrirGenerarProduccion(producto,...)`
+  // pasándole el NOMBRE, pero esa función recibe un ÍNDICE del cache de Necesidades y hacía
+  // `cache[nombre]` → undefined → alerta "Producto no encontrado en cache". Y como no lanzaba
+  // excepción, el `return` cortaba antes del plan B -- que además pegaba a
+  // `/api/plan/lote-manual`, una ruta que NO EXISTE. Los dos caminos rotos, y en silencio.
+  // Ahora usa el endpoint real de programación manual, el mismo del ➕ del calendario, con su
+  // validación de día hábil y la confirmación explícita para forzar (M99).
+  if (!confirm('¿Programar lote de ' + producto + '? · ' + kg + ' kg el ' + fecha
+               + ' · se crea como FIJO, ningún proceso automático lo mueve.')) return;
+  const _post = async (forzar) => {
+    const _b = {producto: producto, fecha: fecha, kg: kg, lotes: 1,
+                observaciones: 'Creado desde una alerta del plan'};
+    if (forzar) _b.skip_validacion_dia = true;
+    const _r = await fetch('/api/plan/programar-manual', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json',
+                'X-CSRFToken': (typeof getCSRF === 'function' ? getCSRF() : '')},
+      body: JSON.stringify(_b)
+    });
+    return [_r, await _r.json().catch(() => ({}))];
+  };
+  (async () => {
+    try {
+      let [r, d] = await _post(false);
+      if (r.status === 422 && d && d.puede_forzar){
+        if (!confirm('⚠ ' + (d.error || 'Día no hábil') + '. ¿Programarlo igual en esa fecha?')) return;
+        [r, d] = await _post(true);
+      }
+      if (!r.ok || (d && d.error)) { alert('No se pudo programar: ' + ((d && d.error) || ('HTTP ' + r.status))); return; }
+      alert('✓ Lote programado el ' + fecha);
+      if (typeof cargar === 'function') cargar();
+    } catch(e){ alert('Error de red: ' + e.message); }
+  })();
 }
 
 function renderListaSugerencias(){
@@ -20768,7 +20848,13 @@ function renderListaSugerencias(){
   const itemsAll = (PLAN_DATA.plan.plan_items || []);
   const items = filtroSoloIA ? itemsAll.filter(it => it.from_ia) : itemsAll;
   if (!items.length){
-    const msg = filtroSoloIA ? 'No hay sugerencias de IA cargadas · apretá "🤖 Autoplan con IA"' : 'No hay sugerencias para este horizonte · todo cubierto';
+    // ⚠ Decía "todo cubierto" SIN HABER CALCULADO NADA: la lista se llena sólo con el autoplan
+    // de IA, así que ese mensaje afirmaba que no falta producir cuando nadie lo había mirado.
+    // Afirmar que está todo bien sin haberlo comprobado es peor que no decir nada.
+    const _hayPlan = !!((PLAN_DATA.plan || {}).total_producciones != null);
+    const msg = _hayPlan
+      ? 'El plan corrió y no propuso lotes nuevos para este horizonte.'
+      : 'Todavía no se calcularon sugerencias para este horizonte · esto NO quiere decir que esté todo cubierto. Corré el plan para saberlo.';
     document.getElementById('sugerencias-lista').innerHTML = '<div class="muted" style="padding:20px;text-align:center">' + msg + '</div>';
     return;
   }
@@ -22151,7 +22237,8 @@ async function _npResumen(){
     const vk = p.velocidad_kg_dia || 0;
     const meses = parseFloat((document.getElementById('np-cad-meses')||{}).value) || 2;
     const _int = Math.max(Math.round(meses * 30.44), 15);
-    if (vk > 0) cadKg.value = (Math.round(vk * (_int + 20) * 10) / 10);   // necesario para durar cadencia + 20d
+    // ⚠ 4-ago: el colchón de 20 días lo trae el PRIMER lote, no todos. Sumarlo al tamaño de cada uno gana 20 días de stock por ciclo y se acumulan (20→40→…→200 al lote 11).
+    if (vk > 0) cadKg.value = (Math.round(vk * _int * 10) / 10);
     else if (p.ultima_produccion_kg > 0) cadKg.value = p.ultima_produccion_kg;
   }
   let h = '';
@@ -22188,7 +22275,8 @@ function _npCadAutoKg(){
   const dias = parseFloat((document.getElementById('np-cad-dias')||{}).value) || 0;
   const mm = Math.min(parseFloat((document.getElementById('np-cad-meses')||{}).value) || 0, 12);
   const interval = dias>0 ? Math.max(15, Math.min(Math.round(dias),400)) : Math.max(Math.round(mm*30.44),15);
-  kgEl.value = (Math.round(udsDia * (interval + 20) * ml / 1000 * 10) / 10);
+  // ⚠ 4-ago: el colchón de 20 días lo trae el PRIMER lote, no todos. Sumarlo al tamaño de cada uno gana 20 días de stock por ciclo y se acumulan (20→40→…→200 al lote 11).
+  kgEl.value = (Math.round(udsDia * interval * ml / 1000 * 10) / 10);
 }
 function _npCadFromMeses(){
   const m = parseFloat((document.getElementById('np-cad-meses')||{}).value) || 0;
@@ -22233,11 +22321,11 @@ function _npCadPreview(){
   const p = window._NP_P;
   let ref = '';
   if (p && (p.velocidad_uds_dia||0) > 0.001 && (p.ml_unidad||0) > 0){
-    const cubre = cc.interval + 20;
+    const cubre = cc.interval;   // en régimen cada lote repone lo que se vende en la cadencia
     const kgRef = (p.velocidad_uds_dia) * cubre * p.ml_unidad / 1000;
     const dif = cc.kg - kgRef;
     const tag = (kgRef>0 && Math.abs(dif) >= kgRef*0.1) ? (dif>0 ? ' · deja <b style="color:var(--cx-info-text, #0891b2)">+'+dif.toFixed(0)+' kg</b> de colchón' : ' · queda <b style="color:var(--cx-danger-text, #dc2626)">'+dif.toFixed(0)+' kg</b> CORTO') : ' · calza justo';
-    ref = '📊 Vende ~<b>'+Math.round(p.velocidad_uds_dia*30.44)+' uds/mes</b> · producís 20d antes → cubrir <b>'+cc.interval+'+20='+cubre+' días</b> → ~<b>'+kgRef.toFixed(0)+' kg</b>'+tag+'<br>';
+    ref = '📊 Vende ~<b>'+Math.round(p.velocidad_uds_dia*30.44)+' uds/mes</b> · en régimen cada lote repone <b>'+cc.interval+' días</b> → ~<b>'+kgRef.toFixed(0)+' kg</b>'+tag+' · el colchón de 20d lo trae el <b>primer</b> lote<br>';
   }
   let _first = '';
   try{ const _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
@@ -22909,7 +22997,8 @@ function _calCmAutoKg(){
   var dias = parseFloat((document.getElementById('cal-cm-dias')||{}).value)||0;
   var mm = Math.min(parseFloat((document.getElementById('cal-cm-meses')||{}).value)||0,12);
   var interval = dias>0 ? Math.max(15,Math.min(Math.round(dias),400)) : Math.max(Math.round(mm*30.44),15);
-  kgEl.value = (Math.round(udsDia*(interval+20)*ml/1000*10)/10);
+  // ⚠ 4-ago: el colchón de 20 días lo trae el PRIMER lote, no todos. Sumarlo al tamaño de cada uno gana 20 días de stock por ciclo y se acumulan (20→40→…→200 al lote 11).
+  kgEl.value = (Math.round(udsDia*interval*ml/1000*10)/10);
 }
 function _calCmSyncMeses(){ var m=parseFloat((document.getElementById('cal-cm-meses')||{}).value)||0; var d=document.getElementById('cal-cm-dias'); if(d&&m>0)d.value=Math.round(m*30.44); _calCmAutoKg(); _calCmPreview(); }
 function _calCmSyncDias(){ var d=parseFloat((document.getElementById('cal-cm-dias')||{}).value)||0; var m=document.getElementById('cal-cm-meses'); if(m&&d>0)m.value=Math.round(d/30.44*10)/10; _calCmAutoKg(); _calCmPreview(); }

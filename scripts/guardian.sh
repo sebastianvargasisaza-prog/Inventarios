@@ -169,6 +169,12 @@ CORAZON=(
   # lo tenia y la cadena llamaba sin ello), y el tope de 200 kg/dia (que no existia: los
   # generadores contaban lotes, no kilos, asi que dos de 150 dejaban 300 kg en un dia).
   "tests/test_reglas_programacion.py"
+  # El Calendario afirmaba cosas que nadie habia comprobado: Factibilidad decia "nada que
+  # comprar" contando SOLO lo fijado a mano mientras Abastecimiento (la pestana de al lado)
+  # mostraba deficit; el semaforo de Alistar envases estaba muerto (todo amarillo, una orden
+  # vencida hace 5 dias igual que una al dia); Estacionalidad marcaba pico en TODOS y promediaba
+  # el mes en curso como si estuviera completo; y una lista decia "todo cubierto" sin calcular.
+  "tests/test_calendario_no_miente.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

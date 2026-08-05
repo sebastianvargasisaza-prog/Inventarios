@@ -27499,7 +27499,12 @@ async function ckMarcar(itemId, estado){
     var dias = parseFloat((document.getElementById('cm-dias')||{}).value) || 0;
     var mm = Math.min(parseFloat((document.getElementById('cm-meses')||{}).value) || 0, 12);
     var interval = dias > 0 ? Math.max(15, Math.min(Math.round(dias),400)) : Math.max(Math.round(mm*30.44),15);
-    kgEl.value = (Math.round(udsDia * (interval + 20) * ml / 1000 * 10) / 10);   // cubrir cadencia + 20d buffer
+    // ⚠ El valor por defecto se corrigió el 4-ago a `velocidad × cadencia`, pero ESTA función
+    // -- la que recalcula al tocar meses o días -- seguía con `(cadencia + 20)`. O sea que el
+    // arreglo duraba hasta que el usuario tocaba el campo, y ahí volvía la fórmula que acumula
+    // 20 días de stock por ciclo. Su propio preview lo acusaba: "deja +X kg de más, y eso se
+    // ACUMULA". El colchón lo trae el PRIMER lote (`kgPrimero`), no todos.
+    kgEl.value = (Math.round(udsDia * interval * ml / 1000 * 10) / 10);
   }
   function _cmSyncFromMeses(idx){
     var m = parseFloat((document.getElementById('cm-meses')||{}).value) || 0;
