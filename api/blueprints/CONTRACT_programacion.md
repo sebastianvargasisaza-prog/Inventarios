@@ -1046,3 +1046,27 @@ se dispara al cambiar los kg (M43) · lo que está en serigrafía se informa, no
 
 Tests: `tests/test_modal_unificado.py` (en el gate · foto y pesado por volumen probados
 revirtiendo cada uno).
+
+## 🧮 PROG-N+14 · El desglose cuadra, y el truncado se declara (4-ago)
+
+**El encabezado de Abastecimiento no sumaba su propio total.** `eos_proyeccion` — el plan rodante
+a 2 años, que suele ser la MAYORÍA de los lotes — no caía ni en `n_fijas` ni en `n_sugeridas` y
+se iba a `n_otras`, que la pantalla nunca pintaba: se leía *"1.400 lotes · 120 Fijas · 60
+Sugeridas"* y el resto no aparecía por ningún lado. Un desglose que no suma el total obliga a
+desconfiar de los tres números. La proyección es una Sugerida más (así la trata el resto del
+motor) y `'calendar'` se sacó de la lista: ese origen se eliminó el 7-jul.
+
+**Y `n_b2b` son PEDIDOS, no lotes.** Iba en la misma suma que dos conteos de lotes, así que el
+renglón nunca cerraba. Ahora va aparte, con su palabra.
+
+**El truncado silencioso.** El SELECT del calendario corta en 6.000 filas ordenando por
+`fecha_programada ASC`, así que lo que se pierde al llegar al tope es **el futuro** — justo lo
+que el calendario existe para mostrar. La respuesta ahora trae `truncado`, `tope` y `aviso`, y
+deja un `log.warning`. Un total que se cortó y no lo dice es un total falso (M100/M124).
+
+## 🚦 PROG-N+15 · La urgencia de marcación (ver PROG-N+12) y el semáforo vivo
+
+Complemento operativo de PROG-N+12: el campo `urgencia_manual` viaja en la respuesta de
+`marcacion-ordenes` para no perder la marca que alguien haya puesto, pero **no participa del
+color**. El semáforo sale siempre de `fecha_alistar` contra hoy-Colombia:
+`vencido` (< 0 días) · `urgente` (≤ 3) · `proximo` (≤ 8) · `ok`.
