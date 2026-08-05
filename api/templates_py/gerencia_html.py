@@ -29,6 +29,30 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 .kpi-lbl{font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:1px;margin-top:8px;}
 .kpi-sub{font-size:0.8em;color:var(--cx-text-faint);margin-top:4px;}
 .sem{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+.ceo-dec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px;margin-bottom:26px;}
+.ceo-dec-cargando{color:var(--cx-text-faint);font-size:.9em;padding:18px;}
+.ceo-card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;padding:16px 18px;
+  box-shadow:0 1px 2px rgba(24,24,27,.04);display:flex;flex-direction:column;}
+.ceo-card.urge{border-left:5px solid var(--cx-danger);}
+.ceo-card.ok{border-left:5px solid var(--cx-success);}
+.ceo-card.espera{border-left:5px solid var(--cx-warn);}
+.ceo-card-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:9px;}
+.ceo-card-t{font-size:.76em;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--cx-text-mute);}
+.ceo-card-n{font-size:1.65em;font-weight:800;color:var(--cx-text);letter-spacing:-.02em;line-height:1.1;}
+.ceo-card-s{font-size:.78em;color:var(--cx-text-mute);margin-top:3px;}
+.ceo-lista{margin-top:11px;border-top:1px solid var(--cx-hairline,var(--cx-border));padding-top:9px;}
+.ceo-li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;font-size:.84em;
+  border-bottom:1px solid var(--cx-hairline,var(--cx-border));}
+.ceo-li:last-child{border-bottom:none;}
+.ceo-li-n{color:var(--cx-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ceo-li-q{font-size:.86em;color:var(--cx-text-mute);font-weight:400;}
+.ceo-li-v{color:var(--cx-text);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.ceo-vacio{font-size:.84em;color:var(--cx-success-text);padding:4px 0;}
+.ceo-aviso{font-size:.8em;color:var(--cx-danger-text);padding:4px 0;}
+.ceo-mas{font-size:.76em;color:var(--cx-text-faint);margin-top:7px;}
+.ceo-ir{margin-top:11px;display:inline-block;font-size:.8em;font-weight:700;color:var(--cx-primary-text);
+  text-decoration:none;border:1px solid var(--cx-primary-soft,var(--cx-border));border-radius:8px;padding:6px 12px;}
+.ceo-ir:hover{background:var(--cx-primary-pale,var(--cx-bg-alt));}
 .sem.verde{background:var(--cx-success);box-shadow:0 0 8px #10b981;}.sem.amarillo{background:var(--cx-warn);box-shadow:0 0 8px #f59e0b;}.sem.rojo{background:var(--cx-danger);box-shadow:0 0 8px #ef4444;}
 .alertas-panel{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;margin-bottom:28px;display:none;}
 .alertas-panel.visible{display:block;}
@@ -103,6 +127,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
 <div class="main">
+
+  <!-- ═══ LO QUE ESPERA TU FIRMA ═══════════════════════════════════════════
+       Va PRIMERO porque un tablero de CEO se abre para decidir, no para mirar.
+       Todo lo de aca lo calcula su modulo dueño (caja: `caja_saldo` de Animus ·
+       creadores: `_pagos_influencer_pendientes` del hub) · el tablero no
+       recalcula nada: dos calculos del mismo hecho divergen siempre. -->
+  <div class="section-title">✍️ Espera tu decisión</div>
+  <div id="ceo-decisiones" class="ceo-dec-grid">
+    <div class="ceo-dec-cargando">Cargando…</div>
+  </div>
 
   <!-- ALERTAS CRÍTICAS -->
   <div class="alertas-panel" id="alertas-panel">
@@ -193,7 +227,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
       <div class="inp-group"><label>Saldo de caja ($COP)</label><input type="number" id="inp-caja" placeholder="354800000"></div>
       <div class="inp-group"><label>Ingresos ÁNIMUS mes ($COP)</label><input type="number" id="inp-animus" placeholder="189000000"></div>
       <div class="inp-group"><label>Ingresos Maquila mes ($COP)</label><input type="number" id="inp-maquila" placeholder="30000000"></div>
-      <div class="inp-group"><label>Nómina total mes ($COP)</label><input type="number" id="inp-nomina" placeholder="16100000"></div>
+      <!-- La NÓMINA no se teclea: sale de lo que RRHH aprobó en `nomina_registros`. Tener acá
+           un campo manual sería un segundo origen del mismo número, y dos orígenes divergen
+           siempre (M99). Encima lo que se escribía se descartaba en silencio: la tabla no tiene
+           esa columna. El valor derivado se muestra abajo, con su período. -->
+      <div class="inp-group"><label>Nómina del período</label>
+        <div id="inp-nomina-vista" style="padding:9px 0;font-weight:700;color:var(--cx-text);">-</div>
+        <div style="font-size:11px;color:var(--cx-text-mute);">sale de RRHH · no se edita acá</div></div>
     </div>
     <div class="inp-group" style="margin-bottom:14px;"><label>Notas del período</label><input type="text" id="inp-notas" placeholder="Ej: Mes de lanzamiento NIAC, pago nómina atrasado..."></div>
     <button class="btn-save" onclick="guardarInputs()">💾 Guardar inputs del mes</button>
@@ -358,7 +398,9 @@ async function loadKPIs(){
     var e=d.espagiria||{}; var a=d.animus||{}; var f=d.inputs_manuales||{}; var sem=d.semaforos||{};
 
     // Periodo
-    document.getElementById('periodo-label').textContent=d.periodo||'';
+    // `d.periodo` no existe en la respuesta · el periodo real es el del input manual, que si
+    // viene. La pildora quedaba vacia desde siempre.
+    document.getElementById('periodo-label').textContent = (f && f.periodo) ? f.periodo : '';
     document.getElementById('ultima-actualizacion').textContent='Actualizado: '+new Date().toLocaleTimeString('es-CO');
 
     // Financiero
@@ -372,7 +414,11 @@ async function loadKPIs(){
     // Espagiria KPIs
     var mpsBajos=e.mps_bajo_minimo||0;
     document.getElementById('val-mps-bajos').textContent=mpsBajos;
-    document.getElementById('sub-deficit').textContent='Déficit: '+Math.round((e.deficit_total_kg||0)*1000).toLocaleString('es-CO')+' g';
+    // `deficit_total_kg` NUNCA lo devolvio el endpoint: mostraba "Déficit: 0 g" siempre.
+    // Calcular el deficit real exige el motor de abastecimiento (caro · vive en Planta), asi que
+    // acá se dice lo que SI se sabe y se manda al lugar donde el numero existe.
+    document.getElementById('sub-deficit').textContent =
+      (e.mps_bajo_minimo||0) > 0 ? 'de ' + (e.mps_total||'?') + ' materias primas activas' : 'todas por encima del mínimo';
     setKPIColor('kpi-mps-bajos','val-mps-bajos',mpsBajos>5?'rojo':(mpsBajos>0?'amarillo':'verde'));
 
     var meeBajos=e.mee_bajo_minimo||0;
@@ -401,7 +447,8 @@ async function loadKPIs(){
 
     var pedAct=a.pedidos_activos||0;
     document.getElementById('val-pedidos-act').textContent=pedAct;
-    document.getElementById('sub-pedidos-val').textContent='Valor: '+fmt(a.valor_pedidos_activos||0);
+    document.getElementById('sub-pedidos-val').textContent =
+      (a.dias_desde_fm != null) ? ('último pedido hace ' + a.dias_desde_fm + ' d') : '';
 
     var diasFM=a.dias_desde_fm;
     var diasFMEl=document.getElementById('val-fm-dias');
@@ -409,18 +456,28 @@ async function loadKPIs(){
     setKPIColor('kpi-fm','val-fm-dias',diasFM>62?'amarillo':'verde');
 
     // Semáforos
-    setSemaforo('sem-inv',sem.inventario||'verde');
-    setSemaforo('sem-animus',sem.fm||'verde');
+    // El endpoint manda `mps/mee/vencimientos/pt/pedidos/solicitudes`; esto leia `inventario` y
+    // `fm`, que no existen -> los dos semaforos caian al default y estaban SIEMPRE en verde, o
+    // sea que eran decoracion. Ahora el de inventario toma lo PEOR de sus tres componentes
+    // (materias primas, envases, vencimientos): un semaforo que promedia esconde el problema.
+    var _peor = function(){
+      var v = [sem.mps, sem.mee, sem.vencimientos];
+      return v.indexOf('rojo') >= 0 ? 'rojo' : (v.indexOf('amarillo') >= 0 ? 'amarillo' : 'verde');
+    };
+    setSemaforo('sem-inv', _peor());
+    setSemaforo('sem-animus', sem.pt || 'verde');
 
     // Detalle inventario
     var di='';
     di+='<div class="data-row"><span class="data-lbl">MPs bajo mínimo</span><span class="data-val '+(mpsBajos>0?'rojo':'verde')+'">'+mpsBajos+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">MEE bajo mínimo</span><span class="data-val '+(meeBajos>0?'amarillo':'verde')+'">'+meeBajos+'</span></div>';
-    di+='<div class="data-row"><span class="data-lbl">Déficit total</span><span class="data-val '+(e.deficit_total_kg>0?'amarillo':'verde')+'">'+((e.deficit_total_kg||0).toFixed(1))+' kg</span></div>';
+    // (se retiro "Déficit total": el endpoint nunca lo calculo, asi que decia 0.0 kg siempre)
     di+='<div class="data-row"><span class="data-lbl">Lotes vencen 30d</span><span class="data-val '+(v30>0?'rojo':'verde')+'">'+v30+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Lotes vencen 60d</span><span class="data-val '+(e.lotes_vence_60>0?'amarillo':'verde')+'">'+(e.lotes_vence_60||0)+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Producción este mes</span><span class="data-val">'+( e.prod_mes||0)+' lotes / '+parseFloat(e.kg_mes||0).toFixed(1)+' kg</span></div>';
-    di+='<div class="data-row"><span class="data-lbl">OCs pendientes</span><span class="data-val '+(ocs>0?'amarillo':'verde')+'">'+ocs+' ('+fmt(e.valor_ocs_pendientes||0)+')</span></div>';
+    // El VALOR de las OCs pendientes tampoco venia del endpoint: mostraba "($0)" al lado de un
+    // conteo real, que es la peor combinacion -- el conteo le daba credibilidad al cero.
+    di+='<div class="data-row"><span class="data-lbl">OCs pendientes</span><span class="data-val '+(ocs>0?'amarillo':'verde')+'">'+ocs+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Solicitudes a Compras</span><span class="data-val '+(solPend>0?'amarillo':'verde')+'">'+solPend+' <a href="/compras" style="color:var(--cx-text-mute);font-size:0.82em;">→ ver</a></span></div>';
     document.getElementById('detalle-inventario').innerHTML=di;
 
@@ -428,17 +485,20 @@ async function loadKPIs(){
     var da='';
     da+='<div class="data-row"><span class="data-lbl">Unidades PT disponibles</span><span class="data-val verde">'+fmtN(a.uds_pt||0)+'</span></div>';
     da+='<div class="data-row"><span class="data-lbl">SKUs con stock</span><span class="data-val">'+(a.skus_stock||0)+'</span></div>';
-    da+='<div class="data-row"><span class="data-lbl">Pedidos activos</span><span class="data-val">'+(a.pedidos_activos||0)+' ('+fmt(a.valor_pedidos_activos||0)+')</span></div>';
-    da+='<div class="data-row"><span class="data-lbl">Último pedido FM</span><span class="data-val">'+(a.ultimo_pedido_fm||'Sin datos')+'</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">Pedidos activos</span><span class="data-val">'+(a.pedidos_activos||0)+'</span></div>';
+    // (se retiraron el valor en $ de los pedidos y "Último pedido FM": ninguno de los dos lo
+    //  devuelve el endpoint · el segundo decia "Sin datos" desde que se escribio)
     da+='<div class="data-row"><span class="data-lbl">Días desde pedido FM</span><span class="data-val '+(diasFM>55?'amarillo':'verde')+'">'+(diasFM!=null?diasFM+' días':'-')+'</span></div>';
     document.getElementById('detalle-animus').innerHTML=da;
 
     // Alertas
     var alertas=[];
-    if(mpsBajos>0) alertas.push({icon:'🔴',txt:'<strong>'+mpsBajos+' MPs bajo mínimo</strong> - Déficit total: '+((e.deficit_total_kg||0).toFixed(1))+' kg. Generar OC desde Compras.'});
+    // Una alerta ROJA que afirma "Déficit total: 0.0 kg" grita y se contradice sola. El hecho
+    // (hay N materias primas bajo el minimo) es real y basta; el numero que no se midio, no va.
+    if(mpsBajos>0) alertas.push({icon:'🔴',txt:'<strong>'+mpsBajos+' materias primas bajo el mínimo</strong> · revisalas en Abastecimiento antes de que frenen una producción.'});
     if(meeBajos>0) alertas.push({icon:'🟡',txt:'<strong>'+meeBajos+' materiales de envase/empaque bajo mínimo</strong> - Revisar stock MEE en módulo Compras.'});
     if(v30>0) alertas.push({icon:'🔴',txt:'<strong>'+v30+' lotes vencen en los próximos 30 días</strong> - Revisar y usar en próximas producciones (FEFO).'});
-    if(ocs>3) alertas.push({icon:'🟡',txt:'<strong>'+ocs+' órdenes de compra</strong> esperando aprobación - Valor total: '+fmt(e.valor_ocs_pendientes||0)+'.'});
+    if(ocs>3) alertas.push({icon:'🟡',txt:'<strong>'+ocs+' órdenes de compra</strong> esperando aprobación.'});
     if(solPend>0) alertas.push({icon:'🟡',txt:'<strong>'+solPend+' solicitud'+(solPend>1?'es':'')+' de compra pendiente'+(solPend>1?'s':'')+' de aprobar</strong> - Catalina debe revisar en <a href="/compras" style="color:rgba(255,255,255,0.75);">Módulo Compras</a> para convertirlas en órdenes de compra.'});
     if(diasFM!=null&&diasFM>55) alertas.push({icon:'🟡',txt:'<strong>Fernando Mesa: '+diasFM+' días sin pedir</strong> - Ciclo normal ~62 días. Próximo pedido inminente.'});
     var nomVal=(nom&&nom.total)||0; if(f.saldo_caja>0&&nomVal>0&&f.saldo_caja<nomVal*2) alertas.push({icon:'&#128308;',txt:'<strong>Caja baja:</strong> Saldo '+fmt(f.saldo_caja)+' cubre menos de 2 nominas (nomina: '+fmt(nomVal)+')'});
@@ -457,7 +517,10 @@ async function loadKPIs(){
     if(f.saldo_caja) document.getElementById('inp-caja').value=f.saldo_caja;
     if(f.ingresos_animus) document.getElementById('inp-animus').value=f.ingresos_animus;
     if(f.ingresos_maquila) document.getElementById('inp-maquila').value=f.ingresos_maquila;
-    if(nom.total) document.getElementById('inp-nomina').value=nom.total;
+    var _nv = document.getElementById('inp-nomina-vista');
+    if(_nv) _nv.textContent = nom.total
+      ? (fmt(nom.total) + '  ·  ' + (nom.empleados||0) + ' personas' + (nom.periodo ? ' · ' + nom.periodo : ''))
+      : 'sin nómina registrada este período';
     if(f.notas) document.getElementById('inp-notas').value=f.notas;
 
   }catch(e){console.error(e);}
@@ -468,7 +531,6 @@ async function guardarInputs(){
     saldo_caja:parseFloat(document.getElementById('inp-caja').value)||0,
     ingresos_animus:parseFloat(document.getElementById('inp-animus').value)||0,
     ingresos_maquila:parseFloat(document.getElementById('inp-maquila').value)||0,
-    nomina_total:parseFloat(document.getElementById('inp-nomina').value)||0,
     notas:document.getElementById('inp-notas').value
   };
   try{
@@ -542,6 +604,115 @@ async function loadFlujoOperacional() {
 loadKPIs();
 loadFlujoOperacional();
 // Auto-refresh cada 5 minutos
+// ── Lo que espera la firma del CEO ────────────────────────────────────────────
+// Cada bloque se pinta por separado: si uno falla, deja su aviso y NO se lleva el resto de la
+// pantalla. Y lo que no se pudo medir se DICE -- un cero que nadie calculo se lee como "no hay
+// nada que hacer" y significa lo contrario (M154).
+function _ceoEsc(x){
+  return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _ceoCard(cls, titulo, numero, sub, cuerpo, ir){
+  return '<div class="ceo-card '+cls+'">'
+    + '<div class="ceo-card-h"><span class="ceo-card-t">'+titulo+'</span></div>'
+    + '<div class="ceo-card-n">'+numero+'</div>'
+    + (sub ? '<div class="ceo-card-s">'+sub+'</div>' : '')
+    + (cuerpo || '')
+    + (ir ? '<a class="ceo-ir" href="'+ir[1]+'">'+ir[0]+'</a>' : '')
+    + '</div>';
+}
+
+function _ceoFilas(items, pinta, vacio, tope){
+  if(!items || !items.length) return '<div class="ceo-lista"><div class="ceo-vacio">'+vacio+'</div></div>';
+  var n = tope || 5;
+  var h = '<div class="ceo-lista">' + items.slice(0, n).map(pinta).join('');
+  if(items.length > n) h += '<div class="ceo-mas">y '+(items.length-n)+' más</div>';
+  return h + '</div>';
+}
+
+async function loadDecisionesCEO(){
+  var box = document.getElementById('ceo-decisiones');
+  if(!box) return;
+  try{
+    var r = await fetch('/api/gerencia/decisiones-ceo', {credentials:'same-origin'});
+    var d = await r.json();
+    if(!d.ok){ box.innerHTML = '<div class="ceo-aviso">'+_ceoEsc(d.error||'No pude cargar')+'</div>'; return; }
+    var h = '';
+
+    // CAJA MENOR · el efectivo REAL. Lo que el veia antes era el numero que el mismo teclea
+    // una vez al mes en el input de abajo, no lo que hay en la gaveta.
+    if(d.caja){
+      var cj = d.caja;
+      var cuerpo = _ceoFilas(cj.pendientes, function(x){
+        return '<div class="ceo-li"><span class="ceo-li-n">'+_ceoEsc(x.concepto)
+          + ' <span class="ceo-li-q">· '+_ceoEsc(x.solicitado_por)+'</span></span>'
+          + '<span class="ceo-li-v">'+fmt(x.monto)+'</span></div>';
+      }, 'Nadie espera tu autorización', 5);
+      var sub = 'disponible ' + fmt(cj.disponible)
+        + (cj.comprometido > 0 ? ' · ' + fmt(cj.comprometido) + ' ya comprometido' : '');
+      if(cj.sin_comprobante_n > 0)
+        sub += ' · <span style="color:var(--cx-danger-text)">' + cj.sin_comprobante_n + ' pagos sin comprobante</span>';
+      h += _ceoCard(cj.esperan_n > 0 ? 'espera' : 'ok', '💵 Caja menor',
+                    fmt(cj.saldo) + ' <span style="font-size:.5em;font-weight:600;color:var(--cx-text-mute)">en la gaveta</span>',
+                    sub, cuerpo, ['Ir a la caja', '/animus']);
+    } else {
+      h += _ceoCard('urge', '💵 Caja menor', '—', '', '<div class="ceo-aviso">No pude leerla</div>', null);
+    }
+
+    // CREADORES · con nombre y monto, no dos agregados
+    if(d.influencers){
+      var inf = d.influencers;
+      var cuerpoI = _ceoFilas(inf.pendientes, function(x){
+        var urg = (x.urgencia === 'vencido') ? ' style="color:var(--cx-danger-text)"' : '';
+        return '<div class="ceo-li"><span class="ceo-li-n"'+urg+'>'+_ceoEsc(x.influencer_nombre || x.nombre || '?')
+          + (x.urgencia === 'vencido' ? ' <span class="ceo-li-q">· vencido</span>' : '')
+          + '</span><span class="ceo-li-v">'+fmt(x.monto)+'</span></div>';
+      }, 'Ningún creador esperando pago', 5);
+      h += _ceoCard(inf.vencidos_n > 0 ? 'urge' : (inf.n > 0 ? 'espera' : 'ok'),
+                    '📣 Pagos a creadores', fmt(inf.monto),
+                    inf.n + ' esperando' + (inf.vencidos_n > 0 ? ' · ' + inf.vencidos_n + ' VENCIDOS' : ''),
+                    cuerpoI, ['Ir a pagar', '/hoy']);
+    } else {
+      h += _ceoCard('urge', '📣 Pagos a creadores', '—', '', '<div class="ceo-aviso">No pude leerlos</div>', null);
+    }
+
+    // COMPRAS que esperan su firma
+    if(d.ocs_por_autorizar){
+      var oc = d.ocs_por_autorizar;
+      var tot = oc.reduce(function(a,x){ return a + (x.valor||0); }, 0);
+      var cuerpoO = _ceoFilas(oc, function(x){
+        return '<div class="ceo-li"><span class="ceo-li-n">'+_ceoEsc(x.proveedor||'?')
+          + ' <span class="ceo-li-q">· '+_ceoEsc(x.numero_oc)+'</span></span>'
+          + '<span class="ceo-li-v">'+fmt(x.valor)+'</span></div>';
+      }, 'Ninguna orden esperando tu firma', 5);
+      h += _ceoCard(oc.length > 0 ? 'espera' : 'ok', '🛒 Compras por autorizar',
+                    fmt(tot), oc.length + ' órdenes revisadas', cuerpoO, ['Ir a Compras', '/compras']);
+    }
+
+    // CALIDAD · un lote sin liberar es plata parada en el estante
+    if(d.calidad){
+      var q = d.calidad;
+      var tq = (q.lotes_por_liberar||0) + (q.mbr_por_aprobar||0);
+      h += _ceoCard(tq > 0 ? 'espera' : 'ok', '🔬 Tu firma como Director Técnico',
+                    fmtN(tq),
+                    (q.lotes_por_liberar||0) + ' lotes por liberar · ' + (q.mbr_por_aprobar||0) + ' procedimientos por aprobar',
+                    '<div class="ceo-lista"><div class="ceo-vacio">'
+                    + (tq > 0 ? 'Un lote sin liberar es producto terminado que no se puede vender.'
+                              : 'Nada esperando tu firma.') + '</div></div>',
+                    ['Ir a la bandeja', '/mi-bandeja']);
+    }
+
+    box.innerHTML = h;
+    if(d.avisos && d.avisos.length)
+      box.innerHTML += '<div class="ceo-aviso">⚠ ' + d.avisos.map(_ceoEsc).join(' · ') + '</div>';
+  }catch(e){
+    box.innerHTML = '<div class="ceo-aviso">No pude cargar lo que espera tu decisión: '+_ceoEsc(e.message)+'</div>';
+  }
+}
+loadDecisionesCEO();
+setInterval(loadDecisionesCEO, 300000);
+
 setInterval(loadKPIs, 300000);
 setInterval(loadFlujoOperacional, 300000);
 

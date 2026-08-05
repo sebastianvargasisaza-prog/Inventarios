@@ -204,6 +204,13 @@ CORAZON=(
   # resolvia por WhatsApp: fuera del sistema y sin rastro. La validacion vive en el BACKEND
   # porque dos pantallas mandan al mismo endpoint. + el picker no vuelca el maestro de cuentas.
   "tests/test_caja_como_se_paga.py"
+  # El tablero del CEO MENTIA en 13 numeros. El peor: /api/gerencia/dashboard-extra devolvia 500
+  # en produccion por un ORDER BY con alias dentro de una expresion, asi que los 8 paneles de
+  # "Metas estrategicas" llevaban meses en "Cargando...". Y `date` nunca se importo: los dias de
+  # transito de TODAS las OCs daban 0 y el SGSST daba 999 (todo verde). + caja menor, que no
+  # estaba en una sola linea del modulo, y los pagos a creadores con nombre en vez de dos
+  # agregados (uno en cero permanente por una columna que no existe).
+  "tests/test_ceo_no_miente.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

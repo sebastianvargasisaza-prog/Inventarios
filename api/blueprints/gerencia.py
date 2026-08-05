@@ -8,7 +8,11 @@ import json
 import sqlite3
 import hmac
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+# ⚠ `date` FALTABA y se usa en dos sitios (`dias_transito`, `dias_restantes`), los dos
+# dentro de un `except` que convertia el NameError en un default plausible: 0 dias de
+# transito para todas las OCs y 999 dias para todo el SGSST, o sea dos indicadores muertos
+# sin un solo error a la vista (M4/M94).
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, FINANZAS_ACCESS
@@ -59,6 +63,8 @@ def gerencia_kpis():
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM maestro_mps m LEFT JOIN (SELECT material_id,SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as s FROM movimientos GROUP BY material_id) st ON m.codigo_mp=st.material_id WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(st.s,0)<m.stock_minimo")
     mps_bajo_minimo = c.fetchone()[0] or 0
+    mps_total_activas = c.execute(
+        "SELECT COUNT(*) FROM maestro_mps WHERE activo=1").fetchone()[0] or 0
     # AUDITORÍA-FIX 23-may-2026 · C18 · canonical SUM(movimientos_mee)
     # · evita falso bajo_minimo por drift del cache stock_actual
     try:
@@ -74,11 +80,29 @@ def gerencia_kpis():
         )
     except Exception:
         mee_bajo_minimo = 0
-    c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento!='' AND fecha_vencimiento<=date('now', '-5 hours', '+30 days') AND fecha_vencimiento>=date('now', '-5 hours')")
-    lotes_vence_30 = c.fetchone()[0] or 0
-    c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento!='' AND fecha_vencimiento<=date('now', '-5 hours', '+60 days') AND fecha_vencimiento>=date('now', '-5 hours', '+30 days')")
-    lotes_vence_60 = c.fetchone()[0] or 0
-    c.execute("SELECT COUNT(*) FROM producciones WHERE fecha>=date('now', '-5 hours', 'start of month')")
+    # ⚠ Contaba MOVIMIENTOS, no lotes: un lote recibido en tres partidas contaba tres veces, y
+    # ese numero alimenta la alerta roja de "lotes vencen en 30 dias" -- o sea que la alerta
+    # gritaba mas fuerte cuanto mas fraccionada hubiera sido la recepcion. La unidad fisica es
+    # el LOTE (material + numero de lote).
+    def _lotes_por_vencer(desde_dias, hasta_dias):
+        try:
+            return c.execute(
+                "SELECT COUNT(*) FROM (SELECT material_id, lote FROM movimientos "
+                "  WHERE tipo='Entrada' AND COALESCE(fecha_vencimiento,'')<>'' "
+                "    AND fecha_vencimiento <= date('now','-5 hours','+' || ? || ' days') "
+                "    AND fecha_vencimiento >= date('now','-5 hours','+' || ? || ' days') "
+                "  GROUP BY material_id, lote) x", (hasta_dias, desde_dias)).fetchone()[0] or 0
+        except Exception as _elv:
+            import logging as _lgv
+            _lgv.getLogger('gerencia').warning('no pude contar los lotes por vencer: %s', _elv)
+            return 0
+    lotes_vence_30 = _lotes_por_vencer(0, 30)
+    lotes_vence_60 = _lotes_por_vencer(30, 60)
+    # `prod_mes` contaba TODAS las filas del mes, incluidas las canceladas, mientras el subtitulo
+    # de la misma tarjeta filtraba por estado: dos numeros de la misma tarjeta salian de
+    # poblaciones distintas (A9 del diagnostico).
+    c.execute("SELECT COUNT(*) FROM producciones WHERE fecha>=date('now', '-5 hours', 'start of month') "
+              "  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','cancelada')")
     prod_mes = c.fetchone()[0] or 0
     # Mismo defecto que el desplegable de recepción (3-ago): faltaba AUTORIZADA, que es el
     # estado normal de una OC en curso, y sobraba 'Enviada', que es de las cotizaciones y no
@@ -119,8 +143,9 @@ def gerencia_kpis():
     cols_inp = ['periodo','saldo_caja','ingresos_animus','ingresos_maquila','notas','fecha']
     inputs_manuales = dict(zip(cols_inp, row)) if row else {}
     # Nomina real: suma de salarios netos del periodo actual
-    from datetime import date as _date2
-    periodo_nom = _date2.today().strftime('%Y-%m')
+    # El periodo contable va anclado a Colombia: con el UTC del server, la noche del ultimo dia
+    # del mes la nomina se buscaba en el mes SIGUIENTE y salia en cero (M24).
+    periodo_nom = _hoy_col().strftime('%Y-%m')
     try:
         c.execute("SELECT COALESCE(SUM(nr.salario_neto),0), COUNT(*) FROM nomina_registros nr WHERE nr.periodo=?", (periodo_nom,))
         nom_row = c.fetchone()
@@ -138,23 +163,28 @@ def gerencia_kpis():
         except Exception:
             pass
     # Produccion kg este mes
-    mes_str_prod = _date2.today().strftime('%Y-%m')
+    # Colombia, no UTC: la noche del ultimo dia del mes el server (que corre en UTC) ya esta en
+    # el mes siguiente y la produccion del mes sale en cero (M24).
+    mes_str_prod = _hoy_col().strftime('%Y-%m')
+    # `producciones.cantidad` ya esta en KG (lo escriben asi los dos writers: inventario.py y
+    # programacion.py). La consulta pedia `cantidad_kg`, que NO existe, asi que fallaba en cada
+    # request y caia al fallback -- el patron M69: el `try/except` usado como sonda de esquema.
+    #
+    # Y el estado: `'Completado'` deja afuera `'Terminado'`, que es lo que escribe la fabricacion
+    # en vivo, asi que la tarjeta y su subtitulo contaban poblaciones distintas (A9). Se cuentan
+    # las dos y se excluye lo cancelado, que es el criterio real de "se produjo".
     try:
-        c.execute("SELECT COALESCE(SUM(cantidad_kg),0), COUNT(*) FROM producciones WHERE fecha LIKE ? AND estado='Completado'",
+        c.execute("SELECT COALESCE(SUM(cantidad),0), COUNT(*) FROM producciones "
+                  " WHERE fecha LIKE ? AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','cancelada')",
                   (mes_str_prod+'%',))
         prod_row = c.fetchone()
         kg_mes = prod_row[0] or 0
         lotes_mes = prod_row[1] or 0
-    except Exception:
-        try:
-            c.execute("SELECT COALESCE(SUM(cantidad),0), COUNT(*) FROM producciones WHERE fecha LIKE ? AND estado='Completado'",
-                      (mes_str_prod+'%',))
-            prod_row = c.fetchone()
-            kg_mes = (prod_row[0] or 0)
-            lotes_mes = prod_row[1] or 0
-        except Exception:
-            kg_mes = 0
-            lotes_mes = 0
+    except Exception as _epr:
+        import logging as _lgp
+        _lgp.getLogger('gerencia').warning('no pude leer la produccion del mes: %s', _epr)
+        kg_mes = 0
+        lotes_mes = 0
     semaforos = {
         'mps': 'rojo' if mps_bajo_minimo > 5 else ('amarillo' if mps_bajo_minimo > 0 else 'verde'),
         'mee': 'rojo' if mee_bajo_minimo > 3 else ('amarillo' if mee_bajo_minimo > 0 else 'verde'),
@@ -166,10 +196,134 @@ def gerencia_kpis():
     return jsonify({'espagiria': {'mps_bajo_minimo': mps_bajo_minimo, 'mee_bajo_minimo': mee_bajo_minimo,
                                    'lotes_vence_30': lotes_vence_30,
                                    'lotes_vence_60': lotes_vence_60, 'prod_mes': prod_mes, 'ocs_pendientes': ocs_pendientes, 'sol_pendientes': sol_pendientes,
-                                   'kg_mes': kg_mes, 'lotes_mes': lotes_mes},
+                                   'kg_mes': kg_mes, 'lotes_mes': lotes_mes,
+                                   # El denominador del "N bajo minimo": sin el, un 3 no dice si
+                                   # es 3 de 12 o 3 de 158.
+                                   'mps_total': mps_total_activas},
                     'animus': {'uds_pt': uds_pt, 'pedidos_activos': pedidos_activos, 'skus_stock': skus_stock, 'dias_desde_fm': dias_fm},
                     'nomina': {'total': nomina_total_real, 'empleados': nomina_empleados, 'periodo': periodo_nom},
                     'inputs_manuales': inputs_manuales, 'semaforos': semaforos})
+
+@bp.route('/api/gerencia/decisiones-ceo')
+def gerencia_decisiones_ceo():
+    """Lo que SOLO el CEO puede destrabar, y la plata que de verdad hay.
+
+    El tablero no calcula nada propio: pregunta a cada modulo dueño. Si aca se recalculara la
+    caja o los pagos, en un mes tendriamos dos numeros distintos para el mismo hecho -- que es
+    exactamente lo que ya pasa con el stock de MP, contado de tres formas en este mismo archivo.
+
+    Cada bloque va aislado: uno que falle deja un aviso en su lugar y NO se lleva el resto de la
+    pantalla. Y lo que no se pudo medir se DECLARA -- un cero que nadie calculo se lee como "no
+    hay nada que hacer" y significa lo contrario (M154).
+    """
+    if 'compras_user' not in session or session.get('compras_user', '') not in FINANZAS_ACCESS:
+        return jsonify({'error': 'No autorizado'}), 401
+    import logging as _lgd
+    _log = _lgd.getLogger('gerencia')
+    conn = get_db()
+    usuario = session.get('compras_user', '')
+    es_admin = usuario in ADMIN_USERS
+    out = {'ok': True, 'avisos': []}
+
+    # ── CAJA MENOR · el efectivo REAL, no el que se teclea una vez al mes ────
+    try:
+        from blueprints.animus import caja_saldo as _caja_saldo, caja_tope_sin_autorizar as _tope
+        _saldo = float(_caja_saldo(conn) or 0)
+        # Lo AUTORIZADO y sin pagar ya esta comprometido aunque siga en la gaveta: mostrar el
+        # saldo sin descontarlo invita a aprobar un pago que la caja no puede cubrir.
+        _comp = float(conn.execute(
+            "SELECT COALESCE(SUM(monto),0) FROM caja_solicitudes_pago "
+            " WHERE estado='autorizada'").fetchone()[0] or 0)
+        _esperan = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(monto),0) FROM caja_solicitudes_pago "
+            " WHERE estado='solicitada'").fetchone()
+        # Las que esperan la firma DEL CEO, con lo necesario para decidir sin abrir otra pantalla.
+        _cols = ('id', 'numero', 'empresa', 'concepto', 'monto', 'beneficiario',
+                 'solicitado_por', 'solicitado_at', 'cotizacion_url')
+        _pend = [dict(zip(_cols, r)) for r in conn.execute(
+            "SELECT id, numero, empresa, concepto, monto, COALESCE(beneficiario,''), "
+            "       solicitado_por, solicitado_at, COALESCE(cotizacion_url,'') "
+            "  FROM caja_solicitudes_pago WHERE estado='solicitada' "
+            " ORDER BY solicitado_at ASC LIMIT 20").fetchall()]
+        for x in _pend:
+            x['monto'] = float(x['monto'] or 0)
+        # Un pago sin comprobante es una salida que nadie puede verificar: se cuenta aparte para
+        # que incomode hasta que se cierre.
+        _sr = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(monto),0) FROM caja_solicitudes_pago "
+            " WHERE estado='pagada' AND COALESCE(comprobante_url,'')=''").fetchone()
+        out['caja'] = {
+            'saldo': round(_saldo, 2),
+            'comprometido': round(_comp, 2),
+            'disponible': round(_saldo - _comp, 2),
+            'esperan_n': int(_esperan[0] or 0),
+            'esperan_monto': round(float(_esperan[1] or 0), 2),
+            'pendientes': _pend,
+            'tope': _tope(conn),
+            'sin_comprobante_n': int(_sr[0] or 0),
+            'sin_comprobante_monto': round(float(_sr[1] or 0), 2),
+            'puede_autorizar': es_admin,
+        }
+    except Exception as e:
+        _log.warning('CEO: no pude leer la caja menor: %s', e)
+        out['caja'] = None
+        out['avisos'].append('No pude leer la caja menor')
+
+    # ── INFLUENCERS · el detalle, no dos agregados ──────────────────────────
+    try:
+        from blueprints.hub import _pagos_influencer_pendientes
+        # Sin banco: el tablero muestra a quien y cuanto; los datos bancarios se ven en el
+        # Centro de Pagos, que es donde se ejecuta (Habeas Data · Ley 1581).
+        _pagos = _pagos_influencer_pendientes(conn.cursor(), con_banco=False) or []
+        for x in _pagos:
+            try:
+                x['monto'] = float(x.get('monto') or 0)
+            except (TypeError, ValueError):
+                x['monto'] = 0.0
+        _venc = [x for x in _pagos if (x.get('urgencia') or '') == 'vencido']
+        out['influencers'] = {
+            'pendientes': _pagos[:12],
+            'n': len(_pagos),
+            'monto': round(sum(x['monto'] for x in _pagos), 2),
+            'vencidos_n': len(_venc),
+            'vencidos_monto': round(sum(x['monto'] for x in _venc), 2),
+        }
+    except Exception as e:
+        _log.warning('CEO: no pude leer los pagos a creadores: %s', e)
+        out['influencers'] = None
+        out['avisos'].append('No pude leer los pagos a creadores')
+
+    # ── COMPRAS que esperan SU firma ────────────────────────────────────────
+    try:
+        _oc = conn.execute(
+            "SELECT numero_oc, proveedor, COALESCE(valor_total,0), fecha "
+            "  FROM ordenes_compra WHERE estado='Revisada' "
+            " ORDER BY COALESCE(valor_total,0) DESC LIMIT 10").fetchall()
+        out['ocs_por_autorizar'] = [
+            {'numero_oc': r[0], 'proveedor': r[1], 'valor': float(r[2] or 0), 'fecha': r[3]}
+            for r in _oc]
+    except Exception as e:
+        _log.warning('CEO: no pude leer las OCs por autorizar: %s', e)
+        out['ocs_por_autorizar'] = None
+        out['avisos'].append('No pude leer las OCs por autorizar')
+
+    # ── LOTES esperando la firma del Director Tecnico ───────────────────────
+    # Un lote liberado tarde es plata parada en el estante, y el unico que puede firmar es el DT.
+    try:
+        _lib = conn.execute(
+            "SELECT COUNT(*) FROM ebr_ejecuciones "
+            " WHERE LOWER(COALESCE(estado,'')) IN ('completado','en_revision_qc')").fetchone()[0] or 0
+        _mbr = conn.execute(
+            "SELECT COUNT(*) FROM mbr_templates "
+            " WHERE LOWER(COALESCE(estado,''))='en_revision'").fetchone()[0] or 0
+        out['calidad'] = {'lotes_por_liberar': int(_lib), 'mbr_por_aprobar': int(_mbr)}
+    except Exception as e:
+        _log.warning('CEO: no pude leer la cola del Director Tecnico: %s', e)
+        out['calidad'] = None
+        out['avisos'].append('No pude leer la cola de Calidad')
+
+    return jsonify(out)
+
 
 @bp.route('/api/gerencia/flujo-operacional')
 def gerencia_flujo_operacional():
@@ -349,24 +503,43 @@ def gerencia_dashboard_extra():
         maquila_pipeline = []
 
     # Stock critico — MPs con stock < stock_minimo
-    c.execute("""
-        SELECT m.codigo_mp,
-               COALESCE(m.nombre_comercial, m.nombre_inci,'') as nombre,
-               m.stock_minimo,
-               COALESCE(SUM(CASE WHEN mv.tipo='Entrada' THEN mv.cantidad
-                                 WHEN mv.tipo='Salida'  THEN -mv.cantidad
-                                 ELSE 0 END), 0) as stock_actual
-        FROM maestro_mps m
-        LEFT JOIN movimientos mv ON m.codigo_mp = mv.material_id
-        WHERE m.activo=1 AND m.stock_minimo > 0
-        GROUP BY m.codigo_mp
-        HAVING stock_actual < m.stock_minimo
-        ORDER BY (stock_actual / m.stock_minimo) ASC
-        LIMIT 15
-    """)
-    stock_critico = [{'codigo_mp': r[0], 'nombre': r[1],
-                       'stock_minimo': r[2], 'stock_actual': max(r[3], 0)}
-                     for r in c.fetchall()]
+    #
+    # ⚠ Esta consulta tenia DOS defectos y el primero tumbaba el endpoint entero:
+    #
+    # 1. `ORDER BY (stock_actual / m.stock_minimo)` usaba un alias del SELECT **dentro de una
+    #    expresion**. PostgreSQL solo acepta el alias solo, asi que en produccion esto daba 500
+    #    y los OCHO paneles de "Metas estrategicas" quedaban en "Cargando..." para siempre. En
+    #    SQLite (los tests) pasa: drift puro (regla #1 del cerebro).
+    # 2. El CASE no era el canonico -- contaba `Ajuste` como salida y no excluia cuarentena,
+    #    vencido ni rechazado -- asi que era la TERCERA definicion de "cuanta MP hay" en el
+    #    mismo modulo, con un numero distinto de las otras dos.
+    #
+    # Las dos se arreglan usando el stock CANONICO y ordenando en Python: `_get_mp_stock` ya
+    # aplica las 6 exclusiones y el puente, esta memoizado por request, y de paso desaparece el
+    # LEFT JOIN sobre todo `movimientos`.
+    try:
+        from blueprints.programacion import _get_mp_stock as _gmp
+        _stk = _gmp(conn)
+    except Exception as _egs:
+        # Si el canonico no se puede leer NO se cae a un SUM propio: eso es exactamente como
+        # nacieron las tres definiciones. Se declara y la seccion queda vacia.
+        import logging as _lgs
+        _lgs.getLogger('gerencia').warning('no pude leer el stock canonico de MP: %s', _egs)
+        _stk = {}
+    _mins = c.execute(
+        "SELECT m.codigo_mp, COALESCE(m.nombre_comercial, m.nombre_inci,''), m.stock_minimo "
+        "  FROM maestro_mps m WHERE m.activo=1 AND COALESCE(m.stock_minimo,0) > 0").fetchall()
+    _crit = []
+    for _cod, _nom, _min in _mins:
+        _act = float(_stk.get(str(_cod or '').strip().upper(), 0) or 0)
+        _mn = float(_min or 0)
+        if _mn > 0 and _act < _mn:
+            _crit.append({'codigo_mp': _cod, 'nombre': _nom, 'stock_minimo': _mn,
+                          'stock_actual': max(_act, 0), '_r': _act / _mn})
+    # Lo mas critico primero = el que menor fraccion de su minimo tiene, que es lo que el
+    # ORDER BY roto queria decir.
+    _crit.sort(key=lambda x: x['_r'])
+    stock_critico = [{k: v for k, v in x.items() if k != '_r'} for x in _crit[:15]]
 
     # SGSST — proximos vencimientos (60 dias)
     cutoff_sgsst = (today + timedelta(days=60)).isoformat()
@@ -428,11 +601,15 @@ def gerencia_dashboard_extra():
     }
     # Influencer spend YTD
     try:
-        c.execute("SELECT COALESCE(SUM(oc.valor_total),0), COUNT(DISTINCT oc.numero_oc) FROM ordenes_compra oc WHERE oc.fecha LIKE ? AND (oc.area_solicitante IN ('Influencer','Marketing') OR oc.proveedor LIKE '%Influenc%') AND oc.estado NOT IN ('Cancelada','Borrador')", (year_str+'%',))
+        c.execute("SELECT COALESCE(SUM(oc.valor_total),0), COUNT(DISTINCT oc.numero_oc) FROM ordenes_compra oc WHERE oc.fecha LIKE ? AND (oc.categoria IN ('Influencer/Marketing Digital','Influencer','Marketing') OR oc.categoria LIKE '%Influencer%' OR oc.proveedor LIKE '%Influenc%') AND oc.estado NOT IN ('Cancelada','Borrador')", (year_str+'%',))
         inf_row = c.fetchone()
         influencer_ytd = inf_row[0] or 0
         influencer_ocs = inf_row[1] or 0
-    except Exception:
+    except Exception as _einf:
+        # Un cero que nadie calculo se lee como "no se gasto nada" y significa lo contrario:
+        # "no se pudo medir" (M154). Se avisa.
+        import logging as _lgi
+        _lgi.getLogger('gerencia').warning('no pude medir el gasto en influencers: %s', _einf)
         influencer_ytd = 0
         influencer_ocs = 0
     try:
