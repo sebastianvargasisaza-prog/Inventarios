@@ -3,7 +3,7 @@
 Medido ese día en `dashboard_html.py`: **8.072 colores hardcodeados contra 40 tokens** del sistema
 (99,5% del color a mano), **415 valores de color distintos** — o sea que no hay paleta, cada vista
 se inventó sus grises y sus violetas — 385 emojis usados como iconografía, 7.032 estilos inline y
-201 bloques ocultos con `display:none`.
+202 bloques ocultos con `display:none`.
 
 Por eso el tema oscuro no funciona en Planta: los fondos claros están fijos en el HTML y ganan
 sobre cualquier hoja de estilos.
@@ -40,7 +40,11 @@ TEMPLATES = os.path.join(RAIZ, 'api', 'templates_py')
 # tras migrar los chips de estado de Fabricación y unificar las 3 vistas del día en un solo
 # renderizador (Envasado · Fabricación · Acondicionamiento):
 TECHO_COLORES_DASHBOARD = 2499
-TECHO_DISPLAY_NONE_DASHBOARD = 201
+# 4-ago: 201 → 202. Estacionalidad dejó de abrir en pestaña NUEVA (Sebastián lo pidió) y pasó a
+# ser un panel más de la sub-barra: TODOS los paneles nacen `display:none` hasta que el
+# conmutador los enciende, así que el +1 es el patrón de sus hermanas, no una pantalla vieja
+# escondida. El techo sube EXACTO: con holgura, el trinquete se afloja solo (M104).
+TECHO_DISPLAY_NONE_DASHBOARD = 202
 TECHO_COLORES_TOTAL = 4862   # los 42 templates juntos · 5005 → 4957 → 4901 → 4862 (28-jul:
                              # 34 pares (fondo fijo + texto en token) migrados con el contraste
                              # MEDIDO en los dos temas antes de aplicar)
@@ -99,7 +103,7 @@ def test_el_dashboard_no_agrega_colores_hardcodeados():
 
 
 def test_el_dashboard_no_agrega_bloques_ocultos():
-    """Cada `display:none` permanente es una pantalla vieja escondida. Ya hay 201: son la causa de
+    """Cada `display:none` permanente es una pantalla vieja escondida. Ya hay 202: son la causa de
     que alguien edite la parte equivocada del archivo."""
     n = len(_NONE.findall(_leer('dashboard_html.py')))
     assert n <= TECHO_DISPLAY_NONE_DASHBOARD, (

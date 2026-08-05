@@ -2633,7 +2633,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       title="Envases por producción · enviar a serigrafía con tiempo">
       &#128230; Alistar envases
     </button>
-    <button onclick="window.open('/planta/estacionalidad','_blank')"
+    <button data-prog-sub="calendario_grp" onclick="switchProgTab('estacionalidad')"
       style="padding:6px 14px;border:1px solid var(--cx-accent-dark);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--cx-card);color:var(--cx-warn-text)"
       title="Ver cómo se elevan las ventas por mes (Black Friday, Día Madres) · histórico Shopify">
       &#128200; Estacionalidad
@@ -2661,6 +2661,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <button id="prog-tab-planv2" onclick="switchProgTab('planv2')"></button>
     <button id="prog-tab-calendario" onclick="switchProgTab('calendario')"></button>
     <button id="prog-tab-factibilidad" onclick="switchProgTab('factibilidad')"></button>
+    <button id="prog-tab-estacionalidad" onclick="switchProgTab('estacionalidad')"></button>
     <button id="prog-tab-abastecimiento" onclick="switchProgTab('abastecimiento')"></button>
     <button id="prog-tab-midia" onclick="switchProgTab('midia')"></button>
     <button id="prog-tab-mando" onclick="switchProgTab('mando')"></button>
@@ -2695,6 +2696,13 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <iframe id="factibilidad-iframe" src="about:blank"
       style="width:100%;height:calc(100vh - 200px);min-height:700px;border:1px solid var(--cx-border);border-radius:12px;background:#0d1117"
       title="Factibilidad del Plan"></iframe>
+  </div>
+  <!-- Estacionalidad · antes abria en pestana NUEVA (Sebastian pidio que no) · mismo iframe
+       lazy que las hermanas, dentro de la misma pantalla y con su resaltado en la sub-barra. -->
+  <div id="ptab-estacionalidad" style="display:none">
+    <iframe id="estacionalidad-iframe" src="about:blank"
+      style="width:100%;height:calc(100vh - 200px);min-height:700px;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"
+      title="Estacionalidad de la demanda"></iframe>
   </div>
   <!-- Tab "Necesidades" · cards por cliente con semáforo 4 zonas + B2B -->
   <div id="ptab-necesidades" style="display:none">
@@ -15102,6 +15110,9 @@ async function ckMarcar(itemId, estado){
         'necesidades': 'ptab-necesidades',
         'abastecimiento': 'ptab-abastecimiento',
         'factibilidad': 'ptab-factibilidad',
+        // Estacionalidad · dejó de abrir en pestaña nueva (Sebastián 4-ago) · sin esta línea
+        // el conmutador apaga todos los paneles y no enciende ninguno = pantalla en blanco.
+        'estacionalidad': 'ptab-estacionalidad',
         'serigrafia': 'ptab-serigrafia',
         // 'asignacion' eliminado · redirige a 'mando' (unificado en mapa)
         'asignacion': 'ptab-plano',
@@ -15193,6 +15204,12 @@ async function ckMarcar(itemId, estado){
       }
       // Lazy-load iframe Factibilidad del Plan al activar la pestaña.
       // Sebastián 19-may-2026: mismo patrón anti-stale que calendario.
+      if (tab === 'estacionalidad') {
+        var frEst = document.getElementById('estacionalidad-iframe');
+        if (frEst && (!frEst.src || frEst.src === 'about:blank' || frEst.src.indexOf('estacionalidad') < 0)) {
+          frEst.src = '/planta/estacionalidad';
+        }
+      }
       if (tab === 'factibilidad') {
         var frFact = document.getElementById('factibilidad-iframe');
         if (frFact) {

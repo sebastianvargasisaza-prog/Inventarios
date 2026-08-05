@@ -219,3 +219,83 @@ def test_las_rutas_que_el_calendario_llama_ESTAN_registradas(app, db_clean):
             continue
         faltan.append(base)
     assert not faltan, 'el calendario llama rutas que no existen: %s' % sorted(set(faltan))
+
+
+# ── 6 · lo que quedaba pendiente del calendario (4-ago, segunda tanda) ───────
+
+def test_el_desglose_de_lotes_CUADRA_con_el_total(app, db_clean):
+    """Se leía "1.400 lotes · 120 Fijos · 60 Sugeridos" y el resto no aparecía: lo proyectado
+    -- que suele ser la mayoría -- caía en un cajón que la pantalla nunca pintaba. Un desglose
+    que no suma el total obliga a desconfiar de los tres números."""
+    prog = _src('api/blueprints/programacion.py')
+    i = prog.find('n_fijas = sum(1 for r in prod_rows')
+    assert i > 0
+    bloque = prog[i:i + 700]
+    assert 'eos_proyeccion' in bloque, 'lo proyectado sigue sin caer en ninguna categoría'
+    assert "'calendar'" not in bloque, "sigue contando 'calendar', un origen que se eliminó"
+    # y el subtítulo separa PEDIDOS de LOTES en vez de sumarlos
+    assert 'pedido(s) B2B pendientes' in prog
+    assert 'de otro origen' in prog, 'no muestra el resto cuando lo hay'
+
+
+def test_el_truncado_del_calendario_se_DECLARA(app, db_clean):
+    """Corta en 6.000 filas ordenando por fecha ASC, así que lo que se pierde es EL FUTURO ·
+    justo lo que el calendario existe para mostrar. Un total que se cortó y no lo dice es un
+    total falso."""
+    prog = _src('api/blueprints/programacion.py')
+    assert "'truncado': _truncado" in prog and "'tope': 6000" in prog
+    assert 'se está recortando' in prog, 'no queda rastro en el log'
+
+
+def test_los_rotulos_de_ANIO_dicen_lo_que_cuentan(app, db_clean):
+    """"Lotes/año" y "programados en el año" contaban TODA la ventana (histórico + 3 años)."""
+    plan = _src('api/blueprints/plan.py')
+    assert '<th>Lotes/año</th>' not in plan, 'el rótulo sigue diciendo un período que no cuenta'
+    assert 'Lotes en el plan' in plan
+    assert "' programados en el año'" not in plan
+    assert 'en todo el plan cargado' in plan
+
+
+def test_el_escaneo_de_huerfanos_tiene_CACHE(app, db_clean):
+    """Parsea 60 días de órdenes de Shopify y el banner lo pide en CADA apertura de la pestaña,
+    por cada worker · es el patrón que satura los 3 workers y devuelve HTML 504 (M43)."""
+    plan = _src('api/blueprints/plan.py')
+    assert '_HUERFANOS_CACHE' in plan
+    assert '_HUERFANOS_CACHE[_ck_h] = (_t_h.time(), _payload_h)' in plan, 'no guarda en el cache'
+    assert "'cacheado': True" in plan or 'cacheado=True' in plan, 'no declara que viene del cache'
+
+
+def test_estacionalidad_NO_abre_en_pestana_nueva(app, db_clean):
+    """Sebastián pidió explícitamente no abrir ventanas nuevas · y sin `data-prog-sub` además
+    perdía el resaltado de la sub-barra."""
+    dash = _sin_comentarios(_src('api/templates_py/dashboard_html.py'))
+    assert "window.open('/planta/estacionalidad','_blank')" not in dash
+    assert "switchProgTab('estacionalidad')" in dash
+    assert 'id="ptab-estacionalidad"' in dash, 'sin panel, el conmutador deja la pantalla en blanco'
+    assert "'estacionalidad': 'ptab-estacionalidad'" in dash, 'falta en el mapa del conmutador'
+
+
+def test_las_acciones_de_MANTENIMIENTO_tienen_boton(app, db_clean):
+    """14 funciones construidas y sin ningún call-site · trece endpoints de mantenimiento del
+    plan, inalcanzables desde la pantalla. Es M112 al revés: allá quedaron botones sin destino,
+    acá quedó el destino sin botones."""
+    plan = _src('api/blueprints/plan.py')
+    for fn in ('dedupMismoDia', 'repartirSobrecargados', 'recuperarCancelados',
+               'backfillFabricacion', 'revertirHoy', 'sellarPlan', 'dejarSoloReal'):
+        assert 'function ' + fn + '(' in plan, 'desapareció %s' % fn
+        assert 'onclick="' + fn + '()"' in plan, '%s sigue sin botón' % fn
+    # y cada botón trae el id que su función busca, o el botón queda mudo
+    for _id in ('btn-dedup', 'btn-repartir', 'btn-recuperar', 'btn-revertir-hoy', 'btn-sellar'):
+        assert 'id="' + _id + '"' in plan, 'falta el id %s' % _id
+
+
+def test_el_AUTOPLAN_se_retiro_entero(app, db_clean):
+    """Sebastián: *"autoplan ya no lo usamos"*. Se poda el par completo -- disparador y destino
+    -- para no dejar botones vivos apuntando a lo que se borró (M112)."""
+    plan = _sin_comentarios(_src('api/blueprints/plan.py'))
+    assert 'id="filtro-solo-ia"' not in plan, \
+        'sigue el filtro que dejaba el calendario en blanco sin mensaje'
+    assert 'onclick="autoplanIA()"' not in plan
+    assert 'onclick="aplicarIAanual()"' not in plan
+    assert 'id="sugerencias-lista"' not in plan, 'sigue la lista del autoplan'
+    assert 'id="btn-aplicar"' not in plan

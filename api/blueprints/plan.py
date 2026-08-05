@@ -3030,11 +3030,21 @@ def admin_skus_huerfanos_top():
         body, code = err
         return jsonify(body), code
     import json as _json
+    import time as _t_h
     from datetime import datetime as _dt2, timedelta as _td2
     try:
         limit = max(1, min(int(request.args.get('limit', 30)), 100))
     except Exception:
         limit = 30
+    # ⚠ CACHE (4-ago): esto parsea el JSON de 60 días de órdenes de Shopify, y el banner del
+    # calendario lo pide en CADA apertura de la pestaña -- por cada uno de los 3 workers. Un
+    # escaneo O(órdenes) en la ruta de carga es lo que satura los workers y devuelve HTML 504
+    # a un `fetch().json()` (M43/M59). El dato cambia con el sync de Shopify, no por minuto.
+    _ck_h = 'huerf_top_%d' % limit
+    _hit_h = _HUERFANOS_CACHE.get(_ck_h)
+    if _hit_h and (_t_h.time() - _hit_h[0]) < 900:
+        return jsonify(dict(_hit_h[1], cacheado=True,
+                            edad_seg=int(_t_h.time() - _hit_h[0])))
     conn = get_db()
     cur = conn.cursor()
     # SKUs ya mapeados
@@ -3086,13 +3096,15 @@ def admin_skus_huerfanos_top():
             productos.append(r[0])
     except Exception:
         pass
-    return jsonify({
+    _payload_h = {
         'ok': True,
         'huerfanos_top': [{'sku': k, 'uds_60d': v} for k, v in top],
         'productos_disponibles': productos,
         'n_huerfanos_total': len(huerfanos),
         'uds_huerfanas_total_60d': round(sum(huerfanos.values())),
-    })
+    }
+    _HUERFANOS_CACHE[_ck_h] = (_t_h.time(), _payload_h)
+    return jsonify(dict(_payload_h, cacheado=False))
 
 
 @bp.route("/api/admin/sku-producto-map/bulk", methods=["POST"])
@@ -4174,6 +4186,9 @@ def plan_necesidades():
 
 
 _ALERTAS_IA_CACHE = {}   # {key: (ts, payload)} · cache per-worker · PERF 9-jul (speed-audit #2)
+# Mismo patrón para el top de SKU huérfanos: lo pide el banner del calendario en cada apertura
+# y adentro parsea 60 días de órdenes (M43).
+_HUERFANOS_CACHE = {}    # {key: (ts, payload)}
 _ALERTAS_IA_TTL = 300    # 5 min · el banner de alertas no necesita exactitud al segundo
 
 
@@ -19904,15 +19919,24 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
       <button class="horiz-btn active" data-h="365" onclick="setHoriz(365)">365 días</button>
     </div>
     <div>
-      <label style="margin-right:10px;font-size:12px;color:var(--cx-text-soft, #475569);cursor:pointer">
-        <input type="checkbox" id="filtro-solo-ia" onchange="render()" style="vertical-align:middle">
-        Solo sugerencias IA
-      </label>
       <button onclick="cargar()" class="secondary">↻ Recargar</button>
       <button onclick="generarPlanIA()" class="success" id="btn-generar-ia">🤖 Generar plan IA</button>
-      <button onclick="autoplanIA()" class="warn" id="btn-ia" style="display:none">🤖 Autoplan con IA</button>
-      <button onclick="aplicarIAanual()" class="success" id="btn-ia-anual" style="display:none">🎯 Aplicar plan IA</button>
       <button onclick="diagCalendar()" class="secondary">🔍 Diag</button>
+      <details style="display:inline-block;position:relative;vertical-align:middle;margin-left:6px">
+        <summary style="list-style:none;cursor:pointer;font-size:12px;font-weight:700;padding:6px 12px;border-radius:6px;background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569);border:1px solid var(--cx-border, #cbd5e1)">🛠 Mantenimiento</summary>
+        <div style="position:absolute;right:0;top:calc(100% + 6px);z-index:60;background:var(--cx-card, #fff);border:1px solid var(--cx-border, #cbd5e1);border-radius:10px;box-shadow:0 12px 30px -12px rgba(15,23,42,.35);padding:8px;min-width:290px;text-align:left">
+          <div style="font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--cx-text-mute, #64748b);padding:4px 8px 6px">Todas muestran una vista previa antes de tocar</div>
+          <button id="btn-dedup" onclick="dedupMismoDia()" class="secondary" style="display:block;width:100%;text-align:left;margin:2px 0">🧹 Quitar lotes repetidos del mismo dia</button>
+          <button id="btn-repartir" onclick="repartirSobrecargados()" class="secondary" style="display:block;width:100%;text-align:left;margin:2px 0">📅 Repartir los dias sobrecargados</button>
+          <button id="btn-recuperar" onclick="recuperarCancelados()" class="secondary" style="display:block;width:100%;text-align:left;margin:2px 0">♻️ Recuperar lotes cancelados por error</button>
+          <button id="btn-backfill-fab" onclick="backfillFabricacion()" class="secondary" style="display:block;width:100%;text-align:left;margin:2px 0">🏭 Traer producciones de Fabricacion al calendario</button>
+          <button id="btn-revertir-hoy" onclick="revertirHoy()" class="secondary" style="display:block;width:100%;text-align:left;margin:2px 0">↩️ Deshacer los cambios de hoy</button>
+          <button id="btn-sellar" onclick="sellarPlan()" class="secondary" style="display:block;width:100%;text-align:left;margin:2px 0">🔒 Sellar el horizonte</button>
+          <div style="border-top:1px solid var(--cx-border, #cbd5e1);margin:6px 0 4px"></div>
+          <button id="btn-solo-real" onclick="dejarSoloReal()" class="warn" style="display:block;width:100%;text-align:left;margin:2px 0">🧽 Dejar solo lo realmente producido</button>
+          <div style="font-size:10px;color:var(--cx-text-mute, #64748b);padding:4px 8px 2px;line-height:1.4">Cancela lo no ejecutado y pausa el cron. Reversible, con vista previa.</div>
+        </div>
+      </details>
     </div>
   </div>
   <div id="ia-comentario" style="margin-top:10px"></div>
@@ -19944,7 +19968,6 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
         style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:var(--cx-text-soft, #475569);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="Revisa TODAS las cadenas de una: marca qué productos están OK y cuáles necesitan atención (sin cadena, incompleta, con hueco, o con azules encima). Así revisás solo lo que tiene algo, no uno por uno.">🔎 Verificar plan (todos)</button>
       <button onclick="verSinDescontar()" class="success" id="btn-sin-descontar"
         style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:var(--cx-accent-dark, #d97706);font-weight:700;box-shadow:0 1px 3px rgba(217,119,6,.25)" title="Producciones que YA pasaron pero no tienen el descuento de MP registrado (el jefe a veces se olvida). Solo informativo · las de junio (pre-inventario) van marcadas para NO descontar.">⚠️ Sin descontar</button>
-      <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
       </div>
     </details>
   </div>
@@ -19961,9 +19984,6 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
   <div id="lista-completa"></div>
 </div>
 
-<div class="card">
-  <h2 id="lista-titulo" style="margin:0 0 8px;color:var(--cx-text-soft, #475569);font-size:15px">📋 Lista del autoplan</h2>
-  <div id="sugerencias-lista"></div>
 </div>
 
 <!-- Modal detalle lote · Sebastián 14-may-2026: "cuando le de al producto
@@ -20496,7 +20516,7 @@ function render(){
       html += '<div style="font-weight:700;color:var(--cx-info-text, #0f766e);margin:8px 0 4px">📦 Los ' +
         Object.keys(porProd).length + ' productos del plan</div>';
       html += '<table style="width:100%;font-size:11px;margin-bottom:10px">' +
-        '<tr style="color:var(--cx-text-mute, #64748b);text-align:left"><th>Producto</th><th>Próximo lote</th><th>Lotes/año</th></tr>';
+        '<tr style="color:var(--cx-text-mute, #64748b);text-align:left"><th>Producto</th><th>Próximo lote</th><th title="Todos los lotes de la ventana cargada (histórico + hasta 3 años adelante), no de un año calendario">Lotes en el plan</th></tr>';
       // Sebastián 16-may-2026: "próximo lote" = primera fecha de HOY en
       // adelante (antes mostraba fechas pasadas como si fueran próximas).
       const _hoyP = fechaLocalStr(new Date());
@@ -20701,7 +20721,10 @@ function render(){
     // Resumen limpio para el usuario (antes era texto de debug)
     let diagMsg = '📅 <strong>' + mesMostrado + '</strong> · ' +
       _pintados.length + ' lote(s) en ' + _fechasConLotes.length + ' día(s)' +
-      (ag.length > _pintados.length ? ' · ' + ag.length + ' programados en el año' : '');
+      // ⚠ Decía "en el año" y contaba TODA la ventana cargada (histórico completo + hasta
+      // ~3 años adelante). Un rótulo que nombra un período y cuenta otro obliga a desconfiar
+      // del número (M5). Se dice lo que es.
+      (ag.length > _pintados.length ? ' · ' + ag.length + ' en todo el plan cargado' : '');
     if (ag.length > 0 && _pintados.length === 0){
       // El mes navegado no tiene lotes · ver en qué meses SÍ hay
       const _meses = {};

@@ -12091,7 +12091,19 @@ def listado_produccion_programada():
             'kg_dtc': max(0.0, kg_dtc),
             'split_inconsistente': kg_dtc < -0.01,
         })
-    return jsonify({'producciones': out, 'total': len(out)})
+    # ⚠ El SELECT corta en 6000 filas ordenando por fecha ASC, así que lo que se pierde al
+    # llegar al tope es EL FUTURO -- justo lo que el calendario existe para mostrar. Antes se
+    # truncaba en silencio y los KPI reflejaban el recorte sin decirlo: un total que se cortó
+    # y no lo dice es un total falso (M100/M124).
+    _truncado = (len(out) >= 6000)
+    if _truncado:
+        log.warning('calendario: la ventana llegó al tope de 6000 lotes · se está recortando '
+                    'el futuro (historico=%s)', _historico)
+    return jsonify({'producciones': out, 'total': len(out),
+                    'truncado': _truncado, 'tope': 6000,
+                    'aviso': ('Se alcanzó el tope de 6.000 lotes: el calendario está mostrando '
+                              'sólo los más cercanos y faltan los del final del horizonte.')
+                             if _truncado else ''})
 
 
 @bp.route('/api/programacion/debug-calendar', methods=['GET'])
@@ -18617,8 +18629,15 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
     # promedio tenemos 3 producciones a la semana". Necesita desglose claro
     # por origen + tasa de lotes/semana para no confundir cuántos lotes hay
     # vs cuántas MPs con déficit (las 2 cifras antes se mezclaban).
+    # ⚠ EL DESGLOSE NO CUADRABA CON EL TOTAL (4-ago). `eos_proyeccion` -- el plan rodante a 2
+    # años, que suele ser la MAYORÍA de los lotes -- no caía en ninguna de las dos categorías y
+    # se iba a `n_otras`, que la pantalla nunca pintaba: se leía "1.400 lotes · 120 Fijos · 60
+    # Sugeridos" y el resto no aparecía por ningún lado. Un desglose que no suma el total obliga
+    # a desconfiar de los tres números. La proyección es una Sugerida más (así la trata el resto
+    # del motor). Y 'calendar' se saca: ese origen se eliminó el 7-jul.
     n_fijas = sum(1 for r in prod_rows if r[6] in ('eos_plan', 'eos_b2b', 'eos_retroactivo'))
-    n_sugeridas = sum(1 for r in prod_rows if r[6] in ('eos_canonico', 'auto_plan', 'sugerido', 'calendar', 'manual'))
+    n_sugeridas = sum(1 for r in prod_rows if r[6] in ('eos_canonico', 'auto_plan', 'sugerido',
+                                                       'eos_proyeccion', 'manual'))
     n_otras = len(prod_rows) - n_fijas - n_sugeridas
 
     # Tasa lotes/semana (en 90d para tener data estable)
@@ -19522,8 +19541,14 @@ def abastecimiento_consumo_bruto_excel():
     lotes_sem = d.get('lotes_por_semana_90d', 0)
     cobertura = d.get('cobertura_dias', 0)
 
+    # ⚠ El desglose se lee al lado del total, así que tiene que SUMARLO. `n_b2b` son PEDIDOS,
+    # no lotes: ponerlo en la misma suma mezclaba dos unidades distintas y hacía que el renglón
+    # nunca cerrara. Va aparte, con su palabra.
+    _n_otras = d.get('n_producciones_otras', 0)
+    _resto = (' + ' + str(_n_otras) + ' de otro origen') if _n_otras else ''
     subtitulo = (
-        f'{n_total} lotes totales · {n_fijas} Fijas + {n_sugeridas} Sugeridas + {n_b2b} B2B pendientes · '
+        f'{n_total} lotes totales · {n_fijas} Fijas + {n_sugeridas} Sugeridas{_resto} · '
+        f'{n_b2b} pedido(s) B2B pendientes · '
         f'{lotes_sem} lotes/sem (90d) · cobertura {cobertura}d · '
         f'último lote {fecha_ultimo_lote or "—"} · '
         f'consumo acumulativo desde hoy · MP en gramos · MEE en unidades · '
