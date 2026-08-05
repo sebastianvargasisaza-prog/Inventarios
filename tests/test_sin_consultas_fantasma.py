@@ -94,11 +94,33 @@ def test_las_consultas_corren_contra_el_esquema_real(app, modulo):
 
 
 def test_el_tablero_del_CEO_lee_tablas_que_existen(app):
-    """El bloque de Dirección Técnica salía vacío porque nombraba tres tablas inexistentes, y
-    el `except` lo tapaba: se leía como "no hay nada que mirar"."""
+    """El bloque de Dirección Técnica salía vacío porque nombraba tablas inexistentes, y el
+    `except` lo tapaba: se leía como "no hay nada que mirar".
+
+    ⚠ Corregido el 5-ago. Este guard tenía una **lista negra de nombres escrita a mano**, y
+    `registros_invima` estaba en ella por error: la tabla SÍ existe — la crea
+    `tecnica._init_tecnica()`, que corre al importar el blueprint (y `get_db()` cae a una
+    conexión directa fuera de contexto, así que también se crea en producción). El guard daba
+    rojo con el código correcto e impedía leer un dato real.
+
+    Una lista de nombres a mano se pudre (M122). La invariante que de verdad importa no es
+    "no nombres esta tabla" sino **"no muestres un número que no pudiste medir"**: por eso lo
+    que se verifica ahora es que la lectura esté guardada y que degrade a `None` — que la
+    pantalla distingue de un cero — en vez de a 0. Las dos tablas que sí eran fantasma en el
+    hub siguen prohibidas. Y el chequeo duro lo hace el test de arriba, que EJECUTA cada
+    consulta contra el esquema real."""
     src = io.open(os.path.join(RAIZ, 'api/blueprints/hub.py'), encoding='utf-8').read()
-    for fantasma in ('FROM formulas_maestras', 'FROM registros_invima', 'FROM documentos_sgd'):
+    for fantasma in ('FROM formulas_maestras', 'FROM documentos_sgd'):
         assert fantasma not in src, 'el tablero del CEO todavía nombra %s' % fantasma
+
+    # `registros_invima` se puede leer, pero SIEMPRE guardada y degradando a None.
+    i = src.find('FROM registros_invima')
+    if i > 0:
+        ventana = src[max(0, i - 700):i + 1400]
+        assert 'except' in ventana, 'la lectura de registros INVIMA quedó sin guard'
+        assert '_invima_vigentes, _invima_vencen = None, None' in ventana, \
+            'si no se puede leer cae a 0 · un cero se lee como "ninguno vigente", que es lo ' \
+            'contrario de "no pude mirar"'
 
 
 def test_el_precio_historico_se_pide_por_su_nombre_real(app):

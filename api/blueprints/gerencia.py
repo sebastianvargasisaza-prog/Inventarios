@@ -455,41 +455,13 @@ def gerencia_dashboard_extra():
         'animus':        ing_aliados,
     }
 
-    # AR — cuentas por cobrar
-    c.execute("SELECT COALESCE(SUM(valor_total),0), COUNT(*) FROM pedidos "
-              "WHERE estado NOT IN ('Cancelado','Despachado') AND valor_total > 0")
-    ar_row = c.fetchone()
-    ar_total, ar_count = (ar_row[0] or 0), (ar_row[1] or 0)
-    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos "
-              "WHERE estado NOT IN ('Cancelado','Despachado') "
-              "AND valor_total > 0 AND fecha <= ?",
-              ((today - timedelta(days=30)).isoformat(),))
-    ar_v30 = c.fetchone()[0] or 0
-    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos "
-              "WHERE estado NOT IN ('Cancelado','Despachado') "
-              "AND valor_total > 0 AND fecha <= ?",
-              ((today - timedelta(days=60)).isoformat(),))
-    ar_v60 = c.fetchone()[0] or 0
-    ar = {'total': ar_total, 'count': ar_count, 'vencido_30': ar_v30, 'vencido_60': ar_v60}
-
-    # AP — cuentas por pagar
-    c.execute("SELECT COALESCE(SUM(valor_total),0), COUNT(*) FROM ordenes_compra "
-              "WHERE estado IN ('Autorizada','Recibida','Parcial') "
-              "AND (pagado_por IS NULL OR pagado_por='')")
-    ap_row = c.fetchone()
-    ap_total, ap_count = (ap_row[0] or 0), (ap_row[1] or 0)
-    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra "
-              "WHERE estado IN ('Autorizada','Recibida','Parcial') "
-              "AND (pagado_por IS NULL OR pagado_por='') AND fecha <= ?",
-              ((today - timedelta(days=30)).isoformat(),))
-    ap_v30 = c.fetchone()[0] or 0
-    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra "
-              "WHERE estado IN ('Autorizada','Recibida','Parcial') "
-              "AND (pagado_por IS NULL OR pagado_por='') AND fecha <= ?",
-              ((today - timedelta(days=60)).isoformat(),))
-    ap_v60 = c.fetchone()[0] or 0
-    ap = {'total': ap_total, 'count': ap_count, 'vencido_30': ap_v30, 'vencido_60': ap_v60}
-
+    # ⚠ El AR/AP de esta pantalla se RETIRO (5-ago). Eran seis consultas por carga, en un
+    # bucle de refresco cada 5 minutos, cuyos contenedores `gx-ar`/`gx-ap` **no existen en el
+    # HTML**: se calculaban para nadie. Y ademas eran conceptos inventados -- "por cobrar" era
+    # TODO pedido no cancelado, y un pedido sin producir no es una cuenta por cobrar.
+    # El AR/AP de verdad vive en Compras (`compras_cash_flow`, que resta los abonos) y en
+    # Contabilidad; el propio encabezado de esta seccion ya manda ahi. Se podo el PAR completo
+    # -- calculo y pintado -- porque dejar una punta viva es lo que produce estos fantasmas (M112).
     # Maquila pipeline activo
     try:
         c.execute("SELECT numero, cliente_nombre, producto, precio_lote, estado "
@@ -666,7 +638,6 @@ def gerencia_dashboard_extra():
         pass
     return jsonify({
         'ingresos_mes': ingresos_mes,
-        'ar': ar, 'ap': ap,
         'maquila_pipeline': maquila_pipeline,
         'maquila_target': maquila_target,
         'influencer_spend': influencer_spend,
@@ -1091,16 +1062,25 @@ def gerencia_aliados_feed():
 
         # ── Alertas: aliados vencidos en prediccion de compra ─────────────────
         # Contar aliados con proxima compra estimada ya vencida
+        # ⚠ Esto era un N+1 puro: una consulta POR CLIENTE, y todo para producir UN SOLO
+        # ENTERO que se pinta en un renglon. Y corre en la ruta critica de carga con un bucle de
+        # refresco cada 5 minutos. Ahora son DOS consultas y el emparejamiento se hace en Python.
         aliados_vencidos = 0
-        all_ali = c.execute(
-            "SELECT id FROM clientes WHERE empresa='ANIMUS' AND activo=1"
-        ).fetchall()
-        for (aid,) in all_ali:
-            fechas_r = c.execute(
-                "SELECT fecha FROM pedidos WHERE cliente_id=? AND estado NOT IN ('Cancelado','Borrador') ORDER BY fecha ASC",
-                (aid,)
-            ).fetchall()
-            fechas = [r[0][:10] for r in fechas_r if r[0]]
+        _fechas_por_cli = {}
+        try:
+            for _cid, _f in c.execute(
+                "SELECT p.cliente_id, p.fecha FROM pedidos p "
+                "  JOIN clientes cl ON cl.id = p.cliente_id "
+                " WHERE cl.empresa='ANIMUS' AND cl.activo=1 "
+                "   AND p.estado NOT IN ('Cancelado','Borrador') AND COALESCE(p.fecha,'')<>'' "
+                " ORDER BY p.cliente_id, p.fecha ASC").fetchall():
+                _fechas_por_cli.setdefault(_cid, []).append(str(_f)[:10])
+        except Exception as _eav:
+            import logging as _lgav
+            _lgav.getLogger('gerencia').warning(
+                'no pude calcular los aliados con compra vencida: %s', _eav)
+            _fechas_por_cli = {}
+        for fechas in _fechas_por_cli.values():
             if len(fechas) >= 2:
                 deltas = []
                 for i in range(1, len(fechas)):

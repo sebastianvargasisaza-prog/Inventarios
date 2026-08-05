@@ -268,6 +268,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
   <!-- QUICK NAV -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">
     <a href="/hub" style="background:var(--cx-bg-alt);border:1px solid var(--cx-text-faint);color:#fff;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">🏠 Panel Central</a>
+    <!-- `/mi-bandeja` era una pantalla HUÉRFANA: 230 líneas de pendientes cross-módulo (recalls,
+         hallazgos, cola de liberación, quejas, control de cambios) alcanzables sólo tecleando la
+         URL — ningún menú ni botón de toda la app la enlazaba. Una feature a la que no se puede
+         llegar es una feature que no existe (M121). -->
+    <a href="/mi-bandeja" style="background:var(--cx-primary-pale, #f5f3ff);border:1px solid var(--cx-primary-soft, #ddd6fe);color:var(--cx-primary-text);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">📋 Mi bandeja de pendientes</a>
+    <a href="/hoy" style="background:var(--cx-primary-pale, #f5f3ff);border:1px solid var(--cx-primary-soft, #ddd6fe);color:var(--cx-primary-text);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">⚡ Centro de Mando · HOY</a>
     <a href="/recepcion" style="background:rgba(109,40,217,0.2);border:1px solid rgba(109,40,217,0.4);color:var(--cx-primary-text);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📥 Recepción de Mercancía</a>
     <a href="/hub-salida" style="background:rgba(74,103,65,0.2);border:1px solid rgba(74,103,65,0.4);color:#8BC98A;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📤 Hub de Salida</a>
     <a href="/compras" style="background:var(--cx-card);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🛒 Módulo Compras</a>
@@ -283,6 +289,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
   <!-- INDICADORES EJECUTIVOS - solo metas/estrategicos. Caja, AR/AP, P&L viven en /financiero -->
   <div class="section-title" style="margin-top:32px;">📊 Metas estratégicas <a href="/financiero" style="font-size:0.65em;font-weight:600;color:var(--cx-primary-text);text-decoration:none;margin-left:12px;">→ Para caja, AR/AP, P&L: ir a Financiero</a> · <a href="/hoy" style="font-size:0.65em;font-weight:600;color:var(--cx-accent);text-decoration:none;">→ Para hoy: ir a HOY</a></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px;">
+    <div class="panel">
+      <!-- Los ingresos por canal YA se calculaban y no se pintaban: el contenedor `gx-ingresos`
+           no existia en el HTML, asi que las tres consultas corrian cada 5 minutos para nadie.
+           Es el numero que contesta "de donde vino la plata este mes". -->
+      <div class="panel-title">&#128176; Ingresos del mes por canal</div>
+      <div id="gx-ingresos"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
+    </div>
     <div class="panel">
       <div class="panel-title">🏭 Pipeline Maquila activo</div>
       <div id="gx-maquila"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
@@ -736,25 +749,8 @@ async function loadGerenciaExtra() {
         +'<div class="data-row" style="border-top:1px solid var(--cx-hairline);margin-top:4px;padding-top:4px;"><span class="data-lbl"><strong>Grand Total</strong></span><span class="data-val verde"><strong>'+fmtV(ig.total)+'</strong></span></div>';
     }
 
-    // AR
-    var ar = d.ar||{};
-    var elAR = document.getElementById('gx-ar');
-    var arClr = ar.total>0?'amarillo':'verde';
-    if(elAR) elAR.innerHTML =
-      '<div class="data-row"><span class="data-lbl">Total</span><span class="data-val '+arClr+'">'+fmtV(ar.total)+'</span></div>'
-      +'<div class="data-row"><span class="data-lbl"># Pedidos</span><span class="data-val">'+( ar.count||0)+'</span></div>'
-      +'<div class="data-row"><span class="data-lbl">> 30 dias</span><span class="data-val '+(ar.vencido_30>0?'rojo':'verde')+'">'+fmtV(ar.vencido_30)+'</span></div>'
-      +'<div class="data-row"><span class="data-lbl">> 60 dias</span><span class="data-val '+(ar.vencido_60>0?'rojo':'verde')+'">'+fmtV(ar.vencido_60)+'</span></div>';
-
-    // AP
-    var ap = d.ap||{};
-    var elAP = document.getElementById('gx-ap');
-    var apClr = ap.total>500000?'amarillo':'verde';
-    if(elAP) elAP.innerHTML =
-      '<div class="data-row"><span class="data-lbl">Total</span><span class="data-val '+apClr+'">'+fmtV(ap.total)+'</span></div>'
-      +'<div class="data-row"><span class="data-lbl"># OCs</span><span class="data-val">'+( ap.count||0)+'</span></div>'
-      +'<div class="data-row"><span class="data-lbl">> 30 dias</span><span class="data-val '+(ap.vencido_30>0?'rojo':'verde')+'">'+fmtV(ap.vencido_30)+'</span></div>'
-      +'<div class="data-row"><span class="data-lbl">> 60 dias</span><span class="data-val '+(ap.vencido_60>0?'rojo':'verde')+'">'+fmtV(ap.vencido_60)+'</span></div>';
+    // (AR/AP retirados: sus contenedores no existian y los conceptos eran inventados ·
+    //  el AR/AP real vive en Compras y Contabilidad, adonde el encabezado ya manda)
 
     // Maquila pipeline
     var mqs = d.maquila_pipeline||[];

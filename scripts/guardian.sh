@@ -225,6 +225,14 @@ CORAZON=(
   # que reemplaza, con un lote EN CUARENTENA sembrado a proposito -- el plan lo cuenta porque mira
   # consumo futuro, y sin ese lote la comparacion es ciega a la diferencia que importa.
   "tests/test_plan_semanal_rapido.py"
+  # Las TRES pantallas del CEO mostraban el mismo hecho con numeros distintos, y el usuario no
+  # tiene forma de saber cual creer -- que es peor que no mostrarlo, porque termina desconfiando
+  # de los tres. Los kg producidos se dividian por 1000 en /hoy (mostraba 0 kg), "MP bajo minimo"
+  # se contaba de CUATRO formas y solo una era la canonica, "lotes por vencer" contaba movimientos
+  # (un lote en tres partidas contaba tres veces) y "Registros INVIMA: 0" mentia dos veces.
+  # + el guard general: ningun getElementById('gx-...') sin su id -- eso son consultas que corren
+  # para nadie cada 5 minutos.
+  "tests/test_ceo_pantallas_coherentes.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

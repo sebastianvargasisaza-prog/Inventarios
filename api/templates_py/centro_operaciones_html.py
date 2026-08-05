@@ -346,7 +346,9 @@ async function cargar(forzado) {
     // PRODUCCION
     const p = d.produccion || {};
     document.getElementById('prod-lotes').textContent = fmtN(p.lotes_mes);
-    document.getElementById('prod-kg').textContent = fmtN(Math.round((p.kg_mes||0)/1000)) + ' kg';
+    // `kg_mes` viene en KILOS · dividirlo otra vez mostraba 0 kg en esta pantalla mientras
+    // /gerencia mostraba el valor real.
+    document.getElementById('prod-kg').textContent = fmtN(Math.round(p.kg_mes||0)) + ' kg';
     document.getElementById('prod-prog').textContent = fmtN(p.programados_30d);
 
     // INVENTARIO
@@ -385,7 +387,10 @@ async function cargar(forzado) {
     // DIRECCIÓN TÉCNICA
     const tc = d.tecnica || {};
     document.getElementById('t-formulas').textContent = fmtN(tc.formulas_vigentes);
-    document.getElementById('t-invima').textContent = fmtN(tc.invima_vigentes);
+    // `fmtN(null)` pintaba 0 y el aviso nunca salia: la tarjeta decia "0 vigentes" cuando lo
+    // que pasaba era que nadie habia mirado. Un cero y un "no pude" mandan a lugares distintos.
+    document.getElementById('t-invima').textContent =
+      (tc.invima_vigentes == null) ? 'sin dato' : fmtN(tc.invima_vigentes);
     document.getElementById('t-sgd').textContent = fmtN(tc.sgd_vencen_30d);
 
     // RRHH

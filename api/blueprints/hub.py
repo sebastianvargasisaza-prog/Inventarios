@@ -859,15 +859,16 @@ def centro_notificaciones():
     # ── Inventario: MPs en stock cero ──
     try:
         for r in c.execute("""
-            SELECT m.codigo_mp, m.nombre_inci as nombre,
-                   COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
-                                     WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad
+            SELECT m.codigo_mp, MAX(m.nombre_inci) as nombre,
+                   COALESCE(SUM(CASE WHEN UPPER(mov.tipo) IN ('ENTRADA','AJUSTE +','AJUSTE') THEN mov.cantidad
+                                     WHEN UPPER(mov.tipo) IN ('SALIDA','AJUSTE -') THEN -mov.cantidad
                                      ELSE 0 END), 0) as stock
             FROM maestro_mps m
             LEFT JOIN movimientos mov ON mov.material_id = m.codigo_mp
-            WHERE m.activo=1 AND m.stock_minimo > 0
+              AND UPPER(COALESCE(mov.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO') 
+            WHERE m.activo=1 AND COALESCE(m.controla_stock,1)=1 AND m.stock_minimo > 0
             GROUP BY m.codigo_mp
-            HAVING stock <= 0
+            HAVING stock <= 0.01
             LIMIT 15
         """).fetchall():
             alertas.append({
@@ -1288,34 +1289,33 @@ def centro_operaciones_data():
 
     # ─── INVENTARIO ──────────────────────────────────────────────────────
     try:
-        n_cero = c.execute("""
-            SELECT COUNT(*) FROM (
-                SELECT m.codigo_mp,
-                       COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
-                                         WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad
-                                         ELSE 0 END),0) as stock
-                FROM maestro_mps m
-                LEFT JOIN movimientos mov ON mov.material_id=m.codigo_mp
-                WHERE m.activo=1 AND m.stock_minimo>0
-                GROUP BY m.codigo_mp HAVING stock<=0
-            )
-        """).fetchone()[0]
-        n_bajo = c.execute("""
-            SELECT COUNT(*) FROM (
-                SELECT m.codigo_mp, m.stock_minimo,
-                       COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
-                                         WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad
-                                         ELSE 0 END),0) as stock
-                FROM maestro_mps m
-                LEFT JOIN movimientos mov ON mov.material_id=m.codigo_mp
-                WHERE m.activo=1 AND m.stock_minimo>0
-                GROUP BY m.codigo_mp
-                HAVING stock<m.stock_minimo AND stock>0
-            )
-        """).fetchone()[0]
-        venc7 = c.execute("""SELECT COUNT(*) FROM movimientos
-                             WHERE tipo='Entrada' AND fecha_vencimiento BETWEEN
-                                   date('now', '-5 hours') AND date('now', '-5 hours', '+7 day')""").fetchone()[0]
+        # ⚠ Estos dos CASE NO eran el canonico: contaban `Ajuste` como salida y no excluian
+        # cuarentena / vencido / rechazado / bloqueado. Con eso, "MP bajo minimo" tenia TRES
+        # valores distintos entre las pantallas del CEO -- y la version correcta ya estaba
+        # escrita en ESTE MISMO archivo, 800 lineas mas arriba (`centro_decisiones`).
+        # Se comparte el fragmento para que no vuelvan a separarse.
+        _CASE_STOCK = (
+            "COALESCE(SUM(CASE WHEN UPPER(mov.tipo) IN ('ENTRADA','AJUSTE +','AJUSTE') THEN mov.cantidad "
+            "WHEN UPPER(mov.tipo) IN ('SALIDA','AJUSTE -') THEN -mov.cantidad ELSE 0 END),0) AS stock ")
+        _FROM_STOCK = (
+            "FROM maestro_mps m LEFT JOIN movimientos mov ON mov.material_id=m.codigo_mp "
+            "AND UPPER(COALESCE(mov.estado_lote,'')) NOT IN "
+            "    ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO') "
+            "WHERE m.activo=1 AND COALESCE(m.controla_stock,1)=1 AND m.stock_minimo>0 ")
+        n_cero = c.execute(
+            "SELECT COUNT(*) FROM (SELECT m.codigo_mp, " + _CASE_STOCK + _FROM_STOCK +
+            "GROUP BY m.codigo_mp HAVING stock<=0.01) t").fetchone()[0]
+        n_bajo = c.execute(
+            "SELECT COUNT(*) FROM (SELECT m.codigo_mp, MIN(m.stock_minimo) AS smin, " + _CASE_STOCK +
+            _FROM_STOCK + "GROUP BY m.codigo_mp "
+            "HAVING stock < MIN(m.stock_minimo) AND stock > 0.01) t").fetchone()[0]
+        # Contaba MOVIMIENTOS, no lotes: un lote recibido en tres partidas contaba tres veces.
+        venc7 = c.execute(
+            "SELECT COUNT(*) FROM (SELECT material_id, lote FROM movimientos "
+            "  WHERE tipo='Entrada' AND COALESCE(fecha_vencimiento,'')<>'' "
+            "    AND fecha_vencimiento BETWEEN date('now','-5 hours') "
+            "                              AND date('now','-5 hours','+7 day') "
+            "  GROUP BY material_id, lote) t").fetchone()[0]
         out['inventario'] = {
             'mps_cero': n_cero, 'mps_bajo': n_bajo, 'lotes_vencen_7d': venc7,
         }
@@ -1438,14 +1438,29 @@ def centro_operaciones_data():
         # `registros_invima`, `documentos_sgd`). Envuelto en un try, no daba error: el tablero
         # del CEO mostraba el bloque vacio y se leia como "no hay nada que mirar" (M12a/M96).
         # Las reales son `formula_headers` y `sgd_documentos`.
+        try:
+            _invima_vigentes = c.execute(
+                "SELECT COUNT(*) FROM registros_invima WHERE estado='Vigente'").fetchone()[0] or 0
+            _invima_vencen = c.execute(
+                "SELECT COUNT(*) FROM registros_invima WHERE estado='Vigente' "
+                "  AND COALESCE(fecha_vencimiento,'')<>'' "
+                "  AND fecha_vencimiento <= date('now','-5 hours','+90 days')").fetchone()[0] or 0
+        except Exception as _ei:
+            # Si de verdad no se puede leer se DECLARA con None, que la pantalla distingue de un
+            # cero. Un cero se lee como "ninguno vigente", que es lo contrario de "no pude mirar".
+            log.warning('hub: no pude leer los registros INVIMA: %s', _ei)
+            _invima_vigentes, _invima_vencen = None, None
         out['tecnica'] = {
             'formulas_vigentes': c.execute(
                 "SELECT COUNT(*) FROM formula_headers WHERE COALESCE(activo,1)=1").fetchone()[0] or 0,
-            # Los registros INVIMA no estan modelados en EOS todavia. Se DECLARA en vez de
-            # mostrar 0: un cero se lee como "ninguno vigente", que es lo contrario de "no lo
-            # llevamos aca" (M124).
-            'invima_vigentes': None,
-            'invima_aviso': 'Los registros INVIMA no se llevan en EOS todavía',
+            # ⚠ El comentario que habia aca afirmaba que los registros INVIMA "no estan
+            # modelados en EOS todavia" y fijaba None -- pero `registros_invima` SI existe: la
+            # crea `tecnica._init_tecnica()` al importar el blueprint y `tecnica.py:238` la
+            # consulta sin problema. Encima el aviso nunca se pintaba y `fmtN(null)` mostraba
+            # un 0, o sea que la tarjeta mentia dos veces: decia cero, y el motivo por el que
+            # decia cero tambien era falso.
+            'invima_vigentes': _invima_vigentes,
+            'invima_vencen_90d': _invima_vencen,
             'sgd_vencen_30d':    c.execute("""SELECT COUNT(*) FROM sgd_documentos
                                              WHERE UPPER(COALESCE(estado,''))='VIGENTE'
                                                AND COALESCE(proxima_revision,'') != ''
@@ -1534,10 +1549,12 @@ def ia_analizar_semana():
                                                 WHERE estado NOT IN ('Hecha','Cancelada')
                                                   AND fecha_compromiso < date('now', '-5 hours')""").fetchone()[0]
         datos['mps_cero'] = c.execute("""SELECT COUNT(*) FROM (
-            SELECT m.codigo_mp, COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
-                                                  WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad ELSE 0 END),0) as stock
+            SELECT m.codigo_mp, COALESCE(SUM(CASE WHEN UPPER(mov.tipo) IN ('ENTRADA','AJUSTE +','AJUSTE') THEN mov.cantidad
+                                                  WHEN UPPER(mov.tipo) IN ('SALIDA','AJUSTE -') THEN -mov.cantidad ELSE 0 END),0) as stock
             FROM maestro_mps m LEFT JOIN movimientos mov ON mov.material_id=m.codigo_mp
-            WHERE m.activo=1 AND m.stock_minimo>0 GROUP BY m.codigo_mp HAVING stock<=0)""").fetchone()[0]
+              AND UPPER(COALESCE(mov.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO') 
+            WHERE m.activo=1 AND COALESCE(m.controla_stock,1)=1 AND m.stock_minimo>0
+            GROUP BY m.codigo_mp HAVING stock<=0.01)""").fetchone()[0]
     except Exception as _e:
         datos['error_recoleccion'] = str(_e)
 
@@ -1650,8 +1667,11 @@ def reporte_semanal_ceo():
         out['producciones_semana'] = c.execute("""SELECT COUNT(*), COALESCE(SUM(cantidad),0)
                                                   FROM producciones
                                                   WHERE fecha >= date('now', '-5 hours', '-7 day')""").fetchone()
+        # ⚠ `producciones.cantidad` YA esta en KILOS (lo escriben asi los dos writers:
+        # inventario.py y programacion.py). Dividir por 1000 mostraba 0 kg mientras /gerencia
+        # mostraba el numero correcto: dos pantallas del CEO, dos respuestas del mismo hecho.
         out['producciones_semana'] = {'lotes': out['producciones_semana'][0],
-                                      'kg': out['producciones_semana'][1]/1000.0}
+                                      'kg': float(out['producciones_semana'][1] or 0)}
     except Exception:
         out['producciones_semana'] = {}
 
