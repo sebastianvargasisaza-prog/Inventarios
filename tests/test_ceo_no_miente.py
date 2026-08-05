@@ -28,6 +28,20 @@ import re
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _html_ceo():
+    """El HTML de la pantalla que el CEO ve DE VERDAD.
+
+    ⚠ Desde el 5-ago las tres pantallas se consolidaron en el Centro de Mando, y `/gerencia`
+    REDIRIGE ahi. Seguir verificando sobre `GERENCIA_HTML` seria medir una plantilla que ya no
+    renderiza nadie -- o sea un test que no puede fallar, que es lo mismo que no tenerlo."""
+    import sys
+    api = os.path.join(RAIZ, 'api')
+    if api not in sys.path:
+        sys.path.insert(0, api)
+    from templates_py.centro_operaciones_html import HTML
+    return HTML
+
+
 def _src(rel):
     return io.open(os.path.join(RAIZ, rel), encoding='utf-8').read()
 

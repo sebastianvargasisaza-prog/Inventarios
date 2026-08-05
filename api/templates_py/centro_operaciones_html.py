@@ -184,7 +184,9 @@ HTML = r"""
       <button class="cm-tab active" data-pane="dec" onclick="showPane('dec')">🎯 Decisiones <span class="cm-badge" id="cm-badge-dec"></span></button>
       <button class="cm-tab" data-pane="pagos" onclick="showPane('pagos')">💸 Pagos <span class="cm-badge" id="cm-badge-pagos"></span></button>
       <button class="cm-tab" data-pane="pulso" onclick="showPane('pulso')">📊 Pulso del día</button>
+      <button class="cm-tab" data-pane="pend" onclick="showPane('pend')">📋 Pendientes <span class="cm-badge" id="cm-badge-pend"></span></button>
       <button class="cm-tab" data-pane="fin" onclick="showPane('fin')">💳 Finanzas & Equipo</button>
+      <button class="cm-tab" data-pane="estr" onclick="showPane('estr')">🎯 Estratégico</button>
     </div>
 
     <!-- PANE: PAGOS · lo que hay que pagar, con la ficha completa para decidirlo acá -->
@@ -212,7 +214,14 @@ HTML = r"""
 
     <!-- PANE: DECISIONES (lo que puedo atacar HOY) -->
     <div class="pane" id="pane-dec">
-    <div class="area-title" style="border:none;padding-bottom:2px"><span class="area-title-icon">🎯</span>Lo que podés atacar hoy
+    <!-- Lo que SOLO el CEO puede destrabar · va primero porque un tablero de CEO se abre para
+         decidir, no para mirar. Todo lo calcula su modulo dueño (la caja: `caja_saldo` de
+         Animus · los creadores: `_pagos_influencer_pendientes`): el tablero no recalcula nada,
+         porque dos calculos del mismo hecho SIEMPRE divergen. -->
+    <div class="area-title" style="border:none;padding-bottom:2px"><span class="area-title-icon">✍️</span>Espera tu decisión</div>
+    <div id="ceo-decisiones" class="ceo-dec-grid"><div class="empty" style="padding:14px;color:var(--cx-text-mute)">Cargando…</div></div>
+
+    <div class="area-title" style="border:none;padding-bottom:2px;margin-top:22px"><span class="area-title-icon">🎯</span>Lo que podés atacar hoy
       <span id="dec-resumen" style="margin-left:auto;font-size:12px;font-weight:600;color:var(--cx-text-mute)"></span>
     </div>
     <div id="dec-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px 0"></div>
@@ -308,17 +317,118 @@ HTML = r"""
       </div>
     </div>
     </div><!-- /pane-fin -->
+
+    <!-- PANE: PENDIENTES · la bandeja cross-modulo que vivia en /mi-bandeja, una pantalla a la
+         que NINGUN menu enlazaba: 230 lineas alcanzables solo tecleando la URL (M121). -->
+    <div class="pane" id="pane-pend" style="display:none">
+      <div class="area-title" style="border:none;padding-bottom:2px"><span class="area-title-icon">📋</span>Todo lo que espera tu atención
+        <span id="pend-resumen" style="margin-left:auto;font-size:12px;font-weight:600;color:var(--cx-text-mute)"></span>
+      </div>
+      <div id="pend-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px 0"></div>
+      <div id="pend-lista"><div class="empty" style="padding:14px;color:var(--cx-text-mute)">Cargando pendientes…</div></div>
+    </div>
+
+    <!-- PANE: ESTRATEGICO · lo que /gerencia tenia de propio (metas, aliados, inputs del mes).
+         Los KPIs de inventario/produccion NO se repiten aca: ya estan en Pulso del dia, y
+         mostrarlos dos veces es como volvieron a divergir la ultima vez. -->
+    <div class="pane" id="pane-estr" style="display:none">
+      <div class="area-title" style="border:none;padding-bottom:2px"><span class="area-title-icon">🎯</span>Metas y canal</div>
+      <div id="estr-metas" class="grid-cards"><div class="empty" style="padding:14px;color:var(--cx-text-mute)">Cargando…</div></div>
+
+      <div class="area-title" style="border:none;padding-bottom:2px;margin-top:22px"><span class="area-title-icon">📝</span>Lo que sólo vos sabés
+        <span style="margin-left:auto;font-size:11px;font-weight:500;color:var(--cx-text-mute)">se actualiza una vez al mes</span>
+      </div>
+      <div class="panel">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px">
+          <div><label class="estr-lbl">Saldo de caja declarado</label>
+            <input id="estr-caja" type="number" class="estr-in" placeholder="0"></div>
+          <div><label class="estr-lbl">Ingresos ÁNIMUS del mes</label>
+            <input id="estr-animus" type="number" class="estr-in" placeholder="0"></div>
+          <div><label class="estr-lbl">Ingresos Maquila del mes</label>
+            <input id="estr-maquila" type="number" class="estr-in" placeholder="0"></div>
+          <div><label class="estr-lbl">Nómina del período</label>
+            <div id="estr-nomina" style="padding:9px 0;font-weight:800;color:var(--cx-text)">-</div>
+            <div style="font-size:11px;color:var(--cx-text-mute)">sale de RRHH &middot; no se edita acá</div></div>
+        </div>
+        <label class="estr-lbl">Notas del período</label>
+        <input id="estr-notas" class="estr-in" placeholder="Ej: mes de lanzamiento, pago de nómina atrasado…">
+        <div style="margin-top:12px"><button class="estr-btn" onclick="estrGuardar()">💾 Guardar</button>
+          <span id="estr-msg" style="margin-left:10px;font-size:12px"></span></div>
+      </div>
+    </div>
   </div>
 
 <script>
+</script>
+<style>
+/* ── Pestañas nuevas del Centro de Mando (5-ago) ── todo en tokens: un hex suelto ignora el
+   tema oscuro y dispara el trinquete de deuda de diseño. */
+.ceo-dec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:13px;margin-bottom:8px}
+.ceo-card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;padding:15px 17px;
+  box-shadow:0 1px 2px rgba(24,24,27,.04);display:flex;flex-direction:column}
+.ceo-card.urge{border-left:5px solid var(--cx-danger)}
+.ceo-card.ok{border-left:5px solid var(--cx-success)}
+.ceo-card.espera{border-left:5px solid var(--cx-warn)}
+.ceo-card-t{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--cx-text-mute)}
+.ceo-card-n{font-size:22px;font-weight:800;color:var(--cx-text);letter-spacing:-.02em;line-height:1.15;margin-top:5px;
+  font-variant-numeric:tabular-nums}
+.ceo-card-s{font-size:11.5px;color:var(--cx-text-mute);margin-top:4px;line-height:1.45}
+.ceo-lista{margin-top:10px;border-top:1px solid var(--cx-hairline);padding-top:8px}
+.ceo-li{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:12px;
+  border-bottom:1px solid var(--cx-hairline)}
+.ceo-li:last-child{border-bottom:none}
+.ceo-li-n{color:var(--cx-text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ceo-li-q{font-size:11px;color:var(--cx-text-mute);font-weight:400}
+.ceo-li-v{color:var(--cx-text);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ceo-vacio{font-size:12px;color:var(--cx-success-text);padding:3px 0}
+.ceo-aviso{font-size:11.5px;color:var(--cx-danger-text);padding:3px 0}
+.ceo-mas{font-size:11px;color:var(--cx-text-faint);margin-top:6px}
+.ceo-ir{margin-top:10px;align-self:flex-start;font-size:11.5px;font-weight:700;color:var(--cx-primary-text);
+  text-decoration:none;border:1px solid var(--cx-primary-soft,var(--cx-border));border-radius:8px;padding:5px 11px}
+.ceo-ir:hover{background:var(--cx-primary-pale,var(--cx-bg-alt))}
+.pend-chip{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:999px;padding:5px 13px;
+  font-size:12px;font-weight:700;color:var(--cx-text-soft);cursor:pointer}
+.pend-chip.on{background:var(--cx-primary-pale,var(--cx-bg-alt));border-color:var(--cx-primary);color:var(--cx-primary-text)}
+.pend-grupo{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--cx-text-mute);margin:16px 0 7px}
+.pend-item{display:flex;gap:11px;align-items:flex-start;background:var(--cx-card);border:1px solid var(--cx-border);
+  border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.pend-item.critical{border-left:5px solid var(--cx-danger)}
+.pend-item.high{border-left:5px solid var(--cx-warn)}
+.pend-item.medium{border-left:5px solid var(--cx-info)}
+.pend-t{font-size:13px;font-weight:700;color:var(--cx-text)}
+.pend-d{font-size:11.5px;color:var(--cx-text-mute);margin-top:3px;line-height:1.45}
+.pend-m{font-size:10.5px;color:var(--cx-text-faint);margin-top:5px;display:flex;gap:9px;flex-wrap:wrap}
+.pend-ir{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--cx-primary-text);text-decoration:none;
+  white-space:nowrap;align-self:center}
+.estr-lbl{display:block;font-size:11px;font-weight:700;color:var(--cx-text-soft);margin-bottom:5px}
+.estr-in{width:100%;background:var(--cx-card);border:1.5px solid var(--cx-border);color:var(--cx-text);
+  padding:9px 12px;border-radius:9px;font-size:13.5px;box-sizing:border-box;font-family:inherit}
+.estr-in:focus{outline:none;border-color:var(--cx-primary)}
+.estr-btn{background:var(--cx-primary-grad,var(--cx-primary));color:#fff;border:none;border-radius:9px;
+  padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.estr-card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;padding:15px 17px}
+.estr-card .n{font-size:21px;font-weight:800;color:var(--cx-text);letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums}
+.estr-card .l{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--cx-text-mute)}
+.estr-card .s{font-size:11.5px;color:var(--cx-text-mute);margin-top:4px}
+</style>
+<script>
 function showPane(p){
-  var panes=['dec','pagos','pulso','fin'];
+  // ⚠ Toda pestaña nueva va TAMBIEN en esta lista. El conmutador apaga todos los paneles antes
+  // de encender el destino, asi que un destino ausente deja la pantalla EN BLANCO -- y sin un
+  // solo error a la vista (M112/M155).
+  var panes=['dec','pagos','pulso','fin','pend','estr'];
   panes.forEach(function(x){ var el=document.getElementById('pane-'+x); if(el) el.style.display = (x===p)?'':'none'; });
   var tabs=document.querySelectorAll('#cm-tabs .cm-tab');
   tabs.forEach(function(t){ if(t.getAttribute('data-pane')===p) t.classList.add('active'); else t.classList.remove('active'); });
   // La bandeja de pagos se pide al ABRIR su pestaña, no en la carga del tablero: recorre
   // los pagos pendientes y calcula alertas de cada uno, y eso no va en la ruta critica (M43).
   if(p==='pagos' && !window._PG_DATA) cargarPagos();
+  // Cada pestaña pide lo suyo al ABRIRSE, no en la carga del tablero (M43).
+  if(p==='pend' && !window._PEND_DATA) cargarPendientes();
+  if(p==='estr' && !window._ESTR_DATA) cargarEstrategico();
+  try{ if(history && history.replaceState) history.replaceState(null,'','#'+p); }catch(e){}
 }
 function showSubPago(s){
   window._PG_SUB=s;
@@ -328,6 +438,186 @@ function showSubPago(s){
 function fmtM(n) { n = parseFloat(n||0); if(n>=1e6) return '$'+(n/1e6).toFixed(1)+'M'; if(n>=1e3) return '$'+(n/1e3).toFixed(0)+'K'; return '$'+Math.round(n).toLocaleString('es-CO'); }
 function fmtN(n) { return (n||0).toLocaleString('es-CO'); }
 function _esc(s){return String(s||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));}
+
+// ── ESPERA TU DECISION · lo que solo el CEO destraba ────────────────────────────
+// Cada bloque se pinta por separado: si uno falla deja su aviso y NO se lleva la pantalla. Y lo
+// que no se pudo medir se DICE -- un cero que nadie calculo se lee como "no hay nada que hacer"
+// y significa lo contrario (M154).
+function _ceoCard(cls, titulo, numero, sub, cuerpo, ir){
+  return '<div class="ceo-card '+cls+'">'
+    + '<div class="ceo-card-t">'+titulo+'</div>'
+    + '<div class="ceo-card-n">'+numero+'</div>'
+    + (sub ? '<div class="ceo-card-s">'+sub+'</div>' : '')
+    + (cuerpo||'')
+    + (ir ? '<a class="ceo-ir" href="'+ir[1]+'">'+ir[0]+'</a>' : '')
+    + '</div>';
+}
+function _ceoFilas(items, pinta, vacio, tope){
+  if(!items || !items.length) return '<div class="ceo-lista"><div class="ceo-vacio">'+vacio+'</div></div>';
+  var n = tope||5;
+  var h = '<div class="ceo-lista">' + items.slice(0,n).map(pinta).join('');
+  if(items.length > n) h += '<div class="ceo-mas">y '+(items.length-n)+' más</div>';
+  return h + '</div>';
+}
+async function cargarDecisionesCEO(){
+  var box = document.getElementById('ceo-decisiones');
+  if(!box) return;
+  try{
+    var d = await (await fetch('/api/gerencia/decisiones-ceo', {credentials:'same-origin'})).json();
+    if(!d.ok){ box.innerHTML = '<div class="ceo-aviso">'+_esc(d.error||'No pude cargar')+'</div>'; return; }
+    var h = '';
+    if(d.caja){
+      var cj = d.caja;
+      var sub = 'disponible ' + fmtM(cj.disponible)
+        + (cj.comprometido > 0 ? ' · ' + fmtM(cj.comprometido) + ' ya comprometido' : '');
+      if(cj.sin_comprobante_n > 0) sub += ' · ' + cj.sin_comprobante_n + ' pagos sin comprobante';
+      h += _ceoCard(cj.esperan_n>0?'espera':'ok', '💵 Caja menor',
+        fmtM(cj.saldo) + ' <span style="font-size:12px;font-weight:600;color:var(--cx-text-mute)">en la gaveta</span>', sub,
+        _ceoFilas(cj.pendientes, function(x){
+          return '<div class="ceo-li"><span class="ceo-li-n">'+_esc(x.concepto)
+            +' <span class="ceo-li-q">· '+_esc(x.solicitado_por)+'</span></span>'
+            +'<span class="ceo-li-v">'+fmtM(x.monto)+'</span></div>';
+        }, 'Nadie espera tu autorización'), ['Ir a la caja','/animus']);
+    } else { h += _ceoCard('urge','💵 Caja menor','—','','<div class="ceo-aviso">No pude leerla</div>',null); }
+    if(d.influencers){
+      var inf = d.influencers;
+      h += _ceoCard(inf.vencidos_n>0?'urge':(inf.n>0?'espera':'ok'), '📣 Pagos a creadores', fmtM(inf.monto),
+        inf.n + ' esperando' + (inf.vencidos_n>0 ? ' · ' + inf.vencidos_n + ' VENCIDOS' : ''),
+        _ceoFilas(inf.pendientes, function(x){
+          var urg = (x.urgencia==='vencido') ? ' style="color:var(--cx-danger-text)"' : '';
+          return '<div class="ceo-li"><span class="ceo-li-n"'+urg+'>'+_esc(x.influencer_nombre||x.nombre||'?')
+            +(x.urgencia==='vencido' ? ' <span class="ceo-li-q">· vencido</span>' : '')
+            +'</span><span class="ceo-li-v">'+fmtM(x.monto)+'</span></div>';
+        }, 'Ningún creador esperando pago'), ['Ir a pagar','#pagos']);
+    } else { h += _ceoCard('urge','📣 Pagos a creadores','—','','<div class="ceo-aviso">No pude leerlos</div>',null); }
+    if(d.ocs_por_autorizar){
+      var oc = d.ocs_por_autorizar;
+      var tot = oc.reduce(function(a,x){ return a + (x.valor||0); }, 0);
+      h += _ceoCard(oc.length>0?'espera':'ok', '🛒 Compras por autorizar', fmtM(tot),
+        oc.length + ' órdenes revisadas',
+        _ceoFilas(oc, function(x){
+          return '<div class="ceo-li"><span class="ceo-li-n">'+_esc(x.proveedor||'?')
+            +' <span class="ceo-li-q">· '+_esc(x.numero_oc)+'</span></span>'
+            +'<span class="ceo-li-v">'+fmtM(x.valor)+'</span></div>';
+        }, 'Ninguna orden esperando tu firma'), ['Ir a Compras','/compras']);
+    }
+    if(d.calidad){
+      var q = d.calidad, tq = (q.lotes_por_liberar||0)+(q.mbr_por_aprobar||0);
+      h += _ceoCard(tq>0?'espera':'ok', '🔬 Tu firma como Director Técnico', fmtN(tq),
+        (q.lotes_por_liberar||0)+' lotes por liberar · '+(q.mbr_por_aprobar||0)+' procedimientos por aprobar',
+        '<div class="ceo-lista"><div class="ceo-vacio">'
+        + (tq>0 ? 'Un lote sin liberar es producto terminado que no se puede vender.' : 'Nada esperando tu firma.')
+        + '</div></div>', ['Ir a Calidad','/calidad']);
+    }
+    box.innerHTML = h;
+    if(d.avisos && d.avisos.length) box.innerHTML += '<div class="ceo-aviso">⚠ '+d.avisos.map(_esc).join(' · ')+'</div>';
+  }catch(e){ box.innerHTML = '<div class="ceo-aviso">No pude cargar lo que espera tu decisión: '+_esc(e.message)+'</div>'; }
+}
+
+// ── PENDIENTES · la bandeja cross-modulo que vivia en /mi-bandeja ───────────────
+var _PEND_FILTRO = 'all';
+var _PEND_SEV = {critical:'🔴 Crítico', high:'🟡 Alta', medium:'🟢 Media'};
+async function cargarPendientes(){
+  var box = document.getElementById('pend-lista');
+  if(!box) return;
+  try{
+    var d = await (await fetch('/api/bandeja-ceo', {credentials:'same-origin'})).json();
+    window._PEND_DATA = d;
+    pintarPendientes();
+  }catch(e){ box.innerHTML = '<div class="ceo-aviso">No pude cargar los pendientes: '+_esc(e.message)+'</div>'; }
+}
+function pendFiltro(f){ _PEND_FILTRO = f; pintarPendientes(); }
+function pintarPendientes(){
+  var d = window._PEND_DATA || {};
+  var items = d.items || [];
+  var cnt = d.counts || {};
+  var chips = document.getElementById('pend-chips');
+  if(chips){
+    var defs = [['all','Todos',d.total||0],['critical','🔴 Críticos',cnt.critical||0],
+                ['high','🟡 Alta',cnt.high||0],['medium','🟢 Media',cnt.medium||0]];
+    chips.innerHTML = defs.map(function(x){
+      return '<button class="pend-chip'+(_PEND_FILTRO===x[0]?' on':'')+'" onclick="pendFiltro(\''+x[0]+'\')">'
+        + x[1] + ' <b>' + x[2] + '</b></button>';
+    }).join('');
+  }
+  var res = document.getElementById('pend-resumen');
+  if(res) res.textContent = (d.total||0) + ' pendientes';
+  var badge = document.getElementById('cm-badge-pend');
+  if(badge) badge.textContent = (cnt.critical ? cnt.critical : (d.total||''));
+  var vis = (_PEND_FILTRO==='all') ? items : items.filter(function(it){ return it.severidad===_PEND_FILTRO; });
+  var box = document.getElementById('pend-lista');
+  if(!vis.length){ box.innerHTML = '<div class="empty" style="padding:20px;color:var(--cx-success-text)">✅ Sin pendientes en esta categoría</div>'; return; }
+  var g = {critical:[], high:[], medium:[]};
+  vis.forEach(function(it){ if(g[it.severidad]) g[it.severidad].push(it); });
+  var h = '';
+  ['critical','high','medium'].forEach(function(sev){
+    if(!g[sev].length) return;
+    h += '<div class="pend-grupo">'+_PEND_SEV[sev]+' · '+g[sev].length+'</div>';
+    g[sev].forEach(function(it){
+      h += '<div class="pend-item '+sev+'"><div style="flex:1;min-width:0">'
+        + '<div class="pend-t">'+_esc(it.titulo)+'</div>'
+        + '<div class="pend-d">'+_esc(it.descripcion)+'</div>'
+        + '<div class="pend-m"><span>'+_esc(it.modulo)+'</span>'
+        + ((it.edad_dias !== null && it.edad_dias !== undefined) ? '<span>⏱ '+it.edad_dias+'d</span>' : '')
+        + '</div></div>'
+        + (it.link ? '<a class="pend-ir" href="'+_esc(it.link)+'">Abrir →</a>' : '')
+        + '</div>';
+    });
+  });
+  box.innerHTML = h;
+}
+
+// ── ESTRATEGICO · lo que /gerencia tenia de propio ──────────────────────────────
+async function cargarEstrategico(){
+  var box = document.getElementById('estr-metas');
+  if(!box) return;
+  try{
+    var d = await (await fetch('/api/gerencia/dashboard-extra', {credentials:'same-origin'})).json();
+    window._ESTR_DATA = d;
+    var ig = d.ingresos_mes || {}, inf = d.influencer_spend || {}, mq = d.maquila_target || {};
+    var h = '';
+    h += '<div class="estr-card"><div class="l">Ingresos del mes</div><div class="n">'+fmtM(ig.total||0)+'</div>'
+      + '<div class="s">ÁNIMUS '+fmtM(ig.animus_total||0)+' · Maquila '+fmtM(ig.maquila||0)+'</div></div>';
+    h += '<div class="estr-card"><div class="l">Aliados B2B / Shopify</div><div class="n">'+fmtM(ig.aliados||0)+'</div>'
+      + '<div class="s">directo Shopify '+fmtM(ig.shopify||0)+'</div></div>';
+    h += '<div class="estr-card"><div class="l">Inversión en creadores (año)</div><div class="n">'+fmtM(inf.ytd||0)+'</div>'
+      + '<div class="s">'+(inf.ocs||0)+' órdenes</div></div>';
+    if(mq && mq.maquila_ytd !== undefined){
+      h += '<div class="estr-card"><div class="l">Maquila del año</div><div class="n">'+fmtM(mq.maquila_ytd||0)+'</div>'
+        + '<div class="s">'+(mq.pct_espagiria||0)+'% de la meta Espagiria</div></div>';
+    }
+    box.innerHTML = h;
+  }catch(e){ box.innerHTML = '<div class="ceo-aviso">No pude cargar las metas: '+_esc(e.message)+'</div>'; }
+  // los inputs del mes (los llena el CEO · la nomina NO se teclea, se deriva de RRHH)
+  try{
+    var k = await (await fetch('/api/gerencia/kpis', {credentials:'same-origin'})).json();
+    var f = k.inputs_manuales || {}, nom = k.nomina || {};
+    var set = function(id, v){ var e = document.getElementById(id); if(e && v) e.value = v; };
+    set('estr-caja', f.saldo_caja); set('estr-animus', f.ingresos_animus);
+    set('estr-maquila', f.ingresos_maquila); set('estr-notas', f.notas);
+    var n = document.getElementById('estr-nomina');
+    if(n) n.textContent = nom.total
+      ? (fmtM(nom.total) + '  ·  ' + (nom.empleados||0) + ' personas' + (nom.periodo ? ' · ' + nom.periodo : ''))
+      : 'sin nómina registrada este período';
+  }catch(e){}
+}
+async function estrGuardar(){
+  var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
+  var msg = document.getElementById('estr-msg');
+  try{
+    var t = await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r = await fetch('/api/gerencia/input-manual', {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},
+      body: JSON.stringify({saldo_caja: parseFloat(g('estr-caja'))||0,
+                            ingresos_animus: parseFloat(g('estr-animus'))||0,
+                            ingresos_maquila: parseFloat(g('estr-maquila'))||0,
+                            notas: g('estr-notas')})});
+    var d = await r.json();
+    if(msg) msg.innerHTML = r.ok
+      ? '<span style="color:var(--cx-success-text)">✓ '+_esc(d.message||'Guardado')+'</span>'
+      : '<span style="color:var(--cx-danger-text)">'+_esc(d.error||'No se pudo')+'</span>';
+  }catch(e){ if(msg) msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error de red</span>'; }
+}
 
 async function cargar(forzado) {
   try {
@@ -818,7 +1108,16 @@ async function cargarDecisiones(){
 
 cargar();
 cargarDecisiones();
-setInterval(function(){ cargar(); cargarDecisiones(); }, 60*1000);
+cargarDecisionesCEO();
+setInterval(function(){ cargar(); cargarDecisiones(); cargarDecisionesCEO(); }, 60*1000);
+
+// Arranque por hash · `/gerencia` y `/mi-bandeja` redirigen aca con su pestaña, asi que un
+// marcador viejo sigue llegando a donde llegaba antes (M120: al mover una ruta enlazada, se
+// deja llegando · una URL que muere en la nada es peor que la pantalla vieja).
+(function(){
+  var h = (location.hash||'').replace('#','');
+  if(['dec','pagos','pulso','fin','pend','estr'].indexOf(h) >= 0) showPane(h);
+})();
 </script>
 </body>
 </html>

@@ -45,7 +45,15 @@ def gerencia_page():
     if session.get('compras_user','') not in ADMIN_USERS:
         # Autenticado pero sin permiso: ir al hub, no al login (evita loop)
         return redirect('/hub')
-    return Response(GERENCIA_HTML, mimetype='text/html')
+    # CONSOLIDADO (5-ago · Sebastian: "si consolida"): habia TRES puertas al mismo trabajo y
+    # hasta ayer ademas se contradecian entre si. Todo vive en el Centro de Mando, que ya tenia
+    # el conmutador de pestañas y los pagos con sus acciones. Lo propio de esta pantalla -- metas,
+    # canal de aliados y los inputs del mes -- entro como la pestaña "Estrategico".
+    #
+    # La ruta REDIRIGE, no se borra: un marcador viejo sigue llegando (M120). Y los ENDPOINTS de
+    # este blueprint siguen vivos porque son los que alimentan esa pestaña -- se retiro la
+    # pantalla, no el calculo.
+    return redirect('/hoy#estr')
 
 @bp.route('/gerencia-financiero')
 def gerencia_financiero_page():

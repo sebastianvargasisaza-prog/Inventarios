@@ -239,6 +239,13 @@ CORAZON=(
   # estaban en tema CLARO, que es el default: el boton "Panel Central" daba 1.03, o sea era
   # literalmente invisible.
   "tests/test_ceo_premium.py"
+  # El CEO tiene UNA sola pantalla: /gerencia y /mi-bandeja REDIRIGEN al Centro de Mando. Lo que
+  # este archivo protege no es la consolidacion sino sus dos formas de romperse en silencio: una
+  # pestaña sin su panel deja la pantalla EN BLANCO (el conmutador apaga todo antes de encender,
+  # y no da error), y una URL vieja que muere en la nada es peor que la pantalla vieja. + el
+  # guard de boton muerto mira la DEFINICION, no el nombre: renombrar la funcion y dejar el
+  # onclick pasaba el test anterior, que es exactamente el bug.
+  "tests/test_ceo_una_sola_pantalla.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

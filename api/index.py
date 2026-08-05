@@ -2595,8 +2595,11 @@ def mi_bandeja_page():
     if user not in ADMIN_USERS:
         return Response('<h1>403</h1><p>Solo administradores</p>',
                           status=403, mimetype='text/html')
-    from templates_py.bandeja_ceo_html import BANDEJA_CEO_HTML
-    return Response(BANDEJA_CEO_HTML, mimetype='text/html')
+    # CONSOLIDADO (5-ago): esta bandeja vive ahora como pestaña del Centro de Mando. Era una
+    # pantalla HUERFANA -- 230 lineas a las que ningun menu enlazaba, alcanzables solo tecleando
+    # la URL (M121) -- y ademas era la tercera puerta al mismo trabajo. La ruta queda
+    # REDIRIGIENDO en vez de borrarse: un marcador viejo tiene que seguir llegando (M120).
+    return redirect('/hoy#pend')
 
 
 @app.route('/api/bandeja-ceo')
