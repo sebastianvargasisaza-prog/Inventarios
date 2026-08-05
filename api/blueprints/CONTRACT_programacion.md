@@ -1070,3 +1070,58 @@ Complemento operativo de PROG-N+12: el campo `urgencia_manual` viaja en la respu
 `marcacion-ordenes` para no perder la marca que alguien haya puesto, pero **no participa del
 color**. El semáforo sale siempre de `fecha_alistar` contra hoy-Colombia:
 `vencido` (< 0 días) · `urgente` (≤ 3) · `proximo` (≤ 8) · `ok`.
+
+## 📦 PROG-N+16 · El lead time de un ENVASE sale de `mee_lead_time_config` (5-ago)
+
+`abastecimiento_consumo_horizontes` emitía **14 días para todos los envases**, con un
+`TODO leer de mee_lead_time_config` al lado. Esa tabla existe desde la mig 71 y está sembrada con
+los datos reales: frasco de China **180 días con MOQ 5.000**, tapa local 30, etiqueta 15,
+serigrafía 20. O sea que el motor le decía a Compras que un frasco importado se pide con dos
+semanas de anticipación cuando son seis meses — no es un número feo, es una decisión de compra
+equivocada esperando a pasar.
+
+**Invariante:** el `lead_time_dias` de un ítem MEE sale de `mee_lead_time_config`; el 14 queda
+sólo como respaldo. La tabla se lee **en bloque, una sola vez** antes del loop (nunca una consulta
+por envase · M43), y el ítem declara `lead_time_medido` (bool), `origen_compra` y `moq_unidades`.
+Lo que no tiene fila se DECLARA: un 14 inventado se lee igual que un 14 medido, y esa es la
+diferencia que importa (M124). Si la tabla no se puede leer, se avisa por log — no se cae al
+default en silencio, porque el default es justo el número que estaba mal.
+
+## 🧴 PROG-N+17 · El checklist de envasado se abre por PRESENTACIÓN (5-ago)
+
+`_generar_checklist_produccion` creaba **una sola fila de envase**, con el código y el volumen de
+la presentación por defecto. Para un producto que sale en dos presentaciones (30 ml y 10 ml, con
+frascos distintos) eso descontaba todo contra un único código usando un volumen promedio que no
+existe físicamente: el desglose que la pantalla promete y lo que la planta consume eran dos cosas
+distintas.
+
+**Invariante:** si `producto_presentaciones` tiene más de una presentación activa con envase y
+volumen, el checklist emite **una fila por presentación**, y el reparto pesa por **volumen
+(uds × ml)**, igual que el resto del sistema (M72) — una unidad de 30 ml se lleva el triple de
+granel que una de 10.
+
+⚠ **Y la trampa que trajo abrir el checklist:** `_descontar_mee_envasado` le restaba el total de
+envases B2B con envase propio a **CADA** fila marcada como envase. Con una sola fila daba igual;
+con varias restaba el mismo B2B dos veces y **descontaba de menos**. Ahora el remanente
+(`_b2b_por_restar`) se consume entre las filas, no se repite en cada una. Regla general: cuando
+un total se resta dentro de un loop, preguntá si el loop puede tener más de una vuelta.
+
+## 🖥️ PROG-N+18 · Los dos modales tienen la MISMA cara (5-ago)
+
+Necesidades y Calendario ya compartían el **cálculo** (`/api/plan/disponibilidad-para-kg`). Desde
+hoy comparten también la **cara**, que es la que Sebastián aprobó:
+
+    veredicto en una línea → ① Cómo va → ② Qué decido (dominante) → ③ Con qué cuento → ④ Qué queda agendado
+
+En el del calendario eso significó dos movimientos, no un maquillaje: el **selector de envase y
+las presentaciones** dejaron de abrir el modal (un detalle de configuración no puede ser lo
+primero que se ve) y el **chequeo de materiales** bajó al bloque ③ — antes salía antes de que el
+usuario eligiera los kilos, o sea contestaba *"alcanza"* sobre un kilaje que todavía no había
+decidido.
+
+**Cómo se hace un reordenamiento así sin perder HTML** (M156): se captura el bloque en una
+variable (`_htmlConQue`) y se emite después, cambiando SÓLO el acumulador dentro de un rango
+acotado por contenido. Borrar un `<div>` **no** rompe la sintaxis, así que el node-check pasa
+verde con la pantalla partida: las verificaciones que sí lo cazan son contar las marcas conocidas
+antes y después, el balance de `<div>`, y que el bloque se declare y se emita exactamente una vez.
+Todo eso vive en `tests/test_modal_calendario_cara.py`, dentro del gate.

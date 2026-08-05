@@ -194,6 +194,11 @@ CORAZON=(
   # leer el fuente no ve -- el reemplazo del titulo, hecho sin anclar, habia caido en OTRA
   # funcion 3.000 lineas antes y dejaba la alerta llamando a una variable inexistente (M96/M151).
   "tests/test_cinco_pendientes.py"
+  # El modal del CALENDARIO tomo la misma cara de 4 bloques que el de Necesidades. Lo que este
+  # archivo vigila no es la estetica: el reordenamiento se hizo capturando bloques en variables,
+  # y un <div> de menos NO rompe la sintaxis -- el node-check pasaria verde con la pantalla
+  # partida. Las cuentas de marcas conocidas y el balance de <div> son las que lo cazan.
+  "tests/test_modal_calendario_cara.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

@@ -22598,6 +22598,9 @@ async function abrirLoteModal(id, producto, fecha, kg){
   }
 
   let html = '';
+  // (3) CON QUE CUENTO · se captura aca y se PINTA despues de la decision. El selector de envase
+  // y las presentaciones abrian el modal, o sea que lo primero que se veia era configuracion.
+  var _htmlConQue = '';
 
   // 🖼️ Foto del producto · servida por el PROXY /api/imagen-producto (misma fuente canónica que el
   // catálogo/Necesidades · prefiere la foto de Shopify) + botón "Traer de Shopify" (Sebastián 16-jul).
@@ -22618,19 +22621,19 @@ async function abrirLoteModal(id, producto, fecha, kg){
   try {
     const _loteFull0 = (PLAN_DATA.agendadas || []).find(a => a.id === id);
     const envActual = (_loteFull0 && _loteFull0.envase_codigo_override) || '';
-    html += '<div style="background:#ecfeff;border:1px solid #67e8f9;border-radius:8px;padding:10px 14px;margin-bottom:12px">';
+    _htmlConQue += '<div style="background:#ecfeff;border:1px solid #67e8f9;border-radius:8px;padding:10px 14px;margin-bottom:12px">';
     // Sebastián 2-jul · el override de SOLO este lote va COLAPSADO (menos carga visual) ·
     // lo principal son las Presentaciones (abajo · aplican a TODOS los lotes y auto-calculan).
-    html += '<details style="margin-bottom:4px"><summary style="cursor:pointer;font-size:11px;color:var(--cx-info-text, #0e7490);font-weight:700">&#9656; Envase de SOLO este lote (avanzado)' + (envActual ? ' &middot; ' + escapeHtml(envActual) : '') + '</summary>';
-    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">';
-    html += '<span style="font-size:11px;font-weight:800;color:var(--cx-info-text, #0e7490);text-transform:uppercase;letter-spacing:.5px">📦 Envase del lote</span>';
-    html += '<select id="env-ovr-' + id + '" data-actual="' + escapeHtml(envActual) + '" style="flex:1;min-width:240px;padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:12px;font-family:inherit;background:var(--cx-card, #fff)">';
-    html += _opcionesEnvaseInline(envActual);
-    html += '</select>';
-    html += '<button onclick="guardarEnvaseOverride(' + id + ')" style="padding:6px 14px;font-size:11px;background:var(--cx-info, #0891b2);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>';
-    html += '<span id="env-ovr-ok-' + id + '" style="color:var(--cx-success-text, #15803d);font-size:11px;display:none">✓</span>';
-    html += '</div>';
-    html += '<div style="font-size:11px;color:var(--cx-info-text, #0e7490);margin-top:6px">' +
+    _htmlConQue += '<details style="margin-bottom:4px"><summary style="cursor:pointer;font-size:11px;color:var(--cx-info-text, #0e7490);font-weight:700">&#9656; Envase de SOLO este lote (avanzado)' + (envActual ? ' &middot; ' + escapeHtml(envActual) : '') + '</summary>';
+    _htmlConQue += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">';
+    _htmlConQue += '<span style="font-size:11px;font-weight:800;color:var(--cx-info-text, #0e7490);text-transform:uppercase;letter-spacing:.5px">📦 Envase del lote</span>';
+    _htmlConQue += '<select id="env-ovr-' + id + '" data-actual="' + escapeHtml(envActual) + '" style="flex:1;min-width:240px;padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-radius:5px;font-size:12px;font-family:inherit;background:var(--cx-card, #fff)">';
+    _htmlConQue += _opcionesEnvaseInline(envActual);
+    _htmlConQue += '</select>';
+    _htmlConQue += '<button onclick="guardarEnvaseOverride(' + id + ')" style="padding:6px 14px;font-size:11px;background:var(--cx-info, #0891b2);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>';
+    _htmlConQue += '<span id="env-ovr-ok-' + id + '" style="color:var(--cx-success-text, #15803d);font-size:11px;display:none">✓</span>';
+    _htmlConQue += '</div>';
+    _htmlConQue += '<div style="font-size:11px;color:var(--cx-info-text, #0e7490);margin-top:6px">' +
        (envActual ? '✓ Override <strong>' + escapeHtml(envActual) + '</strong> · MEE calcula con este envase' :
                      '⚙ Sin override · MEE usa el envase default del producto · elegí uno de la lista para forzar otro') + '</div>';
     // Cargar opciones (cache global · una sola llamada)
@@ -22638,32 +22641,32 @@ async function abrirLoteModal(id, producto, fecha, kg){
     // Sebastián 25-may-2026 PM · botones B (default global) y C (propagar futuros)
     // Solo se muestran si hay override seteado (sino no tiene sentido propagar nada)
     if (envActual){
-      html += '<details style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:8px">';
-      html += '<summary style="cursor:pointer;font-size:11px;color:var(--cx-info-text, #0e7490);font-weight:700">▸ Propagación opcional (avanzado)</summary>';
-      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
-      html += '<button onclick="envaseAplicarDefault(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-warn, #f59e0b);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700" title="Cambia el envase default del producto en sku_mee_config · futuros lotes nuevos lo usan automático">⚓ Aplicar como default del producto</button>';
-      html += '<button onclick="envasePropagarFuturos(' + id + ')" style="padding:6px 12px;font-size:11px;background:#6366f1;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700" title="Setea este envase como override en TODOS los lotes futuros del producto que aún no iniciaron · no toca el default global">↪ Propagar a lotes futuros</button>';
-      html += '</div>';
-      html += '<div style="font-size:10px;color:var(--cx-text-mute, #64748b);margin-top:6px;line-height:1.4">';
-      html += '<strong>⚓ Default</strong>: cambia sku_mee_config global · permanente hasta que lo cambies de nuevo<br>';
-      html += '<strong>↪ Propagar</strong>: sobreescribe override en cada lote futuro · no toca config global · útil cuando es cambio temporal';
-      html += '</div></details>';
+      _htmlConQue += '<details style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:8px">';
+      _htmlConQue += '<summary style="cursor:pointer;font-size:11px;color:var(--cx-info-text, #0e7490);font-weight:700">▸ Propagación opcional (avanzado)</summary>';
+      _htmlConQue += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
+      _htmlConQue += '<button onclick="envaseAplicarDefault(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-warn, #f59e0b);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700" title="Cambia el envase default del producto en sku_mee_config · futuros lotes nuevos lo usan automático">⚓ Aplicar como default del producto</button>';
+      _htmlConQue += '<button onclick="envasePropagarFuturos(' + id + ')" style="padding:6px 12px;font-size:11px;background:#6366f1;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700" title="Setea este envase como override en TODOS los lotes futuros del producto que aún no iniciaron · no toca el default global">↪ Propagar a lotes futuros</button>';
+      _htmlConQue += '</div>';
+      _htmlConQue += '<div style="font-size:10px;color:var(--cx-text-mute, #64748b);margin-top:6px;line-height:1.4">';
+      _htmlConQue += '<strong>⚓ Default</strong>: cambia sku_mee_config global · permanente hasta que lo cambies de nuevo<br>';
+      _htmlConQue += '<strong>↪ Propagar</strong>: sobreescribe override en cada lote futuro · no toca config global · útil cuando es cambio temporal';
+      _htmlConQue += '</div></details>';
     }
-    html += '</details>';
+    _htmlConQue += '</details>';
     // Sebastián 2-jul · PRESENTACIONES del producto (multi-envase) DENTRO del área azul de
     // envase · UNA sola área. Persisten en producto_presentaciones (aplican a TODOS los lotes).
-    html += '<div id="pres-box-' + id + '" data-prod="' + escapeHtml(producto) + '" style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:10px">';
-    html += '<div style="font-size:11px;font-weight:800;color:var(--cx-info-text, #0e7490);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Envase(s) del producto <span style="font-weight:600;text-transform:none;color:#155e75">· agreg&aacute; otro solo si tiene 2+ tama&ntilde;os · se guarda para siempre</span></div>';
-    html += '<div id="pres-list-' + id + '" style="font-size:12px;color:var(--cx-info-text, #0f766e)">cargando&#8230;</div>';
-    html += '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">';
-    html += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-info, #0891b2);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar envase</button>';
-    html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-success, #16a34a);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar</button>';
-    html += '<span id="pres-ok-' + id + '" style="color:var(--cx-success-text, #15803d);font-size:11px;display:none">&#10003; guardado</span>';
-    html += '</div>';
-    html += '<div style="font-size:10px;color:var(--cx-info-text, #0e7490);margin-top:6px;line-height:1.5">Cada fila = <b>un envase + su volumen (ml)</b>. Con eso Abastecimiento calcula solo cu&aacute;ntos envases pedir (kg &rarr; ml &rarr; unidades). Si tiene un solo tama&ntilde;o, dej&aacute; 1 fila. <span style="color:var(--cx-text-faint, #94a3b8)">Lo que vende cada referencia sale en &laquo;Desglose por referencia&raquo; m&aacute;s abajo.</span></div>';
-    html += '</div>';
+    _htmlConQue += '<div id="pres-box-' + id + '" data-prod="' + escapeHtml(producto) + '" style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:10px">';
+    _htmlConQue += '<div style="font-size:11px;font-weight:800;color:var(--cx-info-text, #0e7490);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Envase(s) del producto <span style="font-weight:600;text-transform:none;color:#155e75">· agreg&aacute; otro solo si tiene 2+ tama&ntilde;os · se guarda para siempre</span></div>';
+    _htmlConQue += '<div id="pres-list-' + id + '" style="font-size:12px;color:var(--cx-info-text, #0f766e)">cargando&#8230;</div>';
+    _htmlConQue += '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">';
+    _htmlConQue += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-info, #0891b2);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar envase</button>';
+    _htmlConQue += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:var(--cx-success, #16a34a);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar</button>';
+    _htmlConQue += '<span id="pres-ok-' + id + '" style="color:var(--cx-success-text, #15803d);font-size:11px;display:none">&#10003; guardado</span>';
+    _htmlConQue += '</div>';
+    _htmlConQue += '<div style="font-size:10px;color:var(--cx-info-text, #0e7490);margin-top:6px;line-height:1.5">Cada fila = <b>un envase + su volumen (ml)</b>. Con eso Abastecimiento calcula solo cu&aacute;ntos envases pedir (kg &rarr; ml &rarr; unidades). Si tiene un solo tama&ntilde;o, dej&aacute; 1 fila. <span style="color:var(--cx-text-faint, #94a3b8)">Lo que vende cada referencia sale en &laquo;Desglose por referencia&raquo; m&aacute;s abajo.</span></div>';
+    _htmlConQue += '</div>';
     setTimeout(function(){ _cargarPresentaciones(id); }, 60);
-    html += '</div>';
+    _htmlConQue += '</div>';
   } catch(_e_env){ /* sin lote en PLAN_DATA · no mostrar */ }
 
   // Sebastián 2-jul · QUITADO el box "Composición de envases" (read-only 180d): era
@@ -22777,7 +22780,21 @@ async function abrirLoteModal(id, producto, fecha, kg){
 
   // Sección 1: Datos de venta y stock · LIDERA el modal (Sebastián 13-jul · como en
   // Necesidades: primero los números claros del producto; el detalle de envasado va abajo).
-  html += '<div style="font-size:13px;font-weight:800;color:var(--cx-primary-text, #5b21b6);margin:4px 0 8px">📊 Estado del producto</div>';
+  // VEREDICTO EN UNA LINEA · lo primero que se lee, igual que en Necesidades: en cuantos dias se
+  // agota lo que hay y cuando toca producir (la regla primordial: 20 dias antes de agotarse).
+  var _vd = (diasFisico == null)
+    ? 'Sin velocidad de venta medible &middot; no puedo decir para cuando alcanza'
+    : (diasFisico + ' d&iacute;as de g&oacute;ndola al ritmo actual &middot; '
+       + (diasFisico <= 20
+          ? '<strong>hay que producir YA</strong>'
+          : ('produc&iacute; alrededor del d&iacute;a <strong>' + Math.max(0, diasFisico - 20) + '</strong>, que son 20 antes de agotarse')));
+  html += '<div style="display:flex;align-items:center;gap:10px;background:var(--cx-card, #fff);'
+    + 'border:1px solid ' + _cobCol + '55;border-left:5px solid ' + _cobCol + ';border-radius:12px;'
+    + 'padding:12px 15px;margin:2px 0 14px">'
+    + '<div style="font-size:20px;line-height:1">' + (diasFisico == null ? '&#10067;' : (diasFisico <= 20 ? '&#128308;' : '&#128994;')) + '</div>'
+    + '<div style="font-size:13.5px;font-weight:700;color:var(--cx-text);line-height:1.45">' + _vd + '</div>'
+    + '</div>';
+  html += '<div style="font-size:11px;color:var(--cx-primary-text, #5b21b6);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary, #7c3aed)">&#9312; C&oacute;mo va <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--cx-text-faint, #94a3b8)">&middot; lo que pasa hoy con este producto</span></div>';
   html += '<div class="metric-grid">';
   html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + ml + ' ml</div></div>';
   // Sebastián 20-jul · "Kg a producir" NO va en Estado (es estado = volumen/venta/lo que hay/alcanza) ·
@@ -22896,16 +22913,23 @@ async function abrirLoteModal(id, producto, fecha, kg){
 
   // 🧪 Listo para producir · materias primas + envases (Sebastián 16-jul · paridad con Programar
   // de Necesidades). Se llena async al abrir (MP: /api/planta/listo-producir · envases: listo-envases).
-  html += '<div id="lote-readiness" style="margin:14px 0 2px"><div id="lote-ready-mp"></div><div id="lote-ready-env" style="margin-top:6px"></div></div>';
+  // El chequeo de materiales sale DESPUES de decidir: antes contestaba "alcanza" sobre un kilaje
+  // que el usuario todavia no habia elegido.
+  _htmlConQue = '<div id="lote-readiness" style="margin:2px 0 12px"><div id="lote-ready-mp"></div>'
+    + '<div id="lote-ready-env" style="margin-top:6px"></div></div>' + _htmlConQue;
 
   // 🏭 PRODUCCIÓN (Sebastián 20-jul · el ideal): lidera con los KILOS A PRODUCIR + cuánto alcanzan
   // (live · producí 20d antes de agotar), luego el detalle/desglose y la cadencia. "Kg a producir"
   // se movió acá desde Estado (Estado = solo volumen/venta/lo que hay/alcanza).
   window._loteVelKgDia = velKgDia;
   window._calCadInfo = {velKgDia: velKgDia, velUdsDia: velUds, ml: (info.ml_unidad || 0)};   // editor de cadencia · ml crudo (|| 0) igual que Necesidades (no default 30)
-  html += '<div style="font-size:14px;font-weight:800;color:var(--cx-primary-text, #5b21b6);margin:18px 0 10px;padding-top:12px;border-top:2px solid var(--cx-primary-soft, #ede9fe)">🏭 Producción <span style="font-size:11px;font-weight:600;color:var(--cx-text-faint, #94a3b8)">· todo lo de producir en un solo lugar</span></div>';
+  html += '<div style="font-size:11px;color:var(--cx-primary-text, #5b21b6);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:20px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary, #7c3aed)">&#9313; Qu&eacute; decido <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--cx-text-faint, #94a3b8)">&middot; cu&aacute;ntos kilos y cada cu&aacute;nto</span></div>';
   // Sebastián 20-jul · ENGLOBAR TODO en un contenedor: kilos + alcance + agregar cliente + desglose + cadencia.
-  html += '<div style="border:1.5px solid #e9d5ff;border-radius:14px;background:linear-gradient(180deg,#fdfcff,#faf7ff);padding:16px;margin-bottom:14px">';
+  // DOMINANTE: es el bloque por el que se abre el modal. Antes tenia el mismo peso visual que los
+  // de informacion que lo rodeaban, asi que la accion quedaba escondida entre datos.
+  html += '<div style="border:1px solid var(--cx-primary-soft, #ddd6fe);border-left:5px solid var(--cx-primary, #7c3aed);'
+    + 'border-radius:14px;background:var(--cx-primary-pale, #faf7ff);padding:17px;margin-bottom:14px;'
+    + 'box-shadow:0 1px 2px rgba(24,24,27,.04),0 14px 30px -20px rgba(124,58,237,.45)">';
   html += '<div style="padding-bottom:6px">'
     + '<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">'
     + '<div><div style="font-size:11px;font-weight:800;color:var(--cx-primary-text, #6d28d9);text-transform:uppercase;letter-spacing:.4px">Kilos a producir</div>'
@@ -22963,6 +22987,13 @@ async function abrirLoteModal(id, producto, fecha, kg){
   html += '<div id="lote-desglose-edit"></div>';
   html += '</div>';   // cierra el contenedor 🏭 Producción (englobar todo · Sebastián 20-jul)
 
+  // (3) CON QUE CUENTO · el chequeo de materiales/envases + el envase de este lote y las
+  // presentaciones del producto. Va DESPUES de la decision, contestando por los kilos elegidos.
+  html += '<div style="font-size:11px;color:var(--cx-primary-text, #5b21b6);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:20px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary, #7c3aed)">&#9314; Con qu&eacute; cuento <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--cx-text-faint, #94a3b8)">&middot; materias primas, envases y presentaciones</span></div>';
+  html += _htmlConQue;
+
+  // (4) QUE QUEDA AGENDADO
+  html += '<div style="font-size:11px;color:var(--cx-primary-text, #5b21b6);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:20px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary, #7c3aed)">&#9315; Qu&eacute; queda agendado</div>';
   // 📋 LOTES YA AGENDADOS del producto · con SALUD (colchón) · Sebastián 20-jul (paridad Necesidades img 130)
   html += _renderLotesAgendadosCal(producto, info, ml);
 
