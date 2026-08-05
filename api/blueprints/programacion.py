@@ -5834,7 +5834,65 @@ def prog_mp_sin_formula():
     })
 
 
-def _estacionalidad_mensual(c, meses_hist=24):
+def _estacionalidad_mensual(c, meses_hist=24, force=False):
+    """⚠ DOS COSAS QUE HAY QUE SABER ANTES DE TOCAR ESTO (5-ago).
+
+    (a) PESO. Escanea 24 meses de `animus_shopify_orders` con un `json.loads` POR FILA, y era el
+        unico consumidor de estacionalidad SIN cache compartida -- su gemelo
+        `plan._estacionalidad_cached` la tiene desde M85. Cada worker frio lo re-escaneaba, que
+        es la forma exacta de M43/M85. Ahora usa el MISMO mecanismo (`plan_vmaps_cache`, patron
+        mig 337) con su propia llave.
+
+    (b) DEUDA DECLARADA. Esta funcion y `plan._estacionalidad_ventas` calculan **el mismo hecho**
+        -- la estacionalidad mensual por producto -- con formas de salida distintas. Eso es
+        exactamente el patron que hace divergir dos numeros (M1/M99). No se unificaron acá porque
+        sus consumidores esperan formas distintas y el refactor no es de una linea: queda
+        anotado para hacerlo con calma, no escondido.
+    """
+    return _estacionalidad_mensual_cached(c, meses_hist, force)
+
+
+def _estacionalidad_mensual_cached(c, meses_hist=24, force=False):
+    """Nivel 1 (modulo, por worker) + nivel 2 (BD, compartida). Igual que M85."""
+    import time as _tem, json as _jem, os as _oem
+    _no_cache = bool(_oem.environ.get('PYTEST_CURRENT_TEST'))
+    _key = int(meses_hist or 24)
+    _dbkey = 'estac_mensual:%d' % _key
+    _ahora = _tem.time()
+    if not force and not _no_cache:
+        _hit = _ESTAC_MENSUAL_CACHE.get(_key)
+        if _hit and (_ahora - _hit[0]) < 1800:
+            return _hit[1]
+        try:
+            _r = c.execute("SELECT computed_at, payload FROM plan_vmaps_cache WHERE cache_key=?",
+                           (_dbkey,)).fetchone()
+            if _r and (_ahora - float(_r[0])) < 12 * 3600:
+                _d = _jem.loads(_r[1])
+                # Las llaves de los meses vuelven de JSON como TEXTO · sin esto el consumidor
+                # pide `info['multiplicadores'][3]` y no encuentra nada, en silencio.
+                _d = {k: {**v, 'multiplicadores': {int(m): x for m, x in v['multiplicadores'].items()}}
+                      for k, v in _d.items()}
+                _ESTAC_MENSUAL_CACHE[_key] = (_ahora, _d)
+                return _d
+        except Exception:
+            pass
+    _data = _estacionalidad_mensual_calc(c, meses_hist)
+    if not _no_cache:
+        _ESTAC_MENSUAL_CACHE[_key] = (_ahora, _data)
+        try:
+            c.execute("DELETE FROM plan_vmaps_cache WHERE cache_key=?", (_dbkey,))
+            c.execute("INSERT INTO plan_vmaps_cache (cache_key, computed_at, payload) VALUES (?,?,?)",
+                      (_dbkey, str(_ahora), _jem.dumps(_data)))
+            c.connection.commit()
+        except Exception:
+            pass
+    return _data
+
+
+_ESTAC_MENSUAL_CACHE = {}
+
+
+def _estacionalidad_mensual_calc(c, meses_hist=24):
     """Fase 1 forecast (Sebastián 5-jul) · multiplicador de ESTACIONALIDAD por producto y mes (1-12) desde el
     histórico Shopify. multiplicador[m] = ventas_promedio_del_mes_m / promedio_mensual_anual. >1 = mes alto
     (ej. noviembre Black Friday), <1 = mes bajo. Así el plan puede producir MÁS antes de un mes fuerte.

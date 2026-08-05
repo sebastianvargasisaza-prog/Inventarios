@@ -991,11 +991,18 @@ def cerrar_no_conformidad(ncid):
         return jsonify({'error': 'NC no encontrada'}), 404
     if row[0] == 'Cerrada':
         return jsonify({'error': 'NC ya está cerrada'}), 409
+    # CAS (M27): el chequeo de arriba es check-then-act · con 3 workers, dos cierres
+    # simultaneos pasan LOS DOS y dejan dos entradas de audit_log del mismo cierre. La condicion
+    # en el WHERE no cambia el contrato -- el 409 de "ya esta cerrada" ya existia -- solo cierra
+    # la ventana de concurrencia.
     c.execute("""UPDATE no_conformidades
                  SET estado='Cerrada', fecha_cierre=date('now', '-5 hours'), cerrado_por=?,
                      accion_correctiva=COALESCE(?, accion_correctiva)
-                 WHERE id=?""",
+                 WHERE id=? AND COALESCE(estado,'') <> 'Cerrada'""",
               (user, accion, ncid))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({'error': 'NC ya está cerrada', 'codigo': 'NC_YA_CERRADA'}), 409
     # Audit log INVIMA
     try:
         import json as _json

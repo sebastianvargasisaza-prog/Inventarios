@@ -423,14 +423,21 @@ def api_maquila_kpis():
 @bp.route('/api/animus/alertas-stock', methods=['GET'])
 def animus_alertas_stock():
     conn = get_db(); c = conn.cursor()
-    c.execute("""SELECT sku, descripcion, empresa,
+    # ⚠ `stock_pt` tiene PK `id`, no `sku`: las cinco columnas proyectadas crudas revientan en
+    # PostgreSQL ("must appear in the GROUP BY"). El hermano de mas abajo ya se arreglo el 16-jun
+    # con su comentario explicando el drift; este quedo (M45). El HAVING y el ORDER BY tambien
+    # tienen que ir sobre la expresion agregada, no sobre la columna cruda.
+    c.execute("""SELECT sku, MIN(descripcion) AS descripcion, MIN(empresa) AS empresa,
                         SUM(unidades_disponible) as disponible,
-                        stock_minimo_ud, dias_reposicion, precio_base
+                        MIN(stock_minimo_ud) AS stock_minimo_ud,
+                        MIN(dias_reposicion) AS dias_reposicion,
+                        MIN(precio_base) AS precio_base
                  FROM stock_pt
                  WHERE empresa='ANIMUS' AND estado='Disponible'
                  GROUP BY sku
-                 HAVING disponible < stock_minimo_ud AND stock_minimo_ud > 0
-                 ORDER BY (disponible*1.0/NULLIF(stock_minimo_ud,0)) ASC""")
+                 HAVING SUM(unidades_disponible) < MIN(stock_minimo_ud)
+                    AND MIN(stock_minimo_ud) > 0
+                 ORDER BY (SUM(unidades_disponible)*1.0/NULLIF(MIN(stock_minimo_ud),0)) ASC""")
     cols=['sku','descripcion','empresa','disponible','stock_minimo_ud','dias_reposicion','precio_base']
     alertas=[dict(zip(cols,r)) for r in c.fetchall()]
     # PERF-FIX 27-may-2026 PM · antes N+1 (1 COUNT por alerta · 50+ alertas =

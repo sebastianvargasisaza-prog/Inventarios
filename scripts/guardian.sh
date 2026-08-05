@@ -246,6 +246,12 @@ CORAZON=(
   # guard de boton muerto mira la DEFINICION, no el nombre: renombrar la funcion y dejar el
   # onclick pasaba el test anterior, que es exactamente el bug.
   "tests/test_ceo_una_sola_pantalla.py"
+  # El cierre de la auditoria: el CAS que faltaba al cerrar una NO CONFORMIDAD (dos cierres
+  # simultaneos dejaban dos rastros del mismo cierre, en un registro regulado), el GROUP BY de
+  # alertas-stock que revienta en PG, y la estacionalidad que re-escaneaba 24 meses en cada
+  # worker frio. + deja por escrito que el CAS de la DESVIACION ya existia -- el informe lo
+  # reporto como faltante y no lo era, y este test impide "arreglar" codigo sano.
+  "tests/test_auditoria_cierre_5ago.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.
