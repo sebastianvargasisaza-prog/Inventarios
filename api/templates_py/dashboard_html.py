@@ -27585,8 +27585,41 @@ async function ckMarcar(itemId, estado){
       });
       enCuerpo += '</table>';
     }
-    cont.innerHTML =
-      '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:800;margin:2px 0 7px">'
+    // PRESENTACIONES · Sebastián 4-ago: *"aquí deben salir las presentaciones del producto"*,
+    // *"debería aparecer la foto del envase que se usará, desde la bodega"* y *"aquí debe decir
+    // cuánto se envasará de cada uno"*. Las tres cosas juntas y pegadas: la presentación, su
+    // envase con foto, y las unidades que salen de ella. Antes el desglose vivía al final del
+    // modal, suelto, y la foto del envase no se mostraba en ningún lado.
+    var presHtml = '';
+    var _ps = en.presentaciones || [];
+    if (_ps.length) {
+      presHtml = '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:800;margin:2px 0 7px">'
+        + '🧴 De este lote salen <span style="font-weight:600;color:var(--cx-text-faint)">'
+        + (_ps.length > 1 ? 'estas ' + _ps.length + ' presentaciones' : 'esta presentación')
+        + (en.fuente_reparto ? ' · reparto por ' + escapeHtmlNec(en.fuente_reparto) : '')
+        + '</span></div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">';
+      _ps.forEach(function(pp){
+        var fr = (pp.componentes || []).filter(function(c){ return c.tipo === 'frasco'; })[0] || {};
+        var foto = fr.imagen_url
+          ? '<img src="' + escapeHtmlNec(fr.imagen_url) + '" alt="" style="width:54px;height:54px;object-fit:contain;border-radius:9px;background:var(--cx-card);border:1px solid var(--cx-hairline)">'
+          : '<div title="Este envase no tiene foto cargada · se sube desde Bodega" style="width:54px;height:54px;border-radius:9px;background:var(--cx-border-soft);border:1px dashed var(--cx-border);display:flex;align-items:center;justify-content:center;font-size:19px;color:var(--cx-text-faint)">📦</div>';
+        var otros = (pp.componentes || []).filter(function(c){ return c.tipo !== 'frasco'; })
+          .map(function(c){ return c.tipo; }).join(' · ');
+        presHtml += '<div style="flex:1;min-width:190px;display:flex;gap:10px;align-items:center;background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:11px;padding:9px 11px">'
+          + foto
+          + '<div style="min-width:0">'
+          +   '<div style="font-size:15px;font-weight:800;color:var(--cx-text);line-height:1.1">'
+          +     (pp.uds || 0).toLocaleString('es-CO') + ' <span style="font-size:11px;font-weight:700;color:var(--cx-text-mute)">uds</span></div>'
+          +   '<div style="font-size:11.5px;color:var(--cx-text-soft);font-weight:700">de ' + pp.volumen_ml + ' ml</div>'
+          +   (fr.codigo ? '<div style="font-size:10px;color:var(--cx-text-mute);font-family:ui-monospace;margin-top:2px">' + escapeHtmlNec(fr.codigo) + (fr.descontinuado ? ' <span style="color:var(--cx-danger-text);font-family:inherit;font-weight:700">· descontinuado</span>' : '') + '</div>' : '<div style="font-size:10px;color:var(--cx-danger-text);margin-top:2px;font-weight:700">sin envase asignado</div>')
+          +   (otros ? '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:1px">+ ' + otros + '</div>' : '')
+          + '</div></div>';
+      });
+      presHtml += '</div>';
+    }
+
+    cont.innerHTML = presHtml
+      + '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:800;margin:2px 0 7px">'
       + '🔎 Con qué cuento <span style="font-weight:600;color:var(--cx-text-faint)">para el lote de '
       + (d.kg || 0) + ' kg que estás por programar</span></div>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-bottom:12px">'

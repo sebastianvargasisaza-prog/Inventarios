@@ -1007,3 +1007,42 @@ manual viaja aparte en `urgencia_manual` y **no puede tapar el cálculo**. Es M1
 que alguien tiene que acordarse de actualizar termina viejo y deja de mirarse.
 
 Tests: `tests/test_calendario_no_miente.py` (en el gate).
+
+## 🔗 PROG-N+13 · UN solo bloque de disponibilidad para las dos pantallas (4-ago)
+
+Sebastián: *"quisiera que se viera igual que el de Necesidades, colocando eso que decimos
+adicional, así hacemos que crucen perfecto y no tengamos cosas diferentes"*.
+
+Los dos modales contestaban la misma pregunta preguntándole a **endpoints distintos**:
+
+| | Necesidades | Calendario |
+|---|---|---|
+| Materia prima | `disponibilidad-para-kg` · **los kg de la cadena** | `listo-producir?lotes=1` · **un lote del maestro de fórmulas** |
+| Envases | mismo endpoint | `listo-envases` (por lote) |
+
+Dos respuestas distintas del mismo producto, y el que abría cada pantalla no tenía forma de
+saber cuál creer. Ahora los dos llaman a `plan.disponibilidad_para_kg`. El bloque viejo del
+calendario queda **sólo como respaldo dentro del `catch`**: si el nuevo falla, se ve el anterior
+en vez de un hueco (M112).
+
+**+ Lo que el bloque muestra ahora (los tres pedidos del dueño):**
+- **Las presentaciones del producto**, cada una con sus unidades: *"de este lote salen 3.093 uds
+  de 30 ml y 732 de 10 ml"*.
+- **La foto del envase de bodega** al lado de cada presentación. El dato ya existía
+  (`maestro_mee.imagen_url`, mig 298, se carga desde la grilla de Bodega) y no llegaba a esta
+  pantalla: sólo hubo que pedirlo. Si el envase no tiene foto se muestra un marcador, nunca una
+  imagen inventada.
+- **Cuánto se envasa de cada una**, con el reparto **pesado por volumen** (uds × ml, M72): una
+  unidad de 30 ml se lleva el triple de granel que una de 10, así que aplicar el share de
+  unidades al kg sub-asignaba la presentación grande. Test con dientes: con ventas 800/200 el
+  30 ml se lleva >90% del bulk y las unidades quedan 4 a 1, como las ventas.
+- Y se **declara** cuando una presentación apunta a un envase **descontinuado** (hoy nada lo
+  bloquea) o cuando no tiene envase asignado.
+
+**Invariantes:** el reparto se pesa por volumen, nunca por share de unidades · la foto se LEE
+del maestro, no se guarda acá · el endpoint se llama con debounce y token de secuencia porque
+se dispara al cambiar los kg (M43) · lo que está en serigrafía se informa, no se resta
+(PROG-N+11).
+
+Tests: `tests/test_modal_unificado.py` (en el gate · foto y pesado por volumen probados
+revirtiendo cada uno).

@@ -292,7 +292,8 @@ def _envases_para_kg(c, conn, producto, kg):
     """
     from blueprints.programacion import _get_mee_stock
 
-    res = {'estado': 'SIN_DATO', 'items': [], 'n_faltan': 0, 'nota': '', 'fuente_reparto': ''}
+    res = {'estado': 'SIN_DATO', 'items': [], 'presentaciones': [], 'n_faltan': 0,
+           'nota': '', 'fuente_reparto': ''}
     try:
         pres = c.execute(
             "SELECT COALESCE(volumen_ml,0), COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), "
@@ -324,6 +325,10 @@ def _envases_para_kg(c, conn, producto, kg):
         pesos = [(float(p[5] or 0) * float(p[0] or 0)) / total_peso for p in pres]
 
     necesarias = {}   # codigo -> {'tipo', 'uds'}
+    # Sebastián 4-ago: *"aquí deben salir las PRESENTACIONES del producto"* y *"aquí debe decir
+    # cuánto se envasará de CADA producto"*. El desglose ya se calculaba adentro de esta cuenta
+    # y no salía a ningún lado: se expone por presentación, con su envase y sus unidades.
+    detalle_pres = []
     for pr, w in zip(pres, pesos):
         vol = float(pr[0] or 0)
         if vol <= 0 or w <= 0:
@@ -332,13 +337,22 @@ def _envases_para_kg(c, conn, producto, kg):
         uds = int(round((kg_p * 1000.0) / vol))
         if uds <= 0:
             continue
+        _comp = []
         for cod, tipo in ((pr[1], 'frasco'), (pr[2], 'tapa'),
                           (pr[3], 'caja'), (pr[4], 'etiqueta')):
             cod = (cod or '').strip()
             if not cod:
                 continue
+            _comp.append({'codigo': cod, 'tipo': tipo})
             n = necesarias.setdefault(cod.upper(), {'codigo': cod, 'tipo': tipo, 'uds': 0})
             n['uds'] += uds
+        detalle_pres.append({
+            'volumen_ml': round(vol, 1), 'uds': uds, 'kg': round(kg_p, 2),
+            'porcion': round(w * 100, 1), 'componentes': _comp,
+            'envase_codigo': (pr[1] or '').strip(),
+        })
+    detalle_pres.sort(key=lambda x: -x['volumen_ml'])
+    res['presentaciones'] = detalle_pres
 
     if not necesarias:
         res['estado'] = 'SIN_ENVASE'
@@ -368,19 +382,49 @@ def _envases_para_kg(c, conn, producto, kg):
         log.warning('disponibilidad: no pude leer marcación: %s', _em)
         res['nota'] = 'no pude revisar qué hay en serigrafía'
 
+    # Foto y descripción del envase, del maestro de bodega. `maestro_mee.imagen_url` existe
+    # desde la mig 298 y se carga desde la grilla de Bodega: acá sólo se LEE. Sebastián:
+    # *"debería aparecer la foto del envase que se usará, desde la bodega, para ir anclando eso"*.
+    fotos, nombres = {}, {}
+    try:
+        _ph_e = ','.join('?' for _ in necesarias)
+        for r in c.execute(
+            "SELECT UPPER(TRIM(codigo)), COALESCE(imagen_url,''), COALESCE(descripcion,''), "
+            "       COALESCE(estado,'Activo') FROM maestro_mee "
+            " WHERE UPPER(TRIM(codigo)) IN (" + _ph_e + ")",
+                list(necesarias.keys())).fetchall():
+            fotos[r[0]] = r[1] or ''
+            nombres[r[0]] = {'nombre': r[2] or '', 'estado': r[3] or ''}
+    except Exception as _ef2:
+        log.warning('disponibilidad: no pude leer el maestro de envases: %s', _ef2)
+
     items, n_faltan = [], 0
     for k, n in sorted(necesarias.items(), key=lambda x: (x[1]['tipo'], x[0])):
         hay = float(stock_mee.get(k, 0) or 0)
         falta = n['uds'] - hay
+        _info = nombres.get(k, {})
         items.append({
             'codigo': n['codigo'], 'tipo': n['tipo'], 'necesarias': n['uds'],
             'hay': int(round(hay)), 'falta': int(round(max(falta, 0))),
             'en_marcacion': int(round(afuera.get(k, 0))),
             'esperando_arte': int(round(esperando.get(k, 0))),
             'estado': 'FALTA' if falta > 0.5 else 'OK',
+            'imagen_url': fotos.get(k, ''),
+            'nombre': _info.get('nombre', ''),
+            # Un envase descontinuado sigue calculando · se DECLARA para que no sorprenda
+            # cuando alguien vaya a pedirlo (M124).
+            'descontinuado': (str(_info.get('estado', 'Activo')).strip().lower() != 'activo'),
         })
         if falta > 0.5:
             n_faltan += 1
+    _por_cod = {i['codigo'].strip().upper(): i for i in items}
+    for _dp in res.get('presentaciones') or []:
+        for _cp in _dp.get('componentes') or []:
+            _it = _por_cod.get(_cp['codigo'].strip().upper()) or {}
+            _cp['imagen_url'] = _it.get('imagen_url', '')
+            _cp['nombre'] = _it.get('nombre', '')
+            _cp['estado'] = _it.get('estado', '')
+            _cp['descontinuado'] = _it.get('descontinuado', False)
     res.update({'items': items, 'n_faltan': n_faltan,
                 'estado': 'FALTA' if n_faltan else 'OK'})
     if not res['nota']:
@@ -22894,8 +22938,13 @@ async function abrirLoteModal(id, producto, fecha, kg){
   try{ _prodKgAlcance(); }catch(e){}
   try{ _calCmAutoKg(); }catch(e){}
   try{ _calCmPreview(); }catch(e){}
-  try{ _calCargarListoProducir(producto); }catch(e){}
-  try{ _calCargarListoEnvases(id); }catch(e){}
+  // UN SOLO BLOQUE PARA LAS DOS PANTALLAS (Sebastian 4-ago). Antes cada modal preguntaba a SU
+  // endpoint y daban respuestas distintas del mismo producto. Ahora comparten el calculo.
+  try{ _calDisponibilidad(producto, kg); }catch(e){
+    // Respaldo: si el bloque nuevo falla, quedan los dos viejos en vez de un hueco.
+    try{ _calCargarListoProducir(producto); }catch(_e2){}
+    try{ _calCargarListoEnvases(id); }catch(_e3){}
+  }
   try{ _calCargarOtrosClientes(id); }catch(e){}
 }
 
@@ -23224,6 +23273,122 @@ function _calAnios(){
   var a = s ? (parseInt(s.value) || 2) : 2;
   return (a === 1 || a === 2 || a === 3) ? a : 2;
 }
+// EL MISMO bloque que Necesidades - una sola cuenta para las dos pantallas (Sebastian 4-ago).
+// Pinta presentaciones (con la foto del envase de bodega y cuantas unidades salen de cada una),
+// materia prima y envases, todo para LOS KG que se van a producir.
+window._CAL_DISP_T = null; window._CAL_DISP_SEQ = 0;
+async function _calDisponibilidad(producto, kg){
+  var box = document.getElementById('lote-ready-mp');
+  var box2 = document.getElementById('lote-ready-env');
+  if(!box || !producto || !(kg > 0)) return;
+  if(box2) box2.innerHTML = '';
+  box.innerHTML = '<div style="font-size:11px;color:var(--cx-text-faint, #94a3b8);padding:6px 10px">Revisando materia prima y envases...</div>';
+  clearTimeout(window._CAL_DISP_T);
+  window._CAL_DISP_T = setTimeout(async function(){
+    var mio = ++window._CAL_DISP_SEQ;
+    try{
+      var r = await fetch('/api/plan/disponibilidad-para-kg?producto=' + encodeURIComponent(producto)
+                          + '&kg=' + encodeURIComponent(kg), {credentials:'same-origin'});
+      var d = await r.json();
+      if(mio !== window._CAL_DISP_SEQ) return;
+      if(!d || !d.ok){ box.innerHTML = ''; return; }
+      box.innerHTML = _calDispHtml(d);
+    }catch(e){
+      box.innerHTML = '<div style="font-size:11px;color:var(--cx-text-faint, #94a3b8);padding:6px 10px">No se pudo revisar la disponibilidad</div>';
+    }
+  }, 300);
+}
+function _calDispEsc(t){
+  return String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function _calDispHtml(d){
+  var mp = d.mp || {}, en = d.envases || {};
+  function caja(tit, estado, cuerpo, nota){
+    var ok = (estado === 'OK');
+    var gris = ['SIN_FORMULA','SIN_PRESENTACION','SIN_ENVASE','SIN_DATO'].indexOf(estado) >= 0;
+    var bg = gris ? 'var(--cx-border-soft, #f1f5f9)' : (ok ? 'var(--cx-success-pale, #dcfce7)' : 'var(--cx-danger-pale, #fee2e2)');
+    var bd = gris ? 'var(--cx-text-faint, #94a3b8)' : (ok ? 'var(--cx-success, #16a34a)' : 'var(--cx-danger, #dc2626)');
+    var fg = gris ? 'var(--cx-text-mute, #64748b)' : (ok ? 'var(--cx-success-text, #15803d)' : 'var(--cx-danger-text, #b91c1c)');
+    return '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-left:4px solid ' + bd
+      + ';border-radius:10px;padding:11px 13px">'
+      + '<div style="font-size:12px;font-weight:800;color:' + fg + ';margin-bottom:5px">' + tit + '</div>' + cuerpo
+      + (nota ? '<div style="font-size:10.5px;color:var(--cx-text-mute, #64748b);margin-top:6px;line-height:1.45">' + _calDispEsc(nota) + '</div>' : '')
+      + '</div>';
+  }
+  var ph = '';
+  var ps = en.presentaciones || [];
+  if(ps.length){
+    ph = '<div style="font-size:11px;color:var(--cx-primary-text, #6d28d9);font-weight:800;margin:2px 0 7px">De este lote salen'
+       + '<span style="font-weight:600;color:var(--cx-text-faint, #94a3b8)"> ' + (ps.length > 1 ? ('estas ' + ps.length + ' presentaciones') : 'esta presentacion')
+       + (en.fuente_reparto ? (' - reparto por ' + _calDispEsc(en.fuente_reparto)) : '') + '</span></div>'
+       + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">';
+    ps.forEach(function(pp){
+      var fr = (pp.componentes || []).filter(function(c){ return c.tipo === 'frasco'; })[0] || {};
+      var foto = fr.imagen_url
+        ? '<img src="' + _calDispEsc(fr.imagen_url) + '" alt="" style="width:54px;height:54px;object-fit:contain;border-radius:9px;background:var(--cx-card, #fff);border:1px solid var(--cx-hairline, #ece9f5)">'
+        : '<div title="Este envase no tiene foto cargada - se sube desde Bodega" style="width:54px;height:54px;border-radius:9px;background:var(--cx-border-soft, #f1f5f9);border:1px dashed var(--cx-border, #cbd5e1);display:flex;align-items:center;justify-content:center;font-size:19px;color:var(--cx-text-faint, #94a3b8)">&#128230;</div>';
+      var otros = (pp.componentes || []).filter(function(c){ return c.tipo !== 'frasco'; }).map(function(c){ return c.tipo; }).join(' - ');
+      ph += '<div style="flex:1;min-width:190px;display:flex;gap:10px;align-items:center;background:var(--cx-card, #fff);border:1px solid var(--cx-hairline, #ece9f5);border-radius:11px;padding:9px 11px">'
+        + foto + '<div style="min-width:0">'
+        + '<div style="font-size:15px;font-weight:800;color:var(--cx-text, #0f172a);line-height:1.1">' + (pp.uds || 0).toLocaleString('es-CO')
+        + ' <span style="font-size:11px;font-weight:700;color:var(--cx-text-mute, #64748b)">uds</span></div>'
+        + '<div style="font-size:11.5px;color:var(--cx-text-soft, #475569);font-weight:700">de ' + pp.volumen_ml + ' ml</div>'
+        + (fr.codigo ? ('<div style="font-size:10px;color:var(--cx-text-mute, #64748b);font-family:ui-monospace;margin-top:2px">' + _calDispEsc(fr.codigo) + (fr.descontinuado ? ' <span style="color:var(--cx-danger-text, #b91c1c);font-family:inherit;font-weight:700">- descontinuado</span>' : '') + '</div>')
+                     : '<div style="font-size:10px;color:var(--cx-danger-text, #b91c1c);margin-top:2px;font-weight:700">sin envase asignado</div>')
+        + (otros ? ('<div style="font-size:10px;color:var(--cx-text-faint, #94a3b8);margin-top:1px">+ ' + otros + '</div>') : '')
+        + '</div></div>';
+    });
+    ph += '</div>';
+  }
+  var mc;
+  if(mp.estado === 'SIN_FORMULA'){
+    mc = '<div style="font-size:11.5px;color:var(--cx-text-mute, #64748b)">' + _calDispEsc(mp.nota || 'sin formula') + '</div>';
+  } else {
+    var faltan = (mp.items || []).filter(function(i){ return i.estado === 'FALTA'; });
+    mc = '<div style="font-size:11.5px;color:var(--cx-text-soft, #475569)">'
+      + (mp.n_faltan ? ('Faltan <b>' + mp.n_faltan + '</b> de ' + mp.n_total + ' materias primas.')
+                     : ('Las <b>' + mp.n_total + '</b> alcanzan para los ' + (d.kg || 0) + ' kg.'))
+      + ((mp.n_en_camino || 0) > 0 ? (' - <b>' + mp.n_en_camino + '</b> ya pedida(s), aun sin llegar.') : '') + '</div>';
+    if(faltan.length){
+      mc += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:7px">';
+      faltan.slice(0, 8).forEach(function(i){
+        mc += '<tr style="border-top:1px solid rgba(128,120,150,.2)"><td style="padding:3px 0">'
+          + '<span style="font-family:ui-monospace;font-size:10px;color:var(--cx-text-mute, #64748b)">' + _calDispEsc(i.codigo) + '</span> ' + _calDispEsc(i.nombre)
+          + '</td><td style="padding:3px 0;text-align:right;font-weight:700;white-space:nowrap">falta ' + Math.round(i.falta_g).toLocaleString('es-CO') + ' g</td></tr>';
+      });
+      mc += '</table>';
+      if(faltan.length > 8) mc += '<div style="font-size:10.5px;color:var(--cx-text-mute, #64748b);margin-top:4px">y ' + (faltan.length - 8) + ' mas</div>';
+    }
+  }
+  var ec;
+  if(!(en.items || []).length){
+    ec = '<div style="font-size:11.5px;color:var(--cx-text-mute, #64748b)">' + _calDispEsc(en.nota || 'sin datos de envase') + '</div>';
+  } else {
+    ec = '<div style="font-size:11.5px;color:var(--cx-text-soft, #475569)">'
+      + (en.n_faltan ? ('Faltan <b>' + en.n_faltan + '</b> de ' + en.items.length + ' componentes.')
+                     : ('Los <b>' + en.items.length + '</b> componentes alcanzan.'))
+      + '</div><table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:7px">';
+    en.items.forEach(function(i){
+      var extra = '';
+      if(i.en_marcacion > 0) extra += ' <span title="Salieron de la planta a marcar - ya no estan en el kardex" style="color:var(--cx-warn-text, #b45309);font-weight:700">- ' + i.en_marcacion.toLocaleString('es-CO') + ' en serigrafia</span>';
+      if(i.esperando_arte > 0) extra += ' <span title="Volvieron de marcar y esperan el visto bueno de arte" style="color:var(--cx-info-text, #0e7490);font-weight:700">- ' + i.esperando_arte.toLocaleString('es-CO') + ' esperando arte</span>';
+      ec += '<tr style="border-top:1px solid rgba(128,120,150,.2)"><td style="padding:3px 0">' + i.tipo
+        + ' <span style="font-family:ui-monospace;font-size:10px;color:var(--cx-text-mute, #64748b)">' + _calDispEsc(i.codigo) + '</span>' + extra + '</td>'
+        + '<td style="padding:3px 0;text-align:right;white-space:nowrap;font-weight:700;color:' + (i.estado === 'FALTA' ? 'var(--cx-danger-text, #b91c1c)' : 'var(--cx-text, #0f172a)') + '">'
+        + i.hay.toLocaleString('es-CO') + ' / ' + i.necesarias.toLocaleString('es-CO')
+        + (i.falta ? (' <span style="font-size:10px">(faltan ' + i.falta.toLocaleString('es-CO') + ')</span>') : '') + '</td></tr>';
+    });
+    ec += '</table>';
+  }
+  return ph
+    + '<div style="font-size:11px;color:var(--cx-primary-text, #6d28d9);font-weight:800;margin:2px 0 7px">Con que cuento'
+    + '<span style="font-weight:600;color:var(--cx-text-faint, #94a3b8)"> para el lote de ' + (d.kg || 0) + ' kg</span></div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-bottom:12px">'
+    + caja('Materia prima', mp.estado, mc, mp.nota)
+    + caja('Envases', en.estado, ec, en.nota) + '</div>';
+}
+
 // Chequeo "listo para producir" · MATERIAS PRIMAS (Sebastián 16-jul · reusa /api/planta/listo-producir).
 async function _calCargarListoProducir(producto){
   var box = document.getElementById('lote-ready-mp');

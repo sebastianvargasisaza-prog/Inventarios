@@ -175,6 +175,11 @@ CORAZON=(
   # vencida hace 5 dias igual que una al dia); Estacionalidad marcaba pico en TODOS y promediaba
   # el mes en curso como si estuviera completo; y una lista decia "todo cubierto" sin calcular.
   "tests/test_calendario_no_miente.py"
+  # Los dos modales (Necesidades y Calendario) contestaban lo mismo preguntandole a endpoints
+  # DISTINTOS: uno por un lote del maestro de formulas y el otro por los kg reales de la cadena.
+  # Ahora comparten el calculo, y ese bloque muestra las presentaciones con la foto del envase
+  # de bodega y cuantas unidades salen de cada una.
+  "tests/test_modal_unificado.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.
