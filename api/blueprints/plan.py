@@ -10342,9 +10342,18 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
     fijo_prog_por_prod = {}
     try:
         for r in cur.execute(
+            # ⚠ `cantidad_kg` iba proyectada CRUDA con un `GROUP BY` por EXPRESION, y PG nunca
+            # deriva dependencia funcional de una expresion (solo de la PK). Envuelto en
+            # `try/except: pass`, asi que en produccion este dict quedaba VACIO y el fallback de
+            # mas abajo no corria nunca: **todo producto sin una produccion completada previa
+            # caia en `saltados` y no se programaba** -- justo el caso que este bloque existe
+            # para atender. En SQLite pasaba, o sea que los tests lo daban por bueno.
+            #
+            # `MAX(cantidad_kg)` es ademas lo correcto por contenido: si el producto tiene varios
+            # lotes fijos futuros, el que interesa como base es el mayor, no uno cualquiera.
             """SELECT UPPER(TRIM(producto)) AS prod,
                       MAX(substr(fecha_programada,1,10)) AS f,
-                      cantidad_kg
+                      MAX(COALESCE(cantidad_kg,0)) AS kg
                FROM produccion_programada
                WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
@@ -17029,9 +17038,18 @@ def plan_sugerir_preview():
     fijo_prog_por_prod = {}
     try:
         for r in cur.execute(
+            # ⚠ `cantidad_kg` iba proyectada CRUDA con un `GROUP BY` por EXPRESION, y PG nunca
+            # deriva dependencia funcional de una expresion (solo de la PK). Envuelto en
+            # `try/except: pass`, asi que en produccion este dict quedaba VACIO y el fallback de
+            # mas abajo no corria nunca: **todo producto sin una produccion completada previa
+            # caia en `saltados` y no se programaba** -- justo el caso que este bloque existe
+            # para atender. En SQLite pasaba, o sea que los tests lo daban por bueno.
+            #
+            # `MAX(cantidad_kg)` es ademas lo correcto por contenido: si el producto tiene varios
+            # lotes fijos futuros, el que interesa como base es el mayor, no uno cualquiera.
             """SELECT UPPER(TRIM(producto)) AS prod,
                       MAX(substr(fecha_programada,1,10)) AS f,
-                      cantidad_kg
+                      MAX(COALESCE(cantidad_kg,0)) AS kg
                FROM produccion_programada
                WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')

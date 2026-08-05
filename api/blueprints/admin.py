@@ -27820,8 +27820,13 @@ def explicar_stock_min(codigo):
         nombre_inci = (mp_info.get('nombre_inci') or '').strip()
         nombre_comercial = (mp_info.get('nombre_comercial') or '').strip()
         # Búsqueda case-insensitive por material_id
+        # `fi.material_nombre` iba proyectada cruda con `GROUP BY fi.material_id`, y la PK de
+        # `formula_items` es `id` -- asi que PG no deriva dependencia funcional y rechaza la
+        # consulta. No hay `try`: la pantalla devolvia error interno justo en el caso que esta
+        # rama atiende (un codigo huerfano). Los tres hermanos de este archivo ya envuelven el
+        # nombre en MAX().
         rows_ci = c.execute("""
-            SELECT DISTINCT fi.material_id, fi.material_nombre,
+            SELECT fi.material_id, MAX(fi.material_nombre) AS material_nombre,
                    COUNT(DISTINCT fi.producto_nombre) as n_productos
             FROM formula_items fi
             WHERE UPPER(TRIM(fi.material_id)) = UPPER(TRIM(?))
@@ -27848,7 +27853,7 @@ def explicar_stock_min(codigo):
                 params.append(f'%{nombre_inci}%')
             if patrones:
                 rows_nm = c.execute(f"""
-                    SELECT DISTINCT fi.material_id, fi.material_nombre,
+                    SELECT fi.material_id, MAX(fi.material_nombre) AS material_nombre,
                            COUNT(DISTINCT fi.producto_nombre) as n_productos
                     FROM formula_items fi
                     WHERE ({' OR '.join(patrones)})

@@ -211,6 +211,14 @@ CORAZON=(
   # estaba en una sola linea del modulo, y los pagos a creadores con nombre en vez de dos
   # agregados (uno en cero permanente por una columna que no existe).
   "tests/test_ceo_no_miente.py"
+  # Los bugs que PASAN en los tests y ROMPEN en produccion: la suite corre SQLite y produccion es
+  # PostgreSQL. Una columna proyectada sin agrupar ni agregar -- SQLite elige un valor cualquiera,
+  # PG rechaza. Los que estaban dentro de un `try` no daban error: dejaban la seccion VACIA, y lo
+  # que no aparecia era justo lo que habia que atender (equipos con calibracion vencida, productos
+  # que el planificador debia programar). + dos CAS de dinero e INVIMA: aprobar dos veces un pago
+  # a creador creaba DOS ordenes, y un lote RECHAZADO se podia volver a liberar con un clic.
+  # Estos tests EJECUTAN la consulta contra el esquema real: leer el SQL es lo que los dejo pasar.
+  "tests/test_bugs_5ago.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

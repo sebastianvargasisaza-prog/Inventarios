@@ -12591,7 +12591,20 @@ def auditor_semanal_enviar():
     conn = get_db(); c = conn.cursor()
 
     # Destinatarios
-    rows = c.execute("SELECT email FROM email_destinatarios WHERE activo = 1").fetchall()
+    # ⚠ Decia `email_destinatarios`, que NO EXISTE (cero CREATE en todo el repo). La tabla real
+    # es `email_destinatarios_config`, la misma que este archivo consulta bien en otros 8 sitios.
+    # Y como no estaba en un `try`, reventaba antes de llegar al mensaje "Sin destinatarios
+    # configurados" que el propio codigo tenia preparado: el auditor semanal fallaba SIEMPRE con
+    # un error interno, y nadie recibia ese correo.
+    try:
+        rows = c.execute(
+            "SELECT email FROM email_destinatarios_config "
+            " WHERE COALESCE(activo,0)=1 AND COALESCE(email,'') <> ''").fetchall()
+    except Exception as _ede:
+        import logging as _lge
+        _lge.getLogger('auto_plan').warning(
+            'auditor semanal: no pude leer los destinatarios: %s', _ede)
+        rows = []
     destinatarios = [r[0] for r in rows if r[0]]
     if not destinatarios:
         return jsonify({'error': 'Sin destinatarios configurados. Plan → Configuración → Email'}), 400

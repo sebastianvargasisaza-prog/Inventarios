@@ -26169,7 +26169,8 @@ def planta_cola_liberacion_disposicion(item_id):
     conn = get_db(); c = conn.cursor()
     # Capturar antes para audit log
     antes_row = c.execute(
-        "SELECT producto_nombre, lote, estado, disposicion, unidades "
+        "SELECT producto_nombre, lote, estado, disposicion, unidades, "
+        "       COALESCE(aprobado_por,'') AS aprobado_por "
         "FROM cola_liberacion WHERE id=?", (item_id,)).fetchone()
     if not antes_row:
         return jsonify({'error': 'Item no encontrado'}), 404
@@ -26223,12 +26224,29 @@ def planta_cola_liberacion_disposicion(item_id):
                         'bloqueo': 'micro_sin_conforme',
                     }), 409
                 _micro_override = True
+    # ⚠ CAS (M27): antes este UPDATE iba `WHERE id=?` a secas, asi que un lote ya RECHAZADO por
+    # Calidad se podia volver a poner en `liberado` con un clic posterior -- un control INVIMA
+    # que se elude sin dejar ni un 409. Y dos decisiones simultaneas (liberar + rechazar) pasaban
+    # las dos, quedando la que commiteara ultimo.
+    #
+    # Se bloquea salir de un estado TERMINAL (aprobado / rechazado). `reanalizar` sigue siendo
+    # re-disponible, que es exactamente para lo que existe.
     c.execute("""
         UPDATE cola_liberacion SET
           disposicion=?, estado=?, aprobado_por=?, aprobado_at=datetime('now', '-5 hours'),
           notas=COALESCE(?, notas)
-        WHERE id=?
+        WHERE id=? AND LOWER(COALESCE(disposicion,'')) NOT IN ('aprobado','rechazado')
     """, (disposicion, estado_nuevo, user, notas or None, item_id))
+    if c.rowcount == 0:
+        conn.rollback()
+        _disp_prev = (antes.get('disposicion') or '').lower()
+        return jsonify({
+            'error': 'Este lote ya fue %s%s · cambiar una disposición firmada es un acto de '
+                     'Calidad, no un clic' % (_disp_prev or 'dispuesto',
+                                              (' por ' + antes.get('aprobado_por'))
+                                              if antes.get('aprobado_por') else ''),
+            'disposicion_actual': _disp_prev,
+            'codigo': 'LOTE_YA_DISPUESTO'}), 409
     accion = {
         'aprobado': 'LIBERAR_LOTE_PT',
         'rechazado': 'RECHAZAR_LOTE_PT',

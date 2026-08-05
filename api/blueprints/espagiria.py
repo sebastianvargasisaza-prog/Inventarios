@@ -469,7 +469,7 @@ def quick_actions():
     # 4) Equipos calibracion vencida
     try:
         rows = c.execute("""
-            SELECT ep.codigo, ep.nombre, ep.area_codigo,
+            SELECT ep.codigo, MAX(ep.nombre) AS nombre, MAX(ep.area_codigo) AS area_codigo,
                    MAX(ee.fecha_proxima) as fecha_proxima,
                    julianday('now') - julianday(MAX(ee.fecha_proxima)) as dias_vencido
               FROM equipos_planta ep
@@ -981,7 +981,7 @@ def lab_en_vivo():
     # 3) Equipos con calibracion vencida o proximos
     try:
         out["equipos_estado"] = _fmt_many(c.execute("""
-            SELECT ep.codigo, ep.nombre, ep.area_codigo,
+            SELECT ep.codigo, MAX(ep.nombre) AS nombre, MAX(ep.area_codigo) AS area_codigo,
                    MAX(ee.fecha_proxima) as fecha_proxima,
                    julianday(MAX(ee.fecha_proxima)) - julianday('now') as dias
               FROM equipos_planta ep

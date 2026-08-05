@@ -5484,11 +5484,29 @@ def aprobar_solicitud_influencer(numero):
         benef_nombre = solicitante or 'Sin beneficiario'
 
     # 1. Update SOL: valor + estado=Aprobada
+    #
+    # ⚠ CAS, no check-then-act (M27). Antes el UPDATE iba `WHERE numero=?` a secas y `sol_estado`
+    # se leia solo para el audit -- nunca se validaba. Con eso:
+    #   · un doble clic (o dos workers) pasaba las dos veces: los dos veian `numero_oc_actual`
+    #     vacio, los dos creaban OC, y como la segunda lleva sufijo horario el dedup de
+    #     `pagos_influencers` -que empareja por `numero_oc`- NO la reconocia como duplicada.
+    #     Resultado: dos ordenes y dos pagos pagables por la MISMA solicitud.
+    #   · re-aprobar una SOL ya Aprobada le cambiaba el monto en silencio.
+    # La condicion bloquea lo peligroso (volver a aprobar, o aprobar algo cancelado/rechazado) y
+    # no traba la aprobacion legitima, venga del estado que venga.
     cur.execute(
         "UPDATE solicitudes_compra SET valor=?, estado='Aprobada', "
-        "aprobado_por=?, fecha_aprobacion=datetime('now', '-5 hours') WHERE numero=?",
+        "aprobado_por=?, fecha_aprobacion=datetime('now', '-5 hours') "
+        " WHERE numero=? AND COALESCE(estado,'') NOT IN ('Aprobada','Cancelada','Rechazada')",
         (monto, user, numero)
     )
+    if cur.rowcount == 0:
+        conn.rollback()
+        # El 409 DICE en que estado quedo: "no se pudo" a secas obliga a ir a mirar la base.
+        return jsonify({'error': 'Esta solicitud ya no se puede aprobar · está en "%s"'
+                                 % (sol_estado or '?'),
+                        'estado_actual': sol_estado,
+                        'codigo': 'SOL_YA_RESUELTA'}), 409
 
     # 2. Crear OC si no existe
     if not numero_oc_actual:
