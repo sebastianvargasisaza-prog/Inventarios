@@ -11165,6 +11165,23 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         # distintos y mezclarlos en una columna borraria la diferencia entre lo pedido y lo
         # hecho, que es justo lo que un arqueo necesita comparar.
     ]),
+    (418, "envases: si la parte VIENE INCLUIDA en el bulto, y que la recepcion lo confirme", [
+        # Sebastian (5-ago), mostrando la pantalla de recepcion: *"aqui deberia existir la logica
+        # de ese envase tiene parte? viene con gotero? y si lo compramos con plegadiza y llega con
+        # plegadiza desde china, ALLI es donde debe vivir todo porque alli se da la recepcion"*.
+        #
+        # La distincion es la que hace que esto funcione: `mee_partes` dice que el frasco LLEVA
+        # gotero -- eso es la receta del envase y no cambia. Si ESTE embarque VINO con el gotero
+        # adentro es un hecho del EMBARQUE: el mismo frasco puede venir armado de China y suelto
+        # de un proveedor local. Si eso viviera en el maestro se equivocaria la mitad de las
+        # veces; viviendo en la recepcion es siempre cierto.
+        #
+        # `incluido_default` es solo la MEMORIA de lo que suele pasar: viene premarcado en la
+        # pantalla y quien recibe lo confirma o lo corrige mirando la caja abierta. Nunca decide
+        # solo -- al inventario entra lo que la persona confirmo (M115: sin dato no se inventa un
+        # default que parezca real).
+        "ALTER TABLE mee_partes ADD COLUMN incluido_default INTEGER NOT NULL DEFAULT 0",
+    ]),
 ]
 
 

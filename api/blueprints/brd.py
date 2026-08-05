@@ -8235,12 +8235,69 @@ def cerrar_envasado_ebr(ebr_id):
         _partes = {}
 
     descuentos = []
+    # ── EL LIBRO MAYOR DE LO YA CONSUMIDO (Sebastián 5-ago) ───────────────────────────────
+    # `produccion_checklist.consumido_at` es el registro de "este envase, para esta producción,
+    # ya salió del kardex". Lo escribía SÓLO el cierre de acondicionamiento del Kanban, y este
+    # cierre ni lo leía ni lo escribía -- con los dos corriendo sobre el mismo lote físico
+    # (envasar y después acondicionar) el frasco, la tapa y la caja salían DOS VECES.
+    #
+    # No se agrega un tercer candado: los dos caminos pasan a usar el que ya existe. Acá se lee
+    # para SALTAR lo que ya bajó, y más abajo se RECLAMA con CAS lo que este cierre sí descuenta.
+    _ya_consumido = set()      # códigos que el checklist ya marcó · no se vuelven a descontar
+    _reclamables = {}          # código -> [id de fila del checklist] · para reclamar después
+    _sin_libro = not _prod_id
+    if _prod_id:
+        try:
+            for _cid, _ccod, _cons in cur.execute(
+                    "SELECT id, UPPER(TRIM(COALESCE(mee_codigo_asignado,''))), "
+                    "       COALESCE(consumido_at,'') "
+                    "  FROM produccion_checklist "
+                    " WHERE produccion_id=? AND COALESCE(mee_codigo_asignado,'')<>''",
+                    (_prod_id,)).fetchall():
+                if not _ccod:
+                    continue
+                if str(_cons or '').strip():
+                    _ya_consumido.add(_ccod)
+                else:
+                    _reclamables.setdefault(_ccod, []).append(_cid)
+        except Exception as _e_lib:
+            # Sin el libro mayor NO se puede coordinar · se declara y se sigue descontando (que
+            # un envase no salga del kardex es peor que arriesgar el doble), pero la respuesta
+            # lo dice para que el descuadre no aparezca sin explicación (M100/M124).
+            log.warning("cerrar-envasado: no pude leer el checklist de la producción %s: %s",
+                        _prod_id, _e_lib)
+            _sin_libro = True
+            _ya_consumido = set(); _reclamables = {}
+
+    _saltados = []
 
     def _salida_mee(cod, cantidad, etiqueta, presentacion):
         """Una Salida de MEE. Nunca cantidad <= 0 (el trigger de PG la rechaza · M18)."""
         cod = (cod or "").strip()
         if not cod or cantidad is None or cantidad <= 0:
             return
+        _k = cod.upper()
+        if _k in _ya_consumido:
+            # Ya salió del kardex por el cierre de acondicionamiento · descontarlo otra vez es
+            # inventar un consumo que no ocurrió.
+            _saltados.append({"mee_codigo": cod, "tipo": etiqueta,
+                              "motivo": "ya consumido en el checklist de esta producción"})
+            return
+        # RECLAMO con CAS: si otro worker (o el Kanban) lo marcó entre la lectura y ahora,
+        # `rowcount` es 0 y este cierre NO descuenta. El check-then-act no alcanza con 3
+        # workers (M27/M73: se reclama ANTES de tocar el kardex, no después).
+        _ids = _reclamables.get(_k) or []
+        if _ids:
+            cur.execute(
+                "UPDATE produccion_checklist SET consumido_at=datetime('now','-5 hours'), "
+                "       consumido_por=?, consumido_contexto='envasado_ebr' "
+                " WHERE id=? AND COALESCE(consumido_at,'')=''", (user, _ids[0]))
+            if cur.rowcount == 0:
+                _ya_consumido.add(_k)
+                _saltados.append({"mee_codigo": cod, "tipo": etiqueta,
+                                  "motivo": "otro cierre lo reclamó primero"})
+                return
+            _ids.pop(0)
         cur.execute(
             "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
             "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
@@ -8287,7 +8344,8 @@ def cerrar_envasado_ebr(ebr_id):
     conn.commit()
     audit_log(None, usuario=user, accion="CERRAR_ENVASADO_DESCONTAR_MEE",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
-              despues={"lote": lote, "descuentos": descuentos})
+              despues={"lote": lote, "descuentos": descuentos,
+                       "saltados": _saltados, "sin_libro_mayor": _sin_libro})
     # CADENA OF→OA (27-jun · Sebastián) · al CERRAR el envasado se HABILITA automático el legajo de
     # ACONDICIONAMIENTO del mismo lote físico (idempotente vía crear_ebr_desde_mbr · best-effort · NO
     # bloquea el cierre si falla). Espeja el hook fabricación→envasado de liberar_ebr. Así OF→OA deja de

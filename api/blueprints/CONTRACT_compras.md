@@ -559,3 +559,36 @@ a aprobar, o aprobar algo cancelado) sin trabar la aprobación legítima, venga 
 venga — que es lo que hace seguro aplicarlo sin revisar cada fila histórica.
 
 Test: `tests/test_bugs_5ago.py::test_aprobar_DOS_VECES_un_pago_a_creador_da_409` (en el gate).
+
+
+## 📦 INV-24 · Las DOS puertas de recepción de envases reciben IGUAL (5-ago)
+
+Un envase entra por dos caminos — con orden de compra (`POST /api/ordenes-compra/<n>/recibir`) o
+como contenedor sin OC (`POST /api/mee/recepcion-lineas`) — y es el MISMO hecho físico: llegó un
+bulto de frascos. Hasta el 5-ago se comportaban distinto y eso decidía si el envase se podía usar:
+
+| | por contenedor | por OC (antes) |
+|---|---|---|
+| estado | DISPONIBLE | RETENIDO |
+| lote | del proveedor, o interno `INT-` | **el número de OC** |
+| proveedor / vencimiento / cajas | sí | ninguno |
+
+Reglas ahora, en los dos caminos:
+- **Estado VIGENTE**: la decisión del 30-jul (*"que ingresen a inventario para ser usados"*) vale
+  para las dos puertas. La revisión de Calidad sigue caja por caja y **lo que rechace SALE del
+  stock** en ese momento — quitar un candado exige decir qué lo reemplaza (M126).
+  ⚠ Esto NO toca la materia prima: la MP sigue entrando en CUARENTENA (INVIMA).
+- El **lote es el del proveedor**; si no manda, `audit_helpers.lote_interno_mee` asigna
+  `INT-AAMMDD-NNN`. Es **punto ÚNICO**: dos puertas con su propio correlativo producen dos series
+  que se pisan, y dos materiales bajo el mismo lote es lo peor para la trazabilidad (M1/M99).
+- El kardex guarda **proveedor, vencimiento y `oc_numero` en su columna** (no el número de OC
+  metido en el campo del lote): son los datos que el F01 pre-llena y el rótulo imprime (M115).
+- Se abre **una fila por caja** en `mee_cajas_disposicion`. Sin ellas, la revisión caja por caja
+  no tiene qué revisar y el envase recibido por OC queda fuera de la bandeja de Calidad.
+- MP vs ENVASE se decide **por ítem**, no por la categoría de la OC (el front la crea siempre como
+  'MP'). ⚠ De los 129 códigos de envase reales, sólo 20 llevan prefijo `MEE-`/`ENV-`: la regla que
+  de verdad decide es *"está en `maestro_mee` y no en `maestro_mps`"*; el prefijo es sólo el
+  respaldo para una referencia recién creada (por eso el test usa un código `PLEG-`, o pasaría por
+  el respaldo y no probaría nada).
+
+Tests: `tests/test_recepcion_oc_envases.py` (en el gate).

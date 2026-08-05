@@ -1169,3 +1169,26 @@ Tests: `tests/test_plan_semanal_rapido.py` y `tests/test_bugs_5ago.py` (los dos 
 ⚠ El test de equivalencia siembra un lote **en cuarentena** a propósito: sin él la comparación
 contra el helper es ciega justo a la diferencia que la invariante protege — lo descubrí probando
 los dientes, que la primera versión no tenía.
+
+
+## 📦 INV-11 · El diagnóstico de envases mide la unión COMPLETA, no sólo el frasco (5-ago)
+
+`GET /api/abastecimiento/envases-cobertura` contestaba media pregunta (*"¿el producto tiene
+frasco?"*), pero el motor de compra también lee la **tapa**, la **caja** y las **piezas** del
+frasco (`mee_partes`). Un producto con frasco y sin tapa salía en VERDE mientras su tapa no se
+pedía nunca — la capacidad de comprarla está construida desde el 18-jun y sin un solo dato, que es
+igual a no existir (M121).
+
+La respuesta agrega `union`: por presentación, `envase`/`tapa`/`caja`/`piezas`/`serigrafiado` y
+**`falta`** enumerando pieza por pieza lo que impide comprar o descontar. Un código que existe pero
+no está en `maestro_mee` cuenta como faltante: *"tiene tapa"* y *"tiene una tapa que existe"* no
+son lo mismo. `serigrafiado` es `maestro_mee.material_referencia` (el puente base → impreso); vacío
+significa que lo que vuelve de serigrafía no queda atado a ese producto.
+
+Reglas: los contadores del encabezado (`n_completas`, `n_sin_tapa`…) salen del **mismo recorrido**
+que el detalle — contados aparte, un día dicen cosas distintas y no se puede creer en ninguno
+(M5/M161). Si el detalle no se pudo calcular, `union` viene en `null` y `aviso` lo dice: una lista
+vacía se leería como *"está todo bien"* (M100). El cambio es **aditivo** — la pantalla de Reparto
+ya consumía `sin_envase`/`no_aplica` y no puede romperse (M117).
+
+Tests: `tests/test_union_producto_envase.py` (en el gate).

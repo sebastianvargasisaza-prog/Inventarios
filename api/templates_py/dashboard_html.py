@@ -20984,6 +20984,52 @@ async function ckMarcar(itemId, estado){
       var noap = cov.no_aplica||[];
       if(noap.length){ h += '<div style="font-size:11px;color:var(--cx-text-faint);margin-top:6px">Marcados "no requiere envase" (otro cliente): '+noap.map(escapeHtmlNec).join(', ')+' · <a href="#" onclick="reincluirNoAplica();return false" style="color:var(--cx-info-text)">reincluir todos</a></div>'; }
       h += '<div style="border-top:2px solid #ece9f5;margin:16px 0 12px"></div>';
+      // === Sección 0b · LA UNIÓN COMPLETA producto ↔ empaque ===
+      // Tener frasco no es tener el empaque. La tapa, la caja y las piezas del frasco también
+      // se compran, y un producto al que le falta una se veía en verde acá arriba mientras esa
+      // pieza no se pedía nunca. Se enumera lo que falta, pieza por pieza.
+      var un = cov.union;
+      if(un === null){
+        h += '<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border-radius:10px;padding:12px 14px;font-size:12.5px;margin-bottom:12px">'
+          + escapeHtmlNec(cov.aviso||'No pude revisar la unión completa') + '</div>';
+      }else if(un && un.length){
+        var incompletas = un.filter(function(x){ return !x.completo; }).length;
+        h += '<div style="font-weight:800;color:'+(incompletas?'var(--cx-warn-text)':'var(--cx-success-text)')+';font-size:16px;margin-bottom:4px">'
+          + '🧩 La unión producto ↔ empaque · ' + (incompletas
+              ? incompletas+' de '+un.length+' presentaciones incompletas'
+              : 'las '+un.length+' presentaciones están completas') + '</div>';
+        h += '<div style="font-size:12px;color:var(--cx-text-soft);margin-bottom:10px;line-height:1.5">'
+          + 'Lo que está en <b>rojo</b> no se compra ni se descuenta: el motor lo lee de acá. '
+          + '<b>Serigrafiado</b> es el puente base &rarr; impreso; vacío significa que lo que vuelve '
+          + 'de serigraf&iacute;a no queda atado a este producto.</div>';
+        h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+          + '<thead><tr style="text-align:left;color:var(--cx-text-mute);font-size:11px;text-transform:uppercase;letter-spacing:.05em">'
+          + '<th style="padding:7px 8px">Producto</th><th style="padding:7px 8px">ml</th>'
+          + '<th style="padding:7px 8px">Frasco</th><th style="padding:7px 8px">Tapa</th>'
+          + '<th style="padding:7px 8px">Caja</th><th style="padding:7px 8px">Piezas</th>'
+          + '<th style="padding:7px 8px">Serigrafiado</th></tr></thead><tbody>';
+        un.forEach(function(x){
+          function celda(v){
+            return v ? '<td style="padding:7px 8px;color:var(--cx-text-soft)">'+escapeHtmlNec(v)+'</td>'
+                     : '<td style="padding:7px 8px;color:var(--cx-danger-text);font-weight:700">falta</td>';
+          }
+          var pz = (x.piezas||[]).map(function(p){
+            return p.en_maestro ? escapeHtmlNec(p.codigo)
+              : '<span style="color:var(--cx-danger-text);font-weight:700">'+escapeHtmlNec(p.codigo)+' (no existe)</span>';
+          }).join(' · ');
+          h += '<tr style="border-top:1px solid var(--cx-border-soft)'+(x.completo?'':';background:var(--cx-warn-pale)')+'">'
+            + '<td style="padding:7px 8px;font-weight:700;color:var(--cx-text)">'+escapeHtmlNec(x.producto)+'</td>'
+            + '<td style="padding:7px 8px;color:var(--cx-text-mute)">'+(x.volumen_ml||'-')+'</td>'
+            + celda(x.envase) + celda(x.tapa) + celda(x.caja)
+            + '<td style="padding:7px 8px;color:var(--cx-text-soft)">'+(pz||'<span style="color:var(--cx-text-faint)">ninguna</span>')+'</td>'
+            + celda(x.serigrafiado) + '</tr>';
+        });
+        h += '</tbody></table></div>';
+        h += '<div style="font-size:11.5px;color:var(--cx-text-mute);margin-top:8px">'
+          + 'La tapa y la caja se cargan en Presentaciones; las piezas del frasco (gotero, plegadiza) '
+          + 'en el maestro de envases, y la recepci&oacute;n pregunta en cada bulto si vinieron adentro.</div>';
+        h += '<div style="border-top:2px solid #ece9f5;margin:16px 0 12px"></div>';
+      }
     }catch(e){}
     // === Sección 1 · Envase por tamaño (todos los 10ml en el mismo frasco) ===
     try{

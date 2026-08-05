@@ -17108,7 +17108,70 @@ def abastecimiento_envases_cobertura():
     sin_config = sorted(activos[k] for k in activos if k not in con_env and k not in excl)
     no_aplica = sorted(activos[k] for k in activos if k not in con_env and k in excl)
     ok = [{'producto': activos[k], 'presentaciones': con_env[k]} for k in activos if k in con_env]
-    return jsonify({
+
+    # ── LA UNIÓN COMPLETA producto ↔ empaque (Sebastián 5-ago) ────────────────────────────
+    # *"debemos ir a revisar lo que hay, si ya junta con cada producto y demás"*.
+    #
+    # Tener frasco NO es tener el empaque: el motor de compra también lee la TAPA, la CAJA y las
+    # PIEZAS del frasco (gotero, plegadiza). Un producto con frasco y sin tapa se veía en verde
+    # en este mismo diagnóstico mientras su tapa no se compraba nunca -- la capacidad estaba
+    # construida y sin datos, que es igual a no existir (M121). Acá se enumera pieza por pieza
+    # lo que falta, en vez de un sí/no que esconde tres huecos (M124).
+    detalle = []
+    try:
+        _mee = {}
+        for _cd, _ds, _mr in c.execute(
+                "SELECT codigo, COALESCE(descripcion,''), COALESCE(material_referencia,'') "
+                "  FROM maestro_mee").fetchall():
+            _mee[(_cd or '').strip().upper()] = {'descripcion': _ds, 'material_referencia': _mr}
+        _partes = {}
+        for _env, _pc, _cant in c.execute(
+                "SELECT mee_codigo, parte_codigo, COALESCE(cantidad,1) FROM mee_partes "
+                " WHERE COALESCE(parte_codigo,'')<>''").fetchall():
+            _partes.setdefault((_env or '').strip().upper(), []).append(
+                {'codigo': _pc, 'cantidad_por_envase': _cant,
+                 'en_maestro': (_pc or '').strip().upper() in _mee})
+
+        _filas = c.execute(
+            "SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(volumen_ml,0), "
+            "       COALESCE(tapa_codigo,''), COALESCE(caja_codigo,'') "
+            "  FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall()
+        for _pn, _env, _vol, _tap, _caj in _filas:
+            _ek = (_env or '').strip().upper()
+            _falta = []
+            if not _env:
+                _falta.append('frasco')
+            elif _ek not in _mee:
+                _falta.append('el frasco %s no existe en el maestro de envases' % _env)
+            if not _tap:
+                _falta.append('tapa')
+            elif (_tap or '').strip().upper() not in _mee:
+                _falta.append('la tapa %s no existe en el maestro' % _tap)
+            if not _caj:
+                _falta.append('caja')
+            elif (_caj or '').strip().upper() not in _mee:
+                _falta.append('la caja %s no existe en el maestro' % _caj)
+            _pz = _partes.get(_ek, [])
+            for _p in _pz:
+                if not _p['en_maestro']:
+                    _falta.append('la pieza %s no existe en el maestro' % _p['codigo'])
+            detalle.append({
+                'producto': _pn, 'volumen_ml': _vol,
+                'envase': _env, 'tapa': _tap, 'caja': _caj,
+                'piezas': _pz,
+                # El puente base↔serigrafiado. Vacío = este frasco no está atado a ningún
+                # impreso, así que lo que vuelve de serigrafía no se puede imputar a este
+                # producto (el flujo de marcación queda desconectado de la compra).
+                'serigrafiado': (_mee.get(_ek) or {}).get('material_referencia', ''),
+                'falta': _falta,
+                'completo': not _falta,
+            })
+    except Exception as _e_det:
+        # Se declara en vez de devolver una lista vacía que se lea como "está todo bien" (M100).
+        log.warning('envases-cobertura · detalle de la unión: %s', _e_det)
+        detalle = None
+
+    _res = {
         'n_activos': len(activos),
         'n_con_envase': len(ok),
         'n_sin_envase': len(sin_config),
@@ -17116,7 +17179,17 @@ def abastecimiento_envases_cobertura():
         'sin_envase': sin_config,        # productos que NO se planearán sus envases (configurar)
         'con_envase': sorted(ok, key=lambda x: x['producto']),
         'donde_configurar': 'Planta › Configuración › 📦 Presentaciones',
-    })
+        'union': detalle,
+        'aviso': ('' if detalle is not None
+                  else 'No pude revisar la unión completa (tapa, caja y piezas) · revisá el log'),
+    }
+    if detalle is not None:
+        _res['n_presentaciones'] = len(detalle)
+        _res['n_completas'] = sum(1 for x in detalle if x['completo'])
+        _res['n_sin_tapa'] = sum(1 for x in detalle if not x['tapa'])
+        _res['n_sin_caja'] = sum(1 for x in detalle if not x['caja'])
+        _res['n_sin_serigrafiado'] = sum(1 for x in detalle if not x['serigrafiado'])
+    return jsonify(_res)
 
 
 def _consumo_mp_plan(conn, dias=90):

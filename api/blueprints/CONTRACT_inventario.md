@@ -951,3 +951,32 @@ vive replicado en los sitios que copiaron el idiom).
 
 Tests: `tests/test_oc_autorizada_visible.py` (incluye el guard de que ningún filtro de
 `ordenes_compra` vuelva a usar el estado fantasma `'Enviada'`).
+
+
+## 📦 INV-14 · La recepción de un envase declara QUÉ TRAE EL BULTO (5-ago · mig 418)
+
+Sebastián, con la pantalla delante: *"aquí debería existir la lógica de ese envase tiene parte?
+viene con gotero? y si lo compramos con plegadiza y llega con plegadiza desde China, ALLÍ es donde
+debe vivir todo porque allí se da la recepción"*.
+
+**La distinción que hace que funcione:** `mee_partes` es la RECETA del envase — dice que el frasco
+LLEVA gotero, y eso no cambia. Que **ESTE embarque VINO** con el gotero adentro es un hecho del
+EMBARQUE: el mismo frasco puede venir armado de China y suelto de un proveedor local. Por eso se
+CONFIRMA al recibir y no se deduce del maestro.
+
+Reglas duras de `POST /api/mee/recepcion-lineas`:
+- Cada pieza confirmada entra con su **propio movimiento** en `movimientos_mee`, por
+  `unidades_del_bulto × cantidad_por_envase`. La cantidad se MULTIPLICA, nunca se teclea: dos
+  números para el mismo hecho divergen el día que cambien las unidades (M71/M99).
+- La pieza **hereda lote y vencimiento del bulto**. Una Entrada sin vencimiento la deja fuera del
+  cron de vencidos y el FEFO la trata como eterna (M118).
+- Queda **amarrada** al movimiento del frasco por `[recep #N]`, así que la recepción se puede
+  deshacer entera.
+- Una pieza que **no existe en `maestro_mee` NO entra y se DECLARA** en `avisos`. Un código mal
+  tecleado que entra igual crea stock fantasma que nadie puede reponer (M100).
+- `mee_partes.incluido_default` (mig 418) es **memoria, no regla**: premarca la casilla la próxima
+  vez. Un dato que alguien tiene que recordar termina viejo (M109).
+- La respuesta devuelve `partes_ingresadas` NOMBRÁNDOLAS. Sumarlas al total dejaría a quien recibe
+  sin forma de verificar que el gotero quedó registrado.
+
+Tests: `tests/test_recepcion_partes_envase.py` (en el gate).

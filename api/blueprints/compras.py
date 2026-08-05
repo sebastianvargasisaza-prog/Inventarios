@@ -6487,17 +6487,65 @@ def recibir_oc(numero_oc):
                 # Sin codigo_mp no se puede imputar el MEE · un INSERT con
                 # mee_codigo='' + UPDATE que no matchea nada = drift permanente.
                 if codigo:
-                    # Sebastián 7-jul (audit ultracode · M45): el envase recibido por OC ENTRA EN CUARENTENA
-                    # (INVIMA · igual que la recepción manual inventario.py y que el toggle RECEPCION_AUTO_VIGENTE).
-                    # Antes el INSERT no pasaba `estado` → default VIGENTE → saltaba el gate de Calidad (mig 301).
-                    from database import recepcion_auto_vigente as _rav
-                    _estado_mee = 'VIGENTE' if _rav(cur) else 'CUARENTENA'
-                    # solo sumar al cache si entra VIGENTE · en CUARENTENA _get_mee_stock lo excluye (el cron
-                    # drift-sync alinea el cache stock_actual · M26).
+                    # ── UNA sola regla para las DOS puertas (Sebastián 30-jul) ────────────
+                    # *"aquí no deben caer en cuarentena de una, que ingresen a inventario para
+                    # ser usados"*. Esa decisión se había aplicado sólo a la recepción MANUAL:
+                    # el mismo frasco entraba DISPONIBLE si lo recibían por contenedor y
+                    # RETENIDO si venía con orden de compra. Dos puertas con reglas distintas
+                    # para el mismo hecho hacen que nadie sepa cuál creer (M161), y acá además
+                    # decidía si el envase se podía usar o no.
+                    #
+                    # La revisión de Calidad NO desaparece: sigue caja por caja, y lo que
+                    # rechace SALE del stock en ese momento (M126 · quitar un candado exige
+                    # decir qué lo reemplaza).
+                    # ⚠ Esto NO toca la materia prima: la MP sigue entrando en cuarentena.
+                    _estado_mee = 'VIGENTE'
                     if _estado_mee == 'VIGENTE':
-                        cur.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cant_recibida, codigo))
-                    cur.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha, estado) VALUES (?,?,?,?,?,?,?,?)",
-                               (codigo, 'Entrada', cant_recibida, numero_oc, f'Recepcion OC {numero_oc}', operador, fecha, _estado_mee))
+                        cur.execute("UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? WHERE codigo=?", (cant_recibida, codigo))
+                    # El kardex se llena COMPLETO, igual que la puerta manual. Antes esta rama
+                    # guardaba el número de OC como si fuera el LOTE y nada más: el prefill del
+                    # F01 llegaba vacío, el rótulo salía sin proveedor ni vencimiento y la
+                    # trazabilidad del envase quedaba peor que la de la recepción sin OC (M115:
+                    # un dato que se captura y se pierde en el camino termina inventado).
+                    _lote_mee = lote_proveedor or lote_num
+                    _obs_mee = f'Recepcion OC {numero_oc}'
+                    if not _lote_mee:
+                        from audit_helpers import lote_interno_mee as _lim
+                        _lote_mee = _lim(cur)
+                        _obs_mee += ' | [lote interno: el proveedor no envió lote]'
+                    if notas_item:
+                        _obs_mee += ' | ' + str(notas_item)[:200]
+                    cur.execute(
+                        "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, "
+                        " observaciones, responsable, fecha, estado, proveedor, oc_numero, "
+                        " fecha_vencimiento, n_cajas, unidades_por_caja) "
+                        "VALUES (?, 'Entrada', ?, 'und', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (codigo, cant_recibida, _lote_mee, _obs_mee, operador, fecha, _estado_mee,
+                         (prov_nombre or ''), numero_oc, (fv or ''), _nrec,
+                         round(cant_recibida / _nrec, 2) if _nrec else cant_recibida))
+                    _mid_mee = cur.lastrowid
+                    # Cada CAJA con su fila: es lo que Calidad dispone escaneando el rótulo. Sin
+                    # esto la revisión caja por caja no tiene qué revisar y el envase recibido
+                    # por OC queda fuera de la bandeja (M112: el par disparador↔destino).
+                    try:
+                        _det_mee = ir.get('envases_detalle')
+                        if not (isinstance(_det_mee, (list, tuple)) and len(_det_mee) > 0):
+                            _base = round(cant_recibida / _nrec, 2) if _nrec else cant_recibida
+                            _det_mee = [_base] * max(1, _nrec - 1) + [
+                                round(cant_recibida - _base * max(0, _nrec - 1), 2)]
+                        for _k, _q in enumerate(_det_mee, start=1):
+                            _qf = float(_q or 0)
+                            if _qf <= 0:
+                                continue
+                            cur.execute(
+                                "INSERT INTO mee_cajas_disposicion (mov_id, caja, estado, cantidad, "
+                                " dispuesto_por, dispuesto_at_utc) VALUES (?,?,'PENDIENTE',?,'','')",
+                                (_mid_mee, _k, round(_qf, 2)))
+                    except Exception as _ec:
+                        # Se registra y NO se traga: sin cajas el envase igual entró al stock,
+                        # pero Calidad no lo va a ver en su bandeja y hay que enterarse.
+                        log.warning('recibir_oc %s · no pude abrir las cajas de %s: %s',
+                                    numero_oc, codigo, _ec)
                 else:
                     log.warning('recibir_oc MEE sin codigo_mp · OC %s · item no imputado', numero_oc)
             else:

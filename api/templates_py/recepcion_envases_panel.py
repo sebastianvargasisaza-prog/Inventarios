@@ -51,6 +51,18 @@ PANEL_ENVASES_HTML = r'''
 #rt-env .env-oculto{display:none}
 #rt-env .env-ref{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
 #rt-env .env-ref > div{flex:1 1 280px}
+#rt-env .env-parte{display:flex;align-items:center;gap:14px;padding:11px 14px;border:1px solid var(--cx-border);
+  border-radius:11px;margin-bottom:8px;flex-wrap:wrap}
+#rt-env .env-parte.on{border-color:var(--cx-success);background:var(--cx-success-pale)}
+#rt-env .env-parte-nom{font-weight:700;font-size:13.5px;color:var(--cx-text)}
+#rt-env .env-parte-cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--cx-text-mute)}
+#rt-env .env-parte-sw{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+#rt-env .env-parte-b{border:1.5px solid var(--cx-border);background:transparent;color:var(--cx-text-soft);
+  border-radius:9px;padding:7px 13px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+#rt-env .env-parte-b.sel{background:var(--cx-success-pale);border-color:var(--cx-success);color:var(--cx-success-text)}
+#rt-env .env-parte-b.sel.no{background:var(--cx-bg-soft);border-color:var(--cx-border);color:var(--cx-text-mute)}
+#rt-env .env-parte-tot{font-size:11.5px;color:var(--cx-success-text);font-weight:700;width:100%}
+#rt-env .env-parte-falta{font-size:11.5px;color:var(--cx-danger-text);font-weight:700;width:100%}
 </style>
 
 <div class="env-card" style="background:var(--cx-primary-pale);border-left:4px solid var(--cx-primary)">
@@ -126,6 +138,19 @@ PANEL_ENVASES_HTML = r'''
         <div class="env-hint" style="margin-top:5px">Si no lo marc&aacute;s, entra directo y <b>no</b> aparece en la cola de Calidad.
         Marcalo cuando sea un envase nuevo que nadie ha validado todav&iacute;a.</div>
       </div>
+      <div class="env-w2" style="border-top:1px solid var(--cx-border);padding-top:14px">
+        <label>&iquest;Se arma con otras piezas?</label>
+        <div class="env-hint" style="margin-bottom:9px">Gotero, tapa, plegadiza&hellip; Declaralas ac&aacute;
+        <b>una vez</b> y en cada recepci&oacute;n el sistema te va a preguntar si vinieron adentro del bulto.
+        Es tambi&eacute;n lo que hace que el abastecimiento las compre con el frasco.</div>
+        <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1 1 260px"><select id="env-n-pieza"></select></div>
+          <div style="width:130px"><label>Por envase</label>
+            <input id="env-n-pieza-cant" type="number" min="0.01" step="0.5" value="1"></div>
+          <button class="env-btn ghost mini" onclick="envPiezaAgregar()">+ Agregar pieza</button>
+        </div>
+        <div id="env-n-piezas" class="env-hint" style="margin-top:9px">Ninguna pieza declarada todav&iacute;a.</div>
+      </div>
     </div>
     <div class="env-acciones">
       <button class="env-btn" onclick="envCrearRef()">Crear la referencia</button>
@@ -134,8 +159,20 @@ PANEL_ENVASES_HTML = r'''
   </div>
 </div>
 
+<div class="env-card env-oculto" id="env-partes-card">
+  <h3><span class="env-step">3</span>&iquest;Qu&eacute; trae el bulto?</h3>
+  <div class="env-hint" style="margin-bottom:12px">Este envase se arma con varias piezas. Marc&aacute;
+    las que vinieron <b>adentro de la caja</b>: esas entran al inventario junto con el frasco, con su
+    propio movimiento. Las que se compran sueltas no se tocan ac&aacute; &middot; entran por su propia
+    recepci&oacute;n.</div>
+  <div id="env-partes-lista"></div>
+  <div id="env-partes-vacio" class="env-hint env-oculto">Esta referencia no tiene piezas declaradas
+    en el maestro. Si lleva gotero, tapa o plegadiza, carg&aacute;selas y vuelven a aparecer ac&aacute;
+    la pr&oacute;xima vez.</div>
+</div>
+
 <div class="env-card">
-  <h3><span class="env-step">3</span>&iquest;En cu&aacute;ntas cajas lleg&oacute;?</h3>
+  <h3><span class="env-step">4</span>&iquest;En cu&aacute;ntas cajas lleg&oacute;?</h3>
   <div class="env-grid" style="max-width:660px">
     <div><label>N&uacute;mero de cajas</label><input id="env-ncajas" type="number" min="1" max="500" value="1"></div>
     <div><label>Unidades por caja</label><input id="env-porcaja" type="number" min="1" placeholder="200"></div>
@@ -194,10 +231,107 @@ function envFiltrar(){
     return '<option value="'+envEsc(x.codigo)+'">'+envEsc(x.codigo)+' &middot; '+envEsc(x.desc)+'</option>';
   }).join('')||'<option value="">(no hay coincidencias &middot; cre&aacute; la referencia)</option>';
 }
-function envRefSel(){ envShow('env-nueva', false); }
+function envRefSel(){ envShow('env-nueva', false); envCargarPartes(); }
 
-function envNuevaAbrir(){ envShow('env-nueva', true); envPreverCodigo(); }
+// ── ¿Qué trae el bulto? ──────────────────────────────────────────────────────
+// El maestro dice que el frasco LLEVA gotero (la receta del envase, no cambia). Que ESTE
+// embarque VINO con el gotero adentro es un hecho del EMBARQUE: el mismo frasco puede venir
+// armado de China y suelto de un proveedor local. Por eso se confirma al recibir y no allá.
+var ENV_PARTES = [];
+async function envCargarPartes(){
+  var cod = envG('env-ref');
+  ENV_PARTES = [];
+  if(!cod){ envShow('env-partes-card', false); return; }
+  try{
+    var r = await fetch('/api/mee/partes?codigo=' + encodeURIComponent(cod), {credentials:'same-origin'});
+    var j = await r.json();
+    ENV_PARTES = (j.partes || []).map(function(x){
+      return {codigo:x.codigo, desc:x.descripcion || x.codigo,
+              cxu: parseFloat(x.cantidad_por_unidad || 1) || 1,
+              en_maestro: x.en_maestro !== false,
+              incluida: !!x.incluido_default};
+    });
+  }catch(e){ ENV_PARTES = []; }
+  envShow('env-partes-card', true);
+  envPintarPartes();
+}
+function envSetParte(i, val){ if(ENV_PARTES[i]){ ENV_PARTES[i].incluida = val; envPintarPartes(); } }
+function envPintarPartes(){
+  var box = document.getElementById('env-partes-lista');
+  if(!box) return;
+  if(!ENV_PARTES.length){ box.innerHTML=''; envShow('env-partes-vacio', true); return; }
+  envShow('env-partes-vacio', false);
+  var uds = envTotalUnidades();
+  box.innerHTML = ENV_PARTES.map(function(p, i){
+    var tot = uds ? Math.round(uds * p.cxu) : 0;
+    var pie = '';
+    if(!p.en_maestro){
+      pie = '<div class="env-parte-falta">Esta pieza no existe en el maestro de envases, as&iacute; que '
+          + 'no puede entrar al inventario. Cre&aacute;la primero.</div>';
+    }else if(p.incluida && tot){
+      pie = '<div class="env-parte-tot">&#10003; entran ' + tot.toLocaleString('es-CO')
+          + ' al inventario junto con el frasco</div>';
+    }else if(p.incluida){
+      pie = '<div class="env-parte-tot">&#10003; se calcula al desplegar las cajas</div>';
+    }
+    return '<div class="env-parte' + (p.incluida ? ' on' : '') + '">'
+      + '<div><div class="env-parte-nom">' + envEsc(p.desc) + '</div>'
+      + '<div class="env-parte-cod">' + envEsc(p.codigo)
+      + (p.cxu !== 1 ? ' &middot; ' + p.cxu + ' por envase' : '') + '</div></div>'
+      + '<div class="env-parte-sw">'
+      + '<button type="button" class="env-parte-b' + (p.incluida ? ' sel' : '')
+      + '" onclick="envSetParte(' + i + ',true)">Vino adentro</button>'
+      + '<button type="button" class="env-parte-b' + (!p.incluida ? ' sel no' : '')
+      + '" onclick="envSetParte(' + i + ',false)">Se compra aparte</button>'
+      + '</div>' + pie + '</div>';
+  }).join('');
+}
+function envTotalUnidades(){
+  var t = 0; for(var i=0;i<ENV_CAJAS.length;i++) t += (parseFloat(ENV_CAJAS[i].cantidad)||0);
+  return t;
+}
+function envPartesPayload(){
+  return ENV_PARTES.filter(function(p){ return p.incluida && p.en_maestro; })
+                   .map(function(p){ return {codigo:p.codigo, cantidad_por_envase:p.cxu}; });
+}
+
+function envNuevaAbrir(){ envShow('env-nueva', true); envPreverCodigo(); envPiezasLlenar(); }
 function envNuevaCerrar(){ envShow('env-nueva', false); }
+
+// ── Piezas de una referencia NUEVA ──────────────────────────────────────────
+// Se declaran una sola vez, acá, porque son la RECETA del envase (qué lleva) y no cambian
+// embarque a embarque. Lo que sí cambia -- si vinieron adentro de la caja -- se confirma en
+// el paso 3 de cada recepción.
+var ENV_NPIEZAS = [];
+function envPiezasLlenar(){
+  var s=document.getElementById('env-n-pieza'); if(!s)return;
+  s.innerHTML='<option value="">-- eleg&iacute; la pieza del maestro --</option>'
+    + ENV_MAESTRO.map(function(x){
+        return '<option value="'+envEsc(x.codigo)+'">'+envEsc(x.codigo)+' &middot; '+envEsc(x.desc)+'</option>';
+      }).join('');
+}
+function envPiezaAgregar(){
+  var cod=envG('env-n-pieza');
+  if(!cod){alert('Elegi la pieza del maestro.');return;}
+  var cant=parseFloat(envG('env-n-pieza-cant')||'1')||0;
+  if(cant<=0){alert('La cantidad por envase tiene que ser mayor que cero.');return;}
+  for(var i=0;i<ENV_NPIEZAS.length;i++){
+    if(ENV_NPIEZAS[i].codigo===cod){ ENV_NPIEZAS[i].cantidad=cant; envPiezasPintar(); return; }
+  }
+  var m=ENV_MAESTRO.filter(function(x){return x.codigo===cod;})[0]||{};
+  ENV_NPIEZAS.push({codigo:cod, descripcion:m.desc||'', cantidad:cant});
+  envPiezasPintar();
+}
+function envPiezaQuitar(i){ ENV_NPIEZAS.splice(i,1); envPiezasPintar(); }
+function envPiezasPintar(){
+  var b=document.getElementById('env-n-piezas'); if(!b)return;
+  if(!ENV_NPIEZAS.length){ b.innerHTML='Ninguna pieza declarada todav&iacute;a.'; return; }
+  b.innerHTML=ENV_NPIEZAS.map(function(p,i){
+    return '<span class="env-parte-b sel" style="display:inline-block;margin:0 7px 7px 0;cursor:default">'
+      + envEsc(p.codigo) + ' &times; ' + p.cantidad
+      + ' <a href="#" onclick="envPiezaQuitar('+i+');return false;" style="text-decoration:none">&#10005;</a></span>';
+  }).join('');
+}
 function envArmarNombre(){
   var d=document.getElementById('env-n-desc'); if(!d || (d.value||'').trim()) return;
   d.placeholder=[envG('env-n-mat'), envG('env-n-color'), (envG('env-n-ml')?envG('env-n-ml')+' ml':'')]
@@ -223,7 +357,8 @@ async function envCrearRef(){
   var r=await fetch('/api/mee/crear-auto',{method:'POST',credentials:'same-origin',
     headers:{'Content-Type':'application/json','X-CSRF-Token':t},
     body:JSON.stringify({tipo:tipo,descripcion:desc,volumen_ml:parseFloat(ml||0)||0,
-      requiere_calificacion: !!(document.getElementById('env-n-calif')||{}).checked})});
+      requiere_calificacion: !!(document.getElementById('env-n-calif')||{}).checked,
+      partes:ENV_NPIEZAS})});
   var j=await r.json();
   if(!r.ok||!j.ok){alert('No se pudo crear: '+(j.error||r.status));return;}
   ENV_MAESTRO.unshift({codigo:j.codigo,desc:desc,unidad:'und'});
@@ -231,7 +366,15 @@ async function envCrearRef(){
   envFiltrar();
   var s=document.getElementById('env-ref'); if(s)s.value=j.codigo;
   envNuevaCerrar();
-  alert('Referencia creada: '+j.codigo+' - '+desc);
+  // Las piezas que el maestro NO aceptó se NOMBRAN. Antes viajaban en la respuesta y nadie las
+  // leía: el envase quedaba sin su gotero y sólo se notaba al envasar.
+  var _rech=(j.partes_rechazadas||[]);
+  alert('Referencia creada: '+j.codigo+' - '+desc
+    + (ENV_NPIEZAS.length ? '\npiezas declaradas: '+(ENV_NPIEZAS.length-_rech.length) : '')
+    + (_rech.length ? '\nNO se pudieron declarar: '
+        + _rech.map(function(x){return x.codigo+' ('+x.motivo+')';}).join(', ') : ''));
+  ENV_NPIEZAS=[]; envPiezasPintar();
+  envCargarPartes();   // el paso "¿qué trae?" ya muestra lo que se acaba de declarar
 }
 async function envAgregarUbic(tipo){
   var v=prompt('Valor nuevo de '+tipo+':','');
@@ -260,7 +403,7 @@ function envDesplegar(){
   var m=document.getElementById('env-msg'); if(m)m.innerHTML='';
   envPintarCajas();
 }
-function envSetCaja(i,v){ ENV_CAJAS[i].cantidad=parseFloat(v||0)||0; envKpis(); }
+function envSetCaja(i,v){ ENV_CAJAS[i].cantidad=parseFloat(v||0)||0; envKpis(); envPintarPartes(); }
 function envPintarCajas(){
   var h='';
   for(var i=0;i<ENV_CAJAS.length;i++){var c=ENV_CAJAS[i];
@@ -273,6 +416,7 @@ function envPintarCajas(){
   }
   var tb=document.getElementById('env-cajas-tb'); if(tb)tb.innerHTML=h;
   envKpis();
+  envPintarPartes();   // el total de piezas depende de las unidades del bulto
 }
 function envKpis(){
   var u=0; for(var i=0;i<ENV_CAJAS.length;i++) u+=(parseFloat(ENV_CAJAS[i].cantidad)||0);
@@ -287,13 +431,21 @@ async function envRecibir(){
     if(!(ENV_CAJAS[i].cantidad>0)){alert('La caja '+ENV_CAJAS[i].caja+' esta en 0.');return;}
     u+=ENV_CAJAS[i].cantidad;
   }
-  if(!confirm('Recibir '+ENV_CAJAS.length+' caja(s) de '+cod+' ('+u.toLocaleString('es-CO')+' unidades) en CUARENTENA?'))return;
+  // El texto del confirm dice lo que de verdad va a pasar: desde el 30-jul los envases entran
+  // DISPONIBLES (la revisión de Calidad dejó de ser un candado sobre el stock). Decía
+  // "en CUARENTENA" y contradecía al propio encabezado de la pantalla.
+  var _pz=envPartesPayload();
+  var _txtP=_pz.length ? ('\ncon ' + _pz.length + ' pieza(s) incluidas: '
+              + _pz.map(function(x){return x.codigo;}).join(', ')) : '';
+  if(!confirm('Recibir '+ENV_CAJAS.length+' caja(s) de '+cod+' ('+u.toLocaleString('es-CO')
+      +' unidades)?'+_txtP+'\nEntra DISPONIBLE en inventario.'))return;
   if(!ENV_TOKEN){ENV_TOKEN=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('t'+Date.now()+Math.random());}
   var zona=[envG('env-zona'),envG('env-est'),envG('env-pos')].filter(function(x){return x;}).join(' / ');
   var body={proveedor:envG('env-prov'),factura_numero:envG('env-fact'),zona:zona,
             oc_numero:envG('env-oc'),recepcion_id:ENV_TOKEN,
             lineas:[{codigo:cod,lote_proveedor:envG('env-lote'),
-                     cajas_detalle:ENV_CAJAS.map(function(c){return c.cantidad;})}]};
+                     cajas_detalle:ENV_CAJAS.map(function(c){return c.cantidad;}),
+                     partes:_pz}]};
   var btn=document.getElementById('env-b-recibir'); if(btn)btn.disabled=true;
   var t=await envCsrf();
   var r=await fetch('/api/mee/recepcion-lineas',{method:'POST',credentials:'same-origin',
@@ -306,10 +458,21 @@ async function envRecibir(){
   ENV_MOV=mv.mov_id||null;
   envPintarCajas();
   envShow('env-b-todos', true); envShow('env-b-otra', true);
+  // Las piezas que entraron se NOMBRAN una por una. Sumarlas al total dejaría a quien recibe
+  // sin forma de verificar que el gotero quedó registrado, que es justo lo que este paso viene
+  // a garantizar.
+  var _pi=(j.partes_ingresadas||[]);
+  var _htmlP = _pi.length
+    ? '<div style="margin-top:8px">Adem&aacute;s entraron las piezas que vinieron adentro: '
+      + _pi.map(function(x){ return '<b>'+envEsc(x.codigo)+'</b> ('
+          + Number(x.cantidad).toLocaleString('es-CO')+')'; }).join(' &middot; ') + '.</div>'
+    : '';
+  var _htmlA = (j.avisos||[]).length
+    ? '<div class="env-err">'+(j.avisos||[]).map(envEsc).join('<br>')+'</div>' : '';
   if(msg)msg.innerHTML='<div class="env-ok"><b>Recibido y disponible en inventario.</b> '+ENV_CAJAS.length
     +' caja(s) &middot; '+u.toLocaleString('es-CO')+' unidades. Ya pod&eacute;s imprimir el r&oacute;tulo de cada caja: '
     +'cada uno lleva su c&oacute;digo de barras <b>MEE-'+ENV_MOV+'-(caja)</b>, que es lo que Calidad escanea '
-    +'para revisar esa caja.</div>';
+    +'para revisar esa caja.'+_htmlP+'</div>'+_htmlA;
   ENV_HECHAS.push({codigo:cod,lote:envG('env-lote'),cajas:ENV_CAJAS.length,unidades:u,mov:ENV_MOV});
   envPintarHechas();
 }
@@ -326,6 +489,9 @@ function envPintarHechas(){
 function envRotulosTodos(){ if(ENV_MOV) window.open('/rotulos-recepcion-mee?mov='+ENV_MOV,'_blank'); }
 function envOtraRef(){
   ENV_CAJAS=[]; ENV_MOV=null; ENV_TOKEN=null;
+  // Las piezas son de la referencia anterior: si no se limpian, la próxima recepción arrastra
+  // el gotero del frasco que se acaba de recibir (M113: un estado que sobrevive al reset miente).
+  ENV_PARTES=[]; envShow('env-partes-card', false);
   envShow('env-cajas-wrap', false); envShow('env-b-todos', false); envShow('env-b-otra', false);
   ['env-lote','env-buscar','env-n-desc','env-n-ml','env-n-color'].forEach(function(id){var e=document.getElementById(id); if(e)e.value='';});
   envFiltrar();

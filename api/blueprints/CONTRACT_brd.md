@@ -602,3 +602,42 @@ producción, y hay un test que verifica que **compras sigue afuera** (ampliar un
 el borde es cambiar un control por una puerta abierta).
 
 Tests: `tests/test_ipc_estandar_sod.py` (en el gate · 9 casos).
+
+
+## 📦 INV-19 · El envase sale UNA vez del kardex · un solo libro mayor (5-ago)
+
+Había **dos cierres** que descontaban el mismo empaque, desde la misma fuente, cada uno con su
+propio candado, y ninguno miraba el del otro:
+
+| cierre | de dónde saca los códigos | qué marca |
+|---|---|---|
+| `POST /api/brd/ebr/<id>/cerrar-envasado` (OF) | `producto_presentaciones` | `ebr_ejecuciones.envases_descontados_at` |
+| cierre de acondicionamiento del Kanban (OA) | `produccion_checklist` | `produccion_checklist.consumido_at` |
+
+Y el checklist **se pre-llena desde `producto_presentaciones`** (`programacion.py:21371`), o sea
+exactamente los mismos códigos. Cada CAS impedía que SU camino repitiera; en el flujo normal
+(envasar → acondicionar) los dos corren sobre el mismo lote físico, así que **el frasco, la tapa y
+la caja salían DOS VECES**: el kardex mostraba menos envases de los que hay en el estante y
+abastecimiento los volvía a pedir.
+
+**La regla: un hecho, un libro mayor.** `produccion_checklist.consumido_at` es el registro de
+*"este envase, para esta producción, ya salió"*, y los DOS caminos lo leen y lo escriben. El cierre
+de envasado:
+1. **salta** lo que el checklist ya marcó (`_ya_consumido`) — descontarlo otra vez es inventar un
+   consumo que no ocurrió;
+2. **reclama con CAS** lo que sí descuenta (`WHERE id=? AND COALESCE(consumido_at,'')=''` +
+   `rowcount`), ANTES de tocar el kardex. Con 3 workers, leer-y-después-marcar deja pasar los dos
+   (M27/M73).
+
+No se agregó un tercer candado: el problema era justamente que había dos candados distintos para el
+mismo hecho. Sin `produccion_id` no hay libro que consultar (legajo suelto): descuenta como antes
+pero lo **DECLARA** (`sin_libro_mayor` en la respuesta y en el audit) — un descuento que no se pudo
+coordinar no se puede presentar como coordinado (M124).
+
+**⚠ Hueco conocido, NO cerrado (decisión de producto pendiente):** `brd.py` no lee
+`marcacion_ordenes` en ninguna línea, así que el frasco que volvió **serigrafiado** nunca se
+consume y se re-descuenta el BASE — la causa (a) de M147 sigue viva en el camino real. Y la Salida
+va con un `INSERT` crudo en vez de `aplicar_movimiento_mee`, salteándose el clamp y el cache.
+
+Tests: `tests/test_doble_descuento_envase.py` (en el gate · incluye el recorrido de los DOS cierres
+contando el kardex).

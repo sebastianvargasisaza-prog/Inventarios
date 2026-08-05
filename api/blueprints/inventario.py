@@ -15255,7 +15255,13 @@ def mee_crear_auto():
 
 @bp.route('/api/mee/partes', methods=['GET'])
 def mee_partes_de_empaque():
-    """Partes (componentes) de un empaque · para la recepción múltiple (Sebastián 28-jun)."""
+    """Partes (componentes) de un empaque · para la recepción múltiple (Sebastián 28-jun).
+
+    `incluido_default` (mig 418) es MEMORIA, no regla: dice si la última vez que llegó este
+    envase la pieza venía adentro del bulto, para premarcarla en la recepción. Que el frasco
+    LLEVE gotero lo dice el maestro; que ESTE embarque haya VENIDO con el gotero es un hecho
+    del embarque, y por eso quien recibe lo confirma cada vez.
+    """
     _u, _err, _code = _require_planta_write()
     if _err:
         return _err, _code
@@ -15264,21 +15270,30 @@ def mee_partes_de_empaque():
         return jsonify({'partes': []})
     conn = get_db(); c = conn.cursor()
     out = []
+    aviso = ''
     try:
         rows = c.execute(
             """SELECT p.parte_codigo,
                       COALESCE(NULLIF(p.descripcion,''), m.descripcion, p.parte_codigo) AS descripcion,
-                      COALESCE(p.cantidad,1)
+                      COALESCE(p.cantidad,1),
+                      COALESCE(p.incluido_default,0),
+                      CASE WHEN m.codigo IS NULL THEN 0 ELSE 1 END AS en_maestro
                FROM mee_partes p
                LEFT JOIN maestro_mee m ON UPPER(TRIM(m.codigo))=UPPER(TRIM(p.parte_codigo))
                WHERE UPPER(TRIM(p.mee_codigo))=UPPER(TRIM(?))
                ORDER BY p.id""", (cod,)).fetchall()
         for r in rows:
             if r[0]:
-                out.append({'codigo': r[0], 'descripcion': r[1], 'cantidad_por_unidad': r[2]})
-    except Exception:
-        pass
-    return jsonify({'partes': out})
+                out.append({'codigo': r[0], 'descripcion': r[1], 'cantidad_por_unidad': r[2],
+                            'incluido_default': int(r[3] or 0),
+                            'en_maestro': bool(r[4])})
+    except Exception as _e:
+        # Un `except` mudo acá convierte "no pude leer las piezas" en "este envase no tiene
+        # piezas", que es indistinguible de la verdad y hace recibir un frasco sin su gotero.
+        import logging as _lg
+        _lg.getLogger('inventario').warning('partes de %s: %s', cod, _e)
+        aviso = 'No pude leer las piezas de este envase · revisalas en el maestro'
+    return jsonify({'partes': out, 'aviso': aviso})
 
 
 @bp.route('/api/mee/<codigo>/partes', methods=['POST'])
@@ -15562,6 +15577,34 @@ def mee_registrar_movimiento():
         'message': f'{tipo} de {cantidad:.0f} {unidad} registrada para {mee[1]}'
     })
 
+def _partes_incluidas(l):
+    """Las partes que VINIERON EN EL BULTO, tal como las confirmo quien recibe.
+
+    Formato: `[{'codigo': 'GO-NEG-18', 'cantidad_por_envase': 1}]`. Sólo llegan acá las que la
+    persona marcó como incluidas -- las que se compran sueltas no viajan, porque su stock lo
+    mueve su propia recepción.
+
+    `cantidad_por_envase` viene de `mee_partes.cantidad` (un frasco puede llevar 2 tapas), y se
+    multiplica por las unidades recibidas. No se teclea el total: si se tecleara, el día que las
+    unidades del bulto cambien los dos números divergen (M71).
+    """
+    out = []
+    for x in (l.get('partes') or []):
+        if not isinstance(x, dict):
+            continue
+        cod = str(x.get('codigo') or '').strip()
+        if not cod:
+            continue
+        try:
+            cxu = float(x.get('cantidad_por_envase') or 1)
+        except (TypeError, ValueError):
+            cxu = 1.0
+        if cxu <= 0:
+            continue
+        out.append({'codigo': cod, 'cantidad_por_envase': cxu})
+    return out
+
+
 def _mee_lineas_normalizar(lineas):
     """Normaliza las líneas del packing list y DERIVA la cantidad de las cajas.
 
@@ -15618,6 +15661,7 @@ def _mee_lineas_normalizar(lineas):
                 'unidades_por_caja': cajas_det[0],
                 'unidades_ultima_caja': (cajas_det[-1] if len(cajas_det) > 1 else None),
                 'cajas_detalle': cajas_det,
+                'partes': _partes_incluidas(l),
                 'fecha_vencimiento': str(l.get('fecha_vencimiento') or '').strip(),
                 'observaciones': str(l.get('observaciones') or '').strip()[:300],
                 'linea': i,
@@ -15646,6 +15690,7 @@ def _mee_lineas_normalizar(lineas):
             'codigo': cod, 'lote': lote, 'cantidad': round(cantidad, 2),
             'n_cajas': n_cajas, 'unidades_por_caja': round(por_caja, 2),
             'unidades_ultima_caja': (round(ultima, 2) if ultima is not None else None),
+            'partes': _partes_incluidas(l),
             'cajas_detalle': None,
             'fecha_vencimiento': str(l.get('fecha_vencimiento') or '').strip(),
             'observaciones': str(l.get('observaciones') or '').strip()[:300],
@@ -15754,31 +15799,13 @@ def mee_recepcion_lineas():
     oc_num = str(d.get('oc_numero') or '').strip()[:40]
     zona = str(d.get('zona') or '').strip()[:80]
 
-    def _lote_interno(c_, cod_):
-        """Lote INTERNO cuando el proveedor no manda uno (Sebastián 30-jul: *"es posible que
-        no tengan lote · qué tal si ponés la opción de lote interno"*).
+    # El lote interno se mudó a `audit_helpers.lote_interno_mee` (punto ÚNICO · M1): la puerta
+    # de la ORDEN DE COMPRA también lo necesita, y dos puertas con su propio correlativo
+    # producen dos series que se pisan.
+    from audit_helpers import lote_interno_mee as _lote_interno_mee
 
-        Forma: `INT-AAMMDD-NNN`. Lleva la fecha de recepción (que es el hecho que lo origina) y
-        un correlativo del día, así que dos referencias del mismo contenedor no comparten lote:
-        si mañana hay un reclamo, el lote apunta a UNA recepción concreta y no a "lo que llegó
-        ese día". El prefijo INT- lo distingue a simple vista de un lote del proveedor -- que se
-        confundan sería peor que no tener lote (M115: sin dato no se inventa un default que
-        parezca real).
-        """
-        import re as _re_l
-        base = 'INT-' + (datetime.utcnow() - timedelta(hours=5)).strftime('%y%m%d') + '-'
-        mx = 0
-        try:
-            for (lr,) in c_.execute(
-                    "SELECT lote_ref FROM movimientos_mee WHERE COALESCE(lote_ref,'') LIKE ?",
-                    (base + '%',)).fetchall():
-                m_ = _re_l.match(r'^' + _re_l.escape(base) + r'(\d+)$', str(lr or '').strip())
-                if m_:
-                    mx = max(mx, int(m_.group(1)))
-        except Exception as _eli:
-            import logging as _lgi
-            _lgi.getLogger('inventario').warning('correlativo de lote interno: %s', _eli)
-        return base + '%03d' % (mx + 1)
+    def _lote_interno(c_, cod_):
+        return _lote_interno_mee(c_)
     # Sebastián 30-jul: *"aquí no deben caer en cuarentena de una, que ingresen a inventario
     # para ser usados; lo que queda es para Calidad revisar estados, pero no en cuarentena"*.
     # Los envases entran DISPONIBLES y la revisión de Calidad deja de ser un candado sobre el
@@ -15791,6 +15818,20 @@ def mee_recepcion_lineas():
     # dispone. Antes nacía con el estado del movimiento y eso mezclaba dos cosas distintas
     # (dónde está el material vs si alguien ya lo miró).
     estado_caja = 'CUARENTENA' if cuarentena else 'PENDIENTE'
+
+    # Las partes que quien recibe marcó como incluidas · se cruzan contra el maestro en UNA
+    # consulta (no una por parte) y lo que no exista se DECLARA en vez de entrar como fantasma.
+    _partes_cods = sorted({(x['codigo'] or '').strip().upper()
+                           for l in lineas for x in (l.get('partes') or [])})
+    _partes_maestro = {}
+    if _partes_cods:
+        _phP = ','.join(['?'] * len(_partes_cods))
+        for r in c.execute(
+            "SELECT UPPER(TRIM(codigo)), codigo, COALESCE(descripcion,''), COALESCE(unidad,'und') "
+            f"FROM maestro_mee WHERE UPPER(TRIM(codigo)) IN ({_phP})", _partes_cods).fetchall():
+            _partes_maestro[r[0]] = {'codigo': r[1], 'descripcion': r[2], 'unidad': r[3]}
+    _partes_sin_maestro = []
+    partes_movs = []
 
     movs = []
     for l in lineas:
@@ -15835,6 +15876,55 @@ def mee_recepcion_lineas():
                                 'rotulo_url': '/rotulos-recepcion-mee?mov=%d&caja=%d' % (_mid, _k)}
                                for _k, _q in enumerate(_det, start=1)]})
 
+        # ── LAS PARTES QUE VINIERON EN EL BULTO (Sebastián 5-ago) ──────────────────────
+        # *"si lo compramos con plegadiza y llega con plegadiza desde China, ALLÍ es donde debe
+        # vivir todo porque allí se da la recepción"*. Cada parte que quien recibe marcó como
+        # incluida entra al inventario con su propio movimiento, por la cantidad que de verdad
+        # llegó (unidades del bulto × piezas por envase).
+        #
+        # Movimiento PROPIO y no una anotación: el gotero es un material con su código, su stock
+        # y su consumo. Si entrara como un atributo del frasco, el día que se envase no habría de
+        # dónde descontarlo. Y queda amarrado al movimiento del frasco por `[recep #N]`, así que
+        # se puede deshacer entero si la recepción estuvo mal.
+        for _pt in (l.get('partes') or []):
+            _pcod = _pt['codigo'].strip().upper()
+            _pm = _partes_maestro.get(_pcod)
+            if not _pm:
+                # Una parte que no existe en el maestro NO se inventa: se declara. Un código mal
+                # tecleado que entra igual crea stock fantasma que nadie puede reponer.
+                _partes_sin_maestro.append(_pt['codigo'])
+                continue
+            _pcant = round(float(l['cantidad']) * float(_pt['cantidad_por_envase']), 2)
+            if _pcant <= 0:
+                continue
+            c.execute(
+                # ⚠ Las columnas son `zona` y `factura_numero` (mig del 9-jul), NO `ubicacion`
+                # ni `factura`: copiar el bloque de al lado y cambiarle los nombres de memoria
+                # es exactamente cómo nace una columna fantasma (M12a/M96).
+                "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, "
+                " responsable, observaciones, proveedor, zona, fecha_vencimiento, "
+                " oc_numero, factura_numero, estado) "
+                "VALUES (?, 'Entrada', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (_pm['codigo'], _pcant, _pm['unidad'], l['lote'], _u,
+                 'Vino incluida en %s · [recep #%d]' % (m['codigo'], _mid),
+                 proveedor, zona, l['fecha_vencimiento'], oc_num, factura, estado))
+            _pmid = c.lastrowid
+            if estado != 'CUARENTENA':
+                c.execute("UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? "
+                          " WHERE codigo=?", (_pcant, _pm['codigo']))
+            partes_movs.append({'mov_id': _pmid, 'codigo': _pm['codigo'],
+                                'descripcion': _pm['descripcion'], 'cantidad': _pcant,
+                                'de_envase': m['codigo']})
+            # La próxima vez viene premarcada: es memoria de lo que suele pasar, no una decisión.
+            try:
+                c.execute("UPDATE mee_partes SET incluido_default=1 "
+                          " WHERE UPPER(TRIM(mee_codigo))=? AND UPPER(TRIM(parte_codigo))=?",
+                          (m['codigo'].strip().upper(), _pcod))
+            except Exception as _eid:
+                import logging as _lgid
+                _lgid.getLogger('inventario').warning(
+                    'no pude recordar que %s viene incluida en %s: %s', _pcod, m['codigo'], _eid)
+
     try:
         from audit_helpers import audit_log as _al
         _al(c, usuario=_u, accion='RECEPCION_ENVASES_LINEAS', tabla='movimientos_mee',
@@ -15842,7 +15932,8 @@ def mee_recepcion_lineas():
             despues={'lineas': len(movs), 'unidades': _tot_u, 'cajas': _tot_c,
                      'proveedor': proveedor, 'factura': factura, 'oc': oc_num,
                      'estado': estado, 'movs': [x['mov_id'] for x in movs]},
-            detalle=f'Recepción de envases · {len(movs)} línea(s) · {_tot_c} caja(s) · {_tot_u:.0f} und')
+            detalle=f'Recepción de envases · {len(movs)} línea(s) · {_tot_c} caja(s) · {_tot_u:.0f} und'
+                    + (f' · {len(partes_movs)} parte(s) incluida(s)' if partes_movs else ''))
     except Exception as _ae:
         import logging as _lg
         _lg.getLogger('inventario').warning('audit recepcion_envases falló: %s', _ae)
@@ -15873,7 +15964,14 @@ def mee_recepcion_lineas():
         'ok': True, 'recibidas': len(movs), 'movimientos': movs,
         'total_unidades': _tot_u, 'total_cajas': _tot_c, 'estado': estado,
         'rotulos_url': '/rotulos-recepcion-mee?movs=' + ','.join(str(x['mov_id']) for x in movs),
-        'avisos': avisos,
+        # Las partes que vinieron adentro entran con su propio movimiento · se devuelven aparte
+        # para que la pantalla pueda decir QUÉ entró además del frasco. Si sólo se sumaran al
+        # total, quien recibe no tendría forma de verificar que el gotero quedó registrado.
+        'partes_ingresadas': partes_movs,
+        'avisos': avisos + ([
+            'No pude ingresar estas partes porque no existen en el maestro: '
+            + ', '.join(sorted(set(_partes_sin_maestro))) + ' · creálas y recibilas aparte'
+        ] if _partes_sin_maestro else []),
     }), 201
 
 

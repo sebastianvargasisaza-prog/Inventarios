@@ -360,3 +360,37 @@ def agregar_parte_envase(c, *, envase, parte, descripcion='', cantidad=1, usuari
     except Exception as e:
         log.warning('agregar_parte_envase(%s, %s) falló: %s', env, par, e)
         return False, 'no se pudo declarar la pieza: %s' % str(e)[:120]
+
+
+def lote_interno_mee(c):
+    """Lote INTERNO para un envase cuyo proveedor no manda lote · punto ÚNICO (M1).
+
+    Sebastián 30-jul: *"es posible que no tengan lote, qué tal si ponés la opción de lote
+    interno"*. Forma `INT-AAMMDD-NNN`: lleva la fecha de recepción (el hecho que lo origina) y
+    un correlativo del día, así que dos referencias del mismo contenedor no comparten lote -- si
+    mañana hay un reclamo, el lote apunta a UNA recepción concreta y no a "lo que llegó ese día".
+
+    El prefijo `INT-` lo distingue a simple vista de un lote del proveedor: que se confundan
+    sería peor que no tener lote (M115 · sin dato no se inventa un default que parezca real).
+
+    Vive acá y no dentro de una vista porque lo usan las DOS puertas de recepción de envases (la
+    manual y la de orden de compra). Cuando cada puerta arma su propio lote, la numeración se
+    parte en dos series que se pisan (M99).
+    """
+    import re as _re
+    from datetime import timedelta as _td
+    base = 'INT-' + (datetime.utcnow() - _td(hours=5)).strftime('%y%m%d') + '-'
+    mx = 0
+    try:
+        for (lr,) in c.execute(
+                "SELECT lote_ref FROM movimientos_mee WHERE COALESCE(lote_ref,'') LIKE ?",
+                (base + '%',)).fetchall():
+            m = _re.match(r'^' + _re.escape(base) + r'(\d+)$', str(lr or '').strip())
+            if m:
+                mx = max(mx, int(m.group(1)))
+    except Exception as e:
+        # Un except mudo acá arrancaría el correlativo en 001 y CHOCARÍA con el lote de otra
+        # recepción del mismo día: dos materiales distintos bajo el mismo lote es lo peor que
+        # le puede pasar a la trazabilidad.
+        log.warning('correlativo de lote interno MEE: %s', e)
+    return base + '%03d' % (mx + 1)

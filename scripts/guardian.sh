@@ -72,6 +72,10 @@ CORAZON=(
   "tests/test_diag_envases_partes.py"
   "tests/test_envase_partes_se_descuentan.py"
   "tests/test_envase_cliente_y_partes_helper.py"
+  "tests/test_recepcion_partes_envase.py"
+  "tests/test_recepcion_oc_envases.py"
+  "tests/test_union_producto_envase.py"
+  "tests/test_doble_descuento_envase.py"
   "tests/test_segregacion_funciones.py"
   "tests/test_densidad_puente_op_of.py"
   "tests/test_legajo_trazabilidad_responsables.py"
@@ -646,6 +650,16 @@ fi
 # (sin pipefail, el pipe a tail siempre exit 0 y el bug se traga).
 set -o pipefail
 START=$(date +%s)
+# El hash del arbol se toma ANTES de correr, porque es el arbol que la suite VA A PROBAR.
+# 5-ago: se tomaba al final, y una corrida de 18 min en la que se sigue editando terminaba
+# sellando archivos que la suite nunca vio -- el mismo hueco de M143 por el otro lado. Si el
+# arbol cambio durante la corrida, el sello no coincide con el de ahora y el hook vuelve a
+# correr la suite, que es exactamente lo que tiene que pasar.
+_TMPIDX_PRE="$(mktemp)"
+GIT_INDEX_FILE="$_TMPIDX_PRE" git read-tree HEAD 2>/dev/null
+GIT_INDEX_FILE="$_TMPIDX_PRE" git add -A 2>/dev/null
+_TREE_PRE=$(GIT_INDEX_FILE="$_TMPIDX_PRE" git write-tree 2>/dev/null || echo "")
+rm -f "$_TMPIDX_PRE"
 if "$PYTHON_BIN" -m pytest "${TESTS[@]}" -q --tb=line 2>&1 | tail -10; then
   END=$(date +%s)
   echo ""
@@ -659,11 +673,16 @@ if "$PYTHON_BIN" -m pytest "${TESTS[@]}" -q --tb=line 2>&1 | tail -10; then
   # El hash va sobre los ARCHIVOS EN DISCO (indice temporal), que es lo que la suite acaba de
   # probar. Con `git write-tree` a secas seria el del indice, y un cambio sin `git add` dejaria
   # el sello valido para un codigo que nunca se testeo.
-  _TMPIDX="$(mktemp)"
-  GIT_INDEX_FILE="$_TMPIDX" git read-tree HEAD 2>/dev/null
-  GIT_INDEX_FILE="$_TMPIDX" git add -A 2>/dev/null
-  _TREE=$(GIT_INDEX_FILE="$_TMPIDX" git write-tree 2>/dev/null || echo "")
-  rm -f "$_TMPIDX"
+  # Se sella el arbol de ANTES de correr (el que se probo), no el de ahora: si alguien edito
+  # durante los 18 minutos, ese codigo no lo vio nadie y no puede quedar aprobado.
+  _TREE="$_TREE_PRE"
+  _TREE_POST="$( { _t="$(mktemp)"; GIT_INDEX_FILE="$_t" git read-tree HEAD 2>/dev/null; \
+                   GIT_INDEX_FILE="$_t" git add -A 2>/dev/null; \
+                   GIT_INDEX_FILE="$_t" git write-tree 2>/dev/null; rm -f "$_t"; } )"
+  if [ -n "$_TREE_POST" ] && [ "$_TREE_POST" != "$_TREE" ]; then
+    echo "    ⚠ el arbol CAMBIO durante la corrida · se sella lo que se probo, no lo de ahora"
+    echo "      (el proximo push vuelve a correr la suite completa · asi debe ser)"
+  fi
   if [ -n "$_TREE" ]; then
     mkdir -p "$REPO_ROOT/.git/eos"
     printf '%s %s
