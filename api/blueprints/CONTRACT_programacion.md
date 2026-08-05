@@ -990,3 +990,20 @@ Tests: `tests/test_marcacion_ciclo_real.py` (en el gate).
 **+ `slots_kg` se siembra desde la BD.** El tope de 200 kg/día de los generadores contaba sólo
 los lotes creados en esa corrida: `slots` (cantidad) sí leía lo ya agendado y `slots_kg` arrancaba
 vacío, así que el tope se cumplía dentro de la tanda y se incumplía contra el calendario real.
+
+## 🚦 PROG-N+12 · La urgencia de una orden de marcación se DERIVA de la fecha (4-ago)
+
+`marcacion-ordenes` devolvía `'urgencia': (r[13] or _urg)`, donde `r[13]` es la columna
+`urgencia` — que se escribe **una sola vez** al crear la orden, con el valor `'media'`, y nunca
+se recalcula. Como `'media'` siempre es truthy, el `or` **jamás llegaba al cálculo real**
+(`vencido` / `urgente` / `proximo` / `ok`, derivado de `fecha_alistar`).
+
+Resultado: el semáforo de "Alistar envases" estaba **muerto**. Todo salía amarillo, y una orden
+vencida hace cinco días se pintaba igual que una recién creada — con el texto "hace 5d" al lado,
+en amarillo.
+
+**Invariante:** `urgencia` se calcula SIEMPRE desde `fecha_alistar` contra hoy-Colombia. La marca
+manual viaja aparte en `urgencia_manual` y **no puede tapar el cálculo**. Es M109: un indicador
+que alguien tiene que acordarse de actualizar termina viejo y deja de mirarse.
+
+Tests: `tests/test_calendario_no_miente.py` (en el gate).
