@@ -27123,6 +27123,58 @@ def planta_plan_semanal():
         ORDER BY pp.fecha_programada ASC, pp.id ASC
     """, (fecha_desde, fecha_hasta)).fetchall()
 
+    # ── PRECARGA (5-ago) · lo que antes eran ~1.200 consultas dentro del loop ──────────
+    # Por cada produccion (~30) y por cada MP de su formula (~20) se hacian DOS consultas: el
+    # nombre del material y su stock. Con 3 workers, dos personas abriendo esta pantalla a la
+    # vez dejaban la app entera sin atender (M43).
+    #
+    # ⚠ Un atajo puede ACELERAR la respuesta, no CAMBIARLA (M128). Por eso:
+    #   · el SUM usa el CASE IDENTICO al de `stock_mp_total` -- que incluye cuarentena a
+    #     proposito, porque el plan mira consumo FUTURO y si llegan de QC a tiempo van a contar;
+    #   · lo que no este en el precalculado NO se asume cero: cae al helper de siempre.
+    _nombre_mat = {}
+    try:
+        for _r in c.execute(
+            "SELECT material_id, MAX(material_nombre) FROM formula_items "
+            " WHERE COALESCE(material_id,'')<>'' GROUP BY material_id").fetchall():
+            _nombre_mat[str(_r[0])] = _r[1] or str(_r[0])
+    except Exception as _enm:
+        log.warning('plan-semanal: no pude precargar los nombres de MP: %s', _enm)
+
+    _stock_mat = {}
+    try:
+        for _r in c.execute(
+            "SELECT material_id, COALESCE(SUM(CASE "
+            "         WHEN tipo IN ('Entrada','Ajuste +','Ajuste') THEN cantidad "
+            "         WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad ELSE 0 END),0) "
+            "  FROM movimientos WHERE COALESCE(material_id,'')<>'' "
+            " GROUP BY material_id").fetchall():
+            _stock_mat[str(_r[0])] = float(_r[1] or 0)
+    except Exception as _esm:
+        # Si la precarga falla NO se cae a cero: el loop usa el helper de siempre y la pantalla
+        # sale bien, solo mas lenta. Un stock en cero seria un deficit inventado.
+        log.warning('plan-semanal: no pude precargar el stock de MP (%s) · voy por el camino lento', _esm)
+        _stock_mat = None
+
+    def _stock_precargado(mid):
+        if _stock_mat is not None and mid in _stock_mat:
+            return _stock_mat[mid]
+        return _stock_mp(mid, c)
+
+    # ── VELOCIDAD DE VENTA · de `ventas_diarias`, la tabla que el cron precalcula ──────
+    # La consulta que habia estaba DESACTIVADA con `if False` porque apunta a
+    # `ordenes_shopify_items`, que no existe -- y nadie la reemplazo. Resultado: `velocidad_dia`
+    # valia 0 SIEMPRE, `dias_inv` quedaba en None y la columna "dias de inventario" salia en
+    # GRIS en todas las filas, desde que se escribio.
+    _vel_sku = {}
+    try:
+        for _r in c.execute(
+            "SELECT sku, COALESCE(SUM(cantidad),0)/60.0 FROM ventas_diarias "
+            " WHERE fecha >= date('now','-5 hours','-60 days') GROUP BY sku").fetchall():
+            _vel_sku[str(_r[0]).strip().upper()] = float(_r[1] or 0)
+    except Exception as _evs:
+        log.warning('plan-semanal: no pude leer la velocidad de venta: %s', _evs)
+
     # 2) Consumo acumulado por material — fluye según orden temporal
     consumo_acumulado = {}  # material_id -> g acumulados
     items = []
@@ -27139,9 +27191,8 @@ def planta_plan_semanal():
         mp_req_resuelto = {}
         nombre_por_cod = {}
         for _mid_raw, _rg in mp_req.items():
-            _nr = c.execute("SELECT material_nombre FROM formula_items WHERE material_id=? LIMIT 1",
-                            (_mid_raw,)).fetchone()
-            _nom = (_nr[0] if _nr else _mid_raw)
+            # El nombre sale del dict precargado · antes era una consulta por MP por produccion.
+            _nom = _nombre_mat.get(str(_mid_raw), _mid_raw)
             _cod = _resolver_material_bodega(c, str(_mid_raw), _nom) or str(_mid_raw)
             mp_req_resuelto[_cod] = mp_req_resuelto.get(_cod, 0) + _rg
             nombre_por_cod.setdefault(_cod, _nom)
@@ -27150,7 +27201,7 @@ def planta_plan_semanal():
         mp_status = []
         deficit = []
         for mat_id, req_g in mp_req_resuelto.items():
-            stock_total = _stock_mp(mat_id, c)
+            stock_total = _stock_precargado(mat_id)
             ya_reservado = consumo_acumulado.get(mat_id, 0)
             disp_neto = stock_total - ya_reservado
             mat_nom = nombre_por_cod.get(mat_id, mat_id)
@@ -27180,10 +27231,10 @@ def planta_plan_semanal():
             (producto,)
         ).fetchall()
         for (sku,) in sku_rows:
-            vel = c.execute("""
-                SELECT COALESCE(SUM(cantidad),0)/60.0
-                FROM ordenes_shopify_items WHERE sku=? AND fecha >= date('now', '-5 hours', '-60 days')
-            """, (sku,)).fetchone() if False else None  # legacy, may not exist
+            # La velocidad sale del precalculado de arriba · la consulta que habia apuntaba a
+            # `ordenes_shopify_items`, que no existe, y estaba apagada con `if False`: la columna
+            # de dias de inventario llevaba desde entonces en gris en TODAS las filas.
+            velocidad_dia += _vel_sku.get(str(sku).strip().upper(), 0.0)
             # Stock PT
             sp = c.execute(
                 # estado='Disponible' (igual que el resto del codebase): sin esto el SUM

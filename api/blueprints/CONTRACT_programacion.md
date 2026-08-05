@@ -1125,3 +1125,47 @@ acotado por contenido. Borrar un `<div>` **no** rompe la sintaxis, así que el n
 verde con la pantalla partida: las verificaciones que sí lo cazan son contar las marcas conocidas
 antes y después, el balance de `<div>`, y que el bloque se declare y se emita exactamente una vez.
 Todo eso vive en `tests/test_modal_calendario_cara.py`, dentro del gate.
+
+## 🔒 PROG-N+19 · La disposición de un lote de PT va con CAS (5-ago)
+
+`planta_cola_liberacion_disposicion` hacía `UPDATE cola_liberacion SET disposicion=… WHERE id=?`
+sin repetir el estado ni mirar `rowcount`. Consecuencia: **un lote que Calidad ya RECHAZÓ se
+podía volver a poner en `liberado` con un clic posterior**, sin un solo 409 — un control INVIMA
+que se elude en silencio. Y dos decisiones simultáneas (liberar + rechazar) pasaban las dos,
+quedando la que commiteara último. Es el hermano sin arreglar de lo que M27 cerró en `brd.py`.
+
+**Invariante:** no se sale de un estado TERMINAL. El `WHERE` exige
+`LOWER(COALESCE(disposicion,'')) NOT IN ('aprobado','rechazado')`; si `rowcount==0` → rollback y
+**409 `LOTE_YA_DISPUESTO`**, diciendo qué disposición tiene y quién la firmó. `reanalizar` sigue
+siendo re-disponible, que es exactamente para lo que existe ese estado.
+
+Cambiar una disposición ya firmada es un acto de Calidad, no un clic: si hace falta, va por el
+camino documentado (desviación / control de cambios), no sobrescribiendo la fila.
+
+## ⚡ PROG-N+20 · El plan semanal precarga en vez de consultar por MP (5-ago)
+
+`/api/planta/plan-semanal` hacía, por cada producción de la ventana (~30) **y por cada MP de su
+fórmula** (~20), dos consultas: el nombre del material y su stock. Del orden de **1.200-2.000
+consultas por request**. Con 3 workers Gunicorn eso no es "una pantalla lenta": dos personas
+abriéndola a la vez dejan la app entera sin atender y el resto empieza a devolver "Unexpected
+token '<'", que es el 502 servido como HTML (M43/M59).
+
+**Invariante (M128): el atajo ACELERA la respuesta, NO la cambia.**
+- El SUM precargado usa el CASE **idéntico** al de `stock_mp_total` — que **incluye cuarentena a
+  propósito**, porque el plan mira consumo FUTURO y esos lotes, si salen de QC a tiempo, cuentan.
+  Excluirlos inventaría déficits.
+- Lo que no esté en el precalculado **cae al helper de siempre**, no se asume cero: un stock en
+  cero es un déficit inventado.
+- Si la precarga entera falla, se avisa por log y el endpoint va por el camino lento — más
+  lento, pero correcto.
+
+**+ la columna de días de inventario dejó de estar muerta.** La consulta de velocidad estaba
+apagada con `if False` porque apunta a `ordenes_shopify_items`, que no existe, y nadie la
+reemplazó: `velocidad_dia` valía 0 SIEMPRE y la columna salía en gris en todas las filas desde
+que se escribió. Ahora sale de `ventas_diarias`, la tabla que el cron precalcula y que el resto
+del sistema ya usa para esto.
+
+Tests: `tests/test_plan_semanal_rapido.py` y `tests/test_bugs_5ago.py` (los dos en el gate).
+⚠ El test de equivalencia siembra un lote **en cuarentena** a propósito: sin él la comparación
+contra el helper es ciega justo a la diferencia que la invariante protege — lo descubrí probando
+los dientes, que la primera versión no tenía.

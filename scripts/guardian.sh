@@ -219,6 +219,12 @@ CORAZON=(
   # a creador creaba DOS ordenes, y un lote RECHAZADO se podia volver a liberar con un clic.
   # Estos tests EJECUTAN la consulta contra el esquema real: leer el SQL es lo que los dejo pasar.
   "tests/test_bugs_5ago.py"
+  # El plan semanal hacia ~1.500 consultas por request (una por MP por produccion). Con 3 workers,
+  # dos personas abriendolo a la vez dejaban la app entera sin atender. Lo que este test protege
+  # NO es la velocidad sino que el atajo NO cambie la respuesta (M128): compara contra el helper
+  # que reemplaza, con un lote EN CUARENTENA sembrado a proposito -- el plan lo cuenta porque mira
+  # consumo futuro, y sin ese lote la comparacion es ciega a la diferencia que importa.
+  "tests/test_plan_semanal_rapido.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

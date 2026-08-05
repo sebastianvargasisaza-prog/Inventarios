@@ -538,3 +538,24 @@ solicitudes que ya existen se siguen leyendo igual (`efectivo`, que es lo que er
 medio de pago a una solicitud vieja sería inventar un hecho que nadie registró.
 
 Tests: `tests/test_caja_como_se_paga.py` (en el gate).
+
+---
+
+## INV-23 · Aprobar un pago a creador va con CAS (5-ago)
+
+`aprobar_solicitud_influencer` leía `estado` y **sólo lo usaba para el `antes` del audit** — nunca
+lo validaba — y el `UPDATE` iba `WHERE numero=?` a secas, sin `rowcount`. Dos consecuencias, las
+dos de dinero:
+
+- **Doble clic o dos workers**: ambos ven `numero_oc_actual` vacío, ambos entran a crear la OC, y
+  la segunda sale con sufijo horario. Como el dedup de `pagos_influencers` empareja por
+  `numero_oc`, **el número distinto lo esquiva** → dos órdenes y dos pagos por la misma solicitud.
+- **Re-aprobar cambiaba el monto en silencio**, sin un solo 409.
+
+**Invariante:** el `UPDATE` exige
+`COALESCE(estado,'') NOT IN ('Aprobada','Cancelada','Rechazada')`; si `rowcount==0` → rollback y
+**409 `SOL_YA_RESUELTA`** diciendo en qué estado quedó. La condición bloquea lo peligroso (volver
+a aprobar, o aprobar algo cancelado) sin trabar la aprobación legítima, venga del estado que
+venga — que es lo que hace seguro aplicarlo sin revisar cada fila histórica.
+
+Test: `tests/test_bugs_5ago.py::test_aprobar_DOS_VECES_un_pago_a_creador_da_409` (en el gate).
