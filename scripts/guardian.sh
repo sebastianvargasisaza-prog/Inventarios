@@ -189,6 +189,11 @@ CORAZON=(
   # DESPUES de decidir (antes contestaba por un kilaje que el usuario todavia no habia elegido).
   # El reordenamiento se hizo capturando el bloque en una variable, sin reescribir su contenido.
   "tests/test_modal_cuatro_bloques.py"
+  # Los cinco pendientes que quedaban en cola. El que mas importa del archivo NO es de texto:
+  # recorre el endpoint real de la alerta D-20 con un lote sembrado, y por eso caza lo que
+  # leer el fuente no ve -- el reemplazo del titulo, hecho sin anclar, habia caido en OTRA
+  # funcion 3.000 lineas antes y dejaba la alerta llamando a una variable inexistente (M96/M151).
+  "tests/test_cinco_pendientes.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

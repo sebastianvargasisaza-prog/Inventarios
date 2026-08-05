@@ -13596,14 +13596,22 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
     # clamp si stock_nuevo < 0 (no permite stock fantasma negativo).
     from inventario_helpers import aplicar_movimiento_mee
     descontados = []
+    # Lo que falta restarle a los envases default por los B2B con envase propio · se va
+    # consumiendo entre las filas de envase en vez de aplicarse entero a cada una.
+    _b2b_por_restar = uds_b2b_custom_total
     for item_id, mee_cod, desc, cant_plan, tipo_item in items:
         cant_plan_f = float(cant_plan or 0)
         cant_real = round(cant_plan_f * ratio, 0)
         # Split: si es ENVASE (no tapa/etiqueta) y hay aportes B2B con
         # envase custom, restar uds B2B del descuento default.
-        es_envase = (tipo_item or '').lower() in ('envase', 'frasco', 'recipiente')
-        if es_envase and uds_b2b_custom_total > 0:
-            cant_real = max(cant_real - uds_b2b_custom_total, 0)
+        es_envase = (tipo_item or '').lower() in ('envase', 'frasco', 'recipiente', 'envase_primario')
+        # ⚠ El B2B custom se resta UNA sola vez en total, no por fila. Con un solo item de
+        # envase daba igual; desde que el checklist se abre por PRESENTACION hay varias filas, y
+        # restarle el mismo total a cada una descontaria de menos en todas (4-ago).
+        if es_envase and _b2b_por_restar > 0:
+            _resta = min(cant_real, _b2b_por_restar)
+            cant_real = max(cant_real - _resta, 0)
+            _b2b_por_restar -= _resta
         if cant_real <= 0:
             continue
         # override del lote (admin) reemplaza el envase default SOLO en el item de envase (M55/M5)
@@ -18575,6 +18583,29 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
                 'solicitudes_en_curso': solicitudes_en_curso.get(cod.upper(), []),
             })
 
+    # ⚠ LEAD TIME REAL DE ENVASES (4-ago). Estaba clavado en 14 dias para TODOS, con un
+    # "TODO leer de mee_lead_time_config" al lado -- y esa tabla existe desde la mig 71 con los
+    # datos de verdad: frasco de China 180 dias y MOQ 5.000, tapa local 30, etiqueta 15,
+    # serigrafia 20. El sistema le decia a Compras que un frasco de China se pide con dos
+    # semanas de anticipacion cuando son seis meses.
+    # Se lee en BLOQUE (una consulta, no una por envase · M43) y lo que no tiene fila se DECLARA:
+    # un 14 inventado se lee igual que un 14 medido, y esa es la diferencia que importa (M124).
+    _mee_lt = {}
+    try:
+        for _rlt in c.execute(
+            "SELECT UPPER(TRIM(mee_codigo)), COALESCE(lead_time_dias,0), "
+            "       COALESCE(moq_unidades,0), COALESCE(origen,''), COALESCE(aplica,1) "
+            "  FROM mee_lead_time_config").fetchall():
+            _mee_lt[_rlt[0]] = {'lead_time_dias': int(_rlt[1] or 0),
+                                'moq_unidades': int(_rlt[2] or 0),
+                                'origen': _rlt[3] or '',
+                                'aplica': int(_rlt[4] or 1)}
+    except Exception as _elt:
+        # Si la tabla no se puede leer NO se cae al default en silencio: se avisa, porque el
+        # numero que quedaria es justo el que estaba mal.
+        log.warning('abastecimiento: no pude leer mee_lead_time_config (%s) · los envases van '
+                    'a mostrar el lead time por defecto', _elt)
+
     items_out_mee = []
     if incluir_mee:
         for cod, consumo in consumo_mee.items():
@@ -18602,7 +18633,17 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
                 'neto_a_pedir': {str(h): neto_a_pedir[h] for h in horizontes},
                 'urgencia': urg,
                 'horizonte_quiebre_dias': h_urg,
-                'lead_time_dias': 14,  # MEE default · TODO leer de mee_lead_time_config
+                # El lead time REAL del envase · `lead_time_medido` dice si el numero sale de
+                # la tabla o es el default, para que nadie decida una compra creyendo que un
+                # frasco de China llega en dos semanas.
+                'lead_time_dias': (_mee_lt.get((cod or '').strip().upper(), {})
+                                   .get('lead_time_dias') or 14),
+                'lead_time_medido': bool(_mee_lt.get((cod or '').strip().upper(), {})
+                                         .get('lead_time_dias')),
+                'origen_compra': (_mee_lt.get((cod or '').strip().upper(), {})
+                                  .get('origen') or ''),
+                'moq_unidades': (_mee_lt.get((cod or '').strip().upper(), {})
+                                 .get('moq_unidades') or 0),
                 'buffer_dias': 30,
                 'solicitudes_en_curso': solicitudes_en_curso.get(cod, []),
             })
@@ -21224,8 +21265,25 @@ def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_plane
         except Exception:
             pass
 
+        # TODAS las presentaciones activas con envase · si hay mas de una, el checklist se abre
+        # por presentacion en vez de colapsarlas en un volumen promedio.
+        _pres_multi = []
+        try:
+            _pres_multi = [
+                (float(r[0] or 0), (r[1] or '').strip(), float(r[2] or 0))
+                for r in c.execute(
+                    "SELECT COALESCE(volumen_ml,0), COALESCE(envase_codigo,''), "
+                    "       COALESCE(ventas_mes_referencia,0) FROM producto_presentaciones "
+                    " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+                    "   AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0",
+                    (producto_nombre,)).fetchall()]
+        except Exception as _epm:
+            log.warning('checklist: no pude leer las presentaciones de %s: %s',
+                        producto_nombre, _epm)
+            _pres_multi = []
+
         # Calcular unidades objetivo con 5% de merma (estandar industrial)
-        import math as _math
+        import math as _math   # tambien lo usa el reparto por presentacion de mas abajo
         if presentacion_g_ml > 0 and (cantidad_kg or 0) > 0:
             unidades_objetivo = int(_math.ceil(
                 (cantidad_kg * 1000.0) / presentacion_g_ml * 1.05
@@ -21274,6 +21332,39 @@ def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_plane
             # Pre-llenar desde presentaciones (mig 278): frasco→envase_codigo, tapa→tapa_codigo,
             # caja→caja_codigo · misma fuente que la COMPRA → lo que se compra == lo que se descuenta.
             _t = (tipo or '').lower()
+            # ⚠ MULTI-PRESENTACION (4-ago): si el producto sale en 30 ml y 10 ml con frascos
+            # distintos, una sola fila de envase descuenta TODO contra un codigo, usando un
+            # volumen promedio que no existe fisicamente. Se abre una fila POR presentacion,
+            # con su codigo y sus unidades -- asi lo que la pantalla muestra es lo que la planta
+            # consume. El reparto pesa por VOLUMEN (uds x ml), igual que el resto del sistema
+            # (M72): una unidad de 30 ml se lleva el triple de granel que una de 10.
+            if _t in ('envase_primario', 'envase', 'frasco', 'recipiente') and len(_pres_multi) > 1:
+                _tot_peso = sum((x[2] or 0) * (x[0] or 0) for x in _pres_multi) or 0
+                if _tot_peso <= 0:
+                    _tot_peso = sum((x[0] or 0) for x in _pres_multi) or 1
+                    _pesos = [(x[0] or 0) / _tot_peso for x in _pres_multi]
+                else:
+                    _pesos = [((x[2] or 0) * (x[0] or 0)) / _tot_peso for x in _pres_multi]
+                for _px, _wx in zip(_pres_multi, _pesos):
+                    _volx, _codx = float(_px[0] or 0), (_px[1] or '').strip().upper()
+                    if _volx <= 0 or not _codx or _wx <= 0:
+                        continue
+                    _udx = int(_math.ceil((cantidad_kg * 1000.0 * _wx) / _volx * 1.05))
+                    if _udx <= 0:
+                        continue
+                    c.execute("""INSERT INTO produccion_checklist
+                        (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
+                         item_tipo, descripcion, cantidad_unidades, unidad,
+                         estado, proveedor, dias_anticipacion, observaciones,
+                         actualizado_por, mee_codigo_asignado)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
+                         tipo, (desc or 'Envase') + ' · ' + ('%g' % _volx) + ' ml',
+                         _udx, 'ud', 'pendiente', prov or '', dias or 30,
+                         'Auto · presentación de %g ml (%.0f%% del lote)' % (_volx, _wx * 100),
+                         usuario, _codx))
+                    items_creados += 1
+                continue   # ya se crearon las filas de esta presentacion
             if _t in ('envase_primario', 'envase', 'frasco', 'recipiente'):
                 _mee_asig = env_default
             elif _t == 'tapa':

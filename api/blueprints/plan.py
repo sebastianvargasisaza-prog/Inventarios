@@ -6750,7 +6750,12 @@ def plan_salud_cadenas():
                 'decision_motivo': _motivo_delib,      # por qué NO es hallazgo si es deliberado
                 # sugerencias: o achicar el lote a lo necesario, o espaciar la cadencia
                 'sugerido_kg_lote': kg_req,
-                'sugerido_cadencia_dias': (max(1, int(round((kg_lote * 1000.0 / ml) / vel)) - BUFFER_REORDEN)
+                # ⚠ Alineada con la referencia nueva (4-ago): el colchón lo trae el PRIMER
+                # lote, no todos, así que la cadencia sugerida es lo que dura el lote COMPLETO.
+                # Antes le restaba el buffer, y aplicar la sugerencia dejaba al producto 20 días
+                # corto -- el tablero lo volvía a marcar. Una sugerencia que reintroduce el
+                # problema que dice resolver es peor que ninguna.
+                'sugerido_cadencia_dias': (max(1, int(round((kg_lote * 1000.0 / ml) / vel)))
                                            if (est == 'sobre' and vel > 0) else cad),
             })
     items.sort(key=lambda x: -(x.get('kg_exceso_total') or 0))
@@ -23737,10 +23742,18 @@ async function guardarKgLote(id){
   // → el backend las guarda como override por lote (fija_override_json) y la Composición de
   // envases / Abastecimiento usan EXACTAMENTE esas cantidades.
   var _desg = {};
+  // El VOLUMEN viaja junto con las unidades: el backend mapea SKU -> presentación por
+  // `sku_shopify`, que suele estar vacío, y sin un segundo criterio el guardado no persistía
+  // NADA y respondía OK igual. El ml ya está en la fila, sólo hacía falta mandarlo.
+  var _desgMl = {};
   document.querySelectorAll('.dsk-uds').forEach(function(inp){
     var sk = (inp.getAttribute('data-sku') || '').trim();
     var u = parseInt(inp.value, 10);
-    if(sk && !isNaN(u) && u > 0) _desg[sk] = u;
+    if(sk && !isNaN(u) && u > 0){
+      _desg[sk] = u;
+      var _ml = parseFloat(inp.getAttribute('data-ml'));
+      if(!isNaN(_ml) && _ml > 0) _desgMl[sk] = _ml;
+    }
   });
   var _mesesEl = document.getElementById('dsk-meses');
   var _meses = _mesesEl ? parseFloat(_mesesEl.value) : null;
@@ -23749,7 +23762,7 @@ async function guardarKgLote(id){
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
       credentials:'same-origin',
-      body: JSON.stringify({cantidad_kg: nuevo, desglose_uds: _desg, meses_cobertura: _meses}),
+      body: JSON.stringify({cantidad_kg: nuevo, desglose_uds: _desg, desglose_ml: _desgMl, meses_cobertura: _meses}),
     });
     let d = await r.json();
     if (r.status === 409 && d && d.puede_forzar){
@@ -23758,7 +23771,7 @@ async function guardarKgLote(id){
       if (confirm('⚠ ' + (d.error||'') + '\n\n¿FORZAR el cambio de kg para normalizar el calendario?\n\n(solo ajusta el registro · NO re-descuenta materias primas · la producción ya se hizo)')){
         const rf = await fetch('/api/plan/proximas/' + id + '/cantidad', {
           method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin',
-          body: JSON.stringify({cantidad_kg: nuevo, desglose_uds: _desg, meses_cobertura: _meses, forzar_normalizar: true}),
+          body: JSON.stringify({cantidad_kg: nuevo, desglose_uds: _desg, desglose_ml: _desgMl, meses_cobertura: _meses, forzar_normalizar: true}),
         });
         let df = null; try { df = await rf.json(); } catch(e){ df = {}; }
         if (!rf.ok){ alert('❌ No se pudo (normalizar): ' + (df.error || ('Error ' + rf.status))); return; }
@@ -26408,17 +26421,27 @@ def actualizar_cantidad_proxima(pid):
     # como override POR LOTE (fija_override_json). Así la Composición de envases y Abastecimiento
     # usan EXACTAMENTE lo que decidís producir de cada presentación (no un ratio 180d aparte).
     override_guardado = 0
+    override_aviso = ''
     _desg = body.get("desglose_uds")
     if isinstance(_desg, dict) and _desg:
         try:
             import json as _jd
-            _sku2pc = {}  # SKU real → presentacion_codigo de este producto
+            _sku2pc = {}   # SKU real → presentacion_codigo de este producto
+            _vol2pc = {}   # volumen (ml) → presentacion_codigo · segundo tier
             for r in cur.execute(
-                "SELECT UPPER(TRIM(COALESCE(sku_shopify,''))), UPPER(TRIM(COALESCE(presentacion_codigo,''))) "
+                "SELECT UPPER(TRIM(COALESCE(sku_shopify,''))), UPPER(TRIM(COALESCE(presentacion_codigo,''))), "
+                "       COALESCE(volumen_ml,0) "
                 "FROM producto_presentaciones WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) "
                 "AND COALESCE(activo,1)=1", (producto,)).fetchall():
                 if r[0] and r[1]:
                     _sku2pc[r[0]] = r[1]
+                if r[1] and float(r[2] or 0) > 0:
+                    _vol2pc[int(round(float(r[2])))] = r[1]
+            # ⚠ El cruce por `sku_shopify` falla cuando la presentación no lo tiene cargado --
+            # que es lo habitual (M70) -- y entonces NO se guardaba nada y se respondía OK.
+            # Segundo tier: el volumen, que es justo lo que el desglose muestra al lado de cada
+            # SKU. El front lo manda en `desglose_ml`.
+            _sku2ml = body.get("desglose_ml") or {}
             _ovr = {}
             for _sk, _u in _desg.items():
                 try:
@@ -26428,17 +26451,35 @@ def actualizar_cantidad_proxima(pid):
                 if _uu <= 0:
                     continue
                 _pc = _sku2pc.get(str(_sk).strip().upper())
+                if not _pc:
+                    try:
+                        _mlx = int(round(float(_sku2ml.get(_sk) or 0)))
+                    except (TypeError, ValueError):
+                        _mlx = 0
+                    if _mlx > 0:
+                        _pc = _vol2pc.get(_mlx)
                 if _pc:
-                    _ovr[_pc] = _uu
+                    _ovr[_pc] = _ovr.get(_pc, 0) + _uu
             if _ovr:
                 try:
                     cur.execute("UPDATE produccion_programada SET fija_override_json=? WHERE id=?",
                                 (_jd.dumps(_ovr), pid))
                     override_guardado = len(_ovr)
-                except Exception:
-                    pass  # columna no existe (instancia vieja) · no bloquear el guardado de kg
-        except Exception:
-            pass
+                except Exception as _euo:
+                    # No se traga: si el UPDATE falla el usuario tiene que enterarse, en vez de
+                    # ver "guardado" sobre algo que no se persistió (M4).
+                    log.warning('desglose: no pude guardar el override del lote %s: %s', pid, _euo)
+                    override_aviso = 'no se pudo guardar el desglose: ' + str(_euo)[:120]
+            elif _desg:
+                # Se pidió guardar un desglose y NINGUNA línea cruzó con una presentación.
+                # Antes esto salía como éxito silencioso.
+                override_aviso = ('el desglose no se guardó: las presentaciones de este producto '
+                                  'no tienen SKU de Shopify ni volumen que cruce con lo enviado · '
+                                  'mapealos en Presentaciones')
+                log.warning('desglose: 0 líneas cruzaron para %s (lote %s)', producto, pid)
+        except Exception as _edg:
+            log.warning('desglose: falló el mapeo para %s: %s', producto, _edg)
+            override_aviso = 'no se pudo interpretar el desglose'
     # F4/F5 · persistir los MESES de cobertura elegidos (informativo · NO toca el descuento MP,
     # que sigue leyendo cantidad_kg). Columna meses_cobertura (mig 333). try/except si no existe.
     try:
@@ -26466,7 +26507,10 @@ def actualizar_cantidad_proxima(pid):
     conn.commit()
     return jsonify({"ok": True, "id": pid, "producto": producto,
                     "kg_antes": kg_antes, "kg_nuevo": nueva_kg,
-                    "override_presentaciones": override_guardado})
+                    "override_presentaciones": override_guardado,
+                    # Si el desglose no se pudo mapear, la respuesta lo DICE
+                    # en vez de salir como éxito silencioso.
+                    "override_aviso": override_aviso})
 
 
 @bp.route("/api/plan/kg-otro-cliente-cadena", methods=["POST"])

@@ -6438,44 +6438,45 @@ def alerta_d20_pendientes():
     d_min = fecha_hoy + timedelta(days=15)
     d_max = fecha_hoy + timedelta(days=25)
 
-    # Eventos del Calendar en ventana
-    eventos = _calendar_events_cached()
-    skus_activos = {}
-    try:
-        rows = c.execute("""
-            SELECT producto_nombre FROM sku_planeacion_config
-            WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
-        """).fetchall()
-        skus_activos = {r[0]: r[0] for r in rows}
-    except Exception:
-        pass
-
+    # ⚠ LEE EOS, NO GOOGLE CALENDAR (Sebastián 4-ago: "no debe leer nada Google Calendar, eso
+    # lo quitamos todo, vive en EOS"). Esta alerta recorría `_calendar_events_cached()`, que
+    # devuelve VACÍO desde el 7-jul: llevaba un mes sin avisar nada, y una bandeja vacía se ve
+    # igual que una al día (M127).
+    # Además cruzaba el evento con el producto por PARECIDO de título (score >= 60) y estimaba
+    # los kg parseando el texto. Leyendo `produccion_programada` las dos cosas son un HECHO.
     producciones_d20 = []
-    for ev in eventos:
-        try:
-            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
-        except Exception:
-            continue
-        if f < d_min or f > d_max:
-            continue
-        # Match con SKU activo
-        producto_match = None
-        for prod_nom in skus_activos.keys():
-            try:
-                alias = _alias_calendar_for(c, prod_nom)
-                score = _match_producto_evento(prod_nom, alias, ev.get('titulo'),
-                                                ev.get('descripcion', ''))
-                if score >= 60:
-                    producto_match = prod_nom
-                    break
-            except Exception:
-                continue
+    _prog = []
+    try:
+        _prog = c.execute(
+            "SELECT pp.producto, substr(pp.fecha_programada,1,10), "
+            "       COALESCE(pp.cantidad_kg, pp.lotes * COALESCE(fh.lote_size_kg,0), 0) "
+            "  FROM produccion_programada pp "
+            "  LEFT JOIN formula_headers fh "
+            "    ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(pp.producto)) "
+            " WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado') "
+            "   AND pp.inicio_real_at IS NULL "
+            "   AND substr(pp.fecha_programada,1,10) BETWEEN ? AND ? "
+            " ORDER BY pp.fecha_programada ASC",
+            (d_min.isoformat(), d_max.isoformat())).fetchall()
+    except Exception as _ed20:
+        # No se traga: si esto falla la alerta vuelve a quedar muda, que es el defecto que se
+        # está corrigiendo (M4/M100).
+        import logging as _lg20
+        _lg20.getLogger('auto_plan').warning('alerta D-20: no pude leer el calendario de EOS: %s', _ed20)
+        _prog = []
+
+    for _pr in _prog:
+        producto_match = (_pr[0] or '').strip()
         if not producto_match:
             continue
-        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 30
+        try:
+            f = datetime.strptime(str(_pr[1])[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        kg = float(_pr[2] or 0) or 30.0
         dias_hasta = (f - fecha_hoy).days
 
-        # Buscar serigrafía/tampografía asociada al SKU/producto
+        # Decoraciones (serigrafía/tampografía) asociadas al producto
         decoraciones = []
         try:
             rows = c.execute("""
@@ -6494,13 +6495,17 @@ def alerta_d20_pendientes():
                 'stock': r[3] or 0, 'proveedor': r[4] or '',
                 'lead_time': r[5] or 20,
             } for r in rows]
-        except Exception:
-            pass
+        except Exception as _edec:
+            # Sin decoraciones el lote sale con `critico=False` y la alerta dice que no hay nada
+            # que mandar a serigrafiar · o sea el MISMO silencio que se está corrigiendo (M127).
+            import logging as _lgdec
+            _lgdec.getLogger('auto_plan').warning(
+                'alerta D-20: no pude leer las decoraciones de %s: %s', producto_match, _edec)
 
         producciones_d20.append({
             'fecha': f.isoformat(),
             'dias_hasta': dias_hasta,
-            'titulo': ev.get('titulo', ''),
+            'titulo': producto_match,
             'producto': producto_match,
             'kg': kg,
             'unidades_estimadas': int(kg * 1000 / 30),  # asume 30g/SKU promedio
