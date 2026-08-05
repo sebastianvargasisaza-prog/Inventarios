@@ -12,19 +12,27 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 .topbar{background:var(--cx-hero-grad);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--cx-hairline);}
 .topbar-left{display:flex;align-items:center;gap:16px;}
 .logo{font-size:0.95em;font-weight:900;letter-spacing:3px;color:var(--cx-primary-text);}
-.badge-ceo{background:rgba(109,40,217,0.5);color:var(--cx-primary-text);padding:3px 12px;border-radius:20px;font-size:0.72em;font-weight:700;letter-spacing:1px;}
+/* Violeta sobre violeta: 1.00 en claro y 2.61 en oscuro. El chip vive sobre el degradado del
+   encabezado, asi que va con relleno solido y texto blanco. */
+.badge-ceo{background:var(--cx-primary);color:#fff;padding:3px 12px;border-radius:20px;font-size:0.72em;font-weight:700;letter-spacing:1px;}
 .topbar a{color:var(--cx-text-mute);text-decoration:none;font-size:0.8em;padding:6px 14px;border:1px solid var(--cx-hairline);border-radius:6px;}
 .topbar a:hover{color:var(--cx-text);border-color:var(--cx-text-mute);}
-.periodo-badge{background:rgba(109,40,217,0.3);padding:4px 14px;border-radius:20px;font-size:0.78em;color:var(--cx-primary-text);}
-.main{padding:28px;max-width:1300px;margin:0 auto;}
-.section-title{font-size:0.72em;text-transform:uppercase;letter-spacing:2px;color:var(--cx-text-mute);margin-bottom:14px;margin-top:28px;}
+.periodo-badge{background:var(--cx-primary-pale, #f5f3ff);border:1px solid var(--cx-primary-soft, #ddd6fe);padding:4px 14px;border-radius:20px;font-size:0.78em;color:var(--cx-primary-text);font-weight:700;}
+.main{padding:30px 28px 48px;max-width:1360px;margin:0 auto;}
+/* Los encabezados de seccion eran texto gris suelto: no separaban nada. Con la regla debajo y
+   un poco mas de aire, la pagina se lee como bloques en vez de como una lista larga. */
+.section-title{font-size:.7em;font-weight:800;text-transform:uppercase;letter-spacing:.14em;
+  color:var(--cx-primary-text);margin:34px 0 14px;padding-bottom:6px;
+  border-bottom:2px solid var(--cx-primary-soft, var(--cx-border));display:flex;align-items:center;
+  gap:10px;flex-wrap:wrap;}
 .section-title:first-child{margin-top:0;}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:8px;}
 .kpi{background:var(--cx-card);border:1px solid var(--cx-hairline);box-shadow:var(--cx-sh-card);border-radius:14px;padding:20px 22px;position:relative;overflow:hidden;transition:box-shadow .2s ease,transform .2s ease;}
 .kpi:hover{box-shadow:var(--cx-sh-card-hover);transform:translateY(-2px);}
 .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--ac,#6d28d9);}
 .kpi.rojo::before{background:var(--cx-danger);}.kpi.amarillo::before{background:var(--cx-warn);}.kpi.verde::before{background:var(--cx-success);}
-.kpi-val{font-size:2.2em;font-weight:900;line-height:1;color:var(--cx-text);}
+.kpi-val{font-size:2.15em;font-weight:800;line-height:1;color:var(--cx-text);letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums;}
 .kpi-val.rojo{color:var(--cx-danger-text);}.kpi-val.amarillo{color:var(--cx-warn-text);}.kpi-val.verde{color:var(--cx-success-text);}
 .kpi-lbl{font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:1px;margin-top:8px;}
 .kpi-sub{font-size:0.8em;color:var(--cx-text-faint);margin-top:4px;}
@@ -54,34 +62,48 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
   text-decoration:none;border:1px solid var(--cx-primary-soft,var(--cx-border));border-radius:8px;padding:6px 12px;}
 .ceo-ir:hover{background:var(--cx-primary-pale,var(--cx-bg-alt));}
 .sem.verde{background:var(--cx-success);box-shadow:0 0 8px #10b981;}.sem.amarillo{background:var(--cx-warn);box-shadow:0 0 8px #f59e0b;}.sem.rojo{background:var(--cx-danger);box-shadow:0 0 8px #ef4444;}
-.alertas-panel{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;margin-bottom:28px;display:none;}
+/* La franja roja lleva barra lateral: en una pagina llena de tarjetas, un borde de 1px del
+   mismo grosor que todo lo demas no distingue una alerta de un dato. */
+.alertas-panel{background:var(--cx-danger-pale);border:1px solid var(--cx-danger-soft, var(--cx-border));
+  border-left:5px solid var(--cx-danger);border-radius:14px;padding:18px 20px;margin-bottom:28px;display:none;}
 .alertas-panel.visible{display:block;}
 .alerta-item{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(239,68,68,0.15);}
 .alerta-item:last-child{border-bottom:none;}
 .alerta-icon{font-size:1.2em;margin-top:1px;}
 .alerta-texto{font-size:0.88em;color:var(--cx-text-soft);line-height:1.5;}
 .two-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;}
-.panel{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:12px;padding:22px;}
+.panel{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;padding:20px 22px;
+  box-shadow:0 1px 2px rgba(24,24,27,.04);transition:box-shadow .18s ease;}
+.panel:hover{box-shadow:0 2px 10px -4px rgba(24,24,27,.14);}
 .panel-title{font-size:0.82em;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
 .data-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--cx-hairline);}
 .data-row:last-child{border-bottom:none;}
 .data-lbl{font-size:0.85em;color:var(--cx-text-mute);}
 .data-val{font-size:0.92em;font-weight:700;color:var(--cx-text);}
 .data-val.rojo{color:var(--cx-danger-text);}.data-val.amarillo{color:var(--cx-warn-text);}.data-val.verde{color:var(--cx-success-text);}
-.input-panel{background:rgba(109,40,217,0.1);border:1px solid rgba(109,40,217,0.3);border-radius:12px;padding:22px;margin-top:20px;}
+.input-panel{background:var(--cx-primary-pale, #faf7ff);border:1px solid var(--cx-primary-soft, #ddd6fe);
+  border-radius:14px;padding:22px;margin-top:20px;}
 .input-panel-title{font-size:0.85em;font-weight:700;color:var(--cx-primary-text);margin-bottom:16px;display:flex;align-items:center;gap:8px;}
 .inp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px;}
 .inp-group label{display:block;font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;}
 .inp-group input{width:100%;padding:9px 12px;background:var(--cx-bg-alt);border:1.5px solid var(--cx-hairline);border-radius:7px;color:var(--cx-text);font-size:0.9em;transition:border 0.2s;}
 .inp-group input:focus{outline:none;border-color:var(--cx-primary);background:var(--cx-bg-alt);}
 .inp-group input::placeholder{color:var(--cx-text-faint);}
-.btn-save{background:var(--cx-primary);color:var(--cx-text);border:none;padding:10px 24px;border-radius:8px;font-size:0.88em;font-weight:700;cursor:pointer;transition:all 0.2s;}
-.btn-save:hover{background:#1d5c5a;transform:translateY(-1px);}
-.msg-ok-dark{background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:var(--cx-success-text);padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
-.msg-err-dark{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:var(--cx-danger-text);padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
+/* ⚠ `color:var(--cx-text)` sobre el relleno violeta daba 2.49 en tema claro (texto oscuro
+   sobre fondo oscuro). Sobre un RELLENO de color el texto va blanco y eso no depende del tema.
+   Y el hover era `#1d5c5a` -- un verde azulado, resto de una paleta anterior, sobre un boton
+   violeta. */
+.btn-save{background:var(--cx-primary-grad, var(--cx-primary));color:#fff;border:none;padding:10px 24px;border-radius:9px;font-size:0.88em;font-weight:700;cursor:pointer;transition:all .18s ease;box-shadow:0 2px 8px -2px rgba(124,58,237,.45);}
+.btn-save:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 4px 12px -3px rgba(124,58,237,.55);}
+.msg-ok-dark{background:var(--cx-success-pale);border:1px solid var(--cx-success-soft, var(--cx-border));color:var(--cx-success-text);padding:9px 14px;border-radius:9px;font-size:0.85em;margin-top:10px;font-weight:600;}
+.msg-err-dark{background:var(--cx-danger-pale);border:1px solid var(--cx-danger-soft, var(--cx-border));color:var(--cx-danger-text);padding:9px 14px;border-radius:9px;font-size:0.85em;margin-top:10px;font-weight:600;}
 .finanzas-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px;}
-.fin-card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:10px;padding:16px 18px;text-align:center;}
-.fin-val{font-size:1.6em;font-weight:900;color:var(--cx-primary-text);}
+.fin-card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;padding:18px 20px;
+  text-align:left;box-shadow:0 1px 2px rgba(24,24,27,.04);}
+/* Los numeros de dinero se leen en columna: `tabular-nums` los alinea y el tracking negativo
+   los compacta, que es lo que hace que una cifra grande se vea deliberada y no solo grande. */
+.fin-val{font-size:1.55em;font-weight:800;color:var(--cx-text);letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;line-height:1.15;}
 .fin-lbl{font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:1px;margin-top:5px;}
 .refresh-btn{background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:6px 14px;border-radius:6px;font-size:0.8em;cursor:pointer;transition:all 0.2s;}
 .refresh-btn:hover{background:var(--cx-hairline);color:var(--cx-text);}
@@ -92,8 +114,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 .prog-bar.warn{background:linear-gradient(90deg,#f59e0b,#b45309);}
 .churn-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--cx-hairline);}
 .churn-item:last-child{border-bottom:none;}
-.badge-crit{background:rgba(239,68,68,0.2);color:var(--cx-danger-text);padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
-.badge-atenc{background:rgba(245,158,11,0.2);color:var(--cx-warn-text);padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
+.badge-crit{background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:2px 9px;border-radius:999px;font-size:0.75em;font-weight:800;}
+.badge-atenc{background:var(--cx-warn-pale);color:var(--cx-warn-text);padding:2px 9px;border-radius:999px;font-size:0.75em;font-weight:800;}
 /* Mobile responsive · 27-may-2026 */
 @media (max-width: 768px) {
   .two-cols { grid-template-columns: 1fr !important; }
@@ -267,7 +289,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 
   <!-- QUICK NAV -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">
-    <a href="/hub" style="background:var(--cx-bg-alt);border:1px solid var(--cx-text-faint);color:#fff;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">🏠 Panel Central</a>
+    <!-- ⚠ Tenia `color:#fff` sobre `--cx-bg-alt`, que en tema CLARO -el default- es casi
+         blanco: contraste medido 1.03, o sea el boton era literalmente invisible. Sobre una
+         superficie clara el texto va con el token de texto; el blanco solo sirve sobre un
+         RELLENO de color (M104/M114). -->
+    <a href="/hub" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">🏠 Panel Central</a>
     <!-- `/mi-bandeja` era una pantalla HUÉRFANA: 230 líneas de pendientes cross-módulo (recalls,
          hallazgos, cola de liberación, quejas, control de cambios) alcanzables sólo tecleando la
          URL — ningún menú ni botón de toda la app la enlazaba. Una feature a la que no se puede

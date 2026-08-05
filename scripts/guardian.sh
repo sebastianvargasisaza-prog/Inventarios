@@ -233,6 +233,12 @@ CORAZON=(
   # + el guard general: ningun getElementById('gx-...') sin su id -- eso son consultas que corren
   # para nadie cada 5 minutos.
   "tests/test_ceo_pantallas_coherentes.py"
+  # El tablero del CEO se puede LEER en los dos temas. Mide el contraste de cada par (fondo,
+  # texto) EXTRAYENDOLOS de la pagina, no de una lista escrita a mano -- que es lo que hizo que
+  # la primera version siguiera reportando fallos ya corregidos (M142). Los tres que aparecieron
+  # estaban en tema CLARO, que es el default: el boton "Panel Central" daba 1.03, o sea era
+  # literalmente invisible.
+  "tests/test_ceo_premium.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.
