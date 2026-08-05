@@ -231,3 +231,17 @@ def test_las_dos_pantallas_usan_la_MISMA_referencia_de_kilos(app, db_clean):
     assert 'salud_cadena(' in plan
     assert "_sal.get('sobreproduce')" in plan, \
         'el tablero clasifica con sus propios umbrales en vez de la simulación'
+
+
+def test_el_tope_cuenta_los_kilos_YA_agendados(app, db_clean):
+    """Hallazgo de la revisión adversarial: `slots` (lotes) se sembraba desde la BD y `slots_kg`
+    arrancaba VACÍO · el tope se cumplía dentro de la tanda y se incumplía contra el calendario
+    real, que es donde importa."""
+    import io as _io
+    import os as _os
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    src = _io.open(_os.path.join(raiz, 'api/blueprints/plan.py'), encoding='utf-8').read()
+    # los dos generadores siembran los kilos ya agendados, igual que siembran los lotes
+    assert src.count('slots_kg[r[0]] = float(r[1] or 0)') == 2, \
+        'algún generador arranca el cupo de kilos en cero y sólo mira lo que crea él'
+    assert src.count('slots_kg = {}') == 2

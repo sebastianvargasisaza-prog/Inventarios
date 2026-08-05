@@ -14086,7 +14086,21 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
     # exactamente el hueco que tenía este generador: `_proxima_fecha_habil` sí lo cuida, pero
     # esta función tiene su propio contador y no lo replicaba (M45).
     # Es preferencia, no muro: un lote que por sí solo pasa el tope se coloca igual.
+    # ⚠ Los KILOS ya agendados se siembran igual que los lotes: si `slots_kg` arranca vacío, el
+    # tope de 200 kg sólo mira lo que crea ESTA corrida y deja apilar encima de lo que ya estaba
+    # en el calendario -- o sea el tope se cumple dentro de la tanda y se incumple contra la
+    # realidad (lo cazó la revisión adversarial, no el test).
     slots_kg = {}
+    for r in c.execute(
+        "SELECT substr(pp.fecha_programada,1,10), "
+        "       COALESCE(SUM(COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0)),0) "
+        "  FROM produccion_programada pp "
+        "  LEFT JOIN formula_headers fh "
+        "    ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(pp.producto)) "
+        " WHERE COALESCE(pp.estado,'') NOT IN ('cancelado') "
+        " GROUP BY substr(pp.fecha_programada,1,10)").fetchall():
+        if r[0]:
+            slots_kg[r[0]] = float(r[1] or 0)
 
     def _tomar_slot(desde, kg=0.0):
         if _floor_d and desde < _floor_d:
@@ -14293,7 +14307,21 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
             slots[r[0]] = r[1]
 
     # Mismo cupo por kilos que el gemelo de arriba (M45: si toco uno, toco los dos).
+    # ⚠ Los KILOS ya agendados se siembran igual que los lotes: si `slots_kg` arranca vacío, el
+    # tope de 200 kg sólo mira lo que crea ESTA corrida y deja apilar encima de lo que ya estaba
+    # en el calendario -- o sea el tope se cumple dentro de la tanda y se incumple contra la
+    # realidad (lo cazó la revisión adversarial, no el test).
     slots_kg = {}
+    for r in c.execute(
+        "SELECT substr(pp.fecha_programada,1,10), "
+        "       COALESCE(SUM(COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0)),0) "
+        "  FROM produccion_programada pp "
+        "  LEFT JOIN formula_headers fh "
+        "    ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(pp.producto)) "
+        " WHERE COALESCE(pp.estado,'') NOT IN ('cancelado') "
+        " GROUP BY substr(pp.fecha_programada,1,10)").fetchall():
+        if r[0]:
+            slots_kg[r[0]] = float(r[1] or 0)
 
     def _slot(desde, kg=0.0):
         fd = _ap._next_dia_produccion(desde)

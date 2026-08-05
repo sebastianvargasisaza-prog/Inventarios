@@ -141,6 +141,11 @@ CORAZON=(
   # de verdad se usa -- no se consumia nunca. Ademas "Solicitar alistamiento" llama al MISMO
   # endpoint que enviar, sin guard: dos clics = dos ordenes = dos Salidas.
   "tests/test_marcacion_no_descuenta_doble.py"
+  # El ciclo COMPLETO de marcacion por los endpoints reales. El arreglo del doble descuento se
+  # habia probado con un fixture que ponia el cache `maestro_mee.stock_actual` A MANO; produccion
+  # no hace eso, y sin ese cache la Salida del serigrafiado se registraba en CERO. El doble
+  # descuento se habia convertido en CERO descuento, que es peor.
+  "tests/test_marcacion_ciclo_real.py"
   # Las tarjetas de la caja sumaban transferencia/Nequi/tarjeta como si fueran billetes: la
   # pantalla mostraba un saldo y el servidor decidia con otro (caja_saldo), y ese hero es el
   # numero contra el que se valida un pago. Solo el EFECTIVO entra a la gaveta.

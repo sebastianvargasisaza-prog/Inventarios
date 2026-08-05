@@ -13609,7 +13609,7 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                 _mo = c.execute(
                     "SELECT serigrafiado_codigo FROM marcacion_ordenes "
                     " WHERE produccion_id=? AND UPPER(TRIM(base_codigo))=UPPER(TRIM(?)) "
-                    "   AND LOWER(COALESCE(estado,'')) IN ('recibido','liberado') "
+                    "   AND LOWER(COALESCE(estado,''))='liberado' "
                     "   AND UPPER(TRIM(COALESCE(serigrafiado_codigo,'')))<>UPPER(TRIM(base_codigo)) "
                     " ORDER BY id DESC LIMIT 1",
                     (produccion_id, _cod_efectivo)).fetchone()
@@ -13622,11 +13622,22 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                 log.warning('no pude revisar la marcacion de %s (prod %s): %s',
                             _cod_efectivo, produccion_id, _e)
         try:
-            aplicar_movimiento_mee(
+            _res_mov = aplicar_movimiento_mee(
                 c.connection, _cod_efectivo, 'Salida', cant_real,
                 observaciones=obs_base, responsable=user,
                 lote_ref=str(produccion_id), batch_ref=lote or '',
-            )
+            ) or {}
+            # ⚠ `aplicar_movimiento_mee` CLAMPEA contra `maestro_mee.stock_actual`: si ese cache
+            # quedó bajo (drift), registra MENOS de lo pedido -- o directamente CERO -- sin un
+            # solo error. Un descuento que se registra corto y no lo dice es un envase que el
+            # kardex sigue creyendo en bodega (M4/M100). Se declara y se loguea.
+            _reg = float(_res_mov.get('stock_anterior', 0)) - float(_res_mov.get('stock_nuevo', 0))
+            _reg = round(_reg, 3)
+            _incompleto = _reg + 0.001 < cant_real
+            if _incompleto:
+                log.warning('descuento MEE INCOMPLETO %s: pedido %s · registrado %s '
+                            '(cache stock_actual bajo · prod %s)',
+                            _cod_efectivo, cant_real, _reg, produccion_id)
             c.execute("""
                 UPDATE produccion_checklist
                    SET consumido_at = ?,
@@ -13640,6 +13651,9 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                 # el codigo que de verdad se descontó, y de cuál se redirigió (si aplica)
                 'codigo_descontado': _cod_efectivo,
                 'redirigido_de_marcacion': _redirigido_de,
+                # lo que de verdad quedó registrado, y si quedó corto (clamp contra el cache)
+                'cantidad_registrada': _reg,
+                'descuento_incompleto': _incompleto,
                 'codigo': mee_cod,
                 'descripcion': desc or '',
                 'tipo_item': tipo_item or '',
@@ -13651,6 +13665,21 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
         except sqlite3.OperationalError as e:
             # Si maestro_mee o movimientos_mee no existe, dejamos pasar
             log.warning(f'Descuento MEE skip {mee_cod}: {e}')
+            continue
+        except ValueError as e:
+            # `aplicar_movimiento_mee` lanza ValueError si el código no está en maestro_mee
+            # (busca con `codigo = ?` EXACTO, sin UPPER/TRIM). Un código serigrafiado cargado en
+            # minúscula reventaba el cierre del envasado con un 500 (el guard de la orden sí
+            # normaliza, así que entra). Se salta el ítem y se DECLARA: nunca tumbar el cierre
+            # de una producción por un código mal escrito, ni descontarlo en silencio.
+            log.error('Descuento MEE FALLÓ %s (prod %s): %s', _cod_efectivo, produccion_id, e)
+            descontados.append({
+                'codigo': mee_cod, 'codigo_descontado': _cod_efectivo,
+                'redirigido_de_marcacion': _redirigido_de, 'descripcion': desc or '',
+                'tipo_item': tipo_item or '', 'cantidad_planeada': cant_plan_f,
+                'cantidad_real': 0, 'cantidad_registrada': 0, 'descuento_incompleto': True,
+                'error': str(e)[:150], 'merma': 0, 'split_b2b': False,
+            })
             continue
 
     # Descuento separado de envases B2B custom · 1:1 con uds_real_b2b.
@@ -16395,8 +16424,13 @@ def marcacion_orden_enviar():
     # clics = dos ordenes = dos Salidas del base. El CAS protege TRANSICIONES, no la CREACION
     # (M63): lo que hace falta es el guard.
     # Un reenvio legitimo existe (mandar otra tanda del mismo envase), asi que NO se prohibe:
-    # se avisa con lo que ya hay y se pasa con `forzar`.
-    if not d.get('forzar'):
+    # se avisa con lo que ya hay y se pasa con `forzar_marcacion`.
+    # ⚠ FLAG PROPIO (4-ago · revisión adversarial): este guard NO puede reusar `forzar`, porque
+    # ese flag ya apaga el guard de STOCK_INSUFICIENTE (el que evita kardex negativo) y el gate
+    # de arte de Dirección Técnica. Si la UI reenviara con `forzar` para confirmar una segunda
+    # tanda legítima, de paso apagaría los otros dos sin que nadie lo haya pedido. Un flag por
+    # control. `forzar` se sigue aceptando para no romper a un caller viejo.
+    if not (d.get('forzar_marcacion') or d.get('forzar')):
         try:
             _ya = c.execute(
                 "SELECT id, cantidad_enviada, fecha_envio FROM marcacion_ordenes "
@@ -16415,7 +16449,9 @@ def marcacion_orden_enviar():
                          'tanda, confirmá para no descontarlo dos veces',
                 'codigo': 'MARCACION_YA_ABIERTA',
                 'orden_id': _ya[0], 'cantidad_enviada': _ya[1], 'fecha_envio': _ya[2],
-                'puede_forzar': True}), 409
+                # El flag a reenviar es SÓLO el de este guard: `forzar` apaga además el de
+                # stock y el gate de arte, y confirmar una segunda tanda no puede apagar eso.
+                'puede_forzar': True, 'flag': 'forzar_marcacion'}), 409
 
     # Salida del base (sale a marcar)
     try:
@@ -16473,6 +16509,30 @@ def _marcacion_liberar_core(c, oid, user, rol, chk):
                   (serig, '%orden ' + str(oid) + ' %'))
     except Exception:
         pass
+    # 1b) ⚠ SINCRONIZAR EL CACHE (4-ago · revisión adversarial). `aplicar_movimiento_mee`
+    # CLAMPEA toda Salida contra `maestro_mee.stock_actual`, no contra la suma del kardex. El
+    # envío a marcar DECREMENTA ese cache para el base, pero el retorno insertaba la Entrada del
+    # serigrafiado sin volver a subirlo nunca: con el cache en 0, el descuento de envasado
+    # registraba una Salida de **CERO** -- sin error, sin log, y con el ítem marcado como
+    # consumido. O sea que el doble descuento se había vuelto CERO descuento, que es peor: el
+    # kardex dice que el envase sigue en bodega.
+    # Va acá y no en `recibir` porque hasta la liberación el material está en CUARENTENA, y el
+    # stock canónico excluye la cuarentena: subir el cache antes lo dejaría discrepando.
+    try:
+        _ent = c.execute(
+            "SELECT COALESCE(SUM(cantidad),0) FROM movimientos_mee "
+            " WHERE UPPER(TRIM(mee_codigo))=UPPER(TRIM(?)) AND lote_ref='MARCACION-RET' "
+            "   AND COALESCE(observaciones,'') LIKE ?",
+            (serig, '%orden ' + str(oid) + ' %')).fetchone()
+        _cant_lib = float((_ent[0] if _ent else 0) or 0)
+        if _cant_lib > 0:
+            c.execute("UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? "
+                      " WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (_cant_lib, serig))
+    except Exception as _ec:
+        # No se traga: si el cache no se sincroniza, el próximo descuento sale en cero (M4).
+        log.warning('marcacion: no pude sincronizar el cache de %s (orden %s): %s',
+                    serig, oid, _ec)
+
     # 2) calificar el envase serigrafiado (material calificado)
     try:
         c.execute("UPDATE maestro_mee SET calificado=1, calificado_at=?, calificado_por=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",

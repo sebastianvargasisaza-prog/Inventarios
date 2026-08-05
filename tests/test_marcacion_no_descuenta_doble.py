@@ -105,7 +105,9 @@ def test_una_segunda_tanda_LEGITIMA_se_puede_forzar(app, db_clean):
     _limpiar(app); _sembrar(app, stock_base=1000)
     c = _cli(app)
     _enviar(c, produccion_id=None)
-    r = _enviar(c, produccion_id=None, forzar=True)
+    # El flag propio de ESTE guard · `forzar` a secas también apagaría el guard de stock y el
+    # gate de arte de Dirección Técnica, que no es lo que se está confirmando.
+    r = _enviar(c, produccion_id=None, forzar_marcacion=True)
     assert r.status_code == 200, r.data[:250]
     assert _stock(app, BASE) == 400, 'con forzar debería descontar la segunda tanda'
 

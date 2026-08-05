@@ -949,3 +949,44 @@ como días (float) y sólo se convierte a fecha al reportar.
 
 Tests: `tests/test_reglas_programacion.py` (en el gate · los tres guards probados desactivando
 la regla y viendo el rojo).
+
+## ⚠️ PROG-N+11 · El doble descuento se había vuelto CERO descuento (4-ago · revisión adversarial)
+
+El arreglo de PROG-N+6 se probó con un fixture que ponía `maestro_mee.stock_actual` **a mano**.
+Producción no hace eso, y ahí estaba el bug nuevo:
+
+- `marcacion_orden_enviar` **decrementa** el cache del base (`programacion.py:16429`);
+- `marcacion_orden_recibir` inserta la Entrada del serigrafiado **sin volver a subirlo**;
+- `aplicar_movimiento_mee` **clampea toda Salida contra ese cache**, no contra `SUM(movimientos_mee)`.
+
+Con el cache del serigrafiado en 0, el descuento de envasado registraba una **Salida de CERO**:
+sin error, sin log, y con el ítem del checklist marcado como consumido. **El doble descuento se
+convirtió en cero descuento, que es peor**: el kardex dice que el envase sigue en bodega.
+
+**Los tres arreglos:**
+1. **El cache se sincroniza al LIBERAR**, no al recibir: hasta la liberación el material está en
+   CUARENTENA y el stock canónico la excluye, así que subirlo antes lo dejaría discrepando.
+2. **La redirección exige `liberado`**, no `recibido`. Recibido = sigue en cuarentena esperando a
+   Calidad, o sea no se puede usar; redirigir ahí manda el descuento contra un stock que no existe.
+3. **Una Salida que se registra CORTA se declara** (`cantidad_registrada` + `descuento_incompleto`
+   + `log.warning`). El clamp la vuelve invisible por diseño: si no se dice, cualquier drift
+   futuro del cache vuelve a producir descuentos en cero en silencio (M4/M100).
+   Y el `except` ya no atrapa sólo `OperationalError`: `aplicar_movimiento_mee` lanza `ValueError`
+   si el código no está en `maestro_mee` con match EXACTO (sin UPPER/TRIM), así que un
+   serigrafiado cargado en minúscula tumbaba el cierre del envasado con un 500.
+
+**+ Un flag por control.** El guard anti-duplicado usa `forzar_marcacion`, no `forzar`: ese flag
+ya apagaba el guard de `STOCK_INSUFICIENTE` (kardex negativo) y el gate de arte de Dirección
+Técnica, así que confirmar una segunda tanda legítima habría apagado los tres. El 409 devuelve
+`flag: 'forzar_marcacion'` para que la UI no tenga que adivinar.
+
+**Regla general: cuando un fixture necesite un ajuste que el flujo real no hace, ESE ajuste es el
+bug.** El test que vale recorre el ciclo por los ENDPOINTS
+(enviar → recibir → liberar → producir) — y de paso apareció que el endpoint de liberar que el
+test usaba está **deprecado**: el real es el checklist de arte.
+
+Tests: `tests/test_marcacion_ciclo_real.py` (en el gate).
+
+**+ `slots_kg` se siembra desde la BD.** El tope de 200 kg/día de los generadores contaba sólo
+los lotes creados en esa corrida: `slots` (cantidad) sí leía lo ya agendado y `slots_kg` arrancaba
+vacío, así que el tope se cumplía dentro de la tanda y se incumplía contra el calendario real.
