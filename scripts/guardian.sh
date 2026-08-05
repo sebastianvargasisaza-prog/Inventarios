@@ -180,6 +180,11 @@ CORAZON=(
   # Ahora comparten el calculo, y ese bloque muestra las presentaciones con la foto del envase
   # de bodega y cuantas unidades salen de cada una.
   "tests/test_modal_unificado.py"
+  # La CARA del modal Programar, la que Sebastian aprobo: veredicto en una linea, diagnostico
+  # comprimido a fila de numeros, la DECISION como bloque dominante, y el chequeo de materiales
+  # DESPUES de decidir (antes contestaba por un kilaje que el usuario todavia no habia elegido).
+  # El reordenamiento se hizo capturando el bloque en una variable, sin reescribir su contenido.
+  "tests/test_modal_cuatro_bloques.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

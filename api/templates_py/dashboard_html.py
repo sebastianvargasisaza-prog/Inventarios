@@ -27102,28 +27102,84 @@ async function ckMarcar(itemId, estado){
     html += '<div style="flex:1">' + presentacion + avisos + '</div>';
     html += '</div>';
 
+    // VEREDICTO EN UNA LINEA (Sebastian 4-ago · la cara que aprobo). Antes habia que leer ocho
+    // recuadros para saber como viene el producto. Los datos ya estaban todos; lo que faltaba
+    // era decirlos de un golpe. `cfg` es el estado que la fila ya calculo, asi que el color de
+    // aca y el de la tabla no pueden discrepar (M5).
+    {
+      var _vd = [];
+      _vd.push('<b>' + cfg.emoji + ' ' + (p.dias_gondola != null
+        ? (p.dias_gondola === 0 ? 'Sin stock en góndola' : (p.dias_gondola + ' días de góndola'))
+        : 'Sin dato de góndola') + '</b>');
+      if ((p.velocidad_uds_dia || 0) > 0.001) {
+        _vd.push('vende ' + p.velocidad_uds_dia.toFixed(1) + ' uds/día');
+      } else {
+        _vd.push('sin ventas registradas');
+      }
+      if (p.ultima_produccion_fecha) {
+        _vd.push('última producción hace ' + (p.dias_desde_ultima != null ? p.dias_desde_ultima + ' d' : p.ultima_produccion_fecha));
+      } else {
+        _vd.push('sin producciones registradas');
+      }
+      // Lo que hace que el plan NO vea a este producto va en la misma linea: es lo primero que
+      // hay que arreglar antes de decidir nada sobre el (M124).
+      if (p.sin_mapeo_shopify) _vd.push('<b>⚠ sin SKU mapeado · sus ventas no cuentan</b>');
+      html += '<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;background:'
+        + cfg.bg + ';color:' + cfg.text + ';border:1px solid ' + cfg.border
+        + ';border-radius:10px;padding:9px 13px;font-size:12.5px;font-weight:600;margin-bottom:14px">'
+        + _vd.join('<span style="opacity:.45">·</span>') + '</div>';
+    }
+
     // ═══════ SECCIÓN 1 · DIAGNÓSTICO (read-only) ═══════
     // Sebastián 14-may-2026: "bien ordenado" · separo en 3 secciones claras:
     // 1) Diagnóstico (qué pasa hoy) · 2) Programar (acción rápida) · 3) Mover/Pausar (acciones sobre lo agendado)
 
-    html += '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary)">① Diagnóstico</div>';
+    html += '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary)">① Cómo va <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--cx-text-faint)">· lo que pasa hoy con este producto</span></div>';
 
     // ── Demanda actual ──
-    html += '<div style="background:var(--cx-bg-alt);border-radius:8px;padding:12px;margin-bottom:8px;border-left:4px solid ' + cfg.border + '">';
-    html += '<div style="font-size:11px;color:var(--cx-text-soft);font-weight:700;margin-bottom:6px">📊 Demanda y stock</div>';
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">';
-    html += '<div>Vende/día: <strong>' + p.velocidad_uds_dia.toFixed(1) + ' uds</strong></div>';
-    html += '<div>Vende/mes: <strong>' + ventaMes + ' uds</strong></div>';
-    html += '<div>Stock góndola: <strong>' + p.stock_uds_total + ' uds</strong></div>';
-    html += ((p.por_entrar_uds || 0) > 0 ? '<div>🔵 Por entrar (Espagiria): <strong style="color:var(--cx-info-text)">' + p.por_entrar_uds + ' uds</strong> <span style="font-size:10px;color:var(--cx-text-faint)">producido en el lab · aún no en góndola · ya cuenta para la próxima, no para la urgencia</span></div>' : '');
-    // M5/M6 · "Alcanza" = días de GÓNDOLA físicos (lo que decide la urgencia), NO la
-    // cobertura-con-pipeline. Así el número y el color (CRÍTICO/etc.) coinciden.
-    html += '<div>Alcanza góndola: <strong style="color:' + cfg.text + '">' + (p.dias_gondola != null ? p.dias_gondola + ' días' : '-') + '</strong> ' + cfg.emoji + ' ' + p.urgencia + '</div>';
+    // FILA DE NUMEROS (Sebastian 4-ago · la cara que aprobo). Era un parrafo en grilla de texto;
+    // ahora cada dato es una tarjeta con el numero grande, para que la DECISION de abajo -- que
+    // es la razon por la que se abre este modal -- pase a ser el bloque dominante. Mismos datos,
+    // ninguno se pierde.
+    var _kpiTarjeta = function(rot, val, sub, color, alerta){
+      return '<div style="flex:1;min-width:118px;background:' + (alerta ? cfg.bg : 'var(--cx-card)')
+        + ';border:1px solid ' + (alerta ? cfg.border : 'var(--cx-hairline)')
+        + ';border-radius:11px;padding:9px 12px">'
+        + '<div style="font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--cx-text-mute)">' + rot + '</div>'
+        + '<div style="font-size:20px;font-weight:800;letter-spacing:-.02em;margin-top:1px;font-variant-numeric:tabular-nums;color:' + (color || 'var(--cx-text)') + '">' + val + '</div>'
+        + (sub ? '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:1px">' + sub + '</div>' : '')
+        + '</div>';
+    };
+    var _esAlerta = ['CRITICO','URGENTE'].indexOf(p.urgencia) >= 0;
+    html += '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:8px">';
+    html += _kpiTarjeta('Vende / día', p.velocidad_uds_dia.toFixed(1), 'uds', '', false);
+    html += _kpiTarjeta('Vende / mes', ventaMes, 'uds', '', false);
+    html += _kpiTarjeta('Stock góndola', (p.stock_uds_total || 0).toLocaleString('es-CO'), 'uds',
+                        _esAlerta ? cfg.text : '', _esAlerta);
+    // M5/M6 · "Alcanza" son días de GÓNDOLA físicos (lo que decide la urgencia), NO la
+    // cobertura-con-pipeline: así el número y el color dicen lo mismo.
+    html += _kpiTarjeta('Alcanza', (p.dias_gondola != null ? p.dias_gondola + ' d' : '-'),
+                        (p.urgencia || '').toLowerCase(), cfg.text, _esAlerta);
+    if (p.ultima_produccion_fecha) {
+      html += _kpiTarjeta('Última producción', (p.ultima_produccion_kg || 0) + ' kg',
+                          p.ultima_produccion_fecha + (p.dias_desde_ultima != null ? ' · hace ' + p.dias_desde_ultima + ' d' : ''),
+                          '', false);
+    }
     html += '</div>';
-    // Sebastián 3-jul · QUITADA la línea "Con producción en camino: alcanza ~Xd" · era la MISMA
-    // referencia (~120d) que la caja "Última producción · horizonte" de abajo (Alcanza para ~120 días).
-    // Una sola referencia del alcance.
-    html += '</div>';
+    // El "por entrar" NO es un KPI: es la aclaración de por qué ese stock no cuenta todavía
+    // para la urgencia. Va como línea, no como tarjeta, para que no compita con los números.
+    // El "por entrar" NO es un KPI: es la aclaración de por qué ese stock no cuenta todavía
+    // para la urgencia. Va como línea, y SÓLO si existe -- antes el recuadro se dibujaba
+    // siempre y la mayoría de las veces quedaba vacío con su padding.
+    // ("Alcanza góndola" se sacó de acá: ahora es una de las tarjetas de arriba. Estaba
+    // apareciendo DOS veces, y dos veces el mismo número invita a buscarle la diferencia.)
+    if ((p.por_entrar_uds || 0) > 0) {
+      html += '<div style="background:var(--cx-info-pale);border-left:3px solid var(--cx-info);'
+        + 'border-radius:8px;padding:8px 11px;margin-bottom:8px;font-size:12px;color:var(--cx-text-soft)">'
+        + '🔵 Por entrar (Espagiria): <strong style="color:var(--cx-info-text)">' + p.por_entrar_uds
+        + ' uds</strong> <span style="font-size:10.5px;color:var(--cx-text-faint)">producido en el lab '
+        + '· aún no en góndola · ya cuenta para la próxima, no para la urgencia</span></div>';
+    }
     // 🎨 Desglose por referencia/tono (multi-SKU · 27-jun) · siempre disponible (abre el mix de ventas por SKU).
     html += '<button onclick="verDesgloseTonos(' + JSON.stringify((p.producto_nombre||p.producto||'')).replace(/"/g,'&quot;') + ')" style="background:var(--cx-card);border:1px solid var(--cx-primary-light);color:var(--cx-primary-text);border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:10px">🎨 Ver referencias / tonos</button>';
     // Sebastián 12-jul · marcar como CLIENTE EXTERNO (Ánimus no lo fabrica para DTC · ej. CREMA FACIAL UREA de Kelly Guerra)
@@ -27184,37 +27240,41 @@ async function ckMarcar(itemId, estado){
     // contesta por LOS KILOS de la cadena y sí mira los envases. El bloque viejo de abajo queda
     // como respaldo hasta que la primera respuesta llegue: si lo sacara, la ficha quedaría con
     // un hueco mientras carga.
-    html += '<div id="nec-disp" data-prod="' + escapeHtmlNec(p.producto_nombre || '') + '"></div>';
+    // El bloque "con que cuento" se ARMA aca y se EMITE despues de la decision: contesta por
+    // los kg que el usuario acaba de elegir, asi que ponerlo antes seria contestar por un
+    // kilaje que todavia no existe (Sebastian 4-ago, sobre el orden del modal).
+    var _htmlConQue = '';
+    _htmlConQue += '<div id="nec-disp" data-prod="' + escapeHtmlNec(p.producto_nombre || '') + '"></div>';
 
     // ── Match materias primas · ¿puede fabricarse? ──
     // Sebastián 13-may-2026: bloque CRÍTICO antes de programar
     // ⚠ Este bloque contesta por UN lote del maestro de fórmulas y su stock NO excluye
     // cuarentena. Queda SÓLO como respaldo mientras carga la respuesta real (`nec-disp`), que
     // lo oculta apenas llega. No borrarlo: sin él la ficha muestra un hueco al abrir.
-    html += '<div id="nec-disp-viejo">';
+    _htmlConQue += '<div id="nec-disp-viejo">';
     if (p.mps_status === 'OK') {
-      html += '<div style="background:var(--cx-success-pale);border-left:4px solid var(--cx-success);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--cx-success-text)">';
-      html += '🧪 <strong>Materias primas OK</strong> · ' + p.mps_total_items + ' items con stock suficiente para 1 lote · listo para producir';
-      html += '</div>';
+      _htmlConQue += '<div style="background:var(--cx-success-pale);border-left:4px solid var(--cx-success);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--cx-success-text)">';
+      _htmlConQue += '🧪 <strong>Materias primas OK</strong> · ' + p.mps_total_items + ' items con stock suficiente para 1 lote · listo para producir';
+      _htmlConQue += '</div>';
     } else if (p.mps_status === 'FALTAN_MPS') {
-      html += '<div style="background:var(--cx-danger-pale);border-left:4px solid var(--cx-danger);border-radius:8px;padding:10px;margin-bottom:12px">';
-      html += '<div style="font-size:11px;color:var(--cx-danger-text);font-weight:700;margin-bottom:6px">🧪⚠ FALTAN MATERIAS PRIMAS · ' + p.mps_n_faltantes + ' de ' + p.mps_total_items + ' items insuficientes</div>';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px"><thead><tr style="background:rgba(255,255,255,.5)"><th style="text-align:left;padding:4px">Código</th><th style="text-align:left;padding:4px">MP</th><th style="text-align:center;padding:4px">Necesario</th><th style="text-align:center;padding:4px">Stock</th><th style="text-align:center;padding:4px">Falta</th></tr></thead><tbody>';
+      _htmlConQue += '<div style="background:var(--cx-danger-pale);border-left:4px solid var(--cx-danger);border-radius:8px;padding:10px;margin-bottom:12px">';
+      _htmlConQue += '<div style="font-size:11px;color:var(--cx-danger-text);font-weight:700;margin-bottom:6px">🧪⚠ FALTAN MATERIAS PRIMAS · ' + p.mps_n_faltantes + ' de ' + p.mps_total_items + ' items insuficientes</div>';
+      _htmlConQue += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px"><thead><tr style="background:rgba(255,255,255,.5)"><th style="text-align:left;padding:4px">Código</th><th style="text-align:left;padding:4px">MP</th><th style="text-align:center;padding:4px">Necesario</th><th style="text-align:center;padding:4px">Stock</th><th style="text-align:center;padding:4px">Falta</th></tr></thead><tbody>';
       p.mps_faltantes.forEach(f => {
-        html += '<tr style="border-top:1px solid rgba(220,38,38,.2)"><td style="padding:3px 4px;font-family:ui-monospace;font-weight:700">' + escapeHtmlNec(f.material_id) + '</td><td style="padding:3px 4px">' + escapeHtmlNec(f.material_nombre) + '</td><td style="padding:3px 4px;text-align:center">' + f.necesario_g + 'g</td><td style="padding:3px 4px;text-align:center">' + f.disponible_g + 'g</td><td style="padding:3px 4px;text-align:center;color:var(--cx-danger-text);font-weight:700">' + f.faltante_g + 'g</td></tr>';
+        _htmlConQue += '<tr style="border-top:1px solid rgba(220,38,38,.2)"><td style="padding:3px 4px;font-family:ui-monospace;font-weight:700">' + escapeHtmlNec(f.material_id) + '</td><td style="padding:3px 4px">' + escapeHtmlNec(f.material_nombre) + '</td><td style="padding:3px 4px;text-align:center">' + f.necesario_g + 'g</td><td style="padding:3px 4px;text-align:center">' + f.disponible_g + 'g</td><td style="padding:3px 4px;text-align:center;color:var(--cx-danger-text);font-weight:700">' + f.faltante_g + 'g</td></tr>';
       });
-      html += '</tbody></table>';
-      html += '<div style="font-size:11px;color:var(--cx-danger-text);margin-top:6px">⚠ Comprar/recibir estas MPs antes de iniciar producción</div>';
-      html += '</div>';
+      _htmlConQue += '</tbody></table>';
+      _htmlConQue += '<div style="font-size:11px;color:var(--cx-danger-text);margin-top:6px">⚠ Comprar/recibir estas MPs antes de iniciar producción</div>';
+      _htmlConQue += '</div>';
     } else if (p.mps_status === 'SIN_FORMULA') {
-      html += '<div style="background:var(--cx-border-soft);border-left:4px solid var(--cx-text-faint);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--cx-text-mute)">';
-      html += '🧪? Sin fórmula registrada · no se puede calcular MPs necesarias';
-      html += '</div>';
+      _htmlConQue += '<div style="background:var(--cx-border-soft);border-left:4px solid var(--cx-text-faint);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--cx-text-mute)">';
+      _htmlConQue += '🧪? Sin fórmula registrada · no se puede calcular MPs necesarias';
+      _htmlConQue += '</div>';
     }
     // Sebastián 10-jul · DESPLEGABLE con TODAS las materias primas de la fórmula (confirmar mapeo/stock).
     if ((p.mps_todas || []).length > 0) {
-      html += '<details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:11px;color:var(--cx-primary-text);font-weight:700;padding:6px 10px;background:var(--cx-primary-pale);border-radius:6px;border-left:3px solid var(--cx-primary)">🧪 Ver todas las materias primas (' + p.mps_todas.length + ') · confirmar mapeo</summary>';
-      html += '<div style="padding:8px 0 0"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--cx-border-soft)"><th style="text-align:left;padding:4px">Código</th><th style="text-align:left;padding:4px">MP</th><th style="text-align:center;padding:4px">Necesario</th><th style="text-align:center;padding:4px">Stock</th><th style="text-align:center;padding:4px">Estado</th></tr></thead><tbody>';
+      _htmlConQue += '<details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:11px;color:var(--cx-primary-text);font-weight:700;padding:6px 10px;background:var(--cx-primary-pale);border-radius:6px;border-left:3px solid var(--cx-primary)">🧪 Ver todas las materias primas (' + p.mps_todas.length + ') · confirmar mapeo</summary>';
+      _htmlConQue += '<div style="padding:8px 0 0"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--cx-border-soft)"><th style="text-align:left;padding:4px">Código</th><th style="text-align:left;padding:4px">MP</th><th style="text-align:center;padding:4px">Necesario</th><th style="text-align:center;padding:4px">Stock</th><th style="text-align:center;padding:4px">Estado</th></tr></thead><tbody>';
       p.mps_todas.forEach(function(m){
         var deficitFisico = (m.necesario_g - m.disponible_g) > 0.01;                       // falta stock físico
         var deficitReal = (m.necesario_g - m.disponible_g - (m.pendiente_g || 0)) > 0.01;  // falta AUN restando lo ya pedido
@@ -27223,11 +27283,11 @@ async function ckMarcar(itemId, estado){
                 : (deficitReal ? '<span style="color:var(--cx-danger-text);font-weight:700">⚠ falta</span>'
                 : (deficitFisico ? '<span title="Sin stock físico pero ya pedida en compras" style="color:var(--cx-warn-text)">🚚 en camino</span>'
                 : '<span style="color:var(--cx-success-text)">✓ OK</span>')));
-        html += '<tr style="border-top:1px solid var(--cx-border)"><td style="padding:3px 4px;font-family:ui-monospace;font-weight:700">' + escapeHtmlNec(m.material_id) + '</td><td style="padding:3px 4px">' + escapeHtmlNec(m.material_nombre) + '</td><td style="padding:3px 4px;text-align:center">' + (Math.round(m.necesario_g*10)/10) + 'g</td><td style="padding:3px 4px;text-align:center">' + (Math.round(m.disponible_g*10)/10) + 'g</td><td style="padding:3px 4px;text-align:center">' + est + '</td></tr>';
+        _htmlConQue += '<tr style="border-top:1px solid var(--cx-border)"><td style="padding:3px 4px;font-family:ui-monospace;font-weight:700">' + escapeHtmlNec(m.material_id) + '</td><td style="padding:3px 4px">' + escapeHtmlNec(m.material_nombre) + '</td><td style="padding:3px 4px;text-align:center">' + (Math.round(m.necesario_g*10)/10) + 'g</td><td style="padding:3px 4px;text-align:center">' + (Math.round(m.disponible_g*10)/10) + 'g</td><td style="padding:3px 4px;text-align:center">' + est + '</td></tr>';
       });
-      html += '</tbody></table><div style="font-size:10px;color:var(--cx-text-faint);margin-top:4px">🆕 sin mov = código sin movimientos en el kardex (nuevo o sin recibir) · revisá que esté bien mapeado.</div></div></details>';
+      _htmlConQue += '</tbody></table><div style="font-size:10px;color:var(--cx-text-faint);margin-top:4px">🆕 sin mov = código sin movimientos en el kardex (nuevo o sin recibir) · revisá que esté bien mapeado.</div></div></details>';
     }
-    html += '</div>';   // cierra nec-disp-viejo
+    _htmlConQue += '</div>';   // cierra nec-disp-viejo
 
     // ═══════ PROGRAMAR PRODUCCIÓN · CANÓNICO MANUAL (Sebastián 10-jul) ═══════
     // Modelo nuevo (Alejandro no quiere sugerencias): la programación vive SOLO desde el punto de
@@ -27266,8 +27326,17 @@ async function ckMarcar(itemId, estado){
                           : (_ceM ? _ceM.kg.toFixed(1) : _partKg));
       var _aniosM = (_decG && _decG.horizonte_dias)
         ? Math.max(1, Math.min(3, Math.round(_decG.horizonte_dias / 365))) : 2;
-      html += '<div style="background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:10px;padding:14px;margin:14px 0">';
-      html += '<div style="font-size:14px;font-weight:800;color:var(--cx-primary-text);margin-bottom:8px">🏭 Producción</div>';
+      // ESTE es el bloque por el que se abre el modal (Sebastián 4-ago · la cara que aprobó):
+      // pasa a ser el DOMINANTE. Antes tenía el mismo peso visual que los tres bloques de
+      // información que lo rodeaban, así que la acción quedaba escondida entre datos.
+      html += '<div style="background:var(--cx-primary-pale, #f5f3ff);border:1px solid var(--cx-primary-soft, #ddd6fe);'
+        + 'border-left:5px solid var(--cx-primary);border-radius:14px;padding:17px;margin:16px 0;'
+        + 'box-shadow:0 1px 2px rgba(24,24,27,.04),0 14px 30px -20px rgba(124,58,237,.45)">';
+      html += '<div style="font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;'
+        + 'color:var(--cx-primary-text);margin-bottom:3px">Qué decido</div>';
+      html += '<div style="font-size:16px;font-weight:800;color:var(--cx-text);letter-spacing:-.02em;margin-bottom:10px">'
+        + '🏭 La cadena de producción <span style="font-size:11.5px;font-weight:600;color:var(--cx-text-faint)">'
+        + '· cada cuánto y cuántos kilos, por el horizonte que elijas</span></div>';
       // 📈 Venta esperada/mes (Sebastián 20-jul · mig 365): override cuando Shopify reciente engaña.
       var _vespN = (p.venta_esperada_mes) ? p.venta_esperada_mes : '';
       html += '<div style="background:var(--cx-info-pale);border:1px solid #bfdbfe;border-radius:8px;padding:9px 11px;margin-bottom:11px">';
@@ -27320,9 +27389,16 @@ async function ckMarcar(itemId, estado){
     // (ver la sección "Lotes ya agendados" · cada lote tiene "recalcular horizonte desde acá").
     const prodNombreEsc = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
 
+    // Acá sí: ya hay kilos elegidos, así que la pregunta "¿alcanza?" tiene sentido.
+    html += '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:800;text-transform:uppercase;'
+      + 'letter-spacing:.5px;margin:18px 0 8px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary)">'
+      + '③ Con qué cuento <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--cx-text-faint)">'
+      + '· para el lote que acabás de definir</span></div>';
+    html += _htmlConQue;
+
     // ═══════ SECCIÓN 3 · LOTES AGENDADOS · ACCIONES ═══════
     if ((p.planificacion || []).length > 0) {
-      html += '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary)">③ Lotes ya agendados · ' + p.planificacion.length + '</div>';
+      html += '<div style="font-size:11px;color:var(--cx-primary-text);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary)">④ Qué queda agendado <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--cx-text-faint)">· ' + p.planificacion.length + ' lote(s)</span></div>';
       html += '<div style="background:var(--cx-bg-alt);border-radius:8px;padding:10px">';
       html += renderLotesInline(p.planificacion, p.producto_nombre, p);
       html += '</div>';
