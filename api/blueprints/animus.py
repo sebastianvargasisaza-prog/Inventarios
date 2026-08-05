@@ -2,7 +2,7 @@ import sqlite3, json, logging, re, traceback, unicodedata, urllib.request
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from config import (DB_PATH, ADMIN_USERS, ANIMUS_ACCESS, COMPRAS_ACCESS,
-                    ESPAGIRIA_ACCESS)
+                    ESPAGIRIA_ACCESS, CONTADORA_USERS)
 from database import get_db
 from audit_helpers import audit_log, siguiente_correlativo, intentar_insert_con_retry
 from http_helpers import validate_money
@@ -1105,6 +1105,89 @@ def registrar_movimiento_caja(c, *, tipo, concepto, monto, fecha, metodo='efecti
 EMPRESAS_CAJA = ('ANIMUS', 'ESPAGIRIA')
 CAJA_ESTADOS = ('solicitada', 'autorizada', 'rechazada', 'pagada', 'anulada')
 
+# COMO hay que pagarle. Es lo que PIDE quien solicita, y no se confunde con `metodo_pago`, que
+# es como se pago DE VERDAD (lo escribe quien paga): un arqueo necesita poder comparar los dos.
+CAJA_MEDIOS = ('efectivo', 'nequi', 'transferencia')
+# A QUIEN. `proveedor` trae los datos del maestro; `persona` se escribe a mano; `concepto` es un
+# gasto sin destinatario nominal (un peaje, un domicilio).
+CAJA_BENEFICIARIO_TIPOS = ('proveedor', 'persona', 'concepto')
+
+
+def _caja_normalizar_datos_pago(d):
+    """Valida COMO se le paga y devuelve (datos, error).
+
+    La validacion vive ACA y no en la pantalla porque una solicitud que dice "transferencia" sin
+    numero de cuenta es una solicitud que nadie puede ejecutar -- y el momento de descubrirlo no
+    puede ser cuando Daniela la abre para pagar. Dos pantallas piden esto (Compras y Espagiria):
+    si cada una validara por su cuenta, una de las dos quedaria floja (M45).
+    """
+    medio = (d.get('pago_medio') or 'efectivo').strip().lower()
+    if medio not in CAJA_MEDIOS:
+        return None, 'Medio de pago invalido: debe ser efectivo, nequi o transferencia'
+
+    def _lim(k, n=80):
+        return (str(d.get(k) or '').strip())[:n]
+
+    out = {
+        'pago_medio': medio,
+        'pago_nequi': '',
+        'pago_banco': '',
+        'pago_tipo_cuenta': '',
+        'pago_num_cuenta': '',
+        # El titular y el documento aplican a los dos medios electronicos: el que recibe la plata
+        # puede no llamarse igual que el beneficiario (una persona cobrando por su empresa).
+        'pago_titular': _lim('pago_titular', 120),
+        'pago_documento': _lim('pago_documento', 40),
+    }
+
+    if medio == 'nequi':
+        # Solo digitos: un celular con espacios o guiones se copia mal a la app del banco, y el
+        # que paga termina tecleandolo de nuevo a mano, que es donde se equivoca.
+        nq = ''.join(ch for ch in _lim('pago_nequi', 30) if ch.isdigit())
+        if len(nq) < 7:
+            return None, 'Falta el numero de Nequi (celular) para poder pagar'
+        out['pago_nequi'] = nq
+    elif medio == 'transferencia':
+        out['pago_banco'] = _lim('pago_banco', 80)
+        out['pago_tipo_cuenta'] = _lim('pago_tipo_cuenta', 30).lower()
+        cta = ''.join(ch for ch in _lim('pago_num_cuenta', 40) if ch.isdigit() or ch == '-')
+        if not out['pago_banco']:
+            return None, 'Falta el banco para poder hacer la transferencia'
+        if len(cta.replace('-', '')) < 5:
+            return None, 'Falta el numero de cuenta para poder hacer la transferencia'
+        out['pago_num_cuenta'] = cta
+    # En EFECTIVO no se pide nada mas: se le entrega la plata en la mano. Los campos quedan
+    # vacios a proposito -- guardar una cuenta que no se va a usar es guardar un dato personal
+    # sin motivo.
+    return out, None
+
+
+def _caja_puede_ver_datos_bancarios(u):
+    """Quien puede VER un numero de cuenta (Habeas Data · Ley 1581).
+
+    No es "cualquiera con sesion": son los tres roles que lo necesitan para trabajar. Quien PIDE
+    el pago tiene que poder escribir a donde se paga, y quien PAGA tiene que poder leerlo. Para
+    el resto se enmascara.
+    """
+    return (u in ADMIN_USERS or u in CONTADORA_USERS
+            or _caja_puede_pagar(u) or u in COMPRAS_ACCESS or u in ESPAGIRIA_ACCESS)
+
+
+def _caja_enmascarar(dic, ver):
+    """Deja los ultimos 4 digitos si el que mira no puede ver la cuenta completa.
+
+    Los ultimos 4 no son decoracion: sirven para CONFIRMAR contra un comprobante sin exponer la
+    cuenta. Un campo en blanco obligaria a preguntar por fuera del sistema.
+    """
+    if ver:
+        return dic
+    for k in ('pago_num_cuenta', 'pago_nequi'):
+        v = str(dic.get(k) or '')
+        if len(v) > 4:
+            dic[k] = '*' * (len(v) - 4) + v[-4:]
+    dic['pago_documento'] = ''
+    return dic
+
 
 def caja_tope_sin_autorizar(conn):
     """Monto bajo el cual quien maneja la caja paga sin esperar a gerencia.
@@ -1188,6 +1271,85 @@ def caja_tope():
     return jsonify({"ok": True, "tope": nuevo, "antes": antes})
 
 
+@bp.route("/api/caja/beneficiarios", methods=["GET"])
+def caja_beneficiarios():
+    """A quien se le puede pagar: el maestro de proveedores + quienes ya cobraron antes.
+
+    SIN datos bancarios a proposito. Volcar el maestro entero con todas las cuentas en el load
+    de una pantalla es el hallazgo M12(e): la cuenta se pide aparte, por proveedor, y queda
+    auditada. Aca solo van los nombres, que es lo que el buscador necesita.
+
+    Los beneficiarios ya usados entran a la lista aunque no sean proveedores del maestro: la
+    mayoria de los pagos de caja son a personas (un domiciliario, un tecnico) y obligarlas a
+    existir como proveedor volveria el campo inservible.
+    """
+    u, err, code = _caja_auth()
+    if err: return err, code
+    conn = _db()
+    out = []
+    try:
+        for r in conn.execute(
+            "SELECT id, nombre, COALESCE(nit,''), COALESCE(categoria,'') FROM proveedores "
+            " WHERE COALESCE(activo,1)=1 AND TRIM(COALESCE(nombre,''))<>'' "
+            " ORDER BY nombre").fetchall():
+            out.append({'tipo': 'proveedor', 'id': int(r[0]), 'nombre': r[1],
+                        'nit': r[2], 'categoria': r[3]})
+    except Exception as e:
+        # No se traga: si el maestro no se puede leer, el buscador aparece vacio y se lee como
+        # "no hay proveedores" -- que es lo contrario de lo que pasa (M4/M94).
+        log.warning('caja: no pude leer el maestro de proveedores: %s', e)
+        return jsonify({"ok": False, "beneficiarios": [],
+                        "error": "No pude leer el maestro de proveedores"}), 200
+    _vistos = {x['nombre'].strip().lower() for x in out}
+    try:
+        for r in conn.execute(
+            "SELECT DISTINCT TRIM(beneficiario) FROM caja_solicitudes_pago "
+            " WHERE TRIM(COALESCE(beneficiario,''))<>'' ORDER BY 1").fetchall():
+            if (r[0] or '').strip().lower() not in _vistos:
+                out.append({'tipo': 'persona', 'id': None, 'nombre': r[0].strip(),
+                            'nit': '', 'categoria': 'ya cobro antes'})
+    except Exception as e:
+        log.warning('caja: no pude leer los beneficiarios previos: %s', e)
+    return jsonify({"ok": True, "beneficiarios": out})
+
+
+@bp.route("/api/caja/beneficiario-datos", methods=["GET"])
+def caja_beneficiario_datos():
+    """Los datos de pago de UN proveedor · gateado y auditado (Ley 1581).
+
+    Se pide de a uno y solo cuando alguien lo elige, para que abrir la pantalla no vuelque el
+    maestro completo de cuentas. Queda en `audit_log` porque una consulta de dato personal es
+    justamente lo que una auditoria de Habeas Data pregunta: quien vio que, y cuando.
+    """
+    u, err, code = _caja_auth()
+    if err: return err, code
+    if not _caja_puede_ver_datos_bancarios(u):
+        return jsonify({"error": "No podes ver datos bancarios"}), 403
+    try:
+        pid = int(request.args.get('proveedor_id') or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    if not pid:
+        return jsonify({"error": "Falta el proveedor"}), 400
+    conn = _db()
+    r = conn.execute(
+        "SELECT nombre, COALESCE(banco,''), COALESCE(tipo_cuenta,''), "
+        "       COALESCE(num_cuenta,''), COALESCE(nit,'') "
+        "  FROM proveedores WHERE id=?", (pid,)).fetchone()
+    if not r:
+        return jsonify({"error": "Ese proveedor no existe"}), 404
+    audit_log(None, usuario=u, accion='CAJA_VER_DATOS_BANCARIOS', tabla='proveedores',
+              registro_id=pid, detalle='Consulto los datos de pago de %s' % r[0])
+    # Si el proveedor no tiene cuenta cargada se DICE, en vez de devolver campos vacios que se
+    # leen como "no tiene": son dos cosas distintas y la segunda manda a buscarla por fuera.
+    _tiene = bool((r[1] or '').strip() or (r[3] or '').strip())
+    return jsonify({"ok": True, "nombre": r[0], "banco": r[1], "tipo_cuenta": r[2],
+                    "num_cuenta": r[3], "documento": r[4], "tiene_datos": _tiene,
+                    "aviso": ('' if _tiene else
+                              'Este proveedor no tiene cuenta cargada en el maestro · '
+                              'escribila aca y quedara en la solicitud')})
+
+
 @bp.route("/api/caja/solicitudes", methods=["GET", "POST"])
 def caja_solicitudes():
     """GET: lista. POST: crea una solicitud de pago desde caja menor."""
@@ -1208,7 +1370,8 @@ def caja_solicitudes():
             "SELECT * FROM caja_solicitudes_pago" + where +
             " ORDER BY solicitado_at DESC, id DESC LIMIT 300", args)
         cols = [x[0] for x in cur.description]
-        filas = [_caja_sol_dict(r, cols) for r in cur.fetchall()]
+        _ver = _caja_puede_ver_datos_bancarios(u)
+        filas = [_caja_enmascarar(_caja_sol_dict(r, cols), _ver) for r in cur.fetchall()]
         # Los KPIs se calculan sobre TODO, no sobre la página filtrada: si contaran sólo lo
         # visible, filtrar por estado cambiaría los totales y el número dejaría de significar
         # lo mismo que su etiqueta.
@@ -1254,6 +1417,29 @@ def caja_solicitudes():
     if empresa not in EMPRESAS_CAJA:
         return jsonify({"error": "Empresa inválida · debe ser ANIMUS o ESPAGIRIA"}), 400
 
+    # A QUIEN se le paga · si es un proveedor del maestro se guarda su id, para que dos
+    # solicitudes al mismo proveedor no queden como dos beneficiarios distintos por una tilde.
+    ben_tipo = (d.get("beneficiario_tipo") or "concepto").strip().lower()
+    if ben_tipo not in CAJA_BENEFICIARIO_TIPOS:
+        return jsonify({"error": "Tipo de beneficiario invalido"}), 400
+    prov_id = d.get("proveedor_id")
+    try:
+        prov_id = int(prov_id) if str(prov_id or '').strip() else None
+    except (TypeError, ValueError):
+        prov_id = None
+    if ben_tipo == 'proveedor' and not prov_id:
+        return jsonify({"error": "Elegiste 'proveedor' pero no seleccionaste cual"}), 400
+    if prov_id:
+        # No se guarda un id que no existe: un beneficiario colgado de un proveedor borrado
+        # deja la solicitud sin a-quien-pagarle y nadie se entera hasta que hay que pagar.
+        _pv = conn.execute("SELECT nombre FROM proveedores WHERE id=?", (prov_id,)).fetchone()
+        if not _pv:
+            return jsonify({"error": "Ese proveedor ya no existe"}), 400
+
+    datos_pago, err_pago = _caja_normalizar_datos_pago(d)
+    if err_pago:
+        return jsonify({"error": err_pago}), 400
+
     tope = caja_tope_sin_autorizar(conn)
     # Bajo el tope no espera a gerencia, pero se DECLARA por qué quedó autorizada: un atajo
     # sin rastro es indistinguible de alguien saltándose el control.
@@ -1269,22 +1455,33 @@ def caja_solicitudes():
         c.execute("""INSERT INTO caja_solicitudes_pago
             (numero, empresa, concepto, monto, beneficiario, modulo_origen, estado,
              solicitado_por, solicitado_at, observaciones,
-             autorizado_por, autorizado_at, autorizacion_via, cotizacion_url)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             autorizado_por, autorizado_at, autorizacion_via, cotizacion_url,
+             beneficiario_tipo, proveedor_id, pago_medio, pago_nequi, pago_banco,
+             pago_tipo_cuenta, pago_num_cuenta, pago_titular, pago_documento)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (numero, empresa, concepto, monto, (d.get("beneficiario") or "").strip(),
              (d.get("modulo_origen") or "").strip(),
              'autorizada' if bajo_tope else 'solicitada',
              u, ahora, (d.get("observaciones") or "").strip(),
              (u if bajo_tope else None), (ahora if bajo_tope else None),
              ('bajo el tope de %s' % int(tope)) if bajo_tope else '',
-             (d.get("cotizacion_url") or "").strip()))
+             (d.get("cotizacion_url") or "").strip(),
+             ben_tipo, prov_id,
+             datos_pago['pago_medio'], datos_pago['pago_nequi'], datos_pago['pago_banco'],
+             datos_pago['pago_tipo_cuenta'], datos_pago['pago_num_cuenta'],
+             datos_pago['pago_titular'], datos_pago['pago_documento']))
         return numero, c.lastrowid
 
     numero, sid = intentar_insert_con_retry(_insertar, columna='numero')
     audit_log(c, usuario=u, accion='CAJA_SOLICITUD_CREAR', tabla='caja_solicitudes_pago',
               registro_id=sid,
+              # El audit guarda el MEDIO, nunca el numero de cuenta: el rastro que importa es
+              # "se pidio pagar por transferencia", y `audit_log` es inmutable, asi que un dato
+              # personal que entra ahi no se puede sacar nunca mas.
               despues={'numero': numero, 'monto': monto, 'empresa': empresa,
-                       'concepto': concepto, 'bajo_tope': bajo_tope},
+                       'concepto': concepto, 'bajo_tope': bajo_tope,
+                       'beneficiario_tipo': ben_tipo,
+                       'pago_medio': datos_pago['pago_medio']},
               detalle='Solicitud de pago %s por %s (%s)' % (numero, monto, empresa))
     conn.commit()
     return jsonify({"ok": True, "id": sid, "numero": numero,

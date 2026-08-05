@@ -199,6 +199,11 @@ CORAZON=(
   # y un <div> de menos NO rompe la sintaxis -- el node-check pasaria verde con la pantalla
   # partida. Las cuentas de marcas conocidas y el balance de <div> son las que lo cazan.
   "tests/test_modal_calendario_cara.py"
+  # La solicitud de pago de caja decia CUANTO y A QUIEN, nunca COMO. Daniela recibia una orden
+  # de pago que no se puede ejecutar (transferencia sin cuenta, Nequi sin celular) y eso se
+  # resolvia por WhatsApp: fuera del sistema y sin rastro. La validacion vive en el BACKEND
+  # porque dos pantallas mandan al mismo endpoint. + el picker no vuelca el maestro de cuentas.
+  "tests/test_caja_como_se_paga.py"
   # El panel fabricaba creadores duplicados (~700 copias). Guard de la causa raiz: el set de
   # "conocidos" NUNCA se arma desde la consulta filtrada -- lo que el filtro esconde parece
   # que no existe, y se re-inserta con cada tecla del buscador.

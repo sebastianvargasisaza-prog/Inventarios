@@ -332,6 +332,7 @@ window.addEventListener('error', function(ev){
           <th>N&deg;</th>
           <th>Fecha</th>
           <th>Concepto</th>
+          <th>C&oacute;mo se paga</th>
           <th>Empresa</th>
           <th style="text-align:right;">Monto</th>
           <th>Pidio</th>
@@ -339,7 +340,7 @@ window.addEventListener('error', function(ev){
           <th>Respaldo</th>
           <th></th>
         </tr></thead>
-        <tbody id="sp-body"><tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+        <tbody id="sp-body"><tr><td colspan="10" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2297,7 +2298,7 @@ function renderPagosKPIs(d){
 function renderPagosBody(){
   var body = document.getElementById('sp-body');
   if (!_SP_ROWS.length) {
-    body.innerHTML = '<tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin solicitudes de pago.</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin solicitudes de pago.</td></tr>';
     return;
   }
   body.innerHTML = _SP_ROWS.map(function(s, i){
@@ -2330,6 +2331,9 @@ function renderPagosBody(){
       + '<td style="font-weight:700;">'+esc(s.numero||'')+'</td>'
       + '<td>'+fmtFecha(s.solicitado_at)+'</td>'
       + '<td>'+esc(s.concepto||'')+(s.beneficiario?'<div style="font-size:11px;color:var(--cx-text-mute);">'+esc(s.beneficiario)+'</div>':'')+'</td>'
+      // COMO se le paga · es lo que Daniela necesita para ejecutar el pago sin preguntar por
+      // WhatsApp: el numero de Nequi o el banco y la cuenta, ahi mismo en la fila.
+      + '<td>'+cajaComoPagar(s, esc)+'</td>'
       + '<td><span class="badge badge-gray">'+esc(s.empresa||'')+'</span></td>'
       + '<td style="text-align:right;font-weight:700;">'+fmtCOP(s.monto||0)+'</td>'
       + '<td style="font-size:12px;">'+esc(s.solicitado_por||'')+'</td>'
@@ -3043,8 +3047,26 @@ async function guardarPqrManual(){
 // siempre, porque `loadCod()` solo corria si te ibas a otra pestana y volvias.
 _loaded['caja'] = true;
 loadTab('caja');
+//__CAJA_COMO_PAGAR__
 </script>
 
+<!--CAJA_CHIPS_CSS-->
 <!-- Widget "Mi contraseña" removido 24-may-2026 · vive en /modulos y /hub -->
 </body>
 </html>"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Daniela EJECUTA el pago, asi que es la que mas necesita saber COMO: el numero de Nequi o el
+# banco y la cuenta, en la misma fila. Se inyecta el MISMO pintor que usan Compras y Espagiria
+# (no una copia): el dia que se agregue un medio de pago, esta pantalla no puede quedar
+# mostrando el anterior (M45).
+from templates_py.caja_modal import cajaComoPagar_js, CAJA_MODAL_CSS as _CAJA_CSS
+
+_j = ANIMUS_HTML.count('//__CAJA_COMO_PAGAR__')
+assert _j == 1, 'el marcador de cajaComoPagar aparece %d veces (esperaba 1)' % _j
+ANIMUS_HTML = ANIMUS_HTML.replace('//__CAJA_COMO_PAGAR__', cajaComoPagar_js(), 1)
+
+_c = ANIMUS_HTML.count('<!--CAJA_CHIPS_CSS-->')
+assert _c == 1, 'el marcador del CSS de los chips aparece %d veces (esperaba 1)' % _c
+ANIMUS_HTML = ANIMUS_HTML.replace('<!--CAJA_CHIPS_CSS-->', _CAJA_CSS, 1)

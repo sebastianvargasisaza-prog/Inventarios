@@ -354,12 +354,22 @@ def test_espagiria_tiene_la_misma_pestana_de_novedades():
 def test_el_modal_de_solicitar_pago_deja_subir_la_factura():
     """Sebastián: *"que puedan anexar una foto si es algo que tiene ya factura"*. Se conserva
     además el campo de enlace: una cotización que llegó por correo ya tiene URL y obligar a
-    bajarla y volver a subirla sería absurdo."""
-    import ast as _ast, io as _io, os as _os
+    bajarla y volver a subirla sería absurdo.
+
+    ⚠ Mira el HTML **final**, no el fuente. Desde el 5-ago el modal se inyecta desde
+    `templates_py/caja_modal.py` (una definición para las dos pantallas), así que leer el
+    archivo daba rojo con el formulario perfectamente presente. Se verifica lo que el navegador
+    recibe (M65)."""
+    import os as _os, sys as _sys
     raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-    for arch, pfx in (('espagiria_html.py', 'ep'), ('compras_html.py', 'cp')):
-        src = _io.open(_os.path.join(raiz, 'api', 'templates_py', arch), encoding='utf-8').read()
-        assert 'id="%s-foto"' % pfx in src, '%s no deja subir la factura' % arch
-        assert 'carpeta=cotizaciones' in src, '%s no manda la foto a su carpeta' % arch
-        assert 'id="%s-cotiz"' % pfx in src, '%s perdió el campo de enlace' % arch
-        assert 'width:620px;' in src, '%s: el modal no se agrandó' % arch
+    api = _os.path.join(raiz, 'api')
+    if api not in _sys.path:
+        _sys.path.insert(0, api)
+    from templates_py.espagiria_html import HTML as _ESP
+    from templates_py.compras_html import COMPRAS_HTML as _CMP
+    for arch, pfx, html in (('espagiria', 'ep', _ESP), ('compras', 'cp', _CMP)):
+        assert 'id="%s-foto"' % pfx in html, '%s no deja subir la factura' % arch
+        assert 'carpeta=cotizaciones' in html, '%s no manda la foto a su carpeta' % arch
+        assert 'id="%s-cotiz"' % pfx in html, '%s perdió el campo de enlace' % arch
+        # El modal es GRANDE (Sebastián: pop-ups grandes) · el ancho vive en `.cajam-box`.
+        assert 'width:660px' in html, '%s: el modal no se agrandó' % arch

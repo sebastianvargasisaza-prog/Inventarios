@@ -11137,6 +11137,34 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "INSERT INTO app_settings (clave, valor) VALUES ('cod_fecha_inicio','') "
         "ON CONFLICT (clave) DO NOTHING",
     ]),
+    (417, "caja menor: COMO se le paga al beneficiario (efectivo/Nequi/transferencia)", [
+        # Sebastian (5-ago): "falta la parte de los datos: Nequi, cuenta bancaria, pagar en
+        # efectivo, numero de cuenta, numero de Nequi. Esto debe ser asi tanto en Compras como
+        # en Espagiria y reflejarse a Daniela en Animus cuando le llega la solicitud".
+        #
+        # Hasta hoy la solicitud decia CUANTO y A QUIEN, nunca COMO. Daniela recibia una orden
+        # de pago que no se puede ejecutar: si es transferencia le falta la cuenta, si es Nequi
+        # le falta el celular. Eso se resolvia por WhatsApp, o sea fuera del sistema y sin
+        # rastro -- justo lo que el modulo existe para evitar.
+        #
+        # ADITIVO (M117): las columnas nacen con default, asi que las solicitudes que ya estan
+        # siguen leyendose igual (`efectivo`, que es lo que eran). No se reescribe ni una fila:
+        # ponerle un medio de pago a una solicitud vieja seria inventar un hecho que nadie
+        # registro.
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN beneficiario_tipo TEXT NOT NULL DEFAULT 'concepto'",
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN proveedor_id INTEGER",
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN pago_medio TEXT NOT NULL DEFAULT 'efectivo'",
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN pago_nequi TEXT DEFAULT ''",
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN pago_banco TEXT DEFAULT ''",
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN pago_tipo_cuenta TEXT DEFAULT ''",
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN pago_num_cuenta TEXT DEFAULT ''",
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN pago_titular TEXT DEFAULT ''",
+        "ALTER TABLE caja_solicitudes_pago ADD COLUMN pago_documento TEXT DEFAULT ''",
+        # `pago_medio` es COMO HAY QUE PAGARLE (lo pide quien solicita) y NO se confunde con
+        # `metodo_pago`, que es como se pago DE VERDAD (lo escribe quien paga). Son dos hechos
+        # distintos y mezclarlos en una columna borraria la diferencia entre lo pedido y lo
+        # hecho, que es justo lo que un arqueo necesita comparar.
+    ]),
 ]
 
 

@@ -71,62 +71,7 @@ HTML = r"""
   </div>
 </div>
 
-<!-- MODAL · solicitar pago desde caja (Espagiria) -->
-<div id="modal-ep" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:16px;padding:26px;width:620px;max-width:92vw;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:var(--cx-text);margin:0;">&#128184; Solicitar pago con caja menor</h3>
-      <button onclick="document.getElementById('modal-ep').style.display='none'"
-              style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Concepto</label>
-      <input id="ep-concepto" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Qu&eacute; se va a pagar">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div>
-        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Monto</label>
-        <input id="ep-monto" type="number" oninput="epAvisarTope()" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="0">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Empresa</label>
-        <select id="ep-empresa" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;">
-          <option value="ESPAGIRIA">Espagiria</option>
-          <option value="ANIMUS">ANIMUS</option>
-        </select>
-      </div>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">A qui&eacute;n se le paga</label>
-      <input id="ep-benef" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Proveedor o persona">
-    </div>
-    <div style="margin-bottom:12px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Factura o cotizaci&oacute;n (foto)</label>
-      <input id="ep-foto" type="file" accept="image/*,.pdf" capture="environment"
-             onchange="epSubirFoto()"
-             style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:9px 12px;font-size:13px;">
-      <div id="ep-foto-estado" style="font-size:11.5px;color:var(--cx-text-mute);margin-top:5px;">
-        Sacale una foto a la factura o eleg&iacute;la del celular &middot; justifica el monto ANTES de autorizar
-      </div>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Cotizacion o pantallazo del precio</label>
-      <input id="ep-cotiz" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Enlace de la cotizacion (opcional pero recomendado)">
-      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;">Justifica el monto ANTES de autorizar</div>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Observaciones</label>
-      <textarea id="ep-obs" style="width:100%;min-height:60px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Opcional"></textarea>
-    </div>
-    <div id="ep-tope-aviso" style="font-size:12px;margin-bottom:12px;"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button onclick="document.getElementById('modal-ep').style.display='none'"
-              style="background:transparent;border:1px solid var(--cx-text-soft);color:var(--cx-text-soft);border-radius:8px;padding:8px 16px;cursor:pointer;">Cancelar</button>
-      <button onclick="epGuardar()"
-              style="background:var(--cx-primary-grad);color:var(--cx-text);border:none;border-radius:8px;padding:8px 18px;font-weight:700;cursor:pointer;">Enviar solicitud</button>
-    </div>
-  </div>
-</div>
+<!--CAJA_MODAL_EP-->
 
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
@@ -822,21 +767,31 @@ function epRenderLista(rows){
   var h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr>'
     + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">N&deg;</th>'
     + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Concepto</th>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">C&oacute;mo se paga</th>'
     + '<th style="text-align:right;padding:8px;border-bottom:1px solid var(--cx-border);">Monto</th>'
     + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Estado</th>'
     + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Quien</th>'
     + '</tr></thead><tbody>';
   rows.forEach(function(s){
-    // El rechazo va CON su motivo: sin el, quien pidio no sabe que corregir.
+    // El estado se cuenta COMPLETO: quien, cuando y con que respaldo. "pagada" a secas obliga
+    // a preguntar por fuera del sistema, que es lo que este modulo existe para evitar.
     var extra = '';
     if(s.estado === 'rechazada' && s.motivo_rechazo)
       extra = '<div style="font-size:11px;color:var(--cx-danger-text);">' + _epEsc(s.motivo_rechazo) + '</div>';
-    else if(s.estado === 'pagada' && s.pagado_por)
-      extra = '<div style="font-size:11px;color:var(--cx-text-mute);">pago ' + _epEsc(s.pagado_por) + '</div>';
+    else if(s.estado === 'pagada'){
+      var q = [];
+      if(s.pagado_por) q.push('pag&oacute; ' + _epEsc(s.pagado_por));
+      if(s.pagado_at)  q.push(_epEsc(String(s.pagado_at).slice(0,16).replace('T',' ')));
+      extra = '<div style="font-size:11px;color:var(--cx-text-mute);">' + q.join(' &middot; ') + '</div>';
+      extra += s.comprobante_url
+        ? '<div style="font-size:11px;"><a href="' + _epEsc(s.comprobante_url) + '" target="_blank" style="color:var(--cx-info-text);">ver comprobante</a></div>'
+        : '<div style="font-size:11px;color:var(--cx-warn-text);">&#9888; sin comprobante</div>';
+    }
     h += '<tr>'
       + '<td style="padding:8px;font-weight:700;border-bottom:1px solid var(--cx-hairline);">' + _epEsc(s.numero) + '</td>'
       + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);">' + _epEsc(s.concepto)
         + (s.beneficiario ? '<div style="font-size:11px;color:var(--cx-text-mute);">' + _epEsc(s.beneficiario) + '</div>' : '') + '</td>'
+      + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);">' + cajaComoPagar(s, _epEsc) + '</td>'
       + '<td style="padding:8px;text-align:right;font-weight:700;border-bottom:1px solid var(--cx-hairline);">' + _epFmt(s.monto) + '</td>'
       + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);color:' + (col[s.estado]||'var(--cx-text-mute)') + ';font-weight:600;">'
         + _epEsc(etq[s.estado] || s.estado) + extra + '</td>'
@@ -846,13 +801,7 @@ function epRenderLista(rows){
   body.innerHTML = h + '</tbody></table></div>';
 }
 
-function epAbrir(){
-  ['ep-concepto','ep-monto','ep-benef','ep-obs','ep-cotiz'].forEach(function(id){
-    var el = document.getElementById(id); if(el) el.value = '';
-  });
-  document.getElementById('ep-tope-aviso').innerHTML = '';
-  document.getElementById('modal-ep').style.display = 'flex';
-}
+//__CAJA_JS_EP__
 
 // Sube la factura o cotizacion. Un campo de ENLACE obliga a que el archivo ya viva en algun
 // lado; nadie tiene una URL de la factura, la tiene en el celular.
@@ -893,33 +842,36 @@ function epAvisarTope(){
 }
 
 async function epGuardar(){
-  var body = {
-    concepto: (document.getElementById('ep-concepto')||{value:''}).value.trim(),
-    monto: parseFloat((document.getElementById('ep-monto')||{value:0}).value || 0),
-    empresa: (document.getElementById('ep-empresa')||{value:'ESPAGIRIA'}).value,
-    beneficiario: (document.getElementById('ep-benef')||{value:''}).value.trim(),
-    observaciones: (document.getElementById('ep-obs')||{value:''}).value.trim(),
-    cotizacion_url: (document.getElementById('ep-cotiz')||{value:''}).value.trim(),
-    modulo_origen: 'espagiria'
-  };
-  if(!body.concepto){ alert('Concepto requerido'); return; }
-  if(!body.monto || body.monto <= 0){ alert('El monto debe ser mayor a 0'); return; }
+  // El cuerpo lo arma el modal compartido (incluye A QUIEN y COMO se le paga) · el MISMO que
+  // usa Compras, para que las dos pantallas pidan exactamente lo mismo.
+  var body = epCuerpo();
+  body.modulo_origen = 'espagiria';
+  var err = document.getElementById('ep-err');
+  var poneError = function(m){ if(err) err.textContent = m; else alert(m); };
+  if(err) err.textContent = '';
+  if(!body.concepto){ poneError('Falta el concepto: sin eso nadie sabe qué se está pagando.'); return; }
+  if(!body.monto || body.monto <= 0){ poneError('El monto tiene que ser mayor a 0.'); return; }
   // Guard anti doble-click: una solicitud duplicada termina en un pago duplicado (M63).
   if(window._epBusy) return;
   window._epBusy = true;
-  setTimeout(function(){ window._epBusy = false; }, 3000);
+  var btn = document.getElementById('ep-enviar');
+  if(btn){ btn.disabled = true; btn.textContent = 'Enviando...'; }
+  var soltar = function(){
+    window._epBusy = false;
+    if(btn){ btn.disabled = false; btn.textContent = 'Enviar solicitud'; }
+  };
+  setTimeout(soltar, 4000);
   try{
     var t = await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r = await fetch('/api/caja/solicitudes', {method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},
       body: JSON.stringify(body)});
     var d = await r.json();
-    if(!d.ok){ alert('Error: ' + (d.error||'?')); return; }
-    alert(d.numero + ' - ' + (d.aviso||''));
-    document.getElementById('modal-ep').style.display = 'none';
+    if(!d.ok){ poneError(d.error || 'No se pudo enviar'); return; }
+    epCerrar();
     cargarPagosCaja();
-  }catch(e){ alert('Error de red: ' + e.message); }
-  finally { window._epBusy = false; }
+  }catch(e){ poneError('Error de red: ' + e.message); }
+  finally { soltar(); }
 }
 
 var _labInterval = null;
@@ -1322,3 +1274,18 @@ cargarQA();
 </body>
 </html>
 """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# El MISMO modal que usa Compras (ver `templates_py/caja_modal.py`). Antes habia dos copias con
+# los mismos campos escritos dos veces: la de Espagiria era la que quedaba vieja, porque es la
+# pantalla que se toca menos.
+from templates_py.caja_modal import modal_caja, js_caja, CAJA_MODAL_CSS as _CAJA_CSS
+
+_m = HTML.count('<!--CAJA_MODAL_EP-->')
+assert _m == 1, 'el marcador del modal de caja aparece %d veces (esperaba 1)' % _m
+HTML = HTML.replace('<!--CAJA_MODAL_EP-->', _CAJA_CSS + modal_caja('ep', 'ESPAGIRIA'), 1)
+
+_j = HTML.count('//__CAJA_JS_EP__')
+assert _j == 1, 'el marcador del JS de caja aparece %d veces (esperaba 1)' % _j
+HTML = HTML.replace('//__CAJA_JS_EP__', js_caja('ep'), 1)

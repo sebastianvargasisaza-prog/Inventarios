@@ -815,60 +815,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   <div id="cp-body"><div style="color:var(--cx-text-faint);text-align:center;padding:40px;">Cargando...</div></div>
 </div>
 
-<!-- MODAL · solicitar pago desde caja (Compras) -->
-<div id="modal-cp" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--cx-card);border:1px solid var(--cx-text-soft);border-radius:16px;padding:26px;width:620px;max-width:92vw;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3 style="font-size:16px;color:var(--cx-text);margin:0;">&#128184; Solicitar pago con caja menor</h3>
-      <button onclick="document.getElementById('modal-cp').style.display='none'"
-              style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Concepto</label>
-      <input id="cp-concepto" class="in" style="width:100%" placeholder="Qué se va a pagar">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div>
-        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Monto</label>
-        <input id="cp-monto" type="number" class="in" style="width:100%" placeholder="0" oninput="cpAvisarTope()">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Empresa</label>
-        <select id="cp-empresa" class="in" style="width:100%">
-          <option value="ANIMUS">ANIMUS</option>
-          <option value="ESPAGIRIA">Espagiria</option>
-        </select>
-      </div>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">A quién se le paga</label>
-      <input id="cp-benef" class="in" style="width:100%" placeholder="Proveedor o persona">
-    </div>
-    <div style="margin-bottom:12px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:5px;letter-spacing:.05em;">Factura o cotizaci&oacute;n (foto)</label>
-      <input id="cp-foto" type="file" accept="image/*,.pdf" capture="environment"
-             onchange="cpSubirFoto()"
-             style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);border-radius:9px;padding:9px 12px;font-size:13px;">
-      <div id="cp-foto-estado" style="font-size:11.5px;color:var(--cx-text-mute);margin-top:5px;">
-        Sacale una foto a la factura o eleg&iacute;la del celular &middot; justifica el monto ANTES de autorizar
-      </div>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Cotizacion o pantallazo del precio</label>
-      <input id="cp-cotiz" style="width:100%;background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;" placeholder="Enlace de la cotizacion (opcional pero recomendado)">
-      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;">Justifica el monto ANTES de autorizar</div>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;margin-bottom:4px;">Observaciones</label>
-      <textarea id="cp-obs" class="in" style="width:100%;min-height:60px;" placeholder="Opcional"></textarea>
-    </div>
-    <div id="cp-tope-aviso" style="font-size:12px;margin-bottom:12px;"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="btn bo" onclick="document.getElementById('modal-cp').style.display='none'">Cancelar</button>
-      <button class="btn bg" onclick="cpGuardar()">Enviar solicitud</button>
-    </div>
-  </div>
-</div>
+<!--CAJA_MODAL_CP-->
 
 <div id="pane-por-pagar" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
@@ -7915,24 +7862,36 @@ function cpRenderLista(rows){
     + '<thead><tr>'
     + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">N&deg;</th>'
     + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Concepto</th>'
+    + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">C&oacute;mo se paga</th>'
     + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Empresa</th>'
     + '<th style="text-align:right;padding:8px;border-bottom:1px solid var(--cx-border);">Monto</th>'
     + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Estado</th>'
     + '<th style="text-align:left;padding:8px;border-bottom:1px solid var(--cx-border);">Quien</th>'
     + '</tr></thead><tbody>';
   rows.forEach(function(s){
-    // El rechazo se muestra CON su motivo: sin el, quien pidio no sabe que corregir.
+    // El estado se cuenta COMPLETO: quien y cuando. "pagada" a secas obliga a preguntar por
+    // fuera del sistema quien la pago, que es justo lo que este modulo existe para evitar.
     var extra = '';
     if(s.estado === 'rechazada' && s.motivo_rechazo)
       extra = '<div style="font-size:11px;color:var(--cx-danger-text);">'+esc(s.motivo_rechazo)+'</div>';
-    else if(s.estado === 'pagada' && s.pagado_por)
-      extra = '<div style="font-size:11px;color:var(--cx-text-mute);">pago '+esc(s.pagado_por)+'</div>';
+    else if(s.estado === 'pagada'){
+      var q = [];
+      if(s.pagado_por) q.push('pag&oacute; ' + esc(s.pagado_por));
+      if(s.pagado_at)  q.push(esc(String(s.pagado_at).slice(0,16).replace('T',' ')));
+      extra = '<div style="font-size:11px;color:var(--cx-text-mute);">'+q.join(' &middot; ')+'</div>';
+      // Un pago sin comprobante es una salida que nadie puede verificar: tiene que incomodar
+      // hasta que se cierre.
+      extra += s.comprobante_url
+        ? '<div style="font-size:11px;"><a href="'+esc(s.comprobante_url)+'" target="_blank" style="color:var(--cx-info-text);">ver comprobante</a></div>'
+        : '<div style="font-size:11px;color:var(--cx-warn-text);">&#9888; sin comprobante</div>';
+    }
     else if(s.estado === 'autorizada' && s.autorizacion_via)
       extra = '<div style="font-size:11px;color:var(--cx-text-mute);">'+esc(s.autorizacion_via)+'</div>';
     h += '<tr>'
       + '<td style="padding:8px;font-weight:700;border-bottom:1px solid var(--cx-hairline);">'+esc(s.numero||'')+'</td>'
       + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);">'+esc(s.concepto||'')
         + (s.beneficiario?'<div style="font-size:11px;color:var(--cx-text-mute);">'+esc(s.beneficiario)+'</div>':'')+'</td>'
+      + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);">'+cajaComoPagar(s, esc)+'</td>'
       + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);font-size:11px;">'+esc(s.empresa||'')+'</td>'
       + '<td style="padding:8px;text-align:right;font-weight:700;border-bottom:1px solid var(--cx-hairline);">'+fmt(s.monto||0)+'</td>'
       + '<td style="padding:8px;border-bottom:1px solid var(--cx-hairline);color:'+(col[s.estado]||'var(--cx-text-mute)')+';font-weight:600;">'
@@ -7943,13 +7902,8 @@ function cpRenderLista(rows){
   body.innerHTML = h + '</tbody></table></div>';
 }
 
-function cpAbrirSolicitud(){
-  ['cp-concepto','cp-monto','cp-benef','cp-obs','cp-cotiz'].forEach(function(id){
-    var el = document.getElementById(id); if(el) el.value = '';
-  });
-  document.getElementById('cp-tope-aviso').innerHTML = '';
-  document.getElementById('modal-cp').style.display = 'flex';
-}
+//__CAJA_JS_CP__
+function cpAbrirSolicitud(){ cpAbrir(); }   // el modal lo arma caja_modal.py
 
 // Sube la factura o cotizacion. Un campo de ENLACE obliga a que el archivo ya viva en algun
 // lado; nadie tiene una URL de la factura, la tiene en el celular.
@@ -7991,33 +7945,39 @@ function cpAvisarTope(){
 }
 
 async function cpGuardar(){
-  var body = {
-    concepto: (document.getElementById('cp-concepto')||{value:''}).value.trim(),
-    monto: parseFloat((document.getElementById('cp-monto')||{value:0}).value || 0),
-    empresa: (document.getElementById('cp-empresa')||{value:'ANIMUS'}).value,
-    beneficiario: (document.getElementById('cp-benef')||{value:''}).value.trim(),
-    observaciones: (document.getElementById('cp-obs')||{value:''}).value.trim(),
-    cotizacion_url: (document.getElementById('cp-cotiz')||{value:''}).value.trim(),
-    modulo_origen: 'compras'
+  // El cuerpo lo arma el modal compartido (incluye A QUIEN y COMO se le paga).
+  var body = cpCuerpo();
+  body.modulo_origen = 'compras';
+  var err = document.getElementById('cp-err');
+  var poneError = function(m){
+    // El error va DENTRO del modal, no en un alert: un alert cierra el foco y obliga a
+    // buscar de nuevo el campo que falta.
+    if(err) err.textContent = m; else alert(m);
   };
-  if(!body.concepto){ alert('Concepto requerido'); return; }
-  if(!body.monto || body.monto <= 0){ alert('El monto debe ser mayor a 0'); return; }
+  if(err) err.textContent = '';
+  if(!body.concepto){ poneError('Falta el concepto: sin eso nadie sabe qué se está pagando.'); return; }
+  if(!body.monto || body.monto <= 0){ poneError('El monto tiene que ser mayor a 0.'); return; }
   // Guard anti doble-click: una solicitud duplicada termina en un pago duplicado (M63).
   if(window._cpBusy) return;
   window._cpBusy = true;
-  setTimeout(function(){ window._cpBusy = false; }, 3000);
+  var btn = document.getElementById('cp-enviar');
+  if(btn){ btn.disabled = true; btn.textContent = 'Enviando...'; }
+  var soltar = function(){
+    window._cpBusy = false;
+    if(btn){ btn.disabled = false; btn.textContent = 'Enviar solicitud'; }
+  };
+  setTimeout(soltar, 4000);
   try{
     var t = await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r = await fetch('/api/caja/solicitudes', {method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},
       body: JSON.stringify(body)});
     var d = await r.json();
-    if(!d.ok){ alert('Error: '+(d.error||'?')); return; }
-    alert(d.numero + ' - ' + (d.aviso||''));
-    document.getElementById('modal-cp').style.display='none';
+    if(!d.ok){ poneError(d.error || 'No se pudo enviar'); return; }
+    cpCerrar();
     loadCajaPagos();
-  }catch(e){ alert('Error de red: '+e.message); }
-  finally { window._cpBusy = false; }
+  }catch(e){ poneError('Error de red: '+e.message); }
+  finally { soltar(); }
 }
 
 async function loadConsolidado(){
@@ -9770,3 +9730,23 @@ loadData();
 
 </body>
 </html>"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# El modal de caja menor vive en UN solo lugar y las dos pantallas (Compras y Espagiria) lo
+# inyectan. Dos copias del mismo formulario divergen, y la que queda vieja es siempre la de la
+# pantalla que se toca menos (M116/M45).
+#
+# El `assert` de cada reemplazo es el guard que importa: si el marcador no estuviera, el boton
+# "Solicitar pago" quedaria abriendo un modal inexistente -- exactamente como se desplego
+# Marketing con los modales borrados y los botones vivos (M112).
+from templates_py.caja_modal import modal_caja, js_caja, CAJA_MODAL_CSS as _CAJA_CSS
+
+_m = COMPRAS_HTML.count('<!--CAJA_MODAL_CP-->')
+assert _m == 1, 'el marcador del modal de caja aparece %d veces (esperaba 1)' % _m
+COMPRAS_HTML = COMPRAS_HTML.replace('<!--CAJA_MODAL_CP-->',
+                                    _CAJA_CSS + modal_caja('cp', 'ANIMUS'), 1)
+
+_j = COMPRAS_HTML.count('//__CAJA_JS_CP__')
+assert _j == 1, 'el marcador del JS de caja aparece %d veces (esperaba 1)' % _j
+COMPRAS_HTML = COMPRAS_HTML.replace('//__CAJA_JS_CP__', js_caja('cp'), 1)

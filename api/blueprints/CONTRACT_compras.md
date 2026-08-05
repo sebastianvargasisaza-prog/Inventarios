@@ -489,3 +489,52 @@ una pantalla que no se puede usar (M121).
 `CONTRACT_inventario.md`: el desplegable de ingreso incluye `Autorizada` y `Pagada`).
 
 Tests: `tests/test_oc_autorizada_visible.py` · `tests/test_rastro_oc.py`.
+
+---
+
+## INV-22 · La solicitud de caja menor dice A QUIÉN y CÓMO se le paga (5-ago)
+
+Sebastián: *"proveedor o persona debería poderse elegir de los proveedores ya existentes, o crear
+uno nuevo, o solo poner un concepto (...) falta la parte de los datos: Nequi, cuenta bancaria,
+pagar en efectivo, número de cuenta, número de Nequi. Esto debe ser así tanto en Compras como en
+Espagiria y reflejarse a Daniela en Ánimus cuando le llega la solicitud"*.
+
+Hasta hoy la solicitud decía **cuánto** y **a quién** (texto libre), nunca **cómo**. Daniela
+recibía una orden de pago que no se puede ejecutar — si era transferencia faltaba la cuenta, si
+era Nequi el celular — y eso se resolvía por WhatsApp: fuera del sistema y sin rastro, que es
+exactamente lo que el módulo existe para evitar.
+
+**Invariantes:**
+
+1. **`pago_medio` ∈ (`efectivo`, `nequi`, `transferencia`) y NO se confunde con `metodo_pago`.**
+   El primero es **cómo hay que pagarle** (lo pide quien solicita); el segundo es **cómo se pagó
+   de verdad** (lo escribe quien paga). Mezclarlos en una columna borraría la diferencia entre lo
+   pedido y lo hecho, que es justo lo que un arqueo necesita comparar.
+2. **La validación vive en el BACKEND** (`_caja_normalizar_datos_pago`, `animus.py`), no en la
+   pantalla: Compras y Espagiria mandan al mismo endpoint y si cada una validara por su cuenta
+   una de las dos quedaría floja (M45). `nequi` exige celular (≥7 dígitos, sin separadores);
+   `transferencia` exige banco **y** cuenta; `efectivo` no guarda nada más — una cuenta que no se
+   va a usar es un dato personal guardado sin motivo.
+3. **`beneficiario_tipo` ∈ (`proveedor`, `persona`, `concepto`).** Con `proveedor` se guarda
+   `proveedor_id` y se verifica que exista: un beneficiario colgado de un proveedor borrado deja
+   la solicitud sin a-quién-pagarle y nadie se entera hasta que hay que pagar.
+4. **Habeas Data (Ley 1581):** `GET /api/caja/beneficiarios` devuelve **sólo nombres**;
+   `GET /api/caja/beneficiario-datos?proveedor_id=N` devuelve la cuenta de a uno, gateado por
+   `_caja_puede_ver_datos_bancarios` y **auditado** (`CAJA_VER_DATOS_BANCARIOS`). Volcar el
+   maestro entero con las cuentas en el load de una pantalla es el hallazgo M12(e). Para quien no
+   puede verlas, el listado enmascara dejando los últimos 4 — que no son decoración: sirven para
+   confirmar contra un comprobante sin exponer la cuenta.
+5. **El `audit_log` guarda el MEDIO, nunca el número de cuenta.** `audit_log` es inmutable por
+   trigger: un dato personal que entra ahí no se puede sacar nunca más.
+6. **Un proveedor sin cuenta cargada lo DICE** (`tiene_datos: false` + aviso). Campos vacíos se
+   leen como "no tiene" y mandan a buscar el dato por fuera del sistema.
+7. **El modal es UNO solo** (`templates_py/caja_modal.py`, prefijo de ids por parámetro) y las
+   dos pantallas lo inyectan con `assert`. Dos copias del mismo formulario divergen, y la que
+   queda vieja es siempre la de la pantalla que se toca menos (M116). El pintor de "cómo se le
+   paga" (`cajaComoPagar`) lo comparten **tres** pantallas, incluida la bandeja de Daniela.
+
+**Migración 417 · ADITIVA** (M117): 9 `ADD COLUMN` con default, cero `UPDATE`/`DELETE`. Las
+solicitudes que ya existen se siguen leyendo igual (`efectivo`, que es lo que eran) — ponerle un
+medio de pago a una solicitud vieja sería inventar un hecho que nadie registró.
+
+Tests: `tests/test_caja_como_se_paga.py` (en el gate).

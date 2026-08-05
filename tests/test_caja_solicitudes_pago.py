@@ -398,17 +398,25 @@ def test_daniela_NO_autoriza_lo_que_supera_el_tope(app, db_clean):
 # caja menor, me llega a mi a mi modulo ceo autorizo le sale a daniela autorizado paga queda
 # trazabilidad, lo mismo a luz en su modulo de espagiria".
 # Un endpoint sin pantalla es una feature que en la practica nadie usa (M94).
+#
+# ⚠ Los tres helpers leen el HTML **FINAL** (importando el modulo), no el literal del fuente.
+# Desde el 5-ago el modal de caja se INYECTA desde `templates_py/caja_modal.py` al final del
+# modulo, asi que leer la constante cruda del AST deja de ver medio formulario y da rojos falsos.
+# Es la regla de siempre: se verifica lo que el navegador recibe, no lo que esta escrito (M65).
+
+
+def _mod_html(modulo, atributo):
+    import os as _os, sys as _sys
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    api = _os.path.join(raiz, 'api')
+    if api not in _sys.path:
+        _sys.path.insert(0, api)
+    mod = __import__('templates_py.' + modulo, fromlist=[atributo])
+    return getattr(mod, atributo)
+
 
 def _html_compras():
-    import ast as _ast, io as _io, os as _os
-    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-    src = _io.open(_os.path.join(raiz, 'api', 'templates_py', 'compras_html.py'),
-                   encoding='utf-8').read()
-    for n in _ast.walk(_ast.parse(src)):
-        if (isinstance(n, _ast.Assign) and isinstance(n.value, _ast.Constant)
-                and isinstance(n.value.value, str) and len(n.value.value) > 100000):
-            return n.value.value
-    raise AssertionError('no encontre el HTML de compras')
+    return _mod_html('compras_html', 'COMPRAS_HTML')
 
 
 def test_compras_tiene_la_subpestana_completa():
@@ -447,27 +455,11 @@ def test_la_solicitud_desde_compras_queda_marcada_con_su_ORIGEN(app, db_clean):
 
 
 def _html_animus():
-    import ast as _ast, io as _io, os as _os
-    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-    src = _io.open(_os.path.join(raiz, 'api', 'templates_py', 'animus_html.py'),
-                   encoding='utf-8').read()
-    for n in _ast.walk(_ast.parse(src)):
-        if (isinstance(n, _ast.Assign) and isinstance(n.value, _ast.Constant)
-                and isinstance(n.value.value, str) and len(n.value.value) > 5000):
-            return n.value.value
-    raise AssertionError('no encontre ANIMUS_HTML')
+    return _mod_html('animus_html', 'ANIMUS_HTML')
 
 
 def _html_espagiria():
-    import ast as _ast, io as _io, os as _os
-    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-    src = _io.open(_os.path.join(raiz, 'api', 'templates_py', 'espagiria_html.py'),
-                   encoding='utf-8').read()
-    cands = [n.value.value for n in _ast.walk(_ast.parse(src))
-             if isinstance(n, _ast.Assign) and isinstance(n.value, _ast.Constant)
-             and isinstance(n.value.value, str) and len(n.value.value) > 5000]
-    assert cands, 'no encontre el HTML de espagiria'
-    return max(cands, key=len)
+    return _mod_html('espagiria_html', 'HTML')
 
 
 def test_espagiria_tiene_la_entrada_de_luz_completa():

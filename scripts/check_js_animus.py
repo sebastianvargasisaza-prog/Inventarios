@@ -35,6 +35,27 @@ Response WebSocket IntersectionObserver MutationObserver ResizeObserver CustomEv
 
 
 def html_animus():
+    """El HTML **final** de /animus, no el literal del fuente.
+
+    ⚠ Antes leía la constante cruda del AST, y eso vuelve al guard incapaz de ver cualquier
+    bloque que se INYECTE después de declarar el string (`ANIMUS_HTML.replace(...)` al final del
+    módulo). El 5-ago dio un rojo falso por eso: la página llama a `cajaComoPagar` y su
+    definición entra por inyección, así que el guard veía la llamada y no la función.
+
+    Leer el valor final es además lo correcto por principio (M65): lo que hay que verificar es
+    lo que el navegador recibe, no lo que está escrito. El AST queda de respaldo por si el
+    módulo no se puede importar — con aviso, porque en ese modo el guard mira menos.
+    """
+    try:
+        import sys
+        api = os.path.join(RAIZ, 'api')
+        if api not in sys.path:
+            sys.path.insert(0, api)
+        from templates_py.animus_html import ANIMUS_HTML
+        return ANIMUS_HTML
+    except Exception as e:
+        print('[check_js_animus] AVISO: no pude importar animus_html (%s) · caigo al fuente '
+              'crudo, asi que NO veo lo que se inyecta despues.' % e)
     src = io.open(os.path.join(RAIZ, 'api', 'templates_py', 'animus_html.py'),
                   encoding='utf-8').read()
     for n in ast.walk(ast.parse(src)):
