@@ -247,7 +247,21 @@ CAJA_MODAL_CSS = '''
 .cajam-chip-tr{background:var(--cx-info-pale);color:var(--cx-info-text)}
 .cajam-det{font-size:11.5px;color:var(--cx-text);margin-top:4px;line-height:1.45;
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.cajam-tit{font-size:10.5px;color:var(--cx-text-mute);margin-top:2px}
+.cajam-tit{font-size:11px;color:var(--cx-text-mute);margin-top:3px}
+/* El NUMERO DE CUENTA es lo unico que hay que transcribir exacto, y es donde un error cuesta
+   plata: va grande, monoespaciado y con aire entre digitos. Un dato critico en 11px es una
+   invitacion a equivocarse (Sebastian: "se ven super pequenos... que despues no tengamos
+   errores"). */
+.cajam-cuenta{display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap}
+.cajam-cuenta b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:16px;
+  font-weight:800;letter-spacing:.06em;color:var(--cx-text);line-height:1.2}
+.cajam-copy{border:1px solid var(--cx-border);background:var(--cx-card);color:var(--cx-text-soft);
+  border-radius:7px;padding:3px 9px;font-size:10.5px;font-weight:700;cursor:pointer;
+  font-family:inherit;white-space:nowrap}
+.cajam-copy:hover{background:var(--cx-bg-soft)}
+.cajam-copy.ok{background:var(--cx-success-pale);border-color:var(--cx-success);
+  color:var(--cx-success-text)}
+.cajam-banco{font-size:12px;color:var(--cx-text-soft);font-weight:700;margin-top:3px}
 </style>
 '''
 

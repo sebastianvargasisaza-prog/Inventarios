@@ -2311,7 +2311,14 @@ function renderPagosBody(){
       acc += '<button class="btn btn-primary btn-sm" onclick="spAutorizar('+i+')">Autorizar</button> ';
       acc += '<button class="btn btn-outline btn-sm" onclick="spRechazar('+i+')">Rechazar</button>';
     } else if (s.estado === 'autorizada') {
-      acc += '<button class="btn btn-primary btn-sm" onclick="spPagar('+i+')">Pagar</button>';
+      acc += '<button class="btn btn-primary btn-sm" onclick="spPagar('+i+')">Pagar</button> ';
+      // Rechazar tambien cuando ya esta AUTORIZADA (Sebastian: "esta la hicieron mal, pero debe
+      // eliminarse... algo que diga rechazar y que escriban porque"). El backend ya lo permitia
+      // -- acepta 'solicitada' y 'autorizada' -- pero la pantalla solo lo ofrecia en la primera,
+      // asi que una solicitud mal hecha que ya paso el tope se quedaba lista para pagar sin
+      // forma de frenarla. NO se borra: se rechaza con motivo, porque la plata que no se pago
+      // tambien hay que poder explicarla.
+      acc += '<button class="btn btn-outline btn-sm" onclick="spRechazar('+i+')">Rechazar</button>';
     } else if (s.estado === 'pagada' && !s.comprobante_url) {
       acc += '<button class="btn btn-outline btn-sm" onclick="spComprobante('+i+')">Subir respaldo</button>';
     }
@@ -2319,8 +2326,7 @@ function renderPagosBody(){
       ? ' <a href="' + esc(s.cotizacion_url) + '" target="_blank" class="badge badge-blue" title="Cotizacion">cotiz</a>' : '';
     var resp = '<span style="color:var(--cx-text-mute);">-</span>';
     if (s.estado === 'pagada') {
-      resp = s.comprobante_url
-        ? '<a href="'+esc(s.comprobante_url)+'" target="_blank" class="badge badge-green">ver</a>'
+      resp = s.comprobante_url ? _cajaRespaldo(s.comprobante_url, esc)
         : '<span class="badge badge-red" title="Este pago no tiene respaldo">falta</span>';
     }
     // La via de autorizacion se muestra: si paso por el tope en vez de por gerencia, tiene
@@ -3047,6 +3053,20 @@ async function guardarPqrManual(){
 // siempre, porque `loadCod()` solo corria si te ibas a otra pestana y volvias.
 _loaded['caja'] = true;
 loadTab('caja');
+// El respaldo NO siempre es un archivo: alguien escribio "soporte de pago, fisico", que es un
+// hecho REAL (el comprobante esta en papel, en una carpeta). El sistema lo guardaba como URL y
+// lo pintaba como enlace -> click -> 404. Un dato que se captura bien y se muestra como otra
+// cosa termina rompiendose (M115): si parece enlace se enlaza, si no se muestra como la NOTA
+// que es, sin perderla.
+function _cajaEsUrl(v){
+  var t = String(v || '').trim();
+  return /^https?:[/][/]/i.test(t) || /^[/][^ ]*$/.test(t);
+}
+function _cajaRespaldo(v, esc){
+  var e = esc || function(x){ return String(x == null ? '' : x); };
+  if(_cajaEsUrl(v)) return '<a href="'+e(v)+'" target="_blank" class="badge badge-green">ver</a>';
+  return '<span class="badge badge-blue" title="Respaldo en papel">&#128196; '+e(v)+'</span>';
+}
 //__CAJA_COMO_PAGAR__
 </script>
 

@@ -23,8 +23,12 @@ def cajaComoPagar_js():
     Lo necesita la bandeja de quien paga (Daniela en Ánimus), que muestra los datos pero no
     tiene el formulario para pedirlos. Si esa pantalla se armara su propio pintor, el día que
     se agregue un medio de pago quedaría mostrando el anterior (M45)."""
-    i = _JS_CAJA.find('function cajaComoPagar(')
-    assert i > 0, 'no encontré cajaComoPagar en el JS compartido'
+    # ⚠ El corte arranca en el AYUDANTE de copiar, no en `cajaComoPagar`: el botón que pinta
+    # llama a `cajaCopiar`, así que cortar más abajo deja un botón llamando a una función que
+    # no existe -- no falla, simplemente no hace nada (M146).
+    i = _JS_CAJA.find('function cajaCopiar(')
+    assert i > 0, 'no encontré cajaCopiar en el JS compartido'
+    assert _JS_CAJA.find('function cajaComoPagar(') > i,         'cajaComoPagar quedó ANTES del ayudante · el corte lo dejaría afuera'
     return _JS_CAJA[i:]
 
 
@@ -151,21 +155,52 @@ function @P@Cuerpo(){
 // Muestra COMO hay que pagarle · lo usa la bandeja de quien paga (Daniela) y el listado de
 // Compras/Espagiria. Una orden de pago que no dice a donde se paga no se puede ejecutar, y
 // eso terminaba resolviendose por WhatsApp: fuera del sistema y sin rastro.
+// Copiar el numero al portapapeles: es LO QUE DE VERDAD evita el error de transcripcion.
+// Leerlo bien ayuda; no tener que teclearlo lo elimina.
+function cajaCopiar(btn, valor){
+  var txt = String(valor || '');
+  function ok(){ var v = btn.textContent; btn.textContent = 'copiado'; btn.classList.add('ok');
+                 setTimeout(function(){ btn.textContent = v; btn.classList.remove('ok'); }, 1400); }
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(ok, function(){ cajaCopiarFallback(txt, ok); });
+    } else { cajaCopiarFallback(txt, ok); }
+  }catch(e){ cajaCopiarFallback(txt, ok); }
+}
+function cajaCopiarFallback(txt, ok){
+  // Sin HTTPS o en navegador viejo el portapapeles moderno no existe · el respaldo evita que
+  // el boton quede mudo, que seria peor que no tenerlo.
+  try{
+    var ta = document.createElement('textarea');
+    ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); ok();
+  }catch(e){ alert('Copiá a mano: ' + txt); }
+}
+
 function cajaComoPagar(s, esc){
   var e = esc || function(x){ return String(x == null ? '' : x); };
   var medio = (s.pago_medio || 'efectivo');
   if(medio === 'efectivo') return '<span class="cajam-chip cajam-chip-efe">&#128181; Efectivo</span>';
-  var det = '', chip = '';
+  // El numero (cuenta o Nequi) es lo unico que hay que transcribir EXACTO, y es donde un error
+  // manda la plata a otro lado. Va grande, monoespaciado y con boton de copiar.
+  var chip = '', enc = '', num = '';
   if(medio === 'nequi'){
     chip = '<span class="cajam-chip cajam-chip-nq">&#128241; Nequi</span>';
-    det = '<b>' + e(s.pago_nequi || '') + '</b>';
+    num = String(s.pago_nequi || '');
   } else {
     chip = '<span class="cajam-chip cajam-chip-tr">&#127974; Transferencia</span>';
-    det = e(s.pago_banco || '') + (s.pago_tipo_cuenta ? ' &middot; ' + e(s.pago_tipo_cuenta) : '')
-        + '<br><b>' + e(s.pago_num_cuenta || '') + '</b>';
+    enc = '<div class="cajam-banco">' + e(s.pago_banco || '')
+        + (s.pago_tipo_cuenta ? ' &middot; ' + e(s.pago_tipo_cuenta) : '') + '</div>';
+    num = String(s.pago_num_cuenta || '');
   }
-  var tit = s.pago_titular ? '<div class="cajam-tit">a nombre de ' + e(s.pago_titular)
+  var cuenta = num
+    ? '<div class="cajam-cuenta"><b>' + e(num) + '</b>'
+      + '<button type="button" class="cajam-copy" onclick="cajaCopiar(this,&quot;'
+      + e(num).replace(/"/g, '') + '&quot;)" title="Copiar al portapapeles">copiar</button></div>'
+    : '<div class="cajam-det" style="color:var(--cx-danger-text);font-weight:700">falta el numero</div>';
+  var tit = s.pago_titular ? '<div class="cajam-tit">a nombre de <b>' + e(s.pago_titular) + '</b>'
             + (s.pago_documento ? ' &middot; ' + e(s.pago_documento) : '') + '</div>' : '';
-  return chip + '<div class="cajam-det">' + det + '</div>' + tit;
+  return chip + enc + cuenta + tit;
 }
 """
