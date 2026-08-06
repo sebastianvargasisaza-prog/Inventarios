@@ -7825,6 +7825,51 @@ def pagar_oc(numero_oc):
 # ─── Endpoints comprobantes de egreso ────────────────────────────────────────
 
 
+@bp.route('/comprobante-muestra', methods=['GET'])
+def comprobante_muestra():
+    """Ver CÓMO SE VE el comprobante de egreso, sin tener que hacer un pago (Sebastián 6-ago:
+    *"muéstrame en una pantalla el comprobante como se ve"*).
+
+    Hasta hoy el documento sólo se podía mirar abriendo el PDF de un pago YA hecho desde una fila
+    de Contabilidad. Para revisar el diseño -- o para mostrárselo a alguien -- había que pagarle a
+    alguien primero, que es un precio absurdo por ver una plantilla.
+
+    Usa `generar_comprobante_egreso_pdf`, que es PURO: no reserva número de comprobante ni
+    persiste nada. Un preview que consumiera un correlativo dejaría huecos en una numeración que
+    existe justamente para que los huecos se vean (M106).
+
+    `?empresa=animus|espagiria` para ver las dos identidades.
+    """
+    u, err, code = _require_compras_write()
+    if err:
+        return err, code
+    from datetime import datetime as _dt
+    from comprobante_pago import generar_comprobante_egreso_pdf
+    emp = (request.args.get('empresa') or 'animus').strip().lower()
+    if emp not in ('animus', 'espagiria'):
+        emp = 'animus'
+    # Datos de MUESTRA · el número lleva 0000 y el nombre dice MUESTRA para que nadie confunda
+    # este PDF con un comprobante real si se lo encuentra suelto en una carpeta.
+    pdf = generar_comprobante_egreso_pdf(
+        numero_ce='CE-0000-MUESTRA',
+        fecha_pago=_dt.now(),
+        beneficiario={'nombre': 'NOMBRE DEL CREADOR (MUESTRA)', 'cedula': '1.234.567.890',
+                      'banco': 'Bancolombia', 'cuenta': '000000000000',
+                      'tipo_cuenta': 'Ahorros', 'ciudad': 'Medellín',
+                      'email': 'correo@ejemplo.com', 'telefono': '300 000 0000'},
+        items=[{'descripcion': 'Contenido para redes · REEL', 'fecha': _dt.now().strftime('%Y-%m-%d'),
+                'cantidad': 1, 'valor_unit': 720000}],
+        aplicar_retefuente=True, aplicar_retica=True, aplicar_iva=False,
+        medio_pago='Transferencia',
+        observaciones='MUESTRA · este documento no corresponde a un pago real',
+        pagado_por=u, empresa_clave=emp,
+    )
+    from flask import Response as _Resp
+    return _Resp(pdf, mimetype='application/pdf',
+                 headers={'Content-Disposition': 'inline; filename="comprobante-muestra.pdf"',
+                          'Cache-Control': 'no-store'})
+
+
 @bp.route('/api/comprobantes-pago', methods=['GET'])
 def listar_comprobantes_pago():
     """Lista los comprobantes de egreso generados.

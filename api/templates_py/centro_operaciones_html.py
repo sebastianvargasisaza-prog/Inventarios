@@ -960,6 +960,13 @@ async function pagarDesdeBandeja(ix){
         return '• '+a.mensaje+(pv?('\n   anterior: $'+Number(pv.valor||0).toLocaleString('es-CO')+' del '+String(pv.fecha||'').slice(0,10)+(pv.entregable?' · '+pv.entregable:'')):'');
       }).join('\n') + '\n\n¿Pagar igual a '+p.influencer_nombre+'?'
     : 'Pagar '+_pgMoneda(p.valor)+' a '+p.influencer_nombre+'?';
+  // Al pagar se genera el comprobante de egreso (PDF con retenciones) y se le MANDA al creador.
+  // Sin correo guardado no sale -- y hasta hoy eso pasaba callado: se pagaba creyendo que el
+  // comprobante habia salido. Se avisa ANTES, que es cuando todavia se puede cargar el correo.
+  if(!String(p.email||'').trim()){
+    txt += '\n\n! ' + p.influencer_nombre + ' no tiene correo guardado: el comprobante de pago '
+         + 'NO se le va a enviar. Podes cargarlo en Marketing > Influencers y volver.';
+  }
   if(!confirm(txt)) return;
   var ref=prompt('Referencia de la transferencia (numero del banco):','');
   if(ref===null) return;
@@ -975,6 +982,15 @@ async function pagarDesdeBandeja(ix){
     });
     var js=await r.json();
     if(!r.ok||js.error){ alert('No se pudo pagar: '+(js.error||('HTTP '+r.status))); return; }
+    // El endpoint YA dice si el comprobante salio y por que no · la pantalla tiraba ese dato a
+    // la basura, asi que un pago SIN comprobante se veia igual que uno con comprobante (M100).
+    var cp = js.comprobante || {};
+    if(cp.email_enviado_a){
+      alert('Pagado · comprobante ' + (cp.numero_ce||'') + ' enviado a ' + cp.email_enviado_a);
+    } else if(cp.email_pendiente){
+      alert('Pagado' + (cp.numero_ce ? ' · comprobante ' + cp.numero_ce + ' generado' : '')
+            + ', pero NO se envio por correo:\n\n' + cp.email_pendiente);
+    }
     window._PG_CERRADOS={}; window._PG_DATA=null;
     await cargarPagos();
     cargarDecisiones();
