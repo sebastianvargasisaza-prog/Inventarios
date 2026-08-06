@@ -592,3 +592,30 @@ Reglas ahora, en los dos caminos:
   el respaldo y no probaría nada).
 
 Tests: `tests/test_recepcion_oc_envases.py` (en el gate).
+
+## 💸 INV-25 · TODA plata que sale de Compras se espeja al libro central (6-ago)
+
+Sebastián: *"tesorería debe mostrar cada movimiento de compras, todo lo que sea plata se debe ver
+reflejado allí"*. El libro central es `flujo_egresos`/`flujo_ingresos`, y es lo que lee la
+contadora.
+
+- **Los DOS pagadores espejan.** `pagar_oc` (pagar una orden) lo hacía desde hace rato;
+  **`fp_pagar` (pagar desde el libro de facturas de proveedor) NO** -- medido antes de tocar: 0
+  egresos contra 2. Todo pago hecho por esa puerta era invisible para Tesorería. Es M45 en la
+  forma más cara: el patrón existía, sólo que en uno de los dos hermanos.
+- **La referencia idempotente va por PAGO, no por factura** (`FP-<factura>-PAGO-<pago>`): una
+  factura admite varios parciales y cada uno es un egreso distinto. Anclar por factura haría que
+  el segundo parcial no se registrara nunca.
+- **El PERÍODO sale del HECHO** (INV-10, ahora en los cuatro inserts del archivo): si quien paga
+  manda la fecha, manda esa; si no, hoy anclado a Colombia. Y **no se le pregunta al reloj dos
+  veces**: `fecha` y `periodo` de la misma fila salen de la misma expresión, o a la medianoche de
+  fin de mes la fila puede decir dos meses distintos. El guard que lo sostiene
+  (`test_hoy_colombia_dinero.py`) lee los INSERT con el AST y está probado contra los dos bugs
+  reales -- el que buscaba texto en una ventana pasaba verde con el bug puesto.
+- **Lo que TODAVÍA no llega al libro está inventariado** (cobros contraentrega en efectivo, caja
+  manual, arqueo, `importar-pagados`, pagos a creadores fuera de `pagar_oc`, maquila, gasto
+  publicitario, costo de marcación, abonos de `pedidos.monto_pagado`). Es una lista medida, no una
+  impresión: mientras esté abierta, Tesorería NO puede presentarse como completa (M124).
+
+Tests: `tests/test_caja_libro_contadora.py` + `tests/test_hoy_colombia_dinero.py` (en el gate).
+
