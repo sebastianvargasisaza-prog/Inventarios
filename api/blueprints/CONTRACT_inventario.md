@@ -980,3 +980,33 @@ Reglas duras de `POST /api/mee/recepcion-lineas`:
   sin forma de verificar que el gotero quedó registrado.
 
 Tests: `tests/test_recepcion_partes_envase.py` (en el gate).
+
+## 🏷️ INV-27 · UN solo renderizador para el rótulo de MP (6-ago)
+
+Alejandro pidió imprimir los rótulos de N materias primas de una sola vez (`GET
+/rotulos-recepcion?movs=1,2,3`), y desde Recepción por número de lote
+(`GET /api/lotes/por-numero?lotes=L-1,L-2` → resuelve a movimientos).
+
+- **Es EL MISMO rótulo.** El armado vive en `_rotulo_mp_hojas(codigo, lote, cantidad, args,
+  estado)` y lo usan los DOS caminos: el individual (`/rotulo-recepcion/...`) y el bloque. Es un
+  documento **REGULADO** (COC-PRO-002-F07): dos renderizadores divergen y terminan imprimiendo
+  distinto según por dónde se pida (M1/M93). La extracción se hizo **cortando el cuerpo por
+  líneas**, sin reescribir la maqueta -- un error de transcripción ahí no se ve hasta que lo lee
+  la auditoría.
+- **El ESTADO (CUARENTENA / APROBADO / RECHAZADO) sale del KARDEX** (`movimientos.estado_lote`),
+  **nunca de la URL**. Verificado con test: `?estado=APROBADO` sobre un lote en cuarentena no lo
+  cambia. Un rótulo que miente pegado a un bidón es peor que no tener rótulo.
+- **El peso visual va en la PALABRA y un borde grueso, no en un relleno de color**: en térmica el
+  navegador no imprime fondos sin `print-color-adjust: exact` y un gris claro es invisible
+  (M123). Reemplaza el recuadro "colocar sticker", que existía porque el estado se pegaba a mano.
+- **Los campos del F01/F02 salen en BLANCO** mientras no se hayan hecho: un dato inventado miente
+  con formato de verdad (M115). Al hacerlos se reimprime el mismo rótulo y sale completo.
+- **Lo que no se pudo rotular se DECLARA** (lotes no encontrados, movimientos sin código):
+  imprimir 3 de 5 sin avisar es peor que fallar, porque el que pega no sabe cuál falta (M124).
+
+⚠ El **lote en recepción sigue siendo OPCIONAL** (decisión de Sebastián, 27-jul: trababa la
+recepción administrativa). Si queda vacío entra el provisional `OC-<oc>-<n>` y Calidad carga el
+real en el F01, que **sí** reemplaza el del kardex.
+
+Tests: `tests/test_rotulos_en_bloque.py` (en el gate).
+
