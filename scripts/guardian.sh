@@ -76,6 +76,8 @@ CORAZON=(
   "tests/test_recepcion_oc_envases.py"
   "tests/test_union_producto_envase.py"
   "tests/test_doble_descuento_envase.py"
+  "tests/test_serigrafiado_se_consume.py"
+  "tests/test_salida_envasado_canonica.py"
   "tests/test_segregacion_funciones.py"
   "tests/test_densidad_puente_op_of.py"
   "tests/test_legajo_trazabilidad_responsables.py"

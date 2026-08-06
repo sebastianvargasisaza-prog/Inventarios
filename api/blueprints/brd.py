@@ -8235,6 +8235,38 @@ def cerrar_envasado_ebr(ebr_id):
         _partes = {}
 
     descuentos = []
+
+    # ── EL FRASCO QUE VOLVIÓ SERIGRAFIADO ES EL QUE SE USA (Catalina 4-ago) ────────────────
+    # Cuando un envase se manda a marcar, su Salida YA se registró al enviarlo y vuelve como
+    # OTRO código. Descontar el base otra vez acá lo cuenta dos veces Y deja el serigrafiado
+    # -- el que de verdad se pone en la línea -- sin consumirse nunca (M147 causa (a)).
+    #
+    # No se adivina: la orden guarda `produccion_id` + `base_codigo` + `serigrafiado_codigo`,
+    # así que "este base, para ESTA producción, volvió como aquel" es un hecho REGISTRADO (M19).
+    # Sólo cuenta si está **liberado**: mientras está afuera -- o adentro en cuarentena -- ese
+    # envase no está para usarse y el stock canónico no lo cuenta (M153).
+    _redirigidos = []
+
+    def _envase_efectivo(cod):
+        """Devuelve (código a descontar, código del que se redirigió o '')."""
+        cod = (cod or "").strip()
+        if not cod or not _prod_id:
+            return cod, ''
+        try:
+            _mo = cur.execute(
+                "SELECT serigrafiado_codigo FROM marcacion_ordenes "
+                " WHERE produccion_id=? AND UPPER(TRIM(base_codigo))=UPPER(TRIM(?)) "
+                "   AND LOWER(COALESCE(estado,''))='liberado' "
+                "   AND UPPER(TRIM(COALESCE(serigrafiado_codigo,'')))<>UPPER(TRIM(base_codigo)) "
+                " ORDER BY id DESC LIMIT 1", (_prod_id, cod)).fetchone()
+            if _mo and (_mo[0] or '').strip():
+                return (_mo[0] or '').strip(), cod
+        except Exception as _e_mo:
+            # Un fallo mudo acá vuelve a descontar doble sin que nadie lo note (M4/M94).
+            log.warning("cerrar-envasado: no pude revisar la marcación de %s (prod %s): %s",
+                        cod, _prod_id, _e_mo)
+        return cod, ''
+
     # ── EL LIBRO MAYOR DE LO YA CONSUMIDO (Sebastián 5-ago) ───────────────────────────────
     # `produccion_checklist.consumido_at` es el registro de "este envase, para esta producción,
     # ya salió del kardex". Lo escribía SÓLO el cierre de acondicionamiento del Kanban, y este
@@ -8298,11 +8330,36 @@ def cerrar_envasado_ebr(ebr_id):
                                   "motivo": "otro cierre lo reclamó primero"})
                 return
             _ids.pop(0)
+        _obs = ("Envasado EBR-" + str(ebr_id) + " lote " + lote + " · "
+                + etiqueta + (" " + presentacion if presentacion else ""))
+        # ⚠ NO se usa `aplicar_movimiento_mee` acá, y la razón importa: ese helper **clampea la
+        # Salida contra `maestro_mee.stock_actual`**, que es un CACHE -- y M26 dice explícitamente
+        # que el stock canónico es la SUMA DEL KARDEX, no el cache. Probarlo con el cache en 0
+        # (como hace el fixture de `test_envase_partes_se_descuentan`, a propósito) registra una
+        # Salida de CERO: el envase se usó y el kardex sigue diciendo que está en bodega. Eso es
+        # peor que el doble descuento, y ya pasó una vez (M153).
+        #
+        # Entonces: el KARDEX registra lo que de verdad se consumió (completo), y el cache se
+        # mueve con el MISMO delta. En el caso sano (cache == kardex) queda exacto y sin drift;
+        # si el cache venía mal, el kardex igual dice la verdad y el cron de las 3 AM lo realinea.
+        # Lo único que se conserva del helper es la validación: un código que no está en el
+        # maestro NO entra (antes creaba stock fantasma que nadie puede reponer · M100).
+        if not cur.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
+                           (cod,)).fetchone():
+            log.warning("cerrar-envasado: %s no existe en maestro_mee · no se descuenta", cod)
+            _saltados.append({"mee_codigo": cod, "tipo": etiqueta,
+                              "motivo": "no existe en el maestro de envases"})
+            return
         cur.execute(
-            "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
-            "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
-            (cod, cantidad, "Envasado EBR-" + str(ebr_id) + " lote " + lote + " · "
-             + etiqueta + (" " + presentacion if presentacion else ""), user))
+            "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, "
+            " fecha, lote_ref, batch_ref) "
+            "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'), ?, ?)",
+            (cod, cantidad, _obs, user, str(_prod_id or ''), lote or ''))
+        # `MAX(a,b)` es escalar en SQLite y AGREGADA en PG · va con CASE (M51).
+        cur.execute(
+            "UPDATE maestro_mee SET stock_actual = CASE WHEN COALESCE(stock_actual,0) - ? < 0 "
+            "  THEN 0 ELSE COALESCE(stock_actual,0) - ? END WHERE codigo=?",
+            (cantidad, cantidad, cod))
         descuentos.append({"mee_codigo": cod, "tipo": etiqueta, "cantidad": cantidad,
                            "presentacion": presentacion})
 
@@ -8327,6 +8384,11 @@ def cerrar_envasado_ebr(ebr_id):
             if _b2b_rem > 0:                     # restar las uds que van a envase B2B custom
                 _sub = min(_b2b_rem, _qty_envase)
                 _qty_envase -= _sub; _b2b_rem -= _sub
+            # La redirección aplica al FRASCO, no a la tapa ni a la caja: a serigrafía va el
+            # envase, y redirigir una tapa por parecido sería adivinar.
+            _env_efectivo, _de = _envase_efectivo(_env_efectivo)
+            if _de:
+                _redirigidos.append({"de": _de, "a": _env_efectivo, "presentacion": p[0]})
             _salida_mee(_env_efectivo, _qty_envase, "envase", p[0])
             _salida_mee(p[2], n, "tapa", p[0])
             _salida_mee(p[3], n, "caja", p[0])
@@ -8335,6 +8397,9 @@ def cerrar_envasado_ebr(ebr_id):
                            {(c or "").strip().upper() for c in (_env_efectivo, p[2], p[3]) if c})
         # Envases custom por cliente B2B · 1:1 con sus unidades (aparte del default)
         for _ec, _un in _b2b_custom:
+            _ec, _de_b2b = _envase_efectivo(_ec)
+            if _de_b2b:
+                _redirigidos.append({"de": _de_b2b, "a": _ec, "presentacion": "B2B"})
             _salida_mee(_ec, _un, "envase_b2b", "")
             _salida_partes(_ec, _un, "", {(_ec or "").strip().upper()})
     except Exception as _e:
@@ -8345,7 +8410,8 @@ def cerrar_envasado_ebr(ebr_id):
     audit_log(None, usuario=user, accion="CERRAR_ENVASADO_DESCONTAR_MEE",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"lote": lote, "descuentos": descuentos,
-                       "saltados": _saltados, "sin_libro_mayor": _sin_libro})
+                       "saltados": _saltados, "sin_libro_mayor": _sin_libro,
+                       "redirigidos_a_serigrafiado": _redirigidos})
     # CADENA OF→OA (27-jun · Sebastián) · al CERRAR el envasado se HABILITA automático el legajo de
     # ACONDICIONAMIENTO del mismo lote físico (idempotente vía crear_ebr_desde_mbr · best-effort · NO
     # bloquea el cierre si falla). Espeja el hook fabricación→envasado de liberar_ebr. Así OF→OA deja de
@@ -8414,12 +8480,31 @@ def cerrar_acondicionamiento_ebr(ebr_id):
         return jsonify({"error": "El acondicionamiento ya se cerró/descontó o no está en proceso · refrescá",
                         "codigo": "YA_CERRADO"}), 409
     descuentos = []
+    saltados = []
+    # Mismo tratamiento que el cierre de envasado (M45: el `INSERT` a mano vivía en los DOS).
+    # El KARDEX registra lo consumido y el cache se mueve con el mismo delta; NO se clampea la
+    # Salida contra el cache, porque el stock canónico es la suma del kardex (M26/M153).
+    # La validación del código sí se conserva, y acá pesa más que en ningún lado: los códigos los
+    # TECLEA el operario en el body, así que uno mal escrito entraba como stock fantasma (M100).
     try:
         for cod, cant in items:
+            _obs = "Acondicionamiento EBR-" + str(ebr_id) + " lote " + lote
+            if not cur.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
+                               (cod,)).fetchone():
+                # No frena el cierre entero por un código mal cargado, pero lo DECLARA: un
+                # rechazo silencioso deja el material sin descontar y a nadie enterado (M4).
+                log.warning("cerrar-acondicionamiento: %s no existe en maestro_mee", cod)
+                saltados.append({"mee_codigo": cod, "motivo": "no existe en el maestro de envases"})
+                continue
             cur.execute(
-                "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
-                "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
-                (cod, cant, "Acondicionamiento EBR-" + str(ebr_id) + " lote " + lote, user))
+                "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, "
+                " responsable, fecha, batch_ref) "
+                "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'), ?)",
+                (cod, cant, _obs, user, lote or ''))
+            cur.execute(
+                "UPDATE maestro_mee SET stock_actual = CASE WHEN COALESCE(stock_actual,0) - ? < 0 "
+                "  THEN 0 ELSE COALESCE(stock_actual,0) - ? END WHERE codigo=?",
+                (cant, cant, cod))
             descuentos.append({"mee_codigo": cod, "cantidad": cant})
     except Exception as _e:
         conn.rollback()
@@ -8428,9 +8513,9 @@ def cerrar_acondicionamiento_ebr(ebr_id):
     conn.commit()
     audit_log(None, usuario=user, accion="CERRAR_ACONDICIONAMIENTO_DESCONTAR_MEE",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
-              despues={"lote": lote, "descuentos": descuentos})
+              despues={"lote": lote, "descuentos": descuentos, "saltados": saltados})
     return jsonify({"ok": True, "estado": "completado", "descuentos": descuentos,
-                    "n_descuentos": len(descuentos)})
+                    "n_descuentos": len(descuentos), "saltados": saltados})
 
 
 # ── DEMO de planta (27-jun · Sebastián) · seeder one-click para ver el flujo fabricación→envasado ─────────

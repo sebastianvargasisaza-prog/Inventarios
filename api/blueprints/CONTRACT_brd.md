@@ -634,10 +634,59 @@ mismo hecho. Sin `produccion_id` no hay libro que consultar (legajo suelto): des
 pero lo **DECLARA** (`sin_libro_mayor` en la respuesta y en el audit) — un descuento que no se pudo
 coordinar no se puede presentar como coordinado (M124).
 
-**⚠ Hueco conocido, NO cerrado (decisión de producto pendiente):** `brd.py` no lee
-`marcacion_ordenes` en ninguna línea, así que el frasco que volvió **serigrafiado** nunca se
-consume y se re-descuenta el BASE — la causa (a) de M147 sigue viva en el camino real. Y la Salida
-va con un `INSERT` crudo en vez de `aplicar_movimiento_mee`, salteándose el clamp y el cache.
+
 
 Tests: `tests/test_doble_descuento_envase.py` (en el gate · incluye el recorrido de los DOS cierres
 contando el kardex).
+
+
+## 📦 INV-20 · El frasco que volvió SERIGRAFIADO es el que se consume (5-ago)
+
+Catalina (4-ago) lo reportó como *"descuenta doble"*. Cuando un envase se manda a marcar, su
+**Salida YA se registró al enviarlo** y vuelve como OTRO código. `cerrar-envasado` descontaba el
+BASE otra vez — porque `producto_presentaciones` sigue apuntando a él — así que el base salía dos
+veces y el **serigrafiado, que es el que de verdad se pone en la línea, no se consumía nunca**: su
+stock sólo crecía. Es la causa (a) de M147, que estaba arreglada en `_descontar_mee_envasado`… una
+función **sin llamador vivo**: el arreglo existía y no corría (M121).
+
+La redirección **no adivina**: la orden guarda `produccion_id` + `base_codigo` +
+`serigrafiado_codigo`, así que *"este base, para ESTA producción, volvió como aquel"* es un hecho
+REGISTRADO (M19). Reglas:
+- Sólo si la orden está **`liberado`**. Mientras está afuera — o volvió y sigue en cuarentena — ese
+  envase no está para usarse y el stock canónico no lo cuenta (M153).
+- Sólo de **esta** `produccion_id`. Emparejar por código a secas convertiría el hecho registrado en
+  una coincidencia de nombres.
+- Sólo el **frasco**: a serigrafía no va la tapa ni la caja, y redirigirlas sería adivinar.
+- La redirección se **DECLARA** (`redirigidos_a_serigrafiado` en el audit): un descuento que cambió
+  de código sin decirlo es indistinguible de un error de carga.
+
+Tests: `tests/test_serigrafiado_se_consume.py` (en el gate · 7 casos, incluidos los tres que NO
+deben redirigir).
+
+
+## 📦 INV-21 · Los DOS cierres mueven KARDEX y CACHE juntos, y validan el código (5-ago)
+
+`cerrar-envasado` y `cerrar-acondicionamiento` insertaban la Salida con un `INSERT INTO
+movimientos_mee` a mano y **no tocaban `maestro_mee.stock_actual`** (M45: el patrón vivía en los
+dos). El cache quedaba alto después de cada cierre y sólo lo realineaba el cron de las 3 AM; entre
+medias, todo lo que clampea contra ese cache trabajaba inflado. Tampoco validaban que el código
+existiera, así que uno mal escrito entraba como stock fantasma que nadie puede reponer (M100) — y
+en acondicionamiento los códigos los **teclea el operario** en el body.
+
+Ahora los dos: **validan** que el código esté en `maestro_mee` (si no, va a `saltados` y NO frena
+el cierre), registran la Salida en el kardex y mueven el cache con el **mismo delta**.
+
+**⚠ Por qué NO se usa `aplicar_movimiento_mee`, que sería lo obvio.** Ese helper **clampea la
+Salida contra `maestro_mee.stock_actual`**, y M26 dice que el stock canónico es la SUMA DEL KARDEX,
+no el cache. Se intentó y el gate lo cazó: con el cache en 0 y stock real en el kardex — que es como
+siembra a propósito el fixture de `test_envase_partes_se_descuentan`, con el comentario *"stock real
+por kardex (canónico · M26), no por el cache"* — la Salida se registraba en **CERO**. El envase se
+usaba y el kardex seguía diciendo que estaba en bodega: peor que el doble descuento, y ya había
+pasado una vez (M153).
+
+Con el delta directo: en el caso sano (cache == kardex) queda exacto y sin drift; si el cache venía
+mal, el kardex igual dice la verdad y el cron lo realinea. El cache se clampea a 0 (nunca negativo)
+con `CASE WHEN`, no con `MAX(a,b)`, que es escalar en SQLite y agregada en PG (M51).
+
+Tests: `tests/test_salida_envasado_canonica.py` (en el gate · el guard cubre los DOS cierres y fue
+el que encontró el hermano de acondicionamiento).
