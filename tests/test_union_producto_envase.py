@@ -167,3 +167,91 @@ def test_la_pantalla_PINTA_la_union(app, db_clean):
     assert 'cov.union' in bloque, 'la pantalla no lee la unión'
     assert 'Serigrafiado' in bloque, 'no muestra el puente base → impreso'
     assert 'cov.aviso' in bloque, 'si la unión no se pudo calcular, la pantalla no lo dice'
+
+
+# ── ¿este frasco está EN BLANCO? ─────────────────────────────────────────────
+
+def test_un_frasco_de_COLOR_blanco_NO_se_marca_para_serigrafiar(app, admin_client, db_clean):
+    """⚠ El test que evita la alerta inútil. Medido en el maestro real: `FRASCO BLANCO CUADRADO`,
+    `FRASCO BLANCO PUFF` y `ENVASE REDONDO BLANCO` son frascos de COLOR blanco, no frascos sin
+    marcar. Detectarlos por la palabra "blanco" haría gritar la alerta por medio inventario, y una
+    alerta que suena siempre deja de mirarse justo el día que importa (M129/M144)."""
+    from database import get_db
+    _sembrar(app, serigrafiado='')
+    with app.app_context():
+        conn = get_db()
+        conn.execute("UPDATE maestro_mee SET descripcion='ZZ FRASCO BLANCO CUADRADO 30ml' "
+                     " WHERE codigo=?", (FRASCO,))
+        conn.commit()
+    fila = _union(admin_client)[0][PROD]
+    assert fila['en_blanco'] is False, \
+        'marcó un frasco de color blanco como "sin serigrafía" · señal: %s' % fila['senal_blanco']
+    assert fila['hay_que_serigrafiar'] is False
+    _limpiar(app)
+
+
+def test_un_frasco_SIN_SERIGRAFIA_si_se_marca(app, admin_client, db_clean):
+    """La señal real: `NO PRINT` / `SIN SERIG`, no el color."""
+    from database import get_db
+    _sembrar(app, serigrafiado='')
+    with app.app_context():
+        conn = get_db()
+        conn.execute("UPDATE maestro_mee SET descripcion='ZZ PLASTIC BOTTLE NO PRINT 30ml' "
+                     " WHERE codigo=?", (FRASCO,))
+        conn.commit()
+    fila = _union(admin_client)[0][PROD]
+    assert fila['en_blanco'] is True, fila
+    assert fila['senal_blanco'], 'no dice QUÉ señal coincidió · sin eso no se puede ajustar'
+    assert fila['hay_que_serigrafiar'] is True, 'está en blanco y sin impreso: hay que marcarlo'
+    _limpiar(app)
+
+
+def test_en_blanco_PERO_ya_tiene_su_impreso_no_alerta(app, admin_client, db_clean):
+    """Los dos hechos juntos son la alerta. Un frasco en blanco que YA tiene su serigrafiado
+    asignado está resuelto; seguir gritando por él es ruido."""
+    from database import get_db
+    _sembrar(app, serigrafiado=IMPRESO)
+    with app.app_context():
+        conn = get_db()
+        conn.execute("UPDATE maestro_mee SET descripcion='ZZ FRASCO SIN SERIG 30ml' "
+                     " WHERE codigo=?", (FRASCO,))
+        conn.commit()
+    fila = _union(admin_client)[0][PROD]
+    assert fila['en_blanco'] is True
+    assert fila['hay_que_serigrafiar'] is False, 'alerta por algo que ya está resuelto'
+    _limpiar(app)
+
+
+def test_el_patron_se_puede_ajustar_SIN_desplegar(app, admin_client, db_clean):
+    """Va a aparecer una forma nueva de escribirlo. Una lista escrita a mano en el código se
+    pudre y hay que esperar un deploy para arreglarla (M108/M122)."""
+    from database import get_db
+    _sembrar(app, serigrafiado='')
+    with app.app_context():
+        conn = get_db()
+        conn.execute("UPDATE maestro_mee SET descripcion='ZZ FRASCO CRUDO 30ml' WHERE codigo=?",
+                     (FRASCO,))
+        conn.execute("INSERT INTO app_settings (clave, valor) VALUES ('envase_blanco_patron', ?) "
+                     "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor", ('CRUDO|NO PRINT',))
+        conn.commit()
+    try:
+        fila = _union(admin_client)[0][PROD]
+        assert fila['en_blanco'] is True, 'no tomó el patrón de app_settings'
+        assert fila['senal_blanco'] == 'CRUDO'
+    finally:
+        with app.app_context():
+            conn = get_db()
+            conn.execute("DELETE FROM app_settings WHERE clave='envase_blanco_patron'")
+            conn.commit()
+    _limpiar(app)
+
+
+def test_la_pantalla_AVISA_lo_que_hay_que_serigrafiar(app, db_clean):
+    import templates_py.dashboard_html as D
+    H = ((getattr(D, 'DASHBOARD_APP_JS', '') or '')
+         + (getattr(D, 'DASHBOARD_CORE_JS', '') or '') + D.DASHBOARD_HTML)
+    js = re.sub(r'//[^\n]*', '', H)
+    i = js.find('async function cargarReparto')
+    bloque = js[i:i + 12000]
+    assert 'n_hay_que_serigrafiar' in bloque, 'la pantalla no avisa qué mandar a serigrafiar'
+    assert 'senales_envase_blanco' in bloque, 'no dice por qué señal lo detectó'

@@ -1191,4 +1191,16 @@ que el detalle — contados aparte, un día dicen cosas distintas y no se puede 
 vacía se leería como *"está todo bien"* (M100). El cambio es **aditivo** — la pantalla de Reparto
 ya consumía `sin_envase`/`no_aplica` y no puede romperse (M117).
 
+Además marca **qué frascos hay que mandar a serigrafiar**: los que están EN BLANCO y todavía no
+tienen su impreso. ⚠ La señal NO puede ser la palabra *"blanco"*: medido en el maestro real,
+`FRASCO BLANCO CUADRADO`, `FRASCO BLANCO PUFF` y `ENVASE REDONDO BLANCO` son frascos de **color**
+blanco, no frascos sin marcar — detectarlos así haría gritar la alerta por medio inventario, y una
+alerta que suena siempre deja de mirarse justo el día que importa (M129/M144). Las señales reales
+(`NO PRINT`, `SIN SERIG`…) viven en `app_settings.envase_blanco_patron` para ajustarlas sin
+desplegar cuando aparezca una forma nueva de escribirlo (M108/M122), y el resultado DEVUELVE cuál
+señal coincidió — no un booleano pelado — para poder auditar por qué se marcó un envase.
+
+Los **dos** hechos juntos son la alerta: un frasco en blanco que ya tiene su serigrafiado asignado
+está resuelto, y un pre-impreso de China sin puente no necesita marcarse.
+
 Tests: `tests/test_union_producto_envase.py` (en el gate).

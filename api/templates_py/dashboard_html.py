@@ -21002,6 +21002,17 @@ async function ckMarcar(itemId, estado){
           + 'Lo que está en <b>rojo</b> no se compra ni se descuenta: el motor lo lee de acá. '
           + '<b>Serigrafiado</b> es el puente base &rarr; impreso; vacío significa que lo que vuelve '
           + 'de serigraf&iacute;a no queda atado a este producto.</div>';
+        var _serig = (cov.n_hay_que_serigrafiar || 0);
+        if(_serig){
+          h += '<div style="background:var(--cx-warn-pale);color:var(--cx-warn-text);border-radius:10px;'
+            + 'padding:11px 14px;font-size:12.5px;margin-bottom:10px;font-weight:600">'
+            + _serig + ' frasco(s) est&aacute;n <b>en blanco</b> y todav&iacute;a no tienen su impreso: '
+            + 'hay que mandarlos a serigrafiar. '
+            + '<span style="font-weight:400">Se reconoce por el c&oacute;digo o la descripci&oacute;n ('
+            + escapeHtmlNec((cov.senales_envase_blanco||[]).join(', '))
+            + '). Un frasco de <b>color</b> blanco no cuenta: eso es el color, no que est&eacute; sin marcar.'
+            + '</span></div>';
+        }
         h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
           + '<thead><tr style="text-align:left;color:var(--cx-text-mute);font-size:11px;text-transform:uppercase;letter-spacing:.05em">'
           + '<th style="padding:7px 8px">Producto</th><th style="padding:7px 8px">ml</th>'
@@ -21022,7 +21033,11 @@ async function ckMarcar(itemId, estado){
             + '<td style="padding:7px 8px;color:var(--cx-text-mute)">'+(x.volumen_ml||'-')+'</td>'
             + celda(x.envase) + celda(x.tapa) + celda(x.caja)
             + '<td style="padding:7px 8px;color:var(--cx-text-soft)">'+(pz||'<span style="color:var(--cx-text-faint)">ninguna</span>')+'</td>'
-            + celda(x.serigrafiado) + '</tr>';
+            + (x.hay_que_serigrafiar
+                 ? '<td style="padding:7px 8px;color:var(--cx-warn-text);font-weight:700">'
+                   + 'mandar a serigrafiar</td>'
+                 : celda(x.serigrafiado))
+            + '</tr>';
         });
         h += '</tbody></table></div>';
         h += '<div style="font-size:11.5px;color:var(--cx-text-mute);margin-top:8px">'

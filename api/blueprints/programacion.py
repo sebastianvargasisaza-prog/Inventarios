@@ -17118,12 +17118,37 @@ def abastecimiento_envases_cobertura():
     # construida y sin datos, que es igual a no existir (M121). Acá se enumera pieza por pieza
     # lo que falta, en vez de un sí/no que esconde tres huecos (M124).
     detalle = []
+    # ── ¿ESTE FRASCO ESTÁ EN BLANCO? (Sebastián · *"debería alertar para mandar a serigrafiar"*) ──
+    # Se reconoce por el CÓDIGO o la DESCRIPCIÓN, como él pidió. ⚠ Pero "BLANCO" a secas NO sirve:
+    # medido, `FRASCO BLANCO CUADRADO`, `FRASCO BLANCO PUFF` y `ENVASE REDONDO BLANCO` son frascos
+    # de COLOR blanco, no frascos sin marcar. Usar esa palabra haría gritar la alerta por medio
+    # inventario y en dos días nadie la miraría. Las señales que de verdad dicen "sin imprimir"
+    # son otras (`NO PRINT`, `SIN SERIG`…), y el patrón vive en `app_settings` para poder
+    # ajustarlo sin desplegar cuando aparezca una forma nueva de escribirlo (M108/M122).
+    _SENALES_BLANCO_DEF = 'NO PRINT|NOPRINT|SIN SERG|SIN SERIG|SIN MARCA|SIN IMPRIM|SIN IMPRESION'
+    try:
+        _r_sb = c.execute("SELECT valor FROM app_settings WHERE clave='envase_blanco_patron'").fetchone()
+        _senales = [x.strip().upper() for x in
+                    ((_r_sb[0] if _r_sb and _r_sb[0] else _SENALES_BLANCO_DEF)).split('|') if x.strip()]
+    except Exception:
+        _senales = [x for x in _SENALES_BLANCO_DEF.split('|')]
+
+    def _senal_en_blanco(cod, desc):
+        """Devuelve la señal que coincidió, o '' · se DEVUELVE cuál (no un booleano pelado) para
+        que se pueda auditar por qué se marcó un envase y ajustar el patrón (M108)."""
+        _t = ((cod or '') + ' ' + (desc or '')).upper()
+        for _s in _senales:
+            if _s and _s in _t:
+                return _s
+        return ''
+
     try:
         _mee = {}
         for _cd, _ds, _mr in c.execute(
                 "SELECT codigo, COALESCE(descripcion,''), COALESCE(material_referencia,'') "
                 "  FROM maestro_mee").fetchall():
-            _mee[(_cd or '').strip().upper()] = {'descripcion': _ds, 'material_referencia': _mr}
+            _mee[(_cd or '').strip().upper()] = {'descripcion': _ds, 'material_referencia': _mr,
+                                                 'codigo': _cd}
         _partes = {}
         for _env, _pc, _cant in c.execute(
                 "SELECT mee_codigo, parte_codigo, COALESCE(cantidad,1) FROM mee_partes "
@@ -17155,14 +17180,24 @@ def abastecimiento_envases_cobertura():
             for _p in _pz:
                 if not _p['en_maestro']:
                     _falta.append('la pieza %s no existe en el maestro' % _p['codigo'])
+            # El frasco está EN BLANCO y no tiene impreso asignado → hay que mandarlo a
+            # serigrafiar. Los dos hechos juntos son la alerta; por separado no dicen nada (un
+            # frasco en blanco CON su impreso ya está resuelto, y uno pre-impreso de China sin
+            # puente no necesita marcarse).
+            _info_env = _mee.get(_ek) or {}
+            _senal = _senal_en_blanco(_env, _info_env.get('descripcion', ''))
+            _serig = _info_env.get('material_referencia', '')
             detalle.append({
                 'producto': _pn, 'volumen_ml': _vol,
                 'envase': _env, 'tapa': _tap, 'caja': _caj,
                 'piezas': _pz,
+                'en_blanco': bool(_senal),
+                'senal_blanco': _senal,
+                'hay_que_serigrafiar': bool(_senal and not _serig),
                 # El puente base↔serigrafiado. Vacío = este frasco no está atado a ningún
                 # impreso, así que lo que vuelve de serigrafía no se puede imputar a este
                 # producto (el flujo de marcación queda desconectado de la compra).
-                'serigrafiado': (_mee.get(_ek) or {}).get('material_referencia', ''),
+                'serigrafiado': _serig,
                 'falta': _falta,
                 'completo': not _falta,
             })
@@ -17189,6 +17224,11 @@ def abastecimiento_envases_cobertura():
         _res['n_sin_tapa'] = sum(1 for x in detalle if not x['tapa'])
         _res['n_sin_caja'] = sum(1 for x in detalle if not x['caja'])
         _res['n_sin_serigrafiado'] = sum(1 for x in detalle if not x['serigrafiado'])
+        # El contador que de verdad acciona: no "cuántos no tienen puente" sino cuántos
+        # ESTÁN EN BLANCO y todavía no lo tienen -- esos son los que hay que mandar a
+        # serigrafiar. El otro incluye pre-impresos de China, que no hay que marcar.
+        _res['n_hay_que_serigrafiar'] = sum(1 for x in detalle if x['hay_que_serigrafiar'])
+        _res['senales_envase_blanco'] = _senales
     return jsonify(_res)
 
 
