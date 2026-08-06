@@ -285,7 +285,6 @@ textarea{resize:vertical;min-height:70px;}
   </style>
   <div class="ccp-hero">
     <div class="ccp-title">&#x1F9EA; Recepción y liberación de insumos</div>
-    <div style="display:flex;gap:10px;align-items:center;margin:10px 0 4px"><button class="ccp-btn" onclick="rotImprimir()" style="background:var(--cx-primary-grad,#6d28d9);color:#fff;padding:9px 16px;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#128424; Imprimir rótulos</button><span id="rot-cuenta" style="font-size:12.5px;color:var(--cx-text-mute)">ninguna seleccionada</span></div>
     <div class="ccp-sub">Cada lote que llega recorre el pipeline de calidad. <b>Materias primas:</b> el F02 aprobado por el jefe libera el lote (VIGENTE, stock usable). <b>Envases (MEE):</b> no llevan análisis fisicoquímico &rarr; el F01 conforme + firma del jefe lo libera.</div>
     <div class="ccp-flow">
       <div class="ccp-st"><span class="n">&#x1F150;</span><span class="lb">Recepción administrativa<small>Catalina &middot; entra a cuarentena</small></span></div>
@@ -308,7 +307,11 @@ textarea{resize:vertical;min-height:70px;}
     <button class="ccp-btn" onclick="cjsEscanear()">Abrir la caja</button>
     <span id="cjs-scan-msg" style="font-size:12px;color:var(--cx-text-mute)"></span>
   </div>
-  <input type="text" class="ccp-search" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+  <input type="text" class="ccp-search" style="flex:1;min-width:240px;margin-bottom:0" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…">
+    <span id="rot-cuenta" style="margin-left:auto;font-size:12.5px;color:var(--cx-text-mute);white-space:nowrap">ninguna seleccionada</span>
+    <button class="ccp-btn" onclick="rotImprimir()" style="background:var(--cx-primary-grad,#6d28d9);color:#fff;padding:9px 16px;border:none;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap">&#128424; Imprimir rótulos</button>
+  </div>
   <div class="ccp-wrap" style="overflow-x:auto;">
     <table class="ccp">
       <thead><tr><th style="text-align:center"><input type="checkbox" id="rot-all" title="Marcar todas" onclick="rotTodas(this)" style="width:17px;height:17px;cursor:pointer"></th><th>Insumo</th><th>Lote / Código</th><th>Cantidad</th><th>Proveedor</th><th>Vencimiento</th><th>OC</th><th>&#x1F151; F01 técnica</th><th>&#x1F152; F02 análisis</th></tr></thead>
@@ -2594,7 +2597,35 @@ function _rcHeader(num,titulo,cod){
     +'<button class="rcm-x" onclick="_rcClose()">&#10005;</button></div>';
 }
 function _rcInput(id,val,ph){ return '<input id="'+id+'" class="rcm-in" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">'; }
-function _rcDate(id,val){ var v=(String(val||'').substring(0,10)); return '<input id="'+id+'" type="date" class="rcm-in" value="'+esc(v)+'">'; }
+var _RC_MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto',
+               'septiembre','octubre','noviembre','diciembre'];
+function _rcFechaLarga(iso){
+  // '2028-12-28' -> '28 diciembre 2028'. Se arma con los COMPONENTES de la cadena, NO con
+  // `new Date(iso)`: eso interpreta el ISO como UTC y en Colombia muestra el dia ANTERIOR
+  // (M106/M24) -- en un registro regulado, un dia corrido es un dato falso.
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso||''));
+  if(!m) return '';
+  var mes = _RC_MESES[parseInt(m[2],10)-1] || '';
+  return parseInt(m[3],10) + ' ' + mes + ' ' + m[1];
+}
+function _rcDateSync(id){
+  var el = document.getElementById(id);
+  var lb = document.getElementById(id+'_larga');
+  if(el && lb) lb.textContent = _rcFechaLarga(el.value) || '';
+}
+function _rcDate(id,val){
+  // Alejandro (6-ago): toda fecha de F01/F02 con CALENDARIO y leida "28 diciembre 2028".
+  // El `type="date"` da el calendario nativo (y el teclado de fecha en el celular); el
+  // navegador lo muestra en el formato del sistema, asi que la fecha larga va AL LADO --
+  // es la que la persona lee y la que evita confundir 12/08 con 08/12.
+  var v=(String(val||'').substring(0,10));
+  return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+    +'<input id="'+id+'" type="date" class="rcm-in" style="flex:0 0 auto" value="'+esc(v)+'" '
+    +'oninput="_rcDateSync(&quot;'+id+'&quot;)" onchange="_rcDateSync(&quot;'+id+'&quot;)">'
+    +'<span id="'+id+'_larga" style="font-size:12.5px;color:var(--cx-text-mute);'
+    +'font-weight:600;white-space:nowrap">'+esc(_rcFechaLarga(v))+'</span>'
+    +'</div>';
+}
 function _rcCrit(name,val){
   function o(v,l){ return '<label><input type="radio" name="'+name+'" value="'+v+'"'+(val===v?' checked':'')+'><span>'+l+'</span></label>'; }
   return '<div class="rcm-seg">'+o('cumple','Cumple')+o('no_cumple','No cumple')+o('no_aplica','No aplica')+'</div>';
@@ -2635,14 +2666,19 @@ function _rcUbicacion(g){
   var viejo = g('area_almacenamiento')||'';
   if(!tipo && viejo) tipo = 'legacy';
   var esNevera = (tipo==='nevera') || (est||'').toUpperCase()==='NEVERA';
+  // ESTIBAS (Alejandro 6-ago): hay material que no va a estanteria ni a nevera. Se reconoce
+  // tambien por lo YA GUARDADO como texto libre, para que un registro viejo no se lea como
+  // estanteria vacia al reabrir el F01.
+  var esEstibas = (tipo==='estibas') || (est||'').toUpperCase().indexOf('ESTIBA')===0;
   return '<div class="fg">'
     +'<label class="fl">Ubicación en bodega <span style="color:var(--cx-danger-text)">*</span></label>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">'
       +'<select id="f01_ubic_tipo" class="rcm-in" style="max-width:170px" onchange="_rcUbicTipo()">'
-        +'<option value="estanteria"'+(esNevera?'':' selected')+'>Estantería</option>'
+        +'<option value="estanteria"'+((esNevera||esEstibas)?'':' selected')+'>Estantería</option>'
         +'<option value="nevera"'+(esNevera?' selected':'')+'>Nevera (refrigerado)</option>'
+        +'<option value="estibas"'+(esEstibas?' selected':'')+'>Estibas</option>'
       +'</select>'
-      +'<div id="f01_ubic_est_wrap" style="display:'+(esNevera?'none':'flex')+';gap:8px;flex:1;min-width:220px">'
+      +'<div id="f01_ubic_est_wrap" style="display:'+((esNevera||esEstibas)?'none':'flex')+';gap:8px;flex:1;min-width:220px">'
         +'<input id="f01_ubic_estanteria" class="rcm-in" list="f01-estanterias-dl" style="flex:1"'
           +' value="'+esc(esNevera?'':est)+'" placeholder="Estantería (ej: A3)">'
         +'<input id="f01_ubic_posicion" class="rcm-in" style="flex:1"'
@@ -2661,6 +2697,7 @@ function _rcUbicTexto(){
   // lo compusiera por su lado, el rotulo podria decir algo distinto de lo que quedo guardado.
   var t = (document.getElementById('f01_ubic_tipo')||{}).value || '';
   if(t === 'nevera') return 'Nevera (refrigerado)';
+  if(t === 'estibas') return 'Estibas';
   var e = ((document.getElementById('f01_ubic_estanteria')||{}).value || '').trim();
   var p = ((document.getElementById('f01_ubic_posicion')||{}).value || '').trim();
   if(!e) return '';
@@ -2670,7 +2707,7 @@ function _rcUbicTexto(){
 function _rcUbicTipo(){
   var t = (document.getElementById('f01_ubic_tipo')||{}).value;
   var w = document.getElementById('f01_ubic_est_wrap');
-  if(w) w.style.display = (t==='nevera') ? 'none' : 'flex';
+  if(w) w.style.display = (t==='nevera' || t==='estibas') ? 'none' : 'flex';
 }
 function _rcSeg(name,val,pairs){
   var h='<div class="rcm-seg">';
@@ -2803,8 +2840,8 @@ async function openF02(mov_id){
       +_rcFld('Código / Lote proveedor',_rcInput('f02_lote_proveedor',g('lote_proveedor')))
       +_rcFld('Cantidad recibida',_rcInput('f02_cantidad_recibida',g('cantidad_recibida')))
       +_rcFld('Proveedor',_rcInput('f02_proveedor',g('proveedor')))
-      +_rcFld('Fecha recepción',_rcInput('f02_fecha_recepcion',g('fecha_recepcion')))
-      +_rcFld('Fecha de análisis',_rcInput('f02_fecha_analisis',f.fecha_analisis||''))
+      +_rcFld('Fecha recepción',_rcDate('f02_fecha_recepcion',g('fecha_recepcion')))
+      +_rcFld('Fecha de análisis',_rcDate('f02_fecha_analisis',f.fecha_analisis||''))
       +'</div>'
       +'<div class="rcm-sec">Resultados de análisis</div>'
       +'<table class="crt"><thead><tr><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700">Parámetro</td><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700">Especificación</td><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700">Resultado</td><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700;text-align:right">Cumple</td></tr></thead><tbody>'+prows+'</tbody></table>'
@@ -2815,7 +2852,7 @@ async function openF02(mov_id){
       +_rcFld('Código MP','<input class="rcm-in" value="'+esc(pre.codigo_mp||'')+'" readonly style="background:var(--cx-primary-pale);color:var(--cx-primary-text);font-weight:700">')
       +_rcFld('Nombre INCI',_rcInput('f02_inci_final',pre.nombre_inci||''))
       +_rcFld('Tipo de material',_rcSeg('f02tipo',(pre.tipo_material||'MP'),[['MP','MP'],['ME','ME'],['MEMP','MEMP']]))
-      +_rcFld('Lote (interno)',_rcInput('f02_lote_final',pre.lote||''))
+      +_rcFld('Lote',_rcInput('f02_lote_final',pre.lote||''))
       +_rcFld('Estantería',_rcInput('f02_est_final',pre.estanteria||''))
       +_rcFld('Posición',_rcInput('f02_pos_final',pre.posicion||''))
       +'</div>'
@@ -2823,7 +2860,7 @@ async function openF02(mov_id){
       +'<div class="rcm-sec">Concepto y firmas</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'
       +'<div style="grid-column:1/3">'+_rcFld('Resultado', _rcSeg('f02res',_res,[['aprobado','Aprobado'],['no_aprobado','No aprobado'],['cuarentena','Cuarentena']]))+'</div>'
-      +_rcFld('Fecha vencimiento (F-V)',_rcInput('f02_fecha_vencimiento',g('fecha_vencimiento')))
+      +_rcFld('Fecha vencimiento (F-V)',_rcDate('f02_fecha_vencimiento',g('fecha_vencimiento')))
       +_rcFld('Realiza el análisis (analista)',_rcInput('f02_responsable_analisis',f.responsable_analisis||''))
       +'<div style="grid-column:1/3">'+_rcFld('Aprueba (JEFE de Control de Calidad)',_rcInput('f02_aprobo_por',f.aprobo_por||''))+'</div>'
       +'</div>'
