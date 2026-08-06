@@ -87,6 +87,37 @@ CC_REVIEW_MODAL_HTML = r'''
 
 # ── JS del modal (raw · autocontenido) · usa /api/lotes/cc-review + firma Part 11 ──
 CC_REVIEW_JS = r'''
+// Este bloque se INYECTA en dos pantallas distintas (/calidad y la de Planta) y usa
+// `_fetchOpts`. Sólo una de las dos lo definía, así que el mismo modal funcionaba en una y
+// en la otra el botón no hacía NADA: `_fetchOpts is not defined` revienta la función entera,
+// y ni el node-check ni el balance de <div> ven una función que no existe (M146/M158).
+//
+// Un bloque compartido tiene que traer su propia dependencia en vez de confiar en quien lo
+// hospeda -- si no, agregar el modal a una pantalla nueva lo vuelve a romper en silencio.
+// Se respeta la del anfitrión si ya existe (las declaraciones `function` se izan, así que
+// cuando esta línea corre la del anfitrión ya está): esto sólo cubre el hueco.
+// ⚠ SINCRONA, con el mismo contrato que la del anfitrión. Las 4 llamadas son
+// `fetch(url, _fetchOpts('POST', body))` SIN `await`: una versión async devolvería una
+// PROMESA, `fetch` la ignoraría como opciones y mandaría un GET sin cuerpo ni token -- roto
+// de otra forma y mucho más difícil de ver que el error actual.
+var _ccrCsrf = '';
+try {
+  fetch('/api/csrf-token', {credentials: 'same-origin'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){ _ccrCsrf = (d && d.csrf_token) || ''; })
+    .catch(function(){});
+} catch(e){}
+window._fetchOpts = window._fetchOpts || function(metodo, cuerpo){
+  var h = {};
+  var t = (typeof _csrf === 'function') ? _csrf() : _ccrCsrf;
+  if (t) h['X-CSRF-Token'] = t;
+  var o = {method: metodo || 'GET', headers: h, credentials: 'same-origin'};
+  if (cuerpo !== undefined && cuerpo !== null) {
+    h['Content-Type'] = 'application/json';
+    o.body = (typeof cuerpo === 'string') ? cuerpo : JSON.stringify(cuerpo);
+  }
+  return o;
+};
 var _ccrLote=null;
 function abrirCCReview(lote){
   _ccrLote = (typeof lote==='string') ? JSON.parse(lote) : lote;

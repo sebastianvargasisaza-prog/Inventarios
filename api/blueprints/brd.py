@@ -8451,7 +8451,8 @@ def cerrar_acondicionamiento_ebr(ebr_id):
     body = request.get_json(silent=True) or {}
     conn = get_db(); cur = conn.cursor()
     erow = cur.execute(
-        "SELECT COALESCE(e.lote_codigo, e.lote), COALESCE(e.fase,'fabricacion') "
+        "SELECT COALESCE(e.lote_codigo, e.lote), COALESCE(e.fase,'fabricacion'), "
+        "COALESCE(e.produccion_id, 0) "
         "FROM ebr_ejecuciones e WHERE e.id=?", (ebr_id,)).fetchone()
     if not erow:
         return jsonify({"error": "EBR no encontrado"}), 404
@@ -8481,6 +8482,42 @@ def cerrar_acondicionamiento_ebr(ebr_id):
                         "codigo": "YA_CERRADO"}), 409
     descuentos = []
     saltados = []
+
+    # ── EL MISMO LIBRO MAYOR QUE EL CIERRE DE ENVASADO (M162 · tercer camino) ──────────────
+    # `produccion_checklist.consumido_at` dice "este envase, para esta producción, YA salió del
+    # kardex". El cierre de envasado lo lee y lo reclama; este no lo tocaba en ninguna línea, y
+    # como acá los códigos los TECLEA el operario, escribir el frasco o la caja que envasado ya
+    # consumió los descontaba DOS VECES. Un doble descuento no da síntoma: el kardex
+    # simplemente dice menos de lo que hay.
+    #
+    # No se agrega un cuarto candado: este camino pasa a usar el que ya existe.
+    _prod_id_ac = int(erow[2] or 0)
+    _ya_consumido = set()
+    _reclamables = {}
+    _sin_libro = not _prod_id_ac
+    if _prod_id_ac:
+        try:
+            for _cid, _ccod, _cons in cur.execute(
+                    "SELECT id, UPPER(TRIM(COALESCE(mee_codigo_asignado,''))), "
+                    "       COALESCE(consumido_at,'') "
+                    "  FROM produccion_checklist "
+                    " WHERE produccion_id=? AND COALESCE(mee_codigo_asignado,'')<>''",
+                    (_prod_id_ac,)).fetchall():
+                if not _ccod:
+                    continue
+                if str(_cons or '').strip():
+                    _ya_consumido.add(_ccod)
+                else:
+                    _reclamables.setdefault(_ccod, []).append(_cid)
+        except Exception as _e_lib:
+            # Sin libro mayor no se puede coordinar: se DECLARA y se sigue descontando (que un
+            # envase no salga del kardex es peor que arriesgar el doble), pero la respuesta lo
+            # dice para que el descuadre no aparezca sin explicación (M100/M124).
+            log.warning("cerrar-acondicionamiento: no pude leer el checklist de la producción "
+                        "%s: %s", _prod_id_ac, _e_lib)
+            _sin_libro = True
+            _ya_consumido = set(); _reclamables = {}
+
     # Mismo tratamiento que el cierre de envasado (M45: el `INSERT` a mano vivía en los DOS).
     # El KARDEX registra lo consumido y el cache se mueve con el mismo delta; NO se clampea la
     # Salida contra el cache, porque el stock canónico es la suma del kardex (M26/M153).
@@ -8496,6 +8533,25 @@ def cerrar_acondicionamiento_ebr(ebr_id):
                 log.warning("cerrar-acondicionamiento: %s no existe en maestro_mee", cod)
                 saltados.append({"mee_codigo": cod, "motivo": "no existe en el maestro de envases"})
                 continue
+            _k_ac = cod.strip().upper()
+            if _k_ac in _ya_consumido:
+                # Ya salió del kardex por el otro cierre · descontarlo otra vez inventa un
+                # consumo que no ocurrió.
+                saltados.append({"mee_codigo": cod,
+                                 "motivo": "ya consumido en el checklist de esta producción"})
+                continue
+            _ids_ac = _reclamables.get(_k_ac) or []
+            if _ids_ac:
+                # RECLAMO con CAS: si el otro cierre lo marcó entre la lectura y ahora,
+                # `rowcount` es 0 y este cierre NO lo descuenta (M27/M73).
+                cur.execute(
+                    "UPDATE produccion_checklist SET consumido_at=datetime('now','utc') "
+                    " WHERE id=? AND COALESCE(consumido_at,'')=''", (_ids_ac[0],))
+                if cur.rowcount == 0:
+                    saltados.append({"mee_codigo": cod,
+                                     "motivo": "otro cierre lo reclamó primero"})
+                    continue
+                _ya_consumido.add(_k_ac)
             cur.execute(
                 "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, "
                 " responsable, fecha, batch_ref) "
@@ -8515,7 +8571,11 @@ def cerrar_acondicionamiento_ebr(ebr_id):
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"lote": lote, "descuentos": descuentos, "saltados": saltados})
     return jsonify({"ok": True, "estado": "completado", "descuentos": descuentos,
-                    "n_descuentos": len(descuentos), "saltados": saltados})
+                    "n_descuentos": len(descuentos), "saltados": saltados,
+                    # Lo que NO se pudo coordinar se DECLARA: un descuento sin libro mayor no
+                    # se puede presentar como coordinado, y si mañana aparece un descuadre
+                    # tiene que haber quedado dicho por qué (M100/M124).
+                    "sin_libro_mayor": bool(_sin_libro)})
 
 
 # ── DEMO de planta (27-jun · Sebastián) · seeder one-click para ver el flujo fabricación→envasado ─────────

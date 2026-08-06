@@ -97,7 +97,7 @@ CORAZON=(
   "tests/test_financiero_pestanas_conectadas.py"
   "tests/test_comprobante_llega_al_creador.py"
   "tests/test_comprobante_muestra.py"
-  "tests/test_caja_libro_contadora.py" "tests/test_tesoreria_caja_menor.py" "tests/test_caja_llega_al_libro_central.py" "tests/test_ingreso_se_cuenta_una_vez.py" "tests/test_gastos_llegan_al_libro.py"
+  "tests/test_caja_libro_contadora.py" "tests/test_tesoreria_caja_menor.py" "tests/test_caja_llega_al_libro_central.py" "tests/test_ingreso_se_cuenta_una_vez.py" "tests/test_gastos_llegan_al_libro.py" "tests/test_acondicionamiento_no_descuenta_doble.py" "tests/test_cc_review_funciona_en_las_dos_pantallas.py"
   # La caja también PAGA (3-ago): solicitar → autorizar → pagar, con los controles que le dan
   # sentido -- nadie se autoriza a sí mismo, no se paga dos veces, no se paga más de lo que hay,
   # y consignar no cuenta como gasto. Es plata saliendo de una gaveta: sin gate no está protegido.
