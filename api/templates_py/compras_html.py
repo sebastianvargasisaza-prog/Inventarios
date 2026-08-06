@@ -3461,7 +3461,11 @@ async function confirmarBajaProv360(nombre){
     PROVS=dp.proveedores||[];
     fillProvSelect('noc-prov');
     closeModal('m-ficha360');
-    renderProveedores();
+    // La función se llama `renderProv`, no `renderProveedores` -- esta última no existe en
+    // ninguna parte. Y el `try/catch` de abajo hacía el defecto peor de lo que parecía: la baja
+    // SÍ se aplicaba en el servidor, pero la pantalla mostraba "Error: renderProveedores is not
+    // defined", no refrescaba la lista y se veía como que había fallado (M146).
+    renderProv();
     alert('Proveedor dado de baja. Historial conservado.');
   }catch(e){ alert('Error: '+e.message); }
 }

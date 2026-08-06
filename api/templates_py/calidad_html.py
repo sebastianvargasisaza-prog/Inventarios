@@ -871,21 +871,36 @@ function _renderPag(tabla, info) {
   html += '</select></div>';
   return html;
 }
-var _PAG_REFRESH = {
-  bandeja: function(){ if(window.loadBandeja) loadBandeja(); },
-  nc: function(){ if(window.loadNC) loadNC(); },
-  cal: function(){ if(window.loadCalibraciones) loadCalibraciones(); },
-  cron: function(){ if(window.loadCronograma) loadCronograma(); },
-  esp: function(){ if(window.loadEspecificaciones) loadEspecificaciones(); },
-  coa: function(){ if(window.loadCOA) loadCOA(); },
-  est: function(){ if(window.loadEstabilidades) loadEstabilidades(); },
-  capa: function(){ if(window.loadCAPA) loadCAPA(); },
-  aud: function(){ if(window.loadAuditorias) loadAuditorias(); },
-  micro: function(){ if(window.loadMicro) loadMicro(); },
-  agua: function(){ if(window.loadAgua) loadAgua(); },
-  oos: function(){ if(window.loadOOS) loadOOS(); },
-  equipos: function(){ if(window.loadEquipos) loadEquipos(); },
+var // Este mapa alimenta la PAGINACION y la BUSQUEDA de las tablas (`cambiarPag`,
+// `cambiarPagSize`, `buscarTabla`). Varias entradas apuntaban a funciones que no existen
+// -- `loadCalibraciones` cuando la real se llama `loadCal` -- y como cada una iba protegida
+// con `if(window.X)`, no daba error: buscar o pasar de pagina simplemente NO HACIA NADA.
+// La bitacora de calibracion (Miguel) era una de esas. Una guarda que convierte un error en
+// silencio es peor que el error, porque nadie lo reporta nunca (M112/M154).
+//
+// `_pagRefrescar` centraliza el despacho: si el loader no existe lo DICE en consola en vez de
+// tragárselo. Asi, el dia que una tabla nueva reciba controles de paginacion, el hueco se ve.
+_PAG_REFRESH = {
+  bandeja: function(){ _pagRefrescar('bandeja', 'loadBandeja'); },
+  nc:      function(){ _pagRefrescar('nc', 'loadNC'); },
+  cal:     function(){ _pagRefrescar('cal', 'loadCal'); },
+  cron:    function(){ _pagRefrescar('cron', 'loadCronograma'); },
+  esp:     function(){ _pagRefrescar('esp', 'loadEspecificaciones'); },
+  coa:     function(){ _pagRefrescar('coa', 'loadCOA'); },
+  est:     function(){ _pagRefrescar('est', 'loadEstabilidades'); },
+  capa:    function(){ _pagRefrescar('capa', 'loadCAPA'); },
+  aud:     function(){ _pagRefrescar('aud', 'loadAuditorias'); },
+  micro:   function(){ _pagRefrescar('micro', 'loadMicroAnalisis'); },
+  agua:    function(){ _pagRefrescar('agua', 'loadAguaTabla'); },
+  oos:     function(){ _pagRefrescar('oos', 'loadOOS'); },
+  equipos: function(){ _pagRefrescar('equipos', 'loadEquiposCompleto'); },
 };
+function _pagRefrescar(tabla, fn){
+  var f = window[fn];
+  if (typeof f === 'function') { f(); return; }
+  console.warn('[calidad] la tabla "' + tabla + '" pagina/busca contra ' + fn +
+               '(), que no existe · la accion no hace nada');
+}
 function cambiarPag(tabla, delta){ TBL_STATE[tabla].page = Math.max(1, TBL_STATE[tabla].page + delta); if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
 function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10)||25; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
 function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }

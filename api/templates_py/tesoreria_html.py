@@ -102,7 +102,8 @@ HTML = r"""
         <div class="card"><h3>Ingresos mes</h3><div class="val" id="kpi-ing-mes">-</div><div class="sub" id="kpi-ing-shopify"></div></div>
         <div class="card"><h3>Egresos mes</h3><div class="val" id="kpi-egr-mes" style="color:var(--cx-danger-text)">-</div><div class="sub">OCs+nómina+otros</div></div>
         <div class="card"><h3>Neto mes</h3><div class="val" id="kpi-neto"></div><div class="sub" id="kpi-neto-sub"></div></div>
-        <div class="card"><h3>Saldo caja</h3><div class="val" id="kpi-saldo"></div><div class="sub">acumulado</div></div>
+        <div class="card"><h3>Saldo caja (empresa)</h3><div class="val" id="kpi-saldo"></div><div class="sub" id="kpi-saldo-sub"></div></div>
+        <div class="card"><h3>Caja menor</h3><div class="val" id="kpi-caja-menor"></div><div class="sub" id="kpi-caja-menor-sub">efectivo en la gaveta</div></div>
       </div>
       <div class="grid grid-2">
         <div class="panel">
@@ -342,6 +343,33 @@ async function cargarCaja() {
     document.getElementById('kpi-neto-sub').textContent = neto>=0?'superávit':'déficit';
     document.getElementById('kpi-saldo').textContent = fmtM(k.saldo_caja||0);
     document.getElementById('kpi-saldo').className = 'val ' + ((k.saldo_caja||0)>=0?'pos':'neg');
+    // De CUÁNDO es. Lo teclea gerencia una vez al mes, y se mostraba pelado al lado de tres
+    // números calculados en vivo: un dato de hace seis semanas se leía igual de fresco que el
+    // ingreso de hoy (M109/M124).
+    var _ss = document.getElementById('kpi-saldo-sub');
+    if (!k.saldo_caja_periodo) {
+      _ss.textContent = 'nadie lo ha cargado todavía';
+      _ss.style.color = 'var(--cx-warn-text)';
+    } else if (k.saldo_caja_vigente) {
+      _ss.textContent = 'cargado por gerencia · ' + k.saldo_caja_periodo;
+      _ss.style.color = 'var(--cx-text-mute)';
+    } else {
+      _ss.textContent = 'DESACTUALIZADO · último dato ' + k.saldo_caja_periodo;
+      _ss.style.color = 'var(--cx-danger-text)';
+    }
+    // La caja menor SÍ es verificable: sale del helper canónico, el mismo contra el que se
+    // autorizan los pagos y contra el que se arquea (M1/M148).
+    var _cm = document.getElementById('kpi-caja-menor');
+    if (k.caja_menor_ok) {
+      _cm.textContent = fmtM(k.caja_menor||0);
+      _cm.className = 'val ' + ((k.caja_menor||0)>=0?'pos':'neg');
+      document.getElementById('kpi-caja-menor-sub').textContent = 'efectivo en la gaveta · contado en el arqueo';
+    } else {
+      // Un cero que nadie calculó se lee como "no hay plata" y significa lo contrario (M100).
+      _cm.textContent = 'sin dato';
+      _cm.className = 'val';
+      document.getElementById('kpi-caja-menor-sub').textContent = 'no se pudo leer';
+    }
     if (k.shopify_mes) {
       document.getElementById('kpi-ing-shopify').textContent = 'Shopify mes: '+fmtM(k.shopify_mes);
     }

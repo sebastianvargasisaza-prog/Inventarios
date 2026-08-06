@@ -156,9 +156,35 @@ def financiero_kpis():
     ing_mes, ing_count = c.fetchone()
     c.execute("SELECT COALESCE(SUM(monto),0), COUNT(*) FROM flujo_egresos WHERE periodo=?", (periodo_actual,))
     egr_mes, egr_count = c.fetchone()
-    # Saldo caja desde gerencia_inputs
-    c.execute("SELECT saldo_caja FROM gerencia_inputs ORDER BY periodo DESC LIMIT 1")
-    row = c.fetchone(); saldo_caja = row[0] if row else 0
+    # ⚠ `gerencia_inputs.saldo_caja` es el efectivo de la EMPRESA y lo TECLEA gerencia una vez
+    # al mes. Se mostraba pelado, al lado de tres números calculados en vivo, tomando el último
+    # período que exista -- así que un número de hace seis semanas se leía igual de fresco que
+    # el ingreso de hoy. El dato no cambia; lo que cambia es que ahora dice DE CUÁNDO es y si
+    # está vencido, porque un indicador que alguien tiene que acordarse de actualizar termina
+    # viejo y nadie lo nota (M109/M124).
+    c.execute("SELECT saldo_caja, periodo FROM gerencia_inputs ORDER BY periodo DESC LIMIT 1")
+    row = c.fetchone()
+    saldo_caja = row[0] if row else 0
+    saldo_caja_periodo = (row[1] if row else '') or ''
+    saldo_caja_vigente = bool(saldo_caja_periodo == periodo_actual)
+    # La CAJA MENOR es otra cosa y sí es verificable: es lo que se cuenta en el arqueo. Sale del
+    # helper canónico, el MISMO contra el que se autorizan los pagos (M1/M148) -- nunca de un
+    # SUM propio, que volvería a divergir.
+    try:
+        from blueprints.animus import caja_saldo as _caja_saldo
+        caja_menor = float(_caja_saldo(conn) or 0)
+        caja_menor_ok = True
+    except Exception as _e_cm:
+        # Lo que no se pudo medir se declara: un cero inventado se lee como "no hay plata" y
+        # significa lo contrario, "no se miró" (M100).
+        # ⚠ Este módulo NO tiene un `log` global: escribir `log.warning` acá habría lanzado un
+        # NameError DENTRO del except y tumbado el endpoint entero -- el fallback que existe
+        # para no caerse, tirando la página abajo. Se usa el idiom del propio archivo.
+        import logging as _lg_cm
+        _lg_cm.getLogger('financiero').warning(
+            'no pude leer la caja menor para los KPI: %s', _e_cm)
+        caja_menor = None
+        caja_menor_ok = False
     # Desglose por categoría mes actual
     c.execute("SELECT categoria, SUM(monto) as total FROM flujo_ingresos WHERE periodo=? GROUP BY categoria ORDER BY total DESC", (periodo_actual,))
     desglose_ing = [{'categoria': r[0], 'total': r[1]} for r in c.fetchall()]
@@ -204,7 +230,11 @@ def financiero_kpis():
     except Exception:
         shopify_mes = 0; shopify_pedidos = 0; shopify_anio = 0
     return jsonify({'ing_mes': ing_mes, 'ing_count': ing_count, 'egr_mes': egr_mes, 'egr_count': egr_count,
-                    'saldo_caja': saldo_caja, 'desglose_ing': desglose_ing, 'desglose_egr': desglose_egr,
+                    'saldo_caja': saldo_caja,
+                    'saldo_caja_periodo': saldo_caja_periodo,
+                    'saldo_caja_vigente': saldo_caja_vigente,
+                    'caja_menor': caja_menor, 'caja_menor_ok': caja_menor_ok,
+                    'desglose_ing': desglose_ing, 'desglose_egr': desglose_egr,
                     'historico': historico, 'periodo': periodo_actual,
                     'shopify_mes': shopify_mes, 'shopify_pedidos': shopify_pedidos, 'shopify_anio': shopify_anio})
 
