@@ -255,3 +255,158 @@ def test_la_pantalla_AVISA_lo_que_hay_que_serigrafiar(app, db_clean):
     bloque = js[i:i + 12000]
     assert 'n_hay_que_serigrafiar' in bloque, 'la pantalla no avisa qué mandar a serigrafiar'
     assert 'senales_envase_blanco' in bloque, 'no dice por qué señal lo detectó'
+
+
+# ── las VENTAS son la evidencia de que la presentación existe ─────────────────
+
+def _pres_id(app, vol=30.0):
+    from database import get_db
+    with app.app_context():
+        return get_db().execute("SELECT id FROM producto_presentaciones "
+                                " WHERE producto_nombre=? AND volumen_ml=?", (PROD, vol)).fetchone()[0]
+
+
+def _patch(admin_client, pid, **campos):
+    import json
+    from .conftest import csrf_headers
+    campos['id'] = pid
+    return admin_client.post('/api/programacion/presentacion-empaque', data=json.dumps(campos),
+                             headers=csrf_headers(), content_type='application/json')
+
+
+def test_la_presentacion_dice_si_VENDE(app, admin_client, db_clean):
+    """Sebastián, viendo el modal con datos reales: *"deberías ver cuál de esos realmente tiene
+    ventas en Shopify... es parte fundamental"*. En su pantalla, RENOVA C10 mostraba DOS filas de
+    15 ml con el MISMO frasco: una dobla la demanda del envase. Cuál sobra no se adivina por el
+    nombre, se mira cuál vende."""
+    from database import get_db
+    _sembrar(app)
+    with app.app_context():
+        conn = get_db(); c = conn.cursor()
+        c.execute("DELETE FROM sku_producto_map WHERE sku='ZZ-SKU-30'")
+        c.execute("DELETE FROM ventas_diarias WHERE sku='ZZ-SKU-30'")
+        c.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) "
+                  "VALUES ('ZZ-SKU-30', ?, 30, 1)", (PROD,))
+        c.execute("INSERT INTO ventas_diarias (sku, fecha, cantidad) "
+                  "VALUES ('ZZ-SKU-30', date('now','-10 days'), 44)")
+        conn.commit()
+    try:
+        fila = _union(admin_client)[0][PROD]
+        assert fila['ventas_180d'] == 44, fila
+        assert 'ZZ-SKU-30' in (fila.get('skus') or []), 'no dice POR QUÉ SKU vendió'
+    finally:
+        with app.app_context():
+            conn = get_db()
+            conn.execute("DELETE FROM sku_producto_map WHERE sku='ZZ-SKU-30'")
+            conn.execute("DELETE FROM ventas_diarias WHERE sku='ZZ-SKU-30'")
+            conn.commit()
+    _limpiar(app)
+
+
+def test_sin_ventas_devuelve_CERO_no_None(app, admin_client, db_clean):
+    """Cero y "no se pudo medir" son cosas distintas: un cero inventado se lee como "esta
+    presentación no se usa", que es justo la decisión que se está tomando acá (M100)."""
+    _sembrar(app)
+    fila = _union(admin_client)[0][PROD]
+    assert fila['ventas_180d'] == 0, fila
+    assert fila['ventas_180d'] is not None
+    _limpiar(app)
+
+
+# ── elegir cuál se usa, y arreglarlo ahí mismo ───────────────────────────────
+
+def test_APAGAR_una_presentacion_la_saca_del_conteo(app, admin_client, db_clean):
+    """*"debería poder allí escoger cuál de esas presentaciones sí se usarán para que aparezcan
+    en calendario"*. Apagada deja de contar para el calendario y para la compra de envases."""
+    from database import get_db
+    _sembrar(app, tapa='', caja='')
+    pid = _pres_id(app)
+    r = _patch(admin_client, pid, activo=False)
+    assert r.status_code == 200, r.data[:300]
+    with app.app_context():
+        act = get_db().execute("SELECT COALESCE(activo,1) FROM producto_presentaciones "
+                               " WHERE id=?", (pid,)).fetchone()[0]
+    assert int(act) == 0, 'no se apagó'
+    fila = _union(admin_client)[0][PROD]
+    assert fila['activo'] is False
+    assert fila['falta'] == [], 'una presentación apagada no puede reportar huecos: es ruido'
+    _limpiar(app)
+
+
+def test_la_apagada_SIGUE_VISIBLE_para_poder_encenderla(app, admin_client, db_clean):
+    """Para elegir "cuál se usa" hay que VER las que no se usan. Si se filtraran, apagar una
+    sería una operación de un solo sentido."""
+    _sembrar(app)
+    pid = _pres_id(app)
+    _patch(admin_client, pid, activo=False)
+    assert PROD in _union(admin_client)[0], 'la presentación apagada desapareció de la vista'
+    _patch(admin_client, pid, activo=True)
+    assert _union(admin_client)[0][PROD]['activo'] is True, 'no se pudo volver a encender'
+    _limpiar(app)
+
+
+def test_APAGAR_no_BORRA(app, admin_client, db_clean):
+    """La presentación puede tener histórico colgando y un DELETE no se deshace."""
+    from database import get_db
+    _sembrar(app)
+    pid = _pres_id(app)
+    _patch(admin_client, pid, activo=False)
+    with app.app_context():
+        n = get_db().execute("SELECT COUNT(*) FROM producto_presentaciones WHERE id=?",
+                             (pid,)).fetchone()[0]
+    assert n == 1, 'la fila se borró en vez de apagarse'
+    _limpiar(app)
+
+
+def test_asignar_TAPA_desde_el_modal(app, admin_client, db_clean):
+    """*"además de una vez ponerle el envase, así ya queda redondo"*."""
+    _sembrar(app, tapa='', caja='')
+    pid = _pres_id(app)
+    r = _patch(admin_client, pid, tapa=TAPA)
+    assert r.status_code == 200, r.data[:300]
+    fila = _union(admin_client)[0][PROD]
+    assert fila['tapa'] == TAPA
+    assert 'tapa' not in fila['falta'], fila['falta']
+    _limpiar(app)
+
+
+def test_no_deja_asignar_un_codigo_que_NO_EXISTE(app, admin_client, db_clean):
+    """Dejarlo entrar convierte un hueco visible en uno invisible: el campo se ve lleno y el
+    motor no encuentra nada que comprar (M100)."""
+    _sembrar(app, tapa='')
+    pid = _pres_id(app)
+    r = _patch(admin_client, pid, tapa=FANTASMA)
+    assert r.status_code == 400, r.data[:200]
+    assert 'MEE_INEXISTENTE' in r.get_data(as_text=True)
+    fila = _union(admin_client)[0][PROD]
+    assert fila['tapa'] == '', 'guardó un código inexistente'
+    _limpiar(app)
+
+
+def test_el_PATCH_es_parcial(app, admin_client, db_clean):
+    """Mandar el objeto entero desde una pantalla que no muestra todos los campos los pisaría
+    con vacío: el default del control ganándole al dato guardado (M85)."""
+    _sembrar(app, tapa=TAPA, caja=GOTERO)
+    pid = _pres_id(app)
+    _patch(admin_client, pid, activo=False)      # sólo el interruptor
+    fila = _union(admin_client)[0][PROD]
+    assert fila['tapa'] == TAPA, 'el PATCH pisó la tapa'
+    assert fila['caja'] == GOTERO, 'el PATCH pisó la caja'
+    _limpiar(app)
+
+
+def test_el_cambio_queda_AUDITADO_con_el_valor_previo(app, admin_client, db_clean):
+    """Sin el `antes` no se puede revertir (regla 5 del cerebro)."""
+    from database import get_db
+    _sembrar(app, tapa='')
+    pid = _pres_id(app)
+    _patch(admin_client, pid, tapa=TAPA)
+    with app.app_context():
+        fila = get_db().execute(
+            "SELECT COALESCE(antes,''), COALESCE(despues,'') FROM audit_log "
+            " WHERE accion='EDITAR_PRESENTACION_EMPAQUE' AND registro_id=? "
+            " ORDER BY id DESC LIMIT 1", (str(pid),)).fetchone()
+    assert fila, 'no auditó'
+    assert TAPA in fila[1], 'el audit no dice qué quedó'
+    assert 'tapa' in fila[0], 'el audit no guarda el valor previo · sin eso no se puede revertir'
+    _limpiar(app)

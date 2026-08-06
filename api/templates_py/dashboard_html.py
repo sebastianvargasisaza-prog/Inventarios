@@ -20993,6 +20993,7 @@ async function ckMarcar(itemId, estado){
 // pregunta real. Y ordena por lo que falta primero -- un tablero que hay que leer entero para
 // encontrar el problema no se lee.
 var EMPQ = null;
+var EMPQ_MEE = null;   // catalogo de envases para los selectores
 function empqEsc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function empqCerrar(){var m=document.getElementById('modal-empaque'); if(m)m.style.display='none';}
 async function empqAbrir(){
@@ -21003,6 +21004,13 @@ async function empqAbrir(){
   try{
     var r=await fetch('/api/abastecimiento/envases-cobertura',{credentials:'same-origin'});
     EMPQ=await r.json();
+    if(!EMPQ_MEE){
+      try{
+        var rm=await fetch('/api/mee/stock',{credentials:'same-origin'});
+        var jm=await rm.json();
+        EMPQ_MEE=(jm.items||[]).map(function(x){return {codigo:x.codigo, desc:x.descripcion||''};});
+      }catch(e){ EMPQ_MEE=[]; }
+    }
   }catch(e){
     EMPQ=null;
     if(cuerpo)cuerpo.innerHTML='<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border-radius:10px;padding:14px">No pude leer el empaque. Reintenta en un momento.</div>';
@@ -21046,7 +21054,9 @@ function empqPintar(){
   if(kp){
     kp.innerHTML=empqKpi('Productos', todos.length, 'var(--cx-text)')
       + empqKpi('Les falta algo', nFalta, nFalta?'var(--cx-danger-text)':'var(--cx-success-text)')
-      + empqKpi('Mandar a serigrafiar', nSerig, nSerig?'var(--cx-warn-text)':'var(--cx-text-mute)');
+      + empqKpi('Mandar a serigrafiar', nSerig, nSerig?'var(--cx-warn-text)':'var(--cx-text-mute)')
+      + empqKpi('Encendidas sin ventas', (EMPQ.n_sin_ventas||0),
+                (EMPQ.n_sin_ventas?'var(--cx-warn-text)':'var(--cx-text-mute)'));
   }
   var lista=todos.filter(function(g){
     if(soloFalta && !g.falta) return false;
@@ -21060,6 +21070,34 @@ function empqPintar(){
     return;
   }
   cuerpo.innerHTML=lista.map(empqTarjeta).join('');
+}
+function empqSel(id,campo,valor,off){
+  var v=(valor||'').toUpperCase();
+  var op='<option value="">'+(off?'-':'(falta)')+'</option>';
+  (EMPQ_MEE||[]).forEach(function(m){
+    var c=(m.codigo||'').toUpperCase();
+    op+='<option value="'+empqEsc(m.codigo)+'"'+(c===v?' selected':'')+'>'+empqEsc(m.codigo)+' - '+empqEsc(m.desc)+'</option>';
+  });
+  // Si el codigo guardado NO esta en el catalogo, se conserva como opcion propia: perderlo
+  // silenciosamente al abrir el selector seria borrar el dato sin que nadie lo pidiera.
+  if(v && !(EMPQ_MEE||[]).some(function(m){return (m.codigo||'').toUpperCase()===v;})){
+    op+='<option value="'+empqEsc(valor)+'" selected>'+empqEsc(valor)+' (no esta en el maestro)</option>';
+  }
+  return '<td style="padding:4px 6px"><select onchange="empqSet('+id+',&quot;'+campo+'&quot;,this.value)"'
+    + ' style="max-width:190px;padding:4px 6px;border:1px solid '+(valor?'var(--cx-border)':'var(--cx-danger)')
+    + ';border-radius:6px;background:var(--cx-bg-soft);color:var(--cx-text);font-size:11.5px">'+op+'</select></td>';
+}
+async function empqSet(id,campo,valor){
+  var body={id:id}; body[campo]=valor;
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/presentacion-empaque',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||t.token||''},
+      body:JSON.stringify(body)});
+    var j=await r.json();
+    if(!r.ok){ alert('No se pudo guardar: '+(j.error||r.status)); }
+  }catch(e){ alert('No se pudo guardar: '+e); }
+  empqAbrir();   // recarga para que los contadores y los huecos reflejen lo que se acaba de tocar
 }
 function empqKpi(rot,val,color){
   return '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.06em">'
@@ -21081,31 +21119,48 @@ function empqTarjeta(g){
   }
   h+='<div style="overflow-x:auto;margin-top:9px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr style="text-align:left;color:var(--cx-text-mute);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em">'
-    + '<th style="padding:5px 7px">ml</th><th style="padding:5px 7px">Frasco</th><th style="padding:5px 7px">Tapa</th>'
+    + '<th style="padding:5px 7px">Se usa</th><th style="padding:5px 7px">ml</th>'
+    + '<th style="padding:5px 7px">Vende (180d)</th>'
+    + '<th style="padding:5px 7px">Frasco</th><th style="padding:5px 7px">Tapa</th>'
     + '<th style="padding:5px 7px">Caja</th><th style="padding:5px 7px">Piezas</th><th style="padding:5px 7px">Impreso</th>'
     + '</tr></thead><tbody>';
   g.pres.forEach(function(x){
-    function celda(v){
-      return v ? '<td style="padding:6px 7px;color:var(--cx-text-soft)">'+empqEsc(v)+'</td>'
-               : '<td style="padding:6px 7px;color:var(--cx-danger-text);font-weight:700">falta</td>';
-    }
+    var off=!x.activo;
     var pz=(x.piezas||[]).map(function(p){
       return p.en_maestro ? empqEsc(p.codigo)
         : '<span style="color:var(--cx-danger-text);font-weight:700">'+empqEsc(p.codigo)+' (no existe)</span>';
     }).join(' &middot; ');
-    h+='<tr style="border-top:1px solid var(--cx-border-soft)">'
+    // Las ventas son la EVIDENCIA de que la presentacion existe: con dos filas del mismo tamano
+    // y el mismo frasco, la que vende es la real y la otra dobla la demanda del envase.
+    var vcell;
+    if(x.ventas_180d===null || x.ventas_180d===undefined){
+      vcell='<span style="color:var(--cx-text-faint)" title="No se pudo medir">sin medir</span>';
+    }else if(x.ventas_180d>0){
+      vcell='<b style="color:var(--cx-success-text)">'+Number(x.ventas_180d).toLocaleString('es-CO')+'</b>'
+        + (x.skus&&x.skus.length ? '<div style="font-size:10px;color:var(--cx-text-mute)">'+empqEsc(x.skus.join(' ')) +'</div>' : '');
+    }else{
+      vcell='<span style="color:var(--cx-warn-text);font-weight:700" title="No vendio nada en 180 dias: puede ser un duplicado, o un producto nuevo que todavia no vende">0</span>';
+    }
+    h+='<tr style="border-top:1px solid var(--cx-border-soft)'+(off?';opacity:.45':'')+'">'
+      + '<td style="padding:6px 7px"><input type="checkbox" '+(off?'':'checked')
+      +   ' onchange="empqSet('+x.id+',&quot;activo&quot;,this.checked)" style="width:16px;height:16px;cursor:pointer"'
+      +   ' title="Si se apaga, deja de contar para el calendario y para la compra de envases"></td>'
       + '<td style="padding:6px 7px;color:var(--cx-text-mute)">'+(x.volumen_ml||'-')+'</td>'
-      + celda(x.envase) + celda(x.tapa) + celda(x.caja)
+      + '<td style="padding:6px 7px">'+vcell+'</td>'
+      + empqSel(x.id,'envase',x.envase,off) + empqSel(x.id,'tapa',x.tapa,off) + empqSel(x.id,'caja',x.caja,off)
       + '<td style="padding:6px 7px;color:var(--cx-text-soft)">'+(pz||'<span style="color:var(--cx-text-faint)">ninguna</span>')+'</td>'
       + (x.hay_que_serigrafiar
           ? '<td style="padding:6px 7px;color:var(--cx-warn-text);font-weight:700">mandar a serigrafiar</td>'
-          : celda(x.serigrafiado))
+          : (x.serigrafiado
+              ? '<td style="padding:6px 7px;color:var(--cx-text-soft)">'+empqEsc(x.serigrafiado)+'</td>'
+              : '<td style="padding:6px 7px;color:'+(off?'var(--cx-text-faint)':'var(--cx-danger-text)')+';font-weight:700">'+(off?'-':'falta')+'</td>'))
       + '</tr>';
   });
   h+='</tbody></table></div>';
   h+='<div style="font-size:11px;color:var(--cx-text-mute);margin-top:7px">'
-    + 'Tapa y caja se cargan en Configuraci&oacute;n &rsaquo; Presentaciones &middot; las piezas del frasco '
-    + '(gotero, plegadiza) en el maestro de envases.</div>';
+    + 'Apagar una presentaci&oacute;n la saca del calendario y de la compra de envases (no se borra: '
+    + 'se puede volver a encender). Las piezas del frasco (gotero, plegadiza) se cargan en el maestro '
+    + 'de envases.</div>';
   return h+'</div>';
 }
 

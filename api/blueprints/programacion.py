@@ -17070,6 +17070,80 @@ def marcacion_envase_set():
     return jsonify({'ok': True, 'codigo': cod, 'marcacion_tipo': tipo, 'marcacion_proveedor': prov})
 
 
+@bp.route('/api/programacion/presentacion-empaque', methods=['POST'])
+def prog_presentacion_empaque():
+    """Desde el modal de Empaque por producto: encender/apagar una presentación y ponerle
+    frasco, tapa y caja, sin salir de la pantalla (Sebastián 5-ago).
+
+    *"debería poder allí escoger cuál de esas presentaciones sí se usarán para que aparezcan en
+    calendario, además de una vez ponerle el envase, así ya queda redondo"*.
+
+    Es un PATCH PARCIAL: sólo se toca lo que viene en el body. Mandar el objeto entero desde una
+    pantalla que no muestra todos los campos los pisaría con vacío -- el default del control
+    ganándole al dato guardado (M85).
+
+    **Apagar es `activo=0`, NUNCA DELETE**: la presentación puede tener histórico colgando y el
+    borrado no se puede deshacer. Encender de vuelta es un clic.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    _u = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    try:
+        pid = int(d.get('id') or 0)
+    except (TypeError, ValueError):
+        pid = 0
+    if not pid:
+        return jsonify({'error': 'falta el id de la presentación'}), 400
+    conn = get_db(); c = conn.cursor()
+    prev = c.execute(
+        "SELECT producto_nombre, COALESCE(activo,1), COALESCE(envase_codigo,''), "
+        "       COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), COALESCE(volumen_ml,0) "
+        "  FROM producto_presentaciones WHERE id=?", (pid,)).fetchone()
+    if not prev:
+        return jsonify({'error': 'presentación no encontrada'}), 404
+
+    sets, vals, cambios = [], [], {}
+    if 'activo' in d:
+        _a = 1 if d.get('activo') else 0
+        sets.append('activo=?'); vals.append(_a); cambios['activo'] = _a
+    for _campo, _col in (('envase', 'envase_codigo'), ('tapa', 'tapa_codigo'), ('caja', 'caja_codigo')):
+        if _campo not in d:
+            continue
+        _cod = str(d.get(_campo) or '').strip().upper()
+        if _cod:
+            # Un código que no está en el maestro no se puede comprar ni descontar: dejarlo
+            # entrar convierte un hueco visible en uno invisible (M100).
+            if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?",
+                             (_cod,)).fetchone():
+                return jsonify({'error': '%s no existe en el maestro de envases' % _cod,
+                                'codigo': 'MEE_INEXISTENTE'}), 400
+        sets.append('%s=?' % _col); vals.append(_cod); cambios[_campo] = _cod
+    if not sets:
+        return jsonify({'error': 'no mandaste nada que cambiar'}), 400
+
+    try:
+        sets.append("actualizado_en=datetime('now','-5 hours')")
+        c.execute("UPDATE producto_presentaciones SET %s WHERE id=?" % ', '.join(sets), vals + [pid])
+        if c.rowcount == 0:
+            conn.rollback()
+            return jsonify({'error': 'no se actualizó nada'}), 409
+        # Auditar ANTES del commit · el `antes` es lo que permite revertir (regla 5 del cerebro).
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=_u, accion='EDITAR_PRESENTACION_EMPAQUE',
+            tabla='producto_presentaciones', registro_id=str(pid),
+            antes={'activo': int(prev[1]), 'envase': prev[2], 'tapa': prev[3], 'caja': prev[4]},
+            despues=cambios,
+            detalle='%s · %sml · %s' % (prev[0], prev[5],
+                                        ' '.join('%s=%s' % (k, v) for k, v in cambios.items())))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log.warning('presentacion-empaque %s: %s', pid, e)
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'id': pid, 'cambios': cambios})
+
+
 @bp.route('/api/abastecimiento/envases-cobertura', methods=['GET'])
 def abastecimiento_envases_cobertura():
     """Diagnóstico (read-only · 18-jun): ¿qué productos activos NO tienen presentación+envase?
@@ -17157,28 +17231,66 @@ def abastecimiento_envases_cobertura():
                 {'codigo': _pc, 'cantidad_por_envase': _cant,
                  'en_maestro': (_pc or '').strip().upper() in _mee})
 
+        # ── ¿ESTA PRESENTACIÓN VENDE? (Sebastián 5-ago) ─────────────────────────────────
+        # Es la evidencia para decidir cuál se usa: con dos filas de 15 ml del mismo frasco, la
+        # que vende es la real y la otra dobla la demanda del envase. Se usa el MISMO camino que
+        # el motor de reparto (`_ventas_sku_180d` + `sku_producto_map` por producto/volumen), no
+        # una consulta nueva: el número que se muestra tiene que ser el que DECIDE (M5/M58).
+        _ventas_pv = {}     # (producto_norm, volumen_int) -> uds vendidas 180d
+        _skus_pv = {}       # (producto_norm, volumen_int) -> [sku, ...]
+        try:
+            _vsku = _ventas_sku_180d(c)
+            for _sk, _pn_m, _vml in c.execute(
+                    "SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(volumen_ml,0) "
+                    "  FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+                if not _sk:
+                    continue
+                # ⚠ `_uds`, NO `_u`: en esta función `_u` es el alias del módulo `unicodedata`
+                # y pisarlo con un entero rompe el normalizador tres líneas más abajo, sin un
+                # solo error a la vista salvo el `except` que lo declara.
+                _k = (_nz(_pn_m), int(round(float(_vml or 0))))
+                _uds = _vsku.get(str(_sk).strip().upper(), 0)
+                _ventas_pv[_k] = _ventas_pv.get(_k, 0) + _uds
+                if _uds > 0:
+                    _skus_pv.setdefault(_k, []).append(_sk)
+        except Exception as _e_v:
+            # Sin ventas NO se inventa un cero que se lea como "no vende": se declara (M100).
+            log.warning('envases-cobertura · ventas por presentación: %s', _e_v)
+            _ventas_pv = None
+
+        # Las presentaciones APAGADAS entran también: para elegir "cuál se usa" hay que VER las
+        # que no se usan. Se marcan y no cuentan como hueco -- una presentación que nadie usa no
+        # tiene por qué tener tapa (un diagnóstico que grita por algo apagado es ruido).
         _filas = c.execute(
             "SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(volumen_ml,0), "
-            "       COALESCE(tapa_codigo,''), COALESCE(caja_codigo,'') "
-            "  FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall()
-        for _pn, _env, _vol, _tap, _caj in _filas:
+            "       COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), id, "
+            "       COALESCE(activo,1), COALESCE(presentacion_codigo,'') "
+            "  FROM producto_presentaciones").fetchall()
+        for _pn, _env, _vol, _tap, _caj, _pid, _act, _pcod in _filas:
             _ek = (_env or '').strip().upper()
             _falta = []
-            if not _env:
+            _usada = bool(_act)
+            if not _usada:
+                _falta = []      # apagada: no se compra ni se descuenta, no hay nada que completar
+            elif not _env:
                 _falta.append('frasco')
             elif _ek not in _mee:
                 _falta.append('el frasco %s no existe en el maestro de envases' % _env)
-            if not _tap:
+            if not _usada:
+                pass
+            elif not _tap:
                 _falta.append('tapa')
             elif (_tap or '').strip().upper() not in _mee:
                 _falta.append('la tapa %s no existe en el maestro' % _tap)
-            if not _caj:
+            if not _usada:
+                pass
+            elif not _caj:
                 _falta.append('caja')
             elif (_caj or '').strip().upper() not in _mee:
                 _falta.append('la caja %s no existe en el maestro' % _caj)
             _pz = _partes.get(_ek, [])
             for _p in _pz:
-                if not _p['en_maestro']:
+                if _usada and not _p['en_maestro']:
                     _falta.append('la pieza %s no existe en el maestro' % _p['codigo'])
             # El frasco está EN BLANCO y no tiene impreso asignado → hay que mandarlo a
             # serigrafiar. Los dos hechos juntos son la alerta; por separado no dicen nada (un
@@ -17187,13 +17299,19 @@ def abastecimiento_envases_cobertura():
             _info_env = _mee.get(_ek) or {}
             _senal = _senal_en_blanco(_env, _info_env.get('descripcion', ''))
             _serig = _info_env.get('material_referencia', '')
+            _kv = (_nz(_pn), int(round(float(_vol or 0))))
             detalle.append({
+                'id': _pid, 'activo': _usada, 'presentacion_codigo': _pcod,
                 'producto': _pn, 'volumen_ml': _vol,
+                # `None` (no se pudo medir) es distinto de 0 (no vendió) · un cero inventado se
+                # lee como "esta presentación no se usa" y es la decisión que se está tomando acá.
+                'ventas_180d': (None if _ventas_pv is None else _ventas_pv.get(_kv, 0)),
+                'skus': ([] if _ventas_pv is None else sorted(_skus_pv.get(_kv, []))),
                 'envase': _env, 'tapa': _tap, 'caja': _caj,
                 'piezas': _pz,
                 'en_blanco': bool(_senal),
                 'senal_blanco': _senal,
-                'hay_que_serigrafiar': bool(_senal and not _serig),
+                'hay_que_serigrafiar': bool(_usada and _senal and not _serig),
                 # El puente base↔serigrafiado. Vacío = este frasco no está atado a ningún
                 # impreso, así que lo que vuelve de serigrafía no se puede imputar a este
                 # producto (el flujo de marcación queda desconectado de la compra).
@@ -17219,10 +17337,16 @@ def abastecimiento_envases_cobertura():
                   else 'No pude revisar la unión completa (tapa, caja y piezas) · revisá el log'),
     }
     if detalle is not None:
-        _res['n_presentaciones'] = len(detalle)
-        _res['n_completas'] = sum(1 for x in detalle if x['completo'])
-        _res['n_sin_tapa'] = sum(1 for x in detalle if not x['tapa'])
-        _res['n_sin_caja'] = sum(1 for x in detalle if not x['caja'])
+        _usadas = [x for x in detalle if x['activo']]
+        _res['n_presentaciones'] = len(_usadas)
+        _res['n_apagadas'] = len(detalle) - len(_usadas)
+        _res['n_completas'] = sum(1 for x in _usadas if x['completo'])
+        _res['n_sin_tapa'] = sum(1 for x in _usadas if not x['tapa'])
+        _res['n_sin_caja'] = sum(1 for x in _usadas if not x['caja'])
+        # Presentaciones que NO venden y siguen encendidas: sospechosas de duplicado. No se
+        # apagan solas -- un producto nuevo todavía no vende y apagarlo sería sacarlo del plan.
+        _res['n_sin_ventas'] = sum(1 for x in _usadas if x.get('ventas_180d') == 0)
+        _res['ventas_medidas'] = _ventas_pv is not None
         _res['n_sin_serigrafiado'] = sum(1 for x in detalle if not x['serigrafiado'])
         # El contador que de verdad acciona: no "cuántos no tienen puente" sino cuántos
         # ESTÁN EN BLANCO y todavía no lo tienen -- esos son los que hay que mandar a

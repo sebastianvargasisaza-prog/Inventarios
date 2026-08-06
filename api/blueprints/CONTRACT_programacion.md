@@ -1215,3 +1215,41 @@ Los KPI se cuentan sobre TODOS, no sobre lo filtrado, o cambiarían al escribir 
 
 Tests: `tests/test_union_producto_envase.py` y `tests/test_modal_empaque_por_producto.py`
 (los dos en el gate).
+
+
+## 📦 INV-12 · Las VENTAS deciden qué presentación existe · y se arregla ahí mismo (5-ago)
+
+Sebastián, viendo el modal con datos reales: *"deberías ver cuál de esos realmente tiene ventas en
+Shopify y me los pones allí para mapear todo perfectamente, es parte fundamental"*. Y en su
+pantalla se veía por qué: RENOVA C10 con **dos filas de 15 ml y el MISMO frasco**, AH 1.5% con dos
+de 10 ml. Una de las dos es un duplicado que **dobla la demanda** de ese envase. Cuál sobra no se
+adivina por el nombre: se mira cuál vende.
+
+`union` devuelve por presentación `ventas_180d` + los `skus` que vendieron, por el **MISMO camino
+que el motor de reparto** (`_ventas_sku_180d` + `sku_producto_map` por producto/volumen · M58/M72):
+el número que se muestra tiene que ser el que DECIDE, o pantalla y motor cuentan historias
+distintas (M5). `None` = no se pudo medir, `0` = no vendió — un cero inventado se lee como "esta
+presentación no se usa", que es justo la decisión que se está tomando (M100).
+⚠ Sin ventas NO se apaga nada solo: un producto nuevo todavía no vende y apagarlo lo sacaría del
+plan. Se marca (`n_sin_ventas`) y decide la persona.
+
+**`POST /api/programacion/presentacion-empaque`** (id + `activo`/`envase`/`tapa`/`caja`) permite
+elegir cuál se usa y completar el empaque sin salir del modal. Reglas:
+- **PATCH parcial**: sólo se toca lo que viene en el body. Mandar el objeto entero desde una
+  pantalla que no muestra todos los campos los pisaría con vacío (M85).
+- **Apagar es `activo=0`, NUNCA DELETE**: puede haber histórico colgando y el borrado no se
+  deshace. Encender de vuelta es un clic.
+- Un código que **no está en `maestro_mee` se RECHAZA** (400): dejarlo entrar convierte un hueco
+  visible en uno invisible — el campo se ve lleno y el motor no encuentra nada que comprar (M100).
+- Audita con el valor **previo**: sin el `antes` no se puede revertir (regla 5 del cerebro).
+
+La `union` incluye ahora las presentaciones **apagadas** (marcadas `activo:false`): para elegir
+*cuál se usa* hay que ver las que no se usan, y sin eso apagar sería una operación de un solo
+sentido. Una presentación apagada **no reporta huecos** — no se compra ni se descuenta, así que
+exigirle tapa sería ruido — y no entra en los contadores.
+
+⚠ Trampa propia al escribirlo: usé `_u` como variable del loop de ventas y `_u` era el alias de
+`unicodedata` en esa misma función. Rompió el normalizador tres líneas más abajo y sólo se vio
+porque el `except` lo DECLARA en vez de devolver una lista vacía.
+
+Tests: `tests/test_union_producto_envase.py` (en el gate).
