@@ -914,6 +914,42 @@ def mkt_sync_meta_ads():
                        ctr, cpc, cpm,
                        (cm.get('start_time') or '')[:10],
                        (cm.get('stop_time') or '')[:10]))
+                # El gasto publicitario es plata que la empresa PAGA y no llegaba a Tesorería
+                # en ninguna línea: quedaba sólo en la tabla de campañas, así que el gasto del
+                # mes salía corto en un rubro que se repite todos los meses.
+                # ⚠ `spend_total` es el ACUMULADO de la campaña, no un pago: por eso la fila del
+                # libro se ACTUALIZA (referencia = la campaña) en vez de insertar una nueva en
+                # cada sync. Así el total nunca se duplica, pase lo que pase con la frecuencia
+                # del sync. El período se ancla al inicio de la campaña -- para una campaña
+                # larga eso concentra el gasto en su primer mes, y es una imprecisión que
+                # preferimos a inventar un reparto diario que Meta no nos está dando.
+                try:
+                    _spend = float(spend or 0)
+                    if _spend > 0:
+                        _ref_ads = 'ADS-meta-%s' % cid
+                        _per_ads = ((cm.get('start_time') or '')[:7]
+                                    or _hoy_col().strftime('%Y-%m'))
+                        _fec_ads = ((cm.get('start_time') or '')[:10]
+                                    or _hoy_col().isoformat())
+                        _con_ads = 'Publicidad Meta · %s' % (cm.get('name', '')[:80] or cid)
+                        _ya_ads = c.execute(
+                            "SELECT id FROM flujo_egresos WHERE fuente='ads' AND referencia=? "
+                            "LIMIT 1", (_ref_ads,)).fetchone()
+                        if _ya_ads:
+                            c.execute("UPDATE flujo_egresos SET monto=?, concepto=?, "
+                                      "periodo=?, fecha=? WHERE id=?",
+                                      (_spend, _con_ads, _per_ads, _fec_ads, _ya_ads[0]))
+                        else:
+                            c.execute(
+                                "INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, "
+                                "monto, periodo, fuente, referencia, creado_por, observaciones) "
+                                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                (_fec_ads, 'ANIMUS', _con_ads, 'Publicidad', _spend, _per_ads,
+                                 'ads', _ref_ads, 'sync_meta',
+                                 'Acumulado de la campaña segun Meta'))
+                except Exception as _e_ads:
+                    # Nunca en silencio: el sync no se cae por el espejo, pero se declara (M4).
+                    log.warning('no pude espejar el gasto de la campana %s: %s', cid, _e_ads)
                 sincronizadas += 1
             except urllib.error.HTTPError as he:
                 detail = he.read().decode('utf-8', errors='replace')[:200]

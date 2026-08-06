@@ -225,9 +225,19 @@ def test_no_se_cierra_dos_veces_el_mismo_periodo(app, db_clean):
 
 # ── TESORERÍA ────────────────────────────────────────────────────────────────
 
-def test_consignar_ENTRA_al_banco_en_tesoreria(app, db_clean):
-    """La plata no desaparece: sale de la gaveta y entra al banco. Sin el espejo, Tesorería ve
-    una consignación sin origen y la caja una salida sin destino."""
+def test_consignar_NO_inventa_un_ingreso(app, db_clean):
+    """⚠ Este test decía lo CONTRARIO hasta el 6-ago, y la regla vieja era la equivocada.
+
+    Espejaba la consignación como ingreso para que no apareciera "sin origen" en Tesorería.
+    Mientras el cobro en efectivo NO llegaba al libro eso hacía que la plata se contara una vez
+    -- tarde y bajo una categoría inventada. Desde que el ingreso se registra al COBRAR, espejar
+    también el traslado contaría la MISMA plata dos veces: se cobra $250K, se consigna $250K y
+    los ingresos del mes dirían $500K.
+
+    Una consignación es mover plata de un bolsillo propio a otro. El libro central registra
+    ingresos y gastos, no saldos de cuentas. Su origen se ve en el libro de caja, que para eso
+    está (lo verifica `test_ingreso_se_cuenta_una_vez.py`).
+    """
     _limpiar(app)
     _efectivo(app, 3000000)
     r = _cli(app).post('/api/caja/traslado',
@@ -238,10 +248,10 @@ def test_consignar_ENTRA_al_banco_en_tesoreria(app, db_clean):
     from database import get_db
     with app.app_context():
         conn = get_db()
-        fila = conn.execute("SELECT monto, categoria FROM flujo_ingresos "
+        fila = conn.execute("SELECT monto FROM flujo_ingresos "
                             "WHERE fuente='caja_menor' AND referencia=?", (recibo,)).fetchone()
-    assert fila, 'la consignación no llegó a Tesorería'
-    assert float(fila[0]) == 800000
+    assert not fila, ('la consignación volvió a contarse como ingreso · sumada al espejo del '
+                      'cobro, la misma plata queda contada dos veces')
 
 
 def test_el_espejo_a_tesoreria_no_se_duplica(app, db_clean):
@@ -270,8 +280,11 @@ def test_el_periodo_de_tesoreria_sale_de_la_fecha_del_HECHO(app, db_clean):
     curso y el período contable quedaría mal."""
     _limpiar(app)
     _efectivo(app, 2000000)
-    r = _cli(app).post('/api/caja/traslado',
-                       json={'monto': 50000, 'fecha': '2026-06-15'}, headers=csrf_headers())
+    # El vehiculo es un movimiento MANUAL: la consignacion ya no espeja (no es un ingreso), y
+    # la invariante que este test protege -- el periodo sale del HECHO -- sigue igual de viva.
+    r = _cli(app).post('/api/animus/caja',
+                       json={'tipo': 'ingreso', 'concepto': MARCA + ' periodo',
+                             'monto': 50000, 'fecha': '2026-06-15'}, headers=csrf_headers())
     assert r.status_code == 200, r.data[:250]
     from database import get_db
     with app.app_context():
@@ -289,7 +302,9 @@ def test_un_recibo_cuenta_TODO_su_recorrido(app, db_clean):
     _limpiar(app)
     _efectivo(app, 2000000)
     c = _cli(app)
-    recibo = c.post('/api/caja/traslado', json={'monto': 70000, 'cuenta': 'BC'},
+    # Movimiento manual, no consignacion: el traslado ya no deja espejo en Tesoreria.
+    recibo = c.post('/api/animus/caja',
+                    json={'tipo': 'egreso', 'concepto': MARCA + ' recorrido', 'monto': 70000},
                     headers=csrf_headers()).get_json()['recibo_numero']
     r = c.get('/api/caja/trazabilidad/' + recibo)
     assert r.status_code == 200, r.data[:250]
@@ -438,17 +453,21 @@ def test_anular_tambien_borra_el_espejo_de_tesoreria(app, db_clean):
     _limpiar(app)
     _efectivo(app, 2000000)
     c = _cli(app)
-    d = c.post('/api/caja/traslado', json={'monto': 60000}, headers=csrf_headers()).get_json()
+    # Movimiento manual: es el que deja espejo ahora. La invariante es la misma -- anular no
+    # puede dejar a Tesoreria con un movimiento que ya no existe.
+    d = c.post('/api/animus/caja',
+               json={'tipo': 'egreso', 'concepto': MARCA + ' a anular', 'monto': 60000},
+               headers=csrf_headers()).get_json()
     from database import get_db
     with app.app_context():
         conn = get_db()
-        assert conn.execute("SELECT COUNT(*) FROM flujo_ingresos WHERE referencia=?",
+        assert conn.execute("SELECT COUNT(*) FROM flujo_egresos WHERE referencia=?",
                             (d['recibo_numero'],)).fetchone()[0] == 1
-    c.delete('/api/animus/caja/%d' % d['caja_mov_id'], json={'motivo': MARCA + ' x'},
+    c.delete('/api/animus/caja/%d' % d['id'], json={'motivo': MARCA + ' x'},
              headers=csrf_headers())
     with app.app_context():
         conn = get_db()
-        n = conn.execute("SELECT COUNT(*) FROM flujo_ingresos WHERE referencia=?",
+        n = conn.execute("SELECT COUNT(*) FROM flujo_egresos WHERE referencia=?",
                          (d['recibo_numero'],)).fetchone()[0]
     assert n == 0, 'Tesoreria quedo con un movimiento que ya no existe'
 

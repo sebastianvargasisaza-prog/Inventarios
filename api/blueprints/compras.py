@@ -12152,6 +12152,43 @@ def ordenes_servicio_cambiar_estado(numero_os):
            VALUES (?,?,?,?,?,?)""",
         (numero_os, estado_anterior, estado_nuevo, user, now, obs),
     )
+    # El costo de marcar los envases (serigrafía/tampografía) es plata que la empresa paga y
+    # nunca llegaba al libro central: quedaba sólo en `ordenes_servicio.costo_real_cop`, así que
+    # el gasto del mes salía corto justo en un rubro que se repite todos los meses.
+    # Se registra al ENTREGAR, que es cuando el costo real se conoce. Idempotente por el número
+    # de OS: re-guardar el costo actualiza la fila, nunca agrega una segunda (M45/M148).
+    if estado_nuevo == 'Entregada':
+        try:
+            _costo_os = float(body.get('costo_real_cop') or 0)
+        except (TypeError, ValueError):
+            _costo_os = 0.0
+        if _costo_os > 0:
+            try:
+                # El PERÍODO sale de la fecha de entrega, no del reloj (M106).
+                _fecha_os = str(now)[:10] or _hoy_col().isoformat()
+                _ref_os = 'OS-%s' % numero_os
+                _prov_os = (c.execute("SELECT COALESCE(proveedor,'') FROM ordenes_servicio "
+                                      "WHERE numero_os=?", (numero_os,)).fetchone() or [''])[0]
+                _ya_os = c.execute("SELECT id FROM flujo_egresos WHERE fuente='marcacion' "
+                                   "AND referencia=? LIMIT 1", (_ref_os,)).fetchone()
+                _concepto_os = ('Marcación de envases %s%s'
+                                % (numero_os, (' · ' + _prov_os) if _prov_os else ''))
+                if _ya_os:
+                    c.execute("UPDATE flujo_egresos SET monto=?, fecha=?, periodo=?, "
+                              "concepto=? WHERE id=?",
+                              (_costo_os, _fecha_os, _fecha_os[:7], _concepto_os, _ya_os[0]))
+                else:
+                    c.execute(
+                        "INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, "
+                        "periodo, fuente, referencia, creado_por, observaciones) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (_fecha_os, 'Espagiria', _concepto_os, 'Servicios', _costo_os,
+                         _fecha_os[:7], 'marcacion', _ref_os, user,
+                         'Costo real de la orden de servicio'))
+            except Exception as _e_os:
+                # Nunca en silencio: si el espejo falla, la OS igual se entrega (M4).
+                log.warning('no pude espejar el costo de la OS %s a Tesorería: %s',
+                            numero_os, _e_os)
     # Sebastián 24-may-2026 · audit OS · movimientos kardex MEE.
     # Antes el módulo OS era data-only · no afectaba stock · si los 500
     # frascos salían a serigrafía durante 15d, la bodega MEE no sabía

@@ -86,6 +86,7 @@ HTML = r"""
   <div class="container">
     <div class="tabs" id="tabs">
       <button class="tab active" data-tab="caja" onclick="switchTab('caja')">📊 Caja & KPIs</button>
+      <button class="tab" data-tab="cajamenor" onclick="switchTab('cajamenor')">💵 Caja menor</button>
       <button class="tab" data-tab="pnl" onclick="switchTab('pnl')">📈 P&L · Margen</button>
       <button class="tab" data-tab="cartera" onclick="switchTab('cartera')">📥 Cartera (AR)</button>
       <button class="tab" data-tab="pagar" onclick="switchTab('pagar')">📤 Por Pagar (AP)</button>
@@ -119,6 +120,41 @@ HTML = r"""
           <button class="btn btn-secondary" onclick="importarOCs()">📦 Importar OCs</button>
           <div id="import-msg" style="margin-top:10px;font-size:12px"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- TAB: CAJA MENOR · lo que la contadora revisa -->
+    <div id="tab-cajamenor" class="tabpanel hidden">
+      <div class="panel" style="margin-bottom:16px">
+        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+          <div><label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Desde</label>
+            <input type="date" id="cm-desde" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;background:var(--cx-card);color:var(--cx-text)"></div>
+          <div><label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Hasta</label>
+            <input type="date" id="cm-hasta" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;background:var(--cx-card);color:var(--cx-text)"></div>
+          <div><label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Empresa</label>
+            <select id="cm-empresa" style="padding:7px 10px;border:1px solid var(--cx-border);border-radius:6px;background:var(--cx-card);color:var(--cx-text)">
+              <option value="">Todas</option><option value="ANIMUS">ÁNIMUS</option><option value="ESPAGIRIA">Espagiria</option>
+            </select></div>
+          <button class="btn btn-primary" onclick="cargarCajaMenor()">Ver</button>
+          <button class="btn btn-secondary" onclick="cmExportar()">⬇ Descargar CSV</button>
+        </div>
+      </div>
+
+      <div class="grid grid-4" style="margin-bottom:16px">
+        <div class="card"><h3>Hay en la gaveta</h3><div class="val" id="cm-saldo">-</div><div class="sub">saldo actual · efectivo</div></div>
+        <div class="card"><h3>Entró a la gaveta</h3><div class="val pos" id="cm-gaveta">-</div><div class="sub">en el rango</div></div>
+        <div class="card"><h3>Entró al banco</h3><div class="val" id="cm-banco">-</div><div class="sub">no está en la gaveta</div></div>
+        <div class="card"><h3>Salió</h3><div class="val neg" id="cm-egr">-</div><div class="sub" id="cm-sinresp"></div></div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <h3>Con qué ingresó</h3>
+        <div id="cm-origenes" class="empty">Cargando...</div>
+      </div>
+
+      <div class="panel">
+        <h3>Movimiento por movimiento</h3>
+        <div id="cm-tabla" class="empty">Cargando...</div>
       </div>
     </div>
 
@@ -268,7 +304,7 @@ function fmtM(n){n=parseFloat(n||0); if(n>=1e6) return '$'+(n/1e6).toFixed(1)+'M
 function fmtN(n){return (n||0).toLocaleString('es-CO');}
 function _esc(s){return String(s||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));}
 
-const TABS = ['caja','pnl','cartera','pagar','ocs','facturacion','nomina','config'];
+const TABS = ['caja','cajamenor','pnl','cartera','pagar','ocs','facturacion','nomina','config'];
 
 function switchTab(t) {
   TABS.forEach(x => {
@@ -282,6 +318,7 @@ function switchTab(t) {
 
 function cargarTab(t) {
   if (t === 'caja') cargarCaja();
+  else if (t === 'cajamenor') cargarCajaMenor();
   else if (t === 'pnl') cargarPnL();
   else if (t === 'cartera') cargarCartera();
   else if (t === 'pagar') cargarPagar();
@@ -355,6 +392,141 @@ async function importarOCs() {
   msg.style.color = r.ok ? '#15803d' : '#dc2626';
   msg.textContent = d.message || d.error;
   if (r.ok) cargarCaja();
+}
+
+// -- CAJA MENOR - la pantalla que la contadora revisa ------------------------------------
+// El endpoint (`/api/caja/libro`) ya trae `origen`, `subtipo` y `comprobante_url`: eran cuatro
+// columnas que se escribian desde la mig 409 y NUNCA salian por la API, asi que "con que
+// ingreso cada peso" estaba en la base sin forma de verlo (M115). Aca se pintan.
+var _CM = null;
+
+function cmEsc(v){
+  return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function cmPesos(n){ return '$' + Math.round(parseFloat(n||0)).toLocaleString('es-CO'); }
+function cmFechaLocal(d){
+  // OJO: `toISOString()` es UTC - despues de las 19:00 en Colombia ya devuelve el dia
+  // SIGUIENTE y el rango arrancaria un dia corrido (M106). Se arma con componentes locales.
+  var m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+  return d.getFullYear() + '-' + m + '-' + dd;
+}
+
+async function cargarCajaMenor(){
+  var hoy = new Date();
+  var iDesde = document.getElementById('cm-desde'), iHasta = document.getElementById('cm-hasta');
+  if (!iDesde.value) iDesde.value = cmFechaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
+  if (!iHasta.value) iHasta.value = cmFechaLocal(hoy);
+  var q = 'desde=' + encodeURIComponent(iDesde.value) + '&hasta=' + encodeURIComponent(iHasta.value);
+  var emp = document.getElementById('cm-empresa').value;
+  if (emp) q += '&empresa=' + encodeURIComponent(emp);
+  document.getElementById('cm-tabla').innerHTML = '<div class="empty">Cargando...</div>';
+  try {
+    var r = await fetch('/api/caja/libro?' + q, {credentials:'same-origin'});
+    var d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'no se pudo leer el libro de caja');
+    _CM = d;
+    document.getElementById('cm-saldo').textContent  = cmPesos(d.saldo_actual);
+    document.getElementById('cm-gaveta').textContent = cmPesos(d.ingresos_a_gaveta);
+    document.getElementById('cm-banco').textContent  = cmPesos(d.ingresos_al_banco);
+    document.getElementById('cm-egr').textContent    = cmPesos(d.egresos);
+    // Un egreso sin soporte es lo primero que una contadora busca. Si son cero se DICE:
+    // un hueco en blanco no se distingue de "no se calculo" (M154).
+    var sr = d.egresos_sin_respaldo || 0;
+    var elSr = document.getElementById('cm-sinresp');
+    elSr.textContent = sr ? (sr + ' sin soporte') : 'todos con soporte';
+    elSr.style.color = sr ? 'var(--cx-danger-text)' : 'var(--cx-text-mute)';
+    cmPintarOrigenes(d);
+    cmPintarTabla(d);
+  } catch (e) {
+    document.getElementById('cm-tabla').innerHTML =
+      '<div class="empty">No se pudo cargar: ' + cmEsc(e.message) + '</div>';
+    document.getElementById('cm-origenes').innerHTML = '<div class="empty">-</div>';
+  }
+}
+
+function cmPintarOrigenes(d){
+  var el = document.getElementById('cm-origenes');
+  var ors = d.por_origen || [];
+  if (!ors.length) { el.innerHTML = '<div class="empty">No entro plata en este rango</div>'; return; }
+  var h = '<div style="overflow-x:auto"><table><thead><tr><th>Origen</th>' +
+          '<th style="text-align:right">Movs</th><th style="text-align:right">Total</th>' +
+          '<th style="text-align:right">A la gaveta</th><th style="text-align:right">Al banco</th>' +
+          '</tr></thead><tbody>';
+  ors.forEach(function(o){
+    var banco = (o.total || 0) - (o.a_gaveta || 0);
+    h += '<tr><td><b>' + cmEsc(o.origen) + '</b></td>' +
+         '<td style="text-align:right">' + fmtN(o.n) + '</td>' +
+         '<td style="text-align:right;font-variant-numeric:tabular-nums">' + cmPesos(o.total) + '</td>' +
+         '<td style="text-align:right;font-variant-numeric:tabular-nums" class="pos">' + cmPesos(o.a_gaveta) + '</td>' +
+         '<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--cx-text-mute)">' + cmPesos(banco) + '</td></tr>';
+  });
+  el.innerHTML = h + '</tbody></table></div>';
+}
+
+function cmPintarTabla(d){
+  var el = document.getElementById('cm-tabla');
+  var ms = d.movimientos || [];
+  if (!ms.length) { el.innerHTML = '<div class="empty">Sin movimientos en este rango</div>'; return; }
+  var h = '<div style="overflow-x:auto"><table><thead><tr>' +
+          '<th>Recibo</th><th>Fecha</th><th>Concepto</th><th>Con que</th><th>Metodo</th>' +
+          '<th>Quien</th><th>Soporte</th><th style="text-align:right">Monto</th>' +
+          '</tr></thead><tbody>';
+  ms.forEach(function(m){
+    var anul = m.anulado;
+    var estilo = anul ? ' style="opacity:.55;text-decoration:line-through"' : '';
+    var signo = (m.tipo === 'ingreso') ? '' : '-';
+    var clase = anul ? '' : (m.tipo === 'ingreso' ? 'pos' : 'neg');
+    // Lo que NO cuenta al saldo se dice fila por fila: si no, ella tendria que descubrirlo
+    // restando, y ahi es donde el arqueo deja de cuadrar sin que nadie entienda por que (M124).
+    var chip = '';
+    if (anul) chip = '<span class="badge b-err">anulado</span>';
+    else if (m.tipo === 'ingreso') chip = m.cuenta_en_saldo
+      ? '<span class="badge b-ok">gaveta</span>' : '<span class="badge b-warn">al banco</span>';
+    var soporte = m.comprobante_url
+      ? '<a href="' + cmEsc(m.comprobante_url) + '" target="_blank" rel="noopener">ver</a>'
+      : (m.tipo === 'ingreso' ? '<span style="color:var(--cx-text-faint)">-</span>'
+                              : '<span class="badge b-warn">falta</span>');
+    var motivo = m.anulado_motivo
+      ? '<div style="font-size:11px;color:var(--cx-danger-text)">' + cmEsc(m.anulado_motivo) + '</div>' : '';
+    var sub = m.subtipo
+      ? '<span style="color:var(--cx-text-faint)"> - ' + cmEsc(m.subtipo) + '</span>' : '';
+    h += '<tr' + estilo + '><td style="font-family:monospace;font-size:11px">' + cmEsc(m.recibo || '-') + '</td>' +
+         '<td>' + cmEsc(String(m.fecha || '').slice(0,10)) + '</td>' +
+         '<td>' + cmEsc(m.concepto) + motivo + '</td>' +
+         '<td>' + cmEsc(m.origen) + sub + ' ' + chip + '</td>' +
+         '<td>' + cmEsc(m.metodo || '-') + '</td>' +
+         '<td style="font-size:12px">' + cmEsc(m.registrado_por || '-') + '</td>' +
+         '<td>' + soporte + '</td>' +
+         '<td style="text-align:right;font-variant-numeric:tabular-nums" class="' + clase + '">' +
+           signo + cmPesos(m.monto) + '</td></tr>';
+  });
+  h += '</tbody></table></div>';
+  h += '<div style="margin-top:10px;font-size:12px;color:var(--cx-text-mute)">' +
+       fmtN(ms.length) + ' movimientos' +
+       (d.cerrada_hasta ? ' - caja cerrada hasta ' + cmEsc(d.cerrada_hasta) : '') + '</div>';
+  el.innerHTML = h;
+}
+
+function cmExportar(){
+  if (!_CM || !(_CM.movimientos || []).length) { alert('Primero cargá un rango con movimientos.'); return; }
+  var cab = ['recibo','fecha','tipo','concepto','origen','subtipo','metodo','empresa',
+             'registrado_por','comprobante_url','anulado','cuenta_en_saldo','monto'];
+  var filas = [cab.join(';')];
+  _CM.movimientos.forEach(function(m){
+    filas.push(cab.map(function(c){
+      var v = m[c];
+      if (v === true) v = 'si'; else if (v === false) v = 'no';
+      return String(v == null ? '' : v).split(';').join(',').split('\n').join(' ').split('\r').join('');
+    }).join(';'));
+  });
+  var blob = new Blob([String.fromCharCode(0xFEFF) + filas.join('\r\n')],
+                      {type:'text/csv;charset=utf-8;'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'caja-menor-' + (_CM.desde || '') + '_' + (_CM.hasta || '') + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
 }
 
 async function cargarPnL() {

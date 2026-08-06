@@ -1957,12 +1957,15 @@ def caja_traslado_cuenta():
         monto=monto, fecha=fecha, metodo='transferencia',
         referencia=cuenta, observaciones=(d.get("observaciones") or "").strip(),
         usuario=u, empresa=empresa, subtipo='traslado')
-    # La plata no desaparece: sale de la gaveta y ENTRA al banco. Sin este espejo, Tesorería
-    # ve una consignación sin origen y la caja una salida sin destino.
-    _tesoreria_espejo(c, tipo='ingreso', fecha=fecha,
-                      concepto='Consignación desde caja menor' + ((' · ' + cuenta) if cuenta else ''),
-                      monto=monto, empresa=empresa, referencia=recibo, usuario=u,
-                      categoria='Traslado de caja')
+    # ⚠ Una CONSIGNACIÓN NO ES UN INGRESO: es mover plata de un bolsillo propio a otro, y el
+    # libro central (`flujo_ingresos`/`flujo_egresos`) registra ingresos y gastos, no saldos de
+    # cuentas. Antes se espejaba como ingreso para que la consignación "tuviera origen" -- y
+    # mientras el cobro en efectivo no llegaba al libro, eso hacía que la plata se contara una
+    # vez, tarde y bajo una categoría inventada. Desde que el INGRESO se registra cuando se
+    # COBRA (abajo, y en el movimiento manual), espejar también el traslado contaría la MISMA
+    # plata dos veces: se vende $250K, se cobra $250K, se consigna $250K y los ingresos del mes
+    # dirían $500K. El origen de la consignación se ve en el libro de caja, que para eso está.
+    pass
     audit_log(c, usuario=u, accion='CAJA_TRASLADO_CUENTA', tabla='animus_caja_menor',
               registro_id=mov_id,
               despues={'monto': monto, 'cuenta': cuenta, 'empresa': empresa, 'recibo': recibo},
@@ -2154,6 +2157,13 @@ def caja_arqueos():
             observaciones=motivo, usuario=u,
             empresa=(d.get("empresa") or 'ANIMUS'), subtipo='ajuste_arqueo')
         c.execute("UPDATE caja_arqueos SET ajuste_mov_id=? WHERE id=?", (mov_id, aid))
+        # Un faltante de caja es plata que SALIÓ de la empresa aunque nadie sepa en qué: si no
+        # llega al libro, el mes cierra con un gasto menor del real y la diferencia se descubre
+        # cuadrando a mano. Va con categoría propia para que no se lea como un gasto operativo.
+        _tesoreria_espejo(c, tipo=('ingreso' if dif > 0 else 'egreso'), fecha=fecha,
+                          concepto='Ajuste por arqueo %s · %s' % (numero, motivo[:80]),
+                          monto=abs(dif), empresa=(d.get("empresa") or 'ANIMUS'),
+                          referencia=recibo, usuario=u, categoria='Ajuste de caja')
 
     audit_log(c, usuario=u, accion='CAJA_ARQUEO', tabla='caja_arqueos', registro_id=aid,
               despues={'numero': numero, 'sistema': sistema, 'fisico': fisico,
@@ -2335,6 +2345,14 @@ def caja_solicitud_sobrante(sid):
         metodo='efectivo', referencia=row[0],
         observaciones=(d.get("observaciones") or "Devolución de lo que sobró del pago"),
         usuario=u, empresa=row[3] or 'ANIMUS', subtipo='sobrante', solicitud_id=sid)
+    # ⚠ El sobrante NO es un ingreso: es plata que nunca se gastó. Espejarlo a `flujo_ingresos`
+    # inflaría los ingresos del mes con algo que jamás fue una venta -- el pago ya entró al
+    # libro como egreso por su monto COMPLETO, así que lo correcto es BAJAR ese gasto. Va como
+    # egreso NEGATIVO, que es exactamente lo que dice: se gastó menos.
+    _tesoreria_espejo(c, tipo='egreso', fecha=fecha,
+                      concepto='Sobrante devuelto de %s' % row[0], monto=-abs(monto),
+                      empresa=row[3] or 'ANIMUS', referencia=recibo, usuario=u,
+                      categoria='Caja menor')
     audit_log(c, usuario=u, accion='CAJA_SOBRANTE', tabla='caja_solicitudes_pago',
               registro_id=sid, despues={'monto': monto, 'recibo': recibo},
               detalle='Sobrante de %s devuelto a la caja: %s' % (row[0], monto))
@@ -2586,7 +2604,15 @@ def animus_caja_registrar():
     c = conn.cursor()
     recibo, mov_id = registrar_movimiento_caja(
         c, tipo=tipo, concepto=concepto, monto=monto, fecha=fecha,
-        metodo=metodo, referencia=referencia, observaciones=obs, usuario=u)
+        metodo=metodo, referencia=referencia, observaciones=obs, usuario=u,
+        empresa=(d.get("empresa") or "ANIMUS"))
+    # Un movimiento MANUAL de caja es plata que entró o salió de verdad, y era el único camino
+    # de alta que no llegaba al libro central: sus hermanos (pago de solicitud, consignación,
+    # cobro contraentrega) espejan hace rato y este quedó sin el fix (M45). Sebastián: *"todo lo
+    # que sea plata se debe ver reflejado allí"*.
+    _tesoreria_espejo(c, tipo=tipo, fecha=fecha, concepto=concepto, monto=monto,
+                      empresa=(d.get("empresa") or "ANIMUS"), referencia=recibo, usuario=u,
+                      categoria='Caja menor')
     try:
         audit_log(c, usuario=u, accion='ANIMUS_CAJA_MOV',
                   tabla='animus_caja_menor', registro_id=mov_id,
@@ -3548,15 +3574,15 @@ def animus_cod_cobrar(shopify_id):
     if comprobante:
         c.execute("UPDATE animus_caja_menor SET comprobante_url=?, comprobante_at=? WHERE id=?",
                   (comprobante, _now_col().strftime('%Y-%m-%d %H:%M:%S'), mov_id))
-    # Si no fue efectivo, la plata entro al BANCO: se espeja a Tesoreria igual que una
-    # consignacion. Sin esto ese ingreso no existe en ningun lado -- ni en la gaveta ni en el
-    # flujo -- y el cobro quedaria registrado sin que la plata aparezca.
-    if not es_efectivo(metodo):
-        _tesoreria_espejo(c, tipo='ingreso', fecha=fecha,
-                          concepto='Contraentrega %s por %s%s' % (pedido, metodo,
-                                                                 (' ref ' + ref_pago) if ref_pago else ''),
-                          monto=recibido, empresa='ANIMUS', referencia=recibo, usuario=u,
-                          categoria='Contraentrega')
+    # El ingreso se registra cuando se COBRA, sea en efectivo o no. Antes esto estaba
+    # condicionado a `not es_efectivo`: la venta en efectivo sólo llegaba al libro el día que
+    # alguien la consignara -- y la que nunca se consignaba no se contaba nunca. El METODO dice
+    # dónde quedó la plata (gaveta o banco), no si hubo venta.
+    _tesoreria_espejo(c, tipo='ingreso', fecha=fecha,
+                      concepto='Contraentrega %s por %s%s' % (pedido, metodo,
+                                                              (' ref ' + ref_pago) if ref_pago else ''),
+                      monto=recibido, empresa='ANIMUS', referencia=recibo, usuario=u,
+                      categoria='Contraentrega')
     c.execute("UPDATE animus_cod_cobros SET caja_mov_id=? WHERE id=?", (mov_id, cobro_id))
 
     audit_log(c, usuario=u, accion='ANIMUS_COD_COBRAR', tabla='animus_cod_cobros',
