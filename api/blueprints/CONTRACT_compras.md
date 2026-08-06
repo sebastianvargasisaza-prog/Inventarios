@@ -619,3 +619,21 @@ contadora.
 
 Tests: `tests/test_caja_libro_contadora.py` + `tests/test_hoy_colombia_dinero.py` (en el gate).
 
+## 🏷️ INV-26 · El costo de MARCACIÓN llega al libro central (6-ago)
+
+El costo real de serigrafiar/tampografiar los envases se guardaba en
+`ordenes_servicio.costo_real_cop` al entregar la orden y ahí moría: el gasto del mes salía corto
+justo en un rubro que se repite todos los meses.
+
+- Se registra al pasar a **`Entregada`**, que es cuando el costo real se conoce. Referencia
+  `OS-<numero_os>`, fuente `marcacion`, categoría `Servicios`.
+- **La fila se ACTUALIZA, no se inserta de nuevo.** Hoy la máquina de estados impide re-entregar
+  (`Entregada → Entregada` no está permitida), así que el `UPDATE` es defensa en profundidad; si
+  alguna vez se permite corregir el costo, el gasto no se duplica. Un gasto inflado no da ningún
+  síntoma: nadie sospecha de un número de más (M148).
+- El período sale de la **fecha de entrega**, no del reloj (INV-10 / M106).
+- El espejo es best-effort: si falla, la orden igual se entrega -- pero **se declara con
+  `log.warning`**, nunca en silencio (M4).
+
+Tests: `tests/test_gastos_llegan_al_libro.py` (en el gate · probado reintroduciendo el bug).
+
