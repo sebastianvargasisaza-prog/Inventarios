@@ -1384,12 +1384,35 @@ async function loadPNL(){
 }
 
 var _chartAR=null;
+// Las tres pestanas de abajo (AP, AR, Working Capital) abrian EN BLANCO: el JS escribia en
+// `ap-content` / `ar-content` / `wc-content` y el HTML tiene `ap-table`, `ar-table`, `wc-kpis`.
+// Los dos lados se renombraron por separado y el `if(!el) return` lo hacia fallar EN SILENCIO --
+// una pestana vacia se lee como "no hay datos", que es lo contrario de lo que pasaba (M100/M112).
+// Ahora se resuelve contra los nombres posibles y, si no hay NINGUNO, se dice.
+function _finCont(base, etiqueta){
+  var cands=[base+'-content', base+'-table', base+'-kpis', base+'-ccc'];
+  for(var i=0;i<cands.length;i++){
+    var el=document.getElementById(cands[i]);
+    if(el) return el;
+  }
+  console.warn('[financiero] no encontre donde pintar ' + (etiqueta||base));
+  return null;
+}
+function _finSinDonde(base, etiqueta){
+  // Si de verdad no hay contenedor, la pantalla lo DICE en vez de quedarse muda.
+  var p=document.getElementById('page-'+base);
+  if(p) p.insertAdjacentHTML('beforeend',
+    '<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border-radius:10px;'
+    + 'padding:12px 14px;font-size:13px;margin-top:10px">No pude pintar ' + (etiqueta||base)
+    + ': falta el contenedor en la pantalla.</div>');
+}
+
 async function loadARaging(){
   try{
     var d=await fetch('/api/financiero/ar-aging').then(function(r){return r.json();});
     var fmt2=function(n){return '$'+Math.abs(parseFloat(n||0)).toLocaleString('es-CO',{maximumFractionDigits:0});};
-    var el=document.getElementById('ar-content');
-    if(!el)return;
+    var el=_finCont('ar','Cuentas por Cobrar');
+    if(!el){ _finSinDonde('ar','Cuentas por Cobrar'); return; }
     var bk=d.buckets||{};
     var h='<table style="width:100%;border-collapse:collapse;font-size:0.88em;">';
     h+='<tr style="background:#f8f9fa;"><th style="text-align:left;padding:8px;">Bucket</th><th style="text-align:right;padding:8px;">Total</th><th style="text-align:right;padding:8px;"># Pedidos</th></tr>';
@@ -1411,8 +1434,8 @@ async function loadAPaging(){
   try{
     var d=await fetch('/api/financiero/ap-aging').then(function(r){return r.json();});
     var fmt2=function(n){return '$'+Math.abs(parseFloat(n||0)).toLocaleString('es-CO',{maximumFractionDigits:0});};
-    var el=document.getElementById('ap-content');
-    if(!el)return;
+    var el=_finCont('ap','Cuentas por Pagar');
+    if(!el){ _finSinDonde('ap','Cuentas por Pagar'); return; }
     var bk=d.buckets||{};
     var h='<table style="width:100%;border-collapse:collapse;font-size:0.88em;">';
     h+='<tr style="background:#f8f9fa;"><th style="text-align:left;padding:8px;">Bucket</th><th style="text-align:right;padding:8px;">Total</th><th style="text-align:right;padding:8px;"># OCs</th></tr>';
@@ -1433,8 +1456,8 @@ async function loadWorkingCapital(){
   try{
     var d=await fetch('/api/financiero/working-capital').then(function(r){return r.json();});
     var fmt2=function(n){return '$'+Math.abs(parseFloat(n||0)).toLocaleString('es-CO',{maximumFractionDigits:0});};
-    var el=document.getElementById('wc-content');
-    if(!el)return;
+    var el=_finCont('wc','Capital de Trabajo');
+    if(!el){ _finSinDonde('wc','Capital de Trabajo'); return; }
     var wc=d.working_capital||0;
     var h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;">';
     var cards=[

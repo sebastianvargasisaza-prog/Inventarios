@@ -94,6 +94,7 @@ CORAZON=(
   "tests/test_hoy_colombia_dinero.py"
   "tests/test_caja_recibo_numerado.py"
   "tests/test_caja_respaldo_y_rechazo.py"
+  "tests/test_financiero_pestanas_conectadas.py"
   # La caja también PAGA (3-ago): solicitar → autorizar → pagar, con los controles que le dan
   # sentido -- nadie se autoriza a sí mismo, no se paga dos veces, no se paga más de lo que hay,
   # y consignar no cuenta como gasto. Es plata saliendo de una gaveta: sin gate no está protegido.
