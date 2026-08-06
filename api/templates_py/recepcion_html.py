@@ -7,7 +7,36 @@ RECEPCION_HTML = r"""
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Recepcion de Mercancia - Espagiria</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
-<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
+<script>
+// Rotulos en bloque desde Recepcion (Sebastian 6-ago): "adicional al final puede ser
+// impresion masiva de los lotes, tambien para que puedan hacerlo por alli".
+// Resuelve los lotes contra el kardex y abre el MISMO imprimible que usa Calidad.
+async function rotmImprimir(){
+  var raw = (document.getElementById('rotm-lotes')||{value:''}).value.trim();
+  var msg = document.getElementById('rotm-msg');
+  if(!raw){ msg.innerHTML = '<span style="color:var(--cx-warn-text)">Escribí al menos un lote.</span>'; return; }
+  msg.textContent = 'Buscando...';
+  try{
+    var r = await fetch('/api/lotes/por-numero?lotes=' + encodeURIComponent(raw),
+                        {credentials:'same-origin'});
+    var d = await r.json();
+    if(!d.ok){ throw new Error(d.error || 'no pude resolver los lotes'); }
+    if(!(d.movs||[]).length){
+      msg.innerHTML = '<span style="color:var(--cx-danger-text)">Ninguno de esos lotes está en el kardex.</span>';
+      return;
+    }
+    // Lo que NO se encontro se DICE: imprimir 3 de 5 sin avisar es peor que fallar (M124).
+    var falt = (d.no_encontrados||[]);
+    msg.innerHTML = falt.length
+      ? '<span style="color:var(--cx-warn-text)">Se imprimen ' + d.movs.length +
+        ' · no encontré: ' + falt.join(', ') + '</span>'
+      : '<span style="color:var(--cx-success-text)">Se imprimen ' + d.movs.length + '.</span>';
+    window.open('/rotulos-recepcion?movs=' + encodeURIComponent(d.movs.join(',')), '_blank');
+  }catch(e){
+    msg.innerHTML = '<span style="color:var(--cx-danger-text)">Error: ' + (e.message||e) + '</span>';
+  }
+}
+(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--vio:#6d28d9;--vio2:#7c3aed;--viod:#5b21b6;--ink:#1e1b2e;--mut:var(--cx-text-mute, #6b7280);--line:var(--cx-border, #ece9f6);--bg:#f6f5fb;--card:#fff;--soft:#faf8ff;--amber:#f59e0b;--green:#16a34a;--red:#dc2626;}
@@ -221,7 +250,16 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
   <div class="card">
     <h2>&#128269; Trazabilidad de Lote</h2>
     <div class="search-row">
-      <input type="text" id="lote-input" placeholder="Numero de lote (ej: L-2026-001)" onkeydown="if(event.key==='Enter')buscarLote()">
+      <div style="margin:16px 0 4px;padding:14px 16px;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-bg-alt)">
+    <div style="font-weight:700;margin-bottom:6px">&#128424; Imprimir rótulos en bloque</div>
+    <div style="font-size:12.5px;color:var(--cx-text-mute);margin-bottom:10px">Pegá los números de lote separados por coma y salen todos los rótulos en un solo documento. Los campos que llena Calidad (F01/F02) salen en blanco hasta que los hagan.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="text" id="rotm-lotes" placeholder="L-2026-001, L-2026-002, ..." style="flex:1;min-width:260px;padding:8px 10px;border:1px solid var(--cx-border);border-radius:8px">
+      <button class="btn" onclick="rotmImprimir()" style="background:var(--cx-primary-grad,#6d28d9);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer">Imprimir</button>
+    </div>
+    <div id="rotm-msg" style="margin-top:8px;font-size:12.5px"></div>
+  </div>
+  <input type="text" id="lote-input" placeholder="Numero de lote (ej: L-2026-001)" onkeydown="if(event.key==='Enter')buscarLote()">
       <button class="btn btn-primary" onclick="buscarLote()">Buscar</button>
     </div>
     <div id="lote-result" style="margin-top:12px;"></div>

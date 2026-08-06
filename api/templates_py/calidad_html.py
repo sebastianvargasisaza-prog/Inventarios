@@ -5,7 +5,35 @@ CALIDAD_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Control de Calidad &middot; EOS</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
-<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
+<script>
+// ── Rotulos en bloque (Alejandro, 6-ago) ─────────────────────────────────────────────
+// "Que no les tarde mucho: seleccionan las que quieran, le dan imprimir, salen en
+// cuarentena y los pegan." Es EL MISMO rotulo -- los campos del F01/F02 salen en blanco
+// porque todavia no se hicieron, y el estado lo pone el backend desde el KARDEX.
+function rotSeleccionadas(){
+  return Array.prototype.slice.call(document.querySelectorAll('.rot-chk:checked'))
+    .map(function(x){ return x.value; }).filter(Boolean);
+}
+function rotTodas(master){
+  document.querySelectorAll('.rot-chk').forEach(function(x){ x.checked = master.checked; });
+  rotCuenta();
+}
+function rotCuenta(){
+  var el = document.getElementById('rot-cuenta');
+  if(!el) return;
+  var n = rotSeleccionadas().length;
+  el.textContent = n === 0 ? 'ninguna seleccionada'
+                 : (n === 1 ? '1 seleccionada' : n + ' seleccionadas');
+}
+function rotImprimir(){
+  var ids = rotSeleccionadas();
+  if(!ids.length){ alert('Marcá al menos una materia prima para imprimir su rótulo.'); return; }
+  window.open('/rotulos-recepcion?movs=' + encodeURIComponent(ids.join(',')), '_blank');
+}
+document.addEventListener('change', function(ev){
+  if(ev.target && ev.target.classList && ev.target.classList.contains('rot-chk')) rotCuenta();
+});
+(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);color:var(--cx-text);font-size:14px;min-height:100vh;}
@@ -257,6 +285,7 @@ textarea{resize:vertical;min-height:70px;}
   </style>
   <div class="ccp-hero">
     <div class="ccp-title">&#x1F9EA; Recepción y liberación de insumos</div>
+    <div style="display:flex;gap:10px;align-items:center;margin:10px 0 4px"><button class="ccp-btn" onclick="rotImprimir()" style="background:var(--cx-primary-grad,#6d28d9);color:#fff;padding:9px 16px;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#128424; Imprimir rótulos</button><span id="rot-cuenta" style="font-size:12.5px;color:var(--cx-text-mute)">ninguna seleccionada</span></div>
     <div class="ccp-sub">Cada lote que llega recorre el pipeline de calidad. <b>Materias primas:</b> el F02 aprobado por el jefe libera el lote (VIGENTE, stock usable). <b>Envases (MEE):</b> no llevan análisis fisicoquímico &rarr; el F01 conforme + firma del jefe lo libera.</div>
     <div class="ccp-flow">
       <div class="ccp-st"><span class="n">&#x1F150;</span><span class="lb">Recepción administrativa<small>Catalina &middot; entra a cuarentena</small></span></div>
@@ -282,8 +311,8 @@ textarea{resize:vertical;min-height:70px;}
   <input type="text" class="ccp-search" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…">
   <div class="ccp-wrap" style="overflow-x:auto;">
     <table class="ccp">
-      <thead><tr><th>Insumo</th><th>Lote / Código</th><th>Cantidad</th><th>Proveedor</th><th>Vencimiento</th><th>OC</th><th>&#x1F151; F01 técnica</th><th>&#x1F152; F02 análisis</th></tr></thead>
-      <tbody id="cc-tbody"><tr><td colspan="8" class="ccp-empty">Cargando&hellip;</td></tr></tbody>
+      <thead><tr><th style="text-align:center"><input type="checkbox" id="rot-all" title="Marcar todas" onclick="rotTodas(this)" style="width:17px;height:17px;cursor:pointer"></th><th>Insumo</th><th>Lote / Código</th><th>Cantidad</th><th>Proveedor</th><th>Vencimiento</th><th>OC</th><th>&#x1F151; F01 técnica</th><th>&#x1F152; F02 análisis</th></tr></thead>
+      <tbody id="cc-tbody"><tr><td colspan="9" class="ccp-empty">Cargando&hellip;</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -2459,7 +2488,7 @@ async function loadCuarentena(){
     const r=await fetch('/api/calidad/recepcion-pipeline');
     const d=await r.json(); const rows=(d&&d.lotes)||[]; window._ccrRows=rows;
     _ccRenderKpis(rows);
-    if(!rows.length){tbody.innerHTML='<tr><td colspan="8" class="ccp-empty">No hay lotes en cuarentena</td></tr>';return;}
+    if(!rows.length){tbody.innerHTML='<tr><td colspan="9" class="ccp-empty">No hay lotes en cuarentena</td></tr>';return;}
     tbody.innerHTML=rows.map(function(l){
       var esMEE = (l.tipo==='MEE');
       var org = esMEE?'MEE':'MP';
@@ -2497,6 +2526,7 @@ async function loadCuarentena(){
         f01cell += ' <button class="ccp-btn" style="margin-top:4px" onclick="cjsAbrir('+l.mov_id+')">&#128230; Revisar cajas</button>';
       }
       return '<tr>'
+        +'<td style="text-align:center"><input type="checkbox" class="rot-chk" value="'+l.mov_id+'" style="width:17px;height:17px;cursor:pointer"></td>'
         +'<td>'+tipoBadge+'<span class="ccp-name">'+esc(l.nombre)+'</span></td>'
         +'<td><div class="ccp-meta" style="font-size:12.5px">'+esc(l.lote||'sin lote')+'</div><div class="ccp-meta" style="font-size:10.5px;opacity:.8">'+esc(l.codigo_mp||'')+'</div></td>'
         +'<td><span class="ccp-qty">'+fmtCant(l.cantidad, esMEE)+'</span></td>'
@@ -2507,7 +2537,7 @@ async function loadCuarentena(){
         +'<td>'+f02cell+'</td>'
         +'</tr>';
     }).join('');
-  }catch(e){tbody.innerHTML='<tr><td colspan="8" class="ccp-empty">Error: '+esc(e.message)+'</td></tr>';}
+  }catch(e){tbody.innerHTML='<tr><td colspan="9" class="ccp-empty">Error: '+esc(e.message)+'</td></tr>';}
 }
 
 // ── Pipeline de recepción MP · formularios F01 (técnica/documental) y F02 (análisis) ──

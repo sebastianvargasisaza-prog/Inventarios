@@ -11188,6 +11188,14 @@ def _rotulo_recep_css(lw, lh):
       ".num{font-variant-numeric:tabular-nums;font-weight:600}.cant{color:var(--cx-success-text, #15803d);font-weight:800}.cantsub{color:var(--mute);font-weight:600;font-size:10px}.venc{color:var(--cx-danger-text, #c0392b);font-weight:600}.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:20px}.ck{text-align:center;font-weight:700}"
       ".qc{display:flex;gap:13px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);font-size:11px;font-weight:700;flex-wrap:wrap}.qc b{color:var(--mute);text-transform:uppercase;font-size:9.5px;font-weight:700}"
       ".qcbox{padding:8px 16px;border-top:1px solid var(--line)}"
+      # El ESTADO en grande reemplaza al sticker que se pegaba a mano. En termica un gris
+      # claro NO se ve y el navegador no imprime fondos sin print-color-adjust (M123), asi
+      # que el peso lo llevan la PALABRA y un borde grueso, no un relleno.
+      ".estadobig{font-size:26pt;font-weight:900;letter-spacing:.06em;text-align:center;"
+      "line-height:1.05;padding:4px 0;text-transform:uppercase}"
+      ".qcbox.estado-cuar{border:3px solid #000}.qcbox.estado-cuar .estadobig{color:#000}"
+      ".qcbox.estado-apro{border:3px solid #000}.qcbox.estado-apro .estadobig{color:#000}"
+      ".qcbox.estado-rech{border:4px double #000}.qcbox.estado-rech .estadobig{color:#000}"
       ".qcl{font-size:9.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px}.qcl span{color:#a1a1aa;font-weight:600;text-transform:none;letter-spacing:0}"
       ".qcarea{border:1.5px dashed var(--cx-primary-light, #c4b5fd);border-radius:8px;height:92px;background:repeating-linear-gradient(-45deg,#fff,#fff 8px,#faf5ff 8px,#faf5ff 9px)}"
       ".obs{height:26px}"
@@ -11238,12 +11246,22 @@ def _fecha_larga_es(val):
     return '%02d %s %d' % (d.day, _MESES_ES[d.month - 1], d.year)
 
 
-@bp.route('/rotulo-recepcion/<codigo>/<lote>/<cantidad_str>')
-def rotulo_recepcion(codigo, lote, cantidad_str):
-    if 'compras_user' not in session:
-        return redirect('/login')
-    try: cantidad = float(cantidad_str)
-    except: return "<h2>Cantidad invalida</h2>", 400
+
+def _rotulo_mp_hojas(codigo, lote, cantidad, args, idx0=0, estado=""):
+    """Arma las HOJAS del rotulo de una MP. Punto UNICO: lo usan el rotulo individual y el
+    imprimible en bloque de Calidad.
+
+    Existe como helper y no inline porque el rotulo es un documento REGULADO
+    (COC-PRO-002-F07): dos renderizadores divergen y terminan imprimiendo distinto segun
+    por donde se pida, que es lo que M1/M93 previenen. La maqueta NO se toco -- este cuerpo
+    es el mismo que ya se imprimia.
+
+    `estado` (CUARENTENA / APROBADO / RECHAZADO) se pinta en GRANDE cuando viene: es lo que
+    reemplaza al sticker que hoy pegan a mano. Sale del kardex, nunca se elige a mano -- un
+    rotulo que diga APROBADO sobre un lote en cuarentena es peor que no tener rotulo.
+
+    Devuelve (hojas_html, barcode_js, n_recipientes, ancho_mm, alto_mm).
+    """
     from datetime import date; import urllib.parse
     hoy = _fecha_larga_es(date.today()); lote=urllib.parse.unquote(lote)
     conn = get_db(); c = conn.cursor()
@@ -11280,10 +11298,10 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     _pos=(mov[2] if (mov and len(mov)>2 and mov[2]) else '') or ''
     # Override de ubicación (Sebastián 19-jul · Calidad al LIBERAR ya sabe dónde queda el lote → imprime
     # el rótulo final con esa ubicación aunque aún no se haya guardado en el kardex). ?est= &pos=
-    if (request.args.get('est') or '').strip():
-        _est = request.args.get('est').strip()
-    if (request.args.get('pos') or '').strip():
-        _pos = request.args.get('pos').strip()
+    if (args.get('est') or '').strip():
+        _est = args.get('est').strip()
+    if (args.get('pos') or '').strip():
+        _pos = args.get('pos').strip()
     # Fecha de recepción REAL = la Entrada del lote en el kardex (NO la fecha de impresión · Laura 16-jul:
     # "la fecha debe ser específica"). Si no hay Entrada, cae a hoy.
     _frec = ''
@@ -11298,19 +11316,19 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
         _frec = hoy
     # Overrides del rótulo FINAL de verificación (Calidad corrige en el modal de liberación · 16-jul):
     # ?inci= ?frec= ?tipo=MP|ME|MEMP ?nombre= → el rótulo sale con lo que Calidad verificó.
-    _ov_inci = (request.args.get('inci') or '').strip()
+    _ov_inci = (args.get('inci') or '').strip()
     if _ov_inci:
         ni = _ov_inci
-    _ov_frec = (request.args.get('frec') or '').strip()
+    _ov_frec = (args.get('frec') or '').strip()
     if _ov_frec:
         _frec = _fecha_larga_es(_ov_frec) or _ov_frec  # ISO → '19 JULIO 2026'; si ya viene formateada, tal cual
-    _ov_venc = (request.args.get('venc') or '').strip()
+    _ov_venc = (args.get('venc') or '').strip()
     if _ov_venc:
         fv = _fecha_larga_es(_ov_venc) or _ov_venc
-    _ov_nom = (request.args.get('nombre') or '').strip()
+    _ov_nom = (args.get('nombre') or '').strip()
     if _ov_nom:
         nc = _ov_nom
-    _tipo_sel = (request.args.get('tipo') or 'MP').strip().upper()
+    _tipo_sel = (args.get('tipo') or 'MP').strip().upper()
     if _tipo_sel not in ('MP', 'ME', 'MEMP'):
         _tipo_sel = 'MP'
 
@@ -11323,7 +11341,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     import html as _hh
     def _e(x): return _hh.escape(str(x if x is not None else ''))
     try:
-        _lw = int(round(float(request.args.get('w') or 100))); _lh = int(round(float(request.args.get('h') or 100)))
+        _lw = int(round(float(args.get('w') or 100))); _lh = int(round(float(args.get('h') or 100)))
     except Exception:
         _lw, _lh = 100, 100
     _lw = max(50, min(_lw, 210)); _lh = max(30, min(_lh, 297))
@@ -11332,7 +11350,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     ubic_disp = ' &middot; '.join(_uparts) if _uparts else '-'
     # Override de ubicación como texto libre (el F01 la captura en area_almacenamiento → la manda como ?ubic=)
     # Sebastián 24-jul: la posición/ubicación del F01 debe quedar en el rótulo.
-    _ov_ubic = (request.args.get('ubic') or '').strip()
+    _ov_ubic = (args.get('ubic') or '').strip()
     if _ov_ubic:
         ubic_disp = _e(_ov_ubic)
     # Fallback del VENCIMIENTO desde el F01 (recepcion_tecnica_doc) si el movimiento no lo trae · Sebastián
@@ -11356,7 +11374,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     # (cuando una MP llega en varios envases individuales). Sin `recs` = 1 rótulo por la cantidad total.
     _recs = []
     try:
-        _rraw = (request.args.get('recs') or '').strip()
+        _rraw = (args.get('recs') or '').strip()
         if _rraw:
             for _p in _rraw.split(','):
                 _p = _p.strip()
@@ -11370,6 +11388,12 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
         _recs = [cantidad]
     _nrec = len(_recs)
     _rtot = sum(_recs)
+
+    # El estado manda el COLOR y va en grande: el papel viejo queda pegado al bidon, asi que
+    # el rotulo nuevo tiene que ser inconfundible contra el anterior, no distinguirse por un
+    # detalle chico (M123: en termica un gris claro directamente no se ve).
+    _est_cls = ('apro' if estado.startswith('APRO') else
+                ('rech' if estado.startswith('RECH') else 'cuar'))
 
     def _sheet_mp(amt, idx):
         _rec_tag = ('<span class="rectag">Recipiente ' + str(idx + 1) + ' de ' + str(_nrec) + '</span>') if _nrec > 1 else ''
@@ -11392,13 +11416,29 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
            '<tr><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
            '<tr><td class="k">Observaciones</td><td class="fill obs"></td></tr>'
            '</table>'
-           '<div class="qcbox"><div class="qcl">Estado de calidad <span>&middot; colocar sticker (cuarentena / aprobado / rechazado)</span></div><div class="qcarea"></div></div>'
+           + (('<div class="qcbox estado-' + _est_cls + '"><div class="qcl">Estado de calidad</div>'
+                '<div class="estadobig">' + _e(estado) + '</div></div>')
+               if estado else
+               '<div class="qcbox"><div class="qcl">Estado de calidad <span>&middot; colocar sticker (cuarentena / aprobado / rechazado)</span></div><div class="qcarea"></div></div>') +
            '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
            '<div class="firma"><div class="l">Revisado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
            '</div>')
 
     _sheets = ''.join(_sheet_mp(a, i) for i, a in enumerate(_recs))
     _bc_js = ''.join('try{JsBarcode("#bc' + str(i) + '",' + json.dumps(bv) + ',{format:"CODE128",width:1.3,height:26,displayValue:false,margin:0});}catch(e){}' for i in range(_nrec))
+    return _sheets, _bc_js, _nrec, _lw, _lh
+
+@bp.route('/rotulo-recepcion/<codigo>/<lote>/<cantidad_str>')
+def rotulo_recepcion(codigo, lote, cantidad_str):
+    if 'compras_user' not in session:
+        return redirect('/login')
+    try: cantidad = float(cantidad_str)
+    except: return "<h2>Cantidad invalida</h2>", 400
+    from datetime import date as _d_rot
+    hoy = _fecha_larga_es(_d_rot.today())
+    _sheets, _bc_js, _nrec, _lw, _lh = _rotulo_mp_hojas(
+        codigo, lote, cantidad, request.args,
+        estado=(request.args.get('estado') or '').strip().upper())
     h = ('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulo Recepcion MP</title>'
        '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
        + _rotulo_recep_css(_lw, _lh) + '</head><body>'
@@ -11522,6 +11562,119 @@ def _rotulo_mee_pagina(titulo, hojas, codigos_bc, lw, lh):
             '<div class="wrap">' + ''.join(hojas) + '</div>'
             '<script>window.onload=function(){' + _bc + '};</script>'
             '</body></html>')
+
+
+@bp.route('/api/lotes/por-numero')
+def lotes_por_numero():
+    """Resuelve numeros de lote -> movimientos de Entrada, para imprimir sus rotulos en bloque.
+
+    Lo usa el bloque de impresion masiva de /recepcion (Sebastian 6-ago). Devuelve tambien
+    `no_encontrados`: imprimir 3 de 5 sin avisar es peor que fallar (M124).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'ok': False, 'error': 'sesion requerida'}), 401
+    crudos = [x.strip() for x in (request.args.get('lotes') or '').replace(';', ',').split(',')]
+    crudos = [x for x in crudos if x][:200]
+    if not crudos:
+        return jsonify({'ok': False, 'error': 'no mandaste ningun lote'}), 400
+    conn = get_db(); c = conn.cursor()
+    movs, faltan = [], []
+    for _l in crudos:
+        r = c.execute(
+            "SELECT id FROM movimientos WHERE tipo='Entrada' "
+            " AND UPPER(TRIM(COALESCE(lote,'')))=UPPER(TRIM(?)) "
+            " AND TRIM(COALESCE(material_id,''))<>'' ORDER BY id DESC LIMIT 1", (_l,)).fetchone()
+        if r:
+            movs.append(int(r[0]))
+        else:
+            faltan.append(_l[:40])
+    return jsonify({'ok': True, 'movs': movs, 'no_encontrados': faltan,
+                    'pedidos': len(crudos)})
+
+
+@bp.route('/rotulos-recepcion')
+def rotulos_recepcion_bulk():
+    """N rotulos de materia prima en UN solo imprimible (Alejandro, 6-ago).
+
+    *"Que no les tarde mucho ese rotulo: seleccionan las materias primas que quieran, le dan
+    imprimir, salen en cuarentena y los pegan."*
+
+    Es EL MISMO rotulo -- se arma con `_rotulo_mp_hojas`, el punto unico. Los campos que llenan
+    el F01/F02 salen en BLANCO porque todavia no se hicieron: un dato inventado miente con
+    formato de verdad, y en blanco es honesto (M115). Cuando Calidad haga los F, se reimprime
+    ese mismo rotulo y sale completo.
+
+    `?movs=1,2,3` -> los movimientos de Entrada elegidos en la bandeja de Calidad.
+
+    El ESTADO sale del KARDEX (`estado_lote`), nunca de la URL: un rotulo que diga APROBADO
+    pegado a un bidon que sigue en cuarentena es peor que no tener rotulo.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login')
+    from datetime import date as _d_b
+    import html as _hb
+    ids = []
+    for _raw in (request.args.get('movs') or request.args.get('mov') or '').split(','):
+        _raw = _raw.strip()
+        if _raw:
+            try:
+                ids.append(int(_raw))
+            except ValueError:
+                return "<h2>Movimiento invalido: %s</h2>" % _hb.escape(_raw[:40]), 400
+    if not ids:
+        return ("<h2>Elegi al menos una materia prima</h2>"
+                "<p>Marca las filas en Control de Calidad y volve a darle a Imprimir rotulos.</p>"), 400
+    conn = get_db(); c = conn.cursor()
+    _ph = ','.join('?' for _ in ids)
+    filas = c.execute(
+        "SELECT id, material_id, COALESCE(lote,''), COALESCE(cantidad,0), "
+        "       UPPER(TRIM(COALESCE(estado_lote,''))) "
+        "  FROM movimientos WHERE id IN (" + _ph + ") AND tipo='Entrada' "
+        " ORDER BY material_nombre, id", ids).fetchall()
+    if not filas:
+        return "<h2>Esos movimientos no existen o no son entradas</h2>", 404
+    _lw = _lh = None
+    hojas = []
+    bcjs = []
+    _saltados = []
+    for _f in filas:
+        _mat = (_f[1] or '').strip()
+        if not _mat:
+            # Sin codigo no hay rotulo posible · se DECLARA, no se saltea callado (M100/M124).
+            _saltados.append(str(_f[0]))
+            continue
+        # CUARENTENA / APROBADO / RECHAZADO derivado del kardex. VIGENTE = ya liberado.
+        _e_lote = _f[4] or ''
+        _estado = ('CUARENTENA' if _e_lote.startswith('CUARENTENA')
+                   else ('RECHAZADO' if _e_lote == 'RECHAZADO'
+                         else ('APROBADO' if _e_lote == 'VIGENTE' else '')))
+        _h, _b, _n, _w, _hh2 = _rotulo_mp_hojas(_mat, _f[2] or '', float(_f[3] or 0),
+                                                request.args, estado=_estado)
+        if _lw is None:
+            _lw, _lh = _w, _hh2
+        # Los codigos de barra se re-numeran para que no colisionen entre materiales.
+        # Los ids del codigo de barras se re-numeran por movimiento para que no colisionen
+        # entre materiales (cada hoja los trae numerados desde 0).
+        bcjs.append((_f[0], _n, _mat + '|' + (_f[2] or '')))
+        hojas.append(_h.replace('id="bc', 'id="bcX%d_' % _f[0]))
+    if not hojas:
+        return "<h2>No pude armar ningun rotulo</h2>", 400
+    _js = ''.join(
+        'try{JsBarcode("#bcX%d_%d",%s,{format:"CODE128",width:1.3,height:26,'
+        'displayValue:false,margin:0});}catch(e){}' % (_mid, _k, json.dumps(_bv))
+        for _mid, _cn, _bv in bcjs for _k in range(_cn))
+    _aviso = ('<span style="color:#b45309"> &middot; %d sin codigo, no se pudieron rotular</span>'
+              % len(_saltados)) if _saltados else ''
+    return ('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+            '<title>Rotulos de materia prima</title>'
+            '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/'
+            'JsBarcode.all.min.js"></script>'
+            + _rotulo_recep_css(_lw or 100, _lh or 100) + '</head><body>'
+            '<div class="ph"><div style="font-weight:700">Rotulos de materia prima &middot; '
+            + str(len(hojas)) + ' seleccionadas' + _aviso + '</div>'
+            '<button class="pbtn" onclick="window.print()">&#128424; Imprimir</button></div>'
+            '<div class="wrap">' + ''.join(hojas) + '</div>'
+            '<script>window.onload=function(){' + _js + '};</script></body></html>')
 
 
 @bp.route('/rotulo-recepcion-mee/<codigo>/<cantidad_str>')
