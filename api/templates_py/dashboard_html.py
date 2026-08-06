@@ -10112,7 +10112,7 @@ async function cargarMeeStock(){
       var _chips=(_cliChip(m)+ob).trim();
       var _med=(m.medida||'').trim();
       var _medChip=_med?'<span title="Medida/presentación del envase" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:999px;padding:1px 9px;font-size:0.74em;font-weight:800;white-space:nowrap;margin-left:7px">&#128207; '+_escHTML(_med)+'</span>':'';
-      h+='<td style="font-size:0.9em;line-height:1.35;">'+'<div style="font-weight:600;color:var(--cx-text);display:flex;align-items:center;flex-wrap:wrap">'+_escHTML(m.descripcion)+_medChip+'</div>'+(_chips?'<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+_cliChip(m)+ob+'</div>':'')+'</td>';
+      h+='<td style="font-size:0.9em;line-height:1.35;">'+'<div style="font-weight:600;color:var(--cx-text);display:flex;align-items:center;flex-wrap:wrap">'+_escHTML(m.descripcion)+_medChip+'</div>'+(_chips?'<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+_cliChip(m)+ob+'</div>':'')+_meeKitLinea(m)+_meeUsadoLinea(m)+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
       h+='<td style="font-weight:700;text-align:right;">'+m.stock_actual+' <span style="color:var(--cx-text-faint);font-size:0.8em;font-weight:400">'+_escHTML(m.unidad||'und')+'</span></td>';
       h+='<td style="text-align:center;">'+(_loc?'<span style="background:var(--cx-info-pale);color:var(--cx-info-text);border:1px solid #a5f3fc;border-radius:999px;padding:2px 9px;font-size:0.72em;font-weight:700;white-space:nowrap" title="Ubicación en bodega (zona/estante/posición)">&#128205; '+_escHTML(_loc)+'</span>':'<span style="color:var(--cx-border)">-</span>')+'</td>';
@@ -10169,6 +10169,40 @@ function meeRotulo(codigo){
 }
 // ─── Kit de partes por envase (Sebastián 9-jul) ───────────────────────────────
 var _kitPartes=[];
+function _meeKitLinea(m){
+  // El KIT del envase, DEBAJO de su descripcion (Sebastian 5-ago: "al envase le sale abajo o
+  // como organizamos aqui esto"). El boton Kit ya permitia asociar las piezas, pero la lista no
+  // las mostraba: un envase con kit se veia identico a uno sin kit, asi que quien organiza no
+  // podia saber que ya hizo sin abrir cada fila.
+  if(m.partes===null || m.partes===undefined){
+    // No se pudo leer · se DICE. Una lista sin kits se leeria como "ninguno tiene piezas",
+    // que es lo contrario de lo que hay que saber.
+    return '<div style="margin-top:4px;font-size:0.75em;color:var(--cx-danger-text)">no pude leer el kit</div>';
+  }
+  if(!m.partes.length) return '';
+  var chips=m.partes.map(function(p){
+    return '<span style="background:var(--cx-primary-pale);color:var(--cx-primary-text);border-radius:999px;'
+      + 'padding:1px 8px;font-size:0.72em;font-weight:700;white-space:nowrap" title="'+_escHTML(p.descripcion||'')+'">'
+      + _escHTML(p.codigo) + (Number(p.cantidad)!==1 ? ' &times;'+p.cantidad : '') + '</span>';
+  }).join('');
+  return '<div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">'
+    + '<span style="font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.05em">lleva</span>'
+    + chips + '</div>';
+}
+function _meeUsadoLinea(m){
+  // El REVERSO: un mismo gotero puede ser parte de varios envases. Su stock es UNO (es un
+  // material compartido), pero mirar 500 goteros no dice nada si no se sabe cuantos envases los
+  // consumen: su demanda es la SUMA de todos los que lo llevan.
+  if(!m.usado_en || !m.usado_en.length) return '';
+  var chips=m.usado_en.map(function(c){
+    return '<span style="background:var(--cx-info-pale);color:var(--cx-info-text);border-radius:999px;'
+      + 'padding:1px 8px;font-size:0.72em;font-weight:700;white-space:nowrap">'+_escHTML(c)+'</span>';
+  }).join('');
+  return '<div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">'
+    + '<span style="font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.05em"'
+    + ' title="Este material es parte de estos envases · su stock es compartido entre todos">'
+    + 'lo usan ' + m.usado_en.length + '</span>' + chips + '</div>';
+}
 function meeKit(codigo){
   var m=document.getElementById('mee-kit-modal'); if(!m){ alert('No se pudo abrir'); return; }
   var dd=(window._MEE_DATA||{})[codigo]||{};
@@ -21071,9 +21105,15 @@ function empqPintar(){
   }
   cuerpo.innerHTML=lista.map(empqTarjeta).join('');
 }
-function empqSel(id,campo,valor,off){
+function empqSel(id,campo,valor,off,noLleva){
   var v=(valor||'').toUpperCase();
+  // Tres estados, no dos: con codigo (resuelto), vacio (falta cargarlo) y "no lleva" (decision
+  // registrada). Sin el tercero, un envase que de verdad no usa caja se queda en rojo para
+  // siempre y el tablero se vuelve ruido.
   var op='<option value="">'+(off?'-':'(falta)')+'</option>';
+  if(campo==='tapa'||campo==='caja'){
+    op+='<option value="__NO__"'+(noLleva?' selected':'')+'>-- no lleva --</option>';
+  }
   (EMPQ_MEE||[]).forEach(function(m){
     var c=(m.codigo||'').toUpperCase();
     op+='<option value="'+empqEsc(m.codigo)+'"'+(c===v?' selected':'')+'>'+empqEsc(m.codigo)+' - '+empqEsc(m.desc)+'</option>';
@@ -21083,12 +21123,17 @@ function empqSel(id,campo,valor,off){
   if(v && !(EMPQ_MEE||[]).some(function(m){return (m.codigo||'').toUpperCase()===v;})){
     op+='<option value="'+empqEsc(valor)+'" selected>'+empqEsc(valor)+' (no esta en el maestro)</option>';
   }
+  var resuelto = !!valor || !!noLleva || off;
   return '<td style="padding:4px 6px"><select onchange="empqSet('+id+',&quot;'+campo+'&quot;,this.value)"'
-    + ' style="max-width:190px;padding:4px 6px;border:1px solid '+(valor?'var(--cx-border)':'var(--cx-danger)')
+    + ' style="max-width:190px;padding:4px 6px;border:1px solid '+(resuelto?'var(--cx-border)':'var(--cx-danger)')
     + ';border-radius:6px;background:var(--cx-bg-soft);color:var(--cx-text);font-size:11.5px">'+op+'</select></td>';
 }
 async function empqSet(id,campo,valor){
-  var body={id:id}; body[campo]=valor;
+  var body={id:id};
+  // El centinela NO viaja como si fuera un codigo: se traduce a la bandera. Mandar '__NO__' al
+  // campo del codigo lo dejaria guardado como material a comprar (M100).
+  if(valor==='__NO__'){ body['sin_'+campo]=true; }
+  else { body[campo]=valor; if(campo==='tapa'||campo==='caja') body['sin_'+campo]=false; }
   try{
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/programacion/presentacion-empaque',{method:'POST',credentials:'same-origin',
@@ -21147,7 +21192,9 @@ function empqTarjeta(g){
       +   ' title="Si se apaga, deja de contar para el calendario y para la compra de envases"></td>'
       + '<td style="padding:6px 7px;color:var(--cx-text-mute)">'+(x.volumen_ml||'-')+'</td>'
       + '<td style="padding:6px 7px">'+vcell+'</td>'
-      + empqSel(x.id,'envase',x.envase,off) + empqSel(x.id,'tapa',x.tapa,off) + empqSel(x.id,'caja',x.caja,off)
+      + empqSel(x.id,'envase',x.envase,off)
+      + empqSel(x.id,'tapa',x.tapa,off,x.sin_tapa)
+      + empqSel(x.id,'caja',x.caja,off,x.sin_caja)
       + '<td style="padding:6px 7px;color:var(--cx-text-soft)">'+(pz||'<span style="color:var(--cx-text-faint)">ninguna</span>')+'</td>'
       + (x.hay_que_serigrafiar
           ? '<td style="padding:6px 7px;color:var(--cx-warn-text);font-weight:700">mandar a serigrafiar</td>'

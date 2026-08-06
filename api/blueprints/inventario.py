@@ -15438,6 +15438,47 @@ def mee_stock_list():
     bajo = sum(1 for r in rows
                if (r['stock_minimo'] or 0) > 0 and float(r['stock_actual'] or 0) < r['stock_minimo'])
     _cuar = sum(1 for r in rows if float(r.get('en_cuarentena') or 0) > 0)
+    # ── EL KIT DE CADA ENVASE, EN LA MISMA LISTA (Sebastián 5-ago) ──────────────────────
+    # *"al hacerlo cómo quedaría? al envase le sale abajo o cómo organizamos aquí esto"*.
+    # El botón Kit ya permitía asociar las piezas, pero la lista no las mostraba: un envase con
+    # kit se veía IDÉNTICO a uno sin kit, así que quien organiza no podía saber qué ya hizo sin
+    # abrir cada fila. Una capacidad cuyo resultado no se ve es una capacidad que nadie usa.
+    #
+    # UNA consulta para todos (no una por fila · M63: un helper por fila es un N+1 disfrazado).
+    _partes_de = {}
+    try:
+        for _mc, _pc, _pd, _cant in c.execute(
+                "SELECT UPPER(TRIM(p.mee_codigo)), p.parte_codigo, "
+                "       COALESCE(NULLIF(p.descripcion,''), m.descripcion, p.parte_codigo), "
+                "       COALESCE(p.cantidad,1) "
+                "  FROM mee_partes p "
+                "  LEFT JOIN maestro_mee m ON UPPER(TRIM(m.codigo))=UPPER(TRIM(p.parte_codigo)) "
+                " WHERE COALESCE(p.parte_codigo,'')<>'' ORDER BY p.id").fetchall():
+            _partes_de.setdefault(_mc, []).append(
+                {'codigo': _pc, 'descripcion': _pd, 'cantidad': _cant})
+        # ── EL REVERSO: ¿QUIÉN USA ESTA PIEZA? (Sebastián 5-ago) ────────────────────────
+        # *"un mismo gotero puede ser para varios envases... eso cómo queda? pues muestra el
+        # total que hay de cada cosa?"*. Sí: la pieza tiene UNA fila y UN stock, porque es UN
+        # material compartido. Pero mirar 500 goteros no dice nada si no se sabe cuántos
+        # envases los consumen -- su demanda es la SUMA de todos los que lo llevan. Sin el
+        # reverso, el número existe y no se puede interpretar (M124).
+        _usado_en = {}
+        for _mc, _lista in _partes_de.items():
+            for _p in _lista:
+                _usado_en.setdefault((_p['codigo'] or '').strip().upper(), []).append(_mc)
+        for _r in rows:
+            _k = (_r.get('codigo') or '').strip().upper()
+            _r['partes'] = _partes_de.get(_k, [])
+            _r['usado_en'] = sorted(_usado_en.get(_k, []))
+    except Exception as _e_k:
+        # Se declara: una lista sin kits se leería como "ningún envase tiene piezas declaradas",
+        # que es exactamente lo contrario de lo que hay que saber (M100).
+        import logging as _lgk
+        _lgk.getLogger('inventario').warning('kits del maestro MEE: %s', _e_k)
+        for _r in rows:
+            _r['partes'] = None
+            _r['usado_en'] = None
+
     return jsonify({'items': rows, 'categorias': categorias, 'total': total,
                     'bajo_minimo': bajo, 'con_cuarentena': _cuar})
 

@@ -410,3 +410,87 @@ def test_el_cambio_queda_AUDITADO_con_el_valor_previo(app, admin_client, db_clea
     assert TAPA in fila[1], 'el audit no dice qué quedó'
     assert 'tapa' in fila[0], 'el audit no guarda el valor previo · sin eso no se puede revertir'
     _limpiar(app)
+
+
+# ── "NO LLEVA" es una respuesta, no un hueco ─────────────────────────────────
+
+def test_NO_LLEVA_tapa_deja_de_reportarse_como_hueco(app, admin_client, db_clean):
+    """Sebastián, viendo un envase redondo de 150 ml en rojo por tapa y caja: *"digamos este no
+    tiene ni tapa ni caja, cómo hacemos con esos"*. El diagnóstico trataba VACÍO como FALTA, y
+    así un envase que de verdad no lleva caja se queda en rojo para siempre -- un tablero que
+    grita siempre deja de mirarse justo el día que importa (M129/M144)."""
+    _sembrar(app, tapa='', caja='')
+    pid = _pres_id(app)
+    r = _patch(admin_client, pid, sin_tapa=True, sin_caja=True)
+    assert r.status_code == 200, r.data[:300]
+    fila = _union(admin_client)[0][PROD]
+    assert fila['sin_tapa'] is True and fila['sin_caja'] is True
+    assert fila['falta'] == [], 'sigue reportando como hueco algo que se declaró que no lleva'
+    assert fila['completo'] is True
+    _limpiar(app)
+
+
+def test_VACIO_sigue_siendo_un_hueco(app, admin_client, db_clean):
+    """El otro lado: si no se declaró nada, sigue faltando. Sin esto, la bandera sería una
+    forma de silenciar el tablero en vez de una respuesta."""
+    _sembrar(app, tapa='', caja='')
+    fila = _union(admin_client)[0][PROD]
+    assert 'tapa' in fila['falta'] and 'caja' in fila['falta'], fila['falta']
+    _limpiar(app)
+
+
+def test_poner_un_CODIGO_apaga_el_no_lleva(app, admin_client, db_clean):
+    """Son opuestos: si quedaran los dos, el diagnóstico tendría que elegir a cuál creerle."""
+    _sembrar(app, tapa='')
+    pid = _pres_id(app)
+    _patch(admin_client, pid, sin_tapa=True)
+    _patch(admin_client, pid, tapa=TAPA)
+    fila = _union(admin_client)[0][PROD]
+    assert fila['tapa'] == TAPA
+    assert fila['sin_tapa'] is False, 'quedó "no lleva" con un código cargado'
+    _limpiar(app)
+
+
+def test_decir_NO_LLEVA_borra_el_codigo_que_hubiera(app, admin_client, db_clean):
+    """Al revés: dejar el código con la bandera puesta deja al motor comprando algo que la
+    pantalla dice que no existe (M5)."""
+    from database import get_db
+    _sembrar(app, tapa=TAPA)
+    pid = _pres_id(app)
+    _patch(admin_client, pid, sin_tapa=True)
+    with app.app_context():
+        cod = get_db().execute("SELECT COALESCE(tapa_codigo,'') FROM producto_presentaciones "
+                               " WHERE id=?", (pid,)).fetchone()[0]
+    assert cod == '', 'quedó el código de tapa con "no lleva" puesto'
+    _limpiar(app)
+
+
+def test_el_contador_no_cuenta_lo_que_NO_LLEVA(app, admin_client, db_clean):
+    """Si el KPI siguiera contándolo, el número nunca llegaría a cero y dejaría de usarse."""
+    _sembrar(app, tapa='', caja='')
+    pid = _pres_id(app)
+    antes = _union(admin_client)[1]['n_sin_tapa']
+    _patch(admin_client, pid, sin_tapa=True)
+    despues = _union(admin_client)[1]['n_sin_tapa']
+    assert despues == antes - 1, 'el contador de "sin tapa" no bajó · %s -> %s' % (antes, despues)
+    _limpiar(app)
+
+
+def test_el_centinela_NO_se_guarda_como_codigo(app, db_clean):
+    """La pantalla manda `__NO__` para decir "no lleva". Si viajara al campo del código quedaría
+    guardado como un material a comprar que no existe (M100)."""
+    import templates_py.dashboard_html as D
+    js = re.sub(r'//[^\n]*', '',
+                (getattr(D, 'DASHBOARD_APP_JS', '') or '') + D.DASHBOARD_HTML)
+    i = js.find('async function empqSet')
+    bloque = js[i:i + 700]
+    assert "__NO__" in bloque, 'la pantalla no distingue "no lleva"'
+    assert "body['sin_'+campo]=true" in bloque.replace(' ', '').replace("body['sin_'+campo]=true", "body['sin_'+campo]=true"), \
+        'el centinela no se traduce a la bandera'
+
+
+def test_la_columna_de_la_bandera_existe(app, db_clean):
+    """mig 419 · sin la columna, la bandera sería un `except` mudo que deja el rojo puesto."""
+    from database import get_db
+    with app.app_context():
+        get_db().execute("SELECT sin_tapa, sin_caja FROM producto_presentaciones LIMIT 0")

@@ -11165,6 +11165,23 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         # distintos y mezclarlos en una columna borraria la diferencia entre lo pedido y lo
         # hecho, que es justo lo que un arqueo necesita comparar.
     ]),
+    (419, "presentaciones: 'NO LLEVA' tapa/caja es una respuesta, no un hueco", [
+        # Sebastian (5-ago), viendo el LIMPIADOR FACIAL HIDRATANTE de 150 ml en rojo por tapa y
+        # caja: *"digamos este no tiene ni tapa ni caja, como hacemos con esos"*.
+        #
+        # El diagnostico trataba VACIO como FALTA, y no es lo mismo: un envase que de verdad no
+        # lleva caja se quedaria en rojo para siempre. Una alerta que suena siempre deja de
+        # mirarse justo el dia que importa (M129/M144), y eso arruina el tablero entero.
+        #
+        # Ahora hay tres estados distinguibles: con codigo (resuelto), vacio (falta cargarlo) y
+        # 'no lleva' (decision registrada). El motor NO cambia -- sigue leyendo tapa_codigo, y
+        # sin codigo no hay nada que comprar en los dos casos. La bandera solo cambia lo que el
+        # DIAGNOSTICO reporta, que es exactamente donde estaba el ruido.
+        #
+        # Aditivo y reversible: columnas nuevas en 0, ninguna fila existente cambia de sentido.
+        "ALTER TABLE producto_presentaciones ADD COLUMN sin_tapa INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE producto_presentaciones ADD COLUMN sin_caja INTEGER NOT NULL DEFAULT 0",
+    ]),
     (418, "envases: si la parte VIENE INCLUIDA en el bulto, y que la recepcion lo confirme", [
         # Sebastian (5-ago), mostrando la pantalla de recepcion: *"aqui deberia existir la logica
         # de ese envase tiene parte? viene con gotero? y si lo compramos con plegadiza y llega con

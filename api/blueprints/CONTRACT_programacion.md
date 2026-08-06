@@ -1252,4 +1252,18 @@ exigirle tapa sería ruido — y no entra en los contadores.
 `unicodedata` en esa misma función. Rompió el normalizador tres líneas más abajo y sólo se vio
 porque el `except` lo DECLARA en vez de devolver una lista vacía.
 
+**"No lleva" es una RESPUESTA, no un hueco** (mig 419 · `sin_tapa`/`sin_caja`). Sebastián, viendo
+un envase redondo de 150 ml en rojo por tapa y caja: *"digamos este no tiene ni tapa ni caja, cómo
+hacemos con esos"*. El diagnóstico trataba VACÍO como FALTA, así que un envase que de verdad no
+lleva caja se quedaba en rojo para siempre — y un tablero que grita siempre deja de mirarse justo
+el día que importa (M129/M144).
+
+Tres estados distinguibles: **con código** (resuelto) · **vacío** (falta cargarlo) · **"no lleva"**
+(decisión registrada). El MOTOR no cambia: sigue leyendo `tapa_codigo`, y sin código no hay nada
+que comprar en los dos casos — la bandera sólo cambia lo que el DIAGNÓSTICO reporta, que es donde
+estaba el ruido. Son EXCLUYENTES: poner un código apaga la bandera y declarar "no lleva" borra el
+código, porque si quedaran los dos el diagnóstico tendría que elegir a cuál creerle (M5). El
+centinela `__NO__` de la pantalla se traduce a la bandera y NUNCA viaja al campo del código: ahí
+quedaría guardado como un material a comprar que no existe (M100).
+
 Tests: `tests/test_union_producto_envase.py` (en el gate).

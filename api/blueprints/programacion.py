@@ -17098,7 +17098,8 @@ def prog_presentacion_empaque():
     conn = get_db(); c = conn.cursor()
     prev = c.execute(
         "SELECT producto_nombre, COALESCE(activo,1), COALESCE(envase_codigo,''), "
-        "       COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), COALESCE(volumen_ml,0) "
+        "       COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), COALESCE(volumen_ml,0), "
+        "       COALESCE(sin_tapa,0), COALESCE(sin_caja,0) "
         "  FROM producto_presentaciones WHERE id=?", (pid,)).fetchone()
     if not prev:
         return jsonify({'error': 'presentación no encontrada'}), 404
@@ -17107,6 +17108,20 @@ def prog_presentacion_empaque():
     if 'activo' in d:
         _a = 1 if d.get('activo') else 0
         sets.append('activo=?'); vals.append(_a); cambios['activo'] = _a
+    # "No lleva" es una DECISION, y por eso se guarda: si sólo se dejara el campo vacío no habría
+    # forma de distinguir "este envase no usa caja" de "todavía no la cargué", y el diagnóstico
+    # tendría que gritar por los dos para siempre.
+    for _campo, _col in (('sin_tapa', 'sin_tapa'), ('sin_caja', 'sin_caja')):
+        if _campo not in d:
+            continue
+        _v = 1 if d.get(_campo) else 0
+        sets.append('%s=?' % _col); vals.append(_v); cambios[_campo] = _v
+        if _v:
+            # No pueden convivir: si NO lleva tapa, no puede tener un código de tapa cargado.
+            # Dejar los dos deja al motor comprando algo que la pantalla dice que no existe (M5).
+            _otro = 'tapa_codigo' if _campo == 'sin_tapa' else 'caja_codigo'
+            sets.append('%s=?' % _otro); vals.append(''); cambios[_otro] = ''
+
     for _campo, _col in (('envase', 'envase_codigo'), ('tapa', 'tapa_codigo'), ('caja', 'caja_codigo')):
         if _campo not in d:
             continue
@@ -17119,6 +17134,11 @@ def prog_presentacion_empaque():
                 return jsonify({'error': '%s no existe en el maestro de envases' % _cod,
                                 'codigo': 'MEE_INEXISTENTE'}), 400
         sets.append('%s=?' % _col); vals.append(_cod); cambios[_campo] = _cod
+        # Poner un código contradice el "no lleva": se apaga solo, o quedarían los dos y el
+        # diagnóstico tendría que elegir a cuál creerle.
+        if _cod and _campo in ('tapa', 'caja'):
+            _flag = 'sin_tapa' if _campo == 'tapa' else 'sin_caja'
+            sets.append('%s=?' % _flag); vals.append(0); cambios[_flag] = 0
     if not sets:
         return jsonify({'error': 'no mandaste nada que cambiar'}), 400
 
@@ -17132,7 +17152,8 @@ def prog_presentacion_empaque():
         from audit_helpers import audit_log as _al
         _al(c, usuario=_u, accion='EDITAR_PRESENTACION_EMPAQUE',
             tabla='producto_presentaciones', registro_id=str(pid),
-            antes={'activo': int(prev[1]), 'envase': prev[2], 'tapa': prev[3], 'caja': prev[4]},
+            antes={'activo': int(prev[1]), 'envase': prev[2], 'tapa': prev[3], 'caja': prev[4],
+                   'sin_tapa': int(prev[6] or 0), 'sin_caja': int(prev[7] or 0)},
             despues=cambios,
             detalle='%s · %sml · %s' % (prev[0], prev[5],
                                         ' '.join('%s=%s' % (k, v) for k, v in cambios.items())))
@@ -17264,9 +17285,10 @@ def abastecimiento_envases_cobertura():
         _filas = c.execute(
             "SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(volumen_ml,0), "
             "       COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), id, "
-            "       COALESCE(activo,1), COALESCE(presentacion_codigo,'') "
+            "       COALESCE(activo,1), COALESCE(presentacion_codigo,''), "
+            "       COALESCE(sin_tapa,0), COALESCE(sin_caja,0) "
             "  FROM producto_presentaciones").fetchall()
-        for _pn, _env, _vol, _tap, _caj, _pid, _act, _pcod in _filas:
+        for _pn, _env, _vol, _tap, _caj, _pid, _act, _pcod, _stap, _scaj in _filas:
             _ek = (_env or '').strip().upper()
             _falta = []
             _usada = bool(_act)
@@ -17276,14 +17298,14 @@ def abastecimiento_envases_cobertura():
                 _falta.append('frasco')
             elif _ek not in _mee:
                 _falta.append('el frasco %s no existe en el maestro de envases' % _env)
-            if not _usada:
-                pass
+            if not _usada or _stap:
+                pass                      # 'no lleva tapa' es una respuesta, no un pendiente
             elif not _tap:
                 _falta.append('tapa')
             elif (_tap or '').strip().upper() not in _mee:
                 _falta.append('la tapa %s no existe en el maestro' % _tap)
-            if not _usada:
-                pass
+            if not _usada or _scaj:
+                pass                      # 'no lleva caja' es una respuesta, no un pendiente
             elif not _caj:
                 _falta.append('caja')
             elif (_caj or '').strip().upper() not in _mee:
@@ -17308,6 +17330,7 @@ def abastecimiento_envases_cobertura():
                 'ventas_180d': (None if _ventas_pv is None else _ventas_pv.get(_kv, 0)),
                 'skus': ([] if _ventas_pv is None else sorted(_skus_pv.get(_kv, []))),
                 'envase': _env, 'tapa': _tap, 'caja': _caj,
+                'sin_tapa': bool(_stap), 'sin_caja': bool(_scaj),
                 'piezas': _pz,
                 'en_blanco': bool(_senal),
                 'senal_blanco': _senal,
@@ -17341,8 +17364,8 @@ def abastecimiento_envases_cobertura():
         _res['n_presentaciones'] = len(_usadas)
         _res['n_apagadas'] = len(detalle) - len(_usadas)
         _res['n_completas'] = sum(1 for x in _usadas if x['completo'])
-        _res['n_sin_tapa'] = sum(1 for x in _usadas if not x['tapa'])
-        _res['n_sin_caja'] = sum(1 for x in _usadas if not x['caja'])
+        _res['n_sin_tapa'] = sum(1 for x in _usadas if not x['tapa'] and not x['sin_tapa'])
+        _res['n_sin_caja'] = sum(1 for x in _usadas if not x['caja'] and not x['sin_caja'])
         # Presentaciones que NO venden y siguen encendidas: sospechosas de duplicado. No se
         # apagan solas -- un producto nuevo todavía no vende y apagarlo sería sacarlo del plan.
         _res['n_sin_ventas'] = sum(1 for x in _usadas if x.get('ventas_180d') == 0)
