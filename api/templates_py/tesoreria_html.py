@@ -293,9 +293,12 @@ function cargarTab(t) {
 async function cargarCaja() {
   try {
     const k = await fetch('/api/financiero/kpis').then(r=>r.json());
-    document.getElementById('kpi-ing-mes').textContent = fmtM(k.ingresos_mes);
-    document.getElementById('kpi-egr-mes').textContent = fmtM(k.egresos_mes);
-    const neto = (k.ingresos_mes||0) - (k.egresos_mes||0);
+    // El endpoint devuelve `ing_mes`/`egr_mes` (financiero.py) · leer `ingresos_mes` daba
+    // undefined -> fmtM lo pinta "$0" y el neto salia SIEMPRE en superavit de $0. Un cero que
+    // nadie calculo se lee como "no hubo movimiento" y significa lo contrario (M5/M98).
+    document.getElementById('kpi-ing-mes').textContent = fmtM(k.ing_mes);
+    document.getElementById('kpi-egr-mes').textContent = fmtM(k.egr_mes);
+    const neto = (k.ing_mes||0) - (k.egr_mes||0);
     const eN = document.getElementById('kpi-neto');
     eN.textContent = (neto>=0?'+':'')+fmtM(Math.abs(neto));
     eN.className = 'val ' + (neto>=0?'pos':'neg');
@@ -326,7 +329,8 @@ async function syncDryRun() {
   const d = await r.json();
   if (!r.ok) { msg.style.color='#dc2626'; msg.textContent = d.error||'Error'; return; }
   msg.style.color='#15803d';
-  msg.textContent = 'Importaría '+d.pendientes+' pedidos por '+fmtM(d.total_a_importar);
+  // el endpoint devuelve `total_importado` · leer `total_a_importar` decia siempre "por $0"
+  msg.textContent = 'Importaría '+d.pendientes+' pedidos por '+fmtM(d.total_importado);
 }
 
 async function syncEjecutar() {
@@ -357,9 +361,14 @@ async function cargarPnL() {
   try {
     const p = await fetch('/api/financiero/pnl').then(r=>r.json());
     let html = '<table><thead><tr><th>Empresa</th><th>Ingresos</th><th>Egresos</th><th>EBITDA</th><th>Margen %</th></tr></thead><tbody>';
-    (p.empresas||[]).forEach(e => {
+    // `empresas` viene como OBJETO {ANIMUS:{...}, ESPAGIRIA:{...}, TOTAL:{...}} · hacerle
+    // .forEach lanzaba TypeError y el catch pintaba "Error cargando P&L" SIEMPRE.
+    const _emp = p.empresas || {};
+    Object.keys(_emp).forEach(_k => {
+      const e = Object.assign({empresa:_k}, _emp[_k] || {});
       const margen = e.ingresos > 0 ? ((e.ebitda/e.ingresos)*100).toFixed(1)+'%' : '-';
-      html += '<tr><td><strong>'+_esc(e.empresa)+'</strong></td>' +
+      html += '<tr'+(_k==='TOTAL'?' style="font-weight:800;border-top:2px solid var(--cx-border)"':'')+'>'
+            + '<td><strong>'+_esc(e.empresa)+'</strong></td>' +
               '<td>'+fmtM(e.ingresos)+'</td>' +
               '<td>'+fmtM(e.egresos)+'</td>' +
               '<td class="'+((e.ebitda||0)>=0?'pos':'neg')+'">'+fmtM(e.ebitda)+'</td>' +
@@ -381,19 +390,25 @@ async function cargarPnL() {
   } catch(e) { document.getElementById('wc-content').innerHTML = '<div class="empty">Error</div>'; }
 }
 
+// Los aging devuelven `buckets.{corriente,dias_30,dias_60,dias_90}.total` · leer llaves
+// planas (`ar.corriente`) daba undefined y pintaba TODA la cartera en $0 (M5/M98).
+function _bk(d, k){ return ((((d||{}).buckets)||{})[k]||{}).total || 0; }
+
 async function cargarCartera() {
   try {
     const ar = await fetch('/api/financiero/ar-aging').then(r=>r.json());
     let html = '<div class="grid grid-4" style="margin-bottom:14px">' +
-      '<div class="card"><h3>Total por cobrar</h3><div class="val">'+fmtM(ar.total||0)+'</div></div>' +
-      '<div class="card"><h3>Corriente</h3><div class="val pos">'+fmtM(ar.corriente||0)+'</div></div>' +
-      '<div class="card"><h3>Vencido 30d</h3><div class="val" style="color:var(--cx-warn-text)">'+fmtM(ar.vencido_30||0)+'</div></div>' +
-      '<div class="card"><h3>Vencido 60+d</h3><div class="val neg">'+fmtM((ar.vencido_60||0)+(ar.vencido_90||0))+'</div></div>' +
+      // El endpoint devuelve `ar_total` y `buckets.{corriente,dias_30,dias_60,dias_90}.total`
+      // (financiero.py) · las 6 llaves que se leian aca no existian: la cartera entera en $0.
+      '<div class="card"><h3>Total por cobrar</h3><div class="val">'+fmtM(ar.ar_total||0)+'</div></div>' +
+      '<div class="card"><h3>Corriente</h3><div class="val pos">'+fmtM(_bk(ar,'corriente'))+'</div></div>' +
+      '<div class="card"><h3>Vencido 30d</h3><div class="val" style="color:var(--cx-warn-text)">'+fmtM(_bk(ar,'dias_30'))+'</div></div>' +
+      '<div class="card"><h3>Vencido 60+d</h3><div class="val neg">'+fmtM(_bk(ar,'dias_60')+_bk(ar,'dias_90'))+'</div></div>' +
       '</div>';
-    if (ar.detalle && ar.detalle.length) {
+    if (ar.pedidos && ar.pedidos.length) {
       html += '<table><thead><tr><th>Cliente</th><th>Pedido</th><th>Monto</th><th>Días</th></tr></thead><tbody>';
-      ar.detalle.slice(0,20).forEach(p => {
-        html += '<tr><td>'+_esc(p.cliente)+'</td><td>'+_esc(p.numero)+'</td><td>'+fmtM(p.valor)+'</td><td>'+(p.dias||0)+'</td></tr>';
+      ar.pedidos.slice(0,20).forEach(p => {
+        html += '<tr><td>'+_esc(p.cliente)+'</td><td>'+_esc(p.numero_pedido)+'</td><td>'+fmtM(p.valor_total)+'</td><td>'+(p.dias||0)+'</td></tr>';
       });
       html += '</tbody></table>';
     }
@@ -402,11 +417,15 @@ async function cargarCartera() {
 
   try {
     const f = await fetch('/api/contabilidad/facturas').then(r=>r.json());
-    const pend = (f.facturas||[]).filter(x => x.estado === 'Emitida' || x.estado === 'Parcial');
+    // `/api/contabilidad/facturas` devuelve un ARRAY (contabilidad.py) · leer `f.facturas`
+    // daba [] y la pantalla decia "Sin facturas pendientes" con un check verde: un OK que miente.
+    const _fac = Array.isArray(f) ? f : (f.facturas || []);
+    const pend = _fac.filter(x => x.estado === 'Emitida' || x.estado === 'Parcial');
     if (!pend.length) { document.getElementById('facturas-pendientes').innerHTML = '<div class="empty">Sin facturas pendientes ✓</div>'; return; }
     let html = '<table><thead><tr><th>Factura</th><th>Cliente</th><th>Total</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>';
     pend.slice(0,30).forEach(fa => {
-      const saldo = (fa.total||0) - (fa.pagado||0);
+      // el saldo YA viene calculado por el backend · `fa.pagado` no existe (es `monto_pagado`)
+      const saldo = (fa.saldo !== undefined) ? fa.saldo : ((fa.total||0) - (fa.monto_pagado||0));
       html += '<tr><td><strong>'+_esc(fa.numero)+'</strong></td>' +
               '<td>'+_esc(fa.cliente_nombre)+'</td>' +
               '<td>'+fmtM(fa.total)+'</td>' +
@@ -422,15 +441,15 @@ async function cargarPagar() {
   try {
     const ap = await fetch('/api/financiero/ap-aging').then(r=>r.json());
     let html = '<div class="grid grid-4" style="margin-bottom:14px">' +
-      '<div class="card"><h3>Total por pagar</h3><div class="val">'+fmtM(ap.total||0)+'</div></div>' +
-      '<div class="card"><h3>Corriente</h3><div class="val">'+fmtM(ap.corriente||0)+'</div></div>' +
-      '<div class="card"><h3>Vencido 30d</h3><div class="val" style="color:var(--cx-warn-text)">'+fmtM(ap.vencido_30||0)+'</div></div>' +
-      '<div class="card"><h3>Vencido 60+d</h3><div class="val neg">'+fmtM((ap.vencido_60||0)+(ap.vencido_90||0))+'</div></div>' +
+      '<div class="card"><h3>Total por pagar</h3><div class="val">'+fmtM(ap.ap_total||0)+'</div></div>' +
+      '<div class="card"><h3>Corriente</h3><div class="val">'+fmtM(_bk(ap,'corriente'))+'</div></div>' +
+      '<div class="card"><h3>Vencido 30d</h3><div class="val" style="color:var(--cx-warn-text)">'+fmtM(_bk(ap,'dias_30'))+'</div></div>' +
+      '<div class="card"><h3>Vencido 60+d</h3><div class="val neg">'+fmtM(_bk(ap,'dias_60')+_bk(ap,'dias_90'))+'</div></div>' +
       '</div>';
-    if (ap.detalle && ap.detalle.length) {
+    if (ap.ocs && ap.ocs.length) {
       html += '<table><thead><tr><th>Proveedor</th><th>OC</th><th>Monto</th><th>Días</th></tr></thead><tbody>';
-      ap.detalle.slice(0,20).forEach(p => {
-        html += '<tr><td>'+_esc(p.proveedor)+'</td><td>'+_esc(p.numero_oc)+'</td><td>'+fmtM(p.valor)+'</td><td>'+(p.dias||0)+'</td></tr>';
+      ap.ocs.slice(0,20).forEach(p => {
+        html += '<tr><td>'+_esc(p.proveedor)+'</td><td>'+_esc(p.numero_oc)+'</td><td>'+fmtM(p.valor_total)+'</td><td>'+(p.dias||0)+'</td></tr>';
       });
       html += '</tbody></table>';
     }
@@ -508,9 +527,10 @@ function renderArchivoOCs(){
 async function cargarFacturacion() {
   try {
     const f = await fetch('/api/contabilidad/facturas').then(r=>r.json());
-    if (!(f.facturas||[]).length) { document.getElementById('facturas-list').innerHTML = '<div class="empty">Sin facturas emitidas. Click "+ Emitir factura"</div>'; return; }
+    const _fl = Array.isArray(f) ? f : (f.facturas || []);
+    if (!_fl.length) { document.getElementById('facturas-list').innerHTML = '<div class="empty">Sin facturas emitidas. Click "+ Emitir factura"</div>'; return; }
     let html = '<table><thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th>Total</th><th>Estado</th><th></th></tr></thead><tbody>';
-    f.facturas.slice(0,50).forEach(fa => {
+    _fl.slice(0,50).forEach(fa => {
       const cls = fa.estado==='Pagada'?'b-ok':fa.estado==='Anulada'?'b-err':'b-warn';
       html += '<tr><td><strong>'+_esc(fa.numero)+'</strong></td>' +
               '<td>'+_esc(fa.cliente_nombre)+'</td>' +
@@ -666,7 +686,10 @@ async function checkEstadoNomina(){
     var badge=document.getElementById('nom-estado-badge');
     var btnAp=document.getElementById('nom-btn-aprobar');
     var btnPag=document.getElementById('nom-btn-pagar');
-    var esAdmin = true;  // Tesoreria - siempre admins (Mayra/Sebastian/Alejandro)
+    // ⚠ Estaba en `true` fijo, y aprobar/pagar nomina son SOLO admin (rrhh.py): a Mayra le
+    // aparecian los botones y le devolvian 403. Un boton que se ve y no se puede usar es
+    // peor que no tenerlo -- el servidor manda, la pantalla solo refleja.
+    var esAdmin = !!window._ES_ADMIN;
     if(pagadas>0 && pagadas===estados.length){
       badge.innerHTML='<span style="background:var(--cx-success);color:#fff;padding:3px 12px;border-radius:12px;font-size:11px;font-weight:700">💸 Pagada</span>';
       if(btnAp) btnAp.style.display='none'; if(btnPag) btnPag.style.display='none';

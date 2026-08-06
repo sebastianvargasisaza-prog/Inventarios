@@ -2478,7 +2478,8 @@ def fp_pagar(fid):
         return err, code
     d = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
-    f = c.execute("SELECT numero_oc, total, estado, numero_factura "
+    f = c.execute("SELECT numero_oc, total, estado, numero_factura, "
+                  "       COALESCE(empresa,'Espagiria') "
                   "FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()
     if not f:
         return jsonify({'error': 'no existe'}), 404
@@ -2549,11 +2550,51 @@ def fp_pagar(fid):
             _re = c.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?",
                             (oc_num,)).fetchone()
             oc_estado = _re[0] if _re else None
+    # ── ESPEJO AL LIBRO CENTRAL (Sebastián 6-ago) ─────────────────────────────────────
+    # *"todo lo que sea plata se debe ver reflejado allí"*. Este pago NO llegaba a
+    # `flujo_egresos`: su hermano `pagar_oc` espeja hace rato y este quedó sin el fix -- el
+    # mismo patrón vive en dos sitios y sólo uno lo tiene (M45). Consecuencia medida: TODA la
+    # plata que sale por el libro de facturas de proveedor era invisible para la contadora,
+    # aunque la OC quedara marcada 'Pagada'.
+    #
+    # Idempotente por `referencia`: el mismo pago no puede entrar dos veces aunque se
+    # reintente. La referencia lleva el id del PAGO (no el de la factura) porque una factura
+    # admite varios pagos parciales y todos son egresos distintos.
+    _ref_fe = 'FP-%s-PAGO-%s' % (fid, pago_id)
+    try:
+        _ya = c.execute("SELECT 1 FROM flujo_egresos WHERE referencia=? LIMIT 1",
+                        (_ref_fe,)).fetchone()
+        if not _ya:
+            _emp_fe = (f[4] or 'Espagiria')
+            _num_fact_fe = (f[3] or '(sin número)')
+            # El PERÍODO sale del HECHO (la fecha del pago), no del reloj: la misma fila con
+            # dos meses distintos es lo que descuadra el cierre (M106). Si quien paga manda la
+            # fecha, manda esa; si no, hoy anclado a Colombia (el server corre en UTC y de noche
+            # un pago de fin de mes caería en el mes siguiente · M24).
+            from datetime import timezone as _tzfe
+            _fecha_pago_fe = (str(d.get('fecha_pago') or '').strip()[:10]
+                              or (datetime.now(_tzfe.utc) - timedelta(hours=5)).date().isoformat())
+            periodo_egr = _fecha_pago_fe[:7]
+            c.execute(
+                "INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, "
+                " periodo, fuente, referencia, creado_por, observaciones) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (_fecha_pago_fe, _emp_fe,
+                 'Factura proveedor %s%s' % (_num_fact_fe, (' · OC %s' % oc_num) if oc_num else ''),
+                 'Proveedores', monto, periodo_egr, 'facturas_proveedor', _ref_fe, user,
+                 'Pago %s de la factura %s' % (medio, _num_fact_fe)))
+    except Exception as _e_fe:
+        # NO se traga: si el espejo falla, la contadora deja de ver un egreso real y nadie se
+        # entera. Se registra para poder repararlo (M4).
+        __import__('logging').getLogger('compras').error(
+            'espejo a flujo_egresos del pago %s de la factura %s FALLO: %s', pago_id, fid, _e_fe)
+
     try:
         audit_log(c, usuario=user, accion='PAGAR_FACTURA_PROVEEDOR',
                   tabla='facturas_proveedor', registro_id=str(fid),
                   despues={'monto': monto, 'medio': medio, 'pago_id': pago_id,
-                           'oc': oc_num, 'oc_estado': oc_estado})
+                           'oc': oc_num, 'oc_estado': oc_estado,
+                           'flujo_referencia': _ref_fe})
     except Exception:
         pass
     conn.commit()
@@ -8480,7 +8521,9 @@ def compras_registrar_saldo():
         origen = 'ajuste'
     conn = get_db(); cur = conn.cursor()
     _fecha = (_dtn.now(_tzn.utc) - _tdn(hours=5)).isoformat()
-    _peri = (_dtn.now(_tzn.utc) - _tdn(hours=5)).strftime('%Y-%m')
+    # El periodo se RECORTA de la misma fecha, no se pide al reloj otra vez: dos llamadas
+    # distintas a mitad de la medianoche de fin de mes dejan la fila diciendo dos meses (M106).
+    _peri = _fecha[:7]
     egreso_id = None
     try:
         if origen == 'anticipo':  # plata REAL sale → espejo a flujo_egresos (M12f · no doble)

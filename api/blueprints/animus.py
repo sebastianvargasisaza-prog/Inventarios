@@ -2343,6 +2343,100 @@ def caja_solicitud_sobrante(sid):
                     "saldo": round(caja_saldo(conn), 2)})
 
 
+@bp.route("/api/caja/libro", methods=["GET"])
+def caja_libro():
+    """El LIBRO de la caja para la contadora · cuánto hay y CON QUÉ entró cada peso.
+
+    Sebastián (6-ago): *"la caja menor le debe aparecer todo, cuánto hay, con qué ingresó todo,
+    para ella revisar"*.
+
+    Hasta hoy Mayra no podía revisar la caja: `GET /api/animus/caja` está gateado a
+    `ANIMUS_ACCESS` (daniela/alejandro/sebastián) y ella no está ahí, así que la única pantalla
+    que pinta los movimientos le devolvía 403. Y aunque entrara, ese listado **no devuelve
+    `origen`, `subtipo`, `empresa` ni `comprobante_url`** -- las cuatro columnas se escriben y
+    nunca salían por la API. O sea: el dato de "con qué ingresó" estaba en la base y no había
+    forma de verlo en lista (M115: un dato que se captura y no llega al consumidor no existe).
+
+    Este endpoint es de LECTURA y va por `_caja_auth` (incluye contadora). No duplica el saldo:
+    lo pide a `caja_saldo`, que es el que autoriza los pagos -- dos sumas del mismo hecho
+    divergen siempre (M1/M148).
+    """
+    u, err, code = _caja_auth()
+    if err:
+        return err, code
+    conn = _db(); c = conn.cursor()
+    desde = (request.args.get("desde") or "").strip()
+    hasta = (request.args.get("hasta") or "").strip()
+    empresa = (request.args.get("empresa") or "").strip().upper()
+    if not desde or not hasta:
+        _h = _now_col().date()
+        desde = desde or _h.replace(day=1).isoformat()
+        hasta = hasta or _h.isoformat()
+
+    cond = ["date(fecha) BETWEEN date(?) AND date(?)"]
+    args = [desde, hasta]
+    if empresa:
+        cond.append("UPPER(COALESCE(empresa,'ANIMUS'))=?")
+        args.append(empresa)
+
+    filas = []
+    for r in c.execute(
+            "SELECT id, COALESCE(recibo_numero,''), fecha, tipo, concepto, monto, "
+            "       COALESCE(metodo,'efectivo'), COALESCE(referencia,''), "
+            "       COALESCE(observaciones,''), COALESCE(registrado_por,''), "
+            "       COALESCE(empresa,'ANIMUS'), COALESCE(origen,''), COALESCE(subtipo,''), "
+            "       COALESCE(comprobante_url,''), COALESCE(anulado,0), "
+            "       COALESCE(anulado_por,''), COALESCE(anulado_motivo,'') "
+            "  FROM animus_caja_menor WHERE " + " AND ".join(cond) +
+            " ORDER BY date(fecha) DESC, id DESC LIMIT 1000", args).fetchall():
+        _tipo, _metodo = r[3], r[6]
+        # El mismo criterio que usa el saldo: un INGRESO que no es efectivo entró al BANCO, no a
+        # la gaveta. Se marca fila por fila para que ella entienda por qué el saldo no lo suma,
+        # en vez de tener que descubrirlo restando (M124: lo excluido se enumera).
+        _en_gaveta = not (_tipo == 'ingreso' and not es_efectivo(_metodo))
+        filas.append({
+            'id': r[0], 'recibo': r[1], 'fecha': r[2], 'tipo': _tipo, 'concepto': r[4],
+            'monto': float(r[5] or 0), 'metodo': _metodo, 'referencia': r[7],
+            'observaciones': r[8], 'registrado_por': r[9], 'empresa': r[10],
+            'origen': r[11] or 'manual', 'subtipo': r[12] or ('ingreso' if _tipo == 'ingreso' else 'gasto'),
+            'comprobante_url': r[13], 'anulado': bool(r[14]),
+            'anulado_por': r[15], 'anulado_motivo': r[16],
+            'cuenta_en_saldo': bool(_en_gaveta and not r[14]),
+        })
+
+    _vivas = [f for f in filas if not f['anulado']]
+    _ing_gaveta = sum(f['monto'] for f in _vivas if f['tipo'] == 'ingreso' and f['cuenta_en_saldo'])
+    _ing_banco = sum(f['monto'] for f in _vivas if f['tipo'] == 'ingreso' and not f['cuenta_en_saldo'])
+    _egr = sum(f['monto'] for f in _vivas if f['tipo'] != 'ingreso')
+    # De dónde vino la plata, agrupado · es literalmente "con qué ingresó todo"
+    _por_origen = {}
+    for f in _vivas:
+        if f['tipo'] != 'ingreso':
+            continue
+        k = f['origen']
+        d = _por_origen.setdefault(k, {'origen': k, 'n': 0, 'total': 0.0, 'a_gaveta': 0.0})
+        d['n'] += 1; d['total'] += f['monto']
+        if f['cuenta_en_saldo']:
+            d['a_gaveta'] += f['monto']
+
+    return jsonify({
+        'ok': True, 'desde': desde, 'hasta': hasta, 'empresa': empresa or 'todas',
+        # El saldo sale del helper CANÓNICO, no de sumar estas filas: el rango puede recortar y
+        # un saldo que depende del filtro que elegiste no es un saldo.
+        'saldo_actual': caja_saldo(conn, empresa or None),
+        'movimientos': filas,
+        'n_movimientos': len(filas),
+        'ingresos_a_gaveta': round(_ing_gaveta, 2),
+        'ingresos_al_banco': round(_ing_banco, 2),
+        'egresos': round(_egr, 2),
+        'neto_gaveta': round(_ing_gaveta - _egr, 2),
+        'por_origen': sorted(_por_origen.values(), key=lambda x: -x['total']),
+        'egresos_sin_respaldo': sum(1 for f in _vivas
+                                    if f['tipo'] != 'ingreso' and not f['comprobante_url']),
+        'cerrada_hasta': caja_fecha_cerrada(conn),
+    })
+
+
 @bp.route("/api/caja/reporte", methods=["GET"])
 def caja_reporte():
     """Qué entró y qué salió, separado por EMPRESA y por tipo.
