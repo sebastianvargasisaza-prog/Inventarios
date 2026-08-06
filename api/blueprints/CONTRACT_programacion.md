@@ -1203,4 +1203,15 @@ señal coincidió — no un booleano pelado — para poder auditar por qué se m
 Los **dos** hechos juntos son la alerta: un frasco en blanco que ya tiene su serigrafiado asignado
 está resuelto, y un pre-impreso de China sin puente no necesita marcarse.
 
-Tests: `tests/test_union_producto_envase.py` (en el gate).
+**Dónde se mira: POR PRODUCTO, en un modal de Planta.** Sebastián, al no encontrarlo:
+*"preferiría que revisemos por productos no crees? que quede un modal para eso"*. La primera
+versión vivía en `/planta` › Configuración › Reparto envases -- tres niveles -- y ordenada por
+PRESENTACIÓN, que no es como se piensa el negocio ("este producto, ¿tiene todo su empaque?").
+El modal (`empqAbrir`, botón en la barra de **Necesidades**) agrupa por producto, filtra por
+defecto a los que les falta algo y pone lo incompleto primero: un tablero que hay que leer entero
+para encontrar el problema no se lee. Los productos SIN ninguna presentación entran igual — son el
+peor hueco (su empaque no se compra en absoluto) y listando sólo `union` desaparecerían (M124).
+Los KPI se cuentan sobre TODOS, no sobre lo filtrado, o cambiarían al escribir en el buscador (M5).
+
+Tests: `tests/test_union_producto_envase.py` y `tests/test_modal_empaque_por_producto.py`
+(los dos en el gate).

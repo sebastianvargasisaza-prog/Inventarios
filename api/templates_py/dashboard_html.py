@@ -467,6 +467,32 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 </div>
 
+
+<!-- Empaque por PRODUCTO (Sebastian 5-ago) - se abre desde Necesidades -->
+<div id="modal-empaque" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center">
+  <div style="background:var(--cx-card);border-radius:14px;max-width:1180px;width:96vw;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+    <div style="background:var(--cx-primary-grad);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div>
+        <h3 style="margin:0;font-size:16px;font-weight:800">&#128230; Empaque por producto</h3>
+        <div style="font-size:12px;opacity:.9;margin-top:3px">Lo que est&aacute; incompleto no se compra ni se descuenta: el motor lo lee de ac&aacute;.</div>
+      </div>
+      <button onclick="empqCerrar()" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div style="padding:18px 22px">
+      <div id="empq-kpis" style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <input id="empq-buscar" placeholder="Buscar producto&hellip;" oninput="empqPintar()"
+          style="flex:1 1 260px;padding:8px 12px;border:1px solid var(--cx-border);border-radius:8px;background:var(--cx-bg-soft);color:var(--cx-text);font-size:13px">
+        <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--cx-text-soft);cursor:pointer">
+          <input type="checkbox" id="empq-solo-falta" checked onchange="empqPintar()" style="width:16px;height:16px">
+          Solo los que les falta algo
+        </label>
+      </div>
+      <div id="empq-cuerpo"><div style="color:var(--cx-text-faint);padding:30px;text-align:center">Cargando&hellip;</div></div>
+    </div>
+  </div>
+</div>
+
 <!-- Sebastian 5-may-2026: modal click celda calendario · MP+MEE faltantes -->
 <div id="modal-prod-detalle" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:var(--cx-card);border-radius:14px;max-width:760px;width:96%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
@@ -2718,6 +2744,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <label style="color:var(--cx-text-soft)">Alerta ≤
           <input type="number" id="nec-cob-alerta" value="25" min="14" max="60" style="width:42px;padding:2px 4px;border:1px solid var(--cx-border);border-radius:3px;font-size:11px">d
         </label>
+        <button onclick="empqAbrir()" title="Revisar, producto por producto, si su empaque esta completo: frasco, tapa, caja, piezas y el impreso" style="background:linear-gradient(135deg,#0891b2,#16a34a);color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128230; Empaque por producto</button>
         <button onclick="abrirClientesB2B()" title="Crear/gestionar clientes B2B (Luz, Valentina, Daniela) · cada cliente agrega sus pedidos con '+ Producto' · se cargan solos al plan" style="background:#0d9488;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">👥 Clientes B2B</button>
         <button onclick="cargarNecesidades()" style="background:var(--cx-primary);color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
         <button onclick="syncStockAhora(this)" title="Trae el stock ACTUAL de Shopify: Ánimus Lab = góndola vendible · Espagiria = por entrar (producido en el lab, sin entregar). Úsalo tras producir o entregar para ver los números al día." style="background:var(--cx-info);color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🔄 Sync stock</button>
@@ -20959,6 +20986,128 @@ async function ckMarcar(itemId, estado){
       if(typeof cargarReparto==='function') setTimeout(cargarReparto, 50);
     }
   }
+
+
+// ── Empaque por PRODUCTO (Sebastian 5-ago) ──────────────────────────────────
+// Agrupa por producto, no por presentacion: "¿este producto tiene todo su empaque?" es la
+// pregunta real. Y ordena por lo que falta primero -- un tablero que hay que leer entero para
+// encontrar el problema no se lee.
+var EMPQ = null;
+function empqEsc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function empqCerrar(){var m=document.getElementById('modal-empaque'); if(m)m.style.display='none';}
+async function empqAbrir(){
+  var m=document.getElementById('modal-empaque'); if(!m)return;
+  m.style.display='flex';
+  var cuerpo=document.getElementById('empq-cuerpo');
+  if(cuerpo)cuerpo.innerHTML='<div style="color:var(--cx-text-faint);padding:30px;text-align:center">Cargando&hellip;</div>';
+  try{
+    var r=await fetch('/api/abastecimiento/envases-cobertura',{credentials:'same-origin'});
+    EMPQ=await r.json();
+  }catch(e){
+    EMPQ=null;
+    if(cuerpo)cuerpo.innerHTML='<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border-radius:10px;padding:14px">No pude leer el empaque. Reintenta en un momento.</div>';
+    return;
+  }
+  empqPintar();
+}
+function empqAgrupar(){
+  // producto -> {presentaciones:[], falta:bool, serigrafiar:int}
+  var por={};
+  ((EMPQ && EMPQ.union) || []).forEach(function(x){
+    var g=por[x.producto]||(por[x.producto]={producto:x.producto,pres:[],falta:0,serig:0});
+    g.pres.push(x);
+    if(!x.completo) g.falta++;
+    if(x.hay_que_serigrafiar) g.serig++;
+  });
+  // Los productos SIN NINGUNA presentacion tambien son un hueco -- de hecho el peor: su envase
+  // no se compra en absoluto. Si solo se listara `union` desaparecerian de la vista (M124).
+  ((EMPQ && EMPQ.sin_envase) || []).forEach(function(pn){
+    if(!por[pn]) por[pn]={producto:pn,pres:[],falta:1,serig:0,sin_presentacion:true};
+  });
+  return Object.keys(por).map(function(k){return por[k];});
+}
+function empqPintar(){
+  var cuerpo=document.getElementById('empq-cuerpo'); if(!cuerpo)return;
+  if(!EMPQ){ cuerpo.innerHTML=''; return; }
+  if(EMPQ.union===null){
+    cuerpo.innerHTML='<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border-radius:10px;padding:14px;font-size:13px">'
+      + empqEsc(EMPQ.aviso||'No pude revisar el empaque') + '</div>';
+    return;
+  }
+  var todos=empqAgrupar();
+  var q=(document.getElementById('empq-buscar')||{}).value||'';
+  q=q.trim().toUpperCase();
+  var soloFalta=!!(document.getElementById('empq-solo-falta')||{}).checked;
+  // KPIs: se cuentan sobre TODOS, no sobre lo filtrado -- si no, el numero cambia al escribir
+  // en el buscador y deja de significar algo (M5).
+  var nFalta=todos.filter(function(g){return g.falta;}).length;
+  var nSerig=todos.reduce(function(a,g){return a+g.serig;},0);
+  var kp=document.getElementById('empq-kpis');
+  if(kp){
+    kp.innerHTML=empqKpi('Productos', todos.length, 'var(--cx-text)')
+      + empqKpi('Les falta algo', nFalta, nFalta?'var(--cx-danger-text)':'var(--cx-success-text)')
+      + empqKpi('Mandar a serigrafiar', nSerig, nSerig?'var(--cx-warn-text)':'var(--cx-text-mute)');
+  }
+  var lista=todos.filter(function(g){
+    if(soloFalta && !g.falta) return false;
+    return !q || g.producto.toUpperCase().indexOf(q)>=0;
+  });
+  // lo que falta, primero
+  lista.sort(function(a,b){ return (b.falta-a.falta) || a.producto.localeCompare(b.producto); });
+  if(!lista.length){
+    cuerpo.innerHTML='<div style="background:var(--cx-success-pale);color:var(--cx-success-text);border-radius:10px;padding:16px;font-size:13.5px;font-weight:600">'
+      + (soloFalta ? 'Ningun producto tiene huecos de empaque.' : 'No hay productos que coincidan.') + '</div>';
+    return;
+  }
+  cuerpo.innerHTML=lista.map(empqTarjeta).join('');
+}
+function empqKpi(rot,val,color){
+  return '<div><div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.06em">'
+    + rot + '</div><div style="font-size:24px;font-weight:800;color:'+color+'">'+val+'</div></div>';
+}
+function empqTarjeta(g){
+  var ok=!g.falta;
+  var h='<div style="border:1px solid '+(ok?'var(--cx-border)':'var(--cx-warn)')+';border-radius:12px;padding:13px 15px;margin-bottom:10px;background:'+(ok?'transparent':'var(--cx-warn-pale)')+'">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+    + '<div style="font-weight:800;font-size:14px;color:var(--cx-text)">'+empqEsc(g.producto)+'</div>'
+    + '<div style="font-size:12px;font-weight:700;color:'+(ok?'var(--cx-success-text)':'var(--cx-warn-text)')+'">'
+    + (ok?'&#10003; empaque completo':(g.falta+' presentaci'+(g.falta===1?'&oacute;n':'ones')+' con huecos'))
+    + '</div></div>';
+  if(g.sin_presentacion){
+    h+='<div style="font-size:12.5px;color:var(--cx-danger-text);font-weight:700;margin-top:7px">'
+      + 'No tiene ninguna presentaci&oacute;n con envase: su empaque <b>no se compra</b>. '
+      + 'Asignale el frasco en Configuraci&oacute;n &rsaquo; Reparto envases.</div>';
+    return h+'</div>';
+  }
+  h+='<div style="overflow-x:auto;margin-top:9px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="text-align:left;color:var(--cx-text-mute);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em">'
+    + '<th style="padding:5px 7px">ml</th><th style="padding:5px 7px">Frasco</th><th style="padding:5px 7px">Tapa</th>'
+    + '<th style="padding:5px 7px">Caja</th><th style="padding:5px 7px">Piezas</th><th style="padding:5px 7px">Impreso</th>'
+    + '</tr></thead><tbody>';
+  g.pres.forEach(function(x){
+    function celda(v){
+      return v ? '<td style="padding:6px 7px;color:var(--cx-text-soft)">'+empqEsc(v)+'</td>'
+               : '<td style="padding:6px 7px;color:var(--cx-danger-text);font-weight:700">falta</td>';
+    }
+    var pz=(x.piezas||[]).map(function(p){
+      return p.en_maestro ? empqEsc(p.codigo)
+        : '<span style="color:var(--cx-danger-text);font-weight:700">'+empqEsc(p.codigo)+' (no existe)</span>';
+    }).join(' &middot; ');
+    h+='<tr style="border-top:1px solid var(--cx-border-soft)">'
+      + '<td style="padding:6px 7px;color:var(--cx-text-mute)">'+(x.volumen_ml||'-')+'</td>'
+      + celda(x.envase) + celda(x.tapa) + celda(x.caja)
+      + '<td style="padding:6px 7px;color:var(--cx-text-soft)">'+(pz||'<span style="color:var(--cx-text-faint)">ninguna</span>')+'</td>'
+      + (x.hay_que_serigrafiar
+          ? '<td style="padding:6px 7px;color:var(--cx-warn-text);font-weight:700">mandar a serigrafiar</td>'
+          : celda(x.serigrafiado))
+      + '</tr>';
+  });
+  h+='</tbody></table></div>';
+  h+='<div style="font-size:11px;color:var(--cx-text-mute);margin-top:7px">'
+    + 'Tapa y caja se cargan en Configuraci&oacute;n &rsaquo; Presentaciones &middot; las piezas del frasco '
+    + '(gotero, plegadiza) en el maestro de envases.</div>';
+  return h+'</div>';
+}
 
   async function cargarReparto(){
     var el = document.getElementById('reparto-panel'); if(!el) return;

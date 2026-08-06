@@ -44,7 +44,12 @@ TECHO_COLORES_DASHBOARD = 2499
 # ser un panel más de la sub-barra: TODOS los paneles nacen `display:none` hasta que el
 # conmutador los enciende, así que el +1 es el patrón de sus hermanas, no una pantalla vieja
 # escondida. El techo sube EXACTO: con holgura, el trinquete se afloja solo (M104).
-TECHO_DISPLAY_NONE_DASHBOARD = 202
+# 5-ago: 202 → 203. `modal-empaque` (revisar el empaque POR PRODUCTO desde Necesidades · lo pidió
+# Sebastián al no encontrar la vista enterrada en Configuración). Un MODAL nace oculto por
+# definición -- es lo que lo hace modal -- y los otros 27 del archivo ya cuentan igual. No se
+# esquivó la medición escondiendo el `display:none` detrás de una clase: eso dejaría el trinquete
+# ciego, que es peor que subirlo con el motivo escrito.
+TECHO_DISPLAY_NONE_DASHBOARD = 203
 TECHO_COLORES_TOTAL = 4862   # los 42 templates juntos · 5005 → 4957 → 4901 → 4862 (28-jul:
                              # 34 pares (fondo fijo + texto en token) migrados con el contraste
                              # MEDIDO en los dos temas antes de aplicar)
