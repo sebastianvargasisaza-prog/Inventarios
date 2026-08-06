@@ -233,3 +233,32 @@ def test_el_caso_exacto_de_catalina(app, db_clean):
     assert r.status_code == 200, ('sigue bloqueada en el caso real de Catalina: %s'
                                   % r.data[:400])
     assert (r.get_json() or {}).get('ok'), r.data[:300]
+
+
+def test_el_lote_que_se_ESCRIBE_en_recepcion_llega_al_kardex(app, db_clean):
+    """Sebastián (6-ago): *"en recepción pusieron el lote, le dan recepcionar y queda habilitado
+    para calidad, entonces el lote ya está escrito, debe es jalarlo"*.
+
+    Catalina reportó que en la bandeja de Calidad siguen apareciendo los sintéticos
+    `OC-OC-2026-...`. Este test contesta la mitad del backend con un hecho: si el lote viaja en
+    el POST, ¿queda en `movimientos.lote` (que es lo que Calidad muestra) o sólo en
+    `lote_proveedor`? Las dos posibilidades se ven IGUAL desde la pantalla y llevan a arreglos
+    distintos, así que se mide en vez de suponer.
+    """
+    _sembrar_oc(app, OC_MP, 'Materia Prima', [('MP00050', 'CAPRYLYL GLUCOSIDE')])
+    c = _login(app, 'catalina')
+    r = _recibir(c, OC_MP, [{'codigo_mp': 'MP00050', 'cantidad_recibida': 15000,
+                             'estado': 'OK', 'notas': '', 'lote': 'L-REAL-2026-77',
+                             'fecha_vencimiento': '', 'recipientes': 1}],
+                 'tok-lote-real')
+    assert r.status_code in (200, 201), r.data[:300]
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    fila = conn.execute(
+        "SELECT lote, COALESCE(lote_proveedor,'') FROM movimientos "
+        " WHERE material_id='MP00050' AND tipo='Entrada' ORDER BY id DESC LIMIT 1").fetchone()
+    conn.close()
+    assert fila, 'la recepción no dejó movimiento'
+    assert fila[0] == 'L-REAL-2026-77', (
+        'el lote escrito en recepción NO quedó en el kardex (quedó %r) · Calidad muestra esa '
+        'columna, así que ve el sintético' % fila[0])
+    assert fila[1] == 'L-REAL-2026-77', 'no quedó tampoco como lote del proveedor'
