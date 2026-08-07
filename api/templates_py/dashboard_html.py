@@ -21128,6 +21128,50 @@ function empqSel(id,campo,valor,off,noLleva){
     + ' style="max-width:190px;padding:4px 6px;border:1px solid '+(resuelto?'var(--cx-border)':'var(--cx-danger)')
     + ';border-radius:6px;background:var(--cx-bg-soft);color:var(--cx-text);font-size:11.5px">'+op+'</select></td>';
 }
+async function empqGuardar(body){
+  // Guardado crudo: NO recarga. Existe para poder apagar varias filas seguidas sin disparar
+  // una recarga del modal por cada una (`empqSet` recarga a proposito, para uso de a uno).
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/presentacion-empaque',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||t.token||''},
+      body:JSON.stringify(body)});
+    var j=await r.json();
+    if(!r.ok){ alert('No se pudo guardar: '+(j.error||r.status)); return false; }
+    return true;
+  }catch(e){ alert('No se pudo guardar: '+e); return false; }
+}
+
+async function empqDejarUna(id, vol){
+  // Sebastian (7-ago): *"es el mismo producto, mismos ml, mismas ventas, y solo tengo UNO de
+  // ese"*. La segunda fila no es una variante que haya que elegir: SOBRA. Con un clic en la
+  // que SI es la real, las otras del mismo tamano quedan apagadas.
+  //
+  // ⚠ Se APAGA, no se borra: `producto_presentaciones` la leen la compra, el plan, el
+  // alistamiento y el descuento; borrar una fila que una produccion vieja referencia deja
+  // huerfano lo que ya paso. Apagada sale del calendario y de la compra, y se puede volver a
+  // encender (M31/M126).
+  var grupos = (typeof empqAgrupar === 'function') ? empqAgrupar() : [];
+  var g = grupos.filter(function(gr){
+    return (gr.pres||[]).some(function(p){ return String(p.id) === String(id); });
+  })[0];
+  if(!g){ alert('No encontr\u00e9 el producto \u00b7 volv\u00e9 a abrir el modal.'); return; }
+  var otras = (g.pres||[]).filter(function(p){
+    return p.activo && String(p.volumen_ml||'') === String(vol) && String(p.id) !== String(id);
+  });
+  if(!otras.length) return;
+  if(!confirm('Se apagan ' + otras.length + ' presentaci\u00f3n(es) de ' + vol + ' ml de '
+              + g.producto + '. No se borran: salen del calendario y de la compra de envases, '
+              + 'y se pueden volver a encender. \u00bfContinuar?')) return;
+  for(var i=0;i<otras.length;i++){
+    // Si una falla se corta: seguir apagando a ciegas dejaria el producto a medio arreglar y
+    // sin saber cual quedo como (M134).
+    var ok = await empqGuardar({id: otras[i].id, activo: false});
+    if(!ok) break;
+  }
+  empqAbrir();
+}
+
 async function empqSet(id,campo,valor){
   var body={id:id};
   // El centinela NO viaja como si fuera un codigo: se traduce a la bandera. Mandar '__NO__' al
@@ -21162,6 +21206,36 @@ function empqTarjeta(g){
       + 'Asignale el frasco en Configuraci&oacute;n &rsaquo; Reparto envases.</div>';
     return h+'</div>';
   }
+  // ── Dos presentaciones ENCENDIDAS del mismo tamano (Sebastian 7-ago) ──────────────
+  // El motor reparte la compra de envases por las VENTAS DE ESE VOLUMEN: si hay dos filas
+  // de 15 ml encendidas, las dos reciben las mismas ventas y el reparto queda 50/50 -- se
+  // compra la mitad de cada frasco cuando solo se usa uno. Los totales cuadran, asi que el
+  // error es invisible: por eso se dice ACA, que es donde se puede apagar la que sobra.
+  var _volAct = {};
+  (g.pres||[]).forEach(function(x){
+    if(!x.activo) return;
+    var v = String(x.volumen_ml || '');
+    (_volAct[v] = _volAct[v] || []).push(x);
+  });
+  // Solo avisa cuando HACE DANO: dos filas del mismo tamano con frascos DISTINTOS. Si usan el
+  // mismo frasco (tonos que comparten envase) el reparto suma bien y no hay nada que corregir --
+  // una alerta que suena tambien en el caso sano deja de mirarse (M129).
+  var _dups = Object.keys(_volAct).filter(function(v){
+    if(_volAct[v].length < 2) return false;
+    var fr = {};
+    _volAct[v].forEach(function(x){ fr[String(x.envase || '')] = 1; });
+    return Object.keys(fr).length > 1;
+  });
+  if(_dups.length){
+    h+='<div style="margin-top:8px;padding:8px 11px;border:1px solid var(--cx-warn);'
+      + 'border-radius:9px;background:var(--cx-warn-pale);font-size:12px;'
+      + 'color:var(--cx-warn-text);font-weight:600">'
+      + '&#9888; Hay dos presentaciones encendidas de ' + empqEsc(_dups.join(' y ')) + ' ml. '
+      + 'La compra de envases se reparte entre las dos por las ventas de ese tama&ntilde;o, '
+      + 'y como las ventas son las mismas queda mitad y mitad: se comprar&iacute;a la mitad de '
+      + 'cada frasco. <b>Apag&aacute; la que no se use</b> (no se borra).'
+      + '</div>';
+  }
   h+='<div style="overflow-x:auto;margin-top:9px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr style="text-align:left;color:var(--cx-text-mute);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em">'
     + '<th style="padding:5px 7px">Se usa</th><th style="padding:5px 7px">ml</th>'
@@ -21171,6 +21245,28 @@ function empqTarjeta(g){
     + '</tr></thead><tbody>';
   g.pres.forEach(function(x){
     var off=!x.activo;
+    // Si esta fila comparte tamano con otra ENCENDIDA, se ofrece dejarla como unica: no es una
+    // variante que haya que elegir, es una duplicada que sobra (Sebastian 7-ago).
+    var _mismoVol = (g.pres||[]).filter(function(y){
+      return y.activo && String(y.volumen_ml||'') === String(x.volumen_ml||'');
+    });
+    var _esDup = x.activo && _mismoVol.length > 1;
+    // El SKU PROPIO de la fila, no el del grupo: es lo que dice si esta presentacion existe
+    // en Shopify. Sin el, dos filas del mismo tamano se ven identicas y no hay forma de saber
+    // si son dos variantes elegidas a mano o una duplicada que nadie puede rastrear.
+    var _skuCell = x.sku_propio
+      ? '<div style="font-size:10px;color:var(--cx-text-mute);font-family:ui-monospace,monospace">'
+        + empqEsc(x.sku_propio) + '</div>'
+      : '<div style="font-size:10px;color:var(--cx-danger-text);font-weight:700" '
+        + 'title="Esta presentacion no esta ligada a ningun SKU de Shopify: no se puede rastrear '
+        + 'contra lo que se vende">sin SKU</div>';
+    var _dupBtn = _esDup
+      ? '<div><button onclick="empqDejarUna(' + x.id + ',' + JSON.stringify(String(x.volumen_ml||'')) + ')" '
+        + 'title="Apagar las otras presentaciones de este mismo tama&ntilde;o" '
+        + 'style="margin-top:4px;background:var(--cx-warn-pale);color:var(--cx-warn-text);'
+        + 'border:1px solid var(--cx-warn);border-radius:6px;padding:3px 7px;font-size:10.5px;'
+        + 'font-weight:700;cursor:pointer;white-space:nowrap">dejar s&oacute;lo esta</button></div>'
+      : '';
     var pz=(x.piezas||[]).map(function(p){
       return p.en_maestro ? empqEsc(p.codigo)
         : '<span style="color:var(--cx-danger-text);font-weight:700">'+empqEsc(p.codigo)+' (no existe)</span>';
@@ -21189,9 +21285,10 @@ function empqTarjeta(g){
     h+='<tr style="border-top:1px solid var(--cx-border-soft)'+(off?';opacity:.45':'')+'">'
       + '<td style="padding:6px 7px"><input type="checkbox" '+(off?'':'checked')
       +   ' onchange="empqSet('+x.id+',&quot;activo&quot;,this.checked)" style="width:16px;height:16px;cursor:pointer"'
-      +   ' title="Si se apaga, deja de contar para el calendario y para la compra de envases"></td>'
+      +   ' title="Si se apaga, deja de contar para el calendario y para la compra de envases">'
+      +   _dupBtn + '</td>'
       + '<td style="padding:6px 7px;color:var(--cx-text-mute)">'+(x.volumen_ml||'-')+'</td>'
-      + '<td style="padding:6px 7px">'+vcell+'</td>'
+      + '<td style="padding:6px 7px">'+vcell+_skuCell+'</td>'
       + empqSel(x.id,'envase',x.envase,off)
       + empqSel(x.id,'tapa',x.tapa,off,x.sin_tapa)
       + empqSel(x.id,'caja',x.caja,off,x.sin_caja)

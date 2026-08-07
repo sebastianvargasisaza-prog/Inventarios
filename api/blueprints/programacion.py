@@ -17294,9 +17294,15 @@ def abastecimiento_envases_cobertura():
             "SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(volumen_ml,0), "
             "       COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), id, "
             "       COALESCE(activo,1), COALESCE(presentacion_codigo,''), "
-            "       COALESCE(sin_tapa,0), COALESCE(sin_caja,0) "
+            "       COALESCE(sin_tapa,0), COALESCE(sin_caja,0), "
+            # El SKU PROPIO de cada fila (Sebastián 7-ago): *"lo ideal es que sea el rastreo tal
+            # cual de Shopify"*. Los `skus` que ya se mostraban salen de (producto, volumen), así
+            # que DOS presentaciones del mismo tamaño mostraban el mismo -- imposible distinguir
+            # una duplicada de dos variantes elegidas a mano (M115: el dato existe y no llega).
+            "       COALESCE(sku_shopify,'') "
             "  FROM producto_presentaciones").fetchall()
-        for _pn, _env, _vol, _tap, _caj, _pid, _act, _pcod, _stap, _scaj in _filas:
+        for (_pn, _env, _vol, _tap, _caj, _pid, _act, _pcod, _stap, _scaj,
+             _sku_propio) in _filas:
             _ek = (_env or '').strip().upper()
             _falta = []
             _usada = bool(_act)
@@ -17337,6 +17343,9 @@ def abastecimiento_envases_cobertura():
                 # lee como "esta presentación no se usa" y es la decisión que se está tomando acá.
                 'ventas_180d': (None if _ventas_pv is None else _ventas_pv.get(_kv, 0)),
                 'skus': ([] if _ventas_pv is None else sorted(_skus_pv.get(_kv, []))),
+                # Su SKU, no el del grupo: es lo que dice si esta fila existe en Shopify o es
+                # una duplicada que nadie puede rastrear.
+                'sku_propio': (_sku_propio or '').strip(),
                 'envase': _env, 'tapa': _tap, 'caja': _caj,
                 'sin_tapa': bool(_stap), 'sin_caja': bool(_scaj),
                 'piezas': _pz,
