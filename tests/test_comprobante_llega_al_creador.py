@@ -69,7 +69,13 @@ def test_el_endpoint_DECLARA_por_que_no_envio(app, db_clean):
     assert 'email_pendiente' in c, 'el endpoint no declara cuando no envía'
     assert 'sin email' in c, 'no dice que falta el correo del beneficiario'
     assert 'SMTP no configurado' in c, 'no distingue el caso de SMTP sin configurar'
-    assert 'email_enviado_a' in c, 'no confirma a quién se envió'
+    # ⚠ Decía `email_enviado_a` y se renombró a `email_encolado_a` A PROPÓSITO (7-ago):
+    # `enviar_en_background` vuelve enseguida, así que en ese punto el correo está ENCOLADO,
+    # no entregado -- el SMTP puede fallar después (dirección mal escrita, Gmail rechazando).
+    # Afirmar "enviado" ahí hace que nadie revise un comprobante que nunca salió (M100/M115).
+    # La invariante que este test protege sigue viva: el endpoint dice A QUIÉN va.
+    assert 'email_encolado_a' in c, 'no dice a quién va el comprobante'
+    assert 'email_estado' in c, 'no distingue "va en camino" de "llegó"'
 
 
 def test_el_comprobante_se_manda_SOLO_con_correo_valido(app, db_clean):

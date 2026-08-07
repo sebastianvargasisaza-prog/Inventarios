@@ -782,6 +782,65 @@ async function cargarPagos(){
 }
 
 
+
+function _pgCargarCorreo(p){
+  // Sin correo el comprobante NO le llega, y hasta ahora eso mandaba a otra pantalla y a
+  // volver. Se carga acá, que es donde el hueco se ve (M121: una capacidad que cuesta
+  // alcanzar termina sin usarse).
+  if(!p.influencer_id){
+    // Sin ficha de creador no hay dónde guardarlo · se DICE en vez de mostrar un campo que
+    // no va a funcionar (M100).
+    return '<div class="pg-dato"><div class="pg-k">Email</div>'
+      + '<div class="pg-v" style="color:var(--cx-danger-text)">sin ficha de creador · '
+      + 'no se le puede cargar el correo desde acá</div></div>';
+  }
+  var id = 'pgmail-' + p.influencer_id;
+  return '<div class="pg-dato"><div class="pg-k">Email</div><div class="pg-v">'
+    + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+    + '<input id="' + id + '" type="email" placeholder="correo@ejemplo.com" '
+    + 'style="flex:1;min-width:170px;padding:6px 9px;border:1px solid var(--cx-border);'
+    + 'border-radius:7px;font-size:13px;background:var(--cx-card);color:var(--cx-text)">'
+    + '<button onclick="event.stopPropagation();pgGuardarCorreo(' + p.influencer_id + ')" '
+    + 'style="background:var(--cx-primary-grad,#6d28d9);color:#fff;border:none;border-radius:7px;'
+    + 'padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer">Guardar</button>'
+    + '</div>'
+    + '<div id="' + id + '-msg" style="font-size:11.5px;color:var(--cx-danger-text);margin-top:4px">'
+    + 'sin correo · el comprobante no le va a llegar</div>'
+    + '</div></div>';
+}
+
+async function pgGuardarCorreo(iid){
+  var el = document.getElementById('pgmail-' + iid);
+  var msg = document.getElementById('pgmail-' + iid + '-msg');
+  var mail = ((el||{}).value || '').trim();
+  if(mail.indexOf('@') < 0 || mail.length < 5){
+    msg.style.color = 'var(--cx-danger-text)';
+    msg.textContent = 'Escribí un correo válido'; return;
+  }
+  msg.style.color = 'var(--cx-text-mute)';
+  msg.textContent = 'Guardando...';
+  try{
+    var t = await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    // Se reusa el endpoint que YA escribe este campo · no se abre un segundo camino (M1).
+    var r = await fetch('/api/marketing/influencers/' + iid + '/banco', {
+      method:'PUT', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':(t.csrf_token||t.token||'')},
+      body: JSON.stringify({email: mail})
+    });
+    var js = await r.json();
+    if(!r.ok || js.error){ throw new Error(js.error || ('HTTP ' + r.status)); }
+    // Se refleja en TODAS las tarjetas de ese creador (puede tener varios pagos esperando) y
+    // el contador de "sin correo" baja solo.
+    ((window._PG_DATA||{}).pagos||[]).forEach(function(x){
+      if(String(x.influencer_id) === String(iid)) x.email = mail;
+    });
+    pintarPagos();
+  }catch(e){
+    msg.style.color = 'var(--cx-danger-text)';
+    msg.textContent = 'No se pudo guardar: ' + (e.message || e);
+  }
+}
+
 function pgFiltrarSinCorreo(){
   // Alterna: el mismo clic prende y apaga el filtro. Si no se pudiera apagar, quedarias
   // atrapado viendo cuatro de veinticinco sin saber por que (M112).
@@ -901,7 +960,9 @@ function _pgFila(p, ix){
           _pgDato('Ciudad', p.ciudad),
           _pgDato('Qué se le paga', p.entregable || p.concepto),
           _pgDato('Fecha de publicación', p.fecha_publicacion || 'sin fecha'),
-          _pgDato('Email', p.email),
+          (String(p.email||'').trim()
+             ? _pgDato('Email', p.email)
+             : _pgCargarCorreo(p)),
           _pgDato('Teléfono', p.telefono)
         ])
       + _pgBloque('El cobro', [
@@ -1026,8 +1087,12 @@ async function pagarDesdeBandeja(ix){
     // El endpoint YA dice si el comprobante salio y por que no · la pantalla tiraba ese dato a
     // la basura, asi que un pago SIN comprobante se veia igual que uno con comprobante (M100).
     var cp = js.comprobante || {};
-    if(cp.email_enviado_a){
-      alert('Pagado · comprobante ' + (cp.numero_ce||'') + ' enviado a ' + cp.email_enviado_a);
+    if(cp.email_encolado_a || cp.email_enviado_a){
+      // "va en camino", no "llegó": el envío es en segundo plano y puede fallar después.
+      // Prometer la entrega hace que nadie revise un comprobante que nunca salió (M100).
+      alert('Pagado · comprobante ' + (cp.numero_ce||'') + ' va en camino a '
+            + (cp.email_encolado_a || cp.email_enviado_a)
+            + ' · si el correo estaba mal escrito el envío falla en silencio: verificalo con el creador.');
     } else if(cp.email_pendiente){
       alert('Pagado' + (cp.numero_ce ? ' · comprobante ' + cp.numero_ce + ' generado' : '')
             + ', pero NO se envio por correo:\n\n' + cp.email_pendiente);

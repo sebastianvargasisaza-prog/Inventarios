@@ -7608,7 +7608,45 @@ def pagar_oc(numero_oc):
                     }
             except sqlite3.OperationalError:
                 pass
-        else:
+
+        # ── El MISMO camino que usa la pantalla (7-ago) ────────────────────────────────
+        # La bandeja del Centro de Mando saca el correo de `pagos_influencers.influencer_id`;
+        # el bloque de arriba lo buscaba por `solicitudes_compra.influencer_id`. Dos caminos
+        # para el mismo hecho: si la SOL no quedo ligada al creador, el comprobante salia sin
+        # destinatario AUNQUE la tarjeta mostrara el correo (M1/M115).
+        #
+        # Y el gate por CATEGORIA ('influencer'/'marketing') dejaba fuera toda OC cuya
+        # categoria dijera otra cosa. Si hay una fila en `pagos_influencers` para esta OC, eso
+        # YA dice que es un pago a creador -- no hace falta adivinarlo por un texto.
+        if not (beneficiario.get('email') or '').strip():
+            try:
+                _pi = cur.execute(
+                    "SELECT COALESCE(mi.nombre,''), COALESCE(mi.cedula_nit,''), "
+                    "       COALESCE(mi.banco,''), COALESCE(mi.cuenta_bancaria,''), "
+                    "       COALESCE(mi.tipo_cuenta,''), COALESCE(mi.ciudad,''), "
+                    "       COALESCE(mi.email,'') "
+                    "  FROM pagos_influencers pi "
+                    "  JOIN marketing_influencers mi ON mi.id = pi.influencer_id "
+                    " WHERE pi.numero_oc=? AND COALESCE(mi.email,'')<>'' "
+                    " ORDER BY pi.id DESC LIMIT 1", (numero_oc,)).fetchone()
+                if _pi:
+                    beneficiario = {
+                        'nombre': _pi[0] or beneficiario.get('nombre') or proveedor,
+                        'cedula': _pi[1] or beneficiario.get('cedula') or '',
+                        'banco': _pi[2] or beneficiario.get('banco') or '',
+                        'cuenta': _pi[3] or beneficiario.get('cuenta') or '',
+                        'tipo_cuenta': _pi[4] or beneficiario.get('tipo_cuenta') or '',
+                        'ciudad': _pi[5] or beneficiario.get('ciudad') or '',
+                        'email': _pi[6] or '',
+                    }
+            except Exception as _e_pi:
+                # Nunca en silencio: sin esto el comprobante sale sin destinatario y nadie se
+                # entera de por que (M4).
+                __import__('logging').getLogger('compras').warning(
+                    'no pude resolver el creador de %s por pagos_influencers: %s',
+                    numero_oc, _e_pi)
+
+        if not ('influencer' in cat_lower or 'marketing' in cat_lower):
             # Proveedor regular: jalar datos de la tabla proveedores
             try:
                 pv = cur.execute(
@@ -7785,7 +7823,13 @@ def pagar_oc(numero_oc):
                         numero_oc=numero_oc,
                         empresa=empresa_pagadora,
                     )
-                    comprobante_info['email_enviado_a'] = email_dest
+                    # ⚠ Se ENCOLÓ, no se envió: `enviar_en_background` vuelve enseguida y el
+                    # SMTP puede fallar después (correo mal escrito, Gmail rechazando). Decir
+                    # "enviado" acá es afirmar un hecho antes de que ocurra -- y entonces nadie
+                    # revisa un comprobante que nunca salió (M100/M115). La pantalla distingue
+                    # "va en camino" de "llegó".
+                    comprobante_info['email_encolado_a'] = email_dest
+                    comprobante_info['email_estado'] = 'en_camino'
                 else:
                     comprobante_info['email_pendiente'] = (
                         'SMTP no configurado en Render (EMAIL_REMITENTE/EMAIL_PASSWORD)'

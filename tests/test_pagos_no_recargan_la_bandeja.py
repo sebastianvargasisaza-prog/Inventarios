@@ -130,3 +130,23 @@ def test_cuando_NO_falta_ninguno_lo_dice(app):
     entre un dato y un hueco (M154)."""
     h = _html()
     assert 'a todos les llega el comprobante' in h, 'el caso sano no dice nada'
+
+
+def test_el_correo_se_puede_cargar_DESDE_la_tarjeta(app):
+    """El SMTP está bien (verificado en prod). Lo que falta es el dato, y mandar a otra pantalla
+    y volver es cómo un pendiente se queda pendiente (M121)."""
+    h = _html()
+    assert 'function _pgCargarCorreo' in h, 'no hay dónde cargarlo'
+    assert 'function pgGuardarCorreo' in h, 'el botón no guardaría nada'
+    # Se REUSA el endpoint que ya escribe ese campo: un segundo camino para el mismo dato
+    # termina en dos validaciones distintas sobre la misma columna (M1/M3).
+    b = h[h.find('async function pgGuardarCorreo'):][:1400]
+    assert '/api/marketing/influencers/' in b, 'no usa el endpoint canónico'
+    assert 'pintarPagos()' in b, 'no refleja el correo cargado en la pantalla'
+
+
+def test_sin_ficha_de_creador_lo_DICE(app):
+    """Un campo que no va a poder guardar es peor que no ofrecerlo (M100)."""
+    h = _html()
+    b = h[h.find('function _pgCargarCorreo'):][:900]
+    assert 'sin ficha de creador' in b, 'ofrecería un campo que no funciona'
