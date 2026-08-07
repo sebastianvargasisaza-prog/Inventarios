@@ -927,6 +927,29 @@ function pgToggle(ix){
   pintarPagos();
 }
 
+
+function _pgSacarDeLaBandeja(id){
+  // Lo pagado/rechazado sale de la bandeja SIN volver a pedir la lista: el servidor ya
+  // confirmo, y recargar todo hace perder el scroll y las tarjetas abiertas (Sebastian 6-ago).
+  // Los KPI se recalculan desde lo que QUEDA -- si se dejaran como estaban, el total seguiria
+  // contando plata que ya se pago, que es peor que la espera (M5: el numero que se muestra es
+  // el que decide).
+  var js = window._PG_DATA;
+  if(!js || !js.pagos){ return false; }
+  var antes = js.pagos.length;
+  js.pagos = js.pagos.filter(function(x){ return String(x.id) !== String(id); });
+  if(js.pagos.length === antes){ return false; }   // no estaba · que el caller recargue
+  var res = js.resumen || (js.resumen = {});
+  res.n = js.pagos.length;
+  res.total = js.pagos.reduce(function(a,x){ return a + (Number(x.valor)||0); }, 0);
+  res.con_alerta = js.pagos.filter(function(x){
+    return (x.alertas || []).length > 0;
+  }).length;
+  if(window._PG_CERRADOS) delete window._PG_CERRADOS[id];
+  pintarPagos();
+  return true;
+}
+
 async function rechazarDesdeBandeja(ix){
   // El motivo es OBLIGATORIO: es lo que va a ver Jefferson cuando pregunte por que no le
   // pagaron. Un rechazo sin razon escrita lo deja pidiendo lo mismo la semana que viene.
@@ -943,8 +966,9 @@ async function rechazarDesdeBandeja(ix){
     });
     var js=await r.json();
     if(!r.ok||js.error){ alert('No se pudo rechazar: '+(js.error||('HTTP '+r.status))); return; }
-    window._PG_CERRADOS={}; window._PG_DATA=null;
-    await cargarPagos();
+    // Sale de la bandeja en el acto · si por lo que sea no estaba en la lista cargada,
+    // recien ahi se recarga (nunca dejar la pantalla mostrando algo que ya no existe).
+    if(!_pgSacarDeLaBandeja(p.id)){ window._PG_CERRADOS={}; window._PG_DATA=null; await cargarPagos(); }
     cargarDecisiones();
   }catch(e){ alert('Error de red: '+e.message); }
 }
@@ -991,8 +1015,9 @@ async function pagarDesdeBandeja(ix){
       alert('Pagado' + (cp.numero_ce ? ' · comprobante ' + cp.numero_ce + ' generado' : '')
             + ', pero NO se envio por correo:\n\n' + cp.email_pendiente);
     }
-    window._PG_CERRADOS={}; window._PG_DATA=null;
-    await cargarPagos();
+    // Sale de la bandeja en el acto · si por lo que sea no estaba en la lista cargada,
+    // recien ahi se recarga (nunca dejar la pantalla mostrando algo que ya no existe).
+    if(!_pgSacarDeLaBandeja(p.id)){ window._PG_CERRADOS={}; window._PG_DATA=null; await cargarPagos(); }
     cargarDecisiones();
   }catch(e){ alert('Error de red: '+e.message); }
 }
