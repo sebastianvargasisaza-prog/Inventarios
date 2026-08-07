@@ -212,6 +212,51 @@ def disponibilidad_para_kg(conn, producto, kg):
         # Lo que el stock canónico DEJA AFUERA, dicho con nombre propio.
         out['mp']['excluye'] = ['cuarentena', 'cuarentena extendida', 'vencido',
                                 'rechazado', 'agotado', 'bloqueado']
+
+        # ── VENCIDO POR FECHA, aunque el cron todavía no lo marque (M25) ──────────────
+        # `_get_mp_stock` excluye por `estado_lote`; el FEFO que DESCUENTA excluye además por
+        # `fecha_vencimiento`. Entre que un lote vence y corre `job_marcar_vencidos` (7:50)
+        # hay hasta 24h -- o indefinido si el cron falla -- en las que esta pantalla decía
+        # "alcanza" contando material que el descuento va a rechazar (M5: el número que se
+        # muestra tiene que ser el que decide).
+        #
+        # Se descuenta ACÁ y no en el helper canónico a propósito: las vistas de bodega se
+        # anclan en `estado_lote` (fuente única que el cron alinea) y la defensa por fecha va
+        # sólo en los caminos de CONSUMO. La factibilidad es una decisión de consumo.
+        venc_por_fecha = {}
+        try:
+            for _r in c.execute(
+                """SELECT UPPER(TRIM(COALESCE(material_id,''))) AS cod,
+                          SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste')
+                                   THEN cantidad
+                                   WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -')
+                                   THEN -cantidad ELSE 0 END) AS g
+                     FROM movimientos m
+                    WHERE TRIM(COALESCE(material_id,'')) <> ''
+                      AND UPPER(COALESCE(estado_lote,'')) NOT IN
+                          ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO',
+                           'AGOTADO','BLOQUEADO')
+                      AND UPPER(TRIM(COALESCE(lote,''))) IN (
+                          SELECT UPPER(TRIM(COALESCE(lote,''))) FROM movimientos e
+                           WHERE e.material_id = m.material_id
+                             AND LOWER(COALESCE(e.tipo,'')) = 'entrada'
+                             AND TRIM(CAST(COALESCE(e.fecha_vencimiento,'') AS TEXT)) <> ''
+                             AND date(e.fecha_vencimiento) < date('now','-5 hours'))
+                    GROUP BY UPPER(TRIM(COALESCE(material_id,'')))""").fetchall():
+                _g = float(_r[1] or 0)
+                if _g > 0.01:
+                    venc_por_fecha[_r[0]] = _g
+        except Exception as _ev:
+            # Si no se pudo medir, se DECLARA: un cero inventado acá se lee como "no hay nada
+            # vencido" y significa lo contrario, "no se miró" (M100).
+            log.warning('disponibilidad: no pude medir lo vencido por fecha: %s', _ev)
+            venc_por_fecha = None
+        if venc_por_fecha is None:
+            out['mp']['nota'] = ('no se pudo verificar el vencimiento por fecha · '
+                                 'el disponible puede incluir lotes vencidos')
+        elif venc_por_fecha:
+            out['mp']['excluye'].append('vencido por fecha (aún sin marcar por el cron)')
+        out['mp']['vencido_sin_marcar_g'] = round(sum((venc_por_fecha or {}).values()), 2)
         acc = {}
         for cod, nom, pct, g_lote in filas:
             _p, _g = float(pct or 0), float(g_lote or 0)
@@ -247,10 +292,18 @@ def disponibilidad_para_kg(conn, producto, kg):
             pendientes = {}
 
         items, n_faltan, n_camino = [], 0, 0
+        _venc = venc_por_fecha or {}
         for cod_b, a in sorted(acc.items()):
             if cod_b.strip().upper() in infinitas:
                 continue
             disp = float(stock_mp.get(cod_b, stock_mp.get(cod_b.upper(), 0)) or 0)
+            # Lo vencido por FECHA no está disponible aunque el cron no lo haya marcado: el
+            # FEFO lo va a rechazar, así que contarlo acá es prometer material que el descuento
+            # no puede tomar (M5/M25). Se resta y se informa aparte para que el operario sepa
+            # por qué el número bajó -- un descuento sin explicación se lee como un error.
+            _venc_cod = float(_venc.get(cod_b.strip().upper(), 0) or 0)
+            if _venc_cod > 0.01:
+                disp = max(0.0, disp - _venc_cod)
             pend = float(pendientes.get(cod_b, pendientes.get(cod_b.upper(), 0)) or 0)
             falta_fisico = a['necesario_g'] - disp
             falta_real = falta_fisico - pend
@@ -265,6 +318,7 @@ def disponibilidad_para_kg(conn, producto, kg):
                           'disponible_g': round(disp, 1),
                           'pendiente_g': round(pend, 1),
                           'falta_g': round(max(falta_real, 0), 1),
+                          'vencido_sin_marcar_g': round(_venc_cod, 1),
                           'estado': est})
         out['mp'].update({
             'items': items, 'n_total': len(items), 'n_faltan': n_faltan,

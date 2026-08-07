@@ -98,3 +98,35 @@ def test_el_JS_de_la_pantalla_PARSEA(app):
         _io.open(f, 'w', encoding='utf-8').write(b)
         r = subprocess.run(['node', '--check', f], capture_output=True, text=True, timeout=60)
         assert r.returncode == 0, 'bloque %d roto:\n%s' % (n, r.stderr[:400])
+
+
+# ── Creadores SIN correo: el comprobante no les llega ────────────────────────────────────
+
+def test_se_ve_CUANTOS_creadores_no_tienen_correo(app):
+    """Sebastián (6-ago): *"los correos tienen que llegar a los creadores"*. Hoy no llegan: el
+    comprobante se genera y no tiene a dónde ir porque el creador no tiene `email` guardado.
+
+    Eso no lo arregla código -- alguien tiene que cargarlos -- pero hasta ahora se descubría
+    PAGO POR PAGO: el aviso saltaba recién al apretar Pagar. El número al frente convierte
+    "hay un problema" en "estos cuatro, cargales el correo" (M121: lo que no se puede ver, no
+    se puede actuar)."""
+    h = _html()
+    assert 'Sin correo' in h, 'no se ve cuántos no tienen correo'
+    assert '_sinMail' in h, 'no se cuenta'
+    assert 'pgFiltrarSinCorreo' in h and 'function pgFiltrarSinCorreo' in h, (
+        'el contador no lleva a la lista · obligaría a buscarlos a mano')
+
+
+def test_el_filtro_se_puede_APAGAR(app):
+    """Si sólo prendiera, quedarías viendo cuatro de veinticinco sin entender por qué (M112)."""
+    h = _html()
+    i = h.find('function pgFiltrarSinCorreo')
+    b = h[i:i + 400]
+    assert '!window._PG_SOLO_SIN_CORREO' in b, 'el filtro no alterna'
+
+
+def test_cuando_NO_falta_ninguno_lo_dice(app):
+    """Un cero pelado se lee como "no se calculó". Decir "a todos les llega" es la diferencia
+    entre un dato y un hueco (M154)."""
+    h = _html()
+    assert 'a todos les llega el comprobante' in h, 'el caso sano no dice nada'

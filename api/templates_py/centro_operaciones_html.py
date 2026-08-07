@@ -782,6 +782,13 @@ async function cargarPagos(){
 }
 
 
+function pgFiltrarSinCorreo(){
+  // Alterna: el mismo clic prende y apaga el filtro. Si no se pudiera apagar, quedarias
+  // atrapado viendo cuatro de veinticinco sin saber por que (M112).
+  window._PG_SOLO_SIN_CORREO = !window._PG_SOLO_SIN_CORREO;
+  pintarPagos();
+}
+
 function pintarPagos(){
   var js=window._PG_DATA; if(!js) return;
   var todos=js.pagos||[];
@@ -791,16 +798,26 @@ function pintarPagos(){
   if(badge){ badge.textContent=res.n||0; badge.className='cm-badge'+((res.n||0)?' on':''); }
   var subn=document.getElementById('pg-sub-n'); if(subn) subn.textContent='('+(res.n||0)+')';
 
+  var _sinMail = todos.filter(function(p){ return !String(p.email||'').trim(); }).length;
   var k=document.getElementById('pg-kpis');
   if(k){
     k.innerHTML=''
       +'<div class="card"><div class="label">Total por pagar</div><div class="val">'+_pgMoneda(res.total)+'</div><div class="sub">'+(res.n||0)+' creador(es) esperando</div></div>'
       +'<div class="card"><div class="label">Revisar antes</div><div class="val" style="color:'+((res.con_alerta||0)?'var(--cx-danger-text)':'var(--cx-text-mute)')+'">'+(res.con_alerta||0)+'</div><div class="sub">cobro repetido o sin fecha de publicación</div></div>'
-      +'<div class="card"><div class="label">Sin novedad</div><div class="val" style="color:var(--cx-success-text)">'+Math.max(0,(res.n||0)-(res.con_alerta||0))+'</div><div class="sub">listos para pagar</div></div>';
+      +'<div class="card"><div class="label">Sin novedad</div><div class="val" style="color:var(--cx-success-text)">'+Math.max(0,(res.n||0)-(res.con_alerta||0))+'</div><div class="sub">listos para pagar</div></div>'
+      // El comprobante de pago se le MANDA al creador, y sin correo guardado no sale. Hasta
+      // ahora eso se descubria pago por pago (el aviso salta recien al apretar Pagar): el
+      // numero al frente convierte "hay un problema" en "estos cuatro, cargales el correo".
+      // Es clicable porque un contador que no lleva a la lista obliga a buscarlos a mano.
+      +'<div class="card" onclick="pgFiltrarSinCorreo()" style="cursor:pointer" '
+      +'title="Ver sólo los que no tienen correo"><div class="label">Sin correo</div>'
+      +'<div class="val" style="color:'+(_sinMail?'var(--cx-danger-text)':'var(--cx-text-mute)')+'">'+_sinMail+'</div>'
+      +'<div class="sub">'+(_sinMail?'no les llega el comprobante · clic para verlos':'a todos les llega el comprobante')+'</div></div>';
   }
 
   var q=((document.getElementById('pg-buscar')||{}).value||'').trim().toLowerCase();
   var lista=todos.filter(function(p){
+    if(window._PG_SOLO_SIN_CORREO && String(p.email||'').trim()) return false;
     return !q || (String(p.influencer_nombre||'')+' '+String(p.usuario_red||'')).toLowerCase().indexOf(q)>=0;
   });
   // Lo que hay que revisar va PRIMERO: es la unica jerarquia que importa acá.
