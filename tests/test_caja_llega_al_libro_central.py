@@ -208,3 +208,27 @@ def test_los_TRES_caminos_que_faltaban_llaman_al_espejo(app):
     assert n_espejos >= 6, (
         'hay %d altas de caja y sólo %d espejos · algún camino da de alta plata que no llega al '
         'libro central' % (n_altas, n_espejos))
+
+
+def test_la_importacion_MASIVA_tambien_espeja(app, db_clean):
+    """`importar-pagados` mete en caja las contraentregas que Shopify ya da por pagadas, y no
+    llegaba al libro en una sola línea. Es el hermano del cobro de a uno, que sí espeja desde
+    hace rato (M45) -- y es el camino MASIVO, donde el hueco pesa 40 veces más.
+
+    Se mide sobre el fuente porque ejercitar el import exige pedidos de Shopify sembrados; lo
+    que hay que fijar es que el espejo esté en ESE camino, no en otro."""
+    import io
+    import os
+    import re
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    s = io.open(os.path.join(raiz, 'api', 'blueprints', 'animus.py'), encoding='utf-8').read()
+    i = s.find('def cod_importar_pagados')
+    if i < 0:
+        i = s.find('contraentrega/importar-pagados')
+    assert i > 0, 'no encuentro la importación masiva'
+    j = s.find('\n@bp.route', i + 10)
+    bloque = re.sub(r'^\s*#[^\n]*$', '', s[i:j], flags=re.M)   # sin comentarios (M154)
+    assert '_tesoreria_espejo' in bloque, (
+        'la importación masiva mete la plata a la caja y NO la manda al libro central · '
+        'Tesorería no vería un peso de todo lo importado')
+    assert 'registrar_movimiento_caja' in bloque, 'dejó de pasar por el alta canónica de caja'

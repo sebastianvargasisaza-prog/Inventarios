@@ -922,6 +922,45 @@ def handle_pedido_detalle(numero):
                           detalle=f"Actualizó pedido {numero}")
             except Exception:
                 pass
+            # ── El abono ENTRA al libro central (6-ago) ─────────────────────────────
+            # `monto_pagado` es un ACUMULADO, no un evento: cada PATCH fija el total nuevo. Se
+            # espeja la DIFERENCIA contra lo que habia, y la referencia lleva ese acumulado --
+            # asi fijar dos veces el mismo total no crea dos ingresos (idempotente) y una
+            # correccion hacia abajo no inventa un ingreso negativo.
+            if 'monto_pagado' in d:
+                try:
+                    _nuevo = float(d['monto_pagado'] or 0)
+                    _delta = _nuevo - float(antes.get('monto_pagado') or 0)
+                    if _delta > 0.01:
+                        _ref_ped = 'PED-%s-ACUM-%.2f' % (numero, _nuevo)
+                        _ya_ped = c.execute(
+                            "SELECT 1 FROM flujo_ingresos WHERE referencia=? LIMIT 1",
+                            (_ref_ped,)).fetchone()
+                        if not _ya_ped:
+                            _cli = c.execute(
+                                "SELECT COALESCE(cl.nombre,''), COALESCE(p.empresa,'ANIMUS') "
+                                "  FROM pedidos p LEFT JOIN clientes cl ON cl.id=p.cliente_id "
+                                " WHERE p.numero=?", (numero,)).fetchone()
+                            _nom = (_cli[0] if _cli else '') or ''
+                            _emp = (_cli[1] if _cli else 'ANIMUS') or 'ANIMUS'
+                            # El PERIODO sale del HECHO (hoy en Colombia), no del reloj del
+                            # server, que corre en UTC (M24/M106).
+                            from tz_colombia import hoy_colombia as _hoy_b2b
+                            _f_ped = _hoy_b2b().isoformat()
+                            c.execute(
+                                "INSERT INTO flujo_ingresos (fecha, empresa, concepto, "
+                                " categoria, monto, periodo, fuente, referencia, creado_por) "
+                                "VALUES (?,?,?,?,?,?,?,?,?)",
+                                (_f_ped, _emp,
+                                 ('Abono pedido ' + numero + ((' - ' + _nom[:40]) if _nom else '')),
+                                 'Cobranza B2B', _delta, _f_ped[:7], 'pedido_abono',
+                                 _ref_ped, session.get('compras_user', '')))
+                except Exception as _e_ped:
+                    # Nunca en silencio: si el espejo falla, el abono igual se guarda, pero
+                    # queda dicho -- plata que no llega al libro sin rastro es lo peor (M4).
+                    import logging as _lg_ped
+                    _lg_ped.getLogger('clientes').warning(
+                        'abono del pedido %s no llego a Tesoreria: %s', numero, _e_ped)
             conn.commit()
         return jsonify({'message': f'Pedido {numero} actualizado'})
     c.execute("SELECT p.*,cl.nombre as cliente_nombre FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id=cl.id WHERE p.numero=?", (numero,))

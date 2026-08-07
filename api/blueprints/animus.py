@@ -3311,6 +3311,14 @@ def animus_cod_importar_pagados():
             referencia=sid,
             observaciones='Cobro contraentrega · Shopify lo da por pagado', usuario=u)
         c.execute("UPDATE animus_cod_cobros SET caja_mov_id=? WHERE id=?", (mov_id, cobro_id))
+        # El ingreso llega al LIBRO CENTRAL, igual que el cobro de a uno (M45: el patrón vivía
+        # en el hermano y este quedó sin él). Sin esto, importar 40 contraentregas de una metía
+        # la plata a la caja y Tesorería no veía un solo peso -- y es justo el camino MASIVO,
+        # donde el hueco pesa 40 veces más.
+        _tesoreria_espejo(c, tipo='ingreso', fecha=(p['fecha'] or fecha_hoy),
+                          concepto='Contraentrega %s (importado)' % p['pedido'],
+                          monto=p['valor_esperado'], empresa='ANIMUS', referencia=recibo,
+                          usuario=u, categoria='Contraentrega')
         audit_log(c, usuario=u, accion='ANIMUS_COD_IMPORTAR_PAGADO',
                   tabla='animus_cod_cobros', registro_id=cobro_id,
                   despues={'pedido': p['pedido'], 'monto': p['valor_esperado'],
