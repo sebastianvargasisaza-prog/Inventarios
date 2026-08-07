@@ -17104,10 +17104,16 @@ def prog_presentacion_empaque():
     if not prev:
         return jsonify({'error': 'presentación no encontrada'}), 404
 
-    sets, vals, cambios = [], [], {}
+    # ⚠ Las asignaciones van en un DICT por COLUMNA, no en una lista: si el guardado manda la
+    # tapa Y el "sin tapa" a la vez, la columna `sin_tapa` se asignaba DOS veces en el mismo
+    # UPDATE. SQLite lo tolera; **PostgreSQL lo rechaza** ("multiple assignments to same
+    # column") -> en produccion el guardado fallaba entero y en los tests pasaba (el drift de
+    # siempre). Con un dict, la ultima decision gana -- que es justo la semantica buscada:
+    # poner un codigo apaga el "no lleva".
+    asign, cambios = {}, {}
     if 'activo' in d:
         _a = 1 if d.get('activo') else 0
-        sets.append('activo=?'); vals.append(_a); cambios['activo'] = _a
+        asign['activo'] = _a; cambios['activo'] = _a
     # "No lleva" es una DECISION, y por eso se guarda: si sólo se dejara el campo vacío no habría
     # forma de distinguir "este envase no usa caja" de "todavía no la cargué", y el diagnóstico
     # tendría que gritar por los dos para siempre.
@@ -17115,12 +17121,12 @@ def prog_presentacion_empaque():
         if _campo not in d:
             continue
         _v = 1 if d.get(_campo) else 0
-        sets.append('%s=?' % _col); vals.append(_v); cambios[_campo] = _v
+        asign[_col] = _v; cambios[_campo] = _v
         if _v:
             # No pueden convivir: si NO lleva tapa, no puede tener un código de tapa cargado.
             # Dejar los dos deja al motor comprando algo que la pantalla dice que no existe (M5).
             _otro = 'tapa_codigo' if _campo == 'sin_tapa' else 'caja_codigo'
-            sets.append('%s=?' % _otro); vals.append(''); cambios[_otro] = ''
+            asign[_otro] = ''; cambios[_otro] = ''
 
     for _campo, _col in (('envase', 'envase_codigo'), ('tapa', 'tapa_codigo'), ('caja', 'caja_codigo')):
         if _campo not in d:
@@ -17133,18 +17139,20 @@ def prog_presentacion_empaque():
                              (_cod,)).fetchone():
                 return jsonify({'error': '%s no existe en el maestro de envases' % _cod,
                                 'codigo': 'MEE_INEXISTENTE'}), 400
-        sets.append('%s=?' % _col); vals.append(_cod); cambios[_campo] = _cod
+        asign[_col] = _cod; cambios[_campo] = _cod
         # Poner un código contradice el "no lleva": se apaga solo, o quedarían los dos y el
         # diagnóstico tendría que elegir a cuál creerle.
         if _cod and _campo in ('tapa', 'caja'):
             _flag = 'sin_tapa' if _campo == 'tapa' else 'sin_caja'
-            sets.append('%s=?' % _flag); vals.append(0); cambios[_flag] = 0
-    if not sets:
+            asign[_flag] = 0; cambios[_flag] = 0
+    if not asign:
         return jsonify({'error': 'no mandaste nada que cambiar'}), 400
 
     try:
-        sets.append("actualizado_en=datetime('now','-5 hours')")
-        c.execute("UPDATE producto_presentaciones SET %s WHERE id=?" % ', '.join(sets), vals + [pid])
+        _cols = list(asign.keys())
+        _sql = ', '.join('%s=?' % k for k in _cols) + ", actualizado_en=datetime('now','-5 hours')"
+        c.execute("UPDATE producto_presentaciones SET %s WHERE id=?" % _sql,
+                  [asign[k] for k in _cols] + [pid])
         if c.rowcount == 0:
             conn.rollback()
             return jsonify({'error': 'no se actualizó nada'}), 409

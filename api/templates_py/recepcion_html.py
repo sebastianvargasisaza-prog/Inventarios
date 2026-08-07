@@ -608,6 +608,7 @@ async function registrarRecepcion() {
   if (!receptor) { showMsg('submit-msg', 'Ingresa quien recibe la mercancia', 'err'); return; }
   var items = [];
   var discrepancias = false;
+  var _sinLote = [];
   var ocItems = currentOC.items || [];
   for (var idx = 0; idx < ocItems.length; idx++) {
     var it = ocItems[idx];
@@ -637,6 +638,28 @@ async function registrarRecepcion() {
     var _amts = _envBreak[idx] || [];
     var nrec = _amts.length > 1 ? _amts.length : 1;
     items.push({codigo_mp: it.codigo_mp, cantidad_recibida: cant, estado: est, notas: nota, lote: lote, fecha_vencimiento: fv, recipientes: nrec, envases_detalle: (_amts.length > 1 ? _amts : null)});
+    // Se anota QUE fila va sin lote, no cuantas: "faltan 3" obliga a buscarlas a mano.
+    // Solo cuenta si de verdad se esta recibiendo (cant > 0): una linea en 0 no entra al kardex.
+    if (cant > 0 && !lote) {
+      _sinLote.push(it.descripcion_full || it.nombre_mp || it.codigo_mp || ('fila ' + (idx + 1)));
+    }
+  }
+  // ── Aviso de filas SIN lote (Sebastian 7-ago) ─────────────────────────────────────
+  // El lote es OPCIONAL a proposito (se quito de obligatorio el 27-jul: trababa la recepcion
+  // administrativa cuando el remito no lo trae). Pero dejarlo vacio POR DESCUIDO es lo que
+  // hace que Calidad vea despues `OC-OC-2026-...` y parezca un bug.
+  //
+  // Se avisa donde todavia se puede corregir, se DICE cuales son, y se deja seguir: un guard
+  // que traba un caso legitimo se termina esquivando (M39).
+  if (_sinLote.length) {
+    var _lista = _sinLote.slice(0, 8).join(', ')
+              + (_sinLote.length > 8 ? (' y ' + (_sinLote.length - 8) + ' mas') : '');
+    var _msg = (_sinLote.length === 1
+        ? 'Esta materia prima va SIN lote: '
+        : 'Estas ' + _sinLote.length + ' materias primas van SIN lote: ')
+      + _lista
+      + '. Se les asigna un lote provisional y Calidad carga el real en el F01. Continuar?';
+    if (!confirm(_msg)) return;
   }
   var payload = {
     observaciones_recepcion: obs,

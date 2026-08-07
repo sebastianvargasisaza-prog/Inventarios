@@ -494,3 +494,69 @@ def test_la_columna_de_la_bandera_existe(app, db_clean):
     from database import get_db
     with app.app_context():
         get_db().execute("SELECT sin_tapa, sin_caja FROM producto_presentaciones LIMIT 0")
+
+
+def test_mandar_la_tapa_Y_el_sin_tapa_juntos_no_rompe_el_UPDATE(app, admin_client, db_clean):
+    """El error que Catalina vio en producción: *"No se pudo guardar: multiple assignments to
+    same column 'sin_tapa'"*.
+
+    El endpoint armaba el SET como una LISTA: la primera vuelta escribía `sin_tapa` y la
+    segunda, al ver un código de tapa, lo volvía a escribir para apagarlo. Dos asignaciones a
+    la misma columna en un solo UPDATE: **SQLite lo tolera y PostgreSQL lo rechaza**, así que
+    fallaba en producción y pasaba en los tests -- el drift de siempre.
+
+    Ahora las asignaciones van en un dict por columna: la última decisión gana, que es la
+    semántica buscada (poner un código apaga el "no lleva").
+    """
+    from database import get_db
+    from .conftest import csrf_headers
+    with app.app_context():
+        conn = get_db(); c = conn.cursor()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre='ZZ DOBLE ASIGN'")
+        c.execute("INSERT INTO maestro_mee (codigo, descripcion, estado, stock_actual) "
+                  "VALUES (?,?,?,?) ON CONFLICT (codigo) DO NOTHING",
+                  ('ZZTAP-9', 'ZZ tapa', 'Activo', 0))
+        c.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, "
+                  " etiqueta, volumen_ml, activo, sin_tapa) VALUES (?,?,?,?,?,?)",
+                  ('ZZ DOBLE ASIGN', 'ZZD1', 'ZZ 30 ml', 30, 1, 1))
+        pid = c.lastrowid
+        conn.commit()
+
+    # el modal manda las dos cosas en el mismo guardado
+    r = admin_client.post('/api/programacion/presentacion-empaque',
+                          json={'id': pid, 'tapa': 'ZZTAP-9', 'sin_tapa': True},
+                          headers=csrf_headers())
+    assert r.status_code == 200, 'el guardado falló: %s' % r.data[:250]
+
+    with app.app_context():
+        fila = get_db().execute(
+            "SELECT COALESCE(tapa_codigo,''), COALESCE(sin_tapa,0) "
+            "  FROM producto_presentaciones WHERE id=?", (pid,)).fetchone()
+    # poner un código APAGA el "no lleva": no pueden convivir, o el motor compra algo que la
+    # pantalla dice que no existe (M5)
+    assert fila[0] == 'ZZTAP-9', fila
+    assert int(fila[1] or 0) == 0, 'quedó "sin tapa" con una tapa cargada · se contradicen'
+
+    with app.app_context():
+        conn = get_db()
+        conn.execute("DELETE FROM producto_presentaciones WHERE producto_nombre='ZZ DOBLE ASIGN'")
+        conn.execute("DELETE FROM maestro_mee WHERE codigo='ZZTAP-9'")
+        conn.commit()
+
+
+def test_ninguna_columna_se_asigna_DOS_veces(app):
+    """Guard estructural: el SET se arma por columna, no acumulando en una lista. Con una lista
+    el bug vuelve en cuanto alguien agregue otra regla cruzada."""
+    import io as _io
+    import os as _os
+    import re as _re
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    s = _io.open(_os.path.join(raiz, 'api', 'blueprints', 'programacion.py'), encoding='utf-8').read()
+    i = s.find("def presentacion_empaque")
+    if i < 0:
+        i = s.find("'/api/programacion/presentacion-empaque'")
+    j = s.find('\n@bp.route', i + 10)
+    bloque = _re.sub(r'^\s*#[^\n]*$', '', s[i:j], flags=_re.M)
+    assert 'asign[' in bloque, 'volvió a acumular el SET en una lista'
+    assert "sets.append" not in bloque, (
+        'quedó un `sets.append` · esa es la forma que permite asignar dos veces la misma columna')
