@@ -17173,6 +17173,155 @@ def prog_presentacion_empaque():
     return jsonify({'ok': True, 'id': pid, 'cambios': cambios})
 
 
+@bp.route('/api/programacion/presentaciones-vs-shopify', methods=['GET'])
+def prog_presentaciones_vs_shopify():
+    """Las presentaciones de EOS contra lo que Shopify VENDE de verdad (Sebastián 7-ago).
+
+    *"lo ideal es que sea el rastreo tal cual de Shopify, porque así sabemos qué falta · Shopify
+    tiene muchas cosas, regalos y variantes, pero yo había escogido cuáles quedaban y cuáles no"*.
+
+    Read-only: no corrige nada. Enumera los cuatro desencuentros posibles entre las dos listas,
+    separados, porque **sus arreglos son opuestos** y confundirlos es justo lo que produce el
+    duplicado. Un SKU que vende y nadie mapeó se resuelve mapeándolo; una presentación sin SKU se
+    resuelve pegándole el suyo o apagándola. Emparejarlos solo sería adivinar (M19).
+
+    Su curaduría manda y se DECLARA: un SKU apagado (`sku_producto_map.activo=0`) o marcado como
+    regalo no es un hueco, así que no se cuenta como faltante -- pero tampoco desaparece, porque un
+    descarte invisible se lee como que nunca existió (M124).
+
+    ⚠ La lista de SKUs vendidos se pide con `forzar_ordenes=True`: la tabla precalculada no ve el
+    SKU que el cron todavía no procesó, que es exactamente el que hay que detectar (M128).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = max(7, min(365, int(request.args.get('dias') or 90)))
+    except Exception:
+        dias = 90
+    conn = get_db(); c = conn.cursor()
+    avisos = []
+
+    # 1 · lo que Shopify vendió en la ventana
+    ventas = {}
+    try:
+        try:
+            from blueprints.auto_plan import _ventas_sku_map_orders as _vmap
+        except ImportError:            # según cómo se haya cargado el paquete
+            from auto_plan import _ventas_sku_map_orders as _vmap
+        for _sk, _fechas in (_vmap(c, dias_max=dias, forzar_ordenes=True) or {}).items():
+            _n = sum(float(v or 0) for v in (_fechas or {}).values())
+            if _n > 0:
+                ventas[(_sk or '').strip().upper()] = _n
+    except Exception as _e_v:
+        log.warning('presentaciones-vs-shopify · ventas: %s', _e_v)
+        avisos.append('No pude leer las ventas de Shopify · la lista de "vende y nadie lo mapeó" '
+                      'queda sin medir, no en cero.')
+        ventas = None
+
+    # 2 · la curaduría (qué SKU cuenta y a qué producto pertenece)
+    mapeo = {}
+    for r in c.execute(
+        "SELECT UPPER(TRIM(sku)), COALESCE(producto_nombre,''), COALESCE(activo,1), "
+        "       COALESCE(es_regalo,0), COALESCE(volumen_ml,0) FROM sku_producto_map").fetchall():
+        mapeo[r[0]] = {'producto': (r[1] or '').strip(), 'activo': int(r[2] or 0),
+                       'regalo': int(r[3] or 0), 'volumen_ml': float(r[4] or 0)}
+
+    # 3 · las presentaciones activas, agrupadas por (producto, volumen)
+    pres = []
+    for r in c.execute(
+        "SELECT id, producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), "
+        "       COALESCE(volumen_ml,0), COALESCE(envase_codigo,''), COALESCE(sku_shopify,'') "
+        "  FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall():
+        pres.append({'id': r[0], 'producto': (r[1] or '').strip(), 'codigo': r[2],
+                     'etiqueta': r[3], 'volumen_ml': float(r[4] or 0),
+                     'envase': r[5], 'sku': (r[6] or '').strip().upper()})
+    por_prod_vol = {}
+    for p in pres:
+        por_prod_vol.setdefault((_norm_prod_fuerte(p['producto']), round(p['volumen_ml'], 1)), []).append(p)
+
+    # ── A · vende en Shopify y NADIE lo mapeó ────────────────────────────────────────────────
+    # Es el "¿qué falta?" literal: EOS no sabe de qué producto es, así que esa venta no empuja
+    # ninguna producción ni ningún envase.
+    vende_sin_mapeo = []
+    apagados_que_venden = []
+    regalos_que_venden = []
+    if ventas is not None:
+        for sk, uds in sorted(ventas.items(), key=lambda x: -x[1]):
+            m = mapeo.get(sk)
+            if m is None or not m['producto']:
+                vende_sin_mapeo.append({'sku': sk, 'uds': round(uds, 1),
+                                        'motivo': 'sin mapeo' if m is None else 'mapeado a producto vacío'})
+            elif m['regalo']:
+                regalos_que_venden.append({'sku': sk, 'uds': round(uds, 1), 'producto': m['producto']})
+            elif not m['activo']:
+                apagados_que_venden.append({'sku': sk, 'uds': round(uds, 1), 'producto': m['producto']})
+
+    # ── B · SKU curado y en venta cuyo tamaño NO tiene presentación ──────────────────────────
+    # Sin presentación, su frasco/tapa/caja no entran a la compra.
+    sin_presentacion, sin_volumen = [], []
+    if ventas is not None:
+        for sk, uds in sorted(ventas.items(), key=lambda x: -x[1]):
+            m = mapeo.get(sk)
+            if not m or not m['producto'] or m['regalo'] or not m['activo']:
+                continue
+            vol = m['volumen_ml']
+            if vol <= 0:
+                # Sin volumen no se puede decir si le falta: se declara, no se acusa (M100).
+                sin_volumen.append({'sku': sk, 'uds': round(uds, 1), 'producto': m['producto']})
+                continue
+            if not por_prod_vol.get((_norm_prod_fuerte(m['producto']), round(vol, 1))):
+                sin_presentacion.append({'sku': sk, 'uds': round(uds, 1),
+                                         'producto': m['producto'], 'volumen_ml': vol})
+
+    # ── C · presentación activa SIN SKU de Shopify ───────────────────────────────────────────
+    # No se puede rastrear contra lo que se vende: es la que no se sabe si sobra o si le falta el dato.
+    sin_sku = [{'id': p['id'], 'producto': p['producto'], 'volumen_ml': p['volumen_ml'],
+                'etiqueta': p['etiqueta'], 'envase': p['envase']}
+               for p in pres if not p['sku']]
+
+    # ── D · dos presentaciones ENCENDIDAS del mismo tamaño ───────────────────────────────────
+    # El motor reparte la compra por las ventas de ese volumen: con dos filas iguales el reparto
+    # queda mitad y mitad y se compra la mezcla equivocada, con los totales cuadrando.
+    duplicadas = []
+    for (_pn, _vol), filas in por_prod_vol.items():
+        if len(filas) < 2:
+            continue
+        duplicadas.append({
+            'producto': filas[0]['producto'], 'volumen_ml': _vol,
+            'frascos_distintos': len({f['envase'] for f in filas}) > 1,
+            'filas': [{'id': f['id'], 'codigo': f['codigo'], 'envase': f['envase'],
+                       'sku': f['sku'] or None,
+                       'uds_shopify': (round(ventas.get(f['sku'], 0), 1) if (ventas and f['sku']) else None)}
+                      for f in filas],
+        })
+    duplicadas.sort(key=lambda d: (not d['frascos_distintos'], d['producto']))
+
+    return jsonify({
+        'ok': True,
+        'ventana_dias': dias,
+        'medido': ventas is not None,
+        'avisos': avisos,
+        'vende_sin_mapeo': vende_sin_mapeo,
+        'sin_presentacion': sin_presentacion,
+        'sin_volumen': sin_volumen,
+        'sin_sku': sin_sku,
+        'duplicadas': duplicadas,
+        # Lo que NO se cuenta como hueco porque él lo decidió así · va a la vista, no al silencio.
+        'excluidos_por_curaduria': {
+            'regalos': regalos_que_venden,
+            'apagados': apagados_que_venden,
+        },
+        'resumen': {
+            'skus_vendidos': (len(ventas) if ventas is not None else None),
+            'presentaciones_activas': len(pres),
+            'vende_sin_mapeo': len(vende_sin_mapeo),
+            'sin_presentacion': len(sin_presentacion),
+            'sin_sku': len(sin_sku),
+            'duplicadas': len(duplicadas),
+        },
+    })
+
+
 @bp.route('/api/abastecimiento/envases-cobertura', methods=['GET'])
 def abastecimiento_envases_cobertura():
     """Diagnóstico (read-only · 18-jun): ¿qué productos activos NO tienen presentación+envase?

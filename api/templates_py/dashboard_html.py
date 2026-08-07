@@ -487,7 +487,15 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <input type="checkbox" id="empq-solo-falta" checked onchange="empqPintar()" style="width:16px;height:16px">
           Solo los que les falta algo
         </label>
+        <!-- Va detr&aacute;s de un bot&oacute;n a prop&oacute;sito: el rastreo recorre las &oacute;rdenes de Shopify
+             (necesita la lista COMPLETA de SKUs vendidos, no la tabla precalculada), y eso no puede
+             correr en la carga de una pantalla &middot; M43/M128. -->
+        <button onclick="empqRastreo()" id="empq-btn-rastreo"
+          style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid var(--cx-border);border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer">
+          &#128269; Rastreo Shopify
+        </button>
       </div>
+      <div id="empq-rastreo" style="margin-bottom:14px"></div>
       <div id="empq-cuerpo"><div style="color:var(--cx-text-faint);padding:30px;text-align:center">Cargando&hellip;</div></div>
     </div>
   </div>
@@ -21052,6 +21060,103 @@ async function empqAbrir(){
   }
   empqPintar();
 }
+async function empqRastreo(){
+  // El rastreo de las presentaciones CONTRA lo que Shopify vende (Sebastian 7-ago):
+  // *"lo ideal es que sea el rastreo tal cual de Shopify, porque asi sabemos que falta"*.
+  //
+  // Los cuatro desencuentros van SEPARADOS porque sus arreglos son OPUESTOS: un SKU que vende sin
+  // mapeo se mapea; una presentacion sin SKU se completa o se apaga. Juntarlos en un solo "hay 12
+  // cosas mal" obliga a adivinar cual es cual, que es justo como nacio el duplicado.
+  var cont=document.getElementById('empq-rastreo'); if(!cont)return;
+  var btn=document.getElementById('empq-btn-rastreo');
+  if(window._empqRastBusy) return;            // toda accion que dispara trabajo pesado se llavea (M63)
+  window._empqRastBusy=true;
+  if(btn){ btn.disabled=true; btn.style.opacity='.6'; }
+  cont.innerHTML='<div style="color:var(--cx-text-faint);padding:16px;text-align:center;font-size:12.5px">'
+    + 'Cruzando contra las ventas de Shopify&hellip;</div>';
+  var j=null;
+  try{
+    var r=await fetch('/api/programacion/presentaciones-vs-shopify?dias=90',{credentials:'same-origin'});
+    j=await r.json();
+    if(!r.ok) throw new Error((j&&j.error)||r.status);
+  }catch(e){
+    cont.innerHTML='<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);'
+      + 'border-radius:10px;padding:13px;font-size:12.5px">No pude cruzar contra Shopify: '
+      + empqEsc(String(e))+'</div>';
+    window._empqRastBusy=false; if(btn){ btn.disabled=false; btn.style.opacity='1'; }
+    return;
+  }
+  window._empqRastBusy=false; if(btn){ btn.disabled=false; btn.style.opacity='1'; }
+
+  function _blq(icono, titulo, que_hacer, filas, tono){
+    // Un bloque en CERO tambien se pinta, en verde: "no hay ninguno" es una respuesta, y
+    // esconderlo dejaria la duda de si se midio (M100).
+    var pale = tono==='danger' ? 'var(--cx-danger-pale)' : (tono==='warn' ? 'var(--cx-warn-pale)' : 'var(--cx-success-pale)');
+    var text = tono==='danger' ? 'var(--cx-danger-text)' : (tono==='warn' ? 'var(--cx-warn-text)' : 'var(--cx-success-text)');
+    var h='<div style="border:1px solid var(--cx-border);border-radius:11px;overflow:hidden;margin-bottom:9px">'
+      + '<div style="background:'+(filas.length?pale:'var(--cx-bg-alt)')+';color:'+(filas.length?text:'var(--cx-text-soft)')
+      + ';padding:9px 13px;font-size:12.5px;font-weight:700">'+icono+' '+empqEsc(titulo)
+      + ' <span style="font-weight:800">('+filas.length+')</span>'
+      + '<div style="font-weight:500;font-size:11.5px;opacity:.92;margin-top:2px">'+que_hacer+'</div></div>';
+    if(filas.length){
+      h+='<div style="padding:8px 13px;font-size:12px;color:var(--cx-text);line-height:1.75">'
+        + filas.join('<br>')+'</div>';
+    }
+    return h+'</div>';
+  }
+  function _uds(n){ return '<span style="color:var(--cx-text-faint)"> &middot; '+n+' uds/90d</span>'; }
+
+  var h='';
+  if(!j.medido){
+    // Un cero que nadie calculo se lee como "no hay nada que hacer" y significa lo contrario (M100).
+    h+='<div style="background:var(--cx-warn-pale);color:var(--cx-warn-text);border-radius:10px;'
+      + 'padding:11px 13px;font-size:12.5px;font-weight:600;margin-bottom:9px">&#9888; '
+      + empqEsc((j.avisos||['No se pudo medir contra Shopify.'])[0])+'</div>';
+  }
+  h+=_blq('&#128269;','Vende en Shopify y nadie lo mape&oacute;',
+    'EOS no sabe de qu&eacute; producto es, as&iacute; que esa venta no empuja ninguna producci&oacute;n ni la compra de su envase.',
+    (j.vende_sin_mapeo||[]).map(function(x){
+      return '<b>'+empqEsc(x.sku)+'</b>'+_uds(x.uds)+' <span style="color:var(--cx-text-soft)">'+empqEsc(x.motivo)+'</span>';
+    }), 'danger');
+  h+=_blq('&#128230;','Se vende y ese tama&ntilde;o no tiene presentaci&oacute;n',
+    'Sin presentaci&oacute;n, su frasco, su tapa y su caja no entran a la compra.',
+    (j.sin_presentacion||[]).map(function(x){
+      return empqEsc(x.producto)+' <b>'+x.volumen_ml+' ml</b> <span style="color:var(--cx-text-soft)">('+empqEsc(x.sku)+')</span>'+_uds(x.uds);
+    }), 'warn');
+  h+=_blq('&#127991;','Presentaci&oacute;n sin SKU de Shopify',
+    'No se puede cruzar contra lo que se vende: no se sabe si sobra o si s&oacute;lo le falta el dato.',
+    (j.sin_sku||[]).map(function(x){
+      return empqEsc(x.producto)+' <b>'+x.volumen_ml+' ml</b> <span style="color:var(--cx-text-soft)">'+empqEsc(x.envase||'sin envase')+'</span>';
+    }), 'warn');
+  h+=_blq('&#9888;','Dos presentaciones encendidas del mismo tama&ntilde;o',
+    'La compra se reparte entre las dos por las ventas de ese tama&ntilde;o: queda mitad y mitad y se compra la mezcla equivocada.',
+    (j.duplicadas||[]).map(function(d){
+      var det=(d.filas||[]).map(function(f){
+        return empqEsc(f.envase||'sin envase')+(f.uds_shopify!=null? ' ('+f.uds_shopify+' uds)':' (sin SKU)');
+      }).join(' vs ');
+      return empqEsc(d.producto)+' <b>'+d.volumen_ml+' ml</b>: '+det
+        + (d.frascos_distintos? '': ' <span style="color:var(--cx-text-faint)">&middot; mismo frasco, reparte bien</span>');
+    }), 'danger');
+
+  if((j.sin_volumen||[]).length){
+    h+=_blq('&#10068;','Se vende y no tiene volumen cargado',
+      'Sin el tama&ntilde;o no se puede decir si le falta presentaci&oacute;n: se declara en vez de acusar.',
+      j.sin_volumen.map(function(x){ return '<b>'+empqEsc(x.sku)+'</b> '+empqEsc(x.producto)+_uds(x.uds); }), 'warn');
+  }
+  // Su curaduria NO es un hueco -- pero se VE, o un descarte invisible se lee como que nunca existio.
+  var exc=j.excluidos_por_curaduria||{};
+  var nExc=(exc.regalos||[]).length+(exc.apagados||[]).length;
+  if(nExc){
+    h+='<div style="font-size:11.5px;color:var(--cx-text-faint);padding:2px 3px">'
+      + 'Fuera de la cuenta por decisi&oacute;n suya: '+(exc.regalos||[]).length+' regalo(s) y '
+      + (exc.apagados||[]).length+' SKU(s) apagado(s) que igual vendieron.</div>';
+  }
+  h+='<div style="font-size:11.5px;color:var(--cx-text-faint);padding:4px 3px">Ventana: &uacute;ltimos '
+    + (j.ventana_dias||90)+' d&iacute;as &middot; '+(j.resumen&&j.resumen.presentaciones_activas||0)
+    + ' presentaciones encendidas.</div>';
+  cont.innerHTML=h;
+}
+
 function empqAgrupar(){
   // producto -> {presentaciones:[], falta:bool, serigrafiar:int}
   var por={};
