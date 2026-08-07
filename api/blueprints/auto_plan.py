@@ -12134,9 +12134,32 @@ def sku_mee_config_crear():
 def sku_mee_config_modificar(mid):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
+
+    def _snap_smc():
+        r = c.execute("SELECT sku_codigo, mee_codigo, componente_tipo, cantidad_por_unidad, "
+                      "aplica FROM sku_mee_config WHERE id=?", (mid,)).fetchone()
+        if not r:
+            return None
+        return {'sku_codigo': r[0], 'mee_codigo': r[1], 'componente_tipo': r[2],
+                'cantidad_por_unidad': r[3], 'aplica': r[4]}
+
     if request.method == 'DELETE':
+        # Este era el unico de la tanda con BORRADO DURO: la fila desaparecia y no quedaba ni el
+        # rastro de que existio. Un mapeo SKU-envase decide que empaque se compra, asi que
+        # borrarlo sin autor deja una compra que nadie puede explicar (Sebastian 7-ago).
+        from config import puede_archivar as _puede_arch
+        if not _puede_arch(user):
+            return jsonify({'error': 'Los operarios no eliminan mapeos de envase',
+                            'detalle': 'Pediselo a compras o a un administrador.'}), 403
+        antes = _snap_smc()
+        if antes is None:
+            return jsonify({'error': 'No existe'}), 404
         c.execute("DELETE FROM sku_mee_config WHERE id=?", (mid,))
+        audit_log(c, usuario=user, accion='ELIMINAR_SKU_MEE_CONFIG', tabla='sku_mee_config',
+                  registro_id=str(mid), antes=antes,
+                  detalle='Mapeo %s -> %s eliminado' % (antes['sku_codigo'], antes['mee_codigo']))
         conn.commit()
         return jsonify({'ok': True, 'eliminado': mid})
     d = request.json or {}
@@ -12149,8 +12172,15 @@ def sku_mee_config_modificar(mid):
             sets.append(f"{f} = ?"); params.append(conv(d[f]))
     if not sets:
         return jsonify({'ok': True, 'mensaje': 'Sin cambios'})
+    antes = _snap_smc()
+    if antes is None:
+        return jsonify({'error': 'No existe'}), 404
     params.append(mid)
     c.execute(f"UPDATE sku_mee_config SET {', '.join(sets)} WHERE id = ?", params)
+    audit_log(c, usuario=user, accion='EDITAR_SKU_MEE_CONFIG', tabla='sku_mee_config',
+              registro_id=str(mid), antes=antes,
+              despues={k: d[k] for k in d if k in antes},
+              detalle='Mapeo %s -> %s editado' % (antes['sku_codigo'], antes['mee_codigo']))
     conn.commit()
     return jsonify({'ok': True, 'id': mid})
 

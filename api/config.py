@@ -65,6 +65,30 @@ ASEGURAMIENTO_USERS = {
 # usuario ni su historial: GMP/Part 11 conservan quién hizo qué (sus firmas y registros siguen).
 PLANTA_USERS    = {"smurillo", "sergio", "mayerlin", "camilo", "jose", "milton"}
 
+
+def puede_archivar(usuario):
+    """¿Este usuario puede ELIMINAR o ARCHIVAR un registro maestro?
+
+    Sebastián 7-ago-2026: *"los operarios pueden modificar un inventario, ingresar un producto,
+    pero no eliminar ni archivar, y los cambios quedan con el usuario que lo modifica"*.
+
+    Se escribe por EXCLUSIÓN (todos menos los operarios de planta) y NO con una lista de
+    permitidos por endpoint. Una lista de permitidos escrita a mano siempre deja afuera a alguien
+    que nadie se acordó de incluir, y eso no se descubre revisando código: se descubre con la
+    persona trabada en pleno turno (M32/M121). Por exclusión, agregar un rol nuevo mañana no
+    rompe nada, y el único conjunto que hay que mantener al día es el que ya existe.
+
+    ⚠ Vale para el MAESTRO (archivar un envase, borrar una presentación, dar de baja un equipo),
+    no para el trabajo del día: el operario sigue registrando producción, recepción, consumo y
+    conteo, y sigue pudiendo CORREGIR lo que carga. Lo que no puede es hacer desaparecer una
+    ficha, que es lo irreversible desde su silla.
+    """
+    u = (usuario or '').strip()
+    if not u:
+        return False          # sin sesión no se decide acá · el 401 lo da el endpoint
+    return u not in PLANTA_USERS
+
+
 DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
 
 # URL pública canónica de la app. Se usa para construir links absolutos

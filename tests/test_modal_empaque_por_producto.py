@@ -17,6 +17,14 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(RAIZ, 'api'))
 
 
+def _fin_de_funcion(js, i):
+    """Dónde termina la función que empieza en `i`: la próxima declaración de nivel superior,
+    `function` o `async function`. Devuelve -1 si es la última."""
+    import re as _re
+    m = _re.compile(chr(10) + r'(?:async )?function ').search(js, i + 10)
+    return m.start() if m else -1
+
+
 def _pagina():
     """El valor FINAL, no el literal del fuente: el JS se extrae a los bundles al importar el
     módulo, así que buscarlo en `DASHBOARD_HTML` da CERO con el código correcto (M158)."""
@@ -188,7 +196,10 @@ def test_se_puede_dejar_SOLO_UNA_presentacion_del_mismo_tamano(app):
     # ⚠ Ventana amplia y anclada al FIN de la función: una fija se queda corta en cuanto el
     # bloque crece, y el rojo es del test, no del código (me pasó al agregar el SKU · M154).
     _i = js.find('function empqTarjeta')
-    _j = js.find(chr(10) + 'function ', _i + 10)
+    # ⚠ Corta en la próxima función sea `function` o `async function`: buscando sólo la primera
+    # forma la ventana se pasa de largo y mide la función de al lado · probado, un guard así pasó
+    # VERDE con el bug puesto (M151/M165).
+    _j = _fin_de_funcion(js, _i)
     t = js[_i:_j if _j > _i else _i + 12000]
     assert '_esDup' in t, 'no detecta las filas duplicadas'
     assert 'dejar s' in t, 'no ofrece el botón'
@@ -246,10 +257,77 @@ def test_cada_fila_muestra_SU_sku_de_shopify(app):
     import templates_py.dashboard_html as D
     js = D.DASHBOARD_APP_JS
     _i = js.find('function empqTarjeta')
-    _j = js.find(chr(10) + 'function ', _i + 10)
+    # ⚠ Corta en la próxima función sea `function` o `async function`: buscando sólo la primera
+    # forma la ventana se pasa de largo y mide la función de al lado · probado, un guard así pasó
+    # VERDE con el bug puesto (M151/M165).
+    _j = _fin_de_funcion(js, _i)
     t = js[_i:_j if _j > _i else _i + 12000]
     assert 'x.sku_propio' in t, 'la pantalla no usa el SKU propio'
     assert '_skuCell' in t and "vcell+_skuCell" in t, 'lo calcula y no lo pinta'
     assert 'sin SKU' in t, (
         'no distingue la presentación que NO existe en Shopify · ésa es justo la que no se '
         'puede rastrear')
+
+
+def test_la_fila_muestra_SU_venta_no_la_del_tamano(app):
+    """Sebastián, mirando el modal: *"todos estos los vendemos y dicen que sin SKU, pero veo que
+    jala la venta"*.
+
+    Tenía razón en que se contradecía. El número grande NO era de la fila: era la venta de TODOS
+    los SKU de ese tamaño, así que las once presentaciones de 10 ml de LIP SERUM mostraban el
+    mismo 2.849 mientras cada una decía "sin SKU". Las dos cosas ciertas y de sujetos distintos,
+    que es la peor forma de mostrar un dato.
+
+    Y el daño no era sólo la confusión: mostrando el total del tamaño en todas las filas se
+    escondía **justo lo que sirve para decidir cuál duplicada apagar**, que es cuánto vende cada
+    una (M5: el número mostrado tiene que ser el que decide · M161: dos números del mismo hecho
+    que no coinciden hacen que se deje de creer en los dos).
+    """
+    import io as _io
+    import os as _os
+    import sys as _sys
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    _sys.path.insert(0, _os.path.join(raiz, 'api'))
+
+    # el endpoint manda la venta PROPIA de la fila
+    s = _io.open(_os.path.join(raiz, 'api', 'blueprints', 'programacion.py'),
+                 encoding='utf-8').read()
+    i = s.find("@bp.route('/api/abastecimiento/envases-cobertura'")
+    j = s.find('\n@bp.route', i + 10)
+    b = s[i:j]
+    assert "'uds_propias'" in b, 'el endpoint no manda la venta propia de cada fila'
+    assert 'def _uds_propias' in b, 'no la calcula'
+    # y no la inventa en cero cuando no se puede saber (M100)
+    # ⚠ La ventana se corta en el FIN de la función (el próximo `def` al mismo nivel), no en un
+    # número fijo de caracteres: el docstring explica el caso real y ya se comió una ventana de
+    # 900 · un guard anclado corto da rojo con el código correcto (M165).
+    _cuerpo = b.split('def _uds_propias')[1]
+    _fin = _cuerpo.find('\n        def ')
+    _cuerpo = _cuerpo[:_fin] if _fin > 0 else _cuerpo[:3000]
+    assert 'return None' in _cuerpo, \
+        'devuelve un cero cuando no hay SKU propio · se leería como "esta no vende"'
+
+    import templates_py.dashboard_html as D
+    js = D.DASHBOARD_APP_JS
+    _i = js.find('function empqTarjeta')
+    # ⚠ Corta en la próxima función sea `function` o `async function`: buscando sólo la primera
+    # forma la ventana se pasa de largo y mide la función de al lado · probado, un guard así pasó
+    # VERDE con el bug puesto (M151/M165).
+    _j = _fin_de_funcion(js, _i)
+    t = js[_i:_j if _j > _i else _i + 14000]
+    # ⚠ Se fija la CONDICIÓN de la rama, no que el nombre aparezca: mi primera versión sólo
+    # buscaba `x.uds_propias` y pasaba VERDE con la rama neutralizada a `if(false)`, porque el
+    # nombre seguía escrito en el código muerto (M155: contar menciones no mide comportamiento).
+    _sinesp = t.replace(' ', '')
+    assert 'if(x.uds_propias!==null&&x.uds_propias!==undefined){' in _sinesp, \
+        'la venta propia ya no manda · la fila vuelve a pintar el total del tamaño como si fuera suyo'
+    # el total del tamaño se sigue viendo, pero DICIENDO que es del tamaño
+    assert 'entre las ' in t, 'el total del tamaño no dice que es del tamaño'
+    # y sin SKU propio no se afirma un número ajeno
+    # ⚠ Se ancla al CIERRE de la etiqueta, no al texto suelto: el mismo texto está en el tooltip
+    # de la celda del SKU tres líneas más arriba, así que buscarlo suelto lo satisface mi propio
+    # comentario y el guard pasa verde con la rama borrada (M154, tercera vez el mismo día).
+    assert '>no se puede saber</span>' in t, ('sin SKU propio hay que decir que no se puede saber, '
+                                              'no mostrar la venta de las otras')
+    assert 'sin SKU<' not in t and '>sin SKU' not in t, \
+        'sigue diciendo "sin SKU" al lado de una venta · era justo lo que se contradecía'

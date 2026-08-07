@@ -10384,7 +10384,14 @@ async function meeArchivar(codigo){
   if(!confirm('¿Archivar (eliminar de la lista) "'+codigo+'"? Los movimientos históricos se conservan.')) return;
   try {
     var r = await fetch('/api/mee/'+encodeURIComponent(codigo), {method:'DELETE'});
-    if(!r.ok){ alert('Error'); return; }
+    if(!r.ok){
+      // El motivo es parte del control: archivar un maestro no lo hace un operario, y un
+      // "Error" a secas hace que un bloqueo LEGITIMO se viva como si la app estuviera rota
+      // (M109). Se muestra lo que el servidor explica, no un generico.
+      var _j={}; try{ _j=await r.json(); }catch(e){}
+      alert((_j.error||('Error '+r.status))+(_j.detalle? ' · '+_j.detalle : ''));
+      return;
+    }
     _toast(codigo+' archivado', 1);
     cargarMeeStock();
   } catch(e){ alert('Error: '+e.message); }
@@ -21362,9 +21369,9 @@ function empqTarjeta(g){
     var _skuCell = x.sku_propio
       ? '<div style="font-size:10px;color:var(--cx-text-mute);font-family:ui-monospace,monospace">'
         + empqEsc(x.sku_propio) + '</div>'
-      : '<div style="font-size:10px;color:var(--cx-danger-text);font-weight:700" '
-        + 'title="Esta presentacion no esta ligada a ningun SKU de Shopify: no se puede rastrear '
-        + 'contra lo que se vende">sin SKU</div>';
+      : '<div style="font-size:10px;color:var(--cx-warn-text);font-weight:700" '
+        + 'title="El producto SI vende: lo que falta es decir CUAL de sus SKU de Shopify es esta '
+        + 'fila. Sin eso no se puede saber cuanto vende ella sola.">SKU sin asignar</div>';
     var _dupBtn = _esDup
       ? '<div><button onclick="empqDejarUna(' + x.id + ',' + JSON.stringify(String(x.volumen_ml||'')) + ')" '
         + 'title="Apagar las otras presentaciones de este mismo tama&ntilde;o" '
@@ -21378,14 +21385,31 @@ function empqTarjeta(g){
     }).join(' &middot; ');
     // Las ventas son la EVIDENCIA de que la presentacion existe: con dos filas del mismo tamano
     // y el mismo frasco, la que vende es la real y la otra dobla la demanda del envase.
+    // Sebastian, mirando la pantalla: *"todos estos los vendemos y dicen que sin SKU, pero veo
+    // que jala la venta"*. Tenia razon en que se contradecia: el numero grande NO era de la fila,
+    // era la venta de TODOS los SKU de ese tamano, asi que las once filas de 10 ml mostraban el
+    // mismo 2.849 mientras cada una decia "sin SKU". Las dos cosas ciertas, de sujetos distintos.
+    // Ahora manda la venta PROPIA (que es la que decide cual duplicada apagar) y el total del
+    // tamano se muestra abajo DICIENDO que es del tamano (M5/M124/M161).
     var vcell;
-    if(x.ventas_180d===null || x.ventas_180d===undefined){
+    var _tot = (x.ventas_180d===null || x.ventas_180d===undefined) ? null : Number(x.ventas_180d);
+    var _ml  = (x.volumen_ml||'') + ' ml';
+    var _totLinea = (_tot===null) ? ''
+      : '<div style="font-size:10px;color:var(--cx-text-mute)">' + _tot.toLocaleString('es-CO')
+        + ' entre las ' + empqEsc(_ml) + '</div>';
+    if(x.uds_propias!==null && x.uds_propias!==undefined){
+      // La fila tiene su SKU: se muestra LO QUE ELLA VENDE.
+      vcell = (x.uds_propias>0
+          ? '<b style="color:var(--cx-success-text)">'+Number(x.uds_propias).toLocaleString('es-CO')+'</b>'
+          : '<span style="color:var(--cx-warn-text);font-weight:700" title="Este SKU no vendio en 180 dias: puede ser una duplicada, o una variante nueva que todavia no vende">0</span>')
+        + _totLinea;
+    }else if(_tot===null){
       vcell='<span style="color:var(--cx-text-faint)" title="No se pudo medir">sin medir</span>';
-    }else if(x.ventas_180d>0){
-      vcell='<b style="color:var(--cx-success-text)">'+Number(x.ventas_180d).toLocaleString('es-CO')+'</b>'
-        + (x.skus&&x.skus.length ? '<div style="font-size:10px;color:var(--cx-text-mute)">'+empqEsc(x.skus.join(' ')) +'</div>' : '');
     }else{
-      vcell='<span style="color:var(--cx-warn-text);font-weight:700" title="No vendio nada en 180 dias: puede ser un duplicado, o un producto nuevo que todavia no vende">0</span>';
+      // Sin SKU propio no se puede decir cuanto vende ELLA · se dice eso, no un numero ajeno.
+      vcell='<span style="color:var(--cx-text-faint)" title="El producto vende, pero esta fila no '
+        + 'tiene SKU asignado: no se puede saber cuanto vende ella sola">no se puede saber</span>'
+        + _totLinea;
     }
     h+='<tr style="border-top:1px solid var(--cx-border-soft)'+(off?';opacity:.45':'')+'">'
       + '<td style="padding:6px 7px"><input type="checkbox" '+(off?'':'checked')

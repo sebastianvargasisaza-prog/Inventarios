@@ -15256,6 +15256,11 @@ def mp_bridge_delete(bridge_id):
     _u = session.get('compras_user', '')
     if not _u:
         return jsonify({'error': 'No autorizado'}), 401
+    # Quitar un puente cambia DE QUE CODIGO sale el material al producir · no lo hace un operario.
+    from config import puede_archivar as _puede_arch
+    if not _puede_arch(_u):
+        return jsonify({'error': 'Los operarios no desactivan puentes de material',
+                        'detalle': 'Pediselo a compras o a un administrador.'}), 403
     conn = get_db(); c = conn.cursor()
     r = c.execute("SELECT formula_material_id, bodega_material_id, COALESCE(activo,1), "
                   "COALESCE(notas,'') FROM mp_formula_bridge WHERE id=?", (bridge_id,)).fetchone()
@@ -17416,6 +17421,7 @@ def abastecimiento_envases_cobertura():
         # una consulta nueva: el número que se muestra tiene que ser el que DECIDE (M5/M58).
         _ventas_pv = {}     # (producto_norm, volumen_int) -> uds vendidas 180d
         _skus_pv = {}       # (producto_norm, volumen_int) -> [sku, ...]
+        _vsku = None        # {sku: uds} · la venta PROPIA de cada fila (Sebastián 7-ago)
         try:
             _vsku = _ventas_sku_180d(c)
             for _sk, _pn_m, _vml in c.execute(
@@ -17450,6 +17456,24 @@ def abastecimiento_envases_cobertura():
             # una duplicada de dos variantes elegidas a mano (M115: el dato existe y no llega).
             "       COALESCE(sku_shopify,'') "
             "  FROM producto_presentaciones").fetchall()
+
+        def _uds_propias(sku):
+            """Lo que vendió ESTA fila, no el tamaño entero (Sebastián 7-ago, mirando la
+            pantalla: *"todos estos los vendemos y dicen que sin SKU, pero veo que jala la
+            venta"*).
+
+            Tenía razón en que se contradecía: el número grande es la venta de TODOS los SKU de
+            ese tamaño, así que las once filas de 10 ml mostraban el mismo 2.849 mientras cada
+            una decía "sin SKU". Las dos cosas eran ciertas y hablaban de sujetos distintos, que
+            es la peor forma de mostrar un dato -- y de paso escondía justo lo que sirve para
+            decidir cuál duplicada apagar: cuánto vende CADA una (M5/M161).
+
+            Devuelve None cuando la fila no tiene SKU propio o cuando no se pudo medir: un cero
+            inventado ahí se leería como "esta no vende" (M100).
+            """
+            if _vsku is None or not sku:
+                return None
+            return _vsku.get(str(sku).strip().upper(), 0)
         for (_pn, _env, _vol, _tap, _caj, _pid, _act, _pcod, _stap, _scaj,
              _sku_propio) in _filas:
             _ek = (_env or '').strip().upper()
@@ -17495,6 +17519,9 @@ def abastecimiento_envases_cobertura():
                 # Su SKU, no el del grupo: es lo que dice si esta fila existe en Shopify o es
                 # una duplicada que nadie puede rastrear.
                 'sku_propio': (_sku_propio or '').strip(),
+                # Y lo que vendió ESA fila · sin esto, las once filas de 10 ml mostraban el
+                # mismo total del tamaño y era imposible ver cuál es la real.
+                'uds_propias': _uds_propias(_sku_propio),
                 'envase': _env, 'tapa': _tap, 'caja': _caj,
                 'sin_tapa': bool(_stap), 'sin_caja': bool(_scaj),
                 'piezas': _pz,
@@ -24011,10 +24038,37 @@ def planta_presentaciones_crear():
 def planta_presentaciones_detail(pid):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
+
+    def _snap():
+        """Foto de la fila ANTES de tocarla · sin el estado previo, el rastro no sirve para
+        deshacer ni para entender qué cambió (es lo que pide `audit_log.antes`)."""
+        r = c.execute("SELECT producto_nombre, presentacion_codigo, etiqueta, volumen_ml, "
+                      "envase_codigo, tapa_codigo, caja_codigo, sku_shopify, activo "
+                      "FROM producto_presentaciones WHERE id=?", (pid,)).fetchone()
+        if not r:
+            return None
+        return {'producto_nombre': r[0], 'presentacion_codigo': r[1], 'etiqueta': r[2],
+                'volumen_ml': r[3], 'envase_codigo': r[4], 'tapa_codigo': r[5],
+                'caja_codigo': r[6], 'sku_shopify': r[7], 'activo': r[8]}
+
     if request.method == 'DELETE':
+        # Sebastián 7-ago: el operario modifica y carga, pero no archiva.
+        from config import puede_archivar as _puede_arch
+        if not _puede_arch(user):
+            return jsonify({'error': 'Los operarios no archivan presentaciones',
+                            'detalle': 'Pedíselo a compras o a un administrador.'}), 403
+        antes = _snap()
+        if antes is None:
+            return jsonify({'error': 'No encontrada'}), 404
         # Soft delete (activo=0). No borramos para preservar referencias historicas.
         c.execute("UPDATE producto_presentaciones SET activo=0, actualizado_en=datetime('now', '-5 hours') WHERE id=?", (pid,))
+        audit_log(c, usuario=user, accion='ARCHIVAR_PRESENTACION',
+                  tabla='producto_presentaciones', registro_id=str(pid),
+                  antes=antes, despues={'activo': 0},
+                  detalle='Presentacion %s de %s archivada' % (antes['presentacion_codigo'],
+                                                               antes['producto_nombre']))
         conn.commit()
         return jsonify({'ok': True})
     # PUT
@@ -24036,9 +24090,21 @@ def planta_presentaciones_detail(pid):
             params.append(v)
     if not campos:
         return jsonify({'error': 'Sin cambios'}), 400
+    antes = _snap()
+    if antes is None:
+        return jsonify({'error': 'No encontrada'}), 404
     campos.append("actualizado_en = datetime('now', '-5 hours')")
     params.append(pid)
     c.execute(f"UPDATE producto_presentaciones SET {', '.join(campos)} WHERE id=?", params)
+    # *"los cambios quedan con el usuario que lo modifica"* (Sebastián 7-ago). Modificar sí lo
+    # puede hacer el operario · lo que no puede es quedar anónimo: esta tabla decide qué envase se
+    # compra y cuál se descuenta, así que un cambio sin autor es un número que nadie puede
+    # explicar después.
+    audit_log(c, usuario=user, accion='EDITAR_PRESENTACION',
+              tabla='producto_presentaciones', registro_id=str(pid),
+              antes=antes, despues={k: d[k] for k in d if k in antes},
+              detalle='Presentacion %s de %s editada' % (antes['presentacion_codigo'],
+                                                         antes['producto_nombre']))
     conn.commit()
     return jsonify({'ok': True, 'updated': c.rowcount})
 
@@ -24162,6 +24228,7 @@ def planta_equipos_list():
 def planta_equipos_detail(eq_id):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
     if request.method == 'GET':
         r = c.execute("SELECT * FROM equipos_planta WHERE id=?", (eq_id,)).fetchone()
@@ -24169,8 +24236,30 @@ def planta_equipos_detail(eq_id):
             return jsonify({'error': 'No existe'}), 404
         cols = [d[0] for d in c.description]
         return jsonify({'equipo': dict(zip(cols, r))})
+
+    def _snap_eq():
+        r = c.execute("SELECT codigo, nombre, area_codigo, tipo, estado_operacional, activo "
+                      "FROM equipos_planta WHERE id=?", (eq_id,)).fetchone()
+        if not r:
+            return None
+        return {'codigo': r[0], 'nombre': r[1], 'area_codigo': r[2], 'tipo': r[3],
+                'estado_operacional': r[4], 'activo': r[5]}
+
     if request.method == 'DELETE':
+        # Dar de baja un equipo es un acto REGULADO: de ahi cuelgan su calificacion IQ/OQ/PQ, su
+        # bitacora de calibracion y los lotes que se fabricaron con el. No lo hace un operario, y
+        # nunca puede quedar sin autor (Sebastian 7-ago).
+        from config import puede_archivar as _puede_arch
+        if not _puede_arch(user):
+            return jsonify({'error': 'Los operarios no dan de baja equipos',
+                            'detalle': 'Pediselo a aseguramiento o a un administrador.'}), 403
+        antes = _snap_eq()
+        if antes is None:
+            return jsonify({'error': 'No existe'}), 404
         c.execute("UPDATE equipos_planta SET activo=0, actualizado_en=datetime('now', '-5 hours') WHERE id=?", (eq_id,))
+        audit_log(c, usuario=user, accion='DAR_BAJA_EQUIPO', tabla='equipos_planta',
+                  registro_id=str(eq_id), antes=antes, despues={'activo': 0},
+                  detalle='Equipo %s (%s) dado de baja' % (antes['codigo'], antes['nombre']))
         conn.commit()
         return jsonify({'ok': True})
     # PUT
@@ -24190,9 +24279,16 @@ def planta_equipos_detail(eq_id):
             params.append(v)
     if not campos:
         return jsonify({'error': 'Sin cambios'}), 400
+    antes = _snap_eq()
+    if antes is None:
+        return jsonify({'error': 'No existe'}), 404
     campos.append("actualizado_en = datetime('now', '-5 hours')")
     params.append(eq_id)
     c.execute(f"UPDATE equipos_planta SET {', '.join(campos)} WHERE id=?", params)
+    audit_log(c, usuario=user, accion='EDITAR_EQUIPO', tabla='equipos_planta',
+              registro_id=str(eq_id), antes=antes,
+              despues={k: d[k] for k in d if k in antes},
+              detalle='Equipo %s (%s) editado' % (antes['codigo'], antes['nombre']))
     conn.commit()
     return jsonify({'ok': True})
 

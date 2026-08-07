@@ -16976,6 +16976,15 @@ def mee_item_detalle(codigo):
     user = session.get('compras_user','')
     conn = get_db(); c = conn.cursor()
     if request.method == 'DELETE':
+        # Archivar un envase del maestro NO es trabajo de operario (Sebastián 7-ago).
+        # ⚠ Esta ruta está declarada DOS veces (acá y en compras.py) y gana ésta, así que el gate
+        # de rol que la de compras sí tenía nunca corría: cualquier usuario con login podía
+        # archivar una ficha del maestro. Un gate que existe y no se ejecuta es peor que no
+        # tenerlo, porque se lee como protegido (M97).
+        from config import puede_archivar as _puede_arch
+        if not _puede_arch(user):
+            return jsonify({'error': 'Los operarios no archivan fichas del maestro',
+                            'detalle': 'Pedíselo a compras o a un administrador.'}), 403
         # P1 audit 26-may · audit_log archivado (soft delete) · MEE master
         # snapshot antes del UPDATE
         _snap_row = c.execute(

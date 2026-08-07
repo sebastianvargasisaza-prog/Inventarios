@@ -9216,6 +9216,10 @@ def consumible_editar(cid):
     conn = get_db(); c = conn.cursor()
     user = session.get('compras_user', '')
     if request.method == 'DELETE':
+        from config import puede_archivar as _puede_arch
+        if not _puede_arch(user):
+            return jsonify({'error': 'Los operarios no dan de baja consumibles del catalogo',
+                            'detalle': 'Pediselo a compras o a un administrador.'}), 403
         c.execute("UPDATE maestro_consumibles SET activo=0 WHERE id=?", (cid,))
         audit_log(c, usuario=user, accion='DESACTIVAR_CONSUMIBLE', tabla='maestro_consumibles', registro_id=str(cid))
         conn.commit()
