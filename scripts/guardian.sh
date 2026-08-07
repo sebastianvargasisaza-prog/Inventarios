@@ -77,6 +77,7 @@ CORAZON=(
   "tests/test_union_producto_envase.py"
   "tests/test_modal_empaque_por_producto.py"
   "tests/test_presentaciones_vs_shopify.py"
+  "tests/test_memo_geometria_envase.py"
   "tests/test_kit_visible_en_inventario.py"
   "tests/test_doble_descuento_envase.py"
   "tests/test_serigrafiado_se_consume.py"

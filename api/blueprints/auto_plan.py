@@ -12884,6 +12884,42 @@ def _producciones_futuras_kg(c, producto):
 
 
 def _factor_g_por_unidad_detalle(c, producto):
+    """Memo POR REQUEST de la geometría del envase (PERF 7-ago · sonda local).
+
+    Resolver el volumen de un producto cuesta hasta 3 consultas y se llama **una vez por SKU**:
+    medido, `/api/plan/necesidades` lo llamaba 47 veces para 22 productos (BLUSH BALM 9 veces, una
+    por tono) y `/api/plan/dashboard` 94 veces para los mismos 22, porque recorre la lista dos
+    veces con ventanas de venta distintas. Sobre PostgreSQL cada consulta es un viaje de red, así
+    que eso es latencia pura en la pantalla que más se abre.
+
+    ⚠ El memo es por REQUEST (`flask.g`), NUNCA de módulo: una presentación que el usuario acaba
+    de editar tiene que verse en la carga siguiente (M9). Dentro de un mismo request la BD no
+    cambia, así que el resultado es idéntico -- un atajo que puede cambiar la respuesta no es un
+    atajo (M128). Fuera de un request (crons) no hay memo y el comportamiento es el de siempre.
+    """
+    _k = (producto or '').strip().upper()
+    _memo = None
+    try:
+        from flask import g as _g
+        _memo = getattr(_g, '_factor_gpu_memo', None)
+        if _memo is None:
+            _memo = {}
+            _g._factor_gpu_memo = _memo
+        if _k in _memo:
+            _f, _fu, _de, _pr = _memo[_k]
+            # `pres` es un dict y aguas abajo hay quien lo muta · se devuelve COPIA, igual que
+            # `_ventas_maps_shopify` (compartir la referencia del cache es un bug esperando).
+            return (_f, _fu, _de, dict(_pr) if isinstance(_pr, dict) else _pr)
+    except Exception:
+        _memo = None
+    _res = _factor_g_por_unidad_detalle_impl(c, producto)
+    if _memo is not None:
+        _memo[_k] = _res
+    _f, _fu, _de, _pr = _res
+    return (_f, _fu, _de, dict(_pr) if isinstance(_pr, dict) else _pr)
+
+
+def _factor_g_por_unidad_detalle_impl(c, producto):
     """Igual que _factor_g_por_unidad pero devuelve (factor, fuente, detalle, pres).
 
     fuente ∈ {'presentacion','categoria','nombre','default'} → para auditar de DÓNDE
@@ -12961,6 +12997,32 @@ def _factor_g_por_unidad(c, producto):
 
 
 def _volumen_sku(c, sku, producto):
+    """Memo POR REQUEST · mismas reglas que el de arriba (PERF 7-ago).
+
+    Acá el ahorro es menor y hay que decirlo: medido, en `/necesidades` las 47 llamadas traen 47
+    SKUs DISTINTOS, así que el memo no ahorra nada. Donde sí ahorra es en `/plan/dashboard`, que
+    recorre la lista dos veces (ventana de 60 y de 14 días) y por eso pide dos veces la geometría
+    del MISMO SKU: 94 llamadas para 47 claves. La geometría del envase no depende de la ventana.
+    """
+    _k = ((sku or '').strip().upper(), (producto or '').strip().upper())
+    _memo = None
+    try:
+        from flask import g as _g
+        _memo = getattr(_g, '_vol_sku_memo', None)
+        if _memo is None:
+            _memo = {}
+            _g._vol_sku_memo = _memo
+        if _k in _memo:
+            return _memo[_k]
+    except Exception:
+        _memo = None
+    _res = _volumen_sku_impl(c, sku, producto)
+    if _memo is not None:
+        _memo[_k] = _res
+    return _res
+
+
+def _volumen_sku_impl(c, sku, producto):
     """Volumen (ml por unidad) de UN SKU/tamaño. Orden: 1) sku_producto_map.volumen_ml
     (lo que carga el usuario por tamaño), 2) producto_presentaciones por sku_shopify,
     3) fallback por producto (_factor_g_por_unidad_detalle). Devuelve (vol, fuente)."""
