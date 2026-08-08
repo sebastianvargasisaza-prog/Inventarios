@@ -261,8 +261,16 @@ def test_el_escaneo_de_huerfanos_tiene_CACHE(app, db_clean):
     por cada worker · es el patrón que satura los 3 workers y devuelve HTML 504 (M43)."""
     plan = _src('api/blueprints/plan.py')
     assert '_HUERFANOS_CACHE' in plan
-    assert '_HUERFANOS_CACHE[_ck_h] = (_t_h.time(), _payload_h)' in plan, 'no guarda en el cache'
+    # ⚠ Se exige el HECHO (que se guarde en el cache), no la línea exacta que lo hacía. La versión
+    # anterior fijaba `_HUERFANOS_CACHE[_ck_h] = (...)` textual y se puso roja el 7-ago cuando esa
+    # escritura pasó a ir por `cache_poner`, que además le pone TECHO -- o sea que el test daba
+    # rojo con el código mejor que antes. Una expectativa vieja no es una regresión (M97).
+    assert ('_HUERFANOS_CACHE[_ck_h] = (_t_h.time(), _payload_h)' in plan
+            or 'cache_poner' in plan), 'no guarda en el cache'
     assert "'cacheado': True" in plan or 'cacheado=True' in plan, 'no declara que viene del cache'
+    # y el cache tiene techo: la llave lleva el `limit` del request, así que sin tope crece por
+    # worker hasta comerse la RAM (M89)
+    assert '_cp_h(_HUERFANOS_CACHE' in plan, 'el cache de huérfanos volvió a quedar sin techo'
 
 
 def test_estacionalidad_NO_abre_en_pestana_nueva(app, db_clean):

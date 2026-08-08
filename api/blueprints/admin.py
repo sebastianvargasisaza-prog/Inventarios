@@ -36141,3 +36141,94 @@ async function aplicarBulk(items, motivo){
 cargar();
 </script>
 </body></html>"""
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# MATRIZ DE PERMISOS · qué puede hacer cada usuario (Sebastián 7-ago-2026)
+# ══════════════════════════════════════════════════════════════════════════════════
+@bp.route('/api/admin/matriz-permisos', methods=['GET'])
+def admin_matriz_permisos():
+    """La matriz se GENERA leyendo el código, no se mantiene a mano.
+
+    Una matriz de permisos escrita a mano queda vieja el día que alguien agrega un endpoint, y a
+    partir de ahí miente con cara de documento (M122). Ésta se calcula en el momento en que se
+    pide, así que no puede desactualizarse: si mañana entra una ruta sin gate, aparece sola.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        import permisos_matriz as _pm
+        return jsonify(_pm.construir())
+    except Exception as e:
+        log.warning('matriz de permisos: %s', e)
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+
+
+@bp.route('/admin/permisos', methods=['GET'])
+def admin_permisos_pagina():
+    """Pantalla de la matriz · una tabla por persona y la lista de lo que quedó sin gate."""
+    u, err, code = _require_admin()
+    if err:
+        return Response('<h1>403</h1>', status=403, mimetype='text/html')
+    return Response("""<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Permisos por usuario</title><link rel="stylesheet" href="/static/cortex.css">
+<style>
+ body{background:var(--cx-bg);color:var(--cx-text);font-family:Inter,system-ui,sans-serif;margin:0}
+ .wrap{max-width:96vw;margin:0 auto;padding:22px}
+ .hero{background:var(--cx-primary-grad);color:#fff;border-radius:14px;padding:18px 22px;margin-bottom:16px}
+ .hero h1{margin:0;font-size:19px;font-weight:800}
+ .hero p{margin:5px 0 0;font-size:12.5px;opacity:.92}
+ .card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:15px 17px;margin-bottom:14px}
+ table{width:100%;border-collapse:collapse;font-size:12.5px}
+ th{text-align:left;padding:7px 9px;color:var(--cx-text-soft);font-weight:700;border-bottom:1px solid var(--cx-border)}
+ td{padding:6px 9px;border-top:1px solid var(--cx-border-soft);vertical-align:top}
+ .n{font-variant-numeric:tabular-nums;text-align:right}
+ .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+ .ok{background:var(--cx-success-pale);color:var(--cx-success-text)}
+ .warn{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
+ .dang{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
+ .mods{color:var(--cx-text-mute);font-size:11.5px;line-height:1.7}
+</style></head><body><div class="wrap">
+<div class="hero"><h1>&#128273; Qu&eacute; puede hacer cada usuario</h1>
+<p>Se genera leyendo el c&oacute;digo cada vez que abr&iacute;s esta p&aacute;gina: no puede quedar vieja. Lo que no se pudo resolver se dice, no se supone.</p></div>
+<div id="cuerpo" class="card">Cargando&hellip;</div>
+</div><script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+(async function(){
+  var cont=document.getElementById('cuerpo');
+  var j;
+  try{ var r=await fetch('/api/admin/matriz-permisos',{credentials:'same-origin'}); j=await r.json(); }
+  catch(e){ cont.innerHTML='<div class="chip dang">No pude leer la matriz: '+esc(e)+'</div>'; return; }
+  if(!j.ok){ cont.innerHTML='<div class="chip dang">'+esc(j.error||'error')+'</div>'; return; }
+  var h='<div style="font-size:12.5px;color:var(--cx-text-soft);margin-bottom:12px">'
+    + j.total_rutas + ' rutas analizadas.</div>';
+  h+='<table><thead><tr><th>Usuario</th><th class="n">Puede escribir en</th><th>M&oacute;dulos que toca</th></tr></thead><tbody>';
+  var us=Object.keys(j.por_usuario).sort(function(a,b){return j.por_usuario[b].total_escribe-j.por_usuario[a].total_escribe;});
+  us.forEach(function(u){
+    var v=j.por_usuario[u];
+    var mods=Object.keys(v.modulos).map(function(m){
+      var x=v.modulos[m];
+      return esc(m)+' <span style="opacity:.65">('+x.escribe+'&#9998;/'+x.lee+'&#128065;)</span>';
+    }).join(' &middot; ');
+    h+='<tr><td><b>'+esc(u)+'</b>'
+      + (v.cuenta_activa===false?' <span class="chip warn">cuenta desactivada</span>':'')
+      + '</td><td class="n"><b>'+v.total_escribe+'</b></td><td class="mods">'+mods+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  var sg=j.sin_gate_reconocido||[];
+  h+='<div style="margin-top:18px"><b style="font-size:13px">Rutas sin gate propio y fuera de /api/ ('+sg.length+')</b>'
+    + '<div style="font-size:11.5px;color:var(--cx-text-soft);margin:3px 0 8px">Todo lo que cuelga de /api/ pasa por el login global. Estas no, as&iacute; que cada una se revisa a mano: login, est&aacute;ticos y la p&aacute;gina p&uacute;blica del empleado son correctas por dise&ntilde;o.</div>';
+  if(sg.length){
+    h+='<table><thead><tr><th>M&oacute;dulo</th><th>Ruta</th><th>Qu&eacute; hace</th></tr></thead><tbody>';
+    sg.forEach(function(x){
+      h+='<tr><td>'+esc(x.modulo)+'</td><td><code>'+esc(x.ruta)+'</code></td><td>'
+        + (x.escribe?'<span class="chip dang">escribe</span>':'<span class="chip ok">solo lee</span>')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+  }
+  h+='</div>';
+  cont.innerHTML=h;
+})();
+</script></body></html>""", mimetype='text/html; charset=utf-8')

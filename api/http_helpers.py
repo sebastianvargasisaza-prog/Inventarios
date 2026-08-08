@@ -165,3 +165,31 @@ def validate_money(valor, *, allow_zero: bool = False, max_value: float = None,
         return None, {'error': f'{field_name}={v:.0f} excede el cap razonable ({max_value:.0f})',
                       'codigo': 'MONTO_FUERA_DE_RANGO'}
     return v, None
+
+
+def cache_poner(dic, clave, valor, tope=64):
+    """Guarda en un cache de MÓDULO poniéndole techo (Sebastián 7-ago: *"pensando en
+    escalabilidad"*).
+
+    Un cache de módulo vive por WORKER y no se limpia nunca. Mientras la llave sea fija (el año,
+    el mes) da igual; el problema es cuando la llave viene de lo que TECLEA el usuario -- una
+    fecha del request, un `limit`, una combinación de umbrales -- o cambia a diario: ahí crece sin
+    techo, y con 1 GB de RAM y 3 workers eso termina en un worker muerto por memoria, que se ve
+    como una caída sin causa. Es el P2 que M89 dejó anotado y nadie había cerrado.
+
+    Evicción FIFO simple: se saca lo más viejo. No hace falta LRU -- el objetivo no es acertar
+    más, es que la memoria tenga un techo conocido.
+
+    ⚠ El tope se elige por MEMORIA, no por gusto: `_VMAPS_CACHE` guarda cuatro mapas de todos los
+    SKUs por entrada, así que su techo es chico; uno que guarda un payload de KPIs aguanta más.
+    """
+    try:
+        if clave not in dic and len(dic) >= max(1, int(tope)):
+            # dict de Python conserva orden de inserción → el primero es el más viejo
+            for _vieja in list(dic.keys())[:max(1, len(dic) - int(tope) + 1)]:
+                dic.pop(_vieja, None)
+        dic[clave] = valor
+    except Exception:
+        # Un cache es una optimización: si falla, se sigue sin cachear, nunca se rompe el request.
+        pass
+    return valor

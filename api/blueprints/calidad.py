@@ -223,9 +223,28 @@ def calidad_indicadores():
     hoy, meses = _meses_ventanas(c, 6)
     mes_ini, mes_fin = meses[-1][1], meses[-1][2]  # mes actual
 
+    # Memo POR REQUEST del contador (PERF 7-ago · medido con la sonda local).
+    #
+    # Esta pantalla calcula cada métrica mes a mes sobre 6 meses, y varias comparten ventana: el
+    # mes EN CURSO se vuelve a contar hasta 4 veces con la MISMA consulta y los MISMOS parámetros
+    # (la serie, el valor del mes actual, la tasa y el conteo de MP liberadas lo piden por
+    # separado). Medido: 133 consultas, 40 de ellas repetidas exactas. Sobre PostgreSQL cada una
+    # es un viaje de red.
+    #
+    # ⚠ Es un memo por REQUEST: dentro de un request la BD no cambia, así que el resultado es
+    # idéntico al camino lento -- un atajo que puede contestar distinto no es un atajo (M128). Y
+    # NO puede ser de módulo: un CoA firmado hace un minuto tiene que verse en la carga siguiente,
+    # y este es un indicador regulado (M9).
+    _memo_cont = {}
+
     def cont(sql, params=()):
+        _k = (sql, tuple(params or ()))
+        if _k in _memo_cont:
+            return _memo_cont[_k]
         r = c.execute(sql, params).fetchone()
-        return (r[0] or 0) if r else 0
+        _v = (r[0] or 0) if r else 0
+        _memo_cont[_k] = _v
+        return _v
 
     # ── Tasas por ventana (para serie 6m + valor del mes actual) ──────────
     def rft_y_rechazo(ini, fin):

@@ -14519,26 +14519,53 @@ def revertir_pago_oc(numero_oc):
     if ce_row:
         ce_eliminado = ce_row[1]
         cur.execute("DELETE FROM comprobantes_pago WHERE id=?", (ce_row[0],))
-    # 3. DELETE flujo_egresos asociado · best-effort (puede no tener FK directa)
+    # 3. Reversa del egreso espejo · asiento COMPENSATORIO, no borrado (Sebastián 7-ago)
     flujo_eliminado = 0
     try:
-        # FIX 25-jul (auditoría) · `flujo_egresos` NO tiene columna `numero_oc`: el pago guarda
-        # la OC en `referencia` (ver el INSERT de pagar_oc). El DELETE viejo lanzaba
-        # OperationalError SIEMPRE y el `except` lo tragaba → al revertir un pago se borraba
-        # todo (pagos_oc, comprobante, estado de la OC) MENOS el egreso, así que el dinero
-        # seguía contado en el P&L / cash-flow y al volver a pagar bien quedaba DUPLICADO.
-        # Se borra UNA sola fila (la más reciente que coincida) para no llevarse por delante
-        # dos pagos legítimos del mismo monto a la misma OC.
-        cur.execute(
-            "DELETE FROM flujo_egresos WHERE id = ("
-            "  SELECT id FROM flujo_egresos "
-            "   WHERE referencia=? AND COALESCE(fuente,'')='compras' AND ABS(monto - ?) < 0.01 "
-            "   ORDER BY id DESC LIMIT 1)",
+        # Hasta hoy esto BORRABA la fila del libro. Dos problemas, y el segundo es el que duele:
+        #
+        #  (a) emparejaba por monto, así que con DOS pagos parciales del MISMO monto a la misma
+        #      OC, revertir el viejo se llevaba la fila del NUEVO: el total quedaba bien y el
+        #      detalle mentía;
+        #  (b) una reversa no dejaba NADA. El libro perdía una fila en vez de mostrar que hubo
+        #      un pago y su reversa, que es justo lo que alguien necesita ver para entender un
+        #      período. Un correlativo del que se pueden arrancar hojas no prueba nada (M106).
+        #
+        # ⚠ Y la razón por la que NO se agregó una columna `anulado`: hay 29 lugares que leen
+        # `flujo_egresos` (y 23 más `flujo_ingresos`). Un flag obliga a filtrarlo en los 52 y
+        # basta que uno se olvide para que la pantalla muestre plata anulada -- ésa es la trampa
+        # de la whitelist repartida (M116). El asiento compensatorio, en cambio, **cuadra solo en
+        # TODAS las vistas sin tocar una sola consulta**, que es el mismo patrón con el que el
+        # kardex anula un movimiento (M31).
+        #
+        # El asiento ESPEJA el original (misma referencia, mismo período, misma fuente) para que
+        # neteé en el mismo mes: si cayera en el mes siguiente, el mes del pago quedaría inflado
+        # para siempre y el neteo sólo cuadraría en el acumulado.
+        _orig = cur.execute(
+            "SELECT id, fecha, periodo, COALESCE(empresa,'HHA'), COALESCE(categoria,'MPs') "
+            "  FROM flujo_egresos "
+            " WHERE referencia=? AND COALESCE(fuente,'')='compras' AND ABS(monto - ?) < 0.01 "
+            "   AND monto > 0 "
+            " ORDER BY id DESC LIMIT 1",
             (numero_oc, float(monto_pago)),
-        )
-        flujo_eliminado = cur.rowcount
+        ).fetchone()
+        if _orig:
+            cur.execute(
+                "INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, periodo, "
+                "                           fuente, referencia, creado_por, observaciones) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (_orig[1], _orig[3],
+                 'Reversa de pago ' + str(numero_oc), _orig[4],
+                 -float(monto_pago), _orig[2], 'compras', numero_oc, usuario,
+                 'Reversa del egreso #%s · %s' % (_orig[0], (motivo or '')[:180])),
+            )
+            flujo_eliminado = 1
+        else:
+            # No se pudo emparejar: se DECLARA en vez de dejarlo pasar como si estuviera hecho.
+            # Un cero acá se leería como "no había egreso que revertir" (M100).
+            log.warning('revertir_pago %s · no encontré el egreso espejo de %s', numero_oc, monto_pago)
     except sqlite3.OperationalError as _e_fe:
-        log.warning('revertir_pago %s · no se pudo borrar el egreso espejo: %s', numero_oc, _e_fe)
+        log.warning('revertir_pago %s · no se pudo compensar el egreso espejo: %s', numero_oc, _e_fe)
     # 4. Recalcular estado OC según pagos restantes
     cur.execute("SELECT COALESCE(SUM(monto), 0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
     total_restante = float(cur.fetchone()[0] or 0)

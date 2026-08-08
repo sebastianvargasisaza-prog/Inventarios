@@ -4059,72 +4059,10 @@ def mkt_influencers_panel():
                     if _inf.get(_campo_sensible):
                         _inf[_campo_sensible] = '***'
 
-        # AUTO-BACKFILL: corregir filas mal-marcadas como 'Pendiente'.
-        # Reglas:
-        #   1. OC asociada en estado 'Pagada'/'Recibida'/'Parcial' (>=80% pagado)
-        #      → la fila debe estar 'Pagada' (sync con realidad).
-        #   2. OC asociada 'Rechazada'/'Cancelada' → eliminar la fila para que el
-        #      influencer no aparezca con badge naranja por solicitudes muertas.
-        #   3. Fila historica con fecha_publicacion en el pasado y SIN OC valida
-        #      → marcar 'Pagada' (es historico, ya ocurrio).
-        try:
-            # FIX 7-jul (audit ultracode · M4/Part 11): (a) acumular el rowcount de los 4 statements — antes se
-            # commiteaba solo `if c.rowcount` (el del ÚLTIMO) → si el 1º cambiaba filas pero el último 0, esos
-            # cambios se PERDÍAN al cerrar la conexión; (b) auditar (muta DINERO en un GET · antes sin rastro).
-            _tot_bf = 0
-            c.execute("""
-                UPDATE pagos_influencers
-                SET estado='Pagada'
-                WHERE estado='Pendiente'
-                  AND numero_oc IN (
-                    SELECT numero_oc FROM ordenes_compra
-                    WHERE estado IN ('Pagada','Recibida','Parcial')
-                  )
-            """)
-            _tot_bf += c.rowcount or 0
-            # Un pago cuya OC quedó rechazada/cancelada se MARCA, no se borra (mig 386).
-            # Antes esto era un DELETE y por eso la bandeja de Rechazados salía siempre en 0:
-            # Jefferson pedía, el pago no iba, y el registro desaparecía sin que nadie pudiera
-            # ver por qué. Ese rastro es el motivo por el que existe el módulo.
-            _del_ids_bf = [r[0] for r in c.execute(
-                "SELECT id FROM pagos_influencers WHERE estado='Pendiente' AND numero_oc IN "
-                "(SELECT numero_oc FROM ordenes_compra WHERE estado IN ('Rechazada','Cancelada'))").fetchall()]
-            c.execute("""
-                UPDATE pagos_influencers
-                SET estado='Rechazada',
-                    motivo_rechazo=COALESCE(NULLIF(motivo_rechazo,''),
-                                            'La orden de compra fue rechazada o cancelada')
-                WHERE estado='Pendiente'
-                  AND numero_oc IN (
-                    SELECT numero_oc FROM ordenes_compra
-                    WHERE estado IN ('Rechazada','Cancelada')
-                  )
-            """)
-            _tot_bf += c.rowcount or 0
-            # Historicos sin OC valida y con fecha_publicacion pasada -> Pagada
-            c.execute("""
-                UPDATE pagos_influencers
-                SET estado='Pagada'
-                WHERE estado='Pendiente'
-                  AND COALESCE(fecha_publicacion,'') != ''
-                  AND fecha_publicacion < date('now', '-5 hours', '-7 day')
-                  AND (numero_oc IS NULL OR numero_oc='' OR numero_oc NOT IN (
-                    SELECT numero_oc FROM ordenes_compra WHERE estado IN ('Aprobada','Autorizada','Revisada','Borrador')
-                  ))
-            """)
-            _tot_bf += c.rowcount or 0
-            if _tot_bf:
-                try:
-                    from audit_helpers import audit_log as _alog_bf
-                    _alog_bf(c, usuario=u, accion='AUTO_BACKFILL_PAGOS_INFLUENCER',
-                             tabla='pagos_influencers',
-                             registro_id=(str(_del_ids_bf[0]) if _del_ids_bf else '0'),
-                             despues={'tocados': _tot_bf, 'borrados_ids': _del_ids_bf})
-                except Exception:
-                    pass
-                conn.commit()
-        except Exception:
-            pass
+        # El backfill de estados YA NO corre acá (Sebastián 7-ago). Vivía dentro de este GET,
+        # así que abrir el panel MUTABA dinero -- y la pantalla ya calcula el estado que muestra
+        # más abajo, o sea que el UPDATE sólo persistía: sacarlo no cambia lo que se ve (M113).
+        # Ahora la reconciliación es un helper único que corre por cron y por un POST explícito.
 
         # 2. Pagos desde pagos_influencers con estado calculado segun realidad
         # Logica clara y determinista (decision Sebastian 2026-04-28):
@@ -4526,7 +4464,9 @@ def mkt_atribucion_influencers():
             "kpis": kpis,
             "influencers": resultado,
         }
-        _ATRIB_CACHE[desde] = {"ts": _time.time(), "payload": payload}
+        # techo: la llave es `desde`, texto libre del request → sin tope crece por worker (M89)
+        from http_helpers import cache_poner as _cp
+        _cp(_ATRIB_CACHE, desde, {"ts": _time.time(), "payload": payload}, tope=24)
         return jsonify(payload)
     except Exception as e:
         # Fix 28-may · no filtrar traceback del servidor al cliente.
@@ -4978,6 +4918,120 @@ def mkt_pago_influencer_editar(pid):
         return jsonify({'error': str(e)[:200]}), 500
 
 
+def _reconciliar_pagos_influencer(c, usuario='cron'):
+    """UN solo resolver del estado de un pago a creador (Sebastian 7-ago).
+
+    Antes esto vivia DUPLICADO dentro de dos GET (el panel y la lista), asi que abrir una
+    pantalla MUTABA dinero -- y las dos copias no decian lo mismo (una miraba
+    'Pagada/Recibida/Parcial' y la otra solo 'Pagada'). Como ademas las dos pantallas DERIVAN
+    el estado que muestran, el UPDATE solo persistia: sacarlo no cambia lo que se ve (M45/M113).
+
+    ⚠ Lo que esta funcion NO hace, y es el cambio de fondo: ya no marca 'Pagada' por el PASO
+    DEL TIEMPO. Habia una regla que, si el pago llevaba mas de 7 dias publicado y no tenia OC
+    valida, lo daba por pagado. Se escribio para limpiar historicos y quedo sin fecha de corte,
+    o sea armada para siempre: cualquier pago futuro registrado sin OC se iba a declarar pagado
+    solo por envejecer, sin que saliera un peso ni entrara nada al libro. **El estado del dinero
+    se deriva de un hecho de dinero, nunca de una fecha** -- y para los historicos de verdad ya
+    existe la accion explicita y auditada (`/api/marketing/pagos-historico-cleanup`), donde una
+    persona dice cuales y queda su nombre.
+
+    Las dos reglas que quedan se apoyan en evidencia y son idempotentes:
+      · la OC esta pagada (Pagada/Recibida/Parcial) -> el pago esta Pagado;
+      · la OC quedo Rechazada/Cancelada -> el pago esta Rechazado, con motivo.
+
+    Devuelve {'pagadas': n, 'rechazadas': n} · el caller commitea.
+    """
+    # ⚠ Se lee el rowcount del CURSOR que devuelve execute(), no de `c`: asi da igual que el
+    # caller pase una conexion o un cursor. Un helper que exige cursor y recibe conexion revienta
+    # con 'no attribute rowcount' -- y si estuviera dentro de un try, la feature quedaria muerta
+    # en silencio (M96, que ya mato 'Generar OC' una vez).
+    _pag = _rec = 0
+    _cur = c.execute("""
+        UPDATE pagos_influencers
+        SET estado='Pagada'
+        WHERE estado='Pendiente'
+          AND numero_oc IN (
+            SELECT numero_oc FROM ordenes_compra
+            WHERE estado IN ('Pagada','Recibida','Parcial')
+          )
+    """)
+    _pag = _cur.rowcount or 0
+    # Se MARCA, no se borra (mig 386): la bandeja de Rechazados existe justamente para que se
+    # vea por que un pago no salio. Borrarlo era hacer desaparecer la pregunta.
+    _cur = c.execute("""
+        UPDATE pagos_influencers
+        SET estado='Rechazada',
+            motivo_rechazo=COALESCE(NULLIF(motivo_rechazo,''),
+                                    'La orden de compra fue rechazada o cancelada')
+        WHERE estado='Pendiente'
+          AND numero_oc IN (
+            SELECT numero_oc FROM ordenes_compra
+            WHERE estado IN ('Rechazada','Cancelada')
+          )
+    """)
+    _rec = _cur.rowcount or 0
+    if _pag or _rec:
+        try:
+            from audit_helpers import audit_log as _alog
+            _alog(c, usuario=usuario, accion='RECONCILIAR_PAGOS_INFLUENCER',
+                  tabla='pagos_influencers', registro_id='_BULK_',
+                  despues={'pagadas': _pag, 'rechazadas': _rec})
+        except Exception as _e_a:
+            import logging as _lg_r
+            _lg_r.getLogger('marketing').warning('audit reconciliar pagos: %s', _e_a)
+    return {'pagadas': _pag, 'rechazadas': _rec}
+
+
+@bp.route("/api/marketing/reconciliar-pagos", methods=["POST"])
+def mkt_reconciliar_pagos():
+    """Correr la reconciliacion a mano · para no esperar al cron cuando alguien acaba de pagar
+    una OC por otra via. Es un POST porque ESCRIBE: la pantalla que solo mira no debe mutar."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db(); c = conn.cursor()
+    try:
+        res = _reconciliar_pagos_influencer(c, usuario=u)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, **res})
+
+
+@bp.route("/api/marketing/pagos-sin-evidencia", methods=["GET"])
+def mkt_pagos_sin_evidencia():
+    """Los que la regla vieja habria marcado 'Pagada' sola · ahora se VEN en vez de pasar.
+
+    Read-only a proposito. Son pagos Pendientes sin OC viva: nadie puede mostrar que la plata
+    salio. Se listan para que una persona decida, en vez de que envejezcan hasta darse por
+    pagados solos -- que era el efecto de la regla retirada (M19: los candidatos se muestran,
+    no se resuelven solos).
+    """
+    u, err, code = _auth()
+    if err:
+        return err, code
+    c = _db().cursor()
+    filas = c.execute("""
+        SELECT id, COALESCE(influencer_nombre,''), COALESCE(valor,0), COALESCE(fecha,''),
+               COALESCE(fecha_publicacion,''), COALESCE(numero_oc,'')
+          FROM pagos_influencers
+         WHERE estado='Pendiente'
+           AND (numero_oc IS NULL OR numero_oc='' OR numero_oc NOT IN (
+                 SELECT numero_oc FROM ordenes_compra))
+         ORDER BY COALESCE(fecha_publicacion, fecha) ASC
+         LIMIT 500
+    """).fetchall()
+    return jsonify({
+        'ok': True,
+        'total': len(filas),
+        'items': [{'id': r[0], 'creador': r[1], 'valor': float(r[2] or 0), 'fecha': r[3],
+                   'fecha_publicacion': r[4], 'numero_oc': r[5]} for r in filas],
+        'que_hacer': ('Ninguno tiene OC que respalde el pago. Si de verdad se pagaron por fuera '
+                      'de EOS, marcalos desde la accion de historicos, que deja tu nombre.'),
+    })
+
+
 @bp.route("/api/marketing/pagos-influencers", methods=["GET"])
 def mkt_pagos_influencers_list():
     """Lista cronológica de pagos a influencers con comprobante PDF asociado.
@@ -5000,27 +5054,9 @@ def mkt_pagos_influencers_list():
     conn = _db()
     c = conn.cursor()
     try:
-        # AUTO-BACKFILL idempotente: si alguna fila quedó con estado='Pendiente'
-        # pero la OC ya está Pagada (sync fallido en pagar_oc por categoría
-        # rara/vacía), corregirla aquí. Es una sola UPDATE barata y vuelve los
-        # datos consistentes sin esperar a un nuevo pago.
-        try:
-            c.execute("""
-                UPDATE pagos_influencers
-                SET estado='Pagada'
-                WHERE estado='Pendiente'
-                  AND numero_oc IN (
-                    SELECT numero_oc FROM ordenes_compra
-                    WHERE estado='Pagada'
-                  )
-            """)
-            if c.rowcount:
-                conn.commit()
-        except Exception as _ef:
-            import logging
-            logging.getLogger("marketing").warning(
-                "auto-backfill pagos_influencers falló: %s", _ef
-            )
+        # (El backfill que vivía acá se movió a `_reconciliar_pagos_influencer`: era la SEGUNDA
+        #  copia de la misma regla y mutaba dinero dentro de un GET · M45/M113. El SELECT de
+        #  abajo ya deriva el estado del estado real de la OC, así que la lista se ve igual.)
 
         # Pagos enriquecidos con comprobante (LEFT JOIN, último CE por OC).
         # IMPORTANTE: estado se deriva del estado real de la OC (oc.estado).

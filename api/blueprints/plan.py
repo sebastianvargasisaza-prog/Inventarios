@@ -3157,7 +3157,9 @@ def admin_skus_huerfanos_top():
         'n_huerfanos_total': len(huerfanos),
         'uds_huerfanas_total_60d': round(sum(huerfanos.values())),
     }
-    _HUERFANOS_CACHE[_ck_h] = (_t_h.time(), _payload_h)
+    # techo: la llave lleva el `limit` del request, o sea cualquier entero (M89)
+    from http_helpers import cache_poner as _cp_h
+    _cp_h(_HUERFANOS_CACHE, _ck_h, (_t_h.time(), _payload_h), tope=16)
     return jsonify(dict(_payload_h, cacheado=False))
 
 
@@ -4459,7 +4461,9 @@ def plan_alertas_ia():
             "info": sum(1 for a in alertas if a["severidad"] == "info"),
         },
     }
-    _ALERTAS_IA_CACHE[_ck] = (_t.time(), _payload)
+    # techo: la llave son 4 umbrales que vienen del request (M89)
+    from http_helpers import cache_poner as _cp_a
+    _cp_a(_ALERTAS_IA_CACHE, _ck, (_t.time(), _payload), tope=24)
     return jsonify(_payload)
 
 
@@ -4535,7 +4539,10 @@ def _ventas_maps_shopify(c, vd_base, vd_iso, cut30, cut90, b2b_sql_extra, b2b_pa
                 _pl = _jVm.loads(_row[1] or '{}')
                 _c60, _c30, _c90, _cpv = (_pl.get('v60', {}), _pl.get('v30', {}),
                                           _pl.get('v90', {}), _pl.get('pv', {}))
-                _VMAPS_CACHE[key] = (_tVm.time(), _c60, _c30, _c90, _cpv)
+                # techo BAJO: cada entrada son 4 mapas de TODOS los SKUs, y la llave lleva
+                # fechas → una entrada nueva por día (M89)
+                from http_helpers import cache_poner as _cp_v1
+                _cp_v1(_VMAPS_CACHE, key, (_tVm.time(), _c60, _c30, _c90, _cpv), tope=6)
                 return (dict(_c60), dict(_c30), dict(_c90), dict(_cpv))
         except Exception:
             pass
@@ -4686,7 +4693,8 @@ def _ventas_maps_shopify(c, vd_base, vd_iso, cut30, cut90, b2b_sql_extra, b2b_pa
                 if c10 and (_p is None or c10 < _p):
                     pv[sku] = c10
     if not _no_cache:
-        _VMAPS_CACHE[key] = (_tVm.time(), v60, v30, v90, pv)
+        from http_helpers import cache_poner as _cp_v2
+        _cp_v2(_VMAPS_CACHE, key, (_tVm.time(), v60, v30, v90, pv), tope=6)
         try:  # persistir en la cache COMPARTIDA (best-effort · para los demás workers)
             _pl = _jVm.dumps({'v60': v60, 'v30': v30, 'v90': v90, 'pv': pv})
             c.execute("DELETE FROM plan_vmaps_cache WHERE cache_key=?", (_dbkey,))

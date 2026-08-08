@@ -682,6 +682,12 @@ JOBS_SCHEDULE = [
     # ⭐ Marketing · diario 9:05 · alerta campana si hay pagos influencer atrasados
     # (vence_pago_at < hoy · promesa 30d desde fecha_contenido · Sebastián 27-may-2026)
     ('pagos_influencer_urgencia', 9, 5, None, None,               'job_pagos_influencer_urgencia'),
+    # Marketing · reconciliar el estado de los pagos a creadores contra la OC · 3x/dia.
+    # Antes esto corria dentro de un GET (abrir el panel mutaba dinero) y por eso dependia
+    # de que alguien mirara la pantalla: si nadie entraba, la bandeja quedaba vieja (M113).
+    ('reconciliar_pagos_influencer_am', 8, 20, None, None,        'job_reconciliar_pagos_influencer'),
+    ('reconciliar_pagos_influencer_pm', 14, 20, None, None,       'job_reconciliar_pagos_influencer'),
+    ('reconciliar_pagos_influencer_noche', 20, 20, None, None,    'job_reconciliar_pagos_influencer'),
     # ⭐ Gerencia · diario 9:10 · recordatorio cargos fijos (por pagar → Sebastián · sin monto → Catalina)
     ('cargos_fijos_recordatorio', 9, 10, None, None,             'job_cargos_fijos_recordatorio'),
     # Diarios
@@ -5529,6 +5535,32 @@ def job_resumen_ejecutivo_noche(app):
             'kg_real': kg_real, 'cumplimiento_pct': cum_pct,
             'andon_abiertas': andon_abiertas, 'salas_sucias': salas_sucias,
         }, cuerpo
+
+
+def job_reconciliar_pagos_influencer(app):
+    """Deja la bandeja de pagos a creadores al dia SIN que nadie tenga que abrir una pantalla.
+
+    La reconciliacion vivia dentro de dos GET: mutaba dinero al mirar, y si nadie entraba al
+    panel el estado quedaba viejo. Ahora la regla es una sola (`_reconciliar_pagos_influencer`)
+    y la dispara el reloj -- que es lo que escala: no depende de quien navegue (M113).
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            from blueprints.marketing import _reconciliar_pagos_influencer as _rec
+        except ImportError:
+            from marketing import _reconciliar_pagos_influencer as _rec
+        try:
+            res = _rec(c, usuario='cron')
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            log.warning('reconciliar pagos influencer: %s', e)
+            return {'ok': False, 'error': str(e)[:200]}
+        if res['pagadas'] or res['rechazadas']:
+            log.info('reconciliar pagos influencer · %s', res)
+        return {'ok': True, **res}
 
 
 def job_reconciliar_influencer_60d(app):
