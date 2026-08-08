@@ -91,6 +91,7 @@ CORAZON=(
   "tests/test_empaque_por_frasco.py"
   "tests/test_sku_por_tono.py"
   "tests/test_onclick_no_rompe_el_html.py"
+  "tests/test_normalizacion_mee.py"
   "tests/test_kit_visible_en_inventario.py"
   "tests/test_doble_descuento_envase.py"
   "tests/test_serigrafiado_se_consume.py"

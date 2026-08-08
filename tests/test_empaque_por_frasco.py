@@ -169,3 +169,44 @@ def test_se_puede_ABRIR_desde_la_pantalla(app):
     assert re.search(r'(?:async )?function\s+empqCompletar\s*\(', todo), \
         'el botón llama a una función que no existe'
     assert 'empqAplicarFrasco' in todo and 'empaque-aplicar' in todo
+
+
+def test_NO_LLEVA_se_puede_marcar_por_FRASCO(app, admin_client):
+    """Sebastián (8-ago): *"algunos no tienen tapa, no tienen caja y cosas así"*.
+
+    Es una RESPUESTA, no un pendiente: sin poder decirlo, la lista no llega a cero nunca y deja de
+    mirarse (M129). Va por el MISMO endpoint que poner el código porque es la misma decisión
+    ("qué empaque lleva este frasco"): separarlas invita a que una crezca y la otra no.
+    """
+    from database import get_db
+    _limpiar(app)
+    _mee(app, PREF + '-FRN')
+    for n in ('A', 'B'):
+        _pres(app, PREF + ' ' + n, PREF + '-FRN')
+    r = admin_client.post('/api/programacion/empaque-aplicar',
+                          json={'frasco': PREF + '-FRN', 'campo': 'caja', 'no_lleva': True},
+                          headers={'Origin': 'http://localhost'})
+    assert r.status_code == 200, r.data[:200]
+    assert r.get_json()['aplicadas'] == 2
+    with app.app_context():
+        filas = get_db().execute(
+            "SELECT sin_caja, COALESCE(caja_codigo,'') FROM producto_presentaciones "
+            " WHERE producto_nombre LIKE ?", (PREF + '%',)).fetchall()
+    assert all(f[0] for f in filas), 'no las marcó'
+    # se MARCA, no se inventa un código vacío: 'no lleva' y 'todavía no lo cargaron' son cosas
+    # distintas y la pantalla las tiene que poder distinguir (M100)
+    assert all(not (f[1] or '').strip() for f in filas)
+    # y deja de contar como pendiente
+    j = _sug(admin_client)
+    assert not [x for x in _mios(j, 'sin_referencia', PREF + '-FRN') if x['campo'] == 'caja'], \
+        'sigue contándose como faltante'
+    _limpiar(app)
+
+
+def test_se_puede_marcar_NO_LLEVA_desde_la_pantalla(app):
+    import re
+    import templates_py.dashboard_html as D
+    todo = D.DASHBOARD_HTML + getattr(D, 'DASHBOARD_APP_JS', '')
+    assert re.search(r'(?:async )?function\s+empqNoLleva\s*\(', todo), 'no existe la función'
+    assert 'empqNoLleva(' in todo, 'no hay botón que la llame'
+    assert 'no_lleva:true' in todo.replace(' ', ''), 'el botón no manda la marca'

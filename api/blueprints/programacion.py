@@ -17273,6 +17273,132 @@ def _tokens_tono(texto):
     return [t for t in n.split() if t not in RUIDO and not t.isdigit() and len(t) > 2]
 
 
+@bp.route('/api/mee/normalizacion', methods=['GET'])
+def mee_normalizacion():
+    """Cuanto falta para que el envase de CADA producto este normalizado · read-only.
+
+    Sebastian (8-ago): *"lo mas importante es que necesito normalizar MEE para cada producto, para
+    que podamos avanzar"*.
+
+    "Normalizado" no es una opinion: es una lista de condiciones que se cumplen o no, y cada una
+    tiene una consecuencia concreta si falta. Por eso cada hueco se reporta con lo que ROMPE, no
+    con un rotulo:
+
+      · sin presentacion  -> su envase no se compra EN ABSOLUTO (es el peor, y el mas facil de no
+                             ver: el producto simplemente no aparece en la demanda de envases);
+      · sin frasco        -> lo mismo, la fila existe pero no resuelve a nada;
+      · sin tapa / caja   -> esa pieza no entra a la compra (salvo que se declare 'no lleva', que
+                             es una respuesta valida y cierra el pendiente);
+      · codigo fantasma   -> apunta a algo que no esta en el maestro: la compra no lo resuelve;
+      · sin SKU           -> no se puede cruzar contra lo que se vende, asi que no se sabe si esa
+                             presentacion sobra o le falta el dato;
+      · duplicada         -> dos filas encendidas del mismo tamano con frascos distintos: la
+                             compra se reparte mitad y mitad y sale la mezcla equivocada.
+
+    El avance se mide en PRODUCTOS LISTOS sobre el total, que es el numero que dice si se puede
+    avanzar. Un porcentaje de "campos llenos" subiria aunque el producto siga sin poder comprarse.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    c = get_db().cursor()
+
+    maestro = {(r[0] or '').strip().upper()
+               for r in c.execute("SELECT codigo FROM maestro_mee").fetchall()}
+
+    # Universo: los productos que se fabrican de verdad (fórmula activa con lote).
+    activos = {}
+    for (pn,) in c.execute(
+            "SELECT producto_nombre FROM formula_headers "
+            " WHERE COALESCE(activo,1)=1 AND COALESCE(lote_size_kg,0)>0").fetchall():
+        activos[_norm_prod_fuerte(pn)] = pn
+
+    # Los que el negocio declaro que NO llevan envase (maquila, granel a otro cliente): no son
+    # huecos, y contarlos como tales haria que la lista no llegue a cero nunca.
+    excl = set()
+    try:
+        import json as _j
+        r_ex = c.execute("SELECT valor FROM app_settings WHERE clave='envases_no_requiere'").fetchone()
+        if r_ex and r_ex[0]:
+            excl = {_norm_prod_fuerte(x) for x in (_j.loads(r_ex[0]) or [])}
+    except Exception:
+        pass
+
+    pres = {}
+    for r in c.execute(
+            "SELECT producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(volumen_ml,0), "
+            "       UPPER(TRIM(COALESCE(envase_codigo,''))), UPPER(TRIM(COALESCE(tapa_codigo,''))), "
+            "       UPPER(TRIM(COALESCE(caja_codigo,''))), COALESCE(sin_tapa,0), "
+            "       COALESCE(sin_caja,0), COALESCE(sku_shopify,'') "
+            "  FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall():
+        pres.setdefault(_norm_prod_fuerte(r[0]), []).append({
+            'presentacion': r[1], 'volumen_ml': r[2], 'frasco': r[3], 'tapa': r[4],
+            'caja': r[5], 'sin_tapa': bool(r[6]), 'sin_caja': bool(r[7]),
+            'sku': (r[8] or '').strip()})
+
+    productos, listos = [], 0
+    for k, nombre in sorted(activos.items(), key=lambda x: x[1]):
+        if k in excl:
+            continue
+        filas = pres.get(k) or []
+        faltas = []
+        if not filas:
+            faltas.append({'que': 'sin presentacion',
+                           'rompe': 'su envase no se compra en absoluto'})
+        for f in filas:
+            et = f['presentacion'] or (str(f['volumen_ml']) + ' ml')
+            if not f['frasco']:
+                faltas.append({'que': 'sin frasco', 'presentacion': et,
+                               'rompe': 'no resuelve a ningun envase'})
+            elif f['frasco'] not in maestro:
+                faltas.append({'que': 'frasco fantasma', 'presentacion': et,
+                               'codigo': f['frasco'],
+                               'rompe': 'no esta en el maestro: la compra no lo resuelve'})
+            if not f['tapa'] and not f['sin_tapa']:
+                faltas.append({'que': 'sin tapa', 'presentacion': et,
+                               'rompe': 'la tapa no entra a la compra'})
+            elif f['tapa'] and f['tapa'] not in maestro:
+                faltas.append({'que': 'tapa fantasma', 'presentacion': et, 'codigo': f['tapa'],
+                               'rompe': 'no esta en el maestro'})
+            if not f['caja'] and not f['sin_caja']:
+                faltas.append({'que': 'sin caja', 'presentacion': et,
+                               'rompe': 'la caja no entra a la compra'})
+            elif f['caja'] and f['caja'] not in maestro:
+                faltas.append({'que': 'caja fantasma', 'presentacion': et, 'codigo': f['caja'],
+                               'rompe': 'no esta en el maestro'})
+            if not f['sku']:
+                faltas.append({'que': 'sin SKU', 'presentacion': et,
+                               'rompe': 'no se puede cruzar contra lo que se vende'})
+        # duplicadas: mismo volumen, frascos DISTINTOS (con el mismo frasco el reparto suma bien)
+        porvol = {}
+        for f in filas:
+            porvol.setdefault(round(float(f['volumen_ml'] or 0), 1), []).append(f)
+        for vol, fs in porvol.items():
+            if len(fs) > 1 and len({x['frasco'] for x in fs}) > 1:
+                faltas.append({'que': 'duplicada', 'presentacion': '%s ml' % vol,
+                               'rompe': 'la compra se reparte entre las dos y sale la mezcla '
+                                        'equivocada'})
+        if not faltas:
+            listos += 1
+        productos.append({'producto': nombre, 'presentaciones': len(filas),
+                          'listo': not faltas, 'faltas': faltas})
+
+    total = len(productos)
+    return jsonify({
+        'ok': True,
+        'resumen': {
+            'productos': total,
+            'listos': listos,
+            'faltan': total - listos,
+            # El avance se mide en productos que YA se pueden comprar, no en campos llenos: un
+            # porcentaje de campos subiria aunque ningun producto quede utilizable (M5).
+            'pct': (round(100.0 * listos / total, 1) if total else 0.0),
+        },
+        # Lo incompleto primero: un tablero que hay que leer entero no se lee.
+        'productos': sorted(productos, key=lambda p: (p['listo'], -len(p['faltas']), p['producto'])),
+        'excluidos': sorted(activos[k] for k in excl if k in activos),
+    })
+
+
 @bp.route('/api/programacion/sku-por-tono', methods=['GET'])
 def prog_sku_por_tono():
     """Propone el SKU de Shopify de cada presentacion que no lo tiene, emparejando por TONO.
@@ -17515,17 +17641,25 @@ def prog_empaque_aplicar():
     frasco = (d.get('frasco') or '').strip().upper()
     campo = (d.get('campo') or '').strip().lower()
     codigo = (d.get('codigo') or '').strip().upper()
+    # 'No lleva' es una RESPUESTA, no un pendiente (Sebastian 8-ago: *"algunos no tienen tapa, no
+    # tienen caja y cosas asi"*). Un frasco colapsible sin caja no es un hueco: si se contara como
+    # faltante, la lista de pendientes no llegaria a cero nunca -- y una lista que no cierra deja
+    # de mirarse (M129). Va por el MISMO endpoint que poner el codigo porque es la misma decision
+    # ("que empaque lleva este frasco"), y tenerlas separadas invita a que una crezca y la otra no.
+    no_lleva = bool(d.get('no_lleva'))
     if campo not in ('tapa', 'caja'):
         return jsonify({'error': "campo debe ser 'tapa' o 'caja'"}), 400
-    if not frasco or not codigo:
+    if not frasco or (not codigo and not no_lleva):
         return jsonify({'error': 'falta el frasco o el codigo'}), 400
     conn = get_db(); c = conn.cursor()
-    # El codigo tiene que existir en el maestro: dejar uno fantasma es dejar un empaque que la
-    # compra no resuelve y que por lo tanto no se compra nunca (M5).
-    if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (codigo,)).fetchone():
-        return jsonify({'error': '%s no existe en el maestro de envases' % codigo}), 400
     col = 'tapa_codigo' if campo == 'tapa' else 'caja_codigo'
     marca = 'sin_tapa' if campo == 'tapa' else 'sin_caja'
+    if not no_lleva:
+        # El codigo tiene que existir en el maestro: dejar uno fantasma es dejar un empaque que la
+        # compra no resuelve y que por lo tanto no se compra nunca (M5).
+        if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?",
+                         (codigo,)).fetchone():
+            return jsonify({'error': '%s no existe en el maestro de envases' % codigo}), 400
     ids = [r[0] for r in c.execute(
         "SELECT id FROM producto_presentaciones "
         " WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(COALESCE(envase_codigo,'')))=? "
@@ -17534,15 +17668,26 @@ def prog_empaque_aplicar():
         return jsonify({'ok': True, 'aplicadas': 0,
                         'mensaje': 'No habia ninguna vacia con ese frasco'})
     for _id in ids:
-        c.execute("UPDATE producto_presentaciones SET %s=?, actualizado_en=datetime('now','-5 hours') "
-                  " WHERE id=?" % col, (codigo, _id))
-    audit_log(c, usuario=u, accion='EMPAQUE_APLICAR_POR_FRASCO',
+        if no_lleva:
+            # Se marca, no se inventa un codigo vacio: 'no lleva' y 'todavia no lo cargaron' son
+            # cosas distintas y la pantalla las tiene que poder distinguir (M100).
+            c.execute("UPDATE producto_presentaciones SET %s=1, "
+                      "       actualizado_en=datetime('now','-5 hours') WHERE id=?" % marca, (_id,))
+        else:
+            c.execute("UPDATE producto_presentaciones SET %s=?, "
+                      "       actualizado_en=datetime('now','-5 hours') WHERE id=?" % col,
+                      (codigo, _id))
+    audit_log(c, usuario=u,
+              accion=('EMPAQUE_NO_LLEVA_POR_FRASCO' if no_lleva else 'EMPAQUE_APLICAR_POR_FRASCO'),
               tabla='producto_presentaciones', registro_id=frasco,
-              despues={'campo': campo, 'codigo': codigo, 'ids': ids},
-              detalle='%s=%s aplicado a %d presentaciones del frasco %s'
-                      % (campo, codigo, len(ids), frasco))
+              despues={'campo': campo, 'codigo': (None if no_lleva else codigo),
+                       'no_lleva': no_lleva, 'ids': ids},
+              detalle=('%s: no lleva, en %d presentaciones del frasco %s' % (campo, len(ids), frasco)
+                       if no_lleva else
+                       '%s=%s aplicado a %d presentaciones del frasco %s'
+                       % (campo, codigo, len(ids), frasco)))
     conn.commit()
-    return jsonify({'ok': True, 'aplicadas': len(ids), 'ids': ids})
+    return jsonify({'ok': True, 'aplicadas': len(ids), 'ids': ids, 'no_lleva': no_lleva})
 
 
 @bp.route('/api/programacion/presentacion-empaque', methods=['POST'])

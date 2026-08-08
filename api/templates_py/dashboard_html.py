@@ -21063,6 +21063,12 @@ async function empqAbrir(){
   try{
     var r=await fetch('/api/abastecimiento/envases-cobertura',{credentials:'same-origin'});
     EMPQ=await r.json();
+    // Estado de normalizacion · lectura liviana (no recorre ordenes de Shopify, asi que puede ir
+    // en la carga · M43). Si falla, el modal se abre igual sin ese KPI.
+    try{
+      var rn=await fetch('/api/mee/normalizacion',{credentials:'same-origin'});
+      window._EMPQ_NORM=await rn.json();
+    }catch(e){ window._EMPQ_NORM=null; }
     if(!EMPQ_MEE){
       try{
         var rm=await fetch('/api/mee/stock',{credentials:'same-origin'});
@@ -21252,7 +21258,14 @@ async function empqCompletar(){
       + '<button onclick="empqAplicarFrascoSel('+_q(x.frasco)+','
       + _q(x.campo)+')" style="background:var(--cx-primary-grad);color:#fff;'
       + 'border:none;border-radius:7px;padding:4px 10px;font-size:11.5px;font-weight:700;'
-      + 'cursor:pointer">aplicar a las '+x.faltan+'</button></div>';
+      + 'cursor:pointer">aplicar a las '+x.faltan+'</button>'
+      // 'No lleva' es una RESPUESTA, no un pendiente: un frasco colapsible sin caja no es un
+      // hueco. Sin poder decirlo, la lista no llega a cero nunca y deja de mirarse (M129).
+      + '<button onclick="empqNoLleva('+_q(x.frasco)+','+_q(x.campo)+','+x.faltan+')" '
+      + 'title="Este frasco no lleva '+empqEsc(x.campo)+' &middot; deja de contar como pendiente" '
+      + 'style="background:var(--cx-bg-alt);color:var(--cx-text-soft);border:1px solid '
+      + 'var(--cx-border);border-radius:7px;padding:4px 10px;font-size:11.5px;font-weight:700;'
+      + 'cursor:pointer">no lleva</button></div>';
   });
 
   if(!(j.sugerencias||[]).length && !(j.sin_referencia||[]).length && !(j.ambiguos||[]).length){
@@ -21276,6 +21289,29 @@ async function empqAplicarFrasco(frasco, campo, codigo){
     await empqAbrir();          // se recarga el modal con el dato ya puesto
     empqCompletar();
   }catch(e){ alert('No se pudo aplicar: '+e); }
+  finally{ window._empqAplBusy=false; }
+}
+
+async function empqNoLleva(frasco, campo, n){
+  // Se pregunta porque saca cosas de la lista de pendientes: si se marca por error, el empaque
+  // deja de comprarse y nadie se entera hasta que falte en el piso.
+  if(!confirm('El frasco '+frasco+' no lleva '+campo+'?
+
+Se aplica a '+n
+              +' presentación(es) y dejan de contar como pendientes. Se puede deshacer '
+              +'eligiendo un código después.')) return;
+  if(window._empqAplBusy) return; window._empqAplBusy=true;
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/empaque-aplicar',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||t.token||''},
+      body:JSON.stringify({frasco:frasco, campo:campo, no_lleva:true})});
+    var j=await r.json();
+    if(!r.ok){ alert('No se pudo marcar: '+(j.error||r.status)); return; }
+    _toast(j.aplicadas+' marcada(s) como "no lleva '+campo+'"', 1);
+    await empqAbrir();
+    empqCompletar();
+  }catch(e){ alert('No se pudo marcar: '+e); }
   finally{ window._empqAplBusy=false; }
 }
 
@@ -21417,7 +21453,13 @@ function empqPintar(){
   var nSerig=todos.reduce(function(a,g){return a+g.serig;},0);
   var kp=document.getElementById('empq-kpis');
   if(kp){
+    // El indicador que dice si se puede AVANZAR: productos cuyo envase ya se puede comprar de
+    // punta a punta. Un porcentaje de "campos llenos" subiria aunque ningun producto quede
+    // utilizable, asi que se cuentan PRODUCTOS LISTOS (M5).
+    var _nz=(window._EMPQ_NORM&&window._EMPQ_NORM.resumen)||null;
     kp.innerHTML=empqKpi('Productos', todos.length, 'var(--cx-text)')
+      + (_nz ? empqKpi('Normalizados', _nz.listos+' / '+_nz.productos,
+                       (_nz.faltan?'var(--cx-warn-text)':'var(--cx-success-text)')) : '')
       + empqKpi('Les falta algo', nFalta, nFalta?'var(--cx-danger-text)':'var(--cx-success-text)')
       + empqKpi('Mandar a serigrafiar', nSerig, nSerig?'var(--cx-warn-text)':'var(--cx-text-mute)')
       + empqKpi('Encendidas sin ventas', (EMPQ.n_sin_ventas||0),
