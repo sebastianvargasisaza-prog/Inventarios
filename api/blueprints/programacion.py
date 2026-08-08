@@ -17273,6 +17273,222 @@ def _tokens_tono(texto):
     return [t for t in n.split() if t not in RUIDO and not t.isdigit() and len(t) > 2]
 
 
+# Que categoria del maestro corresponde a cada columna. Se enumeran las variantes reales que hay
+# cargadas (Frasco y Envase conviven, Plegadiza y Plegable tambien): adivinar por parecido dejaria
+# la lista de opciones incompleta justo en el producto raro.
+_MEE_CATS = {
+    'envase':   ('FRASCO', 'ENVASE', 'CONTORNO'),
+    'tapa':     ('TAPA',),
+    'etiqueta': ('ETIQUETA',),
+    'caja':     ('PLEGADIZA', 'PLEGABLE', 'CAJA'),
+}
+
+
+def _tokens_nombre(texto):
+    """Las palabras que IDENTIFICAN algo, sin el ruido que comparten todos los envases."""
+    import re as _re
+    import unicodedata as _ud
+    n = _ud.normalize('NFKD', str(texto or '')).encode('ascii', 'ignore').decode().upper()
+    n = _re.sub(r'[^A-Z0-9]+', ' ', n)
+    RUIDO = {'MEE', 'ENV', 'IMP', 'FR', 'ML', 'GR', 'UN', 'UND', 'DE', 'DEL', 'LA', 'EL', 'CON',
+             'SIN', 'PARA', 'FRASCO', 'ENVASE', 'TAPA', 'ETIQUETA', 'CAJA', 'PLEGADIZA',
+             'PLEGABLE', 'BOTELLA', 'POTE', 'TARRO', 'VIDRIO', 'PET', 'PP', 'PEAD', 'PLASTICO',
+             'AIRLESS', 'GOTERO', 'SERIGRAFIA', 'SERIGRAFIADO', 'IMPRESION', 'IMPRESO', 'BLANCO',
+             'NEGRO', 'TRANSPARENTE', 'AMBAR', 'NUEVA', 'FORMULA', 'PRODUCTO', 'LOTE', 'TONO'}
+    return [t for t in n.split() if t not in RUIDO and not t.isdigit() and len(t) > 2]
+
+
+@bp.route('/planta/normalizar-envases', methods=['GET'])
+def planta_normalizar_envases_pagina():
+    """La pantalla para cargar el empaque · pagina propia, a pedido de Sebastian ("asi me tengas
+    que abrir en otra ventana")."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/planta/normalizar-envases')
+    from templates_py.normalizar_envases_html import NORMALIZAR_ENVASES_HTML
+    return Response(NORMALIZAR_ENVASES_HTML, mimetype='text/html; charset=utf-8')
+
+
+@bp.route('/api/mee/normalizar-tabla', methods=['GET'])
+def mee_normalizar_tabla():
+    """Una fila por presentacion y una columna por componente, con lo que YA esta y lo que se
+    propone por NOMBRE.
+
+    Sebastian (8-ago): *"quiero que sea producto, envase, tapa, etiqueta etc, que arrastre todo
+    por nombre, me deje vacio lo que no es, y me deje poner NO USA, porque no he sido capaz"*.
+
+    La pantalla anterior era una lista de PENDIENTES; esto es una tabla donde se carga. La
+    diferencia importa: una lista dice que falta, una tabla deja avanzar.
+
+    Tres reglas, en el orden en que el importan:
+
+      1. **arrastra por nombre**: si el nombre del producto y el del envase comparten una palabra
+         que los identifica (LIP SERUM MOCCA <-> LIPS GLOSS MOCCA), se propone;
+      2. **deja vacio lo que no es**: si no hay una respuesta clara -- ninguna coincidencia, o dos
+         empatadas -- la celda queda VACIA. Rellenarla con "lo mas parecido" es como se le pone al
+         producto el envase de otro, y eso no da error: da una compra equivocada (M19/M137);
+      3. **deja poner NO USA**: un producto que no lleva etiqueta no es un pendiente, y sin poder
+         decirlo la lista no llega a cero nunca (M129).
+
+    Read-only. Lo que se guarda va por un POST aparte, con lo que la persona confirma.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    c = get_db().cursor()
+
+    # Catalogo por columna · lo que se ofrece en cada desplegable
+    cat_de = {}
+    catalogo = {k: [] for k in _MEE_CATS}
+    for cod, desc, cat in c.execute(
+            "SELECT codigo, COALESCE(descripcion,''), UPPER(TRIM(COALESCE(categoria,''))) "
+            "  FROM maestro_mee WHERE COALESCE(estado,'Activo')<>'Archivado' "
+            " ORDER BY codigo").fetchall():
+        cod_u = (cod or '').strip().upper()
+        if not cod_u:
+            continue
+        cat_de[cod_u] = cat
+        for col, cats in _MEE_CATS.items():
+            if cat in cats:
+                catalogo[col].append({'codigo': cod, 'desc': (desc or '')[:70]})
+
+    # Indice de tokens por componente, para arrastrar por nombre
+    idx = {}
+    for col, cats in _MEE_CATS.items():
+        idx[col] = []
+        for x in catalogo[col]:
+            idx[col].append({'codigo': (x['codigo'] or '').strip().upper(),
+                             'toks': set(_tokens_nombre(x['codigo'] + ' ' + x['desc']))})
+
+    filas = []
+    for (pid, prod, pcod, etq_txt, vol, env, tap, caj, etq,
+         s_tap, s_caj, s_etq, sku, activo) in c.execute(
+            "SELECT id, producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), "
+            "       COALESCE(volumen_ml,0), UPPER(TRIM(COALESCE(envase_codigo,''))), "
+            "       UPPER(TRIM(COALESCE(tapa_codigo,''))), UPPER(TRIM(COALESCE(caja_codigo,''))), "
+            "       UPPER(TRIM(COALESCE(etiqueta_codigo,''))), COALESCE(sin_tapa,0), "
+            "       COALESCE(sin_caja,0), COALESCE(sin_etiqueta,0), COALESCE(sku_shopify,''), "
+            "       COALESCE(activo,1) "
+            "  FROM producto_presentaciones ORDER BY producto_nombre, volumen_ml").fetchall():
+        actual = {'envase': env, 'tapa': tap, 'etiqueta': etq, 'caja': caj}
+        marcas = {'envase': 0, 'tapa': int(s_tap or 0), 'caja': int(s_caj or 0),
+                  'etiqueta': int(s_etq or 0)}
+        # El nombre con el que se arrastra: el del producto MAS el del frasco ya elegido (el frasco
+        # suele llevar el tono, que es lo que distingue una presentacion de otra).
+        base = set(_tokens_nombre(prod)) | set(_tokens_nombre(env)) | set(_tokens_nombre(etq_txt))
+        sugerido, ambiguo = {}, {}
+        for col in _MEE_CATS:
+            if actual[col] or marcas.get(col):
+                continue                     # ya resuelto: no se propone encima
+            marcados = []
+            for x in idx[col]:
+                n = len(base & x['toks'])
+                if n:
+                    marcados.append((n, x['codigo']))
+            if not marcados:
+                continue                     # sin coincidencia -> la celda queda VACIA
+            mejor = max(m[0] for m in marcados)
+            ganadores = sorted({m[1] for m in marcados if m[0] == mejor})
+            if len(ganadores) == 1:
+                sugerido[col] = ganadores[0]
+            else:
+                # Dos empatados no son una respuesta: se deja vacio y se dice por que.
+                ambiguo[col] = ganadores[:6]
+        filas.append({
+            'id': pid, 'producto': prod, 'presentacion': pcod, 'etiqueta_txt': etq_txt,
+            'volumen_ml': vol, 'activo': bool(activo), 'sku': (sku or '').strip(),
+            'actual': actual, 'no_usa': marcas, 'sugerido': sugerido, 'ambiguo': ambiguo,
+            # Un codigo cargado que NO esta en el maestro no se puede comprar ni descontar · se
+            # marca para que no se lea como resuelto (M100).
+            'fantasma': sorted([col for col, v in actual.items() if v and v not in cat_de]),
+        })
+
+    return jsonify({
+        'ok': True,
+        'columnas': ['envase', 'tapa', 'etiqueta', 'caja'],
+        'catalogo': catalogo,
+        'filas': filas,
+        'resumen': {
+            'filas': len(filas),
+            'se_arrastran': sum(len(f['sugerido']) for f in filas),
+            'ambiguas': sum(len(f['ambiguo']) for f in filas),
+            'vacias': sum(1 for f in filas for col in _MEE_CATS
+                          if not f['actual'][col] and not f['no_usa'].get(col)
+                          and col not in f['sugerido']),
+        },
+    })
+
+
+@bp.route('/api/mee/normalizar-guardar', methods=['POST'])
+def mee_normalizar_guardar():
+    """Guarda la tabla · Body: {filas:[{id, envase, tapa, etiqueta, caja}]}.
+
+    Cada valor puede ser: un CODIGO, la cadena vacia (dejar sin definir) o `__NO_USA__`. Las tres
+    son estados distintos y se guardan distinto: 'no usa' es una marca propia, no un codigo vacio,
+    porque "no lleva" y "todavia no lo cargaron" no son lo mismo (M100).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    filas = d.get('filas') or []
+    if not isinstance(filas, list) or not filas:
+        return jsonify({'error': 'no hay filas que guardar'}), 400
+    conn = get_db(); c = conn.cursor()
+    COLS = {'envase': ('envase_codigo', None), 'tapa': ('tapa_codigo', 'sin_tapa'),
+            'etiqueta': ('etiqueta_codigo', 'sin_etiqueta'), 'caja': ('caja_codigo', 'sin_caja')}
+    guardadas, errores = 0, []
+    for f in filas[:2000]:
+        try:
+            pid = int(f.get('id') or 0)
+        except (TypeError, ValueError):
+            pid = 0
+        if not pid:
+            continue
+        sets, params, detalle = [], [], {}
+        for col, (col_cod, col_marca) in COLS.items():
+            if col not in f:
+                continue
+            v = str(f.get(col) or '').strip().upper()
+            if v == '__NO_USA__':
+                if not col_marca:
+                    errores.append({'id': pid, 'campo': col,
+                                    'motivo': 'el envase no puede ser "no usa": sin frasco no hay '
+                                              'nada que envasar'})
+                    continue
+                sets.append('%s=1' % col_marca); sets.append("%s=''" % col_cod)
+                detalle[col] = 'no usa'
+            elif v == '':
+                sets.append("%s=''" % col_cod)
+                if col_marca:
+                    sets.append('%s=0' % col_marca)
+                detalle[col] = ''
+            else:
+                # Un codigo que no esta en el maestro no se puede comprar ni descontar: dejarlo
+                # entrar convierte un hueco visible en uno invisible (M100).
+                if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?",
+                                 (v,)).fetchone():
+                    errores.append({'id': pid, 'campo': col, 'codigo': v,
+                                    'motivo': 'no existe en el maestro de envases'})
+                    continue
+                sets.append('%s=?' % col_cod); params.append(v)
+                if col_marca:
+                    sets.append('%s=0' % col_marca)
+                detalle[col] = v
+        if not sets:
+            continue
+        # ⚠ El SET se arma con una columna por asignacion: repetir una columna en el mismo UPDATE
+        # lo rechaza PostgreSQL ("multiple assignments to same column") · ya paso con `sin_tapa`.
+        _cols_usadas = [x.split('=')[0] for x in sets]
+        assert len(_cols_usadas) == len(set(_cols_usadas)), 'columna repetida en el UPDATE'
+        c.execute("UPDATE producto_presentaciones SET %s, actualizado_en=datetime('now','-5 hours') "
+                  " WHERE id=?" % ', '.join(sets), params + [pid])
+        audit_log(c, usuario=u, accion='NORMALIZAR_ENVASE', tabla='producto_presentaciones',
+                  registro_id=str(pid), despues=detalle,
+                  detalle='normalizacion de empaque desde la tabla')
+        guardadas += 1
+    conn.commit()
+    return jsonify({'ok': True, 'guardadas': guardadas, 'errores': errores})
+
+
 @bp.route('/api/mee/normalizacion', methods=['GET'])
 def mee_normalizacion():
     """Cuanto falta para que el envase de CADA producto este normalizado · read-only.
@@ -17737,7 +17953,8 @@ def prog_presentacion_empaque():
     # "No lleva" es una DECISION, y por eso se guarda: si sólo se dejara el campo vacío no habría
     # forma de distinguir "este envase no usa caja" de "todavía no la cargué", y el diagnóstico
     # tendría que gritar por los dos para siempre.
-    for _campo, _col in (('sin_tapa', 'sin_tapa'), ('sin_caja', 'sin_caja')):
+    for _campo, _col in (('sin_tapa', 'sin_tapa'), ('sin_caja', 'sin_caja'),
+                         ('sin_etiqueta', 'sin_etiqueta')):
         if _campo not in d:
             continue
         _v = 1 if d.get(_campo) else 0
@@ -17745,10 +17962,12 @@ def prog_presentacion_empaque():
         if _v:
             # No pueden convivir: si NO lleva tapa, no puede tener un código de tapa cargado.
             # Dejar los dos deja al motor comprando algo que la pantalla dice que no existe (M5).
-            _otro = 'tapa_codigo' if _campo == 'sin_tapa' else 'caja_codigo'
+            _otro = {'sin_tapa': 'tapa_codigo', 'sin_caja': 'caja_codigo',
+                     'sin_etiqueta': 'etiqueta_codigo'}[_campo]
             asign[_otro] = ''; cambios[_otro] = ''
 
-    for _campo, _col in (('envase', 'envase_codigo'), ('tapa', 'tapa_codigo'), ('caja', 'caja_codigo')):
+    for _campo, _col in (('envase', 'envase_codigo'), ('tapa', 'tapa_codigo'),
+                         ('caja', 'caja_codigo'), ('etiqueta', 'etiqueta_codigo')):
         if _campo not in d:
             continue
         _cod = str(d.get(_campo) or '').strip().upper()
@@ -17762,8 +17981,8 @@ def prog_presentacion_empaque():
         asign[_col] = _cod; cambios[_campo] = _cod
         # Poner un código contradice el "no lleva": se apaga solo, o quedarían los dos y el
         # diagnóstico tendría que elegir a cuál creerle.
-        if _cod and _campo in ('tapa', 'caja'):
-            _flag = 'sin_tapa' if _campo == 'tapa' else 'sin_caja'
+        if _cod and _campo in ('tapa', 'caja', 'etiqueta'):
+            _flag = {'tapa': 'sin_tapa', 'caja': 'sin_caja', 'etiqueta': 'sin_etiqueta'}[_campo]
             asign[_flag] = 0; cambios[_flag] = 0
     if not asign:
         return jsonify({'error': 'no mandaste nada que cambiar'}), 400

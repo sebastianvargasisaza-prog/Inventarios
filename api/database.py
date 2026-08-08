@@ -11240,6 +11240,15 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         # Y salen de las listas de rol para que no figuren con permisos en la matriz.
         "UPDATE usuarios_identidad SET activo=0 WHERE LOWER(username) IN ('sergio','felipe')",
     ]),
+    (422, "producto_presentaciones.sin_etiqueta · 'no usa' tambien para la etiqueta · 8-ago-2026", [
+        # Sebastian: *"que me deje poner NO USA"*. La tapa y la caja ya lo tenian; la etiqueta no,
+        # asi que un producto que no lleva etiqueta contaba como pendiente para siempre y la lista
+        # no llegaba a cero nunca -- una lista que no cierra deja de mirarse (M129).
+        #
+        # 'No usa' y 'todavia no lo cargaron' son cosas DISTINTAS: por eso es una marca propia y no
+        # un codigo vacio (M100).
+        "ALTER TABLE producto_presentaciones ADD COLUMN sin_etiqueta INTEGER NOT NULL DEFAULT 0",
+    ]),
 ]
 
 
