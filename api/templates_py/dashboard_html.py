@@ -21295,11 +21295,7 @@ async function empqAplicarFrasco(frasco, campo, codigo){
 async function empqNoLleva(frasco, campo, n){
   // Se pregunta porque saca cosas de la lista de pendientes: si se marca por error, el empaque
   // deja de comprarse y nadie se entera hasta que falte en el piso.
-  if(!confirm('El frasco '+frasco+' no lleva '+campo+'?
-
-Se aplica a '+n
-              +' presentación(es) y dejan de contar como pendientes. Se puede deshacer '
-              +'eligiendo un código después.')) return;
+  if(!confirm('El frasco '+frasco+' no lleva '+campo+'? Se aplica a '+n+' presentacion(es) y dejan de contar como pendientes. Se puede deshacer eligiendo un codigo despues.')) return;
   if(window._empqAplBusy) return; window._empqAplBusy=true;
   try{
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
