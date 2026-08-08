@@ -86,6 +86,7 @@ CORAZON=(
   "tests/test_matriz_permisos.py"
   "tests/test_limpiar_flujo_reversible.py"
   "tests/test_quien_entra_a_cada_modulo.py"
+  "tests/test_centro_decisiones_sin_repetir.py"
   "tests/test_kit_visible_en_inventario.py"
   "tests/test_doble_descuento_envase.py"
   "tests/test_serigrafiado_se_consume.py"

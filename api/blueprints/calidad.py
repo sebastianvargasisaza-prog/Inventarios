@@ -246,72 +246,120 @@ def calidad_indicadores():
         _memo_cont[_k] = _v
         return _v
 
-    # ── Tasas por ventana (para serie 6m + valor del mes actual) ──────────
-    def rft_y_rechazo(ini, fin):
-        # Flujo ACTUAL = F02 (certificado_analisis_mp) · Sebastián 19-jul: los indicadores estaban ciegos al
-        # pipeline F01/F02 (solo miraban el viejo cc-review). Ahora cuentan el F02 + el histórico cc-review.
-        aprob = cont("SELECT COUNT(*) FROM certificado_analisis_mp WHERE resultado='aprobado' AND COALESCE(anulado,0)=0 AND creado_en >= ? AND creado_en < ?", (ini, fin))
-        rech = cont("SELECT COUNT(*) FROM certificado_analisis_mp WHERE resultado='no_aprobado' AND COALESCE(anulado,0)=0 AND creado_en >= ? AND creado_en < ?", (ini, fin))
-        aprob += cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('APROBAR_LOTE','CC_REVIEW_APROBADO') AND fecha >= ? AND fecha < ?", (ini, fin))
-        rech += cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('RECHAZAR_LOTE','CC_REVIEW_RECHAZADO') AND fecha >= ? AND fecha < ?", (ini, fin))
+    # ── Un conteo por MES, con UNA consulta por metrica ───────────────────
+    #
+    # PERF 8-ago (medido con la sonda local): esta pantalla hacia **133 consultas**. Cada metrica
+    # se contaba mes a mes sobre 6 meses, asi que un `COUNT(*)` por metrica se volvia 6-7
+    # consultas. Sobre PostgreSQL cada una es un viaje de red: 133 viajes para pintar 8 series.
+    #
+    # Ahora cada metrica es UNA consulta agrupada por mes (`GROUP BY substr(fecha,1,7)`), leida
+    # de un dict. Es el mismo patron con el que se arreglo el heatmap de micro (M86).
+    #
+    # ⚠ Es EXACTAMENTE equivalente y no una aproximacion: las ventanas de `_meses_ventanas` son
+    # meses calendario (`YYYY-MM-01` al 01 del siguiente), asi que agrupar por los 7 primeros
+    # caracteres de la fecha da los mismos cubos que comparar `>= ini AND < fin`. La comparacion
+    # de rango se conserva igual (misma comparacion de texto), sobre el rango COMPLETO de los 6
+    # meses.
+    _rango_ini, _rango_fin = meses[0][1], meses[-1][2]
+    _memo_mes = {}
+
+    def por_mes(tabla, cond, col_fecha, params=()):
+        """{'YYYY-MM': n} con UNA consulta · el mes que no aparece es 0, no un dato faltante."""
+        _k = (tabla, cond, col_fecha, tuple(params))
+        if _k in _memo_mes:
+            return _memo_mes[_k]
+        _c = (cond + ' AND ') if cond else ''
+        # GROUP BY por EXPRESION: en PG hay que proyectar la expresion, no un alias, y todo lo
+        # demas tiene que ser agregado (M160). Aca el SELECT es la expresion + COUNT(*), asi que
+        # es correcto en los dos motores.
+        _sql = ("SELECT substr(%s,1,7), COUNT(*) FROM %s WHERE %s%s >= ? AND %s < ? "
+                "GROUP BY substr(%s,1,7)"
+                % (col_fecha, tabla, _c, col_fecha, col_fecha, col_fecha))
+        _d = {}
+        for _r in c.execute(_sql, tuple(params) + (_rango_ini, _rango_fin)).fetchall():
+            if _r[0]:
+                _d[_r[0]] = _r[1] or 0
+        _memo_mes[_k] = _d
+        return _d
+
+    _CAM = "COALESCE(anulado,0)=0"
+    _MIC_COL = "COALESCE(fecha_analisis,fecha_muestreo)"
+    _MIC = "COALESCE(categoria,'producto')<>'ambiente'"
+    _F01 = "COALESCE(anulado,0)=0 AND COALESCE(origen,'MP')='MP'"
+
+    # Flujo ACTUAL = F02 (certificado_analisis_mp) · Sebastián 19-jul: los indicadores estaban
+    # ciegos al pipeline F01/F02 (solo miraban el viejo cc-review). Ahora cuentan el F02 + el
+    # histórico cc-review.
+    _ap_f02 = por_mes('certificado_analisis_mp', "resultado='aprobado' AND " + _CAM, 'creado_en')
+    _re_f02 = por_mes('certificado_analisis_mp', "resultado='no_aprobado' AND " + _CAM, 'creado_en')
+    _ap_cc = por_mes('audit_log', "accion IN ('APROBAR_LOTE','CC_REVIEW_APROBADO')", 'fecha')
+    _re_cc = por_mes('audit_log', "accion IN ('RECHAZAR_LOTE','CC_REVIEW_RECHAZADO')", 'fecha')
+    _lib_ok = por_mes('liberaciones', "estado='Liberado'", 'fecha_liberacion')
+    _lib_no = por_mes('liberaciones', "estado='Rechazado'", 'fecha_liberacion')
+    # Solo producto/MP (el monitoreo ambiental se mide aparte y no debe hundir el KPI).
+    _mic_tot = por_mes('calidad_micro_resultados', _MIC, _MIC_COL)
+    _mic_fue = por_mes('calidad_micro_resultados', _MIC + " AND estado='fuera_industria'", _MIC_COL)
+    _agua_tot = por_mes('calidad_sistema_agua', '', 'fecha')
+    _agua_fue = por_mes('calidad_sistema_agua', "estado='fuera_spec'", 'fecha')
+    _f01_tot = por_mes('recepcion_tecnica_doc', _F01, 'creado_en')
+    _f01_conf = por_mes('recepcion_tecnica_doc', _F01 + " AND resultado='conforme'", 'creado_en')
+
+    def rft_y_rechazo(mes):
+        aprob = _ap_f02.get(mes, 0) + _ap_cc.get(mes, 0)
+        rech = _re_f02.get(mes, 0) + _re_cc.get(mes, 0)
         tot = aprob + rech
         return _ratio_pct(aprob, tot), _ratio_pct(rech, tot)
 
-    def liberacion_pt(ini, fin):
-        lib = cont("SELECT COUNT(*) FROM liberaciones WHERE estado='Liberado' AND fecha_liberacion >= ? AND fecha_liberacion < ?", (ini, fin))
-        rech = cont("SELECT COUNT(*) FROM liberaciones WHERE estado='Rechazado' AND fecha_liberacion >= ? AND fecha_liberacion < ?", (ini, fin))
+    def liberacion_pt(mes):
+        lib, rech = _lib_ok.get(mes, 0), _lib_no.get(mes, 0)
         return _ratio_pct(lib, lib + rech)
 
-    def micro_ok(ini, fin):
-        # Solo producto/MP (el monitoreo ambiental se mide aparte y no debe hundir el KPI).
-        tot = cont("SELECT COUNT(*) FROM calidad_micro_resultados WHERE COALESCE(categoria,'producto')<>'ambiente' AND COALESCE(fecha_analisis,fecha_muestreo) >= ? AND COALESCE(fecha_analisis,fecha_muestreo) < ?", (ini, fin))
-        fuera = cont("SELECT COUNT(*) FROM calidad_micro_resultados WHERE COALESCE(categoria,'producto')<>'ambiente' AND estado='fuera_industria' AND COALESCE(fecha_analisis,fecha_muestreo) >= ? AND COALESCE(fecha_analisis,fecha_muestreo) < ?", (ini, fin))
+    def micro_ok(mes):
+        tot, fuera = _mic_tot.get(mes, 0), _mic_fue.get(mes, 0)
         return _ratio_pct(tot - fuera, tot)
 
-    def agua_conforme(ini, fin):
-        tot = cont("SELECT COUNT(*) FROM calidad_sistema_agua WHERE fecha >= ? AND fecha < ?", (ini, fin))
-        fuera = cont("SELECT COUNT(*) FROM calidad_sistema_agua WHERE estado='fuera_spec' AND fecha >= ? AND fecha < ?", (ini, fin))
+    def agua_conforme(mes):
+        tot, fuera = _agua_tot.get(mes, 0), _agua_fue.get(mes, 0)
         return _ratio_pct(tot - fuera, tot)
 
     # ── Conteos del flujo de MP (F02 · Sebastián 19-jul) ──────────────────
-    def mp_liberadas(ini, fin):
-        return (cont("SELECT COUNT(*) FROM certificado_analisis_mp WHERE resultado='aprobado' AND COALESCE(anulado,0)=0 AND creado_en >= ? AND creado_en < ?", (ini, fin))
-                + cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('APROBAR_LOTE','CC_REVIEW_APROBADO') AND fecha >= ? AND fecha < ?", (ini, fin)))
+    def mp_liberadas(mes):
+        return _ap_f02.get(mes, 0) + _ap_cc.get(mes, 0)
 
-    def mp_rechazadas(ini, fin):
-        return (cont("SELECT COUNT(*) FROM certificado_analisis_mp WHERE resultado='no_aprobado' AND COALESCE(anulado,0)=0 AND creado_en >= ? AND creado_en < ?", (ini, fin))
-                + cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('RECHAZAR_LOTE','CC_REVIEW_RECHAZADO') AND fecha >= ? AND fecha < ?", (ini, fin)))
+    def mp_rechazadas(mes):
+        return _re_f02.get(mes, 0) + _re_cc.get(mes, 0)
 
-    def f01_documental(ini, fin):
-        # % de F01 (recepción técnica) que salieron CONFORMES (cumplimiento documental de la recepción)
-        tot = cont("SELECT COUNT(*) FROM recepcion_tecnica_doc WHERE COALESCE(anulado,0)=0 AND COALESCE(origen,'MP')='MP' AND creado_en >= ? AND creado_en < ?", (ini, fin))
-        conf = cont("SELECT COUNT(*) FROM recepcion_tecnica_doc WHERE COALESCE(anulado,0)=0 AND COALESCE(origen,'MP')='MP' AND resultado='conforme' AND creado_en >= ? AND creado_en < ?", (ini, fin))
-        return _ratio_pct(conf, tot)
+    def f01_documental(mes):
+        # % de F01 (recepción técnica) que salieron CONFORMES
+        return _ratio_pct(_f01_conf.get(mes, 0), _f01_tot.get(mes, 0))
 
     series = {'rft_mp': [], 'tasa_rechazo_mp': [], 'liberacion_pt': [], 'micro_ok': [], 'agua_conforme': [],
               'mp_liberadas_mes': [], 'mp_rechazadas_mes': [], 'rft_documental_f01': []}
     for label, ini, fin in meses:
-        rft, rech = rft_y_rechazo(ini, fin)
+        rft, rech = rft_y_rechazo(label)
         series['rft_mp'].append({'mes': label, 'valor': rft})
         series['tasa_rechazo_mp'].append({'mes': label, 'valor': rech})
-        series['liberacion_pt'].append({'mes': label, 'valor': liberacion_pt(ini, fin)})
-        series['micro_ok'].append({'mes': label, 'valor': micro_ok(ini, fin)})
-        series['agua_conforme'].append({'mes': label, 'valor': agua_conforme(ini, fin)})
-        series['mp_liberadas_mes'].append({'mes': label, 'valor': mp_liberadas(ini, fin)})
-        series['mp_rechazadas_mes'].append({'mes': label, 'valor': mp_rechazadas(ini, fin)})
-        series['rft_documental_f01'].append({'mes': label, 'valor': f01_documental(ini, fin)})
+        series['liberacion_pt'].append({'mes': label, 'valor': liberacion_pt(label)})
+        series['micro_ok'].append({'mes': label, 'valor': micro_ok(label)})
+        series['agua_conforme'].append({'mes': label, 'valor': agua_conforme(label)})
+        series['mp_liberadas_mes'].append({'mes': label, 'valor': mp_liberadas(label)})
+        series['mp_rechazadas_mes'].append({'mes': label, 'valor': mp_rechazadas(label)})
+        series['rft_documental_f01'].append({'mes': label, 'valor': f01_documental(label)})
 
     # ── Valores actuales ──────────────────────────────────────────────────
-    rft_now, rech_now = rft_y_rechazo(mes_ini, mes_fin)
+    # El mes EN CURSO es el ultimo de la serie · antes se volvia a contar con las mismas
+    # consultas (4 veces la misma), ahora se lee del mismo dict.
+    _mes_label = meses[-1][0]
+    rft_now, rech_now = rft_y_rechazo(_mes_label)
     valores = {
         'rft_mp': rft_now,
         'tasa_rechazo_mp': rech_now,
-        'liberacion_pt': liberacion_pt(mes_ini, mes_fin),
-        'micro_ok': micro_ok(mes_ini, mes_fin),
-        'agua_conforme': agua_conforme(mes_ini, mes_fin),
-        'mp_liberadas_mes': mp_liberadas(mes_ini, mes_fin),
-        'mp_rechazadas_mes': mp_rechazadas(mes_ini, mes_fin),
-        'rft_documental_f01': f01_documental(mes_ini, mes_fin),
+        'liberacion_pt': liberacion_pt(_mes_label),
+        'micro_ok': micro_ok(_mes_label),
+        'agua_conforme': agua_conforme(_mes_label),
+        'mp_liberadas_mes': mp_liberadas(_mes_label),
+        'mp_rechazadas_mes': mp_rechazadas(_mes_label),
+        'rft_documental_f01': f01_documental(_mes_label),
         'nc_abiertas': cont("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'"),
         'oos_abiertos': cont("SELECT COUNT(*) FROM calidad_oos WHERE LOWER(COALESCE(estado,'')) NOT IN ('cerrado','rechazado','descartado')"),
         'capa_vencidas': cont("SELECT COUNT(*) FROM capa_acciones WHERE estado NOT IN ('Cerrada','Verificada') AND COALESCE(fecha_compromiso,'') <> '' AND fecha_compromiso < ?", (hoy,)),

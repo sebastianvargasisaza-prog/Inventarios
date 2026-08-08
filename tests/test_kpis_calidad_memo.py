@@ -92,3 +92,65 @@ def test_sin_consultas_REPETIDAS_en_una_carga(app, admin_client):
     repes = {s: n for s, n in vistas.items() if n > 1 and s.upper().startswith('SELECT COUNT')}
     assert not repes, ('la pantalla vuelve a contar lo mismo: %s'
                        % list(repes.items())[:3])
+
+
+def test_una_consulta_por_METRICA_no_una_por_MES(app, admin_client):
+    """Cada métrica se contaba mes a mes sobre 6 meses, así que un `COUNT(*)` se volvía 6-7
+    consultas. Ahora es UNA agrupada por mes (`GROUP BY substr(fecha,1,7)`), leída de un dict.
+
+    Medido: 133 -> 33 consultas, con el JSON byte a byte idéntico contra un juego de datos
+    sembrado a propósito (la comparación se hizo con el endpoint viejo antes de tocarlo).
+
+    ⚠ Es EXACTAMENTE equivalente y no una aproximación: las ventanas de `_meses_ventanas` son
+    meses calendario, así que agrupar por los 7 primeros caracteres da los mismos cubos que
+    comparar `>= ini AND < fin`.
+    """
+    import collections
+    import sqlite3
+
+    vistas = collections.Counter()
+    _orig = sqlite3.connect
+
+    def _conectar(*a, **k):
+        con = _orig(*a, **k)
+        try:
+            con.set_trace_callback(lambda s: vistas.update([' '.join(str(s or '').split())]))
+        except Exception:
+            pass
+        return con
+
+    sqlite3.connect = _conectar
+    try:
+        r = admin_client.get('/api/calidad/indicadores')
+    finally:
+        sqlite3.connect = _orig
+    assert r.status_code == 200
+
+    total = sum(vistas.values())
+    assert total <= 45, ('la pantalla volvió a contar mes por mes: %d consultas' % total)
+    # y ningún COUNT se repite (el mes en curso se contaba hasta 4 veces)
+    repes = {s: n for s, n in vistas.items() if n > 1 and s.upper().startswith('SELECT COUNT')}
+    assert not repes, list(repes.items())[:2]
+
+
+def test_el_mes_SIN_datos_cuenta_CERO_no_desaparece(app, admin_client):
+    """El riesgo propio de agrupar: el mes que no tiene filas no aparece en el resultado. Si se
+    leyera como "sin dato" en vez de cero, la serie tendría huecos y el gráfico mentiría.
+
+    Se prueba con el universo VACÍO: los seis meses tienen que seguir estando, con su cero.
+    """
+    from database import get_db
+    with app.app_context():
+        c = get_db()
+        for t in ('certificado_analisis_mp', 'liberaciones', 'calidad_micro_resultados',
+                  'calidad_sistema_agua', 'recepcion_tecnica_doc'):
+            try:
+                c.execute("DELETE FROM %s" % t)
+            except Exception:
+                pass
+        c.commit()
+    j = admin_client.get('/api/calidad/indicadores').get_json()
+    ind = {x['codigo']: x for x in j.get('indicadores', [])}
+    for cod in ('rft_mp', 'micro_ok'):
+        serie = (ind.get(cod) or {}).get('serie') or []
+        assert len(serie) == 6, '%s perdió meses de la serie: %s' % (cod, len(serie))

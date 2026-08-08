@@ -660,16 +660,39 @@ def alertas_pago_influencer(c, *, influencer_id, nombre, valor, fecha_publicacio
     out = []
     if not influencer_id:
         return out
+    # Memo POR REQUEST del historial (PERF 8-ago · sonda local).
+    #
+    # Esta funcion se llama una vez por PAGO pendiente, y la cola de decisiones evalua varios
+    # pagos del MISMO creador: el historial se leia una vez por pago aunque sea identico. Medido
+    # en `/api/centro/decisiones`: la misma consulta con los mismos parametros, tres veces.
+    #
+    # ⚠ Memo por REQUEST, nunca de modulo: un pago que se acaba de registrar tiene que contar
+    # como antecedente en la carga siguiente, y un cache de modulo lo dejaria invisible sin dar
+    # ningun error (M9). Fuera de un request (crons) no hay memo.
+    _mp = None
     try:
-        prev = c.execute(
-            "SELECT id, valor, fecha, COALESCE(estado,''), COALESCE(concepto,''), "
-            "       COALESCE(fecha_publicacion,''), COALESCE(entregable,''), COALESCE(numero_oc,'') "
-            "FROM pagos_influencers "
-            "WHERE influencer_id=? AND COALESCE(estado,'') <> 'Anulada' "
-            "ORDER BY fecha DESC, id DESC LIMIT 60", (influencer_id,)).fetchall()
-    except Exception as e:
-        log.warning('alertas_pago_influencer: no se pudo leer el historial (%s): %s', nombre, e)
-        return out
+        from flask import g as _g_al
+        _mp = getattr(_g_al, '_alertas_prev_memo', None)
+        if _mp is None:
+            _mp = {}
+            _g_al._alertas_prev_memo = _mp
+    except Exception:
+        _mp = None
+    if _mp is not None and influencer_id in _mp:
+        prev = _mp[influencer_id]
+    else:
+        try:
+            prev = c.execute(
+                "SELECT id, valor, fecha, COALESCE(estado,''), COALESCE(concepto,''), "
+                "       COALESCE(fecha_publicacion,''), COALESCE(entregable,''), COALESCE(numero_oc,'') "
+                "FROM pagos_influencers "
+                "WHERE influencer_id=? AND COALESCE(estado,'') <> 'Anulada' "
+                "ORDER BY fecha DESC, id DESC LIMIT 60", (influencer_id,)).fetchall()
+        except Exception as e:
+            log.warning('alertas_pago_influencer: no se pudo leer el historial (%s): %s', nombre, e)
+            return out
+        if _mp is not None:
+            _mp[influencer_id] = prev
 
     def _ficha(r):
         return {'id': r[0], 'valor': r[1], 'fecha': r[2], 'estado': r[3],
@@ -722,8 +745,23 @@ def alertas_pago_influencer(c, *, influencer_id, nombre, valor, fecha_publicacio
 
     # 5) Reapareció tras estar dado de baja · alguien lo volvió a meter sin decir por qué
     try:
-        est = c.execute("SELECT COALESCE(estado,'') FROM marketing_influencers WHERE id=?",
-                        (influencer_id,)).fetchone()
+        # mismo memo por request: el estado del creador no cambia entre dos pagos suyos
+        _me = None
+        try:
+            from flask import g as _g_es
+            _me = getattr(_g_es, '_alertas_estado_memo', None)
+            if _me is None:
+                _me = {}
+                _g_es._alertas_estado_memo = _me
+        except Exception:
+            _me = None
+        if _me is not None and influencer_id in _me:
+            est = _me[influencer_id]
+        else:
+            est = c.execute("SELECT COALESCE(estado,'') FROM marketing_influencers WHERE id=?",
+                            (influencer_id,)).fetchone()
+            if _me is not None:
+                _me[influencer_id] = est
         if est and str(est[0]).strip().lower() not in ('activo', ''):
             out.append({'nivel': 'alto', 'codigo': 'REINGRESA_DADO_DE_BAJA',
                         'mensaje': 'Este creador está en estado "%s" y le están pidiendo un pago'
