@@ -1517,20 +1517,35 @@ def modulos():
     if 'compras_user' not in session:
         return redirect('/login?next=/modulos')
     from templates_py.modulos_html import MODULOS_HTML
-    from blueprints.marketing import MARKETING_USERS
     from config import ADMIN_USERS as _ADMS
     usuario = session.get('compras_user', '')
     es_admin = 'true' if usuario in _ADMS else 'false'
     html = (MODULOS_HTML
             .replace('{usuario}', usuario)
             .replace('{usuario_es_admin}', es_admin))
-    # Ocultar tarjeta ANIMUS Lab para usuarios sin acceso a Marketing
-    if usuario not in MARKETING_USERS:
-        import re
-        html = re.sub(
-            r'<a class="mod-card" href="/marketing"[^>]*>.*?</a>',
-            '', html, flags=re.DOTALL
-        )
+    # El menu muestra SOLO lo que la persona puede abrir (Sebastian 7-ago-2026).
+    #
+    # Se resuelve con el MISMO mapa que el gate de entrada (`config.modulo_de_ruta` +
+    # `puede_ver_modulo`). Si el menu tuviera su propia lista, un dia mostraria una tarjeta que al
+    # abrirse da 403 -- o al reves, escondería algo a lo que si tiene acceso, y la persona
+    # concluiría que la feature no existe (M1: un solo resolver por entidad).
+    #
+    # Antes esto escondia UNA tarjeta a mano (Marketing) y el resto se veian todas, asi que el
+    # menu ofrecia puertas que no se podian abrir.
+    try:
+        import re as _re_mod
+        from config import modulo_de_ruta as _mod_de, puede_ver_modulo as _puede
+        for _href in set(_re_mod.findall(r'<a class=\"mod-card\" href=\"([^\"]+)\"', html)):
+            _m = _mod_de(_href)
+            if _m and not _puede(usuario, _m):
+                html = _re_mod.sub(
+                    r'<a class="mod-card" href="' + _re_mod.escape(_href) + r'".*?</a>',
+                    '', html, flags=_re_mod.DOTALL)
+    except Exception as _e_menu:
+        # Si el mapa falla, se muestra el menu completo: el gate de entrada sigue bloqueando de
+        # todas formas. Una pantalla en blanco seria peor que una tarjeta de mas (M4).
+        import logging as _lg_menu
+        _lg_menu.getLogger('core').warning('menu por modulo: %s', _e_menu)
     return Response(html, mimetype='text/html')
 
 @bp.route('/login', methods=['GET','POST'])

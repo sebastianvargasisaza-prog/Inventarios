@@ -5,7 +5,7 @@ import sqlite3
 import time
 from datetime import datetime, timezone, timedelta
 
-from flask import request, session, redirect, jsonify
+from flask import request, session, redirect, jsonify, Response
 
 from config import DB_PATH, ADMIN_USERS
 from database import db_connect
@@ -365,6 +365,56 @@ def register_hooks(app):
             return
         if not session.get('compras_user'):
             return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
+
+    @app.before_request
+    def gate_de_modulo():
+        """Quien entra a que modulo (Sebastian 7-ago-2026).
+
+        Va en UN before_request y no pegado en cada pantalla: un gate repartido a mano deja
+        siempre alguna puerta sin cerrar, y la que se olvida no da error -- simplemente sigue
+        abierta (M116). El menu esconde las tarjetas con el MISMO mapa, asi que nadie ve una
+        tarjeta que al abrirse le da 403.
+
+        ⚠ Solo gatea PAGINAS, no los `/api/`. Es deliberado: una pantalla de un modulo llama
+        endpoints de otro todo el tiempo (Planta pide stock, Calidad pide la OC), asi que cerrar
+        las APIs por modulo romperia pantallas que hoy funcionan, y el sintoma seria alguien
+        trabado en pleno turno (M121). Los endpoints conservan el gate que ya tenian.
+
+        ⚠ Y lo que NO esta en el mapa NO se bloquea: default-deny sobre 1.700 rutas cerraria en
+        silencio cosas que nadie sabe que existen.
+        """
+        ruta = request.path or '/'
+        if ruta.startswith('/api/') or ruta.startswith('/static'):
+            return
+        usuario = session.get('compras_user', '')
+        if not usuario:
+            return          # el login lo resuelve el gate de sesion de cada pagina
+        try:
+            from config import modulo_de_ruta, puede_ver_modulo
+        except Exception:
+            return          # sin el mapa no se inventa un bloqueo
+        mod = modulo_de_ruta(ruta)
+        if not mod or puede_ver_modulo(usuario, mod):
+            return
+        # El mensaje dice QUE modulo y a quien pedirlo: un 403 mudo se vive como si la app
+        # estuviera rota y el usuario reintenta (M109).
+        return Response(
+            '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
+            '<title>Sin acceso</title><link rel="stylesheet" href="/static/cortex.css">'
+            '</head><body style="font-family:Inter,system-ui,sans-serif;background:var(--cx-bg);'
+            'color:var(--cx-text);display:flex;align-items:center;justify-content:center;'
+            'min-height:100vh;margin:0">'
+            '<div style="background:var(--cx-card);border:1px solid var(--cx-border);'
+            'border-radius:14px;padding:30px 34px;max-width:440px;text-align:center">'
+            '<div style="font-size:34px;margin-bottom:8px">&#128274;</div>'
+            '<h2 style="margin:0 0 8px;font-size:17px">No tenes acceso a ' + mod.capitalize() + '</h2>'
+            '<p style="margin:0 0 16px;font-size:13px;color:var(--cx-text-soft);line-height:1.6">'
+            'Tu usuario (<b>' + usuario + '</b>) no esta habilitado para este modulo. '
+            'Si lo necesitas para tu trabajo, pediselo a Sebastian o a Alejandro.</p>'
+            '<a href="/modulos" style="display:inline-block;background:var(--cx-primary-grad);'
+            'color:#fff;text-decoration:none;padding:9px 18px;border-radius:9px;font-size:13px;'
+            'font-weight:700">Volver a mis modulos</a>'
+            '</div></body></html>', status=403, mimetype='text/html; charset=utf-8')
 
     @app.before_request
     def enforce_mfa_for_admins():

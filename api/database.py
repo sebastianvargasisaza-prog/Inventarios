@@ -11220,6 +11220,26 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         )""",
         "CREATE INDEX IF NOT EXISTS idx_flujo_respaldo_lote ON flujo_respaldo(lote)",
     ]),
+    (421, "Offboarding 'sergio' y 'felipe' (Sebastian 7-ago-2026) · bloquea el login", [
+        # Sebastian, dictando los permisos: *"sergio inhabilitalo ya no trabaja"*, *"felipe
+        # sacalo"*.
+        #
+        # NO se borra el usuario ni su historial: GMP/Part 11 conservan quien hizo que, y sus
+        # firmas y registros tienen que seguir siendo legibles. Lo que se bloquea es el LOGIN.
+        #
+        # ⚠ Y hace falta INSERTAR la fila antes del UPDATE: si la persona solo existe en config
+        # (`PASS_<USER>` de Render) no hay fila que actualizar y el `activo=0` no hace nada, asi
+        # que seguiria entrando por el fallback de la variable de entorno (M-offboarding, el mismo
+        # detalle que la mig 375 dejo escrito para 'luis').
+        "INSERT OR IGNORE INTO users_passwords (username, password_hash, changed_by) "
+        "VALUES ('sergio', '!DESACTIVADO', 'offboarding-mig421')",
+        "UPDATE users_passwords SET activo=0 WHERE username='sergio'",
+        "INSERT OR IGNORE INTO users_passwords (username, password_hash, changed_by) "
+        "VALUES ('felipe', '!DESACTIVADO', 'offboarding-mig421')",
+        "UPDATE users_passwords SET activo=0 WHERE username='felipe'",
+        # Y salen de las listas de rol para que no figuren con permisos en la matriz.
+        "UPDATE usuarios_identidad SET activo=0 WHERE LOWER(username) IN ('sergio','felipe')",
+    ]),
 ]
 
 

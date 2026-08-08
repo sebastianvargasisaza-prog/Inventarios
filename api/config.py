@@ -63,7 +63,10 @@ ASEGURAMIENTO_USERS = {
 # accesos del expediente lo mostraba con permisos sobre el batch record. Un empleado retirado que
 # aparece con permisos en un documento de autorización es una objeción segura. NO se borra su
 # usuario ni su historial: GMP/Part 11 conservan quién hizo qué (sus firmas y registros siguen).
-PLANTA_USERS    = {"smurillo", "sergio", "mayerlin", "camilo", "jose", "milton"}
+# Sergio salio el 7-ago-2026 (Sebastian: *"sergio inhabilitalo ya no trabaja"*) · su login
+# queda bloqueado por la mig 421 y sale de la lista para no figurar con permisos en la
+# matriz. Su historial NO se borra: Part 11 conserva quien hizo que.
+PLANTA_USERS    = {"smurillo", "mayerlin", "camilo", "jose", "milton"}
 
 
 def puede_archivar(usuario):
@@ -87,6 +90,143 @@ def puede_archivar(usuario):
     if not u:
         return False          # sin sesión no se decide acá · el 401 lo da el endpoint
     return u not in PLANTA_USERS
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════
+# QUIEN ENTRA A CADA MODULO · dictado por Sebastian el 7-ago-2026
+# ══════════════════════════════════════════════════════════════════════════════════════
+#
+# Una sola fuente para todo el sistema: el menu esconde lo que la persona no puede abrir y el
+# gate de entrada usa ESTE mismo mapa. Si estuvieran separados, un dia el menu mostraria una
+# tarjeta que al abrirse da 403 -- o peor, al reves (M1: un solo resolver por entidad).
+#
+# ⚠ Esto controla ENTRAR A UN MODULO. Los permisos finos de adentro (autorizar una OC, firmar una
+# liberacion, archivar una ficha) siguen donde estaban: son otra pregunta y tienen sus propios
+# guards. Mezclarlos aca haria que cambiar quien VE una pantalla cambie quien puede FIRMAR, que
+# es justo lo que no se quiere en un sistema INVIMA.
+
+# Lo que ve todo el mundo: pedir algo, registrar lo que llega y hablar con el equipo.
+_TODOS = set(COMPRAS_USERS)
+
+MODULOS_ACCESO = {
+    # --- para todos ---
+    'solicitudes':   set(_TODOS),
+    'recepcion':     set(_TODOS),
+    'chat':          set(_TODOS),
+
+    # --- planta ---
+    # Jose es el jefe de produccion (reemplazo a Luis, despedido el 24-jul · mig 375).
+    'planta': {'sebastian', 'alejandro', 'jose',
+               'camilo', 'mayerlin', 'smurillo', 'milton',      # operarios
+               'miguel', 'laura', 'yuliel', 'catalina', 'luz', 'hernando'},
+
+    # --- calidad y regulatorio ---
+    # Miguel entra a Calidad ademas de Aseguramiento (Sebastian: *"es mas, miguel deberia poder
+    # entrar a calidad tambien"*).
+    'calidad':       {'sebastian', 'alejandro', 'laura', 'yuliel', 'miguel', 'hernando',
+                      'catalina', 'luz'},
+    'aseguramiento': {'sebastian', 'alejandro', 'miguel', 'hernando', 'luz'},
+    'tecnica':       {'sebastian', 'alejandro', 'hernando', 'luz'},
+
+    # --- administracion ---
+    'compras':       {'sebastian', 'alejandro', 'catalina', 'mayra', 'luz'},
+    'tesoreria':     {'sebastian', 'alejandro', 'mayra'},
+    'rrhh':          {'sebastian', 'alejandro', 'gloria', 'luz', 'mayra'},
+    'bienestar':     {'sebastian', 'alejandro', 'gloria', 'luz'},
+
+    # --- comercial / marcas ---
+    'marketing':     {'sebastian', 'alejandro', 'jefferson'},
+    'clientes':      {'sebastian', 'alejandro', 'valentina', 'luz'},
+    'animus':        {'sebastian', 'alejandro', 'daniela'},
+    'espagiria':     {'sebastian', 'alejandro', 'luz'},
+
+    # --- solo direccion ---
+    # Los que Sebastian no nombro quedan de admin a proposito: si despues falta alguien se agrega
+    # en un minuto y se ve en /admin/permisos. Abrir de mas no se nota; abrir de menos se reporta
+    # el mismo dia.
+    'gerencia':      set(ADMIN_USERS),
+    'centro':        set(ADMIN_USERS),
+    'comercial':     set(ADMIN_USERS),
+    'compliance':    set(ADMIN_USERS),
+    'inteligencia':  set(ADMIN_USERS),
+    'invima':        set(ADMIN_USERS),
+    'seguridad':     set(ADMIN_USERS),
+    'admin':         set(ADMIN_USERS),
+}
+
+# Que prefijo de URL pertenece a que modulo · se evalua EN ORDEN (el mas especifico primero).
+#
+# ⚠ Lo que NO esta en esta lista NO se bloquea. Es deliberado: un default-deny sobre 1.700 rutas
+# cerraria en silencio cosas que hoy funcionan, y el sintoma seria alguien trabado en pleno turno
+# sin que nadie sepa por que (M121). Lo que no esta listado conserva el gate que ya tenia.
+MODULO_POR_RUTA = (
+    # ⚠ `/admin` y `/diag` NO se mapean acá a propósito: ya tienen su propio gate y responden
+    # **404**, no 403, para no revelar siquiera que la ruta existe (es como se cerró la fuga de
+    # `/diag/*` a internet · M95). Si este gate se metiera antes, contestaría 403 y volvería a
+    # delatar que están ahí. Un gate duplicado no suma seguridad: le cambia la respuesta al que
+    # ya funcionaba.
+    ('/seguridad',          'seguridad'),
+    ('/comunicacion',       'admin'),      # 'Compromisos (legacy)' · no esta en uso
+    ('/compromisos',        'admin'),
+    ('/aseguramiento',      'aseguramiento'),
+    ('/calidad',            'calidad'),
+    ('/tecnica',            'tecnica'),
+    ('/compras',            'compras'),
+    ('/tesoreria',          'tesoreria'),
+    ('/financiero',         'tesoreria'),
+    ('/contabilidad',       'tesoreria'),
+    ('/gerencia-financiero', 'tesoreria'),
+    ('/gerencia',           'gerencia'),
+    ('/centro',             'centro'),
+    ('/hoy',                'centro'),
+    ('/comercial',          'comercial'),
+    ('/compliance',         'compliance'),
+    ('/rrhh',               'rrhh'),
+    ('/bienestar',          'bienestar'),
+    ('/marketing',          'marketing'),
+    ('/clientes',           'clientes'),
+    ('/animus',             'animus'),
+    ('/espagiria',          'espagiria'),
+    ('/planta',             'planta'),
+    ('/inventarios',        'planta'),
+    ('/brd',                'planta'),
+    ('/programacion',       'planta'),
+    ('/asignar-areas',      'planta'),
+    ('/artes',              'planta'),
+    ('/solicitudes',        'solicitudes'),
+    ('/recepcion',          'recepcion'),
+    ('/chat',               'chat'),
+)
+
+# Paginas que NUNCA se bloquean aunque caigan bajo un prefijo: la propia sesion, lo publico y lo
+# que el navegador pide solo. Si el logout quedara detras de un permiso, alguien sin acceso no
+# podria ni salir.
+RUTAS_SIEMPRE_ABIERTAS = {
+    '/', '/login', '/logout', '/login/mfa', '/login/mfa-backup', '/modulos', '/hub',
+    '/cambiar-password', '/healthz', '/sw.js', '/manifest.json', '/reportar',
+    '/portal', '/portal/login', '/portal/logout',
+}
+
+
+def modulo_de_ruta(ruta):
+    """A que modulo pertenece una pagina · None si no esta mapeada (y entonces no se bloquea)."""
+    r = (ruta or '').split('?')[0].rstrip('/') or '/'
+    if r in RUTAS_SIEMPRE_ABIERTAS or (r + '/') in RUTAS_SIEMPRE_ABIERTAS:
+        return None
+    for pref, mod in MODULO_POR_RUTA:
+        if r == pref or r.startswith(pref + '/'):
+            return mod
+    return None
+
+
+def puede_ver_modulo(usuario, modulo):
+    """El unico resolver de 'esta persona entra a este modulo'."""
+    u = (usuario or '').strip().lower()
+    if not u:
+        return False
+    if u in ADMIN_USERS:
+        return True                      # fundador y CEO entran a todo
+    return u in MODULOS_ACCESO.get(modulo, set())
 
 
 DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
@@ -152,7 +292,9 @@ FORMULAS_VER_USERS = (
     else (TECNICA_USERS | CALIDAD_USERS | ASEGURAMIENTO_USERS | ADMIN_USERS)
 )
 # Marketing: equipo de marketing + asistentes de gerencia (cada una para su empresa).
-MARKETING_USERS = {"jefferson", "felipe", "daniela", "luz", "alejandro", "sebastian"}
+# Marketing quedo en Jefferson (Sebastian 7-ago) · Felipe salio de la empresa y Daniela y Luz
+# pasaron a sus propios modulos (ANIMUS y Espagiria).
+MARKETING_USERS = {"jefferson", "alejandro", "sebastian"}
 # Acceso al módulo ÁNIMUS Lab (skincare): asistente de gerencia + admins.
 ANIMUS_ACCESS   = {"daniela", "alejandro", "sebastian"}
 # Acceso al módulo Espagiria (pendiente de crear blueprint): asist. gerencia + admins.
