@@ -21077,6 +21077,15 @@ async function empqAbrir(){
   }
   empqPintar();
 }
+function _q(v){
+  // Un valor que va DENTRO de onclick="..." no puede llevar comillas dobles: cierran el atributo
+  // y el HTML queda partido -- el navegador tira "Uncaught SyntaxError: Unexpected end of input"
+  // y la pantalla deja de responder. `JSON.stringify` las mete siempre, asi que se cambian por la
+  // entidad. Es el patron que el resto del archivo ya usaba en 6 sitios y que yo copie a medias
+  // en tres botones nuevos (M45/M125).
+  return JSON.stringify(String(v==null?'':v)).replace(/"/g,'&quot;');
+}
+
 async function empqSkuTono(){
   // Sebastian (8-ago), mirando LIP SERUM: *"vendemos varios tonos, pero veo que no los esta
   // jalando en Shopify -- dice lip serum mocca, peach, merlot, y el envase para cada uno dice los
@@ -21209,8 +21218,8 @@ async function empqCompletar(){
       + '<span style="flex:1 1 320px">Frasco <b>'+empqEsc(x.frasco)+'</b>: ya tiene '
       + empqEsc(x.campo)+' <b>'+empqEsc(x.codigo)+'</b> en otra presentaci&oacute;n &middot; '
       + '<span style="color:var(--cx-text-soft)">falta en '+x.aplica_a.length+'</span></span>'
-      + '<button onclick="empqAplicarFrasco('+JSON.stringify(x.frasco)+','+JSON.stringify(x.campo)
-      + ','+JSON.stringify(x.codigo)+')" style="background:var(--cx-success-pale);'
+      + '<button onclick="empqAplicarFrasco('+_q(x.frasco)+','+_q(x.campo)
+      + ','+_q(x.codigo)+')" style="background:var(--cx-success-pale);'
       + 'color:var(--cx-success-text);border:1px solid var(--cx-success);border-radius:7px;'
       + 'padding:4px 10px;font-size:11.5px;font-weight:700;cursor:pointer">aplicar a las '
       + x.aplica_a.length+'</button></div>';
@@ -21240,8 +21249,8 @@ async function empqCompletar(){
       + '<span style="flex:1 1 260px">Frasco <b>'+empqEsc(x.frasco)+'</b> &middot; falta la '
       + empqEsc(x.campo)+' en '+x.faltan+' <span style="color:var(--cx-text-soft)">(ej. '
       + empqEsc(x.ejemplo)+')</span></span>'+sel
-      + '<button onclick="empqAplicarFrascoSel('+JSON.stringify(x.frasco)+','
-      + JSON.stringify(x.campo)+')" style="background:var(--cx-primary-grad);color:#fff;'
+      + '<button onclick="empqAplicarFrascoSel('+_q(x.frasco)+','
+      + _q(x.campo)+')" style="background:var(--cx-primary-grad);color:#fff;'
       + 'border:none;border-radius:7px;padding:4px 10px;font-size:11.5px;font-weight:700;'
       + 'cursor:pointer">aplicar a las '+x.faltan+'</button></div>';
   });
@@ -21583,7 +21592,7 @@ function empqTarjeta(g){
         + 'title="El producto SI vende: lo que falta es decir CUAL de sus SKU de Shopify es esta '
         + 'fila. Sin eso no se puede saber cuanto vende ella sola.">SKU sin asignar</div>';
     var _dupBtn = _esDup
-      ? '<div><button onclick="empqDejarUna(' + x.id + ',' + JSON.stringify(String(x.volumen_ml||'')) + ')" '
+      ? '<div><button onclick="empqDejarUna(' + x.id + ',' + _q(String(x.volumen_ml||'')) + ')" '
         + 'title="Apagar las otras presentaciones de este mismo tama&ntilde;o" '
         + 'style="margin-top:4px;background:var(--cx-warn-pale);color:var(--cx-warn-text);'
         + 'border:1px solid var(--cx-warn);border-radius:6px;padding:3px 7px;font-size:10.5px;'
