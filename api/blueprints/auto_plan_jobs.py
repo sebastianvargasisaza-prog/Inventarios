@@ -784,6 +784,8 @@ JOBS_SCHEDULE = [
     # duplicados y drift, pero NO mira si una fórmula dejó de sumar 100, si apunta a un código
     # muerto, ni si una corrección de colisión quedó a medias. Avisa cuando el resultado CAMBIA.
     ('salud_mp',              7, 40, None, None,                'job_salud_materias_primas'),
+    # El mismo vigia, para la cadena del ENVASE · 7:45, justo despues del de MP.
+    ('salud_mee',             7, 45, None, None,                'job_salud_envases'),
     # ⭐ Zero-Error · diario 8:00 · validación profunda matemática (8 checks)
     ('validacion_profunda',   8,  0, None, None,                'job_validacion_profunda'),
     # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
@@ -5872,6 +5874,92 @@ def job_pqr_mudo(app):
             log.warning('pqr_mudo notif fallo: %s', e)
         return True, {'dias_sin_recibir': dias, 'ultimo_recibido': ult, 'umbral': umbral,
                       'total_historico': tot}, 0
+
+
+def job_salud_envases(app):
+    """Diario 7:45 · las firmas de que la CADENA DEL ENVASE se rompio.
+
+    Hermano exacto del de materias primas, y por la misma razon: la cadena esta cubierta pieza por
+    pieza, pero cada verificacion corre solo cuando alguien abre un endpoint. Un kardex de envases
+    con un descuento de mas se ve igual que uno sano, y el doble descuento estuvo semanas a la
+    vista sin que nadie lo notara. Lo que faltaba no era el arreglo: era el detector (M127/M134).
+
+    Avisa cuando el resultado CAMBIA, no todos los dias: una alerta que suena igual siempre deja
+    de mirarse justo el dia que importa (M129).
+    """
+    import hashlib as _hashlib
+    import json as _json
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            try:
+                from .programacion import _salud_mee_core
+            except Exception:
+                from blueprints.programacion import _salud_mee_core
+            r = _salud_mee_core(c)
+        except Exception as e:
+            log.warning('salud_envases fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+
+        graves = {k: (r['hallazgos'].get(k) or []) for k in r['graves']}
+        # La huella incluye los chequeos CAIDOS: si manana uno deja de correr, eso tambien es una
+        # novedad -- si no, su lista vacia se leeria como "se arreglo" (M100).
+        firma = _hashlib.sha1(_json.dumps(
+            {'graves': graves, 'fallidos': r['checks_fallidos']},
+            sort_keys=True, ensure_ascii=False, default=str).encode('utf-8')).hexdigest()[:16]
+        prev = ''
+        try:
+            _p = c.execute("SELECT valor FROM app_settings WHERE clave='salud_mee_firma'").fetchone()
+            prev = (_p[0] if _p else '') or ''
+        except Exception:
+            pass
+        try:
+            c.execute("INSERT INTO app_settings (clave, valor) VALUES ('salud_mee_firma', ?) "
+                      "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor", (firma,))
+            conn.commit()
+        except Exception as e:
+            log.warning('salud_envases · no pude guardar la firma: %s', e)
+
+        if r['ok']:
+            return True, {'mensaje': 'Cadena de envases sana · las firmas graves en cero'}, 0
+        if firma == prev:
+            return True, {'mensaje': 'Mismos hallazgos que ayer · no re-notifico',
+                          'n_graves': r['n_graves']}, 0
+
+        _ROTULO = {
+            'serigrafiado_entra_y_nunca_sale':
+                'frasco(s) serigrafiado(s) que entraron y nunca salieron (se sigue gastando el base)',
+            'base_y_serigrafiado_salen_los_dos':
+                'frasco(s) donde salen el base Y el impreso (doble descuento)',
+            'sale_sin_haber_entrado':
+                'envase(s) que se consumieron y nunca se compraron',
+            'cache_distinto_del_kardex':
+                'envase(s) donde el cache no coincide con el kardex (la proxima salida sale corta)',
+            'stock_negativo': 'envase(s) con stock negativo',
+            'presentacion_apunta_a_envase_inexistente':
+                'presentacion(es) apuntando a un envase que no existe en el maestro',
+            'codigo_con_espacios_o_control':
+                'codigo(s) del kardex con espacios pegados (parten el stock en dos)',
+        }
+        partes = []
+        for k, v in graves.items():
+            if v:
+                partes.append('· %d %s' % (len(v), _ROTULO.get(k, k)))
+        for f in r['checks_fallidos']:
+            partes.append('· ⚠ el chequeo "%s" no pudo correr (%s)' % (f['check'], f['error'][:60]))
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['sebastian', 'alejandro'], 'inventario',
+                'Envases: %d cosa(s) que revisar' % r['n_graves'],
+                body=('\n'.join(partes) + '\n\nCada una significa que el envase se esta '
+                      'descontando (o dejando de descontar) de forma que el kardex no refleja lo '
+                      'que paso en el piso. El detalle en /api/mee/salud-cadena'),
+                link='/api/mee/salud-cadena')
+        except Exception as e:
+            log.warning('salud_envases · no pude notificar: %s', e)
+        return True, {'n_graves': r['n_graves'], 'detalle': partes}, len(partes)
 
 
 def job_salud_materias_primas(app):

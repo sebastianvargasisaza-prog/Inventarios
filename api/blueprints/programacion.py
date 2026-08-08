@@ -5389,6 +5389,187 @@ def prog_salud_formulas():
 #
 # Las cinco firmas GRAVES tienen que dar CERO. Si una deja de dar cero, algo se rompió.
 
+def _salud_mee_core(c):
+    """Las firmas de que la CADENA DEL ENVASE se rompio. Read-only, nucleo unico (M1).
+
+    Por que existe: la cadena esta cubierta pieza por pieza (35 archivos de test), pero cada
+    verificacion corre cuando alguien abre un endpoint. El doble descuento del envase estuvo a la
+    vista semanas y nadie lo vio, porque un kardex con un descuento de mas se ve igual que uno
+    sano. Lo que faltaba no era el arreglo: era el DETECTOR (M127/M134).
+
+    Cada firma corresponde a un bug REAL que ya paso, no a una hipotesis:
+
+      1. serigrafiado que solo CRECE -- entro y nunca salio, teniendo un base detras. Es la firma
+         de que el impreso no se consume y se sigue descontando el base (M147 causa (a));
+      2. base que SIGUE saliendo teniendo impreso -- el otro lado del mismo doble descuento;
+      3. envase que se consumio y NUNCA se compro -- codigo fantasma, o una clave con un espacio
+         pegado que partio el stock en dos (M100);
+      4. el cache `maestro_mee.stock_actual` contra la SUMA del kardex -- cuando divergen, una
+         Salida se registra CLAMPEADA en cero y el envase se usa mientras el kardex dice que
+         sigue en bodega (M153, que es peor que el doble descuento);
+      5. stock NEGATIVO por codigo -- fisicamente imposible;
+      6. presentacion ACTIVA que apunta a un envase que no existe en el maestro -- su compra no
+         se resuelve y no se compra nunca (M5).
+
+    Un chequeo que no se pueda correr se DECLARA en `checks_fallidos`: si devolviera lista vacia
+    en silencio, su resultado se leeria como "todo limpio" y estaria mintiendo (M100).
+    """
+    out = {'checks_fallidos': [], 'hallazgos': {}}
+
+    def _chk(nombre, fn):
+        try:
+            out['hallazgos'][nombre] = fn()
+        except Exception as e:
+            out['checks_fallidos'].append({'check': nombre, 'error': str(e)[:200]})
+            log.warning('salud-mee · %s: %s', nombre, e)
+
+    # Movimiento neto por codigo, con la MISMA semantica del kardex canonico (M26): la suma manda,
+    # el cache no. `anulado=0` porque una fila anulada no movio nada.
+    _MOV = ("SELECT UPPER(TRIM(mee_codigo)) AS cod, "
+            "       SUM(CASE WHEN LOWER(tipo) LIKE 'entrada%' THEN cantidad ELSE 0 END) AS ent, "
+            "       SUM(CASE WHEN LOWER(tipo) LIKE 'salida%'  THEN cantidad ELSE 0 END) AS sal, "
+            "       SUM(CASE WHEN LOWER(tipo) LIKE 'ajuste%'  THEN cantidad ELSE 0 END) AS aju "
+            "  FROM movimientos_mee WHERE COALESCE(anulado,0)=0 "
+            " GROUP BY UPPER(TRIM(mee_codigo))")
+
+    def _mov():
+        d = {}
+        for r in c.execute(_MOV).fetchall():
+            if r[0]:
+                d[r[0]] = {'entradas': float(r[1] or 0), 'salidas': float(r[2] or 0),
+                           'ajustes': float(r[3] or 0)}
+        return d
+
+    def _base_de():
+        """{impreso: base} · el puente que declara que este frasco volvio marcado."""
+        d = {}
+        for r in c.execute(
+                "SELECT UPPER(TRIM(codigo)), UPPER(TRIM(COALESCE(material_referencia,''))) "
+                "  FROM maestro_mee WHERE COALESCE(material_referencia,'')<>''").fetchall():
+            if r[0] and r[1]:
+                d[r[0]] = r[1]
+        return d
+
+    mov = _mov()
+    base_de = _base_de()
+
+    # 1 · el serigrafiado entro y nunca salio
+    def _impreso_solo_crece():
+        fuera = []
+        for imp, bas in base_de.items():
+            m = mov.get(imp)
+            if m and m['entradas'] > 0 and m['salidas'] <= 0:
+                fuera.append({'serigrafiado': imp, 'base': bas,
+                              'entradas': m['entradas'], 'salidas': m['salidas']})
+        return sorted(fuera, key=lambda x: -x['entradas'])[:50]
+    _chk('serigrafiado_entra_y_nunca_sale', _impreso_solo_crece)
+
+    # 2 · el base sigue saliendo aunque su impreso ya exista y se este consumiendo
+    def _base_sigue_saliendo():
+        fuera = []
+        for imp, bas in base_de.items():
+            mi, mb = mov.get(imp), mov.get(bas)
+            if mi and mb and mi['salidas'] > 0 and mb['salidas'] > 0:
+                fuera.append({'base': bas, 'serigrafiado': imp,
+                              'salidas_base': mb['salidas'], 'salidas_serigrafiado': mi['salidas']})
+        return sorted(fuera, key=lambda x: -x['salidas_base'])[:50]
+    _chk('base_y_serigrafiado_salen_los_dos', _base_sigue_saliendo)
+
+    # 3 · se consumio algo que nunca entro
+    def _sale_sin_entrar():
+        return sorted(
+            [{'codigo': k, 'salidas': v['salidas'], 'ajustes': v['ajustes']}
+             for k, v in mov.items()
+             if v['salidas'] > 0 and v['entradas'] <= 0 and v['ajustes'] <= 0],
+            key=lambda x: -x['salidas'])[:50]
+    _chk('sale_sin_haber_entrado', _sale_sin_entrar)
+
+    # 4 · el cache contra la suma del kardex
+    def _drift_cache():
+        fuera = []
+        for r in c.execute("SELECT UPPER(TRIM(codigo)), COALESCE(stock_actual,0) "
+                           "  FROM maestro_mee").fetchall():
+            cod = r[0]
+            if not cod:
+                continue
+            m = mov.get(cod)
+            kardex = (m['entradas'] - m['salidas'] + m['ajustes']) if m else 0.0
+            cache = float(r[1] or 0)
+            # El cache se CLAMPEA a 0 por diseno, asi que un cache en 0 con kardex negativo no es
+            # drift: es el clamp haciendo lo suyo. Lo que importa es cuando el cache dice MENOS
+            # que el kardex, porque ahi la proxima Salida se registra corta (M153).
+            if abs(cache - kardex) > 0.5 and not (cache == 0 and kardex <= 0):
+                fuera.append({'codigo': cod, 'cache': cache, 'kardex': kardex,
+                              'diferencia': round(cache - kardex, 2)})
+        return sorted(fuera, key=lambda x: abs(x['diferencia']), reverse=True)[:50]
+    _chk('cache_distinto_del_kardex', _drift_cache)
+
+    # 5 · stock negativo
+    def _negativos():
+        return sorted(
+            [{'codigo': k, 'stock': round(v['entradas'] - v['salidas'] + v['ajustes'], 2)}
+             for k, v in mov.items()
+             if (v['entradas'] - v['salidas'] + v['ajustes']) < -0.01],
+            key=lambda x: x['stock'])[:50]
+    _chk('stock_negativo', _negativos)
+
+    # 6 · presentacion activa que apunta a un envase inexistente
+    def _presentacion_fantasma():
+        maestro = {(r[0] or '').strip().upper()
+                   for r in c.execute("SELECT codigo FROM maestro_mee").fetchall()}
+        fuera = []
+        for r in c.execute(
+                "SELECT producto_nombre, COALESCE(presentacion_codigo,''), "
+                "       COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), "
+                "       COALESCE(caja_codigo,'') "
+                "  FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall():
+            for _campo, _val in (('envase', r[2]), ('tapa', r[3]), ('caja', r[4])):
+                v = (_val or '').strip().upper()
+                if v and v not in maestro:
+                    fuera.append({'producto': r[0], 'presentacion': r[1],
+                                  'campo': _campo, 'codigo': _val})
+        return fuera[:50]
+    _chk('presentacion_apunta_a_envase_inexistente', _presentacion_fantasma)
+
+    # 7 · clave sucia (un tabulador pegado parte el stock en dos, sin un solo error a la vista)
+    def _clave_sucia():
+        fuera = []
+        for r in c.execute("SELECT DISTINCT mee_codigo FROM movimientos_mee").fetchall():
+            v = r[0]
+            if v is None:
+                continue
+            if v != v.strip() or any(ord(ch) < 32 for ch in v):
+                fuera.append({'codigo': repr(v)})
+        return fuera[:50]
+    _chk('codigo_con_espacios_o_control', _clave_sucia)
+
+    graves = ('serigrafiado_entra_y_nunca_sale', 'base_y_serigrafiado_salen_los_dos',
+              'sale_sin_haber_entrado', 'cache_distinto_del_kardex', 'stock_negativo',
+              'presentacion_apunta_a_envase_inexistente', 'codigo_con_espacios_o_control')
+    out['graves'] = list(graves)
+    # ⚠ Cada lista viene RECORTADA a 50 para que la respuesta no sea inmanejable, y un tope que
+    # recorta sin decirlo es un total falso: "50 hallazgos" se leeria como el total cuando podrian
+    # ser 400 (M155). Se declara cuantos hay de verdad y cuantos se muestran.
+    out['conteos'] = {k: len(out['hallazgos'].get(k) or []) for k in graves}
+    out['recortado'] = {k: v for k, v in out['conteos'].items() if v >= 50}
+    out['n_graves'] = sum(out['conteos'].values())
+    out['ok'] = (out['n_graves'] == 0 and not out['checks_fallidos'])
+    out['universo'] = {'codigos_con_movimiento': len(mov), 'puentes_base_impreso': len(base_de)}
+    return out
+
+
+@bp.route('/api/mee/salud-cadena', methods=['GET'])
+def mee_salud_cadena():
+    """La cadena del envase, de punta a punta · read-only.
+
+    Siete firmas que tienen que dar CERO. Cada una corresponde a un bug que ya paso, no a una
+    hipotesis: por eso la lista es corta y se puede mirar entera.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    return jsonify(_salud_mee_core(get_db().cursor()))
+
+
 def _salud_mp_core(c):
     """Núcleo compartido por el diagnóstico y el cron (M1: una sola fuente). Read-only.
 
