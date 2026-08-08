@@ -494,6 +494,16 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid var(--cx-border);border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer">
           &#128269; Rastreo Shopify
         </button>
+        <button onclick="empqSkuTono()" id="empq-btn-tono"
+          title="El tono esta en los dos nombres (el SKU y el frasco): se deduce el vinculo y se completa la presentacion que ya existe"
+          style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid var(--cx-border);border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer">
+          &#128279; Completar SKU por tono
+        </button>
+        <button onclick="empqCompletar()" id="empq-btn-completar"
+          title="La tapa pertenece al FRASCO, no al producto: se carga una vez por frasco y el resto se deduce"
+          style="background:var(--cx-primary-grad);color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer">
+          &#128230; Completar tapas y cajas
+        </button>
       </div>
       <div id="empq-rastreo" style="margin-bottom:14px"></div>
       <div id="empq-cuerpo"><div style="color:var(--cx-text-faint);padding:30px;text-align:center">Cargando&hellip;</div></div>
@@ -21067,6 +21077,206 @@ async function empqAbrir(){
   }
   empqPintar();
 }
+async function empqSkuTono(){
+  // Sebastian (8-ago), mirando LIP SERUM: *"vendemos varios tonos, pero veo que no los esta
+  // jalando en Shopify -- dice lip serum mocca, peach, merlot, y el envase para cada uno dice los
+  // mismos nombres, pero veo que no los rastrea"*.
+  //
+  // El tono esta escrito en los DOS lados (el SKU `GLOSSPEACH` y el frasco `LIPS GLOSS PEACH`),
+  // asi que el vinculo se deduce. Lo que fallaba es que el emparejador viejo CREABA una
+  // presentacion nueva por tono en vez de completar la que ya estaba: por eso el producto quedo
+  // con dos juegos de filas, unas con venta y otras diciendo "SKU sin asignar".
+  //
+  // Esto completa las que EXISTEN, y se confirma antes de escribir: emparejar por parecido sin
+  // que nadie lo mire es como se le atribuye la venta al tono equivocado (M19).
+  var cont=document.getElementById('empq-rastreo'); if(!cont)return;
+  var btn=document.getElementById('empq-btn-tono');
+  if(window._empqTonoBusy) return; window._empqTonoBusy=true;
+  if(btn){ btn.disabled=true; btn.style.opacity='.6'; }
+  cont.innerHTML='<div style="color:var(--cx-text-faint);padding:16px;text-align:center;font-size:12.5px">Emparejando por tono&hellip;</div>';
+  var j=null;
+  try{
+    var r=await fetch('/api/programacion/sku-por-tono',{credentials:'same-origin'});
+    j=await r.json();
+    if(!r.ok) throw new Error((j&&j.error)||r.status);
+  }catch(e){
+    cont.innerHTML='<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border-radius:10px;padding:13px;font-size:12.5px">No pude emparejar: '+empqEsc(String(e))+'</div>';
+    window._empqTonoBusy=false; if(btn){ btn.disabled=false; btn.style.opacity='1'; }
+    return;
+  }
+  window._empqTonoBusy=false; if(btn){ btn.disabled=false; btn.style.opacity='1'; }
+  window._EMPQ_TONO=j;
+
+  var p=j.propuestas||[];
+  var h='<div style="border:1px solid var(--cx-border);border-radius:11px;overflow:hidden;margin-bottom:9px">'
+    + '<div style="background:var(--cx-primary-soft);padding:10px 13px;font-size:12.5px;font-weight:700">'
+    + '&#128279; Completar el SKU de Shopify por tono'
+    + '<div style="font-weight:500;font-size:11.5px;opacity:.9;margin-top:3px">'
+    + 'Completa las presentaciones que YA existen. No crea filas nuevas: crear otra por cada tono '
+    + 'fue lo que dejo el producto con dos juegos.</div></div><div style="padding:9px 13px">';
+
+  if(p.length){
+    h+='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>'
+      + '<th style="text-align:left;padding:4px 6px;color:var(--cx-text-soft)">Producto</th>'
+      + '<th style="text-align:left;padding:4px 6px;color:var(--cx-text-soft)">Frasco</th>'
+      + '<th style="text-align:left;padding:4px 6px;color:var(--cx-text-soft)">SKU que le toca</th>'
+      + '</tr></thead><tbody>';
+    p.forEach(function(x){
+      h+='<tr><td style="padding:4px 6px">'+empqEsc(x.producto)+'</td>'
+        + '<td style="padding:4px 6px;font-family:ui-monospace,monospace;font-size:11px">'+empqEsc(x.frasco)+'</td>'
+        + '<td style="padding:4px 6px"><b>'+empqEsc(x.sku)+'</b></td></tr>';
+    });
+    h+='</tbody></table>'
+      + '<button onclick="empqSkuTonoAplicar()" style="margin-top:10px;background:var(--cx-primary-grad);'
+      + 'color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;'
+      + 'cursor:pointer">Aplicar los '+p.length+'</button>';
+  }else{
+    h+='<div style="color:var(--cx-text-soft);font-size:12.5px">No hay nada que deducir.</div>';
+  }
+  // Lo ambiguo NO se resuelve solo · se muestra (M19)
+  (j.ambiguas||[]).forEach(function(x){
+    h+='<div style="margin-top:7px;font-size:12px;color:var(--cx-warn-text)">&#9888; '
+      + empqEsc(x.producto)+' &middot; <b>'+empqEsc(x.frasco)+'</b>: empatan '
+      + empqEsc((x.candidatos||[]).join(' / '))+' &middot; eleg&iacute; vos en la fila.</div>';
+  });
+  if((j.sin_pista||[]).length){
+    h+='<div style="margin-top:7px;font-size:11.5px;color:var(--cx-text-faint)">'
+      + (j.sin_pista.length)+' presentaci&oacute;n(es) sin pista: el nombre del frasco no dice el '
+      + 'tono, o ning&uacute;n SKU del producto lo lleva. Esas se cargan a mano.</div>';
+  }
+  h+='</div></div>';
+  cont.innerHTML=h;
+}
+
+async function empqSkuTonoAplicar(){
+  var j=window._EMPQ_TONO; if(!j || !(j.propuestas||[]).length) return;
+  if(window._empqTonoApl) return; window._empqTonoApl=true;
+  try{
+    var pares=j.propuestas.map(function(x){ return {id:x.id, sku:x.sku}; });
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/sku-por-tono-aplicar',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||t.token||''},
+      body:JSON.stringify({pares:pares})});
+    var res=await r.json();
+    if(!r.ok){ alert('No se pudo aplicar: '+(res.error||r.status)); return; }
+    _toast(res.aplicados+' presentaci\u00f3n(es) ahora rastrean su SKU', 1);
+    await empqAbrir();
+    empqSkuTono();
+  }catch(e){ alert('No se pudo aplicar: '+e); }
+  finally{ window._empqTonoApl=false; }
+}
+
+async function empqCompletar(){
+  // Sebastian (8-ago): *"entonces necesitas que llene los productos?"*. Si, pero no producto por
+  // producto: **la tapa pertenece al FRASCO**. Un airless de 30 ml lleva la misma tapa lo tenga
+  // el suero que lo tenga, asi que se dice UNA vez por frasco y el resto se deduce.
+  //
+  // Lo que se deduce se APLICA con un clic; lo que no tiene referencia se teclea, y el numero de
+  // frascos es lo que dice cuanto trabajo queda de verdad (no el numero de productos, que asusta
+  // y no es la unidad correcta).
+  var cont=document.getElementById('empq-rastreo'); if(!cont)return;
+  var btn=document.getElementById('empq-btn-completar');
+  if(window._empqCompBusy) return;            // toda accion que escribe se llavea (M63)
+  window._empqCompBusy=true;
+  if(btn){ btn.disabled=true; btn.style.opacity='.6'; }
+  cont.innerHTML='<div style="color:var(--cx-text-faint);padding:16px;text-align:center;font-size:12.5px">Mirando que se puede deducir&hellip;</div>';
+  var j=null;
+  try{
+    var r=await fetch('/api/programacion/empaque-sugerencias',{credentials:'same-origin'});
+    j=await r.json();
+    if(!r.ok) throw new Error((j&&j.error)||r.status);
+  }catch(e){
+    cont.innerHTML='<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);border-radius:10px;padding:13px;font-size:12.5px">No pude leer las sugerencias: '+empqEsc(String(e))+'</div>';
+    window._empqCompBusy=false; if(btn){ btn.disabled=false; btn.style.opacity='1'; }
+    return;
+  }
+  window._empqCompBusy=false; if(btn){ btn.disabled=false; btn.style.opacity='1'; }
+
+  var res=j.resumen||{};
+  var h='<div style="border:1px solid var(--cx-border);border-radius:11px;overflow:hidden;margin-bottom:9px">'
+    + '<div style="background:var(--cx-primary-soft);padding:10px 13px;font-size:12.5px;font-weight:700">'
+    + '&#128230; Completar el empaque por FRASCO'
+    + '<div style="font-weight:500;font-size:11.5px;opacity:.9;margin-top:3px">'
+    + 'La tapa y la caja pertenecen al frasco, no al producto: se cargan una vez y todas las '
+    + 'presentaciones que usan ese frasco las heredan. Quedan <b>'+(res.hay_que_teclear||0)
+    + '</b> por teclear sobre <b>'+(res.frascos||0)+'</b> frascos.</div></div>'
+    + '<div style="padding:9px 13px">';
+
+  // 1 · lo que se puede deducir · un clic
+  (j.sugerencias||[]).forEach(function(x){
+    h+='<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:6px 0;'
+      + 'border-bottom:1px solid var(--cx-border-soft);font-size:12.5px">'
+      + '<span style="flex:1 1 320px">Frasco <b>'+empqEsc(x.frasco)+'</b>: ya tiene '
+      + empqEsc(x.campo)+' <b>'+empqEsc(x.codigo)+'</b> en otra presentaci&oacute;n &middot; '
+      + '<span style="color:var(--cx-text-soft)">falta en '+x.aplica_a.length+'</span></span>'
+      + '<button onclick="empqAplicarFrasco('+JSON.stringify(x.frasco)+','+JSON.stringify(x.campo)
+      + ','+JSON.stringify(x.codigo)+')" style="background:var(--cx-success-pale);'
+      + 'color:var(--cx-success-text);border:1px solid var(--cx-success);border-radius:7px;'
+      + 'padding:4px 10px;font-size:11.5px;font-weight:700;cursor:pointer">aplicar a las '
+      + x.aplica_a.length+'</button></div>';
+  });
+
+  // 2 · lo ambiguo NO se resuelve solo · se muestra (M19)
+  (j.ambiguos||[]).forEach(function(x){
+    h+='<div style="padding:6px 0;border-bottom:1px solid var(--cx-border-soft);font-size:12.5px;'
+      + 'color:var(--cx-warn-text)">&#9888; El frasco <b>'+empqEsc(x.frasco)+'</b> tiene '
+      + empqEsc(x.campo)+'s distintas ('+empqEsc(x.codigos.join(' / '))
+      + '), as&iacute; que no deduzco: eleg&iacute; vos en la fila.</div>';
+  });
+
+  // 3 · lo que hay que teclear · un selector por frasco
+  var mees=(EMPQ_MEE||[]);
+  (j.sin_referencia||[]).forEach(function(x){
+    var sel='<select id="empqc-'+empqEsc(x.frasco)+'-'+empqEsc(x.campo)+'" '
+      + 'style="padding:4px 7px;border:1px solid var(--cx-border);border-radius:6px;'
+      + 'background:var(--cx-bg-soft);color:var(--cx-text);font-size:11.5px;max-width:230px">'
+      + '<option value="">eleg&iacute; el '+empqEsc(x.campo)+'&hellip;</option>';
+    mees.forEach(function(m){
+      sel+='<option value="'+empqEsc(m.codigo)+'">'+empqEsc(m.codigo)+' - '+empqEsc((m.desc||'').slice(0,42))+'</option>';
+    });
+    sel+='</select>';
+    h+='<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:6px 0;'
+      + 'border-bottom:1px solid var(--cx-border-soft);font-size:12.5px">'
+      + '<span style="flex:1 1 260px">Frasco <b>'+empqEsc(x.frasco)+'</b> &middot; falta la '
+      + empqEsc(x.campo)+' en '+x.faltan+' <span style="color:var(--cx-text-soft)">(ej. '
+      + empqEsc(x.ejemplo)+')</span></span>'+sel
+      + '<button onclick="empqAplicarFrascoSel('+JSON.stringify(x.frasco)+','
+      + JSON.stringify(x.campo)+')" style="background:var(--cx-primary-grad);color:#fff;'
+      + 'border:none;border-radius:7px;padding:4px 10px;font-size:11.5px;font-weight:700;'
+      + 'cursor:pointer">aplicar a las '+x.faltan+'</button></div>';
+  });
+
+  if(!(j.sugerencias||[]).length && !(j.sin_referencia||[]).length && !(j.ambiguos||[]).length){
+    h+='<div style="color:var(--cx-success-text);font-size:12.5px;font-weight:600">'
+      + '&#10004; Todas las presentaciones encendidas tienen su tapa y su caja.</div>';
+  }
+  h+='</div></div>';
+  cont.innerHTML=h;
+}
+
+async function empqAplicarFrasco(frasco, campo, codigo){
+  if(window._empqAplBusy) return; window._empqAplBusy=true;
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/empaque-aplicar',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||t.token||''},
+      body:JSON.stringify({frasco:frasco, campo:campo, codigo:codigo})});
+    var j=await r.json();
+    if(!r.ok){ alert('No se pudo aplicar: '+(j.error||r.status)); return; }
+    _toast(j.aplicadas+' presentaci\u00f3n(es) actualizadas', 1);
+    await empqAbrir();          // se recarga el modal con el dato ya puesto
+    empqCompletar();
+  }catch(e){ alert('No se pudo aplicar: '+e); }
+  finally{ window._empqAplBusy=false; }
+}
+
+function empqAplicarFrascoSel(frasco, campo){
+  var el=document.getElementById('empqc-'+frasco+'-'+campo);
+  var cod=el?el.value:'';
+  if(!cod){ alert('Eleg\u00ed primero el c\u00f3digo.'); return; }
+  empqAplicarFrasco(frasco, campo, cod);
+}
+
 async function empqRastreo(){
   // El rastreo de las presentaciones CONTRA lo que Shopify vende (Sebastian 7-ago):
   // *"lo ideal es que sea el rastreo tal cual de Shopify, porque asi sabemos que falta"*.

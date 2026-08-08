@@ -17256,6 +17256,295 @@ def marcacion_envase_set():
     return jsonify({'ok': True, 'codigo': cod, 'marcacion_tipo': tipo, 'marcacion_proveedor': prov})
 
 
+def _tokens_tono(texto):
+    """Las palabras que IDENTIFICAN el tono, sacando el ruido comun del nombre del envase.
+
+    'LIPS GLOSS PEACH' -> ['PEACH'] · 'FRASCO VIDRIO 30 ML AMBAR' -> ['AMBAR'].
+    """
+    import re as _re
+    import unicodedata as _ud
+    n = _ud.normalize('NFKD', str(texto or '')).encode('ascii', 'ignore').decode().upper()
+    n = _re.sub(r'[^A-Z0-9]+', ' ', n)
+    RUIDO = {'LIPS', 'LIP', 'GLOSS', 'SERUM', 'LABIAL', 'LABIO', 'LABIOS', 'VOLUMINIZADOR',
+             'PEPTIDOS', 'SIN', 'SERG', 'SERIG', 'SERIGRAFIA', 'SERIGRAFIADO', 'TAMPOGRAFIA',
+             'CON', 'DE', 'ML', 'ENVASE', 'FRASCO', 'NUEVA', 'FORMULA', 'COLAPSIBLE', 'FR',
+             'VID', 'VIDRIO', 'PLA', 'PLASTICO', 'TONO', 'COLOR', 'LOTE', 'MEE', 'IMP', 'ENV',
+             'TAPA', 'CAJA', 'AIRLESS', 'GOTERO', 'PET', 'PP'}
+    return [t for t in n.split() if t not in RUIDO and not t.isdigit() and len(t) > 2]
+
+
+@bp.route('/api/programacion/sku-por-tono', methods=['GET'])
+def prog_sku_por_tono():
+    """Propone el SKU de Shopify de cada presentacion que no lo tiene, emparejando por TONO.
+
+    Sebastian (8-ago), mirando LIP SERUM: *"vendemos varios tonos, pero veo que no los esta
+    jalando en Shopify -- dice lip serum mocca, peach, merlot, y el envase para cada uno dice los
+    mismos nombres, pero veo que no los rastrea"*.
+
+    Tenia razon y la causa estaba a la vista: el tono esta escrito en los DOS lados (el SKU
+    `GLOSSPEACH` y el frasco `LIPS GLOSS PEACH`), asi que el vinculo se puede deducir. Lo que
+    pasaba es que el emparejador viejo CREABA presentaciones nuevas (`TONO-<sku>`) en vez de
+    completar las que ya estaban: por eso el producto quedo con dos juegos de filas, unas con
+    venta y otras diciendo "SKU sin asignar".
+
+    Esto completa las que EXISTEN. Read-only: la aplicacion es un POST aparte.
+
+    ⚠ Solo propone cuando hay UNA sola respuesta:
+      · el SKU tiene que ser del MISMO producto (no se cruza entre productos);
+      · el SKU no puede estar ya usado por otra presentacion (un SKU es una fila, no dos);
+      · si dos SKU empatan en el tono, NO elige: lo muestra como ambiguo (M19).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    c = get_db().cursor()
+
+    # SKUs por producto, con su nombre normalizado sin separadores (asi 'GLOSSPEACH' contiene
+    # 'PEACH' aunque el frasco lo escriba separado).
+    import re as _re
+    import unicodedata as _ud
+
+    def _plano(x):
+        n = _ud.normalize('NFKD', str(x or '')).encode('ascii', 'ignore').decode().upper()
+        return _re.sub(r'[^A-Z0-9]+', '', n)
+
+    skus_por_prod = {}
+    for sku, pn in c.execute(
+            "SELECT sku, producto_nombre FROM sku_producto_map "
+            " WHERE COALESCE(activo,1)=1 AND COALESCE(es_regalo,0)=0").fetchall():
+        if sku and pn:
+            skus_por_prod.setdefault(_norm_prod_fuerte(pn), []).append(
+                {'sku': sku, 'plano': _plano(sku)})
+
+    # Descripcion de cada frasco, para sacarle el tono
+    desc_mee = {}
+    for cod, de in c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee").fetchall():
+        if cod:
+            desc_mee[(cod or '').strip().upper()] = de
+
+    # SKUs ya tomados por alguna presentacion · un SKU pertenece a UNA fila
+    tomados = set()
+    for r in c.execute("SELECT UPPER(TRIM(COALESCE(sku_shopify,''))) FROM producto_presentaciones "
+                       " WHERE COALESCE(activo,1)=1 AND COALESCE(sku_shopify,'')<>''").fetchall():
+        if r[0]:
+            tomados.add(r[0])
+
+    propuestas, ambiguas, sin_pista = [], [], []
+    for pid, prod, pcod, frasco in c.execute(
+            "SELECT id, producto_nombre, COALESCE(presentacion_codigo,''), "
+            "       UPPER(TRIM(COALESCE(envase_codigo,''))) "
+            "  FROM producto_presentaciones "
+            " WHERE COALESCE(activo,1)=1 AND COALESCE(sku_shopify,'')='' "
+            "   AND COALESCE(envase_codigo,'')<>''").fetchall():
+        cands = skus_por_prod.get(_norm_prod_fuerte(prod)) or []
+        libres = [x for x in cands if x['sku'].strip().upper() not in tomados]
+        if not libres:
+            continue
+        toks = _tokens_tono(frasco + ' ' + desc_mee.get(frasco, ''))
+        if not toks:
+            sin_pista.append({'id': pid, 'producto': prod, 'frasco': frasco,
+                              'motivo': 'el nombre del frasco no dice ningun tono'})
+            continue
+        # Puntaje = cuantos tokens del frasco aparecen en el SKU. Se exige que el ganador sea
+        # UNICO: si dos empatan, no hay una respuesta, hay una pregunta.
+        marcados = []
+        for x in libres:
+            n = sum(1 for t in toks if t in x['plano'])
+            if n:
+                marcados.append((n, x['sku']))
+        if not marcados:
+            sin_pista.append({'id': pid, 'producto': prod, 'frasco': frasco,
+                              'motivo': 'ningun SKU del producto lleva ese tono'})
+            continue
+        mejor = max(m[0] for m in marcados)
+        ganadores = [m[1] for m in marcados if m[0] == mejor]
+        if len(ganadores) > 1:
+            ambiguas.append({'id': pid, 'producto': prod, 'frasco': frasco,
+                             'candidatos': sorted(ganadores), 'tono': toks})
+            continue
+        propuestas.append({'id': pid, 'producto': prod, 'presentacion': pcod,
+                           'frasco': frasco, 'sku': ganadores[0], 'tono': toks})
+
+    return jsonify({
+        'ok': True,
+        'propuestas': propuestas,
+        'ambiguas': ambiguas,
+        'sin_pista': sin_pista,
+        'resumen': {'propuestas': len(propuestas), 'ambiguas': len(ambiguas),
+                    'sin_pista': len(sin_pista)},
+        'que_hace': ('Completa el SKU de las presentaciones que YA existen. No crea filas nuevas: '
+                     'crear otra por cada tono fue lo que dejo el producto con dos juegos.'),
+    })
+
+
+@bp.route('/api/programacion/sku-por-tono-aplicar', methods=['POST'])
+def prog_sku_por_tono_aplicar():
+    """Escribe los pares CONFIRMADOS. Body: {pares:[{id, sku}, ...]}."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    u = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    pares = d.get('pares') or []
+    if not isinstance(pares, list) or not pares:
+        return jsonify({'error': 'no hay pares que aplicar'}), 400
+    conn = get_db(); c = conn.cursor()
+    hechos, saltados = [], []
+    for p in pares[:500]:
+        try:
+            pid = int(p.get('id') or 0)
+        except (TypeError, ValueError):
+            pid = 0
+        sku = (p.get('sku') or '').strip()
+        if not pid or not sku:
+            continue
+        # El SKU tiene que existir · y no puede estar ya tomado por otra fila (un SKU es UNA
+        # presentacion: si dos filas dicen vender el mismo SKU, su venta se cuenta dos veces).
+        if not c.execute("SELECT 1 FROM sku_producto_map WHERE UPPER(TRIM(sku))=UPPER(TRIM(?))",
+                         (sku,)).fetchone():
+            saltados.append({'id': pid, 'sku': sku, 'motivo': 'ese SKU no existe'})
+            continue
+        _ya = c.execute("SELECT id FROM producto_presentaciones "
+                        " WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(COALESCE(sku_shopify,'')))="
+                        "       UPPER(TRIM(?)) AND id<>?", (sku, pid)).fetchone()
+        if _ya:
+            saltados.append({'id': pid, 'sku': sku,
+                             'motivo': 'ese SKU ya lo tiene la presentacion %s' % _ya[0]})
+            continue
+        _r = c.execute("UPDATE producto_presentaciones SET sku_shopify=?, "
+                       "       actualizado_en=datetime('now','-5 hours') "
+                       " WHERE id=? AND COALESCE(sku_shopify,'')=''", (sku, pid))
+        # Solo se completa lo VACIO: si alguien ya lo cargo a mano, no se le pisa.
+        if (_r.rowcount or 0) == 1:
+            hechos.append({'id': pid, 'sku': sku})
+        else:
+            saltados.append({'id': pid, 'sku': sku, 'motivo': 'ya tenia SKU o no existe'})
+    if hechos:
+        audit_log(c, usuario=u, accion='SKU_POR_TONO', tabla='producto_presentaciones',
+                  registro_id='_BULK_', despues={'pares': hechos},
+                  detalle='%d presentacion(es) completadas con su SKU por tono' % len(hechos))
+        conn.commit()
+    return jsonify({'ok': True, 'aplicados': len(hechos), 'saltados': saltados})
+
+
+@bp.route('/api/programacion/empaque-sugerencias', methods=['GET'])
+def prog_empaque_sugerencias():
+    """Que tapa y que caja le corresponden a las presentaciones que estan vacias · read-only.
+
+    Sebastian (8-ago): *"entonces necesitas que llene los productos?"*. La tapa y la caja son un
+    dato que solo ellos tienen, pero cargarlo presentacion por presentacion son decenas de
+    clics -- y la mayoria serian el MISMO dato repetido.
+
+    La regla que lo hace corto: **la tapa pertenece al FRASCO, no al producto**. Un airless de
+    30 ml lleva la misma tapa lo tenga el suero que lo tenga. Entonces basta con decirlo UNA vez
+    por frasco y el resto se deduce.
+
+    ⚠ Deduce, no adivina: solo propone cuando OTRA presentacion del MISMO frasco ya tiene el dato
+    cargado, y si dos presentaciones del mismo frasco tienen tapas DISTINTAS no propone nada y lo
+    dice -- ahi no hay una respuesta, hay una pregunta (M19: los candidatos se muestran, no se
+    resuelven solos).
+
+    No escribe nada: la aplicacion es un POST aparte, con lo que la persona confirma.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    c = get_db().cursor()
+    filas = c.execute(
+        "SELECT id, producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(volumen_ml,0), "
+        "       UPPER(TRIM(COALESCE(envase_codigo,''))), COALESCE(tapa_codigo,''), "
+        "       COALESCE(caja_codigo,''), COALESCE(sin_tapa,0), COALESCE(sin_caja,0) "
+        "  FROM producto_presentaciones "
+        " WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>''").fetchall()
+
+    porfrasco = {}
+    for r in filas:
+        porfrasco.setdefault(r[4], []).append({
+            'id': r[0], 'producto': r[1], 'presentacion': r[2], 'volumen_ml': r[3],
+            'tapa': (r[5] or '').strip(), 'caja': (r[6] or '').strip(),
+            'sin_tapa': bool(r[7]), 'sin_caja': bool(r[8])})
+
+    sugerencias, ambiguos, sin_referencia = [], [], []
+    for frasco, pres in sorted(porfrasco.items()):
+        for campo, marca in (('tapa', 'sin_tapa'), ('caja', 'sin_caja')):
+            # 'no lleva' es una RESPUESTA, no un pendiente: esas no cuentan ni como referencia ni
+            # como faltante.
+            cargadas = {p[campo] for p in pres if p[campo] and not p[marca]}
+            faltan = [p for p in pres if not p[campo] and not p[marca]]
+            if not faltan:
+                continue
+            if len(cargadas) == 1:
+                sugerencias.append({
+                    'frasco': frasco, 'campo': campo, 'codigo': list(cargadas)[0],
+                    'aplica_a': [{'id': p['id'], 'producto': p['producto'],
+                                  'presentacion': p['presentacion']} for p in faltan]})
+            elif len(cargadas) > 1:
+                # Dos tapas distintas para el mismo frasco: puede ser correcto (dos versiones) o
+                # ser el error. No se elige por mayoria -- se muestra.
+                ambiguos.append({'frasco': frasco, 'campo': campo,
+                                 'codigos': sorted(cargadas), 'faltan': len(faltan)})
+            else:
+                sin_referencia.append({'frasco': frasco, 'campo': campo, 'faltan': len(faltan),
+                                       'ejemplo': faltan[0]['producto']})
+
+    return jsonify({
+        'ok': True,
+        'sugerencias': sugerencias,
+        'ambiguos': ambiguos,
+        # Estos son los que SI hay que teclear: uno por frasco, no uno por producto. Es el numero
+        # que dice cuanto trabajo queda de verdad.
+        'sin_referencia': sorted(sin_referencia, key=lambda x: -x['faltan']),
+        'resumen': {
+            'frascos': len(porfrasco),
+            'se_pueden_deducir': sum(len(x['aplica_a']) for x in sugerencias),
+            'hay_que_teclear': len(sin_referencia),
+            'ambiguos': len(ambiguos),
+        },
+    })
+
+
+@bp.route('/api/programacion/empaque-aplicar', methods=['POST'])
+def prog_empaque_aplicar():
+    """Aplica una tapa o una caja a TODAS las presentaciones que comparten un frasco.
+
+    Body: {frasco, campo: 'tapa'|'caja', codigo}. Solo toca las que estan VACIAS: si alguien ya
+    puso un dato distinto a mano, no se le pisa -- lo cargado a mano vale mas que lo deducido
+    (es la misma regla del Fijo sobre lo Sugerido).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    u = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    frasco = (d.get('frasco') or '').strip().upper()
+    campo = (d.get('campo') or '').strip().lower()
+    codigo = (d.get('codigo') or '').strip().upper()
+    if campo not in ('tapa', 'caja'):
+        return jsonify({'error': "campo debe ser 'tapa' o 'caja'"}), 400
+    if not frasco or not codigo:
+        return jsonify({'error': 'falta el frasco o el codigo'}), 400
+    conn = get_db(); c = conn.cursor()
+    # El codigo tiene que existir en el maestro: dejar uno fantasma es dejar un empaque que la
+    # compra no resuelve y que por lo tanto no se compra nunca (M5).
+    if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (codigo,)).fetchone():
+        return jsonify({'error': '%s no existe en el maestro de envases' % codigo}), 400
+    col = 'tapa_codigo' if campo == 'tapa' else 'caja_codigo'
+    marca = 'sin_tapa' if campo == 'tapa' else 'sin_caja'
+    ids = [r[0] for r in c.execute(
+        "SELECT id FROM producto_presentaciones "
+        " WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(COALESCE(envase_codigo,'')))=? "
+        "   AND COALESCE(%s,'')='' AND COALESCE(%s,0)=0" % (col, marca), (frasco,)).fetchall()]
+    if not ids:
+        return jsonify({'ok': True, 'aplicadas': 0,
+                        'mensaje': 'No habia ninguna vacia con ese frasco'})
+    for _id in ids:
+        c.execute("UPDATE producto_presentaciones SET %s=?, actualizado_en=datetime('now','-5 hours') "
+                  " WHERE id=?" % col, (codigo, _id))
+    audit_log(c, usuario=u, accion='EMPAQUE_APLICAR_POR_FRASCO',
+              tabla='producto_presentaciones', registro_id=frasco,
+              despues={'campo': campo, 'codigo': codigo, 'ids': ids},
+              detalle='%s=%s aplicado a %d presentaciones del frasco %s'
+                      % (campo, codigo, len(ids), frasco))
+    conn.commit()
+    return jsonify({'ok': True, 'aplicadas': len(ids), 'ids': ids})
+
+
 @bp.route('/api/programacion/presentacion-empaque', methods=['POST'])
 def prog_presentacion_empaque():
     """Desde el modal de Empaque por producto: encender/apagar una presentación y ponerle
