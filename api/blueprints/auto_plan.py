@@ -13052,27 +13052,93 @@ def _volumen_sku(c, sku, producto):
     return _res
 
 
+def _mapas_volumen(c):
+    """Los DOS catálogos que resuelven el volumen de un SKU, leídos UNA vez por request.
+
+    PERF 7-ago (medido con la sonda local): `_volumen_sku` disparaba dos consultas POR SKU, y en
+    `/api/plan/necesidades` son 47 SKUs distintos -- o sea 94 consultas para leer dos tablas que
+    caben enteras en memoria. Sobre PostgreSQL eso son 94 viajes de red para resolver algo que se
+    resuelve con dos.
+
+    ⚠ El mapa de presentaciones respeta EXACTAMENTE el orden del `LIMIT 1` que reemplaza
+    (`es_default DESC, id ASC`): si eligiera otra fila, el volumen cambiaría y con él los kg del
+    plan. Un atajo que puede contestar distinto no es un atajo (M128).
+
+    Memo por REQUEST, nunca de módulo: un volumen recién editado tiene que verse en la carga
+    siguiente (M9). Fuera de un request (los crons) devuelve None y cada caller consulta como
+    siempre.
+    """
+    try:
+        from flask import g as _g
+    except Exception:
+        return None
+    try:
+        _m = getattr(_g, '_vol_mapas', None)
+        if _m is not None:
+            return _m
+    except Exception:
+        return None
+    por_sku, por_pres = {}, {}
+    try:
+        for _sk, _v in c.execute(
+                "SELECT UPPER(TRIM(sku)), volumen_ml FROM sku_producto_map").fetchall():
+            if _sk:
+                por_sku[_sk] = _v
+    except Exception:
+        por_sku = None          # columna ausente (mig no aplicada) · se declara, no se finge
+    try:
+        for _sk, _vol, _peso, _fac in c.execute(
+                "SELECT UPPER(TRIM(sku_shopify)), volumen_ml, peso_g, factor_g_por_unidad "
+                "  FROM producto_presentaciones WHERE activo=1 "
+                " ORDER BY es_default DESC, id ASC").fetchall():
+            # el primero que llega gana = el mismo que elegía `LIMIT 1` con ese ORDER BY
+            if _sk and _sk not in por_pres:
+                por_pres[_sk] = (_vol, _peso, _fac)
+    except Exception:
+        por_pres = None
+    _m = {'sku': por_sku, 'pres': por_pres}
+    try:
+        _g._vol_mapas = _m
+    except Exception:
+        pass
+    return _m
+
+
 def _volumen_sku_impl(c, sku, producto):
     """Volumen (ml por unidad) de UN SKU/tamaño. Orden: 1) sku_producto_map.volumen_ml
     (lo que carga el usuario por tamaño), 2) producto_presentaciones por sku_shopify,
     3) fallback por producto (_factor_g_por_unidad_detalle). Devuelve (vol, fuente)."""
-    try:
-        r = c.execute("SELECT volumen_ml FROM sku_producto_map WHERE UPPER(TRIM(sku))=UPPER(TRIM(?))",
-                      (sku,)).fetchone()  # FIX 27-jun · case-insensitive (P1) · igual que Necesidades
-        if r and r[0] and float(r[0]) > 0:
-            return (float(r[0]), 'sku')
-    except Exception:
-        pass  # columna ausente (mig no aplicada) → fallback
-    try:
-        r = c.execute(
-            "SELECT volumen_ml, peso_g, factor_g_por_unidad FROM producto_presentaciones "
-            "WHERE UPPER(TRIM(sku_shopify))=UPPER(TRIM(?)) AND activo=1 ORDER BY es_default DESC, id ASC LIMIT 1", (sku,)).fetchone()
+    _mp = _mapas_volumen(c)
+    _k = (sku or '').strip().upper()
+    if _mp is not None and _mp.get('sku') is not None:
+        _v = _mp['sku'].get(_k)
+        if _v and float(_v) > 0:
+            return (float(_v), 'sku')
+    else:
+        try:
+            r = c.execute("SELECT volumen_ml FROM sku_producto_map WHERE UPPER(TRIM(sku))=UPPER(TRIM(?))",
+                          (sku,)).fetchone()  # FIX 27-jun · case-insensitive (P1) · igual que Necesidades
+            if r and r[0] and float(r[0]) > 0:
+                return (float(r[0]), 'sku')
+        except Exception:
+            pass  # columna ausente (mig no aplicada) → fallback
+    if _mp is not None and _mp.get('pres') is not None:
+        r = _mp['pres'].get(_k)
         if r:
             for v in r:
                 if v and float(v) > 0:
                     return (float(v), 'presentacion')
-    except Exception:
-        pass
+    else:
+        try:
+            r = c.execute(
+                "SELECT volumen_ml, peso_g, factor_g_por_unidad FROM producto_presentaciones "
+                "WHERE UPPER(TRIM(sku_shopify))=UPPER(TRIM(?)) AND activo=1 ORDER BY es_default DESC, id ASC LIMIT 1", (sku,)).fetchone()
+            if r:
+                for v in r:
+                    if v and float(v) > 0:
+                        return (float(v), 'presentacion')
+        except Exception:
+            pass
     f, fuente, _det, _pres = _factor_g_por_unidad_detalle(c, producto)
     return (f, 'producto:' + fuente)
 

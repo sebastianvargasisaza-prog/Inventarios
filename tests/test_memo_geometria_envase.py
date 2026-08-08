@@ -124,3 +124,70 @@ def test_fuera_de_un_request_sigue_funcionando(app):
         assert vsku(con, 'SKU-QUE-NO-EXISTE', 'PRODUCTO QUE NO EXISTE')[0] > 0
     finally:
         con.close()
+
+
+def test_los_CATALOGOS_de_volumen_se_leen_una_vez(app, admin_client):
+    """`_volumen_sku` disparaba DOS consultas por SKU, y en Necesidades son 47 SKUs distintos: 94
+    consultas para leer dos tablas que caben enteras en memoria. Sobre PostgreSQL son 94 viajes de
+    red para resolver algo que se resuelve con dos.
+
+    Medido: /plan/necesidades 221 -> 129 consultas, /plan/dashboard 276 -> 184, salud-cadenas
+    222 -> 130, con el payload byte a byte idéntico.
+    """
+    from blueprints import auto_plan as ap
+
+    r1 = admin_client.get('/api/plan/necesidades')
+    assert r1.status_code == 200
+
+    # el camino lento (sin mapas) tiene que dar EXACTAMENTE lo mismo
+    orig = ap._mapas_volumen
+    ap._mapas_volumen = lambda c: None
+    try:
+        r2 = admin_client.get('/api/plan/necesidades')
+    finally:
+        ap._mapas_volumen = orig
+    assert r2.status_code == 200
+    assert r1.data == r2.data, 'leer los catálogos de una cambia el resultado'
+
+
+def test_el_mapa_de_presentaciones_elige_la_MISMA_fila_que_el_LIMIT_1(app):
+    """Es el punto donde un atajo así se rompe en silencio: la consulta que reemplaza ordenaba por
+    `es_default DESC, id ASC` y se quedaba con la primera. Si el mapa eligiera otra fila, el
+    volumen cambiaría y con él los kg del plan, sin un solo error a la vista (M128).
+    """
+    from database import get_db
+    from blueprints.auto_plan import _volumen_sku_impl
+    SKU = 'MAPAVOL-30'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE sku_shopify=?", (SKU,))
+        c.execute("DELETE FROM sku_producto_map WHERE sku=?", (SKU,))
+        # ⚠ La DEFAULT va PRIMERO (id menor) a propósito: si fuera al revés, ordenar por
+        # `es_default DESC` y ordenar por `id ASC` darían el MISMO resultado y el guard estaría
+        # midiendo el caso donde da igual · probado, así pasaba verde con el ORDER BY roto (M152).
+        c.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, "
+                  "etiqueta, volumen_ml, sku_shopify, activo, es_default) "
+                  "VALUES ('MAPAVOL PROD','VB','b',50,?,1,1)", (SKU,))
+        c.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, "
+                  "etiqueta, volumen_ml, sku_shopify, activo, es_default) "
+                  "VALUES ('MAPAVOL PROD','VA','a',10,?,1,0)", (SKU,))
+        c.commit()
+        vol, fuente = _volumen_sku_impl(get_db(), SKU, 'MAPAVOL PROD')
+    assert (vol, fuente) == (50.0, 'presentacion'), \
+        'el mapa eligió una fila distinta de la que elegía el LIMIT 1: %s %s' % (vol, fuente)
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE sku_shopify=?", (SKU,))
+        c.commit()
+
+
+def test_sin_contexto_de_flask_sigue_resolviendo(app):
+    """Los crons llaman a esto sin request · ahí no hay mapas y cada caller consulta como siempre."""
+    from database import db_connect
+    from blueprints.auto_plan import _mapas_volumen, _volumen_sku_impl
+    con = db_connect(timeout=30)
+    try:
+        assert _mapas_volumen(con) is None, 'fuera de un request no debería armar mapas'
+        assert _volumen_sku_impl(con, 'SKU-INEXISTENTE', 'PRODUCTO QUE NO EXISTE')[0] > 0
+    finally:
+        con.close()

@@ -973,6 +973,43 @@ def financiero_limpiar_flujo():
     try:
         egr_count = c.execute('SELECT COUNT(*) FROM flujo_egresos').fetchone()[0]
         ing_count = c.execute('SELECT COUNT(*) FROM flujo_ingresos').fetchone()[0]
+        # RESPALDO ANTES de borrar (Sebastian 7-ago).
+        #
+        # Este boton vacia los DOS libros. Esta bien protegido y existe a proposito, pero hasta
+        # hoy no tenia vuelta atras: guardaba CUANTAS filas borro, no CUALES. Un boton
+        # irreversible sobre la contabilidad funciona bien mil veces, y el dia que alguien se
+        # equivoca no hay como deshacerlo.
+        #
+        # La fila se guarda COMPLETA en JSON, no columna por columna: asi el respaldo sigue
+        # sirviendo si manana la tabla gana una columna. Un respaldo con esquema fijo se queda
+        # viejo justo cuando hay que usarlo.
+        import json as _js_r
+        from datetime import datetime as _dt_r, timedelta as _td_r
+        _ahora = (_dt_r.utcnow() - _td_r(hours=5)).isoformat(timespec='seconds')
+        lote = 'LIMPIEZA-' + _ahora.replace(':', '').replace('-', '')
+        for _tabla in ('flujo_egresos', 'flujo_ingresos'):
+            _cur = c.execute('SELECT * FROM ' + _tabla)
+            _cols = [d[0] for d in _cur.description]
+            for _f in _cur.fetchall():
+                c.execute(
+                    "INSERT INTO flujo_respaldo (lote, tabla, fila_json, creado_en, creado_por) "
+                    "VALUES (?,?,?,?,?)",
+                    (lote, _tabla, _js_r.dumps(dict(zip(_cols, list(_f))), default=str),
+                     _ahora, u))
+        # Si el respaldo no guardo todo lo que hay, NO se borra. Un respaldo a medias es peor que
+        # ninguno: da la sensacion de que se puede volver atras (M134).
+        #
+        # Se cuenta LO QUE QUEDO EN LA TABLA, no cuantas veces se intento insertar. La primera
+        # version llevaba un contador en el loop y por eso no mordia: contaba la intencion, no el
+        # hecho -- si un INSERT no entra, el contador sube igual y el guard aprueba un respaldo
+        # que no existe (M5: el numero que decide tiene que ser el medido).
+        _guardadas = c.execute("SELECT COUNT(*) FROM flujo_respaldo WHERE lote=?",
+                               (lote,)).fetchone()[0] or 0
+        if _guardadas != (egr_count + ing_count):
+            conn.rollback()
+            return jsonify({'error': 'No pude respaldar todo antes de borrar, no se borro nada',
+                            'esperadas': egr_count + ing_count,
+                            'respaldadas': _guardadas}), 500
         c.execute('DELETE FROM flujo_egresos')
         c.execute('DELETE FROM flujo_ingresos')
         # Audit log critico · borrado masivo de datos financieros
@@ -984,13 +1021,93 @@ def financiero_limpiar_flujo():
         return jsonify({
             'ok': True,
             'eliminados': {'egresos': egr_count, 'ingresos': ing_count},
-            'message': f'Limpieza completa: {egr_count} egresos y {ing_count} ingresos eliminados'
+            'respaldo_lote': lote,
+            'message': (f'Limpieza completa: {egr_count} egresos y {ing_count} ingresos '
+                        f'eliminados. Respaldados en el lote {lote}: se puede deshacer.'),
         })
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
         pass  # conexión cerrada automáticamente por teardown_appcontext
+
+@bp.route('/api/financiero/respaldos-flujo', methods=['GET'])
+def financiero_respaldos_flujo():
+    """Que respaldos hay para deshacer.
+
+    Va junto con el respaldo, no despues: un respaldo que existe y que nadie sabe que existe no
+    sirve el dia que hace falta (M121).
+    """
+    u = session.get('compras_user', '')
+    if 'compras_user' not in session or u not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    c = get_db().cursor()
+    try:
+        filas = c.execute(
+            "SELECT lote, MIN(creado_en), MIN(creado_por), COUNT(*), "
+            "       SUM(CASE WHEN COALESCE(restaurado_en,'')<>'' THEN 1 ELSE 0 END) "
+            "  FROM flujo_respaldo GROUP BY lote ORDER BY lote DESC LIMIT 50").fetchall()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'lotes': [
+        {'lote': r[0], 'cuando': r[1], 'quien': r[2], 'filas': r[3],
+         'ya_restaurado': bool(r[4])} for r in filas]})
+
+
+@bp.route('/api/financiero/restaurar-flujo', methods=['POST'])
+def financiero_restaurar_flujo():
+    """Deshace una limpieza: vuelve a insertar las filas respaldadas.
+
+    Es lo que convierte el boton de limpiar en una accion reversible. Al restaurar NO se borra el
+    respaldo, se MARCA: si alguien restaura por error, el rastro sigue ahi. Es la misma regla que
+    el resto del sistema con un registro ya usado (M31/M126).
+    """
+    u = session.get('compras_user', '')
+    if 'compras_user' not in session or u not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json() or {}
+    lote = (d.get('lote') or '').strip()
+    if not lote:
+        return jsonify({'error': 'Falta el lote a restaurar'}), 400
+    conn = get_db(); c = conn.cursor()
+    try:
+        filas = c.execute(
+            "SELECT id, tabla, fila_json FROM flujo_respaldo "
+            " WHERE lote=? AND COALESCE(restaurado_en,'')='' ORDER BY id", (lote,)).fetchall()
+        if not filas:
+            # Ni un cero mudo ni un 200 optimista: "no existe" y "ya se restauro" son cosas
+            # distintas y llevan a acciones distintas (M100).
+            _existe = c.execute("SELECT COUNT(*) FROM flujo_respaldo WHERE lote=?",
+                                (lote,)).fetchone()[0]
+            return jsonify({'error': ('Ese lote ya se restauro' if _existe
+                                      else 'No existe ese lote de respaldo')}), 404
+        import json as _js
+        from datetime import datetime as _dt2, timedelta as _td2
+        _ahora = (_dt2.utcnow() - _td2(hours=5)).isoformat(timespec='seconds')
+        n_ok = 0
+        for _id, _tabla, _json in filas:
+            # La tabla destino se valida contra una lista, no se toma del respaldo: si alguien
+            # lograra escribir ahi, un INSERT con nombre de tabla libre seria una puerta abierta.
+            if _tabla not in ('flujo_egresos', 'flujo_ingresos'):
+                continue
+            fila = _js.loads(_json)
+            # El id lo asigna la tabla: reusar el viejo chocaria con lo que ya exista.
+            fila.pop('id', None)
+            cols = list(fila.keys())
+            c.execute("INSERT INTO %s (%s) VALUES (%s)"
+                      % (_tabla, ','.join(cols), ','.join(['?'] * len(cols))),
+                      [fila[k] for k in cols])
+            c.execute("UPDATE flujo_respaldo SET restaurado_en=? WHERE id=?", (_ahora, _id))
+            n_ok += 1
+        audit_log(c, usuario=u, accion='RESTAURAR_FLUJO', tabla='flujo_egresos+ingresos',
+                  registro_id=lote, despues={'filas': n_ok},
+                  detalle='Restauradas %d filas del lote %s' % (n_ok, lote))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'restauradas': n_ok, 'lote': lote})
+
 
 @bp.route('/api/financiero/precios-mayorista', methods=['GET'])
 def get_precios_mayorista():

@@ -11199,6 +11199,27 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         # default que parezca real).
         "ALTER TABLE mee_partes ADD COLUMN incluido_default INTEGER NOT NULL DEFAULT 0",
     ]),
+    (420, "flujo_respaldo · el borrado masivo del libro deja de ser irreversible · 7-ago-2026", [
+        # `/api/financiero/limpiar-flujo` vacia los DOS libros de un POST. Esta bien protegido
+        # (admin + confirmacion explicita en el cuerpo + audit) y existe a proposito para tirar
+        # datos de prueba o una importacion equivocada. Lo que NO tenia es vuelta atras: guardaba
+        # cuantas filas borro, no CUALES. Un boton irreversible sobre la contabilidad es de esos
+        # que funcionan bien mil veces y el dia que alguien se equivoca no hay como deshacerlo.
+        #
+        # Se guarda la fila COMPLETA en JSON y no columna por columna a proposito: asi el respaldo
+        # sigue sirviendo si manana `flujo_egresos` gana una columna. Un respaldo con esquema fijo
+        # se queda viejo justo cuando hay que usarlo.
+        """CREATE TABLE IF NOT EXISTS flujo_respaldo (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            lote        TEXT NOT NULL,
+            tabla       TEXT NOT NULL,
+            fila_json   TEXT NOT NULL,
+            creado_en   TEXT NOT NULL DEFAULT '',
+            creado_por  TEXT NOT NULL DEFAULT '',
+            restaurado_en TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_flujo_respaldo_lote ON flujo_respaldo(lote)",
+    ]),
 ]
 
 
