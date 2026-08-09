@@ -3363,6 +3363,55 @@ def prog_por_entrar_manual():
                             'el producto de rojo. Es lo que hay producido en Espagiria por transferir.'})
 
 
+_PRES_COLS = ('id', 'producto_nombre', 'presentacion_codigo', 'volumen_ml', 'envase_codigo',
+              'tapa_codigo', 'caja_codigo', 'etiqueta_codigo', 'cantidad_fija_uds',
+              'ventas_mes_referencia', 'sku_shopify', 'activo')
+
+
+def _pres_foto(conn, donde, params):
+    """Foto de las filas de `producto_presentaciones` que una acción va a tocar.
+
+    Devuelve la lista de filas, o None si no se pudo leer (columna ausente) -- y ese None se
+    declara en el rastro en vez de escribirse como "no había nada" (M100).
+    """
+    try:
+        filas = conn.execute(
+            "SELECT " + ', '.join(_PRES_COLS) + " FROM producto_presentaciones WHERE " + donde,
+            params).fetchall()
+        return [dict(zip(_PRES_COLS, f)) for f in filas]
+    except Exception:
+        return None
+
+
+def _pres_rastro(conn, accion, donde, params, antes, detalle=''):
+    """Deja escrito quién cambió el empaque de un producto, y qué cambió.
+
+    Sebastián (7-ago, dictando permisos): *"los operarios pueden modificar un inventario, ingresar
+    un producto, pero no eliminar ni archivar, y **los cambios quedan con el usuario que lo
+    modifica**"*. Los ocho endpoints que editan esta tabla no dejaban ninguno.
+
+    Importa más que en otras tablas: `producto_presentaciones` es de donde salen el envase, la
+    tapa, la caja y la etiqueta que se COMPRAN y se DESCUENTAN (M55). Cambiar acá el frasco de un
+    producto no da error: da una compra equivocada, y sin rastro no hay forma de saber quién ni
+    cuándo (M19/M137).
+
+    Se guarda la foto ANTES y la de DESPUÉS, así que el rastro sirve para deshacer: por eso la
+    foto se toma de las mismas columnas en los dos lados. Best-effort -- el rastro nunca tumba la
+    operación -- pero el fallo se loguea, no se traga (M4).
+    """
+    try:
+        despues = _pres_foto(conn, donde, params)
+        _u = session.get('compras_user', '') or ''
+        audit_log(conn, usuario=_u, accion=accion, tabla='producto_presentaciones',
+                  registro_id=str((antes or despues or [{}])[0].get('id', '')),
+                  antes={'filas': antes} if antes is not None else {'filas': 'no se pudo leer'},
+                  despues={'filas': despues} if despues is not None else {'filas': 'no se pudo leer'},
+                  detalle=detalle or 'cambio de empaque de un producto')
+    except Exception as _e:
+        import logging as _lg
+        _lg.getLogger('programacion').warning('rastro de presentaciones falló: %s', _e)
+
+
 @bp.route('/api/programacion/pres-set-fija', methods=['GET', 'POST'])
 def prog_pres_set_fija():
     """Sebastián 6-jul · setear la CANTIDAD FIJA de una presentación por (producto, volumen). Caso niacinamida/
@@ -3385,9 +3434,13 @@ def prog_pres_set_fija():
         uds_f = float(uds)
     except Exception:
         return jsonify({'ok': False, 'error': 'volumen_ml/uds inválido'})
+    _donde = ("UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+              "AND ABS(COALESCE(volumen_ml,0)-?)<0.01")
+    _ant = _pres_foto(conn, _donde, (prod, vol_f))
     cur = conn.execute("UPDATE producto_presentaciones SET cantidad_fija_uds=? "
-                       "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND ABS(COALESCE(volumen_ml,0)-?)<0.01",
-                       (uds_f, prod, vol_f))
+                       "WHERE " + _donde, (uds_f, prod, vol_f))
+    _pres_rastro(conn, 'PRES_CANTIDAD_FIJA', _donde, (prod, vol_f), _ant,
+                 'cantidad fija de %s (%s ml) = %s uds' % (prod, vol_f, uds_f))
     conn.commit()
     _n = cur.rowcount
     if _n == 0:
@@ -3428,7 +3481,10 @@ def prog_pres_editar():
     if not sets:
         return jsonify({'ok': False, 'error': 'nada para cambiar'})
     params.append(pid)
+    _ant = _pres_foto(conn, 'id=?', (pid,))
     cur = conn.execute("UPDATE producto_presentaciones SET " + ", ".join(sets) + " WHERE id=?", params)
+    _pres_rastro(conn, 'PRES_EDITAR', 'id=?', (pid,), _ant,
+                 'edición de la presentación #%s' % pid)
     conn.commit()
     return jsonify({'ok': True, 'id': pid, 'filas': cur.rowcount})
 
@@ -3461,6 +3517,8 @@ def prog_pres_agregar():
         "INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, volumen_ml, "
         "envase_codigo, cantidad_fija_uds, activo) VALUES (?,?,?,?,?,?,1)",
         (prod, _code, str(_vi) + 'ml', vol_f, (env or None), fija_f))
+    _pres_rastro(conn, 'PRES_AGREGAR', 'id=?', (cur.lastrowid,), [],
+                 'presentación nueva %s de %s (%s ml)' % (_code, prod, vol_f))
     conn.commit()
     return jsonify({'ok': True, 'id': cur.lastrowid, 'producto': prod, 'volumen_ml': vol_f})
 
@@ -3474,7 +3532,10 @@ def prog_pres_eliminar():
     pid = request.args.get('id') or (request.get_json(silent=True) or {}).get('id')
     if not pid:
         return jsonify({'ok': False, 'error': 'falta id'})
+    _ant = _pres_foto(conn, 'id=?', (pid,))
     cur = conn.execute("UPDATE producto_presentaciones SET activo=0 WHERE id=?", (pid,))
+    _pres_rastro(conn, 'PRES_DAR_DE_BAJA', 'id=?', (pid,), _ant,
+                 'presentación #%s dada de baja' % pid)
     conn.commit()
     return jsonify({'ok': True, 'id': pid, 'filas': cur.rowcount})
 
@@ -6502,10 +6563,16 @@ def prog_pres_ventas_set():
         v = 0
     conn = get_db()
     if prod:
-        conn.execute("UPDATE producto_presentaciones SET ventas_mes_referencia=? "
-                     "WHERE presentacion_codigo=? AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (v, cod, prod))
+        _donde = ("presentacion_codigo=? "
+                  "AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))")
+        _par = (cod, prod)
     else:
-        conn.execute("UPDATE producto_presentaciones SET ventas_mes_referencia=? WHERE presentacion_codigo=?", (v, cod))
+        _donde, _par = 'presentacion_codigo=?', (cod,)
+    _ant = _pres_foto(conn, _donde, _par)
+    conn.execute("UPDATE producto_presentaciones SET ventas_mes_referencia=? WHERE " + _donde,
+                 (v,) + _par)
+    _pres_rastro(conn, 'PRES_VENTAS_REFERENCIA', _donde, _par, _ant,
+                 'ventas de referencia de %s = %s' % (cod, v))
     conn.commit()
     return jsonify({'ok': True, 'presentacion_codigo': cod, 'ventas_mes': v})
 
@@ -6523,8 +6590,12 @@ def prog_pres_set_envase():
     if not (cod and prod):
         return jsonify({'ok': False, 'error': 'falta producto o presentacion_codigo'})
     conn = get_db()
-    conn.execute("UPDATE producto_presentaciones SET envase_codigo=? "
-                 "WHERE presentacion_codigo=? AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (env.upper(), cod, prod))
+    _donde = "presentacion_codigo=? AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))"
+    _ant = _pres_foto(conn, _donde, (cod, prod))
+    conn.execute("UPDATE producto_presentaciones SET envase_codigo=? WHERE " + _donde,
+                 (env.upper(), cod, prod))
+    _pres_rastro(conn, 'PRES_SET_ENVASE', _donde, (cod, prod), _ant,
+                 'envase de %s (%s) = %s' % (prod, cod, env.upper()))
     conn.commit()
     return jsonify({'ok': True, 'producto': prod, 'presentacion_codigo': cod, 'envase': env.upper()})
 
@@ -6541,8 +6612,11 @@ def prog_pres_quitar():
     if not (cod and prod):
         return jsonify({'ok': False, 'error': 'falta producto o presentacion_codigo'})
     conn = get_db()
-    conn.execute("UPDATE producto_presentaciones SET activo=0 "
-                 "WHERE presentacion_codigo=? AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (cod, prod))
+    _donde = "presentacion_codigo=? AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))"
+    _ant = _pres_foto(conn, _donde, (cod, prod))
+    conn.execute("UPDATE producto_presentaciones SET activo=0 WHERE " + _donde, (cod, prod))
+    _pres_rastro(conn, 'PRES_QUITAR', _donde, (cod, prod), _ant,
+                 'presentación %s de %s quitada' % (cod, prod))
     conn.commit()
     return jsonify({'ok': True, 'producto': prod, 'presentacion_codigo': cod})
 
@@ -6566,6 +6640,8 @@ def prog_pres_crear():
     cod = 'V' + str(int(round(vol)))
     ex = conn.execute("SELECT id FROM producto_presentaciones WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
                       "AND presentacion_codigo=?", (prod, cod)).fetchone()
+    _donde = "UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND presentacion_codigo=?"
+    _ant = _pres_foto(conn, _donde, (prod, cod))
     if ex:
         conn.execute("UPDATE producto_presentaciones SET envase_codigo=?, volumen_ml=?, activo=1 WHERE id=?",
                      (env.upper(), vol, ex[0]))
@@ -6573,6 +6649,8 @@ def prog_pres_crear():
         conn.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, "
                      "volumen_ml, envase_codigo, activo) VALUES (?,?,?,?,?,1)",
                      (prod, cod, str(int(round(vol))) + ' ml', vol, env.upper()))
+    _pres_rastro(conn, 'PRES_CREAR', _donde, (prod, cod), _ant,
+                 'envase de %s (%s ml) = %s' % (prod, vol, env.upper()))
     conn.commit()
     return jsonify({'ok': True, 'producto': prod, 'volumen_ml': vol, 'envase': env.upper()})
 
@@ -17245,6 +17323,16 @@ def marcacion_envase_set():
         return jsonify({'error': 'tipo invalido'}), 400
     conn = get_db()
     c = conn.cursor()
+    # Lo de ANTES: este campo decide si el envase sale a serigrafía y con qué proveedor, o sea si
+    # entra a la cola de marcación y a qué se le paga. Sin el valor previo no se puede revertir.
+    _prev = None
+    try:
+        _r = c.execute("SELECT COALESCE(marcacion_tipo,''), COALESCE(marcacion_proveedor,'') "
+                       "  FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
+                       (cod,)).fetchone()
+        _prev = ({'marcacion_tipo': _r[0], 'marcacion_proveedor': _r[1]} if _r else None)
+    except Exception:
+        _prev = None
     try:
         c.execute("UPDATE maestro_mee SET marcacion_tipo=?, marcacion_proveedor=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
                   (tipo, prov, cod))
@@ -17252,6 +17340,16 @@ def marcacion_envase_set():
         return jsonify({'error': str(e)[:200]}), 500
     if c.rowcount == 0:
         return jsonify({'error': 'envase no encontrado'}), 404
+    try:
+        audit_log(c, usuario=session.get('compras_user', ''), accion='MEE_MARCACION',
+                  tabla='maestro_mee', registro_id=cod,
+                  antes=_prev if _prev is not None else {'valor': 'no se pudo leer'},
+                  despues={'marcacion_tipo': tipo, 'marcacion_proveedor': prov},
+                  detalle='método de marcación de %s = %s (%s)' % (cod, tipo or '(vacío)',
+                                                                  prov or 'sin proveedor'))
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('programacion').warning('audit MEE_MARCACION falló: %s', _ae)
     conn.commit()
     return jsonify({'ok': True, 'codigo': cod, 'marcacion_tipo': tipo, 'marcacion_proveedor': prov})
 
@@ -24862,6 +24960,8 @@ def planta_presentaciones_crear():
             1 if d.get('es_default') else 0,
             (d.get('notas') or '').strip() or None,
         ))
+        _pres_rastro(conn, 'PRES_CREAR_PLANTA', 'id=?', (cur.lastrowid,), [],
+                     'presentación %s creada para %s' % (pcode, producto))
         conn.commit()
         return jsonify({'ok': True, 'id': cur.lastrowid})
     except sqlite3.IntegrityError as e:
@@ -24979,6 +25079,8 @@ def planta_presentaciones_bulk_categoria():
                 p.get('notas') or None,
             ))
             creadas.append({'id': cur.lastrowid, 'codigo': p['codigo']})
+            _pres_rastro(conn, 'PRES_CREAR_BULK', 'id=?', (cur.lastrowid,), [],
+                         'presentación %s creada en bloque para %s' % (p['codigo'], producto))
         except sqlite3.IntegrityError:
             # Ya existia — saltar silenciosamente
             pass

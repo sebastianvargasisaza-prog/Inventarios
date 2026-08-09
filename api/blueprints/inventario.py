@@ -7434,9 +7434,26 @@ def update_mee_stock_minimo(codigo):
     if nuevo_min is None:
         return jsonify({'error': 'stock_minimo requerido'}), 400
     conn = get_db(); c = conn.cursor()
+    # El mínimo es lo que dispara la sugerencia de comprar ese envase: subirlo de más compra de
+    # más, bajarlo de más deja la línea sin frascos. Queda con quién lo cambió y desde qué valor.
+    _prev = None
+    try:
+        _r = c.execute("SELECT stock_minimo FROM maestro_mee WHERE codigo=?", (codigo,)).fetchone()
+        _prev = (_r[0] if _r else None)
+    except Exception:
+        _prev = None
     c.execute("UPDATE maestro_mee SET stock_minimo=? WHERE codigo=?", (float(nuevo_min), codigo))
     if c.rowcount == 0:
         return jsonify({'error': 'MEE no encontrado'}), 404
+    try:
+        audit_log(c, usuario=session.get('compras_user', ''), accion='MEE_STOCK_MINIMO',
+                  tabla='maestro_mee', registro_id=codigo,
+                  antes={'stock_minimo': _prev if _prev is not None else 'no se pudo leer'},
+                  despues={'stock_minimo': float(nuevo_min)},
+                  detalle='mínimo de %s: %s -> %s' % (codigo, _prev, nuevo_min))
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('inventario').warning('audit MEE_STOCK_MINIMO falló: %s', _ae)
     conn.commit()
     return jsonify({'message': f'Stock minimo de {codigo} actualizado a {nuevo_min}'})
 

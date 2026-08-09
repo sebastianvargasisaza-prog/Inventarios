@@ -8499,6 +8499,18 @@ def admin_mee_base():
         return jsonify({'error': 'codigo requerido'}), 400
     conn = db_connect()
     c = conn.cursor()
+    # ⚠ El puente ANTERIOR, antes de pisarlo. M139 lo dejó escrito con un caso: *"toda acción que
+    # cambia un PUENTE de material se audita con el destino previo -- sin él no se puede revertir,
+    # y el puente 184 existía desde junio sin que nadie supiera porque se creó sin rastro"*. Este
+    # endpoint decide de qué frasco BASE sale un serigrafiado, o sea qué envase se descuenta y cuál
+    # se compra: apuntarlo mal no da error, cambia la compra.
+    _prev = None
+    try:
+        _r = c.execute("SELECT COALESCE(material_referencia,'') FROM maestro_mee "
+                       " WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (cod,)).fetchone()
+        _prev = (_r[0] if _r else None)
+    except Exception:
+        _prev = None            # no se pudo leer · se declara, no se finge que no había (M100)
     try:
         c.execute("UPDATE maestro_mee SET material_referencia=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (base, cod))
     except Exception as _e:
@@ -8507,8 +8519,17 @@ def admin_mee_base():
     if c.rowcount == 0:
         conn.rollback()
         return jsonify({'error': 'envase no encontrado'}), 404
+    try:
+        audit_log(c, usuario=u, accion='MEE_PUENTE_BASE', tabla='maestro_mee', registro_id=cod,
+                  antes={'material_referencia': _prev if _prev is not None else 'no se pudo leer'},
+                  despues={'material_referencia': base},
+                  detalle=('puente del serigrafiado %s: base %s -> %s'
+                           % (cod, _prev or '(sin base)', base or '(sin base)')))
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('admin').warning('audit MEE_PUENTE_BASE falló: %s', _ae)
     conn.commit()
-    return jsonify({'ok': True, 'codigo': cod, 'base': base})
+    return jsonify({'ok': True, 'codigo': cod, 'base': base, 'base_anterior': _prev})
 
 
 @bp.route("/api/admin/mee-shopify-foto", methods=["POST"])
