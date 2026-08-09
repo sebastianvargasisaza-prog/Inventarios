@@ -17406,6 +17406,29 @@ def planta_normalizar_envases_pagina():
     return Response(NORMALIZAR_ENVASES_HTML, mimetype='text/html; charset=utf-8')
 
 
+def _ml_de(texto):
+    """Los mililitros que menciona una descripcion, si menciona alguno.
+
+    Sebastian (9-ago), mirando CONTORNO DE CAFEINA de 10 ml sin tapa: *"este usa gotero, la tapa
+    seria gotero, el de menos ml que tenemos; tenemos varios para 10, 15, 30 y 50 ml"*. La tapa es
+    el caso donde emparejar por NOMBRE no puede funcionar: un gotero no dice de que producto es,
+    dice de que TAMANO es. Asi que para la tapa el tamano ES la identidad.
+
+    Devuelve None si no menciona ninguno (una tapa generica sirve para cualquier tamano).
+    """
+    import re as _re
+    m = _re.findall(r'(\d{1,4}(?:[.,]\d+)?)\s*(?:ML|CC)\b',
+                    ' ' + str(texto or '').upper().replace('.', '. ') + ' ')
+    if not m:
+        m = _re.findall(r'(?:^|[^0-9])(\d{1,4})\s*ML', str(texto or '').upper())
+    if not m:
+        return None
+    try:
+        return float(str(m[0]).replace(',', '.'))
+    except (TypeError, ValueError):
+        return None
+
+
 @bp.route('/api/mee/normalizar-tabla', methods=['GET'])
 def mee_normalizar_tabla():
     """Una fila por presentacion y una columna por componente, con lo que YA esta y lo que se
@@ -17454,7 +17477,19 @@ def mee_normalizar_tabla():
         idx[col] = []
         for x in catalogo[col]:
             idx[col].append({'codigo': (x['codigo'] or '').strip().upper(),
-                             'toks': set(_tokens_nombre(x['codigo'] + ' ' + x['desc']))})
+                             'toks': set(_tokens_nombre(x['codigo'] + ' ' + x['desc'])),
+                             'ml': _ml_de(x['codigo'] + ' ' + x['desc'])})
+
+    # Cuantos PRODUCTOS distintos comparten cada palabra. Una que aparece en varios es una
+    # palabra de FAMILIA (CONTORNO, SUERO, CREMA), no algo que identifique a ESTE producto: con
+    # ella sola se proponia a CONTORNO DE CAFEINA la etiqueta del contorno de RETINALDEHIDO, que
+    # es exactamente "ponerle a un producto el empaque de otro" (M19/M137). Se calcula de los
+    # datos, no de una lista escrita a mano, que se pudre (M122).
+    _prods_por_token = {}
+    for (_pn,) in c.execute("SELECT DISTINCT producto_nombre FROM producto_presentaciones "
+                            " WHERE COALESCE(producto_nombre,'')<>''").fetchall():
+        for _t in set(_tokens_nombre(_pn)):
+            _prods_por_token.setdefault(_t, set()).add(_norm_prod_fuerte(_pn))
 
     filas = []
     for (pid, prod, pcod, etq_txt, vol, env, tap, caj, etq,
@@ -17472,16 +17507,62 @@ def mee_normalizar_tabla():
         # El nombre con el que se arrastra: el del producto MAS el del frasco ya elegido (el frasco
         # suele llevar el tono, que es lo que distingue una presentacion de otra).
         base = set(_tokens_nombre(prod)) | set(_tokens_nombre(env)) | set(_tokens_nombre(etq_txt))
-        sugerido, ambiguo = {}, {}
+        # Las palabras de ESTE producto que no comparte con ningun otro. Son las unicas que
+        # pueden sostener una propuesta: si lo unico en comun es una palabra de familia, la
+        # celda queda VACIA.
+        _mio = _norm_prod_fuerte(prod)
+        propias = {t for t in base
+                   if len(_prods_por_token.get(t, set()) - {_mio}) == 0}
+        # Y el descalificador que de verdad decide: **la etiqueta equivocada llevaba escrito el
+        # nombre de OTRO producto**. Una palabra que identifica a un producto distinto (RETINALDEHIDO)
+        # dentro del candidato lo saca, por mucho que comparta la palabra de familia (M135: un
+        # descalificador duro le gana al parecido).
+        ajenas = {t for t, ps in _prods_por_token.items()
+                  if len(ps) == 1 and _mio not in ps}
+        sugerido, ambiguo, motivo = {}, {}, {}
         for col in _MEE_CATS:
             if actual[col] or marcas.get(col):
                 continue                     # ya resuelto: no se propone encima
-            marcados = []
+            marcados, generico, ajeno = [], False, False
             for x in idx[col]:
-                n = len(base & x['toks'])
-                if n:
-                    marcados.append((n, x['codigo']))
+                comunes = base & x['toks']
+                if not comunes:
+                    continue
+                # Un candidato de OTRO tamano no es este empaque, por mas que el nombre pegue:
+                # un "Envase 30ml" no envasa una presentacion de 10 ml.
+                if vol and x.get('ml') and abs(float(x['ml']) - float(vol)) > 0.01:
+                    continue
+                if x['toks'] & ajenas:
+                    ajeno = True             # lleva el nombre de OTRO producto: no es de este
+                    continue
+                # Vale una palabra PROPIA, o dos de familia juntas: "LIMPIADOR HIDRATANTE" no es
+                # una palabra generica repetida, es el nombre completo del producto.
+                if not (comunes & propias) and len(comunes) < 2:
+                    generico = True          # solo coincide por una palabra de familia
+                    continue
+                marcados.append((len(comunes), x['codigo']))
             if not marcados:
+                # La TAPA no lleva el nombre del producto: lleva el TAMANO. Si hay una sola tapa
+                # de este tamano, esa es (Sebastian 9-ago: los goteros de 10/15/30/50).
+                if col == 'tapa' and vol:
+                    _mismo_ml = sorted({x['codigo'] for x in idx[col]
+                                        if x.get('ml') and abs(float(x['ml']) - float(vol)) <= 0.01})
+                    if len(_mismo_ml) == 1:
+                        sugerido[col] = _mismo_ml[0]
+                        motivo[col] = 'por tamano (%s ml)' % (int(vol) if float(vol).is_integer()
+                                                              else vol)
+                        continue
+                    if len(_mismo_ml) > 1:
+                        ambiguo[col] = _mismo_ml[:6]
+                        motivo[col] = 'varias tapas de %s ml' % (int(vol) if float(vol).is_integer()
+                                                                 else vol)
+                        continue
+                # El motivo tiene que ser CIERTO: son dos razones distintas y llevan a
+                # acciones distintas (una es "elegila vos", la otra es "ojo, ese es de otro").
+                if ajeno:
+                    motivo[col] = 'el candidato lleva el nombre de otro producto'
+                elif generico:
+                    motivo[col] = 'solo coincide por una palabra de familia'
                 continue                     # sin coincidencia -> la celda queda VACIA
             mejor = max(m[0] for m in marcados)
             ganadores = sorted({m[1] for m in marcados if m[0] == mejor})
@@ -17494,6 +17575,9 @@ def mee_normalizar_tabla():
             'id': pid, 'producto': prod, 'presentacion': pcod, 'etiqueta_txt': etq_txt,
             'volumen_ml': vol, 'activo': bool(activo), 'sku': (sku or '').strip(),
             'actual': actual, 'no_usa': marcas, 'sugerido': sugerido, 'ambiguo': ambiguo,
+            # Por que quedo vacia o por que se propuso: una celda vacia sin explicacion se lee
+            # como "el sistema no sabe", y lo que pasa es que SI sabe y decidio no adivinar.
+            'motivo': motivo,
             # Un codigo cargado que NO esta en el maestro no se puede comprar ni descontar · se
             # marca para que no se lea como resuelto (M100).
             'fantasma': sorted([col for col, v in actual.items() if v and v not in cat_de]),
