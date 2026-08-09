@@ -1267,3 +1267,25 @@ centinela `__NO__` de la pantalla se traduce a la bandera y NUNCA viaja al campo
 quedaría guardado como un material a comprar que no existe (M100).
 
 Tests: `tests/test_union_producto_envase.py` (en el gate).
+
+### INV-17 · Toda edición de `producto_presentaciones` deja QUIÉN (8-ago-2026)
+
+De esta tabla salen el envase, la tapa, la caja y la etiqueta que se **compran** y se
+**descuentan**. Cambiar acá el frasco de un producto no da error: da una compra equivocada, y sin
+rastro no hay forma de saber quién ni cuándo. Regla de Sebastián al dictar los permisos: *"los
+cambios quedan con el usuario que lo modifica"*.
+
+Los diez endpoints que la escriben pasan por `_pres_rastro`, que guarda una **foto ANTES y otra
+DESPUÉS de las mismas columnas** (no campo por campo): así el rastro alcanza para deshacer, porque
+ante un frasco equivocado la pregunta es *"¿cuál era antes?"*, no *"¿cuál es ahora?"*. Es
+best-effort -- nunca tumba la operación -- pero su fallo se loguea, no se traga.
+
+Enumerar los sitios a mano no alcanza: el guard **recorre el fuente** y falla si alguna función
+con ruta escribe la tabla sin llamar al rastro (así encontró dos que se habían pasado por alto, y
+así el endpoint que se escriba mañana no nace mudo).
+
+También dejan rastro las dos decisiones del maestro de envases que viven en este blueprint: el
+método de marcación (`marcacion_tipo`/`marcacion_proveedor`, que decide si el envase sale a
+serigrafía y a qué proveedor se le paga).
+
+Tests: `tests/test_rastro_empaque.py`, `tests/test_rastro_maestro_envases.py` (en el gate).

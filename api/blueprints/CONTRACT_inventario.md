@@ -1010,3 +1010,12 @@ real en el F01, que **sí** reemplaza el del kardex.
 
 Tests: `tests/test_rotulos_en_bloque.py` (en el gate).
 
+
+### INV-12 · El mínimo de un envase deja QUIÉN y desde qué valor (8-ago-2026)
+
+`PUT /api/maestro-mps/<codigo>/mee-stock-minimo` escribe `maestro_mee.stock_minimo`, que es lo que
+**dispara la sugerencia de comprar** ese envase: subirlo de más compra de más, bajarlo de más deja
+la línea sin frascos. Queda auditado con el valor anterior (sin él no se puede revertir), igual que
+el puente base↔serigrafiado (M139) y el método de marcación.
+
+Tests: `tests/test_rastro_maestro_envases.py` (en el gate).
