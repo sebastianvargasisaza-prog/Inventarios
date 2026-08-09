@@ -149,18 +149,67 @@ def _desactivados():
         return set()
 
 
+# El escaneo del CODIGO, cacheado por la FIRMA de los archivos que lee.
+#
+# Se cachea porque el codigo no puede cambiar dentro de un proceso vivo: un despliegue reinicia
+# los workers. Y se cachea SOLO esta mitad -- la otra, quien tiene la cuenta bloqueada, sale de la
+# base y se vuelve a leer en cada carga, porque si se cacheara la pantalla mostraria con permisos
+# a alguien que se fue (M9).
+#
+# La firma incluye tamano y fecha de cada archivo: si alguno cambia, el cache se descarta solo. No
+# hay forma de que quede vieja sin que se note, que es justo lo que esta pantalla promete.
+_CACHE_ESCANEO = {'firma': None, 'rutas': None}
+
+
+def _firma_fuentes():
+    """(archivo, tamano, fecha) de todo lo que el escaneo LEE."""
+    partes = []
+    try:
+        for fn in sorted(os.listdir(BLUEPRINTS)):
+            if not fn.endswith('.py'):
+                continue
+            st = os.stat(os.path.join(BLUEPRINTS, fn))
+            partes.append((fn, st.st_size, int(st.st_mtime)))
+        st = os.stat(os.path.join(RAIZ, 'auth.py'))
+        partes.append(('auth.py', st.st_size, int(st.st_mtime)))
+    except Exception:
+        return None            # no se pudo firmar -> no se cachea (mejor lento que viejo)
+    return tuple(partes)
+
+
+def _copia_rutas(rutas):
+    """Copia de lo cacheado · compartir la referencia es que el primer caller se la pise a todos
+    los demas (M167)."""
+    return [{'modulo': r['modulo'], 'ruta': r['ruta'], 'metodos': list(r['metodos']),
+             'funcion': r['funcion'], 'gate': r['gate'], 'resuelto': r['resuelto'],
+             'escribe': r['escribe'],
+             'quienes': (list(r['quienes']) if r['quienes'] is not None else None)}
+            for r in rutas]
+
+
 def construir():
     """Recorre los blueprints y devuelve la matriz + los hallazgos."""
     sets = _conjuntos()
     PUBLICAS = _publicas()
     todos_login = sets['TODOS_CON_LOGIN']
     inactivos = _desactivados()
+    _firma = _firma_fuentes()
+    if _firma is not None and _CACHE_ESCANEO['firma'] == _firma \
+            and _CACHE_ESCANEO['rutas'] is not None:
+        rutas = _copia_rutas(_CACHE_ESCANEO['rutas'])
+        return _armar(rutas, sets, inactivos)
     rutas = []
     for fn, src in _fuentes():
         try:
             arbol = ast.parse(src)
         except Exception:
             continue
+        # ⚠ Las líneas se parten UNA vez por archivo. `ast.get_source_segment` vuelve a partir el
+        # archivo ENTERO en cada llamada, y acá se llama una vez por ruta: sobre `admin.py`
+        # (28.000 líneas) son ~700 pasadas sobre 1,5 MB. Medido: 23 de los 26 segundos que tardaba
+        # la matriz se iban ahí, y esos 26 segundos en producción se comen un worker de tres y
+        # pasan del timeout, así que la pantalla no abría nunca (M43).
+        _lineas = src.splitlines()
         for n in ast.walk(arbol):
             if not isinstance(n, ast.FunctionDef):
                 continue
@@ -179,7 +228,11 @@ def construir():
                     reglas.append((d.args[0].value, [m.upper() for m in mets]))
             if not reglas:
                 continue
-            cuerpo = ast.get_source_segment(src, n) or ''
+            # Se corta por número de línea. Devuelve las líneas COMPLETAS (a lo sumo la
+            # sangría inicial de más), y lo único que se hace con el cuerpo es buscarle
+            # patrones con expresiones regulares: el resultado es idéntico, y hay un test
+            # que compara la matriz entera contra la del camino anterior.
+            cuerpo = '\n'.join(_lineas[n.lineno - 1:(n.end_lineno or n.lineno)])
             quienes, etiqueta, resuelto = _resolver_guard(cuerpo, sets)
             muta = bool(re.search(r'\b(INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b',
                                   _sin_comentarios(cuerpo), re.I))
@@ -207,6 +260,13 @@ def construir():
                     'quienes': sorted(_q) if _q is not None else None,
                 })
 
+    if _firma is not None:
+        _CACHE_ESCANEO['firma'], _CACHE_ESCANEO['rutas'] = _firma, _copia_rutas(rutas)
+    return _armar(rutas, sets, inactivos)
+
+
+def _armar(rutas, sets, inactivos):
+    """La vista por PERSONA y los hallazgos · se rehace en cada carga, no se cachea."""
     # ── Vista por PERSONA: qué módulos toca y dónde puede escribir ────────────────────────
     por_usuario = {}
     for u in sorted(sets['TODOS_CON_LOGIN']):
