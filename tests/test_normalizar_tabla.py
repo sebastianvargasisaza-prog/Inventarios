@@ -384,3 +384,115 @@ def test_lo_guardado_CORRECTO_no_se_marca(app, admin_client):
     assert not (f.get('sospechoso') or {}).get('etiqueta'), \
         'marcó como sospechosa la etiqueta correcta: %s' % f.get('sospechoso')
     _limpiar(app)
+
+
+def test_el_GOTERO_se_ofrece_como_tapa(app, admin_client):
+    """Sebastián (9-ago): *"la tapa sería gotero... sigue sin salirme la opción del gotero"*.
+
+    No salía porque `Gotero` es una CATEGORÍA PROPIA del maestro y la columna sólo ofrecía `TAPA`.
+    Los tres goteros existían y la pantalla no los mostraba, que desde la silla del usuario es lo
+    mismo que no tenerlos (M121).
+    """
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-GOT', 'GOTERO BLANCO 89mm', 'Gotero')
+    r = admin_client.get('/api/mee/normalizar-tabla')
+    codigos = {o['codigo'] for o in r.get_json()['catalogo']['tapa']}
+    assert 'MEE-QQ-GOT' in codigos, 'el gotero no se ofrece como tapa'
+    _limpiar(app)
+
+
+def test_el_envase_YA_IMPRESO_se_ofrece_como_envase(app, admin_client):
+    """La categoría real trae TILDE (`Impresión`), así que comparar con UPPER() a secas no la
+    encuentra nunca: el envase que viene impreso de China quedaba fuera de la lista."""
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-IMP', 'Con Tampografia - Vitamina C+ 30ml', 'Impresión')
+    r = admin_client.get('/api/mee/normalizar-tabla')
+    codigos = {o['codigo'] for o in r.get_json()['catalogo']['envase']}
+    assert 'MEE-QQ-IMP' in codigos, 'el envase ya impreso no se ofrece (la tilde de la categoría)'
+    _limpiar(app)
+
+
+def test_CREAR_lo_que_falta_nace_en_CERO(app, admin_client):
+    """*"él usa etiqueta, quizás en este momento no hay ... ¿la creamos y que aparezca en cero?"*
+
+    En cero es como corresponde: el motor compra `necesidad - stock`, así que una etiqueta que
+    existe con stock 0 pide TODA la necesidad. Una que no existe no pide nada y el faltante es
+    invisible (M100).
+    """
+    from database import get_db
+    _limpiar(app)
+    r = admin_client.post('/api/mee/normalizar-crear',
+                          json={'columna': 'etiqueta',
+                                'descripcion': 'ETIQUETA NORMTAB PRUEBA CREAR'},
+                          headers={'Origin': 'http://localhost'})
+    assert r.status_code == 200, r.data[:200]
+    cod = r.get_json()['codigo']
+    with app.app_context():
+        c = get_db()
+        fila = c.execute("SELECT stock_actual, categoria, estado FROM maestro_mee WHERE codigo=?",
+                         (cod,)).fetchone()
+        assert fila and float(fila[0] or 0) == 0, 'no nació en cero: %s' % (tuple(fila or ()),)
+        assert (fila[2] or '') == 'Activo'
+        n = c.execute("SELECT COUNT(*) FROM audit_log WHERE accion='CREAR_MEE' AND registro_id=?",
+                      (cod,)).fetchone()[0]
+        assert n >= 1, 'crear un empaque no dejó rastro de quién'
+        c.execute("DELETE FROM maestro_mee WHERE codigo=?", (cod,))
+        c.commit()
+    _limpiar(app)
+
+
+def test_CREAR_no_duplica_uno_que_ya_existe(app, admin_client):
+    """Dos códigos para la misma cosa parten el stock en dos y ninguno muestra la necesidad real
+    (M57). Si ya existe con esa descripción, se devuelve ese en vez de crear otro."""
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-ETQ', 'ETIQUETA NORMTAB YA EXISTE', 'Etiqueta')
+    r = admin_client.post('/api/mee/normalizar-crear',
+                          json={'columna': 'etiqueta', 'descripcion': 'etiqueta normtab ya existe'},
+                          headers={'Origin': 'http://localhost'})
+    assert r.status_code == 409, 'creó un duplicado: %s' % r.data[:200]
+    assert r.get_json().get('codigo') == 'MEE-QQ-ETQ', 'no dice cuál usar en su lugar'
+    _limpiar(app)
+
+
+def test_un_codigo_DADO_DE_BAJA_se_ofrece_marcado_pero_no_se_propone(app, admin_client):
+    """Sebastián (9-ago): *"veo que existen dos tapas para envase cuadrado"*. La vieja **ya estaba
+    en Inactivo**: la decisión ya se había tomado y la pantalla la mostraba igual, porque el
+    catálogo sólo excluía 'Archivado' (69 de 129 códigos estaban de baja).
+
+    No se esconden -- si el que hace falta está de baja, esconderlo deja la columna vacía sin que
+    nadie sepa por qué (M121) -- pero van al final, marcados, y **no se proponen solos**: elegir
+    uno de baja es apuntarle la compra a algo que nadie repone.
+    """
+    from database import get_db
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-FR', 'FRASCO VIDRIO 30', 'Frasco')
+    _mee(app, 'MEE-QQ-ETQ', 'ETIQUETA ZANAHORIA 30', 'Etiqueta')
+    with app.app_context():
+        c = get_db()
+        c.execute("UPDATE maestro_mee SET estado='Inactivo' WHERE codigo='MEE-QQ-ETQ'")
+        c.commit()
+    pid = _pres(app)
+    f, j = _fila(admin_client, pid)
+    ops = {o['codigo']: o for o in j['catalogo']['etiqueta']}
+    assert 'MEE-QQ-ETQ' in ops, 'escondió un código de baja: la columna queda vacía sin explicar'
+    assert ops['MEE-QQ-ETQ'].get('activo') is False, 'no dice que está de baja'
+    assert not f['sugerido'].get('etiqueta'), 'propuso solo un código dado de baja'
+    _limpiar(app)
+
+
+def test_lo_GUARDADO_que_apunta_a_un_codigo_de_baja_se_marca(app, admin_client):
+    """Si desapareciera de la vista, el próximo guardado lo pisaría con vacío sin que nadie lo
+    haya decidido (M115) -- y mientras tanto la compra apunta a algo que nadie repone."""
+    from database import get_db
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-FR', 'FRASCO VIDRIO 30', 'Frasco')
+    _mee(app, 'MEE-QQ-TAP', 'TAPA VIEJA', 'Tapa')
+    with app.app_context():
+        c = get_db()
+        c.execute("UPDATE maestro_mee SET estado='Inactivo' WHERE codigo='MEE-QQ-TAP'")
+        c.commit()
+    pid = _pres(app, tapa='MEE-QQ-TAP')
+    f, _ = _fila(admin_client, pid)
+    assert f['actual']['tapa'] == 'MEE-QQ-TAP', 'borró el dato guardado'
+    assert 'tapa' in (f.get('de_baja') or []), 'no marcó que apunta a un código de baja'
+    _limpiar(app)

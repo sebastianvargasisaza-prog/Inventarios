@@ -17452,11 +17452,22 @@ def _tokens_tono(texto):
 # cargadas (Frasco y Envase conviven, Plegadiza y Plegable tambien): adivinar por parecido dejaria
 # la lista de opciones incompleta justo en el producto raro.
 _MEE_CATS = {
-    'envase':   ('FRASCO', 'ENVASE', 'CONTORNO'),
-    'tapa':     ('TAPA',),
-    'etiqueta': ('ETIQUETA',),
-    'caja':     ('PLEGADIZA', 'PLEGABLE', 'CAJA'),
+    # Sebastian (9-ago): *"la tapa seria gotero... sigue sin salirme la opcion del gotero"*. No
+    # salia porque `Gotero` es una CATEGORIA PROPIA del maestro y esta columna solo ofrecia `TAPA`:
+    # los tres goteros existian y la pantalla no los mostraba, que desde la silla del usuario es lo
+    # mismo que no tenerlos (M121).
+    'envase':   ('FRASCO', 'ENVASE', 'CONTORNO', 'SERIGRAFIA', 'IMPRESION', 'TAMPOGRAFIA'),
+    'tapa':     ('TAPA', 'GOTERO', 'VALVULA', 'DOSIFICADOR', 'TAPON', 'SPRAY', 'BOMBA', 'PUMP'),
+    'etiqueta': ('ETIQUETA', 'ROTULO', 'STICKER'),
+    'caja':     ('PLEGADIZA', 'PLEGABLE', 'CAJA', 'ESTUCHE'),
 }
+# ⚠ La categoria real trae TILDE (`Impresion` se guarda como "Impresi\u00f3n"), asi que comparar
+# con UPPER() a secas no la encuentra NUNCA: el envase ya serigrafiado -- justo el que viene
+# impreso de China -- quedaba fuera de la lista sin que nada avisara.
+def _cat_norm(x):
+    import unicodedata as _ud
+    n = _ud.normalize('NFKD', str(x or '')).encode('ascii', 'ignore').decode()
+    return n.strip().upper()
 
 
 def _tokens_nombre(texto):
@@ -17534,19 +17545,38 @@ def mee_normalizar_tabla():
     c = get_db().cursor()
 
     # Catalogo por columna · lo que se ofrece en cada desplegable
-    cat_de = {}
+    cat_de, estado_de = {}, {}
     catalogo = {k: [] for k in _MEE_CATS}
-    for cod, desc, cat in c.execute(
-            "SELECT codigo, COALESCE(descripcion,''), UPPER(TRIM(COALESCE(categoria,''))) "
-            "  FROM maestro_mee WHERE COALESCE(estado,'Activo')<>'Archivado' "
-            " ORDER BY codigo").fetchall():
+    # ⚠ Solo se OFRECE lo que esta ACTIVO. Antes se excluia unicamente 'Archivado', asi que los
+    # 69 codigos dados de baja (de 129) salian en el desplegable como si se pudieran elegir --
+    # y esa es la razon por la que Sebastian veia DOS tapas para el envase cuadrado: la vieja ya
+    # estaba en Inactivo, la decision ya estaba tomada, y la pantalla la mostraba igual.
+    #
+    # Ofrecer un codigo dado de baja no es un detalle de lista: si se elige, la compra apunta a un
+    # material que nadie repone y el stock del bueno queda partido en dos (M57).
+    for cod, desc, cat, est in c.execute(
+            "SELECT codigo, COALESCE(descripcion,''), UPPER(TRIM(COALESCE(categoria,''))), "
+            "       COALESCE(estado,'Activo') "
+            "  FROM maestro_mee ORDER BY codigo").fetchall():
         cod_u = (cod or '').strip().upper()
         if not cod_u:
             continue
+        cat = _cat_norm(cat)
         cat_de[cod_u] = cat
+        estado_de[cod_u] = (est or 'Activo').strip()
+        _act = (_cat_norm(est) == 'ACTIVO')
         for col, cats in _MEE_CATS.items():
             if cat in cats:
-                catalogo[col].append({'codigo': cod, 'desc': (desc or '')[:70]})
+                # Los dados de baja NO se esconden: se ofrecen marcados y al final. Esconderlos
+                # seria decidir por el usuario -- si el gotero que necesita esta dado de baja, la
+                # columna le queda vacia y no tiene forma de saber por que (M121). Marcados, la
+                # pantalla dice el estado y el decide: usar el activo, o reactivar ese.
+                catalogo[col].append({'codigo': cod, 'desc': (desc or '')[:70],
+                                      'activo': _act, 'estado': estado_de[cod_u]})
+
+    # Activos primero: lo que se repone va arriba, lo dado de baja al final.
+    for _col in catalogo:
+        catalogo[_col].sort(key=lambda x: (0 if x.get('activo') else 1, x['codigo']))
 
     # Indice de tokens por componente, para arrastrar por nombre
     idx = {}
@@ -17555,7 +17585,8 @@ def mee_normalizar_tabla():
         for x in catalogo[col]:
             idx[col].append({'codigo': (x['codigo'] or '').strip().upper(),
                              'toks': set(_tokens_nombre(x['codigo'] + ' ' + x['desc'])),
-                             'ml': _ml_de(x['codigo'] + ' ' + x['desc'])})
+                             'ml': _ml_de(x['codigo'] + ' ' + x['desc']),
+                             'activo': x.get('activo', True)})
 
     # Cuantos PRODUCTOS distintos comparten cada palabra. Una que aparece en varios es una
     # palabra de FAMILIA (CONTORNO, SUERO, CREMA), no algo que identifique a ESTE producto: con
@@ -17611,6 +17642,8 @@ def mee_normalizar_tabla():
                 comunes = base & x['toks']
                 if not comunes:
                     continue
+                if not x.get('activo', True):
+                    continue          # dado de baja: se ofrece, pero no se PROPONE solo
                 # Un candidato de OTRO tamano no es este empaque, por mas que el nombre pegue:
                 # un "Envase 30ml" no envasa una presentacion de 10 ml.
                 if vol and x.get('ml') and abs(float(x['ml']) - float(vol)) > 0.01:
@@ -17629,7 +17662,8 @@ def mee_normalizar_tabla():
                 # de este tamano, esa es (Sebastian 9-ago: los goteros de 10/15/30/50).
                 if col == 'tapa' and vol:
                     _mismo_ml = sorted({x['codigo'] for x in idx[col]
-                                        if x.get('ml') and abs(float(x['ml']) - float(vol)) <= 0.01})
+                                        if x.get('activo', True) and x.get('ml')
+                                        and abs(float(x['ml']) - float(vol)) <= 0.01})
                     if len(_mismo_ml) == 1:
                         sugerido[col] = _mismo_ml[0]
                         motivo[col] = 'por tamano (%s ml)' % (int(vol) if float(vol).is_integer()
@@ -17671,6 +17705,11 @@ def mee_normalizar_tabla():
             'sospechoso': {col: sorted(desc_toks.get(v, set()) & ajenas)[:3]
                            for col, v in actual.items()
                            if v and (desc_toks.get(v, set()) & ajenas)},
+            # Lo guardado que apunta a un codigo DADO DE BAJA. No se borra ni se esconde: si
+            # desapareciera de la vista, el proximo guardado lo pisaria con vacio sin que nadie lo
+            # haya decidido (M115), y mientras tanto la compra apunta a algo que nadie repone.
+            'de_baja': sorted([col for col, v in actual.items()
+                               if v and _cat_norm(estado_de.get(v, 'Activo')) != 'ACTIVO']),
         })
 
     return jsonify({
@@ -17687,6 +17726,67 @@ def mee_normalizar_tabla():
                           and col not in f['sugerido']),
         },
     })
+
+
+_PREFIJO_COL = {'envase': 'MEE-ENV', 'tapa': 'MEE-TAP', 'etiqueta': 'MEE-ETQ',
+                'caja': 'MEE-PLG'}
+_CAT_COL = {'envase': 'Frasco', 'tapa': 'Tapa', 'etiqueta': 'Etiqueta', 'caja': 'Plegadiza'}
+
+
+@bp.route('/api/mee/normalizar-crear', methods=['POST'])
+def mee_normalizar_crear():
+    """Crea el empaque que falta, en CERO, sin salir de la tabla.
+
+    Sebastian (9-ago): *"el usa etiqueta, quizas en este momento no hay, pero como hacemos? la
+    creamos y que aparezca en cero?"*. Si: en cero es exactamente como corresponde. Lo que el
+    motor compra es `necesidad - stock`, asi que una etiqueta que existe con stock 0 **pide toda
+    la necesidad**; una que no existe no pide nada y el faltante es invisible (M100).
+
+    El codigo se genera solo, con el correlativo del prefijo de esa columna, en Python y nunca con
+    `CAST(SUBSTR(...))` (revienta en PostgreSQL con cualquier sufijo no numerico · M45).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json(silent=True) or {}
+    col = (d.get('columna') or '').strip().lower()
+    desc = (d.get('descripcion') or '').strip()
+    if col not in _PREFIJO_COL:
+        return jsonify({'error': 'columna invalida'}), 400
+    if len(desc) < 3:
+        return jsonify({'error': 'poneile una descripcion (con que producto es)'}), 400
+    conn = get_db(); c = conn.cursor()
+    # Un empaque con el mismo nombre ya existente NO se duplica: dos codigos para la misma cosa
+    # parten el stock en dos y ninguno muestra la necesidad real (M57).
+    _ya = c.execute("SELECT codigo FROM maestro_mee "
+                    " WHERE UPPER(TRIM(descripcion))=UPPER(TRIM(?)) "
+                    "   AND COALESCE(estado,'Activo')<>'Archivado' LIMIT 1", (desc,)).fetchone()
+    if _ya:
+        return jsonify({'error': 'YA_EXISTE', 'codigo': _ya[0],
+                        'mensaje': 'Ya existe %s con esa descripcion · usalo en vez de crear otro'
+                                   % _ya[0]}), 409
+    pref = _PREFIJO_COL[col]
+    try:
+        from audit_helpers import siguiente_correlativo
+        cod = siguiente_correlativo(c, 'maestro_mee', 'codigo', pref + '-')
+    except Exception:
+        cod = ''
+    if not cod:
+        return jsonify({'error': 'no pude generar el codigo'}), 500
+    u = session.get('compras_user', '')
+    try:
+        c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, stock_actual, "
+                  "stock_minimo, estado) VALUES (?,?,?, 'und', 0, 0, 'Activo')",
+                  (cod, desc, _CAT_COL[col]))
+        audit_log(c, usuario=u, accion='CREAR_MEE', tabla='maestro_mee', registro_id=cod,
+                  despues={'codigo': cod, 'descripcion': desc[:80], 'categoria': _CAT_COL[col],
+                           'stock_actual': 0},
+                  detalle='creado en cero desde la tabla de normalizacion')
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'no se pudo crear: %s' % str(e)[:160]}), 500
+    return jsonify({'ok': True, 'codigo': cod, 'descripcion': desc,
+                    'categoria': _CAT_COL[col], 'stock': 0})
 
 
 @bp.route('/api/mee/normalizar-guardar', methods=['POST'])

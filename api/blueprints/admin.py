@@ -20761,6 +20761,71 @@ def admin_maestro_envases_diff():
             duplicados.append({'categoria': cat, 'nombre_normalizado': norm,
                                'canonico_sugerido': items_ord[0]['codigo'], 'codigos': items_ord})
 
+    # ── Duplicados que el agrupador por nombre NO ve: uno lleva el TAMANO y el otro no ──────
+    #
+    # Sebastian (9-ago), mirando la tabla de normalizacion: *"veo que existen dos tapas para
+    # envase cuadrado, creo que debemos normalizar a solo una"*. Eran `MEE-TAP-003 · TAPA ENVASE
+    # CUADRADO` y `TAP-TAPA-ENVASE-CUADRADO-30ML15ML · TAPA ENVASE CUADRADO 30ml/15ml`: el mismo
+    # nombre, salvo que uno trae el tamano pegado. Como el agrupador compara el nombre
+    # normalizado COMPLETO, nunca los vio juntos y los dos siguen vivos en el desplegable.
+    #
+    # El dano no es cosmetico: si un producto se carga con uno y otro con el otro, **el stock de
+    # esa tapa queda partido en dos** y ninguna de las dos muestra la necesidad real (M57/M100).
+    #
+    # ⚠ Se listan como CANDIDATOS, nunca se fusionan solos: una tapa de 30 ml y una de 120 ml no
+    # son la misma cosa, y si el nombre sin tamano tiene VARIOS tamanos enfrente no hay forma de
+    # saber a cual corresponde -- ese caso se muestra marcado como ambiguo y se deja a una persona
+    # (M19). La fusion sigue siendo el mismo apply de siempre: puente + inactivo, reversible.
+    import re as _re_dup
+
+    def _sin_tamano(nombre):
+        """El nombre sin las medidas: '... CUADRADO 30 ML 15 ML' y '... CUADRADO' colapsan."""
+        n = _re_dup.sub(r'\b\d+(?:[.,]\d+)?\s*(?:ML|CC|GR?|L)\b', ' ', str(nombre or ''))
+        n = _re_dup.sub(r'\b\d+(?:[.,]\d+)?\b', ' ', n)
+        return ' '.join(n.split())
+
+    def _tamanos(nombre):
+        return sorted({m for m in _re_dup.findall(r'\b(\d+(?:[.,]\d+)?)\s*(?:ML|CC)\b',
+                                                  str(nombre or ''))})
+
+    _por_base = defaultdict(list)
+    for (cat, norm), items in grupos.items():
+        if not norm:
+            continue
+        base = _sin_tamano(norm)
+        if base:
+            _por_base[(cat, base)].append((norm, items))
+
+    _ya_en_dup = {i['codigo'] for d in duplicados for i in d['codigos']}
+    posibles_duplicados = []
+    for (cat, base), variantes in _por_base.items():
+        if len(variantes) < 2:
+            continue
+        _todos = [i for _n, its in variantes for i in its]
+        if len(_todos) < 2 or all(i['codigo'] in _ya_en_dup for i in _todos):
+            continue
+        _con_tam = [(_n, its) for _n, its in variantes if _tamanos(_n)]
+        _sin_tam = [(_n, its) for _n, its in variantes if not _tamanos(_n)]
+        # ⚠ La firma del duplicado es que UNO NO LLEVE TAMAÑO y el otro sí. Si todos lo llevan y
+        # son distintos, son VARIANTES legítimas -- `FR-BLANCOCUAD-30` y `FR-BLANCOCUAD-15` son
+        # dos frascos, no el mismo mal cargado, y marcarlos convierte al detector en ruido justo
+        # donde tiene que dar confianza (M122). Medido: sin esta línea marcaba 3 de 4 mal.
+        if not _sin_tam:
+            continue
+        # Ambiguo cuando el nombre SIN tamano tiene mas de un tamano enfrente: no hay forma de
+        # saber a cual corresponde, asi que se muestra y no se propone canonico.
+        _ambiguo = bool(_sin_tam) and len(_con_tam) > 1
+        _ord = sorted(_todos, key=lambda x: (-x['stock'], 0 if x['tiene_mov'] else 1, x['codigo']))
+        posibles_duplicados.append({
+            'categoria': cat, 'nombre_base': base,
+            'motivo': 'mismo nombre · uno lleva el tamaño y el otro no',
+            'ambiguo': _ambiguo,
+            'canonico_sugerido': (None if _ambiguo else _ord[0]['codigo']),
+            'tamanos': sorted({t for _n, _i in variantes for t in _tamanos(_n)}),
+            'codigos': _ord,
+        })
+    posibles_duplicados.sort(key=lambda d: (d['ambiguo'], d['categoria'], d['nombre_base']))
+
     ya_puenteados = []
     try:
         for r in c.execute("SELECT alias, codigo_mee, COALESCE(descripcion_canonical,''), "
@@ -20799,8 +20864,12 @@ def admin_maestro_envases_diff():
         'ya_puenteados': ya_puenteados,
         'huerfanos_presentaciones': huerfanos,
         'sin_inci': sin_inci,
+        # Los que el agrupador por nombre NO ve: uno lleva el tamaño y el otro no. Van aparte de
+        # `duplicados` porque son CANDIDATOS: una tapa de 30 y una de 120 no son la misma cosa.
+        'posibles_duplicados': posibles_duplicados,
         'resumen': {
             'grupos_duplicados': len(duplicados),
+            'posibles_duplicados': len(posibles_duplicados),
             'codigos_duplicados': sum(len(d['codigos']) for d in duplicados),
             'puentes_existentes': len(ya_puenteados),
             'huerfanos_presentaciones': len(huerfanos),

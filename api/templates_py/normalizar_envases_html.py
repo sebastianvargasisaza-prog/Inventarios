@@ -125,6 +125,7 @@ function incompleta(f){
     if(!v) return true;
   }
   if(Object.keys(f.sospechoso||{}).length) return true;   // una guardada que hay que revisar
+  if((f.de_baja||[]).length) return true;                 // apunta a un codigo dado de baja
   return (f.fantasma||[]).length>0;
 }
 
@@ -133,12 +134,20 @@ function opciones(col, sel){
   // 'No usa' solo donde tiene sentido: sin frasco no hay nada que envasar, asi que el envase no
   // puede declararse ausente.
   if(col!=='envase') h+='<option value="__NO_USA__"'+(sel==='__NO_USA__'?' selected':'')+'>no usa</option>';
-  var vistos={}, i;
+  var vistos={}, i, corte=false;
   for(i=0;i<lista.length;i++){
     var c=lista[i].codigo, u=String(c||'').toUpperCase();
     vistos[u]=1;
+    // Los dados de baja van al final y DICHOS. No se esconden -- si el que hace falta esta de
+    // baja, esconderlo deja la columna vacia sin explicacion -- pero tampoco se mezclan con los
+    // que se reponen: elegir uno de baja es apuntarle la compra a algo que nadie repone.
+    if(lista[i].activo===false && !corte){
+      corte=true;
+      h+='<option disabled>&mdash;&mdash; dados de baja (no se reponen) &mdash;&mdash;</option>';
+    }
     h+='<option value="'+esc(c)+'"'+(String(sel).toUpperCase()===u?' selected':'')+'>'
-      + esc(c)+(lista[i].desc?' &middot; '+esc(lista[i].desc):'')+'</option>';
+      + esc(c)+(lista[i].desc?' &middot; '+esc(lista[i].desc):'')
+      + (lista[i].activo===false?' &middot; (de baja)':'')+'</option>';
   }
   // Un codigo cargado que ya no esta en el catalogo NO se borra de la vista: se muestra marcado.
   // Si desapareciera, el guardado lo pisaria con vacio sin que nadie lo haya decidido (M115).
@@ -186,6 +195,8 @@ function pintar(){
       // Lo que YA esta guardado y nombra a OTRO producto. Hasta el 9-ago el emparejador proponia
       // por palabra de familia, asi que un "aceptar todas" pudo dejar la etiqueta del
       // retinaldehido en la cafeina: esa fila se ve RESUELTA, que es la peor forma de estar mal.
+      if((f.de_baja||[]).indexOf(col)>=0)
+        h+='<div class="chip fan" style="margin-top:3px">&#9888; ese codigo esta dado de baja</div>';
       if(((f.sospechoso||{})[col]||[]).length)
         h+='<div class="chip sos" style="margin-top:3px">&#9888; revisar: nombra a otro producto ('
           + esc(((f.sospechoso||{})[col]||[]).join(', ')) + ')</div>';
@@ -198,7 +209,38 @@ function pintar(){
   document.getElementById('cuerpo').innerHTML=h;
 }
 
-function cambio(id, col, v){ CAMBIOS[id+'|'+col]=v; pintar(); }
+function porId(id){ var i; for(i=0;i<(D.filas||[]).length;i++){ if(D.filas[i].id===id) return D.filas[i]; } return null; }
+
+async function crearEmpaque(id, col){
+  // Sebastian (9-ago): *"el usa etiqueta, quizas en este momento no hay, pero como hacemos? la
+  // creamos y que aparezca en cero?"*. En cero es como corresponde: el motor compra
+  // `necesidad - stock`, asi que una etiqueta que existe en cero pide TODA la necesidad, y una
+  // que no existe no pide nada y el faltante queda invisible.
+  var f=porId(id), sugerida=(f? (f.producto+' '+(f.etiqueta_txt||'')) : '');
+  var desc=prompt('Descripcion del/la '+col+' que falta (con que producto es):', sugerida);
+  if(desc===null || String(desc).trim().length<3){ pintar(); return; }
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/mee/normalizar-crear',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':(t&&t.csrf_token)||''},
+      body:JSON.stringify({columna:col, descripcion:String(desc).trim()})});
+    var j=await r.json();
+    if(!r.ok || !j.ok){
+      alert(j.mensaje||j.error||'No se pudo crear');
+      if(j.codigo){ CAMBIOS[id+'|'+col]=j.codigo; }   // ya existia: se usa ese, no se duplica
+      await cargar();
+      return;
+    }
+    D.catalogo[col].push({codigo:j.codigo, desc:j.descripcion});
+    CAMBIOS[id+'|'+col]=j.codigo;
+    pintar();
+  }catch(e){ alert('No se pudo crear: '+e); await cargar(); }
+}
+
+function cambio(id, col, v){
+  if(v==='__CREAR__'){ crearEmpaque(id, col); return; }
+  CAMBIOS[id+'|'+col]=v; pintar();
+}
 
 function aceptarSugeridas(){
   // Acepta lo que se dedujo del nombre, en bloque. Se puede revisar antes de guardar: lo que se
