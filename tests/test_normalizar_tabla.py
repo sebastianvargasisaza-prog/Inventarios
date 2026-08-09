@@ -348,3 +348,39 @@ def test_un_envase_de_OTRO_tamano_no_se_propone(app, admin_client):
     assert not f['sugerido'].get('envase'), \
         'propuso un envase de 30 ml para una presentación de 10: %s' % f['sugerido']
     _limpiar(app)
+
+
+def test_marca_lo_YA_GUARDADO_que_nombra_a_otro_producto(app, admin_client):
+    """Arreglar la regla no arregla el dato que ya se guardó con la regla vieja.
+
+    Hasta el 9-ago el emparejador proponía por palabra de familia, así que un "aceptar todas las
+    sugeridas" pudo dejar la etiqueta del retinaldehído puesta en la cafeína. Esa fila se ve
+    RESUELTA, que es la peor forma de estar mal (M100). Se marca para poder revisarla.
+    """
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-FR', 'FRASCO VIDRIO 30', 'Frasco')
+    _mee(app, 'MEE-QQ-ETQ', 'ETIQUETA CON RETINALDEHIDO', 'Etiqueta')
+    from database import get_db
+    with app.app_context():
+        c = get_db()
+        c.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, "
+                  "etiqueta, volumen_ml, activo) VALUES ('NORMTAB RETINALDEHIDO','V30','30 ml',30,1)")
+        c.commit()
+    pid = _pres(app, etq='MEE-QQ-ETQ')          # ya GUARDADA, como si se hubiera aceptado en bloque
+    f, _ = _fila(admin_client, pid)
+    assert f['actual']['etiqueta'] == 'MEE-QQ-ETQ'
+    assert 'etiqueta' in (f.get('sospechoso') or {}), \
+        'no marcó una etiqueta guardada que nombra a otro producto: %s' % f.get('sospechoso')
+    _limpiar(app)
+
+
+def test_lo_guardado_CORRECTO_no_se_marca(app, admin_client):
+    """Un detector que grita de más deja de mirarse (M122): la etiqueta propia no se marca."""
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-FR', 'FRASCO VIDRIO 30', 'Frasco')
+    _mee(app, 'MEE-QQ-ETQ', 'ETIQUETA ZANAHORIA 30', 'Etiqueta')
+    pid = _pres(app, etq='MEE-QQ-ETQ')
+    f, _ = _fila(admin_client, pid)
+    assert not (f.get('sospechoso') or {}).get('etiqueta'), \
+        'marcó como sospechosa la etiqueta correcta: %s' % f.get('sospechoso')
+    _limpiar(app)

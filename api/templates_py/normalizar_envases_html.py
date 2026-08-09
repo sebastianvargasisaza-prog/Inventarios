@@ -49,6 +49,7 @@ NORMALIZAR_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
  .chip{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700}
  .amb{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
  .fan{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
+ .sos{background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid var(--cx-danger-text)}
  .prod{font-weight:600}
  .ml{font-variant-numeric:tabular-nums;color:var(--cx-text-soft)}
  .pie{position:sticky;bottom:0;background:var(--cx-card);border-top:1px solid var(--cx-border);
@@ -123,6 +124,7 @@ function incompleta(f){
     var v=valorDe(f, cols[i]);
     if(!v) return true;
   }
+  if(Object.keys(f.sospechoso||{}).length) return true;   // una guardada que hay que revisar
   return (f.fantasma||[]).length>0;
 }
 
@@ -181,6 +183,12 @@ function pintar(){
         + opciones(col, v)+'</select>';
       if((f.ambiguo||{})[col]) h+='<div class="chip amb" style="margin-top:3px">empatan: '+esc(f.ambiguo[col].join(' / '))+'</div>';
       if((f.fantasma||[]).indexOf(col)>=0) h+='<div class="chip fan" style="margin-top:3px">no esta en el maestro</div>';
+      // Lo que YA esta guardado y nombra a OTRO producto. Hasta el 9-ago el emparejador proponia
+      // por palabra de familia, asi que un "aceptar todas" pudo dejar la etiqueta del
+      // retinaldehido en la cafeina: esa fila se ve RESUELTA, que es la peor forma de estar mal.
+      if(((f.sospechoso||{})[col]||[]).length)
+        h+='<div class="chip sos" style="margin-top:3px">&#9888; revisar: nombra a otro producto ('
+          + esc(((f.sospechoso||{})[col]||[]).join(', ')) + ')</div>';
       h+='</td>';
     });
     h+='</tr>';

@@ -16664,7 +16664,29 @@ def serigrafia_cola():
         _stock = _get_mee_stock(conn)
     except Exception:
         _stock = {}
+    # De que envase LIMPIO sale cada impreso/serigrafiado (el puente de Fase 0). Sin el, cuando
+    # el impreso no alcance se puede avisar igual, pero no se puede decir QUE mandar a marcar --
+    # y entonces se declara, no se supone (M100).
+    _base_de, _desc_mee = {}, {}
+    try:
+        for (mc, dd) in c.execute(
+                "SELECT UPPER(TRIM(codigo)), COALESCE(descripcion,'') FROM maestro_mee").fetchall():
+            _desc_mee[mc] = dd
+    except Exception:
+        _desc_mee = {}
+    try:
+        for (mc, mr) in c.execute(
+                "SELECT UPPER(TRIM(codigo)), UPPER(TRIM(COALESCE(material_referencia,''))) "
+                "  FROM maestro_mee WHERE COALESCE(material_referencia,'')<>''").fetchall():
+            _base_de[mc] = mr
+    except Exception:
+        _base_de = {}
+
     from datetime import datetime as _dtSC, timedelta as _tdSC
+    # Lo que se lleva consumido de cada envase a lo largo de la cola. Las producciones vienen EN
+    # ORDEN DE FECHA, que es como se gasta de verdad: el stock es uno solo y lo que se lleva la
+    # produccion de septiembre ya no esta para la de octubre.
+    _consumido = {}
     out = []
     for (lid, prod, fecha, kg) in rows:
         try:
@@ -16679,8 +16701,63 @@ def serigrafia_cola():
             if not env or uds <= 0:
                 continue
             _mt, _mp = _marc.get(env.upper(), ('', ''))
+            _envu = env.upper()
+            _antes = _consumido.get(_envu, 0)
+            _consumido[_envu] = _antes + uds
             if _mt == 'pre_impreso':
-                continue  # viene ya serigrafiado de China · no se alista ni envía a marcar
+                # Sebastian (9-ago): *"todo lo impreso va primero; cuando no alcanza, entonces
+                # debe decir se debe enviar tal envase a serigrafia o solicitar etiqueta"*.
+                #
+                # Antes esta rama hacia `continue` a secas: mientras el impreso alcanzara todo
+                # bien, y **el dia que no alcanzara nadie se enteraba**. El impreso no se manda a
+                # marcar (ya viene marcado), pero eso no es lo mismo que no mirarlo.
+                _hay = float(_stock.get(_envu, 0) or 0)
+                _falta = int(round(max(0.0, (_antes + uds) - _hay) - max(0.0, _antes - _hay)))
+                if _falta <= 0:
+                    continue                  # el impreso alcanza · no hay nada que hacer
+                _limpio = _base_de.get(_envu, '')
+                _etq = (v.get('etiqueta_codigo') or v.get('etiqueta') or '').strip()
+                try:
+                    _fe = (_dtSC.fromisoformat(str(fecha)[:10]) - _tdSC(days=15)).date().isoformat()
+                except Exception:
+                    _fe = ''
+                # ⚠ La fila es una ORDEN DE TRABAJO: la pantalla de Compras la usa para mandar a
+                # marcar. Entonces tiene que traer el envase que hay que MANDAR (el limpio, no el
+                # impreso, que ya viene marcado) y la cantidad que FALTA, no la de la producción
+                # entera. Emitirla con el impreso y el total haría que Catalina mande el frasco
+                # equivocado, por la cantidad equivocada -- y la pantalla no tendría cómo saberlo.
+                _mt_lim, _mp_lim = _marc.get(_limpio, ('', '')) if _limpio else ('', '')
+                out.append({
+                    'produccion_id': lid, 'producto': prod, 'fecha': fecha, 'fecha_envio': _fe,
+                    'envase_codigo': (_limpio or env),
+                    'envase_desc': (_desc_mee.get(_limpio, '') if _limpio
+                                    else v.get('envase_descripcion', '')),
+                    'etiqueta': v.get('etiqueta', ''), 'volumen_ml': v.get('volumen_ml', 0),
+                    'unidades': _falta, 'kg': float(kg or 0),
+                    'marcacion_tipo': (_mt_lim or ('etiqueta' if (not _limpio and _etq) else '')),
+                    'marcacion_proveedor': _mp_lim,
+                    'stock_envase': float(_stock.get(_limpio, 0) or 0) if _limpio else _hay,
+                    'envase_impreso': env,
+                    'stock_impreso': _hay,
+                    'unidades_produccion': uds,
+                    # Lo que hace accionable la fila: cuantos faltan y las dos salidas posibles.
+                    'impreso_no_alcanza': True,
+                    'faltan': _falta,
+                    'envase_limpio': _limpio,
+                    'etiqueta_codigo': _etq,
+                    'accion': ('enviar_a_serigrafiar' if _limpio else
+                               ('solicitar_etiqueta' if _etq else 'sin_salida_definida')),
+                    'aviso': (('El impreso no alcanza para esta produccion: faltan %d. '
+                               'Enviar %s a marcar antes del %s') % (_falta, _limpio, _fe or 's/f')
+                              if _limpio else
+                              (('El impreso no alcanza: faltan %d. No hay envase limpio anclado a '
+                                '%s (material_referencia), asi que no se puede decir que mandar a '
+                                'marcar; se puede solicitar la etiqueta %s') % (_falta, env, _etq))
+                              if _etq else
+                              ('El impreso no alcanza: faltan %d, y este envase no tiene ni '
+                               'envase limpio anclado ni etiqueta definida' % _falta)),
+                })
+                continue
             _fenv = ''
             try:
                 _fenv = (_dtSC.fromisoformat(str(fecha)[:10]) - _tdSC(days=15)).date().isoformat()
@@ -17491,6 +17568,12 @@ def mee_normalizar_tabla():
         for _t in set(_tokens_nombre(_pn)):
             _prods_por_token.setdefault(_t, set()).add(_norm_prod_fuerte(_pn))
 
+    # Tokens de cada codigo del maestro, para poder revisar tambien lo que YA esta guardado.
+    desc_toks = {}
+    for col in _MEE_CATS:
+        for x in idx[col]:
+            desc_toks[x['codigo']] = x['toks']
+
     filas = []
     for (pid, prod, pcod, etq_txt, vol, env, tap, caj, etq,
          s_tap, s_caj, s_etq, sku, activo) in c.execute(
@@ -17581,6 +17664,13 @@ def mee_normalizar_tabla():
             # Un codigo cargado que NO esta en el maestro no se puede comprar ni descontar · se
             # marca para que no se lea como resuelto (M100).
             'fantasma': sorted([col for col, v in actual.items() if v and v not in cat_de]),
+            # Lo que YA esta guardado y NOMBRA a otro producto. Hasta el 9-ago el emparejador
+            # proponia por palabra de familia, asi que un "aceptar todas" pudo dejar la etiqueta
+            # del retinaldehido en la cafeina. Revisar el dato viejo es parte de arreglar la
+            # regla: si no, el defecto se queda guardado y la pantalla lo muestra como resuelto.
+            'sospechoso': {col: sorted(desc_toks.get(v, set()) & ajenas)[:3]
+                           for col, v in actual.items()
+                           if v and (desc_toks.get(v, set()) & ajenas)},
         })
 
     return jsonify({

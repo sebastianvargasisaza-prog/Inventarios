@@ -83,6 +83,7 @@ CORAZON=(
   "tests/test_rastro_empaque.py"
   "tests/test_rastro_maestro_envases.py"
   "tests/test_matriz_permisos_rapida.py"
+  "tests/test_impreso_no_alcanza.py"
   "tests/test_operario_no_archiva.py"
   "tests/test_pago_creador_no_se_paga_solo.py"
   "tests/test_reversa_pago_deja_rastro.py"

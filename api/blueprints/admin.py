@@ -9748,7 +9748,16 @@ function render(){
     var urge=(r.fecha_envio && r.fecha_envio<=hoy());
     h+='<tr>'+
       '<td>'+(r.fecha_envio?('<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;'+(urge?'background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #b91c1c)':'background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569)')+'">'+(urge?'&#128308; ':'&#128197; ')+esc(r.fecha_envio)+'</span>'):'<span class="muted">-</span>')+'</td>'+
-      '<td><b style="color:var(--cx-text, #0f172a)">'+esc(r.producto)+'</b></td>'+
+      '<td><b style="color:var(--cx-text, #0f172a)">'+esc(r.producto)+'</b>'+
+        // Esta fila no nacio de un envase que siempre se manda a marcar: nacio porque el IMPRESO
+        // que viene de China no alcanza para esa produccion. Sin decirlo, la fila se lee como
+        // cualquier otra y nadie entiende por que aparecio (Sebastian 9-ago).
+        (r.impreso_no_alcanza?('<div style="margin-top:3px;font-size:10.5px;font-weight:700;'+
+          'background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #92400e);'+
+          'border-radius:6px;padding:3px 7px;display:inline-block">&#9888; el impreso '+
+          esc(r.envase_impreso||'')+' no alcanza &middot; hay '+Math.round(r.stock_impreso||0)+
+          ' y la produccion pide '+Math.round(r.unidades_produccion||0)+'</div>'):'')+
+        '</td>'+
       '<td class="muted">'+esc(String(r.fecha||''))+'</td>'+
       '<td><select id="e-'+i+'" onchange="cambiarEnvase('+i+')" style="max-width:235px;font-size:11px">'+envOpts(r.envase_codigo)+'</select> <button onclick="crearEnvase('+i+')" title="Crear nuevo envase" style="background:linear-gradient(135deg,#0d9488,#0f766e);padding:5px 10px">&#10133;</button><br><span class="muted" style="font-size:10px">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span></td>'+
       '<td><input id="u-'+i+'" type="number" min="1" value="'+Math.round(r.unidades||0)+'" style="width:80px;font-weight:700;color:var(--cx-primary-text, #5b21b6);text-align:right"></td>'+

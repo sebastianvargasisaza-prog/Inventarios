@@ -102,12 +102,38 @@ def test_la_pantalla_ABRE_en_un_tiempo_razonable(app, admin_client):
     ms = (time.time() - t0) * 1000
     assert r.status_code == 200, r.data[:200]
     assert ms < 3000, 'la matriz tardó %.0f ms con el proceso tibio (antes eran 26.000)' % ms
-    # Y el escaneo FRÍO también tiene techo: si alguien vuelve a `ast.get_source_segment` el cache
-    # tapa el problema en la 2ª carga, pero la 1ª (la de después de cada despliegue) se dispara a
-    # 26 segundos y la pantalla no abre. Un guard que sólo mide el camino caliente no vería eso.
+    # ⚠ El camino FRÍO no se mide con el reloj. Si alguien vuelve a `ast.get_source_segment`, el
+    # cache tapa el problema en la 2ª carga y sólo se dispara la 1ª -- la de después de cada
+    # despliegue -- así que hay que vigilarlo; pero un techo en milisegundos depende de cuánto más
+    # esté corriendo la máquina: este mismo guard midió 6.800 ms en reposo y 19.800 ms con el gate
+    # cargado, y tumbó el push por un rojo que no hablaba del código (M133).
+    #
+    # Lo que sí es independiente de la máquina: que la 2ª carga aproveche el escaneo de la 1ª.
     with app.app_context():
         _limpiar_cache()
         t1 = time.time()
         permisos_matriz.construir()
         frio = (time.time() - t1) * 1000
-    assert frio < 15000, 'el escaneo frío tardó %.0f ms (antes eran 32.000)' % frio
+    assert ms * 10 < frio, \
+        'la 2ª carga no aprovecha el escaneo (fría %.0f ms · tibia %.0f ms)' % (frio, ms)
+
+
+def test_la_matriz_no_vuelve_a_PARTIR_el_archivo_en_cada_ruta(app):
+    """La invariante de los 23 segundos, medida sin reloj.
+
+    `ast.get_source_segment` vuelve a partir en líneas el archivo ENTERO en cada llamada; acá se
+    llama una vez por ruta y `admin.py` tiene ~700, o sea 700 pasadas sobre 1,5 MB. Se corta por
+    número de línea, sobre las líneas partidas una sola vez por archivo.
+
+    Es la misma vigilancia que el techo de milisegundos, pero sobre un hecho del código: no puede
+    dar rojo porque la máquina esté ocupada.
+    """
+    import io as _io
+    ruta = os.path.join(RAIZ, 'api', 'permisos_matriz.py')
+    src = _io.open(ruta, encoding='utf-8').read()
+    # Sin comentarios: si no, al test lo satisface la explicación de por qué ya NO se usa, que es
+    # justo la trampa en la que caí dos veces (M154).
+    codigo = '\n'.join(l.split('#')[0] for l in src.splitlines())
+    assert 'get_source_segment' not in codigo, \
+        'volvió a ast.get_source_segment: es cuadrático y la pantalla deja de abrir'
+    assert 'splitlines()' in codigo, 'ya no parte las líneas una sola vez por archivo'
