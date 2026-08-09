@@ -81,3 +81,25 @@ def test_el_tono_guardado_APARECE_en_la_tabla_de_normalizacion(app, admin_client
         c.execute("DELETE FROM sku_producto_map WHERE sku='TONOSH1'")
         c.execute("DELETE FROM maestro_mee WHERE codigo='TONOSH-FR'")
         c.commit()
+
+
+def test_hay_una_puerta_para_TRAER_los_tonos_sin_esperar_al_cron(app, admin_client):
+    """El catálogo se sincroniza 5:30 / 13:30 / 21:30. Sin esta puerta, para abrir las filas por
+    tono habría que esperar horas: una capacidad que llega tarde, para el que está trabajando
+    ahora, no existe (M121).
+
+    Corre en SEGUNDO PLANO: sostener una llamada de red con paginado dentro del request retiene
+    uno de los tres workers hasta 40 segundos, que es como se satura la app (M43/M89).
+    """
+    r = admin_client.post('/api/mee/traer-tonos-shopify', headers={'Origin': 'http://localhost'})
+    assert r.status_code in (200, 202), r.data[:200]
+    assert r.get_json().get('ok') is True
+    import io as _io
+    src = _io.open(os.path.join(RAIZ, 'api', 'blueprints', 'programacion.py'),
+                   encoding='utf-8').read()
+    i = src.find('def mee_traer_tonos_shopify')
+    assert i > 0
+    cuerpo = src[i:i + 2200]
+    assert 'Thread(' in cuerpo, 'lo corre dentro del request: retiene un worker'
+    assert 'job_sync_stock_shopify_diario' in cuerpo, \
+        'no delega en el job del cron: dos caminos para el mismo hecho divergen (M1/M3)'

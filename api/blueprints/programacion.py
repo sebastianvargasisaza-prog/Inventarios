@@ -17836,6 +17836,48 @@ _PREFIJO_COL = {'envase': 'MEE-ENV', 'tapa': 'MEE-TAP', 'etiqueta': 'MEE-ETQ',
 _CAT_COL = {'envase': 'Frasco', 'tapa': 'Tapa', 'etiqueta': 'Etiqueta', 'caja': 'Plegadiza'}
 
 
+@bp.route('/api/mee/traer-tonos-shopify', methods=['POST'])
+def mee_traer_tonos_shopify():
+    """Dispara el sync del CATALOGO de Shopify para que se llenen los tonos, sin esperar al cron.
+
+    El catalogo se sincroniza a las 5:30, 13:30 y 21:30. Sin esta puerta, para abrir las filas por
+    tono habria que esperar horas: una capacidad que existe pero llega tarde, para el que esta
+    trabajando ahora, no existe (M121).
+
+    ⚠ Corre en SEGUNDO PLANO. Es una llamada de red a Shopify con paginado, y sostenerla dentro
+    del request retiene uno de los tres workers hasta 40 segundos -- que es como se satura la app
+    (M43/M89). Se lanza y se contesta enseguida; la pantalla se recarga despues.
+
+    Y se delega en el MISMO job que corre el cron, no en una copia: dos caminos para el mismo
+    hecho divergen (M1/M3).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    from flask import current_app as _ca
+    _app = _ca._get_current_object()
+    try:
+        from blueprints.auto_plan_jobs import job_sync_stock_shopify_diario as _job
+    except Exception:
+        try:
+            from auto_plan_jobs import job_sync_stock_shopify_diario as _job
+        except Exception as _e:
+            return jsonify({'error': 'no encuentro el sync: %s' % str(_e)[:120]}), 500
+
+    import threading as _th
+
+    def _correr():
+        try:
+            _job(_app)
+        except Exception as _e2:
+            import logging as _lg
+            _lg.getLogger('programacion').warning('sync de tonos fallo: %s', _e2)
+
+    _th.Thread(target=_correr, daemon=True, name='tonos-shopify').start()
+    return jsonify({'ok': True,
+                    'mensaje': ('Le pedi el catalogo a Shopify. Tarda hasta un minuto: recarga la '
+                                'pantalla y volve a intentar abrir las filas por tono.')}), 202
+
+
 @bp.route('/api/mee/expandir-tonos', methods=['GET'])
 def mee_expandir_tonos():
     """Read-only · que pasaria si se abre una fila por TONO.
@@ -18316,9 +18358,9 @@ def prog_sku_por_tono():
             tomados.add(r[0])
 
     propuestas, ambiguas, sin_pista = [], [], []
-    for pid, prod, pcod, frasco in c.execute(
+    for pid, prod, pcod, etq_txt, frasco in c.execute(
             "SELECT id, producto_nombre, COALESCE(presentacion_codigo,''), "
-            "       UPPER(TRIM(COALESCE(envase_codigo,''))) "
+            "       COALESCE(etiqueta,''), UPPER(TRIM(COALESCE(envase_codigo,''))) "
             "  FROM producto_presentaciones "
             " WHERE COALESCE(activo,1)=1 AND COALESCE(sku_shopify,'')='' "
             "   AND COALESCE(envase_codigo,'')<>''").fetchall():
@@ -18326,10 +18368,20 @@ def prog_sku_por_tono():
         libres = [x for x in cands if x['sku'].strip().upper() not in tomados]
         if not libres:
             continue
-        toks = _tokens_tono(frasco + ' ' + desc_mee.get(frasco, ''))
+        # ⚠ El tono no siempre esta en el FRASCO. Sebastian (9-ago) lo mostro sin querer: el
+        # frasco del LIP SERUM dice "LIP GLOSS BLANCO SIN SERG" -- blanco es el frasco sin marcar,
+        # no un tono -- mientras que el CODIGO DE LA PRESENTACION dice `GLOSSMALVA`, que es
+        # exactamente el SKU. Mirando solo el frasco, 35 filas quedaban "sin pista" teniendo el
+        # tono escrito al lado.
+        #
+        # Se miran las tres cosas que pueden llevarlo: el codigo de la presentacion, su etiqueta
+        # de texto y el nombre del frasco.
+        toks = _tokens_tono(str(pcod) + ' ' + str(etq_txt) + ' ' + frasco + ' '
+                            + desc_mee.get(frasco, ''))
         if not toks:
             sin_pista.append({'id': pid, 'producto': prod, 'frasco': frasco,
-                              'motivo': 'el nombre del frasco no dice ningun tono'})
+                              'presentacion': pcod,
+                              'motivo': 'ni la presentacion ni el frasco dicen un tono'})
             continue
         # Puntaje = cuantos tokens del frasco aparecen en el SKU. Se exige que el ganador sea
         # UNICO: si dos empatan, no hay una respuesta, hay una pregunta.

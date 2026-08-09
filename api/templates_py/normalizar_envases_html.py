@@ -301,8 +301,18 @@ async function expandirTonos(){
     var props=d.propuestas||[];
     if(!props.length){
       var st=(d.sin_tono||[]);
-      alert(st.length? ('No puedo abrirlas: hay SKU sin tono en '+st.map(function(x){return x.producto;}).join(', ')+'. El tono lo trae el sync de Shopify.')
-                     : 'No hay producto con una sola fila para varios tonos.');
+      if(!st.length){ alert('No hay producto con una sola fila para varios tonos.'); return; }
+      // El tono lo trae el catalogo de Shopify, que se sincroniza 5:30 / 13:30 / 21:30. En vez de
+      // decirle que espere hasta la noche, se le ofrece pedirlo ahora. Y se nombran tres ejemplos,
+      // no los dieciocho: una lista larga se lee como ruido y deja de mirarse (M122).
+      var ej=st.slice(0,3).map(function(x){return x.producto;}).join(', ');
+      if(confirm('Faltan los tonos de '+st.length+' producto(s) (por ejemplo '+ej+'). Los trae el catalogo de Shopify. Lo pido ahora?')){
+        var tk=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+        var rr=await fetch('/api/mee/traer-tonos-shopify',{method:'POST',credentials:'same-origin',
+          headers:{'X-CSRF-Token':(tk&&tk.csrf_token)||''}});
+        var jj=await rr.json();
+        alert(jj.mensaje||jj.error||'Pedido enviado');
+      }
       return;
     }
     var txt=props.map(function(p){
