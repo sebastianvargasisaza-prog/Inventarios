@@ -235,6 +235,17 @@ def test_cola_excluye_pre_impreso(app, db_clean):
     d = c.get('/api/programacion/serigrafia-cola').get_json()
     it = next((x for x in (d.get('items') or []) if x.get('envase_codigo') == pre), None)
     assert it is None, ('el pre_impreso NO debe aparecer en la cola', [x.get('envase_codigo') for x in (d.get('items') or [])])
+    # 9-ago (Sebastián): "todo lo impreso va primero; cuando no alcanza, entonces debe decir se
+    # debe enviar tal envase a serigrafía". El impreso sigue SIN entrar como algo que mandar a
+    # marcar -- ya viene marcado, mandarlo sería pagar dos veces -- pero ahora, cuando su stock no
+    # alcanza para la producción, aparece un AVISO con el envase limpio y las unidades que faltan.
+    # Acá el impreso está en 0 y la producción pide ~166, así que el aviso tiene que estar; y como
+    # este envase no tiene limpio anclado, lo que corresponde es que lo DIGA.
+    avisos = [x for x in (d.get('items') or []) if x.get('impreso_no_alcanza')
+              and x.get('envase_impreso') == pre]
+    assert avisos, 'el impreso no alcanzaba y la cola no avisó'
+    assert not avisos[0].get('envase_codigo'), 'propone mandar a marcar un frasco YA impreso'
+    assert avisos[0].get('faltan', 0) > 0
 
 
 def test_envase_reparto_pesado_por_volumen(app, db_clean):

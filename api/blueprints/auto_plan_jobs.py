@@ -1059,6 +1059,15 @@ def job_sync_stock_shopify_diario(app):
                     iid = variant.get('inventory_item_id')  # para fix D Available
                     all_variants.append({
                         'sku': sku_raw, 'titulo': title,
+                        # ⚠ El titulo de la VARIANTE es el TONO ("Hot Pink", "Malva"). Ya
+                        # traiamos el catalogo entero para el stock y lo tirabamos: por eso
+                        # `sku_producto_map.tono_label` estaba vacio en las 55 filas y los ocho
+                        # tonos del blush vivian en una lista escrita A MANO en el codigo, que se
+                        # pudre el dia que alguien agrega un color (M122).
+                        #
+                        # Shopify usa "Default Title" para los productos sin variantes: eso NO es
+                        # un tono y no se guarda.
+                        'variante': str(variant.get('title', '') or '').strip(),
                         'inv_qty': qty, 'inv_item_id': iid,
                     })
 
@@ -1154,6 +1163,28 @@ def job_sync_stock_shopify_diario(app):
         synced = 0
         skipped = 0
         today = _dt.now().strftime('%Y-%m-%d')
+        # El tono de cada SKU, tal como lo dice Shopify. Se escribe solo donde el SKU YA esta
+        # mapeado (no inventa filas) y solo si cambio, para no reescribir 55 filas cada corrida.
+        _tonos_ok, _tonos_err = 0, 0
+        for v in all_variants:
+            _sk = (v.get('sku') or '').strip().upper()
+            _var = (v.get('variante') or '').strip()
+            if not _sk or not _var or _var.lower() in ('default title', 'default'):
+                continue
+            try:
+                cur = conn.execute(
+                    "UPDATE sku_producto_map SET tono_label=? "
+                    " WHERE UPPER(TRIM(sku))=? AND COALESCE(tono_label,'')<>?",
+                    (_var, _sk, _var))
+                _tonos_ok += (cur.rowcount or 0)
+            except Exception:
+                _tonos_err += 1      # columna ausente (mig no aplicada) · no rompe el sync
+        if _tonos_ok:
+            try:
+                conn.commit()
+            except Exception:
+                pass
+
         for v in all_variants:
             sku = v['sku']
             iid = v.get('inv_item_id')
@@ -1212,6 +1243,8 @@ def job_sync_stock_shopify_diario(app):
             'fuente_stock': 'Available' if used_available else 'On hand (FALLBACK · stock puede estar inflado)',
             'available_ok': used_available,
             'total_variantes': len(all_variants),
+            'tonos_actualizados': _tonos_ok,
+            'tonos_sin_columna': _tonos_err,
             'usado_available': used_available,
         }, 0
 

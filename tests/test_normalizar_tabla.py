@@ -539,3 +539,35 @@ def test_la_medida_en_ML_tambien_sirve_para_proponer_la_tapa(app, admin_client):
     assert f['sugerido'].get('tapa') == 'MEE-QQ-G5', \
         'no usó la medida para proponer la tapa: %s · %s' % (f['sugerido'], f.get('motivo'))
     _limpiar(app)
+
+
+def test_una_fila_SIN_TONO_lo_dice_en_vez_de_inventarlo(app, admin_client):
+    """Sebastián (9-ago), con los multitono: LIP SERUM tiene cinco filas de 10 ml y tres apuntan al
+    MISMO frasco, así que en pantalla son indistinguibles.
+
+    Intenté deducir el tono del nombre del frasco y salió mal: los colores están en la lista de
+    ruido del emparejador (BLANCO, NEGRO) y las palabras del producto se cuelan, así que
+    *"LIPS GLOSS MERLOT"* devolvía *"LIPS GLOSS"*. Un tono adivinado le pone a un color la etiqueta
+    de otro (M19/M137). El tono sale del SKU y de ningún otro lado; sin SKU, la fila lo DICE, que
+    es accionable: lo que falta es emparejarle su SKU.
+    """
+    from database import get_db
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-FR', 'LIPS GLOSS MERLOT SIN SERIGRAFIA', 'Frasco')
+    pid = _pres(app)
+    f, _ = _fila(admin_client, pid)
+    assert f.get('tono', '') == '', 'inventó un tono desde el nombre del frasco: %r' % f.get('tono')
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM sku_producto_map WHERE sku='QQTONO1'")
+        c.execute("INSERT INTO sku_producto_map (sku, producto_nombre, tono_label, activo) "
+                  "VALUES ('QQTONO1',?, 'MERLOT', 1)", (PROD,))
+        c.execute("UPDATE producto_presentaciones SET sku_shopify='QQTONO1' WHERE id=?", (pid,))
+        c.commit()
+    f, _ = _fila(admin_client, pid)
+    assert f.get('tono') == 'MERLOT', 'con SKU no mostró el tono: %r' % f.get('tono')
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM sku_producto_map WHERE sku='QQTONO1'")
+        c.commit()
+    _limpiar(app)

@@ -11535,6 +11535,70 @@ def _ventas_sku_180d(c):
     return ventas
 
 
+def _unidades_por_presentacion(pres, ventas_sku, ventas_por_volumen):
+    """Cuantas UNIDADES vendidas le corresponden a cada presentacion. Una sola regla, tres usos.
+
+    `pres` = lista de dicts con: cod, sku, vol, override.
+
+    Las tres funciones que reparten el bulk (el lote, el abastecimiento y el trail) tenian esta
+    misma prioridad copiada, y las tres con el mismo hueco: **el peso por (producto, VOLUMEN) iba
+    ANTES que el peso por SKU**. Para un multitono eso es fatal: los ocho tonos del blush son
+    todos de 6 ml, asi que la suma por volumen devuelve lo MISMO para los ocho y el nivel por SKU
+    no llega a correr nunca -- se pediria la misma cantidad de cada etiqueta, sin importar que el
+    borgona venda cinco veces mas que el malva (M58/M72 aplicados al caso tono).
+
+    El orden correcto es del dato mas ESPECIFICO al mas general:
+
+      1. el override manual, que es una decision explicita;
+      2. **por SKU**, cuando todas las presentaciones de ESE volumen declaran el suyo;
+      3. por (producto, volumen), que es lo que habia;
+      4. uniforme.
+
+    ⚠ El paso 2 exige que las declaren TODAS las de ese volumen, no algunas: mezclar una venta
+    por SKU con una suma por volumen es sumar peras y manzanas -- la que no tiene SKU se llevaria
+    el total del grupo y aplastaria a las demas. Con el grupo incompleto se usa el agregado, que
+    es exactamente lo que se hacia antes: sin SKUs cargados, nada cambia.
+    """
+    if not pres:
+        return {}
+    _ov = sum(float(p.get('override') or 0) for p in pres)
+    if _ov > 0:
+        return {p['cod']: float(p.get('override') or 0) for p in pres}
+
+    # (2) por SKU, grupo de volumen por grupo de volumen
+    _por_vol = {}
+    for p in pres:
+        _por_vol.setdefault(int(round(float(p.get('vol') or 0))), []).append(p)
+    _uds, _falta = {}, False
+    for _v, _grupo in _por_vol.items():
+        _skus = [(p, str(p.get('sku') or '').strip().upper()) for p in _grupo]
+        if all(sk for _p, sk in _skus):
+            _vals = {p['cod']: float(ventas_sku.get(sk, 0) or 0) for p, sk in _skus}
+            if sum(_vals.values()) > 0:
+                _uds.update(_vals)
+                continue
+        _falta = True
+        for p in _grupo:
+            _uds[p['cod']] = None            # este grupo se resuelve por volumen
+    if not _falta:
+        return _uds
+
+    # (3) por (producto, volumen) para los grupos que no se pudieron resolver por SKU
+    _res, _hay = {}, False
+    for p in pres:
+        _v = _uds.get(p['cod'])
+        if _v is None:
+            _v = float(ventas_por_volumen.get(int(round(float(p.get('vol') or 0))), 0) or 0)
+        _res[p['cod']] = _v
+        if _v > 0:
+            _hay = True
+    if _hay:
+        return _res
+
+    # (4) sin ninguna venta: uniforme (el peso por volumen lo aplica el caller · M72)
+    return {p['cod']: 1.0 for p in pres}
+
+
 def _composicion_envases_lote(c, evento_id):
     """Composición de envases (variantes) de un lote · helper reusable por
     composicion-mee y por la preparación de envases. Devuelve dict o None
@@ -11672,15 +11736,12 @@ def _composicion_envases_lote(c, evento_id):
     except Exception:
         _sku_vol = {}
     suma_override = sum(float(p.get('ventas_mes_referencia') or 0) for p in presentaciones)
+    _uds_pres = _unidades_por_presentacion(
+        [{'cod': p['codigo'], 'sku': p.get('sku_shopify'), 'vol': p.get('volumen_ml'),
+          'override': p.get('ventas_mes_referencia')} for p in presentaciones],
+        ventas_sku, _sku_vol)
     for p in presentaciones:
-        if suma_override > 0:
-            p['_ventas_90d'] = float(p.get('ventas_mes_referencia') or 0)      # 1) override manual
-        else:
-            _v = _sku_vol.get(int(round(p['volumen_ml'])), 0)                  # 2) Shopify por (producto, volumen)
-            if _v <= 0:
-                _sk = (p['sku_shopify'] or '').strip().upper()
-                _v = ventas_sku.get(_sk, 0) if _sk else 0                      # 3) Shopify por sku de la presentación
-            p['_ventas_90d'] = _v
+        p['_ventas_90d'] = float(_uds_pres.get(p['codigo'], 0) or 0)
     _pesos = {p['codigo']: float(p.get('_ventas_90d') or 0) * float(p['volumen_ml'] or 0) for p in presentaciones}
     _tp = sum(_pesos.values())
     if _tp > 0:                                                               # peso = uds × ml (M72)
@@ -15925,23 +15986,12 @@ def producciones_faltantes():
         if len(pres) == 1:
             return {pres[0]['codigo']: 1.0}
         # (a) UNIDADES vendidas por presentación (según prioridad)
-        unidades = None
-        suma_override = sum(float(p.get('ventas_mes_referencia') or 0) for p in pres)
-        if suma_override > 0:
-            unidades = {p['codigo']: float(p.get('ventas_mes_referencia') or 0) for p in pres}
-        if unidades is None:
-            vv = sku_vol_ventas.get(producto_norm, {})
-            if vv:
-                vpv = {p['codigo']: vv.get(int(round(float(p.get('volumen_ml') or 0))), 0) for p in pres}
-                if sum(vpv.values()) > 0:
-                    unidades = vpv
-        if unidades is None:
-            vs = {p['codigo']: (ventas_por_sku_90d.get((p['sku_shopify'] or '').strip(), 0)
-                                if (p['sku_shopify'] or '').strip() else 0) for p in pres}
-            if sum(vs.values()) > 0:
-                unidades = vs
-        if unidades is None:
-            unidades = {p['codigo']: 1.0 for p in pres}   # uniforme en unidades
+        # Misma regla que el reparto del lote y el del trail: una sola funcion, tres usos (M45).
+        unidades = _unidades_por_presentacion(
+            [{'cod': p['codigo'], 'sku': p.get('sku_shopify'), 'vol': p.get('volumen_ml'),
+              'override': p.get('ventas_mes_referencia')} for p in pres],
+            {str(k).strip().upper(): v for k, v in (ventas_por_sku_90d or {}).items()},
+            sku_vol_ventas.get(producto_norm, {}) or {})
         # (b) PESAR POR VOLUMEN → porción del kg (bulk) de cada presentación
         pesos = {p['codigo']: unidades.get(p['codigo'], 0) * float(p.get('volumen_ml') or 0) for p in pres}
         total_peso = sum(pesos.values())
@@ -16727,11 +16777,15 @@ def serigrafia_cola():
                 # entera. Emitirla con el impreso y el total haría que Catalina mande el frasco
                 # equivocado, por la cantidad equivocada -- y la pantalla no tendría cómo saberlo.
                 _mt_lim, _mp_lim = _marc.get(_limpio, ('', '')) if _limpio else ('', '')
+                # ⚠ Si NO hay envase limpio anclado, la fila NO lleva el codigo del impreso: ese
+                # frasco YA viene serigrafiado y mandarlo a marcar es pagar por marcar algo que ya
+                # esta marcado. Queda vacio y el aviso dice que falta el ancla -- un hueco DICHO
+                # es accionable; uno rellenado con lo que habia a mano produce una orden mal.
                 out.append({
                     'produccion_id': lid, 'producto': prod, 'fecha': fecha, 'fecha_envio': _fe,
-                    'envase_codigo': (_limpio or env),
+                    'envase_codigo': _limpio,
                     'envase_desc': (_desc_mee.get(_limpio, '') if _limpio
-                                    else v.get('envase_descripcion', '')),
+                                    else 'falta anclar el envase limpio de ' + str(env)),
                     'etiqueta': v.get('etiqueta', ''), 'volumen_ml': v.get('volumen_ml', 0),
                     'unidades': _falta, 'kg': float(kg or 0),
                     'marcacion_tipo': (_mt_lim or ('etiqueta' if (not _limpio and _etq) else '')),
@@ -17494,6 +17548,15 @@ def planta_normalizar_envases_pagina():
     return Response(NORMALIZAR_ENVASES_HTML, mimetype='text/html; charset=utf-8')
 
 
+def _ml_txt(v):
+    """El volumen como se escribe: 6, no 6.0 · 7,5 se conserva."""
+    try:
+        f = float(v or 0)
+    except (TypeError, ValueError):
+        return ''
+    return str(int(f)) if f == int(f) else ('%g' % f)
+
+
 def _ml_de(texto):
     """Los mililitros que menciona una descripcion, si menciona alguno.
 
@@ -17619,6 +17682,22 @@ def mee_normalizar_tabla():
         for x in idx[col]:
             desc_toks[x['codigo']] = x['toks']
 
+    # El TONO de cada presentacion, para poder distinguir cinco filas que dicen lo mismo.
+    #
+    # Sebastian (9-ago), con los multitono: LIP SERUM tiene cinco filas de 10 ml y tres apuntan al
+    # MISMO frasco, asi que en pantalla son indistinguibles y no hay forma de saber cual llenar.
+    # El tono ya esta en el sistema (`sku_producto_map.tono_label`, mig 177) y esta pantalla no lo
+    # mostraba: un dato que existe y no se muestra, desde la silla del usuario, no existe (M121).
+    _tono_de_sku = {}
+    try:
+        for (_sk, _tl) in c.execute(
+                "SELECT UPPER(TRIM(sku)), COALESCE(tono_label,'') FROM sku_producto_map "
+                " WHERE COALESCE(tono_label,'')<>''").fetchall():
+            if _sk:
+                _tono_de_sku[_sk] = _tl
+    except Exception:
+        _tono_de_sku = {}      # columna ausente: se sigue sin el tono, no se rompe
+
     filas = []
     for (pid, prod, pcod, etq_txt, vol, env, tap, caj, etq,
          s_tap, s_caj, s_etq, sku, activo) in c.execute(
@@ -17705,6 +17784,16 @@ def mee_normalizar_tabla():
         filas.append({
             'id': pid, 'producto': prod, 'presentacion': pcod, 'etiqueta_txt': etq_txt,
             'volumen_ml': vol, 'activo': bool(activo), 'sku': (sku or '').strip(),
+            # El tono, en este orden: el que declara el SKU, y si no hay SKU lo que se pueda leer
+            # del FRASCO (que en estos productos lleva el color en el nombre: "LIPS GLOSS MERLOT").
+            # Si no se puede saber, queda vacio y la pantalla lo dice -- no se inventa un tono.
+            # ⚠ El tono sale del SKU y de NINGUN otro lado. Intente deducirlo del nombre del
+            # frasco y salio mal: los colores estan en la lista de ruido del emparejador (BLANCO,
+            # NEGRO) y las palabras del producto se cuelan, asi que "LIPS GLOSS MERLOT" devolvia
+            # "LIPS GLOSS". Un tono adivinado le pone a un color la etiqueta de otro, que es el
+            # mismo dano de siempre (M19/M137). Sin SKU, la fila DICE que no tiene tono -- y eso
+            # es accionable: lo que falta es emparejarle su SKU.
+            'tono': _tono_de_sku.get((sku or '').strip().upper(), ''),
             'actual': actual, 'no_usa': marcas, 'sugerido': sugerido, 'ambiguo': ambiguo,
             # Por que quedo vacia o por que se propuso: una celda vacia sin explicacion se lee
             # como "el sistema no sabe", y lo que pasa es que SI sabe y decidio no adivinar.
@@ -17745,6 +17834,176 @@ def mee_normalizar_tabla():
 _PREFIJO_COL = {'envase': 'MEE-ENV', 'tapa': 'MEE-TAP', 'etiqueta': 'MEE-ETQ',
                 'caja': 'MEE-PLG'}
 _CAT_COL = {'envase': 'Frasco', 'tapa': 'Tapa', 'etiqueta': 'Etiqueta', 'caja': 'Plegadiza'}
+
+
+@bp.route('/api/mee/expandir-tonos', methods=['GET'])
+def mee_expandir_tonos():
+    """Read-only · que pasaria si se abre una fila por TONO.
+
+    Sebastian (9-ago): *"resuelve eso de las filas por tono"*. El BLUSH BALM tiene **una sola
+    presentacion** para los ocho tonos -- mismo frasco de aluminio, misma caja -- y lo unico que
+    cambia es la ETIQUETA. Con una sola fila la etiqueta no tiene donde ir: hay un solo casillero
+    para ocho etiquetas distintas.
+
+    Distinto del LIP SERUM, que ya tiene una fila por tono porque ahi cambia el FRASCO (cada color
+    es un frasco serigrafiado propio).
+
+    Se propone una fila por tono copiando el envase, la tapa y la caja de la que ya existe, y
+    poniendole a cada una su SKU. La ETIQUETA queda VACIA a proposito: es lo unico que cambia y es
+    lo que hay que elegir -- rellenarla adivinando le pondria a un color la etiqueta de otro
+    (M19/M137).
+
+    ⚠ Solo se propone para productos donde **todos** los SKU declaran su tono. Sin tono no se
+    puede saber que fila es cual, y ocho filas indistinguibles son peores que una (M100). El tono
+    lo trae el sync de Shopify (`sku_producto_map.tono_label`).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    c = get_db().cursor()
+
+    # SKUs con tono, por producto
+    skus = {}
+    try:
+        for _sk, _pn, _tl, _vol in c.execute(
+                "SELECT sku, producto_nombre, COALESCE(tono_label,''), COALESCE(volumen_ml,0) "
+                "  FROM sku_producto_map "
+                " WHERE COALESCE(activo,1)=1 AND COALESCE(es_regalo,0)=0").fetchall():
+            if _sk and _pn:
+                skus.setdefault(_norm_prod_fuerte(_pn), []).append(
+                    {'sku': str(_sk).strip(), 'tono': str(_tl or '').strip(),
+                     'vol': float(_vol or 0)})
+    except Exception:
+        return jsonify({'ok': True, 'propuestas': [], 'sin_tono': [],
+                        'aviso': 'no pude leer los SKU de Shopify'}), 200
+
+    # Presentaciones actuales por producto
+    pres = {}
+    for (pid, prod, pcod, vol, env, tap, caj, etq, sku, act) in c.execute(
+            "SELECT id, producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(volumen_ml,0), "
+            "       COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), "
+            "       COALESCE(etiqueta_codigo,''), COALESCE(sku_shopify,''), COALESCE(activo,1) "
+            "  FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall():
+        pres.setdefault(_norm_prod_fuerte(prod), []).append(
+            {'id': pid, 'producto': prod, 'cod': pcod, 'vol': float(vol or 0), 'envase': env,
+             'tapa': tap, 'caja': caj, 'etiqueta': etq, 'sku': (sku or '').strip()})
+
+    propuestas, sin_tono, ya_estan = [], [], []
+    for _pn, _sks in skus.items():
+        _filas = pres.get(_pn) or []
+        if not _filas or len(_sks) < 2:
+            continue
+        # Ya resuelto: hay al menos tantas filas como SKU y cada una declara el suyo
+        _con_sku = [f for f in _filas if f['sku']]
+        if len(_con_sku) >= len(_sks):
+            ya_estan.append({'producto': _filas[0]['producto'], 'filas': len(_filas),
+                             'skus': len(_sks)})
+            continue
+        _sin = [x['sku'] for x in _sks if not x['tono']]
+        if _sin:
+            sin_tono.append({'producto': _filas[0]['producto'], 'skus_sin_tono': _sin[:8],
+                             'motivo': 'sin el tono no se puede saber que fila es cual'})
+            continue
+        # La fila MODELO: la que ya esta cargada (de la que se copia el empaque comun)
+        _modelo = sorted(_filas, key=lambda f: (0 if f['envase'] else 1, f['id']))[0]
+        _tomados = {f['sku'].upper() for f in _filas if f['sku']}
+        _faltan = [x for x in _sks if x['sku'].upper() not in _tomados]
+        if not _faltan:
+            continue
+        propuestas.append({
+            'producto': _modelo['producto'],
+            'modelo': {'id': _modelo['id'], 'presentacion': _modelo['cod'],
+                       'envase': _modelo['envase'], 'tapa': _modelo['tapa'],
+                       'caja': _modelo['caja'], 'volumen_ml': _modelo['vol']},
+            'filas_hoy': len(_filas),
+            'tonos': [{'sku': x['sku'], 'tono': x['tono']} for x in _faltan],
+            'que_hace': ('crea %d fila(s) copiando envase/tapa/caja y poniendole a cada una su '
+                         'SKU · la ETIQUETA queda vacia, que es lo unico que cambia entre tonos'
+                         % len(_faltan)),
+        })
+
+    return jsonify({'ok': True, 'propuestas': propuestas, 'sin_tono': sin_tono,
+                    'ya_estan': ya_estan,
+                    'resumen': {'productos': len(propuestas),
+                                'filas_a_crear': sum(len(p['tonos']) for p in propuestas),
+                                'sin_tono': len(sin_tono)}})
+
+
+@bp.route('/api/mee/expandir-tonos-aplicar', methods=['POST'])
+def mee_expandir_tonos_aplicar():
+    """Crea las filas por tono confirmadas. Body: {productos:[nombre, ...]}."""
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    quiere = {_norm_prod_fuerte(x) for x in (d.get('productos') or []) if x}
+    if not quiere:
+        return jsonify({'error': 'no hay productos que expandir'}), 400
+
+    from flask import current_app as _ca
+    with _ca.test_request_context('/api/mee/expandir-tonos'):
+        pass
+    # se reusa el calculo del preview para no tener DOS reglas (M1)
+    _prev = mee_expandir_tonos().get_json()
+    conn = get_db(); c = conn.cursor()
+    creadas, saltadas = [], []
+    for p in (_prev.get('propuestas') or []):
+        if _norm_prod_fuerte(p['producto']) not in quiere:
+            continue
+        m = p['modelo']
+        for t in p['tonos']:
+            _cod = ('T-' + str(t['tono'] or t['sku'])).upper()[:40]
+            _ya = c.execute(
+                "SELECT id FROM producto_presentaciones "
+                " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+                "   AND (UPPER(TRIM(COALESCE(sku_shopify,'')))=? OR presentacion_codigo=?)",
+                (p['producto'], str(t['sku']).upper(), _cod)).fetchone()
+            if _ya:
+                saltadas.append({'sku': t['sku'], 'motivo': 'ya existe'})
+                continue
+            c.execute(
+                "INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, "
+                " etiqueta, volumen_ml, envase_codigo, tapa_codigo, caja_codigo, etiqueta_codigo, "
+                " sku_shopify, activo) VALUES (?,?,?,?,?,?,?,'',?,1)",
+                (p['producto'], _cod,
+                 (str(t['tono'] or '') + ' ' + _ml_txt(m['volumen_ml']) + ' ml').strip()[:60],
+                 m['volumen_ml'], m['envase'], m['tapa'], m['caja'], t['sku']))
+            creadas.append({'producto': p['producto'], 'tono': t['tono'], 'sku': t['sku'],
+                            'id': c.lastrowid})
+            audit_log(c, usuario=u, accion='PRES_EXPANDIR_TONO',
+                      tabla='producto_presentaciones', registro_id=str(c.lastrowid),
+                      antes={}, despues={'producto': p['producto'], 'tono': t['tono'],
+                                         'sku': t['sku'], 'envase': m['envase']},
+                      detalle='fila por tono creada desde la de %s' % m['presentacion'])
+    # ⚠ La fila GENERICA (la que representaba "todos los tonos") se da de baja al expandir. Si
+    # quedara activa el grupo tendria una fila SIN SKU, y la regla de reparto exige que todas las
+    # de ese volumen declaren el suyo para pesar por tono: con una sola sin SKU volveria a repartir
+    # por volumen, o sea a pedir la misma cantidad de cada etiqueta -- justo lo que la expansion
+    # viene a arreglar. Se da de BAJA (activo=0), no se borra: es reversible y queda auditado.
+    bajas = []
+    for p in (_prev.get('propuestas') or []):
+        if _norm_prod_fuerte(p['producto']) not in quiere:
+            continue
+        _mid = p['modelo']['id']
+        if not any(x['producto'] == p['producto'] for x in creadas):
+            continue
+        _snap = c.execute("SELECT presentacion_codigo, COALESCE(sku_shopify,'') "
+                          "  FROM producto_presentaciones WHERE id=?", (_mid,)).fetchone()
+        if _snap and not (_snap[1] or '').strip():
+            c.execute("UPDATE producto_presentaciones SET activo=0 WHERE id=? AND activo=1",
+                      (_mid,))
+            if c.rowcount:
+                bajas.append({'id': _mid, 'presentacion': _snap[0], 'producto': p['producto']})
+                audit_log(c, usuario=u, accion='PRES_GENERICA_DE_BAJA',
+                          tabla='producto_presentaciones', registro_id=str(_mid),
+                          antes={'activo': 1}, despues={'activo': 0},
+                          detalle=('dada de baja al abrir una fila por tono de %s'
+                                   % p['producto']))
+    conn.commit()
+    return jsonify({'ok': True, 'creadas': creadas, 'saltadas': saltadas, 'bajas': bajas,
+                    'aviso': ('La ETIQUETA de cada tono quedo VACIA a proposito: es lo unico que '
+                              'cambia entre tonos y hay que elegirla. La fila generica quedo dada '
+                              'de baja (reversible): si siguiera activa, el reparto volveria a '
+                              'pedir la misma cantidad de cada etiqueta.')})
 
 
 @bp.route('/api/mee/normalizar-crear', methods=['POST'])
@@ -20663,22 +20922,13 @@ def _trail_envase(c, codigo_up, mee_row):
             return {}
         if len(pres) == 1:
             return {pres[0]['codigo']: 1.0}
-        unidades = None
-        s = sum(p['vmr'] for p in pres)
-        if s > 0:
-            unidades = {p['codigo']: p['vmr'] for p in pres}          # 1) override manual
-        if unidades is None:
-            vv = sku_vol.get(prodn, {})                              # 2) Shopify por VOLUMEN (real · 15 vs 30)
-            if vv:
-                vt2 = {p['codigo']: vv.get(int(round(p['vol'])), 0) for p in pres}
-                if sum(vt2.values()) > 0:
-                    unidades = vt2
-        if unidades is None:
-            vt = {p['codigo']: ventas_sku.get(p['sku'], 0) for p in pres}   # 3) Shopify por sku de la presentación
-            if sum(vt.values()) > 0:
-                unidades = vt
-        if unidades is None:
-            unidades = {p['codigo']: 1.0 for p in pres}              # 4) uniforme en unidades
+        # La MISMA regla que el reparto del lote y el del abastecimiento: una sola funcion, tres
+        # usos. Tres copias de una prioridad divergen, y entonces dos pantallas dicen numeros
+        # distintos del mismo hecho (M45/M73).
+        unidades = _unidades_por_presentacion(
+            [{'cod': p['codigo'], 'sku': p.get('sku'), 'vol': p.get('vol'),
+              'override': p.get('vmr')} for p in pres],
+            ventas_sku, sku_vol.get(prodn, {}) or {})
         pesos = {p['codigo']: unidades.get(p['codigo'], 0) * float(p['vol'] or 0) for p in pres}   # ×ml
         tp = sum(pesos.values())
         if tp > 0:

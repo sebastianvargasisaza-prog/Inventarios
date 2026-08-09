@@ -46,6 +46,7 @@ NORMALIZAR_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
  select.nousa{color:var(--cx-text-faint);font-style:italic}
  select.vacio{border-color:var(--cx-warn)}
  .apag{opacity:.5}
+ .sub{font-size:10.5px;color:var(--cx-text-soft);margin-top:2px;font-weight:400}
  .pieop{font-size:10.5px;color:var(--cx-text-soft);margin-top:2px;line-height:1.25;word-break:break-word}
  .chip{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700}
  .amb{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
@@ -84,6 +85,10 @@ NORMALIZAR_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
   <div id="cuerpo" style="padding:26px;text-align:center;color:var(--cx-text-faint)">Cargando&hellip;</div>
   <div class="pie">
     <button class="btn btn-p" onclick="guardar()" id="btn-guardar">Guardar los cambios</button>
+    <button class="btn" onclick="expandirTonos()" id="btn-exp"
+      title="Para los productos que tienen UNA sola fila para todos los tonos (blush): abre una por tono">&#10133; Abrir una fila por tono</button>
+    <button class="btn" onclick="emparejarTonos()" id="btn-tonos"
+      title="Le pone a cada presentacion el SKU de Shopify de SU tono, emparejando por el nombre del frasco">&#127912; Emparejar SKU por tono</button>
     <span id="estado" style="font-size:12.5px;color:var(--cx-text-soft)"></span>
   </div>
 </div>
@@ -198,8 +203,16 @@ function pintar(){
   D.columnas.forEach(function(c){ h+='<th>'+esc(c)+'</th>'; });
   h+='</tr></thead><tbody>';
   filas.forEach(function(f){
+    // El TONO y la presentacion: cinco filas que dicen "LIP SERUM 10" son indistinguibles, y sin
+    // saber cual es cual no se pueden llenar. Si no se pudo determinar, se dice.
+    var _sub = [];
+    if(f.tono) _sub.push('<b>'+esc(f.tono)+'</b>');
+    if(f.presentacion) _sub.push(esc(f.presentacion));
+    if(f.sku) _sub.push('SKU '+esc(f.sku));
+    if(!f.tono && !f.sku) _sub.push('<span class="chip amb">sin tono ni SKU</span>');
     h+='<tr class="'+(f.activo?'':'apag')+'"><td class="prod">'+esc(f.producto)
-      + (f.activo?'':' <span class="chip amb">apagada</span>')+'</td>'
+      + (f.activo?'':' <span class="chip amb">apagada</span>')
+      + '<div class="sub">'+_sub.join(' &middot; ')+'</div></td>'
       + '<td class="ml">'+(f.volumen_ml||'')+'</td>';
     D.columnas.forEach(function(col){
       var v=valorDe(f,col), cls=[];
@@ -278,6 +291,66 @@ function aceptarSugeridas(){
   });
   pintar();
   document.getElementById('estado').textContent = n+' sugerencia(s) aceptadas. Revisa y guarda.';
+}
+
+async function expandirTonos(){
+  // El blush tiene UNA fila para los ocho tonos: un solo casillero para ocho etiquetas.
+  var b=document.getElementById('btn-exp'); if(b) b.disabled=true;
+  try{
+    var d=await (await fetch('/api/mee/expandir-tonos',{credentials:'same-origin'})).json();
+    var props=d.propuestas||[];
+    if(!props.length){
+      var st=(d.sin_tono||[]);
+      alert(st.length? ('No puedo abrirlas: hay SKU sin tono en '+st.map(function(x){return x.producto;}).join(', ')+'. El tono lo trae el sync de Shopify.')
+                     : 'No hay producto con una sola fila para varios tonos.');
+      return;
+    }
+    var txt=props.map(function(p){
+      return p.producto+': '+p.tonos.map(function(t){return t.tono;}).join(', ');
+    }).join(' | ');
+    if(!confirm('Abro una fila por tono en: '+txt+' . Copia el frasco, la tapa y la caja, y le pone a cada una su SKU. La ETIQUETA queda vacia, que es lo unico que cambia. La fila generica queda dada de baja (reversible).')) return;
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/mee/expandir-tonos-aplicar',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':(t&&t.csrf_token)||''},
+      body:JSON.stringify({productos:props.map(function(p){return p.producto;})})});
+    var j=await r.json();
+    if(!r.ok || j.error){ alert(j.error||'No se pudo'); return; }
+    alert('Listo: '+((j.creadas||[]).length)+' fila(s) por tono. Ahora elegi la etiqueta de cada una.');
+    await cargar();
+  }catch(e){ alert('No se pudo: '+e); }
+  finally{ if(b) b.disabled=false; }
+}
+
+async function emparejarTonos(){
+  // Los multitono tienen varias filas del MISMO producto y el mismo ml: sin el SKU de cada tono
+  // son indistinguibles en pantalla y, peor, su venta no se puede separar.
+  var b=document.getElementById('btn-tonos'); if(b) b.disabled=true;
+  try{
+    var d=await (await fetch('/api/programacion/sku-por-tono',{credentials:'same-origin'})).json();
+    var props=d.propuestas||[];
+    if(!props.length){
+      alert('No puedo ponerle SKU a ninguna sin adivinar. Ambiguas (dos SKU empatan): '
+        +((d.ambiguas||[]).length)+' | Sin pista en el nombre del frasco: '+((d.sin_pista||[]).length));
+      return;
+    }
+    var txt=props.slice(0,12).map(function(p){
+      return p.producto+' '+(p.presentacion||'')+' -> '+p.sku;
+    }).join('; ');
+    if(!confirm('Le pongo el SKU a '+props.length+' presentacion(es): '+txt
+        +(props.length>12?' ...y '+(props.length-12)+' mas':'')
+        +' . Solo completa las que YA existen, no crea filas nuevas.')) return;
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/sku-por-tono-aplicar',{method:'POST',
+      credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':(t&&t.csrf_token)||''},
+      body:JSON.stringify({pares:props.map(function(p){return {id:p.id, sku:p.sku};})})});
+    var j=await r.json();
+    if(!r.ok || j.error){ alert(j.error||'No se pudo aplicar'); return; }
+    var salt=(j.saltados||[]).length;
+    alert('Listo: '+((j.hechos||[]).length)+' emparejadas'+(salt?' | '+salt+' saltadas':''));
+    await cargar();
+  }catch(e){ alert('No se pudo: '+e); }
+  finally{ if(b) b.disabled=false; }
 }
 
 async function guardar(){
