@@ -26889,14 +26889,35 @@ def recuperar_semana_19may2026():
     automáticos. Idempotente: si ya existe (mismo producto + fecha, no
     cancelada) no la duplica.
 
-    Acepta GET para que Sebastián solo abra la URL en el navegador (está
-    logueado como admin) y ejecute la recuperación de un solo uso. Si se
-    vuelve a abrir, no duplica nada (idempotente).
+    ⚠ RETIRADA el 8-ago-2026. Cumplió su trabajo el 19-may y desde entonces es un peligro
+    dormido: **la idempotencia sólo mira lotes que NO estén cancelados ni completados**, así que
+    ahora que aquellos cuatro ya se completaron, el chequeo no los encuentra y vuelve a INSERTAR
+    cuatro producciones fechadas en mayo -- con `origen='eos_plan'`, o sea Fijas, que ningún
+    proceso automático limpia (regla #3). Y bastaba ABRIR la URL: acepta GET, justamente para que
+    se pudiera disparar desde el navegador.
+
+    Lo encontró el barrido que abre las 912 rutas GET y cuenta filas antes y después: es la única
+    que creaba producción con sólo mirarla (M113 · un GET que muta).
+
+    La ruta se conserva contestando por qué no corre, en vez de borrarse: un marcador viejo que
+    devuelve 404 no explica nada, y el rastro de que esto existió es parte de la historia del
+    incidente. Si algún día hiciera falta repetir una recuperación, se escribe una nueva con SUS
+    fechas -- ésta lleva las de mayo escritas a mano en el código.
     """
     user, err = _require_admin_or_compras()
     if err:
         body, code = err
         return jsonify(body), code
+    return jsonify({
+        'error': 'RECUPERACION_YA_EJECUTADA',
+        'mensaje': ('Esta recuperación puntual corrió el 19-may-2026 y quedó retirada el '
+                    '8-ago-2026. Volver a ejecutarla hoy no recupera nada: crearía cuatro '
+                    'producciones nuevas fechadas en mayo, marcadas como Fijas, que ningún '
+                    'proceso automático limpia.'),
+        'que_hacer': ('Si hace falta reconstruir una semana perdida, se arma una recuperación '
+                      'con las fechas de ESA semana; ésta lleva las del 19-22 may escritas en '
+                      'el código.'),
+    }), 409
 
     PLAN_SEMANA = [
         ('LIMPIADOR FACIAL HIDRATANTE',  '2026-05-19', 70.0),

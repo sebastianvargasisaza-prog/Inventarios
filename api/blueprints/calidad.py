@@ -2146,7 +2146,11 @@ def calidad_coa_pt_imprimible(lote):
 # Registro central `documentos_regulados` (mig 371): reconstruir (backfill) + buscar + página.
 # REGLA (cerebro): todo documento regulado nuevo se inscribe con registrar_documento().
 # ══════════════════════════════════════════════════════════════════════════════
-@bp.route('/api/calidad/reconstruir-expediente', methods=['GET', 'POST'])
+# Sólo POST (8-ago): aceptaba GET, así que cualquier precarga del navegador o un barrido de
+# rutas disparaba el backfill entero (52 documentos en la base de pruebas). Es idempotente,
+# así que no duplicaba, pero una acción que ESCRIBE no se ejecuta por mirar una URL (M113).
+# La pantalla ya lo llama por POST con su token CSRF: nadie pierde nada.
+@bp.route('/api/calidad/reconstruir-expediente', methods=['POST'])
 def calidad_reconstruir_expediente():
     """Backfill del registro central desde las tablas origen (F01, F02, EBR + rótulo derivado).
     Re-ejecutable (idempotente vía registrar_documento · dedup por tipo+mov/ref). Admin/Calidad."""

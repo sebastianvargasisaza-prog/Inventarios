@@ -1705,7 +1705,7 @@ def plan_semanal_v2():
         LEFT JOIN areas_planta ap ON ap.id = pp.area_id
         LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
         WHERE pp.fecha_programada BETWEEN ? AND ?
-          AND pp.COALESCE(estado,'programado') NOT IN ('completado','cancelado')
+          AND COALESCE(pp.estado,'programado') NOT IN ('completado','cancelado')
         ORDER BY pp.fecha_programada ASC, pp.id ASC
     """, (fecha_desde, fecha_hasta)).fetchall()
 

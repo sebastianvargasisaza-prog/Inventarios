@@ -79,6 +79,7 @@ CORAZON=(
   "tests/test_presentaciones_vs_shopify.py"
   "tests/test_memo_geometria_envase.py"
   "tests/test_memo_por_producto.py"
+  "tests/test_ninguna_pantalla_revienta.py"
   "tests/test_operario_no_archiva.py"
   "tests/test_pago_creador_no_se_paga_solo.py"
   "tests/test_reversa_pago_deja_rastro.py"

@@ -6717,8 +6717,10 @@ def admin_mps_proveedores_status():
     ]
 
     # Lista de proveedores existentes (para que la UI ofrezca dropdown)
+    # ⚠ `por_proveedor` son dicts con la clave 'proveedor' (se renombró al construirlos, arriba):
+    # leerlos por el alias 'prov' del SQL tiraba KeyError y el endpoint devolvía 500 SIEMPRE.
     provs_existentes = [
-        r['prov'] for r in por_proveedor if r['prov'] != '(SIN PROVEEDOR)'
+        r['proveedor'] for r in por_proveedor if r['proveedor'] != '(SIN PROVEEDOR)'
     ]
 
     # Cross-check con MPs en déficit real (los que importan operacionalmente)
