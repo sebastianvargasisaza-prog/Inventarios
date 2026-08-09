@@ -210,3 +210,26 @@ def test_la_PAGINA_existe_y_es_su_propia_ventana(app, admin_client, client):
         'la pantalla no vive en su propio archivo'
     r2 = client.get('/planta/normalizar-envases')      # sin sesión
     assert r2.status_code in (302, 401, 403), 'la página está abierta'
+
+
+def test_a_las_pantallas_NUEVAS_se_LLEGA_desde_la_app(app, admin_client):
+    """Una capacidad a la que no se llega no existe (M121).
+
+    Sebastián tuvo que escribir la URL a mano para abrir la tabla de normalización, y la matriz de
+    permisos llevaba horas sin un solo enlace. Construir la pantalla es la mitad del trabajo: la
+    otra mitad es que alguien pueda encontrarla sin que se la digan.
+
+    Se enumeran las que importan, con la pantalla desde la que se llega. Si mañana se agrega otra,
+    se suma acá y el guard exige su enlace.
+    """
+    destinos = [
+        ('/planta/normalizar-envases', '/inventarios'),
+        ('/admin/permisos', '/admin'),
+    ]
+    sin_enlace = []
+    for destino, desde in destinos:
+        r = admin_client.get(desde)
+        assert r.status_code == 200, 'no pude abrir %s' % desde
+        if destino.encode() not in r.data:
+            sin_enlace.append('%s no se enlaza desde %s' % (destino, desde))
+    assert not sin_enlace, sin_enlace

@@ -12752,7 +12752,8 @@ tr:hover td{background:#263348;}
 <!-- ─── TAB USERS ─── -->
 <div id="tab-users" class="tab-panel">
   <div class="card">
-    <h2>&#x1F465; Usuarios del sistema</h2>
+    <a href="/admin/permisos" target="_blank" rel="noopener" style="display:inline-block;background:var(--cx-primary-grad, #6d28d9);color:#fff;text-decoration:none;padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:700;margin-bottom:10px">&#128273; Ver qu&eacute; puede hacer cada usuario</a>
+<h2>&#x1F465; Usuarios del sistema</h2>
     <div class="section-sub">
       Aqui ves a los 19 usuarios con sus grupos, fuente de password (DB = cambiada por el user, ENV = de Render),
       y ultimo login. Si alguien olvida su password, presiona <strong>Resetear</strong> y comparte

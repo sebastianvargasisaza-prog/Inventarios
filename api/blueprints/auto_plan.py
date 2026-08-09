@@ -482,6 +482,13 @@ def venta_esperada_override(c, producto):
     acá la venta que CONOCE. Si está seteada (>0), el motor de velocidad la usa en LUGAR del blend, IGUAL en
     el display (_calcular_animus_dtc) y el motor (_demanda_stock_gramos) → paridad M70. Devuelve uds/DÍA
     (venta_esperada_mes/30.44) o None. NULL-safe/deploy-safe (columna ausente → None, no rompe)."""
+    _fila = _spc_de(c, producto)
+    if _fila is not None:                    # memo del request (PERF 8-ago · 27 lecturas → 0)
+        _v = _fila.get('venta_esperada_mes')
+        try:
+            return (float(_v) / 30.44) if _v and float(_v) > 0 else None
+        except (TypeError, ValueError):
+            return None
     try:
         r = c.execute(
             "SELECT venta_esperada_mes FROM sku_planeacion_config "
@@ -12958,20 +12965,40 @@ def _factor_g_por_unidad_detalle_impl(c, producto):
     histórica para no cambiar el cálculo."""
     # 0) VOLUMEN DIRECTO por producto (Sebastián 16-jun · sin envase · lo más simple).
     # Si está cargado en sku_planeacion_config.volumen_ml_unidad, manda sobre todo.
-    try:
-        vr = c.execute(
-            "SELECT volumen_ml_unidad FROM sku_planeacion_config "
-            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (producto,)).fetchone()
-        if vr and vr[0] and float(vr[0]) > 0:
-            return (float(vr[0]), 'volumen_directo', 'sku_planeacion_config.volumen_ml_unidad', None)
-    except Exception:
-        pass  # columna ausente (mig no aplicada) → sigue al fallback histórico
+    _mp = _mapas_producto(c)
+    _k = (producto or '').strip().upper()
+    _spc_fila = _spc_de(c, producto)
+    if _spc_fila is not None:                # memo del request (PERF 8-ago)
+        _v = _spc_fila.get('volumen_ml_unidad')
+        try:
+            if _v and float(_v) > 0:
+                return (float(_v), 'volumen_directo',
+                        'sku_planeacion_config.volumen_ml_unidad', None)
+        except (TypeError, ValueError):
+            pass
+    else:
+        try:
+            vr = c.execute(
+                "SELECT volumen_ml_unidad FROM sku_planeacion_config "
+                "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (producto,)).fetchone()
+            if vr and vr[0] and float(vr[0]) > 0:
+                return (float(vr[0]), 'volumen_directo',
+                        'sku_planeacion_config.volumen_ml_unidad', None)
+        except Exception:
+            pass  # columna ausente (mig no aplicada) → sigue al fallback histórico
     # 1) Presentación default (volumen real del envase cargado)
-    r = c.execute("""
-        SELECT factor_g_por_unidad, peso_g, volumen_ml, etiqueta FROM producto_presentaciones
-        WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?)) AND activo=1
-        ORDER BY es_default DESC, id ASC LIMIT 1
-    """, (producto,)).fetchone()
+    if _mp is not None and _mp.get('pres') is not None:
+        _pm = _mp['pres'].get(_k)
+        # COPIA: el dict lo mutan aguas abajo · compartir la referencia del memo es que el primer
+        # caller se la pise a todos los del mismo request (M167).
+        r = None if _pm is None else (_pm['factor_g_por_unidad'], _pm['peso_g'],
+                                      _pm['volumen_ml'], _pm['etiqueta'])
+    else:
+        r = c.execute("""
+            SELECT factor_g_por_unidad, peso_g, volumen_ml, etiqueta FROM producto_presentaciones
+            WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?)) AND activo=1
+            ORDER BY es_default DESC, id ASC LIMIT 1
+        """, (producto,)).fetchone()
     pres = None
     if r:
         pres = {'factor_g_por_unidad': r[0], 'peso_g': r[1], 'volumen_ml': r[2], 'etiqueta': r[3]}
@@ -12982,11 +13009,13 @@ def _factor_g_por_unidad_detalle_impl(c, producto):
         if r[2] and r[2] > 0:
             return (float(r[2]), 'presentacion', 'volumen_ml', pres)
     # 2) Fallback por categoría
-    cat_row = c.execute(
-        "SELECT categoria FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
-        (producto,)
-    ).fetchone()
-    cat = (cat_row[0] if cat_row else '') or ''
+    if _spc_fila is not None:                # memo del request (PERF 8-ago)
+        cat = _spc_fila.get('categoria') or ''
+    else:
+        cat_row = c.execute(
+            "SELECT categoria FROM sku_planeacion_config "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (producto,)).fetchone()
+        cat = (cat_row[0] if cat_row else '') or ''
     factores_cat = {
         'limpiador': 150.0,        # 150 mL
         'hidratante': 50.0,        # 50 mL airless
@@ -13102,6 +13131,80 @@ def _mapas_volumen(c):
     except Exception:
         pass
     return _m
+
+
+def _mapas_producto(c):
+    """Los dos catalogos que se resuelven POR NOMBRE DE PRODUCTO, leidos UNA vez por request.
+
+    PERF 8-ago (medido con la sonda local, regla 0.5): `/api/plan/dashboard` hacia 176 consultas
+    y **61 eran la misma tabla chica** -- `sku_planeacion_config`, una fila por producto, pedida
+    desde TRES sitios distintos (la venta esperada, el volumen por unidad y la categoria). Otras
+    22 eran la presentacion default, tambien de a una. Son dos tablas que caben enteras en
+    memoria: sobre PostgreSQL cada una de esas 83 consultas es un viaje de red para leer una fila.
+
+    Memo por REQUEST, nunca de modulo: un volumen o una venta esperada recien editados tienen que
+    verse en la carga siguiente (M9). Fuera de un request (los crons) devuelve None y cada caller
+    consulta como siempre, sin cambiar de comportamiento.
+
+    Lo que hace que el atajo sea legitimo (M128 · un atajo que puede contestar distinto no es un
+    atajo):
+      - la presentacion respeta EXACTAMENTE `activo=1 ORDER BY es_default DESC, id ASC LIMIT 1`;
+      - `venta_esperada_mes` conserva la condicion `> 0` del original (0 y NULL son "sin fijar");
+      - si una columna no existe todavia (migracion sin aplicar), ese mapa queda en None y el
+        caller cae a su consulta de siempre en vez de fingir que no hay dato (M100).
+    """
+    try:
+        from flask import g as _g
+    except Exception:
+        return None
+    try:
+        _m = getattr(_g, '_prod_mapas', None)
+        if _m is not None:
+            return _m
+    except Exception:
+        return None
+    spc, pres = {}, {}
+    try:
+        for _n, _vesp, _vol, _cat in c.execute(
+                "SELECT UPPER(TRIM(producto_nombre)), venta_esperada_mes, volumen_ml_unidad, "
+                "       COALESCE(categoria,'') "
+                "  FROM sku_planeacion_config").fetchall():
+            if _n:
+                spc[_n] = {'venta_esperada_mes': _vesp, 'volumen_ml_unidad': _vol,
+                           'categoria': _cat or ''}
+    except Exception:
+        spc = None              # columna ausente (mig no aplicada) · se declara, no se finge
+    try:
+        for _n, _fac, _peso, _vol, _etq in c.execute(
+                "SELECT UPPER(TRIM(producto_nombre)), factor_g_por_unidad, peso_g, volumen_ml, "
+                "       etiqueta "
+                "  FROM producto_presentaciones WHERE activo=1 "
+                " ORDER BY es_default DESC, id ASC").fetchall():
+            # el primero que llega gana = el mismo que elegia `LIMIT 1` con ese ORDER BY
+            if _n and _n not in pres:
+                pres[_n] = {'factor_g_por_unidad': _fac, 'peso_g': _peso, 'volumen_ml': _vol,
+                            'etiqueta': _etq}
+    except Exception:
+        pres = None
+    _m = {'spc': spc, 'pres': pres}
+    try:
+        _g._prod_mapas = _m
+    except Exception:
+        pass
+    return _m
+
+
+def _spc_de(c, producto):
+    """La fila de `sku_planeacion_config` de un producto, del memo si se puede.
+
+    Devuelve el dict, `{}` si el producto no tiene fila, o None si el memo no esta disponible
+    (fuera de request o columna ausente) -- y ESE None es la senal de que el caller tiene que
+    consultar por su cuenta, distinta de "no hay fila".
+    """
+    _m = _mapas_producto(c)
+    if _m is None or _m.get('spc') is None:
+        return None
+    return _m['spc'].get((producto or '').strip().upper()) or {}
 
 
 def _volumen_sku_impl(c, sku, producto):

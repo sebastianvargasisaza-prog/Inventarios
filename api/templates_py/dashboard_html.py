@@ -494,6 +494,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid var(--cx-border);border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer">
           &#128269; Rastreo Shopify
         </button>
+        <a href="/planta/normalizar-envases" target="_blank" rel="noopener"
+          title="Tabla completa: producto, envase, tapa, etiqueta y caja · arrastra por nombre y deja poner 'no usa'"
+          style="background:var(--cx-primary-grad);color:#fff;border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;text-decoration:none;display:inline-block">
+          &#128203; Tabla de normalizaci&oacute;n
+        </a>
         <button onclick="empqSkuTono()" id="empq-btn-tono"
           title="El tono esta en los dos nombres (el SKU y el frasco): se deduce el vinculo y se completa la presentacion que ya existe"
           style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid var(--cx-border);border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer">
@@ -13762,6 +13767,7 @@ function _renderProgramacion(d){
       <button id="cfg-stab-riesgo" onclick="cfgSubtab('riesgo')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:var(--cx-border);color:var(--cx-text-soft)">🎨 Perfil Riesgo</button>
       <button id="cfg-stab-calendar" onclick="cfgSubtab('calendar')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#fbbf24,#dc2626);color:#fff">📆 Google Calendar</button>
       <button id="cfg-stab-estac" onclick="cfgSubtab('estac')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#6d28d9,#0891b2);color:#fff">📈 Estacionalidad</button>
+      <a href="/planta/normalizar-envases" target="_blank" rel="noopener" style="padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;background:var(--cx-primary-grad);color:#fff;text-decoration:none;display:inline-block">&#128203; Normalizar empaque</a>
       <button id="cfg-stab-reparto" onclick="cfgSubtab('reparto')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#0891b2,#16a34a);color:#fff">📊 Reparto envases</button>
     </div>
     <div id="cfg-content"></div>
