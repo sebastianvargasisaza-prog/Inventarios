@@ -46,6 +46,7 @@ NORMALIZAR_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
  select.nousa{color:var(--cx-text-faint);font-style:italic}
  select.vacio{border-color:var(--cx-warn)}
  .apag{opacity:.5}
+ .pieop{font-size:10.5px;color:var(--cx-text-soft);margin-top:2px;line-height:1.25;word-break:break-word}
  .chip{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700}
  .amb{background:var(--cx-warn-pale);color:var(--cx-warn-text)}
  .fan{background:var(--cx-danger-pale);color:var(--cx-danger-text)}
@@ -129,6 +130,20 @@ function incompleta(f){
   return (f.fantasma||[]).length>0;
 }
 
+function textoDe(col, sel){
+  if(!sel) return '';
+  if(sel==='__NO_USA__') return 'no usa';
+  var lista=(D.catalogo[col]||[]), i, u=String(sel).toUpperCase();
+  for(i=0;i<lista.length;i++){
+    if(String(lista[i].codigo||'').toUpperCase()===u){
+      return lista[i].codigo + (lista[i].desc?' · '+lista[i].desc:'')
+           + (lista[i].medida?' · '+lista[i].medida:'')
+           + (lista[i].activo===false?' · (de baja)':'');
+    }
+  }
+  return sel;
+}
+
 function opciones(col, sel){
   var lista=(D.catalogo[col]||[]), h='<option value="">&mdash; sin definir &mdash;</option>';
   // 'No usa' solo donde tiene sentido: sin frasco no hay nada que envasar, asi que el envase no
@@ -145,8 +160,11 @@ function opciones(col, sel){
       corte=true;
       h+='<option disabled>&mdash;&mdash; dados de baja (no se reponen) &mdash;&mdash;</option>';
     }
+    // La MEDIDA es lo que distingue a los que se llaman igual: los seis goteros dicen todos
+    // "GOTERO" y lo unico que los separa es 89mm / 72mm / 65mm / 55mm.
     h+='<option value="'+esc(c)+'"'+(String(sel).toUpperCase()===u?' selected':'')+'>'
       + esc(c)+(lista[i].desc?' &middot; '+esc(lista[i].desc):'')
+      + (lista[i].medida?' &middot; '+esc(lista[i].medida):'')
       + (lista[i].activo===false?' &middot; (de baja)':'')+'</option>';
   }
   // Un codigo cargado que ya no esta en el catalogo NO se borra de la vista: se muestra marcado.
@@ -188,8 +206,14 @@ function pintar(){
       if(esSugerida(f,col)) cls.push('sug');
       if(v==='__NO_USA__') cls.push('nousa');
       if(!v) cls.push('vacio');
-      h+='<td><select class="'+cls.join(' ')+'" onchange="cambio('+f.id+',&quot;'+esc(col)+'&quot;,this.value)">'
-        + opciones(col, v)+'</select>';
+      // El nombre completo: el select cerrado lo recorta, asi que se pone tambien en `title`
+      // (se ve al pasar el mouse) y la celda se deja crecer. Sebastian: *"tambien deben traer
+      // aqui todo el nombre"* -- si no se lee entero, elegir es adivinar.
+      var _txt = textoDe(col, v);
+      h+='<td><select class="'+cls.join(' ')+'" title="'+esc(_txt)+'" '
+        + 'onchange="cambio('+f.id+',&quot;'+esc(col)+'&quot;,this.value)">'
+        + opciones(col, v)+'</select>'
+        + (_txt?'<div class="pieop" title="'+esc(_txt)+'">'+esc(_txt)+'</div>':'');
       if((f.ambiguo||{})[col]) h+='<div class="chip amb" style="margin-top:3px">empatan: '+esc(f.ambiguo[col].join(' / '))+'</div>';
       if((f.fantasma||[]).indexOf(col)>=0) h+='<div class="chip fan" style="margin-top:3px">no esta en el maestro</div>';
       // Lo que YA esta guardado y nombra a OTRO producto. Hasta el 9-ago el emparejador proponia

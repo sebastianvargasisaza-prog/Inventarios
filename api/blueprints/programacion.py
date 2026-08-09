@@ -17554,10 +17554,22 @@ def mee_normalizar_tabla():
     #
     # Ofrecer un codigo dado de baja no es un detalle de lista: si se elige, la compra apunta a un
     # material que nadie repone y el stock del bueno queda partido en dos (M57).
-    for cod, desc, cat, est in c.execute(
+    # ⚠ `medida` es lo que DISTINGUE a los que se llaman igual: los seis goteros dicen todos
+    # "GOTERO" en la descripcion y lo unico que los separa es 89mm / 72mm / 65mm / 55mm. La
+    # columna existe y esta llena desde que alguien vio ese mismo problema (mig 528): lo que
+    # faltaba era que esta pantalla la mostrara. Sebastian: *"no me sale los mm del gotero para
+    # poder elegir"* -- un dato que existe y no se muestra, desde la silla del usuario, no existe.
+    try:
+        _filas_cat = c.execute(
             "SELECT codigo, COALESCE(descripcion,''), UPPER(TRIM(COALESCE(categoria,''))), "
-            "       COALESCE(estado,'Activo') "
-            "  FROM maestro_mee ORDER BY codigo").fetchall():
+            "       COALESCE(estado,'Activo'), COALESCE(medida,'') "
+            "  FROM maestro_mee ORDER BY codigo").fetchall()
+    except Exception:
+        # instancia sin la columna (migracion no aplicada): se sigue sin la medida, no se rompe
+        _filas_cat = [(r[0], r[1], r[2], r[3], '') for r in c.execute(
+            "SELECT codigo, COALESCE(descripcion,''), UPPER(TRIM(COALESCE(categoria,''))), "
+            "       COALESCE(estado,'Activo') FROM maestro_mee ORDER BY codigo").fetchall()]
+    for cod, desc, cat, est, med in _filas_cat:
         cod_u = (cod or '').strip().upper()
         if not cod_u:
             continue
@@ -17572,6 +17584,7 @@ def mee_normalizar_tabla():
                 # columna le queda vacia y no tiene forma de saber por que (M121). Marcados, la
                 # pantalla dice el estado y el decide: usar el activo, o reactivar ese.
                 catalogo[col].append({'codigo': cod, 'desc': (desc or '')[:70],
+                                      'medida': (med or '').strip(),
                                       'activo': _act, 'estado': estado_de[cod_u]})
 
     # Activos primero: lo que se repone va arriba, lo dado de baja al final.
@@ -17585,7 +17598,8 @@ def mee_normalizar_tabla():
         for x in catalogo[col]:
             idx[col].append({'codigo': (x['codigo'] or '').strip().upper(),
                              'toks': set(_tokens_nombre(x['codigo'] + ' ' + x['desc'])),
-                             'ml': _ml_de(x['codigo'] + ' ' + x['desc']),
+                             'ml': (_ml_de(x['codigo'] + ' ' + x['desc'])
+                                    or _ml_de(x.get('medida', ''))),
                              'activo': x.get('activo', True)})
 
     # Cuantos PRODUCTOS distintos comparten cada palabra. Una que aparece en varios es una

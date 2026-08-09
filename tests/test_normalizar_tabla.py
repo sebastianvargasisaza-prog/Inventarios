@@ -496,3 +496,46 @@ def test_lo_GUARDADO_que_apunta_a_un_codigo_de_baja_se_marca(app, admin_client):
     assert f['actual']['tapa'] == 'MEE-QQ-TAP', 'borró el dato guardado'
     assert 'tapa' in (f.get('de_baja') or []), 'no marcó que apunta a un código de baja'
     _limpiar(app)
+
+
+def test_la_MEDIDA_distingue_a_los_que_se_llaman_igual(app, admin_client):
+    """Sebastián (9-ago): *"no me sale los mm del gotero para poder elegir"*.
+
+    Los seis goteros del maestro dicen todos "GOTERO" en la descripción y lo único que los separa
+    es 89mm / 72mm / 65mm / 55mm. Esa medida **ya estaba cargada** (alguien vio el mismo problema
+    y la migró); lo que faltaba era que esta pantalla la mostrara. Un dato que existe y no se
+    muestra, desde la silla del usuario, no existe (M121).
+    """
+    from database import get_db
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-G1', 'GOTERO', 'Gotero')
+    _mee(app, 'MEE-QQ-G2', 'GOTERO', 'Gotero')
+    with app.app_context():
+        c = get_db()
+        c.execute("UPDATE maestro_mee SET medida='89mm' WHERE codigo='MEE-QQ-G1'")
+        c.execute("UPDATE maestro_mee SET medida='55mm' WHERE codigo='MEE-QQ-G2'")
+        c.commit()
+    j = admin_client.get('/api/mee/normalizar-tabla').get_json()
+    ops = {o['codigo']: o for o in j['catalogo']['tapa']}
+    assert ops.get('MEE-QQ-G1', {}).get('medida') == '89mm', \
+        'sin la medida los dos goteros son indistinguibles: %s' % ops.get('MEE-QQ-G1')
+    assert ops.get('MEE-QQ-G2', {}).get('medida') == '55mm'
+    _limpiar(app)
+
+
+def test_la_medida_en_ML_tambien_sirve_para_proponer_la_tapa(app, admin_client):
+    """Si la medida dice 30ml, esa tapa es candidata de una presentación de 30 ml aunque su
+    descripción no lo diga."""
+    from database import get_db
+    _limpiar(app)
+    _mee(app, 'MEE-QQ-FR', 'FRASCO VIDRIO 30', 'Frasco')
+    _mee(app, 'MEE-QQ-G5', 'GOTERO FRASCO OPAL', 'Gotero')
+    with app.app_context():
+        c = get_db()
+        c.execute("UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-QQ-G5'")
+        c.commit()
+    pid = _pres(app)                                # presentación de 30 ml
+    f, _ = _fila(admin_client, pid)
+    assert f['sugerido'].get('tapa') == 'MEE-QQ-G5', \
+        'no usó la medida para proponer la tapa: %s · %s' % (f['sugerido'], f.get('motivo'))
+    _limpiar(app)
