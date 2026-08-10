@@ -301,8 +301,52 @@ def app(test_workspace):
     if api_dir not in sys.path:
         sys.path.insert(0, api_dir)
 
+    # ── PLANTILLA de la base de tests (SQLite) ────────────────────────────────────────────
+    #
+    # Importar `index` corre `init_db()`, o sea el esquema + las 400 migraciones + los seeds:
+    # medido, **10,6 segundos por sesion de pytest**. Eso se paga en CADA corrida, incluidas las
+    # de un solo archivo que uno hace decenas de veces al dia, y se MULTIPLICA por worker cuando
+    # la suite corre en paralelo (con 8 workers son 85 de los 160 segundos).
+    #
+    # La base ya construida se guarda como PLANTILLA y despues se COPIA: copiar un archivo son
+    # milisegundos. `init_db()` encuentra las migraciones aplicadas y sale enseguida.
+    #
+    # ⚠ La plantilla se llavea por el HASH de lo que la construye (`database.py` y este archivo):
+    # si cambia una migracion, el hash cambia y se reconstruye sola. No hay forma de que quede
+    # vieja sin que se note, que es la unica condicion para que un atajo asi sea legitimo (M105).
+    _tpl = None
+    if not _postgres_mode():
+        try:
+            import hashlib as _hl
+            import shutil as _sh
+            _h = _hl.sha256()
+            for _f in (os.path.join(api_dir, 'database.py'), os.path.abspath(__file__)):
+                with open(_f, 'rb') as _fh:
+                    _h.update(_fh.read())
+            _tpl = os.path.join(tempfile.gettempdir(),
+                                'eos_test_tpl_' + _h.hexdigest()[:16] + '.db')
+            if os.path.exists(_tpl) and os.path.getsize(_tpl) > 100000:
+                _sh.copyfile(_tpl, os.environ["DB_PATH"])
+        except Exception:
+            _tpl = None       # sin plantilla se construye como siempre · nunca se rompe por esto
+
     from index import app as flask_app
     flask_app.config["TESTING"] = True
+
+    if _tpl and not os.path.exists(_tpl):
+        # Primera corrida con este esquema: se guarda la base recien construida como plantilla.
+        # Se escribe a un temporal y se renombra, para que dos sesiones a la vez no dejen media
+        # plantilla escrita (que seria peor que no tenerla).
+        try:
+            import shutil as _sh2
+            _tmp = _tpl + '.' + str(os.getpid()) + '.tmp'
+            _sh2.copyfile(os.environ["DB_PATH"], _tmp)
+            os.replace(_tmp, _tpl)
+        except Exception:
+            try:
+                os.remove(_tmp)
+            except Exception:
+                pass
     # Batch Record VISIBLE en tests: la funcionalidad EBR/MBR/legajos se prueba con el flag
     # encendido. En prod queda OCULTO por defecto (app_settings.brd_visible ausente) hasta
     # la validación Part 11 (Sebastián 18-jun). Test específico del gate: test_brd_oculto.

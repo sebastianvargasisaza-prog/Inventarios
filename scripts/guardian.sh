@@ -23,12 +23,59 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 MODE="${1:-quick}"
+# Vacio salvo en --rapido: el corazon completo no paralela bien (medido) y el modo --pg
+# comparte una sola base de PostgreSQL, asi que ahi el paralelo se pisaria.
+PARALELO=""
 
 # ── SET DEL CORAZÓN (25-jul-2026) ─────────────────────────────────────────────
 # Lo que NO puede romperse en silencio: el descuento de MP, el motor de demanda,
 # el resolver de material y las propiedades de inventario/fórmulas. Entran al gate
 # porque la auditoría CERO-ERROR encontró 11 de estos tests EN ROJO desde hacía
 # tiempo, invisibles por correr solo los golden. ~40s.
+# ─────────────────────────────────────────────────────────────────────────────────────────
+# MODO --rapido · el gate que se puede correr en cada tanda sin perder la tarde
+#
+# Sebastian (9-ago): *"llevas mas de una hora y no has resuelto esto... tenemos que trabajar en
+# esos tiempos"*. Tenia razon y el numero lo confirma: el gate completo tarda entre 10 y 30
+# minutos, lo corri una docena de veces en el dia, y casi todos esos cambios tocaban DOS archivos.
+#
+# Medido hoy:
+#   arranque de pytest (esquema + 400 migraciones)   10,6 s  ->  0,8 s  (plantilla en conftest)
+#   golden paths                                     4m23s   ->  1m51s (8 procesos)
+#   corazon completo (186 archivos)                  ~15 min  (no paralela bien)
+#
+# Entonces --rapido corre:
+#   · los golden EN PARALELO, que son la red de seguridad de los flujos criticos;
+#   · los tests del corazon que TOCAN lo que cambio (por nombre de modulo y por archivo tocado);
+#   · y DICE cuales quedaron afuera.
+#
+# ⚠ Lo ultimo no es cosmetico: un gate mas angosto que no declara su alcance se lee como si
+# hubiera probado todo (M155). El completo (--quick) sigue existiendo y es el que manda antes de
+# una tanda grande o si el diff toca el corazon del descuento.
+_seleccion_rapida() {
+  local cambiados
+  cambiados=$(git diff --name-only HEAD 2>/dev/null; git diff --cached --name-only 2>/dev/null; \
+              git ls-files --others --exclude-standard 2>/dev/null)
+  cambiados=$(echo "$cambiados" | sort -u | grep -E '\.py$' || true)
+  [ -z "$cambiados" ] && return 0
+  local pistas=""
+  local f base
+  for f in $cambiados; do
+    base=$(basename "$f" .py)
+    case "$f" in
+      tests/*) echo "$f" ;;                       # el test tocado corre siempre
+      *) pistas="$pistas $base" ;;
+    esac
+  done
+  [ -z "$pistas" ] && return 0
+  # Un test "toca" un modulo si lo nombra en su fuente. Es una heuristica y se declara como tal:
+  # por eso los golden corren SIEMPRE, para que la red no dependa de que la heuristica acierte.
+  local p
+  for p in $pistas; do
+    grep -rl --include='*.py' -e "$p" tests/ 2>/dev/null || true
+  done
+}
+
 CORAZON=(
   "tests/test_descuento_perfecto.py"
   "tests/test_descuento_dedup_codigo.py"
@@ -646,6 +693,21 @@ PYHASH
     echo "      Definí PSQL_BIN=/ruta/psql para que el gate se limpie solo."
   fi
   TESTS=("tests/test_golden_paths.py" "${CORAZON[@]}")
+elif [ "$MODE" = "--rapido" ] || [ "$MODE" = "rapido" ]; then
+  # Golden SIEMPRE (la red de seguridad) + lo que el cambio puede romper. Se corre en paralelo:
+  # medido hoy, 245 golden pasan de 4m23s a 1m51s con 8 procesos, y el arranque de cada worker
+  # bajo de 10,6 s a 0,8 s con la plantilla de la base.
+  _SEL=$(_seleccion_rapida | sort -u | grep -E '^tests/.*\.py$' || true)
+  TESTS=("tests/test_golden_paths.py")
+  if [ -n "$_SEL" ]; then
+    while IFS= read -r _t; do
+      [ -n "$_t" ] && [ "$_t" != "tests/test_golden_paths.py" ] && TESTS+=("$_t")
+    done <<< "$_SEL"
+  fi
+  PARALELO="-n 8 --dist load"
+  echo "    modo RAPIDO · golden + ${#TESTS[@]} archivo(s) relacionados con lo que cambio"
+  echo "    ⚠ NO corre el corazon completo (186 archivos · ~15 min). Antes de una tanda grande,"
+  echo "      o si tocaste el descuento/abastecimiento, corre: bash scripts/guardian.sh --quick"
 elif [ "$MODE" = "--full" ] || [ "$MODE" = "full" ]; then
   TESTS=(
     "tests/test_golden_paths.py"
@@ -700,7 +762,7 @@ GIT_INDEX_FILE="$_TMPIDX_PRE" git read-tree HEAD 2>/dev/null
 GIT_INDEX_FILE="$_TMPIDX_PRE" git add -A 2>/dev/null
 _TREE_PRE=$(GIT_INDEX_FILE="$_TMPIDX_PRE" git write-tree 2>/dev/null || echo "")
 rm -f "$_TMPIDX_PRE"
-if "$PYTHON_BIN" -m pytest "${TESTS[@]}" -q --tb=line 2>&1 | tail -10; then
+if "$PYTHON_BIN" -m pytest "${TESTS[@]}" $PARALELO -q --tb=line 2>&1 | tail -10; then
   END=$(date +%s)
   echo ""
   echo "✅ GUARDIAN APROBÓ · golden paths verdes en $((END - START))s"
