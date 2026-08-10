@@ -85,6 +85,8 @@ NORMALIZAR_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
   <div id="cuerpo" style="padding:26px;text-align:center;color:var(--cx-text-faint)">Cargando&hellip;</div>
   <div class="pie">
     <button class="btn btn-p" onclick="guardar()" id="btn-guardar">Guardar los cambios</button>
+    <button class="btn btn-p" onclick="resolverTonos()" id="btn-res"
+      title="Deja una fila por tono, con su SKU: limpia lo que sobro, abre las que falten y las empareja">&#127912; Resolver los tonos</button>
     <button class="btn" onclick="limpiarSobrantes()" id="btn-limp"
       title="Filas que sobraron de corridas viejas: duplicadas, sin frasco, o apuntando a un codigo que no existe">&#129529; Limpiar filas sobrantes</button>
     <button class="btn" onclick="expandirTonos()" id="btn-exp"
@@ -293,6 +295,40 @@ function aceptarSugeridas(){
   });
   pintar();
   document.getElementById('estado').textContent = n+' sugerencia(s) aceptadas. Revisa y guarda.';
+}
+
+async function resolverTonos(){
+  // Sebastian (9-ago): "la idea es que liste todos los tonos de blush y de gloss, y los
+  // empareja". Tenia razon: le habia dejado TRES botones y el trabajo de ordenarlos. Eso no
+  // es una herramienta, es un procedimiento que hay que recordar.
+  var b=document.getElementById("btn-res"); if(b) b.disabled=true;
+  try{
+    var d=await (await fetch("/api/mee/expandir-tonos",{credentials:"same-origin"})).json();
+    var props=d.propuestas||[];
+    if(!props.length){
+      var st=(d.sin_tono||[]);
+      alert(st.length? ("No puedo: faltan los tonos de "+st.map(function(x){return x.producto;}).slice(0,4).join(", ")+". Los trae el catalogo de Shopify.")
+                     : "No hay ningun producto con una sola fila para varios tonos.");
+      return;
+    }
+    var txt=props.map(function(p){
+      return p.producto+" ("+p.tonos.length+"): "+p.tonos.map(function(t){return t.tono;}).join(", ");
+    }).join(" | ");
+    if(!confirm("Voy a dejar una fila por tono en: "+txt+" . Copia el frasco, la tapa y la caja, le pone a cada una su SKU, y da de baja la fila generica (reversible). La ETIQUETA queda vacia: es lo unico que cambia entre tonos.")) return;
+    var t=await (await fetch("/api/csrf-token",{credentials:"same-origin"})).json();
+    var r=await fetch("/api/mee/resolver-tonos",{method:"POST",credentials:"same-origin",
+      headers:{"Content-Type":"application/json","X-CSRF-Token":(t&&t.csrf_token)||""},
+      body:JSON.stringify({productos:props.map(function(p){return p.producto;})})});
+    var j=await r.json();
+    if(!r.ok || j.error){ alert(j.error||"No se pudo"); return; }
+    var res=(j.multitono||[]).map(function(m){
+      return m.producto+": "+m.filas+" filas, "+m.con_sku+" con SKU, "+m.con_etiqueta+" con etiqueta";
+    }).join(" | ");
+    alert("Listo. "+res+" . Falta elegir la ETIQUETA de cada tono."
+      +((j.pendientes||[]).length? " SIN RESOLVER: "+j.pendientes.slice(0,4).join(" | ") : ""));
+    await cargar();
+  }catch(e){ alert("No se pudo: "+e); }
+  finally{ if(b) b.disabled=false; }
 }
 
 async function limpiarSobrantes(){

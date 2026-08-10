@@ -17836,6 +17836,142 @@ _PREFIJO_COL = {'envase': 'MEE-ENV', 'tapa': 'MEE-TAP', 'etiqueta': 'MEE-ETQ',
 _CAT_COL = {'envase': 'Frasco', 'tapa': 'Tapa', 'etiqueta': 'Etiqueta', 'caja': 'Plegadiza'}
 
 
+@bp.route('/api/mee/resolver-tonos', methods=['POST'])
+def mee_resolver_tonos():
+    """Deja la tabla con UNA FILA POR TONO, emparejada. Todo de una.
+
+    Sebastian (9-ago): *"la idea es que liste todos los tonos de blush y de gloss, y los
+    empareja"*. Tenia razon en la queja de fondo: le habia dejado TRES botones (limpiar, expandir,
+    emparejar) y el trabajo de ordenarlos. Eso no es una herramienta, es un procedimiento que hay
+    que recordar -- y lo que el pidio es el resultado, no los pasos.
+
+    Corre los tres en el orden que corresponde y CUENTA lo que hizo:
+
+      1. da de baja las filas sobrantes (duplicadas, sin frasco, o apuntando a un codigo que no
+         existe) -- si quedaran, ensucian el reparto y el emparejamiento;
+      2. abre una fila por tono donde falten;
+      3. le pone a cada una el SKU de su tono.
+
+    Cada paso conserva sus guardas: nunca toca una fila que YA declara su SKU, da de BAJA en vez de
+    borrar (reversible y auditado), y no elige cuando dos SKU empatan. La ETIQUETA queda vacia a
+    proposito: es lo unico que cambia entre tonos y la elige una persona (M19/M137).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    _u = session.get('compras_user', '')      # se captura ANTES de abrir otros contextos
+    # ⚠ Acotado a los productos que se confirmaron. Sin esto expandia TODO lo que pareciera
+    # multitono -- en la prueba fueron 31 filas de seis productos que nadie pidio -- y una accion
+    # que toca cosas que no se vieron no se puede confiar, por mas que cada paso sea reversible.
+    _quiere = {_norm_prod_fuerte(x) for x in
+               ((request.get_json(silent=True) or {}).get('productos') or []) if x}
+    pasos = []
+
+    # 1 · limpiar lo que sobro
+    try:
+        _sob = mee_filas_sobrantes().get_json()
+        _ids = [x['id'] for x in (_sob.get('sobrantes') or [])
+                if not _quiere or _norm_prod_fuerte(x.get('producto', '')) in _quiere]
+        if _ids:
+            from flask import request as _rq
+            _r = _aplicar_json(mee_filas_sobrantes_baja, {'ids': _ids}, _u)
+            pasos.append({'paso': 'limpiar', 'bajas': len((_r or {}).get('bajas') or []),
+                          'detalle': [x.get('presentacion') for x in ((_r or {}).get('bajas') or [])][:10]})
+        else:
+            pasos.append({'paso': 'limpiar', 'bajas': 0})
+    except Exception as e:
+        pasos.append({'paso': 'limpiar', 'error': str(e)[:140]})
+
+    # 2 · abrir una fila por tono
+    try:
+        _exp = mee_expandir_tonos().get_json()
+        _prods = [p['producto'] for p in (_exp.get('propuestas') or [])
+                  if not _quiere or _norm_prod_fuerte(p['producto']) in _quiere]
+        if _prods:
+            _r = _aplicar_json(mee_expandir_tonos_aplicar, {'productos': _prods}, _u)
+            pasos.append({'paso': 'abrir_filas', 'creadas': len((_r or {}).get('creadas') or []),
+                          'productos': _prods[:6]})
+        else:
+            pasos.append({'paso': 'abrir_filas', 'creadas': 0,
+                          'sin_tono': [x['producto'] for x in (_exp.get('sin_tono') or [])][:6]})
+    except Exception as e:
+        pasos.append({'paso': 'abrir_filas', 'error': str(e)[:140]})
+
+    # 3 · emparejar el SKU de cada tono
+    try:
+        _sk = prog_sku_por_tono().get_json()
+        _pares = [{'id': p['id'], 'sku': p['sku']} for p in (_sk.get('propuestas') or [])
+                  if not _quiere or _norm_prod_fuerte(p.get('producto', '')) in _quiere]
+        if _pares:
+            _r = _aplicar_json(prog_sku_por_tono_aplicar, {'pares': _pares}, _u)
+            pasos.append({'paso': 'emparejar', 'hechos': len((_r or {}).get('hechos') or [])})
+        else:
+            pasos.append({'paso': 'emparejar', 'hechos': 0})
+        pendientes = []
+        for x in (_sk.get('ambiguas') or []):
+            pendientes.append('%s %s: empatan %s' % (x.get('producto'), x.get('presentacion', ''),
+                                                     ' y '.join(x.get('candidatos') or [])))
+        for x in (_sk.get('sin_pista') or []):
+            pendientes.append('%s %s: %s' % (x.get('producto'), x.get('presentacion', ''),
+                                             x.get('motivo', '')))
+    except Exception as e:
+        pasos.append({'paso': 'emparejar', 'error': str(e)[:140]})
+        pendientes = []
+
+    # 4 · como quedo cada producto multitono
+    c = get_db().cursor()
+    resumen = []
+    try:
+        _n_sku = {}
+        for (_pn, _n) in c.execute(
+                "SELECT producto_nombre, COUNT(*) FROM sku_producto_map "
+                " WHERE COALESCE(activo,1)=1 AND COALESCE(es_regalo,0)=0 "
+                " GROUP BY producto_nombre").fetchall():
+            _n_sku[_norm_prod_fuerte(_pn)] = (_pn, _n)
+        for (_pn, _filas, _con_sku, _con_etq) in c.execute(
+                "SELECT producto_nombre, COUNT(*), "
+                "       SUM(CASE WHEN COALESCE(sku_shopify,'')<>'' THEN 1 ELSE 0 END), "
+                "       SUM(CASE WHEN COALESCE(etiqueta_codigo,'')<>'' "
+                "                  OR COALESCE(sin_etiqueta,0)=1 THEN 1 ELSE 0 END) "
+                "  FROM producto_presentaciones WHERE COALESCE(activo,1)=1 "
+                " GROUP BY producto_nombre").fetchall():
+            _k = _norm_prod_fuerte(_pn)
+            if _k in _n_sku and _n_sku[_k][1] >= 2:
+                resumen.append({'producto': _pn, 'filas': _filas, 'con_sku': _con_sku or 0,
+                                'con_etiqueta': _con_etq or 0, 'skus': _n_sku[_k][1]})
+    except Exception:
+        resumen = []
+
+    return jsonify({'ok': True, 'pasos': pasos, 'pendientes': pendientes[:10],
+                    'multitono': sorted(resumen, key=lambda x: x['producto']),
+                    'aviso': ('Falta elegir la ETIQUETA de cada tono: es lo unico que cambia entre '
+                              'ellos y no se adivina.')})
+
+
+def _aplicar_json(vista, cuerpo, usuario=''):
+    """Llama a otra vista de este mismo blueprint con un cuerpo JSON, sin duplicar su logica.
+
+    Se reusa la vista y no una copia: dos caminos para el mismo hecho divergen (M1/M3).
+
+    ⚠ El usuario se pasa desde AFUERA. Dentro del contexto nuevo la sesion del request original ya
+    no esta, asi que leerla ahi devuelve vacio y la vista contesta 401 -- y el orquestador reporta
+    "0 hechas" como si no hubiera nada que hacer, que es la peor forma de fallar (M4).
+    """
+    from flask import current_app as _ca
+    with _ca.test_request_context(json=cuerpo, method='POST'):
+        from flask import session as _se
+        try:
+            _se['compras_user'] = usuario
+        except Exception:
+            pass
+        _resp = vista()
+        try:
+            if isinstance(_resp, tuple):
+                return _resp[0].get_json()
+            return _resp.get_json()
+        except Exception:
+            return None
+
+
 @bp.route('/api/mee/filas-sobrantes', methods=['GET'])
 def mee_filas_sobrantes():
     """Read-only · filas de presentacion que sobraron de corridas viejas.
