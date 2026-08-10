@@ -185,3 +185,39 @@ def test_se_puede_ABRIR_desde_la_pantalla(app):
     assert re.search(r'(?:async )?function\s+empqSkuTono\s*\(', todo), \
         'el botón llama a una función que no existe'
     assert 'sku-por-tono-aplicar' in todo, 'no puede aplicar lo que propone'
+
+
+def test_el_aviso_no_cuenta_productos_de_UN_SOLO_SKU(app, admin_client):
+    """Sebastián (9-ago) vio *"sin pista en el nombre del frasco: 33"* sobre 42 filas: la mayoría
+    eran productos de un solo SKU, que no tienen tono ni lo necesitan. Ese ruido enterraba las dos
+    filas que sí había que mirar (M122).
+
+    Y si un producto tiene UN solo SKU y UNA sola fila sin él, el emparejamiento no tiene
+    ambigüedad: se propone sin pedir tono.
+    """
+    from database import get_db
+    P = 'UNSKU PRODUCTO'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (P,))
+        c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (P,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='UNS-FR'")
+        c.execute("INSERT INTO maestro_mee (codigo,descripcion,categoria,stock_actual) "
+                  "VALUES ('UNS-FR','FRASCO SIN TONO','Frasco',0)")
+        c.execute("INSERT INTO sku_producto_map (sku,producto_nombre,volumen_ml,activo) "
+                  "VALUES ('UNSKU1',?,30,1)", (P,))
+        c.execute("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,"
+                  "etiqueta,volumen_ml,envase_codigo,activo) VALUES (?,'V30','30 ml',30,'UNS-FR',1)",
+                  (P,))
+        c.commit()
+    j = admin_client.get('/api/programacion/sku-por-tono').get_json()
+    assert not [x for x in j['sin_pista'] if x['producto'] == P], \
+        'contó como "sin pista" un producto de un solo SKU'
+    assert [x for x in j['propuestas'] if x['producto'] == P], \
+        'no propuso el único SKU posible, que no tiene ambigüedad'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (P,))
+        c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (P,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='UNS-FR'")
+        c.commit()

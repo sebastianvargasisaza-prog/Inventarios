@@ -18543,6 +18543,18 @@ def prog_sku_por_tono():
         libres = [x for x in cands if x['sku'].strip().upper() not in tomados]
         if not libres:
             continue
+        # Un producto de UN SOLO SKU no tiene tono ni lo necesita: si ademas le queda una sola
+        # fila sin SKU, el emparejamiento no tiene ambiguedad y se propone sin pedir tono.
+        _sin_sku = sum(1 for _f in c.execute(
+            "SELECT 1 FROM producto_presentaciones WHERE COALESCE(activo,1)=1 "
+            "  AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+            "  AND COALESCE(sku_shopify,'')=''", (prod,)).fetchall())
+        if len(libres) == 1 and _sin_sku == 1:
+            propuestas.append({'id': pid, 'producto': prod, 'presentacion': pcod,
+                               'frasco': frasco, 'sku': libres[0]['sku'],
+                               'tono': ['(unico SKU del producto)']})
+            tomados.add(libres[0]['sku'].strip().upper())
+            continue
         # ⚠ El tono no siempre esta en el FRASCO. Sebastian (9-ago) lo mostro sin querer: el
         # frasco del LIP SERUM dice "LIP GLOSS BLANCO SIN SERG" -- blanco es el frasco sin marcar,
         # no un tono -- mientras que el CODIGO DE LA PRESENTACION dice `GLOSSMALVA`, que es
@@ -18554,9 +18566,13 @@ def prog_sku_por_tono():
         toks = _tokens_tono(str(pcod) + ' ' + str(etq_txt) + ' ' + frasco + ' '
                             + desc_mee.get(frasco, ''))
         if not toks:
-            sin_pista.append({'id': pid, 'producto': prod, 'frasco': frasco,
-                              'presentacion': pcod,
-                              'motivo': 'ni la presentacion ni el frasco dicen un tono'})
+            # ⚠ Solo se reporta cuando el producto tiene VARIOS SKU, o sea cuando el tono hace
+            # falta de verdad. Contar los de un solo SKU llenaba el aviso de ruido -- 33 de 42
+            # filas -- y enterraba las dos que si habia que mirar (M122).
+            if len(cands) >= 2:
+                sin_pista.append({'id': pid, 'producto': prod, 'frasco': frasco,
+                                  'presentacion': pcod,
+                                  'motivo': 'ni la presentacion ni el frasco dicen un tono'})
             continue
         # Puntaje = cuantos tokens del frasco aparecen en el SKU. Se exige que el ganador sea
         # UNICO: si dos empatan, no hay una respuesta, hay una pregunta.
@@ -18572,8 +18588,8 @@ def prog_sku_por_tono():
         mejor = max(m[0] for m in marcados)
         ganadores = [m[1] for m in marcados if m[0] == mejor]
         if len(ganadores) > 1:
-            ambiguas.append({'id': pid, 'producto': prod, 'frasco': frasco,
-                             'candidatos': sorted(ganadores), 'tono': toks})
+            ambiguas.append({'id': pid, 'producto': prod, 'presentacion': pcod,
+                             'frasco': frasco, 'candidatos': sorted(ganadores), 'tono': toks})
             continue
         propuestas.append({'id': pid, 'producto': prod, 'presentacion': pcod,
                            'frasco': frasco, 'sku': ganadores[0], 'tono': toks})

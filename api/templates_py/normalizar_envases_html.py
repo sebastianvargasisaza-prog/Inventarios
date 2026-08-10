@@ -367,8 +367,19 @@ async function emparejarTonos(){
     var d=await (await fetch('/api/programacion/sku-por-tono',{credentials:'same-origin'})).json();
     var props=d.propuestas||[];
     if(!props.length){
-      alert('No puedo ponerle SKU a ninguna sin adivinar. Ambiguas (dos SKU empatan): '
-        +((d.ambiguas||[]).length)+' | Sin pista en el nombre del frasco: '+((d.sin_pista||[]).length));
+      // El aviso tiene que decir QUE mirar, no cuantas cosas hay. Las ambiguas son las
+      // accionables: se nombra el producto y los dos SKU que empatan.
+      var amb=(d.ambiguas||[]), sp=(d.sin_pista||[]);
+      var det=amb.slice(0,6).map(function(x){
+        return x.producto+' '+(x.presentacion||'')+': empatan '+(x.candidatos||[]).join(' y ');
+      }).join(' | ');
+      alert(amb.length
+        ? ('No puedo elegir sin adivinar en '+amb.length+' fila(s): '+det
+           +'. Elegi el SKU a mano en cada una.')
+        : (sp.length
+           ? ('Ninguna fila multitono tiene el tono escrito. Filas sin pista: '+sp.length
+              +' (por ejemplo '+sp.slice(0,3).map(function(x){return x.producto+' '+(x.presentacion||'');}).join(', ')+').')
+           : 'No queda ninguna presentacion sin SKU.'));
       return;
     }
     var txt=props.slice(0,12).map(function(p){
