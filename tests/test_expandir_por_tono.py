@@ -112,3 +112,70 @@ def test_correrlo_DOS_veces_no_duplica(app, admin_client):
                       headers={'Origin': 'http://localhost'})
     assert len(_filas(app)) == n1, 'duplicó filas al correrlo de nuevo'
     _limpiar(app)
+
+
+def test_el_tono_sale_del_SKU_cuando_lo_lleva_escrito(app, admin_client):
+    """LIP SERUM: los SKU son `GLOSSMALVA`, `GLOSSMERLOT`. Comparten el prefijo `GLOSS` y lo que
+    sobra ES el tono. El prefijo se calcula de los datos, sin ninguna lista que mantener (M122).
+
+    Existe para no dejar a nadie esperando al cron de las 21:30 teniendo el dato a la vista; en
+    cuanto corre el sync de Shopify, `tono_label` lo pisa con lo que Shopify diga.
+    """
+    from database import get_db
+    PL = 'EXPTONO LIP'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (PL,))
+        c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (PL,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='EXL-FR'")
+        c.execute("INSERT INTO maestro_mee (codigo,descripcion,categoria,stock_actual) "
+                  "VALUES ('EXL-FR','LIP GLOSS BLANCO SIN SERG','Frasco',0)")
+        for sk in ('GLOSSMALVA', 'GLOSSMERLOT', 'GLOSSCAFECLARO'):
+            c.execute("INSERT INTO sku_producto_map (sku,producto_nombre,volumen_ml,activo) "
+                      "VALUES (?,?,10,1)", (sk, PL))
+        c.execute("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,"
+                  "etiqueta,volumen_ml,envase_codigo,activo) VALUES (?,'V10','10 ml',10,'EXL-FR',1)",
+                  (PL,))
+        c.commit()
+    j = admin_client.get('/api/mee/expandir-tonos').get_json()
+    p = [x for x in j['propuestas'] if x['producto'] == PL]
+    assert p, 'no propuso abrir las filas del lip serum: %s' % j.get('sin_tono')
+    tonos = {t['tono'].upper() for t in p[0]['tonos']}
+    assert {'MALVA', 'MERLOT'} <= tonos, 'no sacó el tono del SKU: %s' % tonos
+    assert all(t['fuente_tono'] for t in p[0]['tonos']), 'no dice de dónde salió el tono'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (PL,))
+        c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (PL,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='EXL-FR'")
+        c.commit()
+
+
+def test_NO_confunde_TAMANOS_con_tonos(app, admin_client):
+    """`SAH15` y `SAH30` comparten prefijo y lo que sobra son números: eso no nombra un tono. Si
+    los tomara, abriría "tonos" que son en realidad dos tamaños del mismo producto."""
+    from database import get_db
+    PS = 'EXPTONO SUERO TAM'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (PS,))
+        c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (PS,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='EXS-FR'")
+        c.execute("INSERT INTO maestro_mee (codigo,descripcion,categoria,stock_actual) "
+                  "VALUES ('EXS-FR','FRASCO SUERO','Frasco',0)")
+        for sk, vol in (('EXSAH15', 15), ('EXSAH30', 30)):
+            c.execute("INSERT INTO sku_producto_map (sku,producto_nombre,volumen_ml,activo) "
+                      "VALUES (?,?,?,1)", (sk, PS, vol))
+        c.execute("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,"
+                  "etiqueta,volumen_ml,envase_codigo,activo) VALUES (?,'V15','15 ml',15,'EXS-FR',1)",
+                  (PS,))
+        c.commit()
+    j = admin_client.get('/api/mee/expandir-tonos').get_json()
+    assert not [x for x in j['propuestas'] if x['producto'] == PS], \
+        'tomó dos TAMAÑOS como si fueran tonos'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (PS,))
+        c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (PS,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='EXS-FR'")
+        c.commit()

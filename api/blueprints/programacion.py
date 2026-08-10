@@ -17836,6 +17836,113 @@ _PREFIJO_COL = {'envase': 'MEE-ENV', 'tapa': 'MEE-TAP', 'etiqueta': 'MEE-ETQ',
 _CAT_COL = {'envase': 'Frasco', 'tapa': 'Tapa', 'etiqueta': 'Etiqueta', 'caja': 'Plegadiza'}
 
 
+@bp.route('/api/mee/filas-sobrantes', methods=['GET'])
+def mee_filas_sobrantes():
+    """Read-only · filas de presentacion que sobraron de corridas viejas.
+
+    Sebastian (9-ago), mirando el LIP SERUM: cinco filas de 10 ml, dos con nombre de tono
+    (`GLOSSMALVA`, `GLOSSMERLOT`), dos llamadas `TONO-MEE-ENV-016/017` y una apuntando a un codigo
+    que no existe. Las `TONO-*` las creo un emparejador viejo que **creaba** presentaciones en vez
+    de completar las que ya estaban -- por eso el producto quedo con dos juegos.
+
+    Se listan tres cosas, cada una con su motivo, y NINGUNA se toca sola:
+
+      · `duplicada`  -- misma combinacion producto+envase+volumen que otra fila que SI tiene un
+        nombre propio. Dos filas iguales reparten el bulto entre las dos y cada una pide su
+        empaque: se compra el doble de lo que se usa.
+      · `envase_fantasma` -- apunta a un codigo que no esta en el maestro. Ese empaque no se puede
+        comprar ni descontar: la necesidad es invisible (M100).
+      · `sin_envase` -- sin frasco no hay nada que envasar.
+
+    La limpieza es dar de BAJA (activo=0), reversible y auditada; nunca un borrado.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    c = get_db().cursor()
+    maestro = {(r[0] or '').strip().upper() for r in
+               c.execute("SELECT codigo FROM maestro_mee").fetchall()}
+    filas = []
+    for (pid, prod, pcod, vol, env, sku) in c.execute(
+            "SELECT id, producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(volumen_ml,0), "
+            "       UPPER(TRIM(COALESCE(envase_codigo,''))), COALESCE(sku_shopify,'') "
+            "  FROM producto_presentaciones WHERE COALESCE(activo,1)=1 "
+            " ORDER BY producto_nombre, id").fetchall():
+        filas.append({'id': pid, 'producto': prod, 'cod': pcod, 'vol': float(vol or 0),
+                      'env': env, 'sku': (sku or '').strip()})
+
+    # Una fila se considera con NOMBRE PROPIO si su codigo no lo genero una herramienta.
+    def _generado(cod):
+        cu = str(cod or '').strip().upper()
+        return cu.startswith('TONO-') or cu.startswith('T-') or not cu
+
+    sobrantes = []
+    porclave = {}
+    for f in filas:
+        porclave.setdefault((_norm_prod_fuerte(f['producto']), f['env'], round(f['vol'], 2)),
+                            []).append(f)
+    for _cl, grupo in porclave.items():
+        if len(grupo) < 2:
+            continue
+        # se conserva la que tiene SKU; si ninguna, la de nombre propio; si empatan, la mas vieja
+        grupo_ord = sorted(grupo, key=lambda f: (0 if f['sku'] else 1,
+                                                 1 if _generado(f['cod']) else 0, f['id']))
+        for f in grupo_ord[1:]:
+            if not f['sku'] and _generado(f['cod']):
+                sobrantes.append({**f, 'motivo': 'duplicada',
+                                  'detalle': ('mismo producto, envase y volumen que %s'
+                                              % grupo_ord[0]['cod'])})
+    for f in filas:
+        if f['env'] and f['env'] not in maestro:
+            sobrantes.append({**f, 'motivo': 'envase_fantasma',
+                              'detalle': '%s no esta en el maestro de envases' % f['env']})
+        elif not f['env']:
+            sobrantes.append({**f, 'motivo': 'sin_envase',
+                              'detalle': 'sin frasco no hay nada que envasar'})
+    _vistos, _uni = set(), []
+    for x in sobrantes:
+        if x['id'] in _vistos:
+            continue
+        _vistos.add(x['id'])
+        _uni.append(x)
+    return jsonify({'ok': True, 'sobrantes': _uni, 'total': len(_uni),
+                    'aviso': 'Dar de baja es reversible (activo=0) y queda auditado.'})
+
+
+@bp.route('/api/mee/filas-sobrantes-baja', methods=['POST'])
+def mee_filas_sobrantes_baja():
+    """Da de baja las filas confirmadas. Body: {ids:[...]}."""
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    ids = [int(x) for x in ((request.get_json(silent=True) or {}).get('ids') or [])
+           if str(x).strip().isdigit()]
+    if not ids:
+        return jsonify({'error': 'no hay filas que dar de baja'}), 400
+    conn = get_db(); c = conn.cursor()
+    bajas, saltadas = [], []
+    for pid in ids[:200]:
+        _f = c.execute("SELECT producto_nombre, COALESCE(presentacion_codigo,''), "
+                       "       COALESCE(sku_shopify,''), COALESCE(activo,1) "
+                       "  FROM producto_presentaciones WHERE id=?", (pid,)).fetchone()
+        if not _f or not _f[3]:
+            saltadas.append({'id': pid, 'motivo': 'no existe o ya estaba de baja'})
+            continue
+        # ⚠ Una fila que YA declara su SKU no es sobrante: es la buena. No se da de baja aunque
+        # venga en la lista, porque su venta es la que separa el tono (M19).
+        if (_f[2] or '').strip():
+            saltadas.append({'id': pid, 'motivo': 'tiene SKU propio: esa es la buena'})
+            continue
+        c.execute("UPDATE producto_presentaciones SET activo=0 WHERE id=? AND activo=1", (pid,))
+        if c.rowcount:
+            bajas.append({'id': pid, 'producto': _f[0], 'presentacion': _f[1]})
+            audit_log(c, usuario=u, accion='PRES_SOBRANTE_DE_BAJA',
+                      tabla='producto_presentaciones', registro_id=str(pid),
+                      antes={'activo': 1}, despues={'activo': 0},
+                      detalle='fila sobrante dada de baja desde la tabla de normalizacion')
+    conn.commit()
+    return jsonify({'ok': True, 'bajas': bajas, 'saltadas': saltadas})
+
+
 @bp.route('/api/mee/traer-tonos-shopify', methods=['POST'])
 def mee_traer_tonos_shopify():
     """Dispara el sync del CATALOGO de Shopify para que se llenen los tonos, sin esperar al cron.
@@ -17903,17 +18010,84 @@ def mee_expandir_tonos():
         return jsonify({'error': 'No autorizado'}), 401
     c = get_db().cursor()
 
-    # SKUs con tono, por producto
-    skus = {}
+    # SKUs con tono, por producto.
+    #
+    # El tono se busca en TRES lados, del mas confiable al menos, y cada propuesta DICE de donde
+    # salio -- si no se puede saber, se declara y no se inventa (M19/M137):
+    #
+    #   1. `tono_label`, que es lo que dice Shopify (lo llena el sync del catalogo);
+    #   2. la lista conocida del codigo (los ocho del blush, cuyos SKU son opacos: BB101...);
+    #   3. el propio SKU cuando lo lleva escrito (`GLOSSMALVA` -> MALVA), quitandole las palabras
+    #      del nombre del producto.
+    #
+    # El 2 y el 3 existen para no dejar a nadie esperando al cron de las 21:30 teniendo el dato a
+    # la vista; en cuanto corre el sync, el 1 los pisa con lo que Shopify diga.
+    _conocidos = {}
+    try:
+        for _sk, _nm in BLUSH_TONOS:
+            _conocidos[str(_sk).strip().upper()] = _nm
+    except Exception:
+        _conocidos = {}
+
+    def _prefijo_comun(lista):
+        """Lo que TODOS los SKU de un producto tienen adelante.
+
+        Los SKU de un multitono comparten prefijo y se diferencian en el tono: GLOSSMALVA,
+        GLOSSMERLOT, GLOSSCAFECLARO -> el prefijo es GLOSS y lo que sobra es el tono. Sale de los
+        datos, sin ninguna lista que mantener (M122).
+        """
+        if len(lista) < 2:
+            return ''
+        _a = min(lista)
+        _b = max(lista)
+        _i = 0
+        while _i < len(_a) and _i < len(_b) and _a[_i] == _b[_i]:
+            _i += 1
+        # se exige que quede algo distinguible en TODOS despues del prefijo
+        return _a[:_i] if _i >= 2 and all(len(x) > _i for x in lista) else ''
+
+    def _tono_del_sku(sku, prod, prefijo=''):
+        """Lo que le sobra al SKU: sin el prefijo comun y sin las palabras del producto."""
+        _s = str(sku or '').strip().upper()
+        if prefijo and _s.startswith(prefijo):
+            _s = _s[len(prefijo):]
+        if not _s or _s.isdigit():
+            return ''            # queda un numero: eso no nombra un tono
+        _t = [x for x in _tokens_tono(_s) if x not in set(_tokens_tono(str(prod)))]
+        return ' '.join(_t[:2]).title() if _t else ''
+
+    # El prefijo comun se calcula por PRODUCTO, asi que hace falta agrupar primero.
+    _crudos = {}
     try:
         for _sk, _pn, _tl, _vol in c.execute(
                 "SELECT sku, producto_nombre, COALESCE(tono_label,''), COALESCE(volumen_ml,0) "
                 "  FROM sku_producto_map "
                 " WHERE COALESCE(activo,1)=1 AND COALESCE(es_regalo,0)=0").fetchall():
             if _sk and _pn:
-                skus.setdefault(_norm_prod_fuerte(_pn), []).append(
-                    {'sku': str(_sk).strip(), 'tono': str(_tl or '').strip(),
-                     'vol': float(_vol or 0)})
+                _crudos.setdefault(_norm_prod_fuerte(_pn), []).append(
+                    (str(_sk).strip(), _pn, str(_tl or '').strip(), float(_vol or 0)))
+    except Exception:
+        _crudos = {}
+    _prefijos = {k: _prefijo_comun([x[0].upper() for x in v]) for k, v in _crudos.items()}
+
+    skus = {}
+    try:
+        for _sk, _pn, _tl, _vol in c.execute(
+                "SELECT sku, producto_nombre, COALESCE(tono_label,''), COALESCE(volumen_ml,0) "
+                "  FROM sku_producto_map "
+                " WHERE COALESCE(activo,1)=1 AND COALESCE(es_regalo,0)=0").fetchall():
+            if not (_sk and _pn):
+                continue
+            _sku = str(_sk).strip()
+            _t, _fuente = str(_tl or '').strip(), 'shopify'
+            if not _t:
+                _t, _fuente = _conocidos.get(_sku.upper(), ''), 'lista_conocida'
+            if not _t:
+                _t = _tono_del_sku(_sku, _pn, _prefijos.get(_norm_prod_fuerte(_pn), ''))
+                _fuente = 'del_sku'
+            skus.setdefault(_norm_prod_fuerte(_pn), []).append(
+                {'sku': _sku, 'tono': _t, 'fuente_tono': (_fuente if _t else ''),
+                 'vol': float(_vol or 0)})
     except Exception:
         return jsonify({'ok': True, 'propuestas': [], 'sin_tono': [],
                         'aviso': 'no pude leer los SKU de Shopify'}), 200
@@ -17957,7 +18131,8 @@ def mee_expandir_tonos():
                        'envase': _modelo['envase'], 'tapa': _modelo['tapa'],
                        'caja': _modelo['caja'], 'volumen_ml': _modelo['vol']},
             'filas_hoy': len(_filas),
-            'tonos': [{'sku': x['sku'], 'tono': x['tono']} for x in _faltan],
+            'tonos': [{'sku': x['sku'], 'tono': x['tono'],
+                       'fuente_tono': x.get('fuente_tono', '')} for x in _faltan],
             'que_hace': ('crea %d fila(s) copiando envase/tapa/caja y poniendole a cada una su '
                          'SKU · la ETIQUETA queda vacia, que es lo unico que cambia entre tonos'
                          % len(_faltan)),

@@ -85,6 +85,8 @@ NORMALIZAR_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
   <div id="cuerpo" style="padding:26px;text-align:center;color:var(--cx-text-faint)">Cargando&hellip;</div>
   <div class="pie">
     <button class="btn btn-p" onclick="guardar()" id="btn-guardar">Guardar los cambios</button>
+    <button class="btn" onclick="limpiarSobrantes()" id="btn-limp"
+      title="Filas que sobraron de corridas viejas: duplicadas, sin frasco, o apuntando a un codigo que no existe">&#129529; Limpiar filas sobrantes</button>
     <button class="btn" onclick="expandirTonos()" id="btn-exp"
       title="Para los productos que tienen UNA sola fila para todos los tonos (blush): abre una por tono">&#10133; Abrir una fila por tono</button>
     <button class="btn" onclick="emparejarTonos()" id="btn-tonos"
@@ -291,6 +293,32 @@ function aceptarSugeridas(){
   });
   pintar();
   document.getElementById('estado').textContent = n+' sugerencia(s) aceptadas. Revisa y guarda.';
+}
+
+async function limpiarSobrantes(){
+  // Filas de corridas viejas: el emparejador anterior CREABA presentaciones (TONO-<envase>)
+  // en vez de completar las que ya estaban, y por eso el producto quedo con dos juegos.
+  var b=document.getElementById("btn-limp"); if(b) b.disabled=true;
+  try{
+    var d=await (await fetch("/api/mee/filas-sobrantes",{credentials:"same-origin"})).json();
+    var so=d.sobrantes||[];
+    if(!so.length){ alert("No hay filas sobrantes."); return; }
+    var txt=so.slice(0,15).map(function(x){
+      return x.producto+" "+x.cod+" ("+x.motivo+")";
+    }).join("; ");
+    if(!confirm("Doy de baja "+so.length+" fila(s): "+txt+(so.length>15?" ...":"")
+        +" . Es reversible (quedan apagadas, no se borran) y queda auditado.")) return;
+    var t=await (await fetch("/api/csrf-token",{credentials:"same-origin"})).json();
+    var r=await fetch("/api/mee/filas-sobrantes-baja",{method:"POST",credentials:"same-origin",
+      headers:{"Content-Type":"application/json","X-CSRF-Token":(t&&t.csrf_token)||""},
+      body:JSON.stringify({ids:so.map(function(x){return x.id;})})});
+    var j=await r.json();
+    if(!r.ok || j.error){ alert(j.error||"No se pudo"); return; }
+    var sa=(j.saltadas||[]).length;
+    alert("Listo: "+((j.bajas||[]).length)+" dadas de baja"+(sa?" | "+sa+" saltadas (tienen SKU propio)":""));
+    await cargar();
+  }catch(e){ alert("No se pudo: "+e); }
+  finally{ if(b) b.disabled=false; }
 }
 
 async function expandirTonos(){

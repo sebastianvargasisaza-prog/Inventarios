@@ -88,6 +88,7 @@ CORAZON=(
   "tests/test_tono_desde_shopify.py"
   "tests/test_expandir_por_tono.py"
   "tests/test_reparto_por_tono.py"
+  "tests/test_filas_sobrantes.py"
   "tests/test_operario_no_archiva.py"
   "tests/test_pago_creador_no_se_paga_solo.py"
   "tests/test_reversa_pago_deja_rastro.py"
