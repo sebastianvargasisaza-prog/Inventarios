@@ -18047,14 +18047,26 @@ def mee_expandir_tonos():
         return _a[:_i] if _i >= 2 and all(len(x) > _i for x in lista) else ''
 
     def _tono_del_sku(sku, prod, prefijo=''):
-        """Lo que le sobra al SKU: sin el prefijo comun y sin las palabras del producto."""
+        """Lo que le sobra al SKU, y si eso puede ser un tono.
+
+        Devuelve (tono, es_tamano). Distinguir los dos vacios importa:
+
+          · lo que sobra son NUMEROS (`SAH15` -> "15") -> es un TAMANO, no un color: el producto
+            no es multitono y no hay que abrirle filas por tono;
+          · lo que sobra es corto pero no numerico (`GLOSSN` -> "N") -> no se puede NOMBRAR, pero
+            si es un tono: la fila se abre rotulada con su SKU y despues se le pone el nombre.
+
+        Confundirlos es lo que hacia que un solo `GLOSSN` bloqueara a Malva, Merlot, Mocca y Peach.
+        """
         _s = str(sku or '').strip().upper()
         if prefijo and _s.startswith(prefijo):
             _s = _s[len(prefijo):]
-        if not _s or _s.isdigit():
-            return ''            # queda un numero: eso no nombra un tono
+        if not _s:
+            return ('', False)
+        if _s.isdigit():
+            return ('', True)                # un tamano, no un tono
         _t = [x for x in _tokens_tono(_s) if x not in set(_tokens_tono(str(prod)))]
-        return ' '.join(_t[:2]).title() if _t else ''
+        return ((' '.join(_t[:2]).title() if _t else ''), False)
 
     # El prefijo comun se calcula por PRODUCTO, asi que hace falta agrupar primero.
     _crudos = {}
@@ -18082,12 +18094,14 @@ def mee_expandir_tonos():
             _t, _fuente = str(_tl or '').strip(), 'shopify'
             if not _t:
                 _t, _fuente = _conocidos.get(_sku.upper(), ''), 'lista_conocida'
+            _es_tam = False
             if not _t:
-                _t = _tono_del_sku(_sku, _pn, _prefijos.get(_norm_prod_fuerte(_pn), ''))
+                _t, _es_tam = _tono_del_sku(_sku, _pn,
+                                            _prefijos.get(_norm_prod_fuerte(_pn), ''))
                 _fuente = 'del_sku'
             skus.setdefault(_norm_prod_fuerte(_pn), []).append(
                 {'sku': _sku, 'tono': _t, 'fuente_tono': (_fuente if _t else ''),
-                 'vol': float(_vol or 0)})
+                 'es_tamano': _es_tam, 'vol': float(_vol or 0)})
     except Exception:
         return jsonify({'ok': True, 'propuestas': [], 'sin_tono': [],
                         'aviso': 'no pude leer los SKU de Shopify'}), 200
@@ -18114,9 +18128,28 @@ def mee_expandir_tonos():
             ya_estan.append({'producto': _filas[0]['producto'], 'filas': len(_filas),
                              'skus': len(_sks)})
             continue
-        _sin = [x['sku'] for x in _sks if not x['tono']]
-        if _sin:
-            sin_tono.append({'producto': _filas[0]['producto'], 'skus_sin_tono': _sin[:8],
+        # ⚠ Un SKU cuyo tono no se puede nombrar NO bloquea a los demas. `GLOSSN` deja solo la
+        # letra "N", que no nombra un color -- y con la regla anterior ese unico caso dejaba
+        # afuera a Malva, Merlot, Mocca y Peach, que si se podian abrir. Cuatro filas que se
+        # pueden nombrar no esperan por una que no.
+        #
+        # La fila igual se abre, rotulada con su SKU: eso la hace distinguible, que era lo unico
+        # que importaba (ocho filas identicas son peores que una), y despues se le pone el nombre.
+        # Si lo que distingue a los SKU son NUMEROS y NINGUNO tiene un tono de verdad (de Shopify
+        # o de la lista conocida), esos son TAMANOS: abrirle filas por tono inventaria colores que
+        # no existen. Pero si alguno SI tiene tono real, el producto es multitono y los numericos
+        # son parte de el -- el blush es justo eso: BB101...BB801 son opacos y sus nombres salen de
+        # la lista.
+        _tono_real = any(x.get('fuente_tono') in ('shopify', 'lista_conocida') for x in _sks)
+        if any(x.get('es_tamano') for x in _sks) and not _tono_real:
+            continue
+        for _x in _sks:
+            if not _x['tono']:
+                _x['tono'] = _x['sku']
+                _x['fuente_tono'] = 'codigo_del_sku'
+        if not any(x['tono'] for x in _sks):
+            sin_tono.append({'producto': _filas[0]['producto'],
+                             'skus_sin_tono': [x['sku'] for x in _sks][:8],
                              'motivo': 'sin el tono no se puede saber que fila es cual'})
             continue
         # La fila MODELO: la que ya esta cargada (de la que se copia el empaque comun)

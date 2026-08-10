@@ -93,13 +93,21 @@ def test_la_fila_GENERICA_queda_de_baja(app, admin_client):
     _limpiar(app)
 
 
-def test_NO_expande_si_algun_SKU_no_declara_su_tono(app, admin_client):
-    """Sin el tono no se puede saber qué fila es cuál, y ocho filas indistinguibles son peores que
-    una (M100). El tono lo trae el sync de Shopify."""
+def test_un_tono_sin_nombre_NO_bloquea_a_los_demas(app, admin_client):
+    """El caso real del LIP SERUM (9-ago): sus SKU son `GLOSSMALVA`, `GLOSSMERLOT`, `GLOSSMOCCA`,
+    `GLOSSPEACH` y `GLOSSN`. Ese último deja sólo la letra "N", que no nombra un color -- y la
+    regla anterior bloqueaba **el producto entero** por ese uno, dejando afuera a los otros cuatro.
+
+    La fila igual se abre, rotulada con su SKU: eso la hace distinguible, que era lo único que
+    importaba (ocho filas idénticas son peores que una), y después se le pone el nombre.
+    """
     _sembrar(app, tonos=(('EXB101', 'Hot Pink'), ('EXB201', '')))
     j = admin_client.get('/api/mee/expandir-tonos').get_json()
-    assert not [p for p in j['propuestas'] if p['producto'] == P], 'expandió sin saber los tonos'
-    assert [x for x in j['sin_tono'] if x['producto'] == P], 'no dice por qué no puede'
+    p = [x for x in j['propuestas'] if x['producto'] == P]
+    assert p, 'un SKU sin nombre bloqueó a los demás: %s' % j.get('sin_tono')
+    tonos = {t['tono'] for t in p[0]['tonos']}
+    assert 'Hot Pink' in tonos, 'perdió el que sí tenía nombre'
+    assert 'EXB201' in tonos, 'no rotuló con su SKU el que no se pudo nombrar: %s' % tonos
     _limpiar(app)
 
 
@@ -178,4 +186,40 @@ def test_NO_confunde_TAMANOS_con_tonos(app, admin_client):
         c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (PS,))
         c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (PS,))
         c.execute("DELETE FROM maestro_mee WHERE codigo='EXS-FR'")
+        c.commit()
+
+
+def test_el_caso_REAL_del_lip_serum(app, admin_client):
+    """Los cinco SKU reales: `GLOSSMALVA`, `GLOSSMERLOT`, `GLOSSMOCCA`, `GLOSSPEACH` y `GLOSSN`.
+
+    Los cuatro primeros se nombran solos (prefijo común `GLOSS`); el quinto deja sólo la letra "N"
+    y se rotula con su SKU. Antes ese único caso bloqueaba a los otros cuatro.
+    """
+    from database import get_db
+    PL = 'EXPTONO LIP REAL'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (PL,))
+        c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (PL,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='EXLR-FR'")
+        c.execute("INSERT INTO maestro_mee (codigo,descripcion,categoria,stock_actual) "
+                  "VALUES ('EXLR-FR','LIP GLOSS BLANCO SIN SERG','Frasco',0)")
+        for sk in ('GLOSSMALVA', 'GLOSSMERLOT', 'GLOSSMOCCA', 'GLOSSPEACH', 'GLOSSN'):
+            c.execute("INSERT INTO sku_producto_map (sku,producto_nombre,volumen_ml,activo) "
+                      "VALUES (?,?,10,1)", (sk, PL))
+        c.execute("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,"
+                  "etiqueta,volumen_ml,envase_codigo,activo) "
+                  "VALUES (?,'V10','10 ml',10,'EXLR-FR',1)", (PL,))
+        c.commit()
+    j = admin_client.get('/api/mee/expandir-tonos').get_json()
+    p = [x for x in j['propuestas'] if x['producto'] == PL]
+    assert p, 'no propuso abrir el lip serum: %s' % j.get('sin_tono')
+    tonos = {t['tono'] for t in p[0]['tonos']}
+    assert {'Malva', 'Merlot', 'Mocca', 'Peach'} <= tonos, 'perdió tonos nombrables: %s' % tonos
+    assert 'GLOSSN' in tonos, 'no rotuló con su SKU el que no se pudo nombrar: %s' % tonos
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (PL,))
+        c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (PL,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='EXLR-FR'")
         c.commit()
