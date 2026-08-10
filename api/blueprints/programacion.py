@@ -18532,7 +18532,7 @@ def prog_sku_por_tono():
         if r[0]:
             tomados.add(r[0])
 
-    propuestas, ambiguas, sin_pista = [], [], []
+    propuestas, ambiguas, sin_pista, sin_skus = [], [], [], []
     for pid, prod, pcod, etq_txt, frasco in c.execute(
             "SELECT id, producto_nombre, COALESCE(presentacion_codigo,''), "
             "       COALESCE(etiqueta,''), UPPER(TRIM(COALESCE(envase_codigo,''))) "
@@ -18540,6 +18540,15 @@ def prog_sku_por_tono():
             " WHERE COALESCE(activo,1)=1 AND COALESCE(sku_shopify,'')='' "
             "   AND COALESCE(envase_codigo,'')<>''").fetchall():
         cands = skus_por_prod.get(_norm_prod_fuerte(prod)) or []
+        # ⚠ El producto no tiene NINGUN SKU mapeado. Eso no es un problema de empaque: si sus SKU
+        # venden en Shopify y nadie los mapeo, EOS no le cuenta una sola venta -- velocidad cero,
+        # y por lo tanto el producto nunca entra al plan (M128). Se DICE, con la pantalla donde se
+        # arregla, en vez de dejar la fila en un "sin pista" que no lleva a ningun lado.
+        if not cands:
+            sin_skus.append({'id': pid, 'producto': prod, 'presentacion': pcod,
+                             'motivo': 'el producto no tiene ningun SKU de Shopify mapeado',
+                             'donde': '/admin/sku-map'})
+            continue
         libres = [x for x in cands if x['sku'].strip().upper() not in tomados]
         if not libres:
             continue
@@ -18599,6 +18608,7 @@ def prog_sku_por_tono():
         'propuestas': propuestas,
         'ambiguas': ambiguas,
         'sin_pista': sin_pista,
+        'productos_sin_sku': sin_skus,
         'resumen': {'propuestas': len(propuestas), 'ambiguas': len(ambiguas),
                     'sin_pista': len(sin_pista)},
         'que_hace': ('Completa el SKU de las presentaciones que YA existen. No crea filas nuevas: '

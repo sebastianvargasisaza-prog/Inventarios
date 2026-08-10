@@ -369,7 +369,16 @@ async function emparejarTonos(){
     if(!props.length){
       // El aviso tiene que decir QUE mirar, no cuantas cosas hay. Las ambiguas son las
       // accionables: se nombra el producto y los dos SKU que empatan.
-      var amb=(d.ambiguas||[]), sp=(d.sin_pista||[]);
+      var amb=(d.ambiguas||[]), sp=(d.sin_pista||[]), ns=(d.productos_sin_sku||[]);
+      if(ns.length){
+        // No es un problema de empaque: si esos SKU venden y nadie los mapeo, EOS no le cuenta
+        // una sola venta al producto y nunca entra al plan.
+        var prods=[]; ns.forEach(function(x){ if(prods.indexOf(x.producto)<0) prods.push(x.producto); });
+        alert('Estos productos no tienen NINGUN SKU de Shopify mapeado: '+prods.join(', ')
+          +'. Mientras esten asi, EOS no les cuenta ventas y no entran al plan. Se arregla en '
+          +'/admin/sku-map (mapear SKU a producto).');
+        return;
+      }
       var det=amb.slice(0,6).map(function(x){
         return x.producto+' '+(x.presentacion||'')+': empatan '+(x.candidatos||[]).join(' y ');
       }).join(' | ');

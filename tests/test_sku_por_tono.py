@@ -221,3 +221,39 @@ def test_el_aviso_no_cuenta_productos_de_UN_SOLO_SKU(app, admin_client):
         c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (P,))
         c.execute("DELETE FROM maestro_mee WHERE codigo='UNS-FR'")
         c.commit()
+
+
+def test_un_producto_SIN_NINGUN_SKU_mapeado_se_declara(app, admin_client):
+    """El bloqueo real del LIP SERUM (9-ago): sus presentaciones se llaman `GLOSSMALVA` y
+    `GLOSSMERLOT`, pero **el producto no tiene ni un SKU mapeado**, así que no hay contra qué
+    emparejar.
+
+    Y eso no es un problema de empaque: si esos SKU venden en Shopify y nadie los mapeó, EOS no le
+    cuenta una sola venta al producto -- velocidad cero -- y nunca entra al plan (M128). Se dice,
+    con la pantalla donde se arregla, en vez de dejarlo en un "sin pista" que no lleva a ningún
+    lado.
+    """
+    from database import get_db
+    P = 'SINSKU LIP SERUM'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (P,))
+        c.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (P,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='SNS-FR'")
+        c.execute("INSERT INTO maestro_mee (codigo,descripcion,categoria,stock_actual) "
+                  "VALUES ('SNS-FR','LIP GLOSS BLANCO','Frasco',0)")
+        c.execute("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,"
+                  "etiqueta,volumen_ml,envase_codigo,activo) "
+                  "VALUES (?,'GLOSSMALVA','10 ml',10,'SNS-FR',1)", (P,))
+        c.commit()
+    j = admin_client.get('/api/programacion/sku-por-tono').get_json()
+    fila = [x for x in (j.get('productos_sin_sku') or []) if x['producto'] == P]
+    assert fila, 'no declaró que el producto no tiene SKU mapeado: %s' % j.get('resumen')
+    assert 'sku-map' in (fila[0].get('donde') or ''), 'no dice dónde se arregla'
+    assert not [x for x in j['sin_pista'] if x['producto'] == P], \
+        'lo dejó en "sin pista", que no lleva a ningún lado'
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (P,))
+        c.execute("DELETE FROM maestro_mee WHERE codigo='SNS-FR'")
+        c.commit()
