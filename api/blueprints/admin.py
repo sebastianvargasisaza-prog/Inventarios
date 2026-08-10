@@ -16915,8 +16915,15 @@ def admin_sku_map_page():
       var act = document.getElementById('act-'+i).checked;
       var clean = document.getElementById('clean-'+i).checked;
       if(!prod){ alert('Selecciona un producto'); return; }
+      // M15: todo POST a un endpoint admin/sensible manda `X-CSRF-Token`. Sin el, el guard lo
+      // rechaza con "CSRF token requerido" y la pantalla queda inutil -- que es exactamente lo que
+      // le pasaba a Sebastian mapeando los SKU del lip serum (9-ago).
+      var _t = {};
+      try { _t = await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json(); }
+      catch(e) { _t = {}; }
       var r = await fetch('/api/admin/sku-map'+(clean?'?cleanup=1':''), {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json', 'X-CSRF-Token': (_t && _t.csrf_token) || ''},
         body: JSON.stringify({sku: sku, producto_nombre: prod, activo: act, producto_anterior: productoAnterior})
       });
       var d = await r.json();

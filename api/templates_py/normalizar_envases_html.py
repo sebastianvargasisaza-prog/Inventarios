@@ -405,7 +405,18 @@ async function emparejarTonos(){
     var j=await r.json();
     if(!r.ok || j.error){ alert(j.error||'No se pudo aplicar'); return; }
     var salt=(j.saltados||[]).length;
-    alert('Listo: '+((j.hechos||[]).length)+' emparejadas'+(salt?' | '+salt+' saltadas':''));
+    // Lo que QUEDO sin resolver, con nombre y motivo. Antes solo decia cuantas se hicieron y las
+    // que no salian quedaban invisibles: se apretaba, se leia "listo", y las filas seguian vacias
+    // sin que nadie supiera por que.
+    var pend=[];
+    (d.ambiguas||[]).forEach(function(x){
+      pend.push(x.producto+' '+(x.presentacion||'')+': empatan '+(x.candidatos||[]).join(' y '));
+    });
+    (d.sin_pista||[]).forEach(function(x){
+      pend.push(x.producto+' '+(x.presentacion||'')+': '+(x.motivo||'sin pista'));
+    });
+    alert('Listo: '+((j.hechos||[]).length)+' emparejadas'+(salt?' | '+salt+' saltadas':'')
+      +(pend.length? ' . QUEDAN SIN RESOLVER '+pend.length+': '+pend.slice(0,6).join(' | ') : ''));
     await cargar();
   }catch(e){ alert('No se pudo: '+e); }
   finally{ if(b) b.disabled=false; }
