@@ -187,6 +187,10 @@ def test_estado_sin_hallazgos_con_copias_al_dia(app, monkeypatch):
     monkeypatch.setattr(R, 'clave_configurada', lambda: True)
     import r2_storage
     monkeypatch.setattr(r2_storage, 'r2_configurado', lambda: True)
+    # El caso sano incluye la proteccion del contenedor acreditada: si no, queda un pendiente
+    # legitimo (dejar la constancia) y el estado NO deberia salir en verde.
+    monkeypatch.setattr(r2_storage, 'r2_proteccion',
+                        lambda: {'versionado': True, 'bloqueo_objetos': True, 'detalle': ''})
     with app.app_context():
         from database import get_db
         conn = get_db()
@@ -490,8 +494,14 @@ def test_no_poder_comprobarlo_NO_se_reporta_como_apagado(app, monkeypatch):
                       "cifrado) VALUES (?,?,'k',9,9,1,1)", (tipo, ahora))
         conn.commit()
         est = R.estado(conn)
-    assert est['ok'] is True, 'no debe haber hallazgos por algo que no se pudo comprobar: %s' % est['hallazgos']
+    # Cambio deliberado (12-ago): ya existe una accion posible -- dejar constancia de que se
+    # verifico en el panel -- asi que "sin comprobar" pasa a ser un pendiente ACCIONABLE. Lo que
+    # sigue prohibido, y es lo que este test protege, es ACUSAR de apagado algo no verificado.
     assert est['proteccion']['versionado'] is None
+    assert est['proteccion']['bloqueo_objetos'] is None
+    texto = ' '.join(est['hallazgos']).lower()
+    assert 'apagado' not in texto, 'acusa de apagado algo que no pudo comprobar: %s' % est['hallazgos']
+    assert 'constancia' in texto, 'deberia pedir la constancia, que es la accion que si existe'
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -552,3 +562,89 @@ def test_el_lector_por_lotes_degrada_sin_romper(app):
         except Exception:
             pass
     os.remove(ruta)
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# Constancia del bloqueo · una DECLARACION no puede presentarse como una comprobacion
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_sin_constancia_ni_deteccion_queda_sin_comprobar(app, monkeypatch):
+    import respaldo_db as R
+    import r2_storage
+    monkeypatch.setattr(R, 'clave_configurada', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_configurado', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_proteccion',
+                        lambda: {'versionado': None, 'bloqueo_objetos': None, 'detalle': ''})
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("DELETE FROM app_settings WHERE clave='r2_bloqueo_confirmado'")
+        conn.commit()
+        est = R.estado(conn)
+    assert est['proteccion']['bloqueo_objetos'] is None
+    assert any('constancia' in h.lower() for h in est['hallazgos'])
+
+
+def test_la_constancia_acredita_pero_dice_que_es_declarada(app, admin_client, monkeypatch):
+    """DIENTES · deja el hallazgo resuelto Y marca el origen, para que nadie lea una declaración
+    como si el sistema lo hubiera comprobado."""
+    import respaldo_db as R
+    import r2_storage
+    monkeypatch.setattr(R, 'clave_configurada', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_configurado', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_proteccion',
+                        lambda: {'versionado': None, 'bloqueo_objetos': None, 'detalle': ''})
+    r = admin_client.post('/api/admin/respaldo-proteccion',
+                          json={'confirmado': True,
+                                'detalle': 'Bucket lock 1825 dias en expediente/ y contingencia/'})
+    assert r.status_code == 200, r.get_data(as_text=True)[:200]
+
+    with app.app_context():
+        from database import get_db
+        est = R.estado(get_db())
+    p = est['proteccion']
+    assert p['bloqueo_objetos'] is True
+    assert p['origen'] == 'declarado', 'una declaración no puede figurar como detección'
+    assert p['confirmado_por'] == 'sebastian'
+    assert 'expediente/' in p['confirmado_detalle']
+    assert not any('constancia' in h.lower() for h in est['hallazgos'])
+
+
+def test_la_constancia_se_puede_retirar(app, admin_client, monkeypatch):
+    """Si alguien apaga el bloqueo, el estado tiene que poder volver a reflejarlo."""
+    import respaldo_db as R
+    import r2_storage
+    monkeypatch.setattr(R, 'clave_configurada', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_configurado', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_proteccion',
+                        lambda: {'versionado': None, 'bloqueo_objetos': None, 'detalle': ''})
+    admin_client.post('/api/admin/respaldo-proteccion',
+                      json={'confirmado': True, 'detalle': 'puesto'})
+    admin_client.post('/api/admin/respaldo-proteccion',
+                      json={'confirmado': False, 'detalle': 'lo apagaron'})
+    with app.app_context():
+        from database import get_db
+        est = R.estado(get_db())
+    assert est['proteccion']['bloqueo_objetos'] is None
+
+
+def test_una_constancia_vacia_no_dice_nada(admin_client):
+    r = admin_client.post('/api/admin/respaldo-proteccion', json={'confirmado': True})
+    assert r.status_code == 400
+
+
+def test_la_deteccion_real_le_GANA_a_la_constancia(app, admin_client, monkeypatch):
+    """Si el proveedor sí lo expone, manda lo medido · la declaración es solo el respaldo."""
+    import respaldo_db as R
+    import r2_storage
+    monkeypatch.setattr(R, 'clave_configurada', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_configurado', lambda: True)
+    admin_client.post('/api/admin/respaldo-proteccion',
+                      json={'confirmado': True, 'detalle': 'declarado a mano'})
+    monkeypatch.setattr(r2_storage, 'r2_proteccion',
+                        lambda: {'versionado': True, 'bloqueo_objetos': True, 'detalle': ''})
+    with app.app_context():
+        from database import get_db
+        est = R.estado(get_db())
+    assert est['proteccion']['origen'] == 'detectado'

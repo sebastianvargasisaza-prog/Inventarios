@@ -421,6 +421,43 @@ def admin_respaldo_ahora():
                     "mensaje": "La copia se está generando. Actualizá en un par de minutos."})
 
 
+@bp.route("/api/admin/respaldo-proteccion", methods=["POST"])
+def admin_respaldo_proteccion():
+    """Deja constancia de que el bloqueo del contenedor se verificó en el panel del proveedor.
+
+    Cloudflare R2 expone su bloqueo por una extensión propia, no por la API estándar, así que la
+    consulta automática no lo ve. Sin esto la pantalla se quedaría en ámbar para siempre después
+    de que alguien hiciera el trabajo bien, y una alerta que no cambia cuando arreglás la cosa
+    enseña a ignorarla.
+
+    Es una DECLARACIÓN, no una detección, y así se muestra: con quién la firmó y cuándo.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import json as _json
+    d = request.get_json(silent=True) or {}
+    detalle = (d.get("detalle") or "").strip()
+    if not detalle:
+        return jsonify({"error": "Escribí qué verificaste (reglas y prefijos), o la constancia "
+                                 "no dice nada"}), 400
+    if d.get("confirmado") is not True:
+        # Retirar la constancia devuelve la pantalla a "sin comprobar", que es lo correcto: si
+        # alguien apagó el bloqueo, el estado tiene que volver a reflejarlo.
+        valor = ""
+    else:
+        valor = _json.dumps({"por": u, "at": _hoy_col_str(), "detalle": detalle[:400]},
+                            ensure_ascii=False)
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("INSERT INTO app_settings (clave, valor) VALUES ('r2_bloqueo_confirmado', ?) "
+              "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor", (valor,))
+    audit_log(c, usuario=u, accion="R2_BLOQUEO_CONSTANCIA", tabla="app_settings",
+              registro_id="r2_bloqueo_confirmado", detalle=detalle[:200])
+    conn.commit()
+    return jsonify({"ok": True, "confirmado": bool(valor)})
+
+
 @bp.route("/api/admin/respaldo-verificar", methods=["POST"])
 def admin_respaldo_verificar():
     """Descarga una copia, la descifra y CUENTA las filas contra su manifiesto.
@@ -512,9 +549,17 @@ function mb(n){ if(!n) return '-'; var m=n/1048576; return m<1 ? (n/1024).toFixe
 // distinto. Mostrarlas igual haria que la pantalla acuse una falla que no verifico.
 function prot(p){
   if(!p) return '<span class="mut">sin datos</span>';
-  if(p.versionado===true && p.bloqueo_objetos===true) return '<span class="ok">activo</span>';
   if(p.versionado===false || p.bloqueo_objetos===false) return '<span class="err">apagado</span>';
+  if(p.bloqueo_objetos===true) return '<span class="ok">activo</span>';
   return '<span class="warn">sin comprobar</span>';
+}
+// Se dice de DONDE sale el verde: comprobado por el sistema, o declarado por una persona. No es
+// lo mismo, y presentarlos igual convertiria una constancia en una comprobacion.
+function protPie(p){
+  if(!p) return 'versionado y bloqueo de objetos';
+  if(p.origen==='detectado') return 'comprobado por el sistema';
+  if(p.origen==='declarado') return 'declarado por '+esc(p.confirmado_por||'')+' el '+esc(p.confirmado_at||'');
+  return '<a href="#" onclick="declarar();return false" style="color:var(--cx-primary-text,#6d28d9)">dejar constancia de que lo verificaste</a>';
 }
 async function tok(){ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); var d=await r.json(); return d.csrf_token; }
 async function cargar(){
@@ -532,7 +577,7 @@ async function cargar(){
     '<div class="card"><div class="k">Cifrado</div><div class="v">'+(d.cifrado_configurado?'<span class="ok">activo</span>':'<span class="err">sin clave</span>')+'</div><div class="mut">BACKUP_CIPHER_KEY</div></div>'+
     '<div class="card"><div class="k">Almacenamiento</div><div class="v">'+(d.almacenamiento_configurado?'<span class="ok">conectado</span>':'<span class="err">sin configurar</span>')+// La entidad HTML NO puede pasar por esc(): la escapa y el usuario ve "&nbsp;" escrito.
 '</div><div class="mut">'+(d.en_curso?esc('generando '+d.en_curso+'...'):'&nbsp;')+'</div></div>'+
-    '<div class="card"><div class="k">Archivo inmutable</div><div class="v">'+prot(d.proteccion)+'</div><div class="mut">versionado y bloqueo de objetos</div></div>';
+    '<div class="card"><div class="k">Archivo inmutable</div><div class="v">'+prot(d.proteccion)+'</div><div class="mut">'+protPie(d.proteccion)+'</div></div>';
   var tb=document.getElementById('tb');
   if(!d.copias||!d.copias.length){ tb.innerHTML='<tr><td colspan="4" class="mut">No hay ninguna copia guardada todav&iacute;a.</td></tr>'; return; }
   tb.innerHTML=d.copias.map(function(c){
@@ -560,6 +605,19 @@ async function verificar(){
     out.innerHTML='<div class="hall" style="background:'+(d.ok?'var(--cx-success-pale,#f0fdf4)':'var(--cx-danger-pale,#fef2f2)')+';border-color:'+(d.ok?'var(--cx-success-soft,#bbf7d0)':'var(--cx-danger-soft,#fecaca)')+'"><b class="'+(d.ok?'ok':'err')+'">'+(d.ok?'La copia se abri&oacute; y est&aacute; completa':'La copia NO super&oacute; la verificaci&oacute;n')+'</b><div class="mut">'+(d.ok?(Number(d.filas||0).toLocaleString('es-CO')+' filas en '+d.tablas+' tablas &middot; '+(d.cifrado?'cifrada':'sin cifrar')+' &middot; '+d.segundos+'s'):esc(d.motivo||(d.n_diferencias+' tablas no coinciden con el manifiesto')))+'</div></div>';
   }catch(e){ out.innerHTML='<div class="hall"><b class="err">Error de red</b><div class="mut">'+esc(String(e))+'</div></div>'; }
   b.disabled=false; b.textContent='Verificar la última';
+}
+async function declarar(){
+  var q = prompt('Escribi que verificaste en el panel del proveedor (reglas y prefijos).',
+                 'Bucket lock 1825 dias en expediente/ y contingencia/');
+  if(!q) return;
+  try{
+    var r=await fetch('/api/admin/respaldo-proteccion',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':await tok()},
+      body:JSON.stringify({confirmado:true,detalle:q})});
+    var d=await r.json();
+    if(!r.ok){ alert('No se pudo: '+(d.error||'')); return; }
+    cargar();
+  }catch(e){ alert('Error de red: '+e); }
 }
 cargar();
 </script></body></html>""", mimetype="text/html")

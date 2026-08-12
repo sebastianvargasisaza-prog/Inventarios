@@ -524,6 +524,31 @@ def estado(conn):
         prot = r2_proteccion()
     except Exception as e:
         prot = {'versionado': None, 'bloqueo_objetos': None, 'detalle': str(e)[:120]}
+
+    # Si el proveedor NO expone la consulta, la protección se acredita con una constancia: quién
+    # la verificó en el panel y cuándo. No es lo mismo que detectarla, y por eso se dice cuál de
+    # las dos cosas es (`origen`).
+    #
+    # La alternativa era dejar la tarjeta en ámbar para siempre después de que alguien hiciera el
+    # trabajo bien, y eso es peor que no tenerla: una pantalla que no cambia cuando arreglás la
+    # cosa enseña a ignorarla (M129).
+    if prot.get('bloqueo_objetos') is None:
+        try:
+            r = c.execute("SELECT valor FROM app_settings WHERE clave='r2_bloqueo_confirmado'"
+                          ).fetchone()
+            if r and (r[0] or '').strip():
+                import json as _j
+                d = _j.loads(r[0])
+                prot['bloqueo_objetos'] = True
+                prot['origen'] = 'declarado'
+                prot['confirmado_por'] = d.get('por', '')
+                prot['confirmado_at'] = d.get('at', '')
+                prot['confirmado_detalle'] = d.get('detalle', '')
+        except Exception as e:
+            log.info('no pude leer la constancia de bloqueo: %s', e)
+    else:
+        prot['origen'] = 'detectado'
+
     out['proteccion'] = prot
     if prot.get('versionado') is False:
         out['hallazgos'].append('El versionado del contenedor está apagado: un archivo borrado '
@@ -531,6 +556,10 @@ def estado(conn):
     if prot.get('bloqueo_objetos') is False:
         out['hallazgos'].append('El bloqueo de objetos está apagado: la palabra inmutable del '
                                 'ASG-PRO-014 describe hoy una intención y no un control.')
+    elif prot.get('bloqueo_objetos') is None:
+        out['hallazgos'].append('No hay constancia de que el bloqueo de objetos esté activo en el '
+                                'contenedor: confirmarlo desde esta pantalla tras verificarlo en '
+                                'el panel del proveedor.')
 
     hoy = _hoy_col()
     sem = out['ultimo'].get('semanal')
