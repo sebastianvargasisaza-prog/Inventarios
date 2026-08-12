@@ -144,3 +144,43 @@ def test_no_confunde_un_tono_contenido_en_otra_palabra(app, planta_client):
 
 def test_requiere_sesion(client):
     assert client.get('/api/mee/tonos-diagnostico').status_code in (401, 302)
+
+
+def test_un_TAMANO_no_es_un_tono(app, planta_client):
+    """DIENTES · Shopify mezcla tono y tamaño en el mismo campo de variante.
+
+    Con los sueros ("10 ml" / "30 ml") eso hacía aparecer NUEVE productos como multitono cuando
+    los reales son dos. Y el daño no es cosmético: buscar un envase que "nombre el tono 30ML"
+    empareja con todos los frascos de 30 ml de cualquier producto (M19/M137).
+    """
+    _limpiar(app)
+    for t in ('10 ml', '30 ml'):
+        _sku(app, 'TONO TEST TAMANOS', 'TAM' + t.replace(' ', ''), t)
+    d = planta_client.get('/api/mee/tonos-diagnostico?producto=TONO TEST TAMANOS').get_json()
+    p = [x for x in d['productos'] if 'TONO TEST TAMANOS' in x['producto']][0]
+    assert p['tonos_n'] == 0, 'contó tamaños como tonos: %s' % p['tonos']
+    assert p['tamanos'] == ['10 ml', '30 ml']
+    assert 'TAMAÑO' in p['motivo']
+    assert p not in d['multitono'], 'un producto de dos tamaños no es multitono'
+
+
+def test_un_producto_con_tono_Y_tamano_conserva_solo_el_tono(app, planta_client):
+    """El caso real del lip serum: Shopify le manda "Malva", "Merlot" ... y también "30mL"."""
+    _limpiar(app)
+    for t in ('Malva', 'Merlot', '30mL'):
+        _sku(app, 'TONO TEST MIXTO', 'MIX' + t, t)
+        if t != '30mL':
+            _mee(app, 'TT-ENV-' + t.upper(), 'MIXTOTEST GLOSSX ' + t + ' 10ml', 'Frasco')
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        conn.cursor().execute(
+            "INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, "
+            "volumen_ml, envase_codigo, activo, es_default) "
+            "VALUES ('TONO TEST MIXTO','V10','10 ml',10,'TT-ENV-MALVA',1,1)")
+        conn.commit()
+    d = planta_client.get('/api/mee/tonos-diagnostico?producto=TONO TEST MIXTO').get_json()
+    p = [x for x in d['productos'] if 'TONO TEST MIXTO' in x['producto']][0]
+    assert sorted(p['tonos']) == ['Malva', 'Merlot'], p['tonos']
+    assert p['tamanos'] == ['30mL']
+    assert p['lleva_el_tono'] == 'envase'

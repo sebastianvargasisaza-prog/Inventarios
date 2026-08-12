@@ -17510,7 +17510,18 @@ _MEE_CATS = {
     # salia porque `Gotero` es una CATEGORIA PROPIA del maestro y esta columna solo ofrecia `TAPA`:
     # los tres goteros existian y la pantalla no los mostraba, que desde la silla del usuario es lo
     # mismo que no tenerlos (M121).
-    'envase':   ('FRASCO', 'ENVASE', 'CONTORNO', 'SERIGRAFIA', 'IMPRESION', 'TAMPOGRAFIA'),
+    #
+    # Y volvio a pasar con los IMPRESOS (12-ago): la lista decia 'IMPRESION' y el maestro dice
+    # 'Impreso'. Ninguna de las dos comparaciones ('empieza por' / 'contiene') las une, asi que
+    # los OCHO frascos serigrafiados -- los que de verdad van a la linea, con 634 unidades el
+    # gris -- eran invisibles: la fila del lip serum mostraba 'MEE-IMP-001 (no esta en el
+    # maestro)' teniendo 301 unidades en bodega.
+    #
+    # Por eso ademas del valor se agrego el guard de abajo: una categoria que ningun componente
+    # reclama deja una familia entera fuera de la pantalla, y eso no da error -- da una celda
+    # vacia que el usuario no puede llenar.
+    'envase':   ('FRASCO', 'ENVASE', 'CONTORNO', 'SERIGRAFIA', 'IMPRESION', 'IMPRESO',
+                 'TAMPOGRAFIA'),
     'tapa':     ('TAPA', 'GOTERO', 'VALVULA', 'DOSIFICADOR', 'TAPON', 'SPRAY', 'BOMBA', 'PUMP'),
     'etiqueta': ('ETIQUETA', 'ROTULO', 'STICKER'),
     'caja':     ('PLEGADIZA', 'PLEGABLE', 'CAJA', 'ESTUCHE'),
@@ -17845,10 +17856,32 @@ def mee_normalizar_tabla():
         if f['bloquea']:
             _bloquean += 1
 
+    # ── categorias que NINGUNA columna reclama ────────────────────────────────────────────────
+    #
+    # Una categoria fuera de las listas deja una familia entera invisible, y no da error: da una
+    # celda vacia que el usuario no puede llenar. Ya paso dos veces (los goteros y los impresos),
+    # asi que en vez de confiar en que la lista este completa, la pantalla DICE lo que quedo
+    # afuera. Una lista escrita a mano se pudre; una que se compara contra los datos, no (M122).
+    _sin_clasificar = []
+    try:
+        for (_cg, _n) in c.execute(
+                "SELECT COALESCE(categoria,''), COUNT(*) FROM maestro_mee "
+                "WHERE COALESCE(estado,'') NOT IN ('Archivado') GROUP BY COALESCE(categoria,'')"
+                ).fetchall():
+            _cn2 = _cat_norm(_cg)
+            if not _cn2:
+                continue
+            if not any(_cn2.startswith(x) or x in _cn2
+                       for cats in _MEE_CATS.values() for x in cats):
+                _sin_clasificar.append({'categoria': _cg, 'codigos': _n})
+    except Exception as _e:
+        log.warning('normalizar-tabla · categorías sin clasificar: %s', _e)
+
     return jsonify({
         'ok': True,
         'columnas': ['envase', 'tapa', 'etiqueta', 'caja'],
         'catalogo': catalogo,
+        'categorias_sin_clasificar': _sin_clasificar,
         'filas': filas,
         'resumen': {
             'filas': len(filas),
@@ -30915,9 +30948,28 @@ def mee_tonos_diagnostico():
         t = _cat_norm(texto or '')
         return any(w in t for w in toks)
 
+    # ── un TAMAÑO no es un tono ───────────────────────────────────────────────────────────────
+    #
+    # Shopify usa el mismo campo de variante para las dos cosas: el lip serum trae "Malva" y
+    # "30mL" mezclados, y los sueros traen sólo "10 ml" / "30 ml". Contarlos juntos hacía que
+    # NUEVE productos aparecieran como multitono cuando los reales son dos, y una lista con ruido
+    # deja de leerse justo el día que importa (M129).
+    #
+    # Además el daño no es sólo cosmético: buscar un envase que "nombre el tono 30ML" empareja con
+    # TODOS los frascos de 30 ml de cualquier producto, y de ahí a ponerle a un producto el envase
+    # de otro hay un paso (M19/M137).
+    import re as _re_tam
+    _RE_TAMANO = _re_tam.compile(r'^\s*\d+([.,]\d+)?\s*(ml|g|gr|kg|l|oz|un|uds?)\s*$',
+                                 _re_tam.I)
+
+    def _es_tamano(x):
+        return bool(_RE_TAMANO.match((x or '').strip()))
+
     salida = []
     for pn_norm, vs in sorted(por_prod.items()):
-        tonos = sorted({v['tono'] for v in vs if (v['tono'] or '').strip()})
+        _etiquetas = {v['tono'] for v in vs if (v['tono'] or '').strip()}
+        tamanos = sorted({t for t in _etiquetas if _es_tamano(t)})
+        tonos = sorted(_etiquetas - set(tamanos))
         nombre = vs[0]['producto']
         # ¿En qué componente aparecen los tonos? Se CUENTA, no se supone.
         # ── de qué FAMILIA son los componentes de este producto ──────────────────────────────
@@ -30969,6 +31021,10 @@ def mee_tonos_diagnostico():
         motivo = ''
         if not vs:
             motivo = 'Shopify no tiene ninguna variante mapeada a este producto.'
+        elif not tonos and tamanos:
+            motivo = ('Las %d variantes de Shopify son de TAMAÑO (%s), no de tono. Ese eje ya lo '
+                      'maneja la presentación por volumen: este producto no es multitono.'
+                      % (len(vs), ', '.join(tamanos)))
         elif not tonos:
             motivo = ('Las %d variantes de Shopify no traen el nombre del tono. Lo captura el '
                       'trabajo que sincroniza el catálogo: hasta que corra, no hay tono que '
@@ -30982,6 +31038,9 @@ def mee_tonos_diagnostico():
         salida.append({
             'producto': nombre, 'variantes': len(vs), 'tonos': tonos,
             'tonos_n': len(tonos),
+            # Se declaran aparte: son variantes reales del producto, pero de TAMAÑO, y ese eje ya
+            # lo maneja la presentación por volumen. Mezclarlos era lo que inflaba la lista.
+            'tamanos': tamanos,
             'lleva_el_tono': lleva,
             'coincidencias': {'envase': conteo['envase'], 'etiqueta': conteo['etiqueta']},
             'detalle': detalle,

@@ -123,3 +123,54 @@ def test_la_pantalla_muestra_el_contador_y_el_filtro(planta_client):
     assert 'frenan producci' in h
     assert 'btn-bloquean' in h
     assert 'SOLO_BLOQUEAN' in h
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# Una categoría fuera de la lista deja una FAMILIA ENTERA invisible
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+def _mee(app, codigo, desc, categoria):
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("DELETE FROM maestro_mee WHERE codigo=?", (codigo,))
+        c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, stock_actual) "
+                  "VALUES (?,?,?,0)", (codigo, desc, categoria))
+        conn.commit()
+
+
+def test_los_frascos_IMPRESOS_salen_en_la_columna_envase(app, planta_client):
+    """DIENTES · la categoría del maestro es 'Impreso' y la lista decía 'IMPRESION'.
+
+    Ni 'empieza por' ni 'contiene' unen esas dos palabras, así que los ocho frascos serigrafiados
+    -- los que de verdad van a la línea -- eran invisibles: la fila del lip serum mostraba
+    "MEE-IMP-001 (no está en el maestro)" teniendo 301 unidades en bodega. No da error: da una
+    celda vacía que el usuario no puede llenar (M121/M179).
+    """
+    _mee(app, 'IMPTEST-001', 'LIPS GLOSS GRIS CON SERIGRAFIA', 'Impreso')
+    d = planta_client.get('/api/mee/normalizar-tabla').get_json()
+    codigos = {x['codigo'] for x in d['catalogo'].get('envase', [])}
+    assert 'IMPTEST-001' in codigos, (
+        'un envase con categoría "Impreso" no aparece para elegir · la familia entera queda '
+        'invisible')
+
+
+def test_una_categoria_que_nadie_reclama_se_DECLARA(app, planta_client):
+    """El guard que evita la tercera vez: en lugar de confiar en que la lista esté completa, la
+    pantalla dice qué categorías del maestro quedaron sin columna."""
+    _mee(app, 'RARO-001', 'COMPONENTE DE UNA FAMILIA NUEVA', 'CategoriaQueNadieReclama')
+    d = planta_client.get('/api/mee/normalizar-tabla').get_json()
+    sin = {x['categoria'] for x in d.get('categorias_sin_clasificar', [])}
+    assert 'CategoriaQueNadieReclama' in sin, (
+        'una categoría fuera de las listas no se declaró: la próxima familia invisible pasaría '
+        'igual de desapercibida')
+
+
+def test_una_categoria_conocida_NO_se_reporta(app, planta_client):
+    """Y el caso sano: sin esto, el guard podría reportar todo y volverse ruido."""
+    _mee(app, 'FRTEST-001', 'FRASCO DE PRUEBA 30ml', 'Frasco')
+    d = planta_client.get('/api/mee/normalizar-tabla').get_json()
+    sin = {x['categoria'] for x in d.get('categorias_sin_clasificar', [])}
+    assert 'Frasco' not in sin
+    assert 'Impreso' not in sin, 'Impreso ya está reclamado por la columna envase'
