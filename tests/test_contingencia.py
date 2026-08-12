@@ -265,3 +265,53 @@ def test_la_pantalla_esta_enlazada():
     sin_comentarios = re.sub(r'<!--.*?-->', '', s, flags=re.S)
     assert re.search(r'''href=["']/planta/contingencia["']''', sin_comentarios), \
         'la pantalla de contingencia no está enlazada desde Planta'
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# El paquete imprimible (tarea B-12) · tiene que existir ANTES de la falla
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_el_paquete_trae_los_formatos_del_sgd(planta_client):
+    r = planta_client.get('/planta/contingencia/paquete')
+    assert r.status_code == 200
+    h = r.get_data(as_text=True)
+    for formato in ('COC-PRO-002-F01', 'PRD-PRO-001-F08', 'COC-PRO-002-F07',
+                    'PRD-PRO-002-F02', 'PRD-PRO-001-F02'):
+        assert formato in h, 'falta el formato %s del paquete' % formato
+
+
+def test_el_despeje_impreso_dice_lo_MISMO_que_la_pantalla(app, planta_client):
+    """DIENTES · los 12 ítems salen de la constante canónica, no de una copia.
+
+    Si el papel trajera otra lista, el operario verificaría una cosa en el piso y el registro
+    cargado después diría otra, y esa diferencia no la detecta nadie (M1: un solo resolvedor).
+    """
+    with app.app_context():
+        from blueprints.brd import DESPEJE_LINEA_ITEMS
+    h = planta_client.get('/planta/contingencia/paquete').get_data(as_text=True)
+    limpio = h.replace('&amp;', '&').replace('&lt;', '<')
+    faltan = [i for i in DESPEJE_LINEA_ITEMS if i.split('?')[0][:38] not in limpio]
+    assert not faltan, 'el paquete no trae estos ítems del despeje: %s' % faltan[:2]
+    assert len(DESPEJE_LINEA_ITEMS) == 12
+
+
+def test_el_paquete_sobrevive_a_la_impresora(planta_client):
+    """M123 · sin `print-color-adjust: exact` el navegador no imprime fondos, y un borde claro
+    sale invisible en térmica: el formato llega al piso sin sus divisiones."""
+    h = planta_client.get('/planta/contingencia/paquete').get_data(as_text=True)
+    assert 'print-color-adjust:exact' in h.replace(' ', ''), 'los fondos no se van a imprimir'
+    assert '@media print' in h
+    assert '#000' in h, 'los bordes de impresión tienen que ir en negro explícito'
+
+
+def test_el_paquete_esta_enlazado_desde_la_pantalla(planta_client):
+    """Un paquete que hay que saber que existe no se imprime, y el día de la falla ya es tarde."""
+    h = planta_client.get('/planta/contingencia').get_data(as_text=True)
+    import re
+    sin_comentarios = re.sub(r'<!--.*?-->', '', h, flags=re.S)
+    assert '/planta/contingencia/paquete' in sin_comentarios
+
+
+def test_el_paquete_no_se_ve_sin_sesion(client):
+    r = client.get('/planta/contingencia/paquete')
+    assert r.status_code in (302, 401)

@@ -476,6 +476,22 @@ def estado(conn):
         out['hallazgos'].append('Falta configurar BACKUP_CIPHER_KEY: las copias se están '
                                 'guardando sin cifrar.')
 
+    # Tarea B-03 · la inmutabilidad del archivo depende del contenedor, no del sistema. Se reporta
+    # sólo lo COMPROBADO: `None` es "no pude determinarlo" y no se convierte en un hallazgo, o la
+    # pantalla gritaría por una API que el proveedor puede no exponer (M129).
+    try:
+        from r2_storage import r2_proteccion
+        prot = r2_proteccion()
+    except Exception as e:
+        prot = {'versionado': None, 'bloqueo_objetos': None, 'detalle': str(e)[:120]}
+    out['proteccion'] = prot
+    if prot.get('versionado') is False:
+        out['hallazgos'].append('El versionado del contenedor está apagado: un archivo borrado '
+                                'por error no se puede recuperar.')
+    if prot.get('bloqueo_objetos') is False:
+        out['hallazgos'].append('El bloqueo de objetos está apagado: la palabra inmutable del '
+                                'ASG-PRO-014 describe hoy una intención y no un control.')
+
     hoy = _hoy_col()
     sem = out['ultimo'].get('semanal')
     if not sem:

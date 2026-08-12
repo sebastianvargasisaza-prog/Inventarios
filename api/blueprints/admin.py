@@ -497,6 +497,14 @@ Es la tarea B-01 del ASG-PRO-014 &middot; esta pantalla es la evidencia del form
 <script>
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function mb(n){ if(!n) return '-'; var m=n/1048576; return m<1 ? (n/1024).toFixed(0)+' KB' : m.toFixed(1)+' MB'; }
+// null NO es false: "no pude comprobarlo" y "esta apagado" son cosas distintas y se pintan
+// distinto. Mostrarlas igual haria que la pantalla acuse una falla que no verifico.
+function prot(p){
+  if(!p) return '<span class="mut">sin datos</span>';
+  if(p.versionado===true && p.bloqueo_objetos===true) return '<span class="ok">activo</span>';
+  if(p.versionado===false || p.bloqueo_objetos===false) return '<span class="err">apagado</span>';
+  return '<span class="warn">sin comprobar</span>';
+}
 async function tok(){ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); var d=await r.json(); return d.csrf_token; }
 async function cargar(){
   var r=await fetch('/api/admin/respaldo-estado',{credentials:'same-origin'});
@@ -511,7 +519,8 @@ async function cargar(){
     '<div class="card"><div class="k">&Uacute;ltima semanal</div><div class="v">'+(s?esc(String(s.fecha).slice(0,16).replace('T',' ')):'<span class="err">ninguna</span>')+'</div><div class="mut">'+(s?mb(s.bytes)+' &middot; '+Number(s.filas||0).toLocaleString('es-CO')+' filas':'')+'</div></div>'+
     '<div class="card"><div class="k">&Uacute;ltima mensual</div><div class="v">'+(m?esc(String(m.fecha).slice(0,16).replace('T',' ')):'<span class="err">ninguna</span>')+'</div><div class="mut">'+(m?mb(m.bytes)+' &middot; '+Number(m.filas||0).toLocaleString('es-CO')+' filas':'')+'</div></div>'+
     '<div class="card"><div class="k">Cifrado</div><div class="v">'+(d.cifrado_configurado?'<span class="ok">activo</span>':'<span class="err">sin clave</span>')+'</div><div class="mut">BACKUP_CIPHER_KEY</div></div>'+
-    '<div class="card"><div class="k">Almacenamiento</div><div class="v">'+(d.almacenamiento_configurado?'<span class="ok">conectado</span>':'<span class="err">sin configurar</span>')+'</div><div class="mut">'+esc(d.en_curso?('generando '+d.en_curso+'...'):'&nbsp;')+'</div></div>';
+    '<div class="card"><div class="k">Almacenamiento</div><div class="v">'+(d.almacenamiento_configurado?'<span class="ok">conectado</span>':'<span class="err">sin configurar</span>')+'</div><div class="mut">'+esc(d.en_curso?('generando '+d.en_curso+'...'):'&nbsp;')+'</div></div>'+
+    '<div class="card"><div class="k">Archivo inmutable</div><div class="v">'+prot(d.proteccion)+'</div><div class="mut">versionado y bloqueo de objetos</div></div>';
   var tb=document.getElementById('tb');
   if(!d.copias||!d.copias.length){ tb.innerHTML='<tr><td colspan="4" class="mut">No hay ninguna copia guardada todav&iacute;a.</td></tr>'; return; }
   tb.innerHTML=d.copias.map(function(c){

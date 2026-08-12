@@ -439,3 +439,56 @@ def test_ida_y_vuelta_completa_a_una_base_nueva(app, monkeypatch):
             os.remove(p)
         except OSError:
             pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# Proteccion del contenedor (tarea B-03) · "no pude comprobarlo" NO es "esta apagado"
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_proteccion_apagada_es_hallazgo(app, monkeypatch):
+    """DIENTES · con el versionado y el bloqueo apagados, el estado NO puede salir en verde."""
+    import respaldo_db as R
+    import r2_storage
+    monkeypatch.setattr(R, 'clave_configurada', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_configurado', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_proteccion',
+                        lambda: {'versionado': False, 'bloqueo_objetos': False, 'detalle': ''})
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("DELETE FROM respaldo_log")
+        ahora = R._hoy_col().isoformat()
+        for tipo in ('semanal', 'mensual'):
+            c.execute("INSERT INTO respaldo_log (tipo, fecha, r2_key, bytes, filas, completo, "
+                      "cifrado) VALUES (?,?,'k',9,9,1,1)", (tipo, ahora))
+        conn.commit()
+        est = R.estado(conn)
+    assert est['ok'] is False
+    texto = ' '.join(est['hallazgos']).lower()
+    assert 'versionado' in texto and 'inmutable' in texto
+
+
+def test_no_poder_comprobarlo_NO_se_reporta_como_apagado(app, monkeypatch):
+    """El caso que hace legítimo el guard: si el proveedor no expone la consulta, la pantalla
+    NO puede acusar una falla que no verificó · una alerta que suena sin motivo deja de mirarse."""
+    import respaldo_db as R
+    import r2_storage
+    monkeypatch.setattr(R, 'clave_configurada', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_configurado', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_proteccion',
+                        lambda: {'versionado': None, 'bloqueo_objetos': None,
+                                 'detalle': 'no pude consultarlo'})
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("DELETE FROM respaldo_log")
+        ahora = R._hoy_col().isoformat()
+        for tipo in ('semanal', 'mensual'):
+            c.execute("INSERT INTO respaldo_log (tipo, fecha, r2_key, bytes, filas, completo, "
+                      "cifrado) VALUES (?,?,'k',9,9,1,1)", (tipo, ahora))
+        conn.commit()
+        est = R.estado(conn)
+    assert est['ok'] is True, 'no debe haber hallazgos por algo que no se pudo comprobar: %s' % est['hallazgos']
+    assert est['proteccion']['versionado'] is None

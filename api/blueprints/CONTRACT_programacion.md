@@ -1318,3 +1318,23 @@ pantalla `GET /planta/contingencia` (enlazada desde la barra principal de Planta
 
 Tests: `tests/test_contingencia.py` (en el gate), incluidos los dos bordes de permiso y el guard
 de que el cliente no puede dictar la fecha de carga.
+
+### INV-12 · El paquete de contingencia usa la MISMA lista que el legajo (12-ago-2026)
+
+Tarea B-12 (numeral 5.6.1 del ASG-PRO-014). `GET /planta/contingencia/paquete` imprime los seis
+formatos en blanco que la planta llena a mano cuando no hay energía ni conexión.
+
+**La invariante:** los 12 ítems del despeje salen de `brd.DESPEJE_LINEA_ITEMS`, la misma constante
+que usa el legajo electrónico. Si el papel trajera otra lista, el operario verificaría una cosa en
+el piso y el registro cargado después diría otra, y esa diferencia no la detecta nadie. Igual los
+campos de cada formato: son los que exige el COC-LMA-003 para el registro que reemplazan, porque
+un formato con menos campos produce un papel que no se puede cargar completo.
+
+Imprimible de verdad (M123): `print-color-adjust: exact` y bordes en negro explícito dentro de
+`@media print`. Sin eso el navegador no pinta los fondos y el formato llega al piso sin sus
+divisiones, que es exactamente lo que ya se reportó con los rótulos.
+
+Enlazado desde `/planta/contingencia`, que es donde se entra a cargar: el paquete tiene que estar
+impreso ANTES de la falla, porque el día de la contingencia no hay con qué imprimirlo.
+
+Tests: `tests/test_contingencia.py` (en el gate).

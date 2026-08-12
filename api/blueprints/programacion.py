@@ -30354,6 +30354,15 @@ cu&aacute;ndo se carg&oacute; y marca el registro como contingencia. Numeral 5.6
     <h2>Cargar un registro</h2>
     <div class="hint">Lo marcado con <span class="req">*</span> es obligatorio. Si no pudiste sacarle
     foto al papel, cargalo igual: queda como pendiente de soporte y no se pierde.</div>
+    <!-- El paquete tiene que estar impreso ANTES de la falla: el dia de la contingencia no hay
+         con que imprimirlo. Por eso el enlace vive aca, donde se entra a cargar, y no escondido
+         en una pantalla de configuracion. -->
+    <a href="/planta/contingencia/paquete" target="_blank" rel="noopener"
+      style="display:block;text-align:center;background:var(--cx-bg-alt, #f4f4f5);color:var(--cx-text, #1c1917);border:1px dashed var(--cx-border, #d6d3d1);border-radius:11px;padding:11px;font-size:12.5px;font-weight:700;text-decoration:none;margin-bottom:4px">
+      &#128424; Imprimir el paquete de formatos en blanco
+    </a>
+    <div class="hint" style="margin-bottom:16px">Imprimilo y dejalo en cada &aacute;rea <b>antes</b>
+    de necesitarlo: el d&iacute;a que se va la luz no hay con qu&eacute; imprimirlo.</div>
     <form id="frm" onsubmit="return false">
       <label>Tipo de registro <span class="req">*</span></label>
       <select id="tipo"></select>
@@ -30456,3 +30465,236 @@ async function enviar(){
 }
 cargar();
 </script></body></html>""", mimetype='text/html')
+
+
+# ── Paquete de contingencia imprimible (tarea B-12 · numeral 5.6.1 del ASG-PRO-014) ───────────
+#
+# Los formatos en blanco que la planta llena a mano cuando no hay energía ni conexión. Tiene que
+# existir ANTES de la falla: el día de la contingencia no hay con qué imprimirlo, así que se
+# imprime, se guarda en cada área y se repone cada vez que se usa.
+#
+# Los campos son los mismos que exige el COC-LMA-003 para el registro electrónico que reemplazan.
+# Un formato de contingencia con menos campos produce un papel que después no se puede cargar
+# completo, y el hueco reaparece en el expediente por otro camino.
+
+def _ctg_campo(etiqueta, ancho='1fr', alto=26):
+    return ('<div style="flex:%s;min-width:0"><span class="et">%s</span>'
+            '<div class="ln" style="height:%dpx"></div></div>' % (ancho, etiqueta, alto))
+
+
+def _ctg_fila(*campos):
+    return '<div class="fila">' + ''.join(campos) + '</div>'
+
+
+def _ctg_hoja(titulo, formato, cuerpo, logo):
+    """Una hoja del paquete · encabezado institucional + el formato + las firmas."""
+    return (
+        '<section class="hoja">'
+        '<table class="enc"><tr>'
+        '<td class="logo"><img src="' + logo + '" alt=""></td>'
+        '<td class="tit"><b>ESPAGIRIA LABORATORIO S.A.S.</b><br>' + titulo + '</td>'
+        '<td class="cod"><b>' + formato + '</b><br>Registro en contingencia<br>'
+        'ASG-PRO-014 &middot; 5.6.2</td>'
+        '</tr></table>'
+        '<div class="banda">REGISTRO DILIGENCIADO EN CONTINGENCIA &middot; '
+        'anotar la fecha y hora REALES de cada actividad</div>'
+        + cuerpo +
+        '<div class="fila firmas">'
+        '<div style="flex:1"><span class="et">Ejecutó (nombre y firma)</span><div class="ln" style="height:38px"></div></div>'
+        '<div style="flex:1"><span class="et">Verificó (nombre y firma)</span><div class="ln" style="height:38px"></div></div>'
+        '<div style="flex:.6"><span class="et">Fecha</span><div class="ln" style="height:38px"></div></div>'
+        '</div>'
+        '<div class="pie">Cargar en EOS dentro de las 24 horas siguientes al restablecimiento '
+        '(Planta &rarr; Contingencia) y conservar este original firmado.</div>'
+        '</section>')
+
+
+@bp.route('/planta/contingencia/paquete', methods=['GET'])
+def contingencia_paquete():
+    """Los formatos en blanco para llenar a mano durante una contingencia."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/planta/contingencia/paquete')
+    conn = get_db()
+    try:
+        from blueprints.inventario import _rotulo_logo_src
+        logo = _rotulo_logo_src(conn.cursor())
+    except Exception:
+        logo = '/static/logos/espagiria.svg'
+
+    # Los 12 items del despeje salen de la MISMA constante que usa el legajo electrónico. Si el
+    # papel trajera otra lista, el registro cargado después no correspondería con lo verificado
+    # en el piso, y esa diferencia no la detecta nadie (M1: un solo resolvedor por entidad).
+    try:
+        from blueprints.brd import DESPEJE_LINEA_ITEMS as _DESPEJE
+    except Exception:
+        _DESPEJE = []
+
+    hojas = []
+
+    # 1 · Recepción de material
+    hojas.append(_ctg_hoja(
+        'Recepci&oacute;n de material', 'COC-PRO-002-F01',
+        _ctg_fila(_ctg_campo('Fecha de recepci&oacute;n'), _ctg_campo('Hora'),
+                  _ctg_campo('Orden de compra')) +
+        _ctg_fila(_ctg_campo('Proveedor', '2fr'),
+                  _ctg_campo('Tipo (MP / ME / MEMP)')) +
+        _ctg_fila(_ctg_campo('C&oacute;digo interno'), _ctg_campo('Nombre del material', '2fr')) +
+        _ctg_fila(_ctg_campo('Nombre INCI', '2fr'), _ctg_campo('Lote del proveedor')) +
+        _ctg_fila(_ctg_campo('Cantidad'), _ctg_campo('Unidad'),
+                  _ctg_campo('N&uacute;mero de recipientes')) +
+        _ctg_fila(_ctg_campo('Fecha de vencimiento'), _ctg_campo('Ubicaci&oacute;n'),
+                  _ctg_campo('Estado (cuarentena / aprobado / rechazado)', '1.4fr')) +
+        _ctg_fila(_ctg_campo('Observaciones', '1fr', 44)), logo))
+
+    # 2 · Dispensación
+    filas = ''.join(
+        '<tr><td class="n">%d</td><td></td><td></td><td></td><td></td><td></td></tr>' % i
+        for i in range(1, 13))
+    hojas.append(_ctg_hoja(
+        'Dispensaci&oacute;n y pesaje de materia prima', 'PRD-PRO-001-F08',
+        _ctg_fila(_ctg_campo('Producto', '2fr'), _ctg_campo('Lote a fabricar'),
+                  _ctg_campo('Fecha')) +
+        '<table class="grid"><thead><tr><th class="n">#</th><th>C&oacute;digo MP</th>'
+        '<th>Nombre de la materia prima</th><th>Lote de origen</th><th>Peso te&oacute;rico</th>'
+        '<th>Peso real</th></tr></thead><tbody>' + filas + '</tbody></table>', logo))
+
+    # 3 · Control en proceso
+    filas = ''.join(
+        '<tr><td class="n">%d</td><td></td><td></td><td></td><td></td><td></td></tr>' % i
+        for i in range(1, 9))
+    hojas.append(_ctg_hoja(
+        'Controles en proceso', 'COC-PRO-002-F07',
+        _ctg_fila(_ctg_campo('Producto', '2fr'), _ctg_campo('Lote'), _ctg_campo('Fecha')) +
+        '<table class="grid"><thead><tr><th class="n">#</th><th>Control</th>'
+        '<th>Especificaci&oacute;n</th><th>Resultado</th><th>Hora</th>'
+        '<th>Conforme (S&iacute; / No)</th></tr></thead><tbody>' + filas + '</tbody></table>'
+        '<div class="nota">Un resultado NO conforme abre desviaci&oacute;n (ASG-PRO-001) y '
+        'bloquea la liberaci&oacute;n del lote. Anotarlo igual: el registro es el hecho.</div>',
+        logo))
+
+    # 4 · Despeje de línea
+    filas = ''.join(
+        '<tr><td class="n">%d</td><td class="it">%s</td><td class="chk"></td>'
+        '<td class="chk"></td><td class="chk"></td><td></td></tr>'
+        % (i, item.replace('&', '&amp;').replace('<', '&lt;'))
+        for i, item in enumerate(_DESPEJE, start=1))
+    hojas.append(_ctg_hoja(
+        'Despeje de l&iacute;nea', 'PRD-PRO-002-F02',
+        _ctg_fila(_ctg_campo('&Aacute;rea'), _ctg_campo('Producto', '2fr'),
+                  _ctg_campo('Lote'), _ctg_campo('Fecha')) +
+        '<table class="grid despeje"><thead><tr><th class="n">#</th><th>Verificaci&oacute;n</th>'
+        '<th class="chk">S&iacute;</th><th class="chk">No</th><th class="chk">N/A</th>'
+        '<th>Observaciones</th></tr></thead><tbody>' + filas + '</tbody></table>', logo))
+
+    # 5 · Limpieza de área y equipo
+    hojas.append(_ctg_hoja(
+        'Limpieza de &aacute;rea y equipo', 'PRD-PRO-001-F02',
+        _ctg_fila(_ctg_campo('&Aacute;rea'), _ctg_campo('Equipo', '1.4fr'),
+                  _ctg_campo('Fecha'), _ctg_campo('Hora')) +
+        _ctg_fila(_ctg_campo('Producto anterior', '2fr'),
+                  _ctg_campo('Tipo de limpieza (rutinaria / profunda)', '1.4fr')) +
+        _ctg_fila(_ctg_campo('Actividad realizada y productos utilizados', '1fr', 62)) +
+        _ctg_fila(_ctg_campo('Vigencia de la condici&oacute;n de limpio'),
+                  _ctg_campo('Observaciones', '2fr')), logo))
+
+    # 6 · Producción / otro
+    hojas.append(_ctg_hoja(
+        'Ejecuci&oacute;n de producci&oacute;n u otro registro', 'ASG-PRO-014-F05',
+        _ctg_fila(_ctg_campo('&Aacute;rea'), _ctg_campo('Producto', '2fr'),
+                  _ctg_campo('Lote'), _ctg_campo('Fecha')) +
+        _ctg_fila(_ctg_campo('Motivo de la contingencia (falla el&eacute;ctrica / conectividad / '
+                             'sistema no disponible)', '1fr', 30)) +
+        _ctg_fila(_ctg_campo('Hora de inicio de la contingencia'),
+                  _ctg_campo('Hora de restablecimiento')) +
+        _ctg_fila(_ctg_campo('Descripci&oacute;n de lo ejecutado', '1fr', 150)), logo))
+
+    portada = (
+        '<section class="hoja portada">'
+        '<img class="logo-g" src="' + logo + '" alt="">'
+        '<h1>Paquete de contingencia</h1>'
+        '<div class="lead">Para usar cuando no hay energ&iacute;a, no hay conexi&oacute;n o el '
+        'sistema no est&aacute; disponible. La falta de sistema nunca es motivo para no registrar: '
+        'un registro que no se hizo no se puede reconstruir despu&eacute;s, uno hecho en papel '
+        's&iacute; se puede cargar.</div>'
+        '<ol class="pasos">'
+        '<li><b>Registrar a mano</b> en el formato que corresponda, con la hora REAL de cada '
+        'actividad y la firma de qui&eacute;n ejecuta y qui&eacute;n verifica.</li>'
+        '<li><b>Al restablecerse el sistema</b>, cargar cada registro en Planta &rarr; '
+        'Contingencia, dentro de las 24 horas siguientes.</li>'
+        '<li><b>Adjuntar la foto</b> del formato firmado: con ella el expediente del lote queda '
+        'completo sin depender de que alguien busque la carpeta.</li>'
+        '<li><b>Conservar el original</b> en papel, archivado, por el mismo tiempo que el '
+        'registro que respalda. La carga al sistema no lo reemplaza.</li>'
+        '</ol>'
+        '<div class="aviso"><b>Antes de guardar este paquete:</b> imprimir varias copias de cada '
+        'hoja y dejarlas en cada &aacute;rea. El d&iacute;a de la contingencia no hay con qu&eacute; '
+        'imprimirlo. Reponer cada vez que se use y verificar su existencia en la revisi&oacute;n '
+        'mensual.</div>'
+        '<div class="pie">ASG-PRO-014 numerales 5.6.1 y 5.6.2 &middot; los campos de cada formato '
+        'son los mismos que exige el registro electr&oacute;nico que reemplaza (COC-LMA-003).</div>'
+        '</section>')
+
+    html = (
+        '<!doctype html><html lang="es"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>Paquete de contingencia &middot; EOS</title><style>'
+        '@page{size:A4;margin:12mm}'
+        '*{box-sizing:border-box}'
+        'body{font-family:Arial,Helvetica,sans-serif;color:#111;background:#e9e9ee;margin:0;'
+        'padding:18px;font-size:11.5px}'
+        '.barra{max-width:190mm;margin:0 auto 14px;display:flex;gap:10px;align-items:center}'
+        '.barra a{color:#6d28d9;text-decoration:none;font-weight:700;font-size:13px}'
+        '.barra button{margin-left:auto;font-family:inherit;font-size:13px;font-weight:800;'
+        'border:none;border-radius:9px;padding:10px 20px;background:#6d28d9;color:#fff;cursor:pointer}'
+        '.hoja{background:#fff;width:190mm;min-height:272mm;margin:0 auto 16px;padding:10mm;'
+        'box-shadow:0 2px 12px rgba(0,0,0,.12);page-break-after:always}'
+        '.hoja:last-child{page-break-after:auto}'
+        'table.enc{width:100%;border-collapse:collapse;margin-bottom:8px}'
+        'table.enc td{border:1px solid #111;padding:5px 7px;vertical-align:middle}'
+        'table.enc .logo{width:30mm;text-align:center}'
+        'table.enc .logo img{max-width:26mm;max-height:14mm}'
+        'table.enc .tit{text-align:center;font-size:12.5px}'
+        'table.enc .cod{width:42mm;font-size:9.5px;text-align:center}'
+        '.banda{background:#111;color:#fff;text-align:center;font-weight:700;font-size:10px;'
+        'padding:4px;letter-spacing:.04em;margin-bottom:10px}'
+        '.fila{display:flex;gap:8px;margin-bottom:9px}'
+        '.et{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.03em;'
+        'font-weight:700;color:#333;margin-bottom:2px}'
+        '.ln{border:1px solid #111;border-radius:2px}'
+        '.firmas{margin-top:16px}'
+        'table.grid{width:100%;border-collapse:collapse;margin:6px 0 4px}'
+        'table.grid th{border:1px solid #111;background:#e3e3e3;font-size:9px;padding:4px 5px;'
+        'text-transform:uppercase;letter-spacing:.02em}'
+        'table.grid td{border:1px solid #111;height:26px;padding:3px 5px}'
+        'table.grid .n{width:8mm;text-align:center;font-size:9px}'
+        'table.grid .chk{width:11mm}'
+        'table.despeje td.it{font-size:9.5px;line-height:1.3}'
+        'table.despeje td{height:auto}'
+        '.nota{font-size:9.5px;border-left:3px solid #111;padding:5px 9px;margin-top:8px;'
+        'background:#f2f2f2}'
+        '.pie{margin-top:12px;font-size:9px;color:#333;border-top:1px solid #111;padding-top:5px}'
+        '.portada{display:flex;flex-direction:column;justify-content:center}'
+        '.portada .logo-g{max-width:48mm;margin-bottom:16px}'
+        '.portada h1{font-size:27px;margin:0 0 10px}'
+        '.lead{font-size:13px;line-height:1.65;margin-bottom:16px;max-width:150mm}'
+        '.pasos{font-size:12px;line-height:1.85;padding-left:20px;max-width:155mm}'
+        '.aviso{border:2px solid #111;padding:10px 13px;margin-top:16px;font-size:11.5px;'
+        'line-height:1.6;max-width:155mm}'
+        # M123 · sin esto la impresora NO pinta los fondos (la banda negra y el encabezado de las
+        # tablas desaparecen) y un borde gris claro sale invisible: el formato queda sin sus
+        # divisiones, que es justo lo que reportaron del piso con los rótulos.
+        '@media print{'
+        'body{background:#fff;padding:0}'
+        '.barra{display:none}'
+        '.hoja{box-shadow:none;margin:0;width:auto;min-height:auto;padding:0}'
+        '*{-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+        'table.enc td,table.grid th,table.grid td,.ln,.aviso{border-color:#000}'
+        '.banda{background:#000;color:#fff}'
+        'table.grid th{background:#ddd}'
+        '}'
+        '</style></head><body>'
+        '<div class="barra"><a href="/planta/contingencia">&larr; Volver</a>'
+        '<button onclick="window.print()">&#128424; Imprimir el paquete</button></div>'
+        + portada + ''.join(hojas) +
+        '</body></html>')
+    return Response(html, mimetype='text/html')

@@ -121,6 +121,44 @@ def r2_put_archivo(key, ruta, content_type='application/octet-stream'):
         return False
 
 
+def r2_proteccion():
+    """¿El contenedor tiene versionado y bloqueo de objetos ACTIVOS? (tarea B-03 · ASG-PRO-014)
+
+    El procedimiento dice que la copia de un documento regulado es inmutable. Eso es cierto sólo
+    si el contenedor lo hace cumplir: el sistema escribe cada versión con una llave distinta y
+    NUNCA sobrescribe, pero eso protege contra el propio sistema, no contra alguien con las
+    credenciales borrando un objeto. Sin versionado, un borrado accidental no se recupera; sin
+    bloqueo, "inmutable" describe una intención (M100: lo que no se puede afirmar se declara).
+
+    Devuelve `None` en cada campo que NO se pudo determinar, y eso es distinto de `False`:
+    confundir "no pude comprobarlo" con "está apagado" haría gritar a la pantalla por una API que
+    el proveedor no expone, y una alerta que suena sin motivo deja de mirarse (M129).
+    """
+    out = {'versionado': None, 'bloqueo_objetos': None, 'detalle': ''}
+    cl = _client()
+    if not cl:
+        out['detalle'] = 'el almacenamiento de objetos no está configurado'
+        return out
+    c = _cfg()
+    try:
+        v = cl.get_bucket_versioning(Bucket=c['bucket'])
+        out['versionado'] = (v.get('Status') == 'Enabled')
+    except Exception as e:
+        out['detalle'] += 'versionado: no pude consultarlo (%s). ' % str(e)[:90]
+    try:
+        cl.get_object_lock_configuration(Bucket=c['bucket'])
+        out['bloqueo_objetos'] = True
+    except Exception as e:
+        # El proveedor responde con un error específico cuando la protección NO está puesta; ese
+        # caso sí es un "apagado" comprobado, no una indeterminación.
+        msg = str(e)
+        if 'ObjectLockConfigurationNotFound' in msg or 'NoSuchObjectLockConfiguration' in msg:
+            out['bloqueo_objetos'] = False
+        else:
+            out['detalle'] += 'bloqueo de objetos: no pude consultarlo (%s).' % msg[:90]
+    return out
+
+
 def r2_get(key):
     """Descarga un objeto de R2 → bytes, o None si no existe/falla."""
     if not r2_configurado():
