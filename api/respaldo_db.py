@@ -52,7 +52,16 @@ BLOQUE = 4 * 1024 * 1024
 MAGIC = b'EOSBK1\n'
 
 # Retención, espejo del numeral 5.5 del ASG-PRO-014.
-RETENCION = {'semanal': 90, 'mensual': 1100}
+#
+# ⚠ MEDIDO el 12-ago-2026, y cambia el papel de esta copia: el proveedor ofrece recuperación a un
+# punto en el tiempo de **3 DÍAS** (plan Basic; 7 con Pro). El requisito de conservación de un
+# registro de lote es de TRES AÑOS. O sea que el respaldo del proveedor cubre el accidente
+# operativo -- una tabla corrupta, una migración mala -- y **no cubre nada del requisito de
+# conservación**. Esta copia no es un complemento: es la cobertura completa.
+#
+# Por eso la cadencia corta es DIARIA y no semanal: con la semanal, perder la cuenta un sábado
+# costaba hasta 7 días de registros. Con 322 MB de base son ~60 MB comprimidos por copia.
+RETENCION = {'diario': 30, 'semanal': 90, 'mensual': 1100}
 
 PREFIJO = 'respaldo'
 
@@ -498,7 +507,7 @@ def estado(conn):
            'ultimo': {}, 'hallazgos': []}
     try:
         c = conn.cursor()
-        for tipo in ('semanal', 'mensual'):
+        for tipo in ('diario', 'semanal', 'mensual'):
             r = c.execute("SELECT fecha, bytes, filas, completo, cifrado, r2_key FROM respaldo_log "
                           "WHERE tipo=? ORDER BY id DESC LIMIT 1", (tipo,)).fetchone()
             if r:
@@ -562,18 +571,23 @@ def estado(conn):
                                 'el panel del proveedor.')
 
     hoy = _hoy_col()
-    sem = out['ultimo'].get('semanal')
-    if not sem:
-        out['hallazgos'].append('Nunca se ha generado una copia semanal.')
+    # Se vigila la cadencia CORTA que realmente corre. Si alguna vez se vuelve a la semanal, el
+    # umbral de edad tiene que moverse con ella: un vigía calibrado para otra frecuencia avisa
+    # tarde o avisa siempre, y las dos cosas terminan en que nadie lo mira.
+    corta = out['ultimo'].get('diario') or out['ultimo'].get('semanal')
+    es_diaria = bool(out['ultimo'].get('diario'))
+    if not corta:
+        out['hallazgos'].append('Nunca se ha generado una copia diaria.')
     else:
         try:
-            edad = (hoy - datetime.fromisoformat(sem['fecha'])).days
-            if edad > 10:
-                out['hallazgos'].append('La última copia semanal tiene %d días.' % edad)
+            edad = (hoy - datetime.fromisoformat(corta['fecha'])).days
+            if edad > (2 if es_diaria else 10):
+                out['hallazgos'].append('La última copia %s tiene %d días.'
+                                        % ('diaria' if es_diaria else 'semanal', edad))
         except Exception:
             pass
-        if not sem.get('completo'):
-            out['hallazgos'].append('La última copia semanal quedó incompleta.')
+        if not corta.get('completo'):
+            out['hallazgos'].append('La última copia corta quedó incompleta.')
     men = out['ultimo'].get('mensual')
     if not men:
         out['hallazgos'].append('Nunca se ha generado una copia mensual.')

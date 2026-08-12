@@ -167,7 +167,7 @@ def test_estado_marca_la_copia_vieja(app):
         vieja = (R._hoy_col() - timedelta(days=30)).isoformat()
         reciente = R._hoy_col().isoformat()
         c.execute("INSERT INTO respaldo_log (tipo, fecha, r2_key, bytes, filas, completo, cifrado) "
-                  "VALUES ('semanal',?,'k',10,10,1,1)", (vieja,))
+                  "VALUES ('diario',?,'k',10,10,1,1)", (vieja,))
         c.execute("INSERT INTO respaldo_log (tipo, fecha, r2_key, bytes, filas, completo, cifrado) "
                   "VALUES ('mensual',?,'k',10,10,1,1)", (reciente,))
         conn.commit()
@@ -197,7 +197,7 @@ def test_estado_sin_hallazgos_con_copias_al_dia(app, monkeypatch):
         c = conn.cursor()
         c.execute("DELETE FROM respaldo_log")
         ahora = R._hoy_col().isoformat()
-        for tipo in ('semanal', 'mensual'):
+        for tipo in ('diario', 'mensual'):
             c.execute("INSERT INTO respaldo_log (tipo, fecha, r2_key, bytes, filas, completo, "
                       "cifrado) VALUES (?,?,'k',999,999,1,1)", (tipo, ahora))
         conn.commit()
@@ -246,7 +246,9 @@ def test_tipo_invalido_se_rechaza(admin_client):
 def test_los_respaldos_estan_en_el_cron(app):
     from blueprints.auto_plan_jobs import JOBS_SCHEDULE
     nombres = {j[0] for j in JOBS_SCHEDULE}
-    assert 'respaldo_base_semanal' in nombres
+    # La cadencia corta paso de semanal a DIARIA el 12-ago, cuando se midio que el proveedor
+    # solo retiene 3 dias: la copia dejo de ser un complemento y paso a ser la cobertura entera.
+    assert 'respaldo_base_diario' in nombres
     assert 'respaldo_base_mensual' in nombres
     llamables = {j[5] for j in JOBS_SCHEDULE if j[0].startswith('respaldo_base')}
     import blueprints.auto_plan_jobs as J
@@ -463,7 +465,7 @@ def test_proteccion_apagada_es_hallazgo(app, monkeypatch):
         c = conn.cursor()
         c.execute("DELETE FROM respaldo_log")
         ahora = R._hoy_col().isoformat()
-        for tipo in ('semanal', 'mensual'):
+        for tipo in ('diario', 'mensual'):
             c.execute("INSERT INTO respaldo_log (tipo, fecha, r2_key, bytes, filas, completo, "
                       "cifrado) VALUES (?,?,'k',9,9,1,1)", (tipo, ahora))
         conn.commit()
@@ -489,7 +491,7 @@ def test_no_poder_comprobarlo_NO_se_reporta_como_apagado(app, monkeypatch):
         c = conn.cursor()
         c.execute("DELETE FROM respaldo_log")
         ahora = R._hoy_col().isoformat()
-        for tipo in ('semanal', 'mensual'):
+        for tipo in ('diario', 'mensual'):
             c.execute("INSERT INTO respaldo_log (tipo, fecha, r2_key, bytes, filas, completo, "
                       "cifrado) VALUES (?,?,'k',9,9,1,1)", (tipo, ahora))
         conn.commit()
@@ -648,3 +650,42 @@ def test_la_deteccion_real_le_GANA_a_la_constancia(app, admin_client, monkeypatc
         from database import get_db
         est = R.estado(get_db())
     assert est['proteccion']['origen'] == 'detectado'
+
+
+def test_la_copia_corta_es_DIARIA_y_se_vigila_como_tal(app):
+    """DIENTES · una copia de hace 5 días ya es un hallazgo cuando la cadencia es diaria.
+
+    Con el umbral de la semanal (10 días) este caso pasaba en verde, y el respaldo podia llevar
+    casi una semana caido sin que la pantalla dijera nada. Un vigia calibrado para otra
+    frecuencia avisa tarde, que es lo mismo que no avisar (M129).
+    """
+    import respaldo_db as R
+    from datetime import timedelta
+    assert 'diario' in R.RETENCION and R.RETENCION['diario'] == 30
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("DELETE FROM respaldo_log")
+        c.execute("INSERT INTO respaldo_log (tipo, fecha, r2_key, bytes, filas, completo, cifrado) "
+                  "VALUES ('diario',?,'k',10,10,1,1)",
+                  ((R._hoy_col() - timedelta(days=5)).isoformat(),))
+        c.execute("INSERT INTO respaldo_log (tipo, fecha, r2_key, bytes, filas, completo, cifrado) "
+                  "VALUES ('mensual',?,'k',10,10,1,1)", (R._hoy_col().isoformat(),))
+        conn.commit()
+        est = R.estado(conn)
+    assert est['ok'] is False
+    assert any('diaria' in h.lower() and '5 d' in h for h in est['hallazgos']), est['hallazgos']
+
+
+def test_el_cron_diario_existe_y_apunta_a_algo_real(app):
+    from blueprints.auto_plan_jobs import JOBS_SCHEDULE
+    import blueprints.auto_plan_jobs as J
+    nombres = {j[0] for j in JOBS_SCHEDULE}
+    assert 'respaldo_base_diario' in nombres
+    assert 'respaldo_base_mensual' in nombres
+    for j in JOBS_SCHEDULE:
+        if j[0].startswith('respaldo_base'):
+            assert hasattr(J, j[5]), 'el cron apunta a %s y no existe' % j[5]
+            if j[0] == 'respaldo_base_diario':
+                assert j[3] is None, 'la copia corta tiene que correr TODOS los dias'

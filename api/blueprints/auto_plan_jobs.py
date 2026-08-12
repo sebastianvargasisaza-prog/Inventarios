@@ -722,7 +722,7 @@ JOBS_SCHEDULE = [
     # Copia completa de la base FUERA del proveedor (tarea B-01 · ASG-PRO-014). En valle y en dos
     # cadencias: la semanal se conserva 3 meses y la mensual 3 años, que es el período que exige la
     # conservación de registros de lote. Domingo y día 1 para no competir con la operación.
-    ('respaldo_base_semanal',  3, 30, [6],  None,               'job_respaldo_semanal'),
+    ('respaldo_base_diario',   3, 30, None, None,               'job_respaldo_diario'),
     ('respaldo_base_mensual',  4,  0, None, [1],                'job_respaldo_mensual'),
     ('archivar_r2_am',         6, 10, None, None,               'job_archivar_r2'),
     ('archivar_r2_pm',        14, 10, None, None,               'job_archivar_r2'),
@@ -4403,9 +4403,14 @@ def _job_respaldo(app, tipo):
     return bool(res.get('ok')), res, int(res.get('filas_totales') or 0)
 
 
-def job_respaldo_semanal(app):
-    """Copia semanal de la base a R2 · domingo en valle · retención 3 meses."""
-    return _job_respaldo(app, 'semanal')
+def job_respaldo_diario(app):
+    """Copia diaria de la base a R2 · en valle · se conserva 30 días.
+
+    Diaria y no semanal porque está MEDIDO (12-ago-2026) que el proveedor solo retiene 3 días:
+    esta copia no complementa la conservación, la cubre entera. Con la semanal, perder la cuenta
+    un sábado costaba hasta 7 días de registros.
+    """
+    return _job_respaldo(app, 'diario')
 
 
 def job_respaldo_mensual(app):
