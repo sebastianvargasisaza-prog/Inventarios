@@ -101,6 +101,26 @@ def r2_put(key, data, content_type='application/octet-stream'):
         return False
 
 
+def r2_put_archivo(key, ruta, content_type='application/octet-stream'):
+    """Sube un ARCHIVO del disco, en flujo. Devuelve True/False.
+
+    `r2_put` recibe bytes, o sea que carga el objeto entero en memoria: sirve para un documento
+    de unos KB y NO para la copia completa de la base, que puede pesar cientos de MB y multiplicar
+    por tres la memoria del worker (bytes + buffer del cliente + reintento). `upload_file` lee del
+    disco de a bloques y hace la carga multiparte solo cuando hace falta.
+    """
+    if not r2_configurado():
+        return False
+    try:
+        cl = _client()
+        c = _cfg()
+        cl.upload_file(ruta, c['bucket'], key, ExtraArgs={'ContentType': content_type})
+        return True
+    except Exception as e:
+        log.warning('r2_put_archivo falló (%s): %s', key, e)
+        return False
+
+
 def r2_get(key):
     """Descarga un objeto de R2 → bytes, o None si no existe/falla."""
     if not r2_configurado():

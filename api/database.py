@@ -11249,6 +11249,34 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         # un codigo vacio (M100).
         "ALTER TABLE producto_presentaciones ADD COLUMN sin_etiqueta INTEGER NOT NULL DEFAULT 0",
     ]),
+    (423, "respaldo_log · constancia de la copia de la base FUERA del proveedor · 12-ago-2026", [
+        # Tarea B-01 del ASG-PRO-014. Hasta hoy los DATOS vivos existian en un solo proveedor: el
+        # respaldo de Render protege contra que la base se dane, no contra perder la cuenta, porque
+        # vive adentro del servicio que se perderia. Los documentos regulados si tenian copia
+        # independiente en R2 desde julio; los datos no.
+        #
+        # Esta tabla es la CONSTANCIA que lee la verificacion mensual (ASG-PRO-014-F01). Sin ella,
+        # saber si el respaldo corrio obligaria a preguntarle al almacenamiento en cada carga de la
+        # pantalla, o sea una llamada de red en la ruta critica (M43).
+        #
+        # Es un registro append-only por costumbre, no por trigger: no es un dato regulado de
+        # producto, es la bitacora de una tarea de sistema.
+        """CREATE TABLE IF NOT EXISTS respaldo_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL,
+            fecha TEXT NOT NULL,
+            r2_key TEXT NOT NULL DEFAULT '',
+            bytes INTEGER NOT NULL DEFAULT 0,
+            filas INTEGER NOT NULL DEFAULT 0,
+            completo INTEGER NOT NULL DEFAULT 0,
+            cifrado INTEGER NOT NULL DEFAULT 0,
+            verificado_at TEXT DEFAULT '',
+            verificado_ok INTEGER DEFAULT NULL,
+            detalle TEXT DEFAULT '',
+            creado_en TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_respaldolog_tipo_fecha ON respaldo_log(tipo, fecha)",
+    ]),
 ]
 
 

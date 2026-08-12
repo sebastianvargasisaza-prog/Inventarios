@@ -3,12 +3,17 @@ admin.py — Blueprint de administración: panel, backups, eventos de seguridad.
 
 Acceso: SOLO ADMIN_USERS (sebastian, alejandro). El resto recibe 403.
 """
+import logging
 import os
 import secrets
 import sqlite3
 import string
 
-from flask import Blueprint, jsonify, request, session, send_file, Response, redirect
+# current_app y log al NIVEL DEL MÓDULO a propósito: este archivo ya produjo un NameError en
+# producción por usar `get_db()` sin importarlo arriba (7-jul), y el golden no abre páginas de
+# admin, así que un nombre faltante acá no se ve hasta que alguien usa el botón.
+from flask import (Blueprint, current_app, jsonify, request, session, send_file, Response,
+                   redirect)
 from werkzeug.security import generate_password_hash
 
 from config import (
@@ -25,6 +30,8 @@ from backup import (
     do_backup, list_backups, get_backup_path, BACKUPS_DIR,
     RETENTION_DAYS, BACKUP_INTERVAL_HOURS,
 )
+
+log = logging.getLogger(__name__)
 
 bp = Blueprint("admin", __name__)
 
@@ -314,6 +321,224 @@ async function probar(){
   }catch(e){ st.className='st err'; st.textContent='Error de red'; det.textContent=String(e); }
 }
 probar();
+</script></body></html>""", mimetype="text/html")
+
+
+# ─── Copia de la base FUERA del proveedor (tarea B-01 · ASG-PRO-014) ─────────────
+#
+# El respaldo de Render cubre que la base se DAÑE. No cubre PERDER LA CUENTA, porque vive adentro
+# del servicio que se perdería. Los documentos regulados ya tenían copia independiente en R2 desde
+# julio; los datos vivos no tenían ninguna.
+_RESPALDO_EN_CURSO = {"tipo": "", "desde": 0.0}
+
+
+def _lanzar_respaldo(app, tipo):
+    """Corre el respaldo en un hilo aparte.
+
+    Un volcado completo puede tardar minutos y `--timeout 120` de Gunicorn MATA al worker que se
+    pase: el request se pierde y el worker se recicla, que es justo el patrón de caída que ya
+    costó una jornada (M89/M91). El botón dispara y la pantalla consulta el estado.
+    """
+    import threading
+    import time as _t
+
+    def _correr():
+        try:
+            from respaldo_db import respaldar, rotar
+            res = respaldar(app, tipo=tipo, presupuesto_seg=900)
+            if res.get("ok"):
+                try:
+                    rotar(tipo)
+                except Exception:
+                    log.warning("rotación de respaldos falló", exc_info=True)
+        except Exception:
+            log.exception("respaldo manual falló")
+        finally:
+            _RESPALDO_EN_CURSO["tipo"] = ""
+            _RESPALDO_EN_CURSO["desde"] = 0.0
+
+    _RESPALDO_EN_CURSO["tipo"] = tipo
+    _RESPALDO_EN_CURSO["desde"] = _t.time()
+    threading.Thread(target=_correr, daemon=True, name="respaldo-%s" % tipo).start()
+
+
+@bp.route("/api/admin/respaldo-estado", methods=["GET"])
+def admin_respaldo_estado():
+    """Lo que necesita la verificación mensual del ASG-PRO-014-F01, en una sola llamada."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from respaldo_db import estado, listar
+    conn = get_db()
+    out = estado(conn)
+    out["en_curso"] = _RESPALDO_EN_CURSO.get("tipo") or ""
+    try:
+        # El listado sale del ALMACENAMIENTO, no de la base: si alguien borró una copia allá, la
+        # tabla local seguiría diciendo que existe. La verificación tiene que mirar lo que hay.
+        out["copias"] = listar(limite=20)
+    except Exception as e:
+        out["copias"] = []
+        out.setdefault("hallazgos", []).append(
+            "no pude listar las copias en el almacenamiento: %s" % str(e)[:120])
+    return jsonify(out)
+
+
+@bp.route("/api/admin/respaldo-ahora", methods=["POST"])
+def admin_respaldo_ahora():
+    """Dispara una copia manual. Se usa antes de una operación grande y para la prueba anual."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import time as _t
+    d = request.get_json(silent=True) or {}
+    tipo = (d.get("tipo") or "semanal").strip().lower()
+    if tipo not in ("semanal", "mensual"):
+        return jsonify({"error": "tipo inválido · semanal o mensual"}), 400
+    try:
+        from r2_storage import r2_configurado
+    except Exception:
+        return jsonify({"error": "el almacenamiento de objetos no está disponible"}), 503
+    if not r2_configurado():
+        return jsonify({"error": "el almacenamiento de objetos no está configurado"}), 503
+    # Anti doble-click (M63): dos volcados a la vez duplican el trabajo y compiten por la base.
+    if _RESPALDO_EN_CURSO.get("tipo") and (_t.time() - _RESPALDO_EN_CURSO.get("desde", 0)) < 1800:
+        return jsonify({"error": "ya hay una copia en curso (%s)" % _RESPALDO_EN_CURSO["tipo"]}), 409
+    audit_log(None, u, "RESPALDO_MANUAL", "respaldo_log", "", "", tipo)
+    _lanzar_respaldo(current_app._get_current_object(), tipo)
+    return jsonify({"ok": True, "tipo": tipo,
+                    "mensaje": "La copia se está generando. Actualizá en un par de minutos."})
+
+
+@bp.route("/api/admin/respaldo-verificar", methods=["POST"])
+def admin_respaldo_verificar():
+    """Descarga una copia, la descifra y CUENTA las filas contra su manifiesto.
+
+    Es la evidencia del ASG-PRO-014-F02: un respaldo que nunca se abrió es una suposición.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    key = (d.get("key") or "").strip()
+    from respaldo_db import verificar, listar
+    if not key:
+        copias = listar(limite=1)
+        if not copias:
+            return jsonify({"error": "no hay ninguna copia para verificar"}), 404
+        key = copias[0]["key"]
+    res = verificar(key, presupuesto_seg=110)
+    try:
+        conn = get_db()
+        conn.cursor().execute(
+            "UPDATE respaldo_log SET verificado_at=?, verificado_ok=? WHERE r2_key=?",
+            (_hoy_col_str(), 1 if res.get("ok") else 0, key))
+        conn.commit()
+    except Exception:
+        log.warning("no pude registrar la verificación del respaldo", exc_info=True)
+    audit_log(None, u, "RESPALDO_VERIFICAR", "respaldo_log", key, "",
+              "ok" if res.get("ok") else str(res.get("motivo"))[:120])
+    res["key"] = key
+    return jsonify(res)
+
+
+def _hoy_col_str():
+    from datetime import datetime as _dt, timedelta as _td
+    return (_dt.utcnow() - _td(hours=5)).strftime("%Y-%m-%d %H:%M")
+
+
+@bp.route("/admin/respaldos", methods=["GET"])
+def admin_respaldos_page():
+    """Pantalla · estado de las copias de la base fuera del proveedor."""
+    if "compras_user" not in session:
+        return redirect("/login?next=/admin/respaldos")
+    return Response(r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Respaldos &middot; EOS</title>
+<style>
+body{font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--cx-bg, #faf9fb);color:var(--cx-text, #1c1917);padding:28px 18px;margin:0}
+.wrap{max-width:1180px;margin:0 auto}
+a.back{color:var(--cx-primary-text, #6d28d9);text-decoration:none;font-size:13px;font-weight:700}
+h1{font-size:25px;margin:10px 0 4px}
+.sub{color:var(--cx-text-mute, #78716c);font-size:13px;margin-bottom:20px;line-height:1.6;max-width:820px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-bottom:18px}
+.card{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #eef0f2);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px 20px}
+.k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--cx-text-mute, #78716c);font-weight:800}
+.v{font-size:21px;font-weight:800;margin-top:6px}
+.mut{color:var(--cx-text-mute, #78716c);font-size:12px;margin-top:4px}
+.ok{color:var(--cx-success-text, #15803d)}.err{color:var(--cx-danger-text, #b91c1c)}.warn{color:var(--cx-warn-text, #b45309)}
+.hall{background:var(--cx-danger-pale, #fef2f2);border:1px solid var(--cx-danger-soft, #fecaca);border-radius:14px;padding:14px 18px;margin-bottom:16px}
+.hall b{color:var(--cx-danger-text, #b91c1c)}
+.hall ul{margin:8px 0 0;padding-left:18px;line-height:1.7;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:13px;background:var(--cx-card, #fff);border-radius:14px;overflow:hidden;box-shadow:0 2px 14px rgba(15,23,42,.05)}
+th{background:var(--cx-bg-alt, #f4f4f5);text-align:left;padding:11px 13px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute, #78716c)}
+td{padding:11px 13px;border-top:1px solid var(--cx-border, #eef0f2)}
+button{font-family:inherit;font-size:13px;font-weight:800;border-radius:11px;padding:10px 18px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;cursor:pointer;margin-right:8px}
+button.sec{background:var(--cx-bg-alt, #f4f4f5);color:var(--cx-text, #1c1917);border:1px solid var(--cx-border, #e7e5e4)}
+button:disabled{opacity:.5;cursor:default}
+.bar{margin:16px 0 20px}
+</style></head><body><div class="wrap">
+<a class="back" href="/inventarios">&larr; Volver</a>
+<h1>&#128190; Copia de la base fuera del proveedor</h1>
+<div class="sub">El proveedor respalda la base contra da&ntilde;os. Esta copia cubre lo otro: perder la cuenta.
+Se guarda cifrada en el almacenamiento de objetos, semanal (se conserva 3 meses) y mensual (3 a&ntilde;os).
+Es la tarea B-01 del ASG-PRO-014 &middot; esta pantalla es la evidencia del formato F01.</div>
+<div id="hall"></div>
+<div class="grid" id="kpis"></div>
+<div class="bar">
+  <button id="bSem" onclick="correr('semanal')">Generar copia ahora</button>
+  <button class="sec" id="bVer" onclick="verificar()">Verificar la &uacute;ltima</button>
+  <button class="sec" onclick="cargar()">Actualizar</button>
+</div>
+<div id="verres"></div>
+<table><thead><tr><th>Tipo</th><th>Fecha</th><th>Tama&ntilde;o</th><th>Archivo</th></tr></thead>
+<tbody id="tb"><tr><td colspan="4" class="mut">Cargando&hellip;</td></tr></tbody></table>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function mb(n){ if(!n) return '-'; var m=n/1048576; return m<1 ? (n/1024).toFixed(0)+' KB' : m.toFixed(1)+' MB'; }
+async function tok(){ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); var d=await r.json(); return d.csrf_token; }
+async function cargar(){
+  var r=await fetch('/api/admin/respaldo-estado',{credentials:'same-origin'});
+  var d=await r.json();
+  var h=document.getElementById('hall');
+  if(d.hallazgos && d.hallazgos.length){
+    var li=d.hallazgos.map(function(x){return '<li>'+esc(x)+'</li>';}).join('');
+    h.innerHTML='<div class="hall"><b>Requiere atenci&oacute;n</b><ul>'+li+'</ul></div>';
+  } else { h.innerHTML='<div class="hall" style="background:var(--cx-success-pale,#f0fdf4);border-color:var(--cx-success-soft,#bbf7d0)"><b class="ok">Sin hallazgos</b><div class="mut">Las copias est&aacute;n al d&iacute;a y cifradas.</div></div>'; }
+  var s=d.ultimo&&d.ultimo.semanal, m=d.ultimo&&d.ultimo.mensual;
+  document.getElementById('kpis').innerHTML=
+    '<div class="card"><div class="k">&Uacute;ltima semanal</div><div class="v">'+(s?esc(String(s.fecha).slice(0,16).replace('T',' ')):'<span class="err">ninguna</span>')+'</div><div class="mut">'+(s?mb(s.bytes)+' &middot; '+Number(s.filas||0).toLocaleString('es-CO')+' filas':'')+'</div></div>'+
+    '<div class="card"><div class="k">&Uacute;ltima mensual</div><div class="v">'+(m?esc(String(m.fecha).slice(0,16).replace('T',' ')):'<span class="err">ninguna</span>')+'</div><div class="mut">'+(m?mb(m.bytes)+' &middot; '+Number(m.filas||0).toLocaleString('es-CO')+' filas':'')+'</div></div>'+
+    '<div class="card"><div class="k">Cifrado</div><div class="v">'+(d.cifrado_configurado?'<span class="ok">activo</span>':'<span class="err">sin clave</span>')+'</div><div class="mut">BACKUP_CIPHER_KEY</div></div>'+
+    '<div class="card"><div class="k">Almacenamiento</div><div class="v">'+(d.almacenamiento_configurado?'<span class="ok">conectado</span>':'<span class="err">sin configurar</span>')+'</div><div class="mut">'+esc(d.en_curso?('generando '+d.en_curso+'...'):'&nbsp;')+'</div></div>';
+  var tb=document.getElementById('tb');
+  if(!d.copias||!d.copias.length){ tb.innerHTML='<tr><td colspan="4" class="mut">No hay ninguna copia guardada todav&iacute;a.</td></tr>'; return; }
+  tb.innerHTML=d.copias.map(function(c){
+    return '<tr><td><b>'+esc(c.tipo)+'</b></td><td>'+esc(String(c.fecha).slice(0,16).replace('T',' '))+'</td><td>'+mb(c.bytes)+'</td><td class="mut">'+esc(c.key)+'</td></tr>';
+  }).join('');
+  document.getElementById('bSem').disabled=!!d.en_curso;
+}
+async function correr(tipo){
+  var b=document.getElementById('bSem'); b.disabled=true; b.textContent='Generando...';
+  try{
+    var r=await fetch('/api/admin/respaldo-ahora',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':await tok()},body:JSON.stringify({tipo:tipo})});
+    var d=await r.json();
+    alert(d.ok? d.mensaje : ('No se pudo: '+(d.error||'')));
+  }catch(e){ alert('Error de red: '+e); }
+  b.textContent='Generar copia ahora'; setTimeout(cargar,1500);
+}
+async function verificar(){
+  var b=document.getElementById('bVer'); b.disabled=true; b.textContent='Verificando...';
+  var out=document.getElementById('verres');
+  try{
+    var r=await fetch('/api/admin/respaldo-verificar',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':await tok()},body:JSON.stringify({})});
+    var d=await r.json();
+    out.innerHTML='<div class="hall" style="background:'+(d.ok?'var(--cx-success-pale,#f0fdf4)':'var(--cx-danger-pale,#fef2f2)')+';border-color:'+(d.ok?'var(--cx-success-soft,#bbf7d0)':'var(--cx-danger-soft,#fecaca)')+'"><b class="'+(d.ok?'ok':'err')+'">'+(d.ok?'La copia se abri&oacute; y est&aacute; completa':'La copia NO super&oacute; la verificaci&oacute;n')+'</b><div class="mut">'+(d.ok?(Number(d.filas||0).toLocaleString('es-CO')+' filas en '+d.tablas+' tablas &middot; '+(d.cifrado?'cifrada':'sin cifrar')+' &middot; '+d.segundos+'s'):esc(d.motivo||(d.n_diferencias+' tablas no coinciden con el manifiesto')))+'</div></div>';
+  }catch(e){ out.innerHTML='<div class="hall"><b class="err">Error de red</b><div class="mut">'+esc(String(e))+'</div></div>'; }
+  b.disabled=false; b.textContent='Verificar la última';
+}
+cargar();
 </script></body></html>""", mimetype="text/html")
 
 
@@ -12752,8 +12977,14 @@ tr:hover td{background:#263348;}
   <div class="card">
     <h2>&#x1F4C0; Backups de Base de Datos</h2>
     <div class="section-sub">
-      Backups automaticos cada 23h, 7 dias de retencion. Descarga el mas reciente regularmente
-      para tener una copia <strong>fuera de Render</strong> — eso te protege si el disco se corrompe.
+      <a href="/admin/respaldos" style="display:inline-block;background:var(--cx-primary-grad, #6d28d9);color:#fff;text-decoration:none;padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:700;margin-bottom:10px">&#128190; Copia de la base fuera del proveedor</a>
+      <div style="background:var(--cx-warn-pale, #fffbeb);border:1px solid var(--cx-warn-soft, #fde68a);border-radius:10px;padding:11px 14px;margin:8px 0;line-height:1.6">
+        <strong>Esta lista es del motor anterior (SQLite) y en produccion NO se genera.</strong>
+        Con PostgreSQL la rutina local sale sin hacer nada, asi que una lista vacia aca es lo
+        esperado y no significa que falte un respaldo. Los datos vivos los respalda el proveedor,
+        y la copia <strong>fuera del proveedor</strong> vive en el boton de arriba: esa es la que
+        cubre perder la cuenta, y la que revisa la verificacion mensual del ASG-PRO-014.
+      </div>
     </div>
     <div class="kpi-row">
       <div class="kpi"><div class="kpi-l">Disponibles</div><div class="kpi-v" id="kpi-count">-</div></div>

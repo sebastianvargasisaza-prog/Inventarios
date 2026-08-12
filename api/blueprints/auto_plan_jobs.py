@@ -719,6 +719,11 @@ JOBS_SCHEDULE = [
     ('estacionalidad_pm',     13, 45, None, None,               'job_refrescar_estacionalidad'),
     # 🗄️ INVIMA zero-paper 24-jul · 3×/día · archiva a Cloudflare R2 (inmutable off-site) cada documento
     # regulado nuevo (F01/F02/EBR/COA/rótulo). Idempotente · no-op si R2 no está configurado.
+    # Copia completa de la base FUERA del proveedor (tarea B-01 · ASG-PRO-014). En valle y en dos
+    # cadencias: la semanal se conserva 3 meses y la mensual 3 años, que es el período que exige la
+    # conservación de registros de lote. Domingo y día 1 para no competir con la operación.
+    ('respaldo_base_semanal',  3, 30, [6],  None,               'job_respaldo_semanal'),
+    ('respaldo_base_mensual',  4,  0, None, [1],                'job_respaldo_mensual'),
     ('archivar_r2_am',         6, 10, None, None,               'job_archivar_r2'),
     ('archivar_r2_pm',        14, 10, None, None,               'job_archivar_r2'),
     ('archivar_r2_noche',     22, 10, None, None,               'job_archivar_r2'),
@@ -4362,6 +4367,50 @@ def job_archivar_r2(app):
     # presupuesto de reloj (M90): corre en el hilo único del multi-cron · nunca lo retiene demasiado.
     res = archivar_pendientes_r2(app, limite=80, presupuesto_seg=90)
     return bool(res.get('ok')), res, int(res.get('archivados') or 0)
+
+
+def _job_respaldo(app, tipo):
+    """Copia completa de la base FUERA del proveedor (tarea B-01 · ASG-PRO-014).
+
+    Es la pieza que faltaba: los documentos regulados ya viajaban a R2 desde julio, pero los DATOS
+    vivos (kardex, lotes, fórmulas, órdenes, firmas, audit_log) existían únicamente en el
+    PostgreSQL de Render. El respaldo del proveedor cubre que la base se dañe; no cubre perder la
+    cuenta, porque vive adentro del servicio que se perdería.
+
+    Presupuesto de reloj ajustado (M90/M92): esto corre en el hilo ÚNICO del multi-cron, así que
+    un volcado que se alargue detiene los crons siguientes (ventas_diarias, marcar_vencidos) y eso
+    se siente como lentitud de toda la app. Si el presupuesto se agota, el volcado se corta y lo
+    DECLARA (`completo=False`) en vez de dejar una copia recortada con cara de completa.
+    """
+    try:
+        from respaldo_db import respaldar, rotar
+    except Exception:
+        from api.respaldo_db import respaldar, rotar  # pragma: no cover
+    try:
+        from r2_storage import r2_configurado
+    except Exception:
+        from api.r2_storage import r2_configurado  # pragma: no cover
+    if not r2_configurado():
+        return True, {'skip': 'almacenamiento de objetos no configurado'}, 0
+    res = respaldar(app, tipo=tipo, presupuesto_seg=420)
+    if res.get('ok'):
+        # La rotación va DESPUÉS de subir la copia nueva. Al revés, un fallo de subida dejaría
+        # menos copias de las que había: una rotación nunca puede correr sin su reemplazo puesto.
+        try:
+            res['rotadas'] = rotar(tipo)
+        except Exception as e:
+            log.warning('rotación de respaldos falló: %s', e)
+    return bool(res.get('ok')), res, int(res.get('filas_totales') or 0)
+
+
+def job_respaldo_semanal(app):
+    """Copia semanal de la base a R2 · domingo en valle · retención 3 meses."""
+    return _job_respaldo(app, 'semanal')
+
+
+def job_respaldo_mensual(app):
+    """Copia mensual de la base a R2 · día 1 · retención 3 años (numeral 5.5 del ASG-PRO-014)."""
+    return _job_respaldo(app, 'mensual')
 
 
 def job_backfill_coa_r2(app):

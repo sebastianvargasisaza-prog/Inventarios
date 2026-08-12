@@ -508,6 +508,12 @@ CORAZON=(
   # Desactivar un puente cambia de QUE codigo sale el material: es mutacion regulada y se
   # hacia sin dejar rastro. El audit guarda a donde apuntaba, o no se puede revertir.
   "tests/test_puente_desactivar_audita.py"
+  # La copia de la base FUERA del proveedor (tarea B-01 del ASG-PRO-014). Los documentos
+  # regulados ya viajaban a R2; los DATOS vivos existian en un solo proveedor, y el codigo que
+  # debia cubrirlo estaba MUERTO (do_backup sale en su primera linea con PostgreSQL).
+  # Lo que se protege no es "el respaldo corre" sino que se pueda VOLVER A LEER: el test de ida
+  # y vuelta vuelca, cifra, descifra y carga en una base nueva comparando fila por fila.
+  "tests/test_respaldo_base.py"
 )
 
 echo ""

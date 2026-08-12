@@ -73,3 +73,6 @@ _barrido_ronda1.txt
 # node-check temporal (se regenera al vuelo)
 _tmp_nodech*/
 .claude/worktrees/
+
+# Copias obsoletas del motor anterior (renombradas para que nadie las confunda con produccion)
+OBSOLETA_NO_USAR_*
