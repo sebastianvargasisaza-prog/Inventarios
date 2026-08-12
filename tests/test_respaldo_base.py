@@ -492,3 +492,63 @@ def test_no_poder_comprobarlo_NO_se_reporta_como_apagado(app, monkeypatch):
         est = R.estado(conn)
     assert est['ok'] is True, 'no debe haber hallazgos por algo que no se pudo comprobar: %s' % est['hallazgos']
     assert est['proteccion']['versionado'] is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# La marca "en curso" vive en la memoria de UN worker · no puede quedarse encendida para siempre
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_la_marca_en_curso_caduca(app, admin_client, monkeypatch):
+    """DIENTES · una marca vieja NO puede seguir deshabilitando el botón.
+
+    Vive en la memoria de un worker y hay tres: si ese worker se reinicia (un deploy, un
+    reciclaje) la marca queda huérfana y el usuario ve "generando" sin que haya nada generándose.
+    """
+    import time
+    from blueprints import admin as A
+    import r2_storage
+    monkeypatch.setattr(r2_storage, 'r2_configurado', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_proteccion',
+                        lambda: {'versionado': None, 'bloqueo_objetos': None, 'detalle': ''})
+    monkeypatch.setattr(A, '_RESPALDO_EN_CURSO',
+                        {'tipo': 'semanal', 'desde': time.time() - 7200})   # de hace 2 horas
+    d = admin_client.get('/api/admin/respaldo-estado').get_json()
+    assert d['en_curso'] == '', 'una marca de hace 2 horas sigue bloqueando el botón'
+
+
+def test_una_marca_reciente_SI_se_respeta(app, admin_client, monkeypatch):
+    """Y el caso sano · sin esto el anterior pasaría con la marca rota al revés (nunca activa),
+    y dos copias a la vez competirían por la base."""
+    import time
+    from blueprints import admin as A
+    import r2_storage
+    monkeypatch.setattr(r2_storage, 'r2_configurado', lambda: True)
+    monkeypatch.setattr(r2_storage, 'r2_proteccion',
+                        lambda: {'versionado': None, 'bloqueo_objetos': None, 'detalle': ''})
+    monkeypatch.setattr(A, '_RESPALDO_EN_CURSO', {'tipo': 'semanal', 'desde': time.time() - 30})
+    d = admin_client.get('/api/admin/respaldo-estado').get_json()
+    assert d['en_curso'] == 'semanal'
+
+
+def test_el_lector_por_lotes_degrada_sin_romper(app):
+    """Si no hay cursor por lotes disponible se usa el normal · el volcado NO puede fallar por eso.
+
+    Perder el respaldo por optimizar la lectura sería el peor intercambio posible: el atajo de
+    memoria es deseable, tener la copia es obligatorio.
+    """
+    import respaldo_db as R
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        lector = R._abrir_lector(conn)      # en SQLite no hay cursor con nombre
+        # devuelva lo que devuelva, el volcado tiene que salir completo por el mismo camino
+        ruta = _tmp('respaldo_lector.jsonl.gz')
+        man = R.volcar(conn, ruta, presupuesto_seg=300)
+    assert man['completo'], man['truncado']
+    assert man['filas_totales'] > 0
+    if lector is not None:
+        try:
+            lector.close()
+        except Exception:
+            pass
+    os.remove(ruta)

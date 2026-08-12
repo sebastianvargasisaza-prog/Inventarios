@@ -124,6 +124,31 @@ def _descifrar_a(origen, destino, clave):
 # Volcado
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 
+def _abrir_lector(conn):
+    """Un cursor que trae las filas DE A BLOQUES, no la tabla entera.
+
+    El adaptador devuelve un cursor del lado del CLIENTE: con psycopg, `execute` trae el resultado
+    completo a memoria y el `fetchmany` posterior sólo reparte lo que ya está en RAM. O sea que el
+    volcado "en flujo" no lo era del lado de la lectura, y la memoria crecía con la tabla más
+    grande -- justo lo que este módulo dice evitar.
+
+    Un cursor CON NOMBRE (server-side) deja las filas en el servidor y las trae por lotes. Se
+    alcanza la conexión psycopg cruda porque el adaptador no lo expone; si algo de eso no está
+    disponible se cae al cursor normal, que funciona igual y sólo gasta más memoria: perder el
+    respaldo por optimizar la lectura sería el peor intercambio posible.
+    """
+    try:
+        raw = getattr(conn, '_conn', None)
+        if raw is None or not hasattr(raw, 'cursor'):
+            return None
+        cur = raw.cursor(name='eos_respaldo')     # psycopg3: con nombre = server-side
+        cur.itersize = 500
+        return cur
+    except Exception as e:
+        log.info('respaldo: sin cursor por lotes (%s) · se lee con el cursor normal', e)
+        return None
+
+
 def _tablas(c):
     """Las tablas de datos del motor en uso. Se leen del catálogo y no de una lista escrita a
     mano: una lista a mano deja afuera la tabla que se cree mañana, y nadie se entera hasta que
@@ -172,6 +197,7 @@ def volcar(conn, ruta_gz, presupuesto_seg=600):
     t0 = time.monotonic()
     c = conn.cursor()
     tablas = _tablas(c)
+    lector = _abrir_lector(conn)
     manifiesto = {}
     truncado = []
     filas_tot = 0
@@ -187,16 +213,25 @@ def volcar(conn, ruta_gz, presupuesto_seg=600):
                 # y esa es exactamente la copia con la que uno descubre el problema al restaurar.
                 truncado.append(t)
                 continue
+            # El cursor por lotes es de un solo uso por consulta: se abre uno por tabla y se
+            # cierra al terminarla, o la segunda tabla choca contra el nombre ya tomado.
+            cur = _abrir_lector(conn) if lector is not None else None
+            usado = cur or c
             try:
-                c.execute('SELECT * FROM "%s"' % t)
+                usado.execute('SELECT * FROM "%s"' % t)
             except Exception as e:
                 log.warning('respaldo: no pude leer %s: %s', t, e)
                 manifiesto[t] = {'filas': -1, 'error': str(e)[:200]}
+                if cur is not None:
+                    try:
+                        cur.close()
+                    except Exception:
+                        pass
                 continue
-            cols = [d[0] for d in (c.description or [])]
+            cols = [d[0] for d in (usado.description or [])]
             n = 0
             while True:
-                bloque = c.fetchmany(500)
+                bloque = usado.fetchmany(500)
                 if not bloque:
                     break
                 for fila in bloque:
@@ -206,6 +241,11 @@ def volcar(conn, ruta_gz, presupuesto_seg=600):
                     n += 1
             manifiesto[t] = {'filas': n}
             filas_tot += n
+            if cur is not None:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
 
     return {'tablas': manifiesto, 'filas_totales': filas_tot, 'truncado': truncado,
             'completo': not truncado, 'segundos': round(time.monotonic() - t0, 1)}

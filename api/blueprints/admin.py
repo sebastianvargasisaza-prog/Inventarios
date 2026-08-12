@@ -371,7 +371,18 @@ def admin_respaldo_estado():
     from respaldo_db import estado, listar
     conn = get_db()
     out = estado(conn)
-    out["en_curso"] = _RESPALDO_EN_CURSO.get("tipo") or ""
+    # La marca vive en la MEMORIA de un worker, y hay tres. Si ese worker se reinicia (un deploy,
+    # un reciclaje) la marca queda huerfana y el boton se deshabilita para siempre: el usuario ve
+    # "generando" sin que haya nada generandose. Se le pone la misma caducidad que ya usa el POST.
+    #
+    # Y ojo con la otra cara del mismo hecho: si el GET cae en OTRO worker, `en_curso` sale vacio
+    # aunque la copia si este corriendo. Por eso la fuente de verdad de esta pantalla es la TABLA
+    # (lo que existe en el almacenamiento), no esta marca, que es solo una ayuda de la interfaz.
+    import time as _t2
+    _tipo = _RESPALDO_EN_CURSO.get("tipo") or ""
+    if _tipo and (_t2.time() - _RESPALDO_EN_CURSO.get("desde", 0)) > 1800:
+        _tipo = ""
+    out["en_curso"] = _tipo
     try:
         # El listado sale del ALMACENAMIENTO, no de la base: si alguien borró una copia allá, la
         # tabla local seguiría diciendo que existe. La verificación tiene que mirar lo que hay.
@@ -519,7 +530,8 @@ async function cargar(){
     '<div class="card"><div class="k">&Uacute;ltima semanal</div><div class="v">'+(s?esc(String(s.fecha).slice(0,16).replace('T',' ')):'<span class="err">ninguna</span>')+'</div><div class="mut">'+(s?mb(s.bytes)+' &middot; '+Number(s.filas||0).toLocaleString('es-CO')+' filas':'')+'</div></div>'+
     '<div class="card"><div class="k">&Uacute;ltima mensual</div><div class="v">'+(m?esc(String(m.fecha).slice(0,16).replace('T',' ')):'<span class="err">ninguna</span>')+'</div><div class="mut">'+(m?mb(m.bytes)+' &middot; '+Number(m.filas||0).toLocaleString('es-CO')+' filas':'')+'</div></div>'+
     '<div class="card"><div class="k">Cifrado</div><div class="v">'+(d.cifrado_configurado?'<span class="ok">activo</span>':'<span class="err">sin clave</span>')+'</div><div class="mut">BACKUP_CIPHER_KEY</div></div>'+
-    '<div class="card"><div class="k">Almacenamiento</div><div class="v">'+(d.almacenamiento_configurado?'<span class="ok">conectado</span>':'<span class="err">sin configurar</span>')+'</div><div class="mut">'+esc(d.en_curso?('generando '+d.en_curso+'...'):'&nbsp;')+'</div></div>'+
+    '<div class="card"><div class="k">Almacenamiento</div><div class="v">'+(d.almacenamiento_configurado?'<span class="ok">conectado</span>':'<span class="err">sin configurar</span>')+// La entidad HTML NO puede pasar por esc(): la escapa y el usuario ve "&nbsp;" escrito.
+'</div><div class="mut">'+(d.en_curso?esc('generando '+d.en_curso+'...'):'&nbsp;')+'</div></div>'+
     '<div class="card"><div class="k">Archivo inmutable</div><div class="v">'+prot(d.proteccion)+'</div><div class="mut">versionado y bloqueo de objetos</div></div>';
   var tb=document.getElementById('tb');
   if(!d.copias||!d.copias.length){ tb.innerHTML='<tr><td colspan="4" class="mut">No hay ninguna copia guardada todav&iacute;a.</td></tr>'; return; }
