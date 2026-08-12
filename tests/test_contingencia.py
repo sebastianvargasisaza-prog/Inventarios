@@ -315,3 +315,69 @@ def test_el_paquete_esta_enlazado_desde_la_pantalla(planta_client):
 def test_el_paquete_no_se_ve_sin_sesion(client):
     r = client.get('/planta/contingencia/paquete')
     assert r.status_code in (302, 401)
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# Cola local (B-14) · reintentar NO puede duplicar un registro regulado
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_el_mismo_token_no_crea_dos_registros(app, planta_client):
+    """DIENTES · el caso que el reintento no puede distinguir solo.
+
+    Si el POST llega al servidor y se pierde la RESPUESTA, la cola reintenta. Desde el cliente
+    eso es idéntico a que no haya llegado, y el servidor tampoco puede distinguirlo por los datos
+    (dos dispensaciones iguales el mismo día existen). Por eso la unicidad la declara quien
+    origina, con un token estable entre reintentos.
+    """
+    _limpiar(app)
+    campos = _campos(ejecutado_por='CTG-Token', lote='LOTE-CTG-TOKEN')
+    campos['token'] = 'tok-prueba-unico-123'
+
+    r1 = planta_client.post('/api/planta/contingencia', data=dict(campos),
+                            content_type='multipart/form-data')
+    assert r1.status_code == 200
+    id1 = r1.get_json()['id']
+
+    r2 = planta_client.post('/api/planta/contingencia', data=dict(campos),
+                            content_type='multipart/form-data')
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    assert d2['duplicado'] is True
+    assert d2['id'] == id1, 'devolvió otro registro en vez del que ya existía'
+
+    with app.app_context():
+        from database import get_db
+        n = get_db().cursor().execute(
+            "SELECT COUNT(*) FROM registros_contingencia WHERE token=?",
+            ('tok-prueba-unico-123',)).fetchone()[0]
+    assert n == 1, 'el reintento creó un segundo registro del mismo hecho'
+
+
+def test_sin_token_dos_envios_SI_son_dos_registros(app, planta_client):
+    """Y el borde del otro lado: dos registros legítimos del mismo tipo el mismo día existen.
+
+    Sin este test, el anterior pasaría con un guard que colapse por datos parecidos, y se
+    perderían registros reales -- que es peor que duplicar (M45).
+    """
+    _limpiar(app)
+    for _ in range(2):
+        r = planta_client.post('/api/planta/contingencia',
+                               data=_campos(ejecutado_por='CTG-DosVeces'),
+                               content_type='multipart/form-data')
+        assert r.status_code == 200
+        assert not r.get_json().get('duplicado')
+    with app.app_context():
+        from database import get_db
+        n = get_db().cursor().execute(
+            "SELECT COUNT(*) FROM registros_contingencia WHERE ejecutado_por='CTG-DosVeces'"
+        ).fetchone()[0]
+    assert n == 2
+
+
+def test_la_pantalla_trae_la_cola_local(planta_client):
+    """Estructural: la cola es del navegador y no se puede ejercitar desde acá, pero sí se puede
+    exigir que las piezas estén · si alguien las borra, esto se pone rojo."""
+    h = planta_client.get('/planta/contingencia').get_data(as_text=True)
+    for pieza in ('eos_ctg_cola', 'colaEnviar', 'colaGuardar', "addEventListener('online'",
+                  '_ctgToken'):
+        assert pieza in h, 'falta %s: la cola quedó a medias' % pieza

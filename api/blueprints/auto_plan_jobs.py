@@ -724,6 +724,10 @@ JOBS_SCHEDULE = [
     # conservación de registros de lote. Domingo y día 1 para no competir con la operación.
     ('respaldo_base_diario',   3, 30, None, None,               'job_respaldo_diario'),
     ('respaldo_base_mensual',  4,  0, None, [1],                'job_respaldo_mensual'),
+    # Indice anual del expediente, legible sin EOS. Corre el dia 2 de cada mes y exporta el
+    # ano en curso: reconstruirlo una sola vez en enero dejaria once meses sin indice si algo
+    # pasara en el medio, y el costo de rehacerlo es despreciable.
+    ('exportar_expediente',    4, 40, None, [2],                'job_exportar_expediente'),
     ('archivar_r2_am',         6, 10, None, None,               'job_archivar_r2'),
     ('archivar_r2_pm',        14, 10, None, None,               'job_archivar_r2'),
     ('archivar_r2_noche',     22, 10, None, None,               'job_archivar_r2'),
@@ -4416,6 +4420,23 @@ def job_respaldo_diario(app):
 def job_respaldo_mensual(app):
     """Copia mensual de la base a R2 · día 1 · retención 3 años (numeral 5.5 del ASG-PRO-014)."""
     return _job_respaldo(app, 'mensual')
+
+
+def job_exportar_expediente(app):
+    """Reconstruye el índice anual del expediente (tarea B-08 · ASG-PRO-014).
+
+    El archivo inmutable conserva los documentos, pero saber CUÁLES componen el expediente de un
+    lote sale de la base. Sin este índice, perder el sistema dejaría miles de archivos sin forma
+    de saber cuál corresponde a qué ni si están todos.
+    """
+    try:
+        from exportar_expediente import exportar
+    except Exception:
+        from api.exportar_expediente import exportar  # pragma: no cover
+    from datetime import datetime as _d, timedelta as _t
+    anio = (_d.utcnow() - _t(hours=5)).year
+    res = exportar(app, anio)
+    return bool(res.get('ok')), res, int(res.get('documentos') or 0)
 
 
 def job_backfill_coa_r2(app):

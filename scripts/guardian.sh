@@ -522,6 +522,12 @@ CORAZON=(
   # admin.py -- ninguna dejaba rastro y todas devolvian 500 en la ultima linea del endpoint,
   # despues de haber hecho el trabajo. El golden no abre paginas de admin, asi que nadie las vio.
   "tests/test_audit_log_firma.py"
+  # El expediente tiene que poder leerse dentro de diez anos con un navegador y nada mas. El
+  # archivo conserva los documentos, pero saber CUALES componen el expediente de un lote sale de
+  # la base: sin indice, perder el sistema deja miles de archivos sin forma de saber cual es de
+  # quien. Y el indice enumera lo que FALTA: uno que solo liste lo que salio bien se lee como
+  # completo justo cuando le falta lo unico que importaba senalar.
+  "tests/test_exportar_expediente.py"
 )
 
 echo ""

@@ -458,6 +458,39 @@ def admin_respaldo_proteccion():
     return jsonify({"ok": True, "confirmado": bool(valor)})
 
 
+@bp.route("/api/admin/exportar-expediente", methods=["GET", "POST"])
+def admin_exportar_expediente():
+    """Índice anual del expediente, legible sin EOS (tarea B-08 · ASG-PRO-014).
+
+    GET previsualiza el HTML sin escribir nada; POST lo guarda junto a los documentos.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from datetime import datetime as _dt, timedelta as _td
+    d = request.get_json(silent=True) or {}
+    anio = (d.get("anio") or request.args.get("anio")
+            or (_dt.utcnow() - _td(hours=5)).year)
+    try:
+        anio = int(anio)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Año inválido"}), 400
+
+    from exportar_expediente import construir, exportar
+    if request.method == "GET":
+        # Previsualizar es leer: no escribe, así se puede mirar antes de archivar (M113).
+        doc, _csv, resumen = construir(get_db(), anio)
+        if request.args.get("html"):
+            return Response(doc, mimetype="text/html")
+        return jsonify(resumen)
+
+    res = exportar(current_app._get_current_object(), anio)
+    audit_log(None, usuario=u, accion="EXPORTAR_EXPEDIENTE", tabla="documentos_regulados",
+              registro_id=str(anio),
+              detalle="%s lotes · %s documentos" % (res.get("lotes"), res.get("documentos")))
+    return jsonify(res)
+
+
 @bp.route("/api/admin/respaldo-verificar", methods=["POST"])
 def admin_respaldo_verificar():
     """Descarga una copia, la descifra y CUENTA las filas contra su manifiesto.
@@ -537,6 +570,10 @@ Es la tarea B-01 del ASG-PRO-014 &middot; esta pantalla es la evidencia del form
   <button id="bSem" onclick="correr('semanal')">Generar copia ahora</button>
   <button class="sec" id="bVer" onclick="verificar()">Verificar la &uacute;ltima</button>
   <button class="sec" onclick="cargar()">Actualizar</button>
+  <a class="sec" href="/api/admin/exportar-expediente?html=1" target="_blank" rel="noopener"
+     style="display:inline-block;text-decoration:none;font-family:inherit;font-size:13px;font-weight:800;border-radius:11px;padding:10px 18px;background:var(--cx-bg-alt, #f4f4f5);color:var(--cx-text, #1c1917);border:1px solid var(--cx-border, #e7e5e4)"
+     title="Indice del expediente de este ano, legible sin EOS">Ver el &iacute;ndice del expediente</a>
+  <button class="sec" onclick="exportar()">Archivar el &iacute;ndice</button>
 </div>
 <div id="verres"></div>
 <table><thead><tr><th>Tipo</th><th>Fecha</th><th>Tama&ntilde;o</th><th>Archivo</th></tr></thead>
@@ -605,6 +642,16 @@ async function verificar(){
     out.innerHTML='<div class="hall" style="background:'+(d.ok?'var(--cx-success-pale,#f0fdf4)':'var(--cx-danger-pale,#fef2f2)')+';border-color:'+(d.ok?'var(--cx-success-soft,#bbf7d0)':'var(--cx-danger-soft,#fecaca)')+'"><b class="'+(d.ok?'ok':'err')+'">'+(d.ok?'La copia se abri&oacute; y est&aacute; completa':'La copia NO super&oacute; la verificaci&oacute;n')+'</b><div class="mut">'+(d.ok?(Number(d.filas||0).toLocaleString('es-CO')+' filas en '+d.tablas+' tablas &middot; '+(d.cifrado?'cifrada':'sin cifrar')+' &middot; '+d.segundos+'s'):esc(d.motivo||(d.n_diferencias+' tablas no coinciden con el manifiesto')))+'</div></div>';
   }catch(e){ out.innerHTML='<div class="hall"><b class="err">Error de red</b><div class="mut">'+esc(String(e))+'</div></div>'; }
   b.disabled=false; b.textContent='Verificar la última';
+}
+async function exportar(){
+  if(!confirm('Se genera el indice del expediente de este ano y se guarda junto a los documentos. Continuar?')) return;
+  try{
+    var r=await fetch('/api/admin/exportar-expediente',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':await tok()},body:JSON.stringify({})});
+    var d=await r.json();
+    alert(d.ok ? ('Indice archivado: '+d.lotes+' lotes, '+d.documentos+' documentos'+(d.sin_archivar?(' ('+d.sin_archivar+' sin archivar)'):''))
+               : ('No se pudo: '+(d.motivo||d.error||'')));
+  }catch(e){ alert('Error de red: '+e); }
 }
 async function declarar(){
   var q = prompt('Escribi que verificaste en el panel del proveedor (reglas y prefijos).',

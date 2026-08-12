@@ -30206,15 +30206,31 @@ def contingencia_cargar():
 
     conn = get_db()
     c = conn.cursor()
+
+    # El mismo registro reintentado por la cola del navegador NO puede entrar dos veces. Un
+    # reintento ocurre cuando se pierde la RESPUESTA, no la petición, y desde el cliente esos dos
+    # casos se ven idénticos. El servidor tampoco puede distinguirlo mirando los datos: dos
+    # dispensaciones iguales el mismo día existen de verdad. Así que la unicidad la declara quien
+    # origina, con un token estable entre reintentos (mismo patrón que la recepción · M45).
+    token = (f.get('token') or '').strip()[:64]
+    if token:
+        prev = c.execute("SELECT id FROM registros_contingencia WHERE token=?",
+                         (token,)).fetchone()
+        if prev:
+            return jsonify({'ok': True, 'id': prev[0], 'duplicado': True, 'avisos': [],
+                            'sin_soporte': False,
+                            'mensaje': 'Este registro ya estaba cargado · no se duplicó.'})
+
     cargado_at = hoy_col.strftime('%Y-%m-%d %H:%M:%S')
     c.execute("INSERT INTO registros_contingencia (tipo_registro, area, lote, producto, "
               "fecha_hecho, hora_hecho, ejecutado_por, verificado_por, motivo, observaciones, "
-              "r2_key, sin_soporte, cargado_por, cargado_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              "r2_key, sin_soporte, cargado_por, cargado_at, token) "
+              "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (tipo, (f.get('area') or '').strip(), lote, (f.get('producto') or '').strip(),
                fecha[:10], (f.get('hora_hecho') or '').strip(), ejecutado,
                (f.get('verificado_por') or '').strip(),
                (f.get('motivo') or '').strip().lower(), (f.get('observaciones') or '').strip(),
-               r2_key, sin_soporte, u, cargado_at))
+               r2_key, sin_soporte, u, cargado_at, token))
     reg_id = c.lastrowid
 
     # Se inscribe en el índice del expediente para que aparezca al buscar el lote. Es la razón de
@@ -30386,6 +30402,7 @@ cu&aacute;ndo se carg&oacute; y marca el registro como contingencia. Numeral 5.6
       <input type="file" id="soporte" accept="image/*,application/pdf">
       <button id="btn" onclick="enviar()">Cargar al sistema</button>
     </form>
+    <div id="cola"></div>
     <div id="res"></div>
   </div>
 
@@ -30430,12 +30447,61 @@ async function cargar(){
       '<td>'+sop+'</td><td>'+esc(x.cargado_at)+'<br><small>'+esc(x.cargado_por)+'</small></td></tr>';
   }).join('');
 }
+// ── Cola local (tarea B-14 · numeral 5.6.3 del ASG-PRO-014) ─────────────────────────────────
+// Si la conexion se cae JUSTO al enviar, lo escrito no se pierde: queda en el navegador y se
+// manda solo cuando vuelve. Respeta la regla del numeral: aca se CAPTURA, no se decide -- este
+// formulario no libera ni consume nada, asi que diferirlo no saltea ningun control. Y la fecha
+// del hecho ya la escribe la persona, asi que el registro conserva su hora real aunque suba
+// horas despues.
+var COLA='eos_ctg_cola';
+function colaLeer(){ try{ return JSON.parse(localStorage.getItem(COLA)||'[]'); }catch(e){ return []; } }
+function colaGuardar(c){ try{ localStorage.setItem(COLA, JSON.stringify(c)); return true; }catch(e){ return false; } }
+function colaPintar(){
+  var c=colaLeer(), d=document.getElementById('cola');
+  if(!c.length){ d.innerHTML=''; return; }
+  d.innerHTML='<div class="avisos a-warn"><b>'+c.length+' registro(s) sin enviar</b>'+
+    'Quedaron guardados en este navegador porque no habia conexion. Se mandan solos al volver, '+
+    'o apreta reintentar. <b>No cierres la sesion sin enviarlos.</b>'+
+    '<div style="margin-top:8px"><button type="button" onclick="colaEnviar()" style="width:auto;margin:0;padding:7px 14px;font-size:12.5px">Reintentar ahora</button></div></div>';
+}
+async function colaEnviar(){
+  var c=colaLeer(); if(!c.length) return;
+  var quedan=[], enviados=0;
+  for(var i=0;i<c.length;i++){
+    try{
+      var fd=new FormData();
+      for(var k in c[i].campos){ fd.append(k, c[i].campos[k]); }
+      if(c[i].foto){
+        var bin=atob(c[i].foto.datos), arr=new Uint8Array(bin.length);
+        for(var j=0;j<bin.length;j++){ arr[j]=bin.charCodeAt(j); }
+        fd.append('soporte', new Blob([arr],{type:c[i].foto.tipo}), c[i].foto.nombre);
+      }
+      var r=await fetch('/api/planta/contingencia',{method:'POST',credentials:'same-origin',
+        headers:{'X-CSRF-Token':await tok()},body:fd});
+      if(r.ok){ enviados++; }
+      else if(r.status>=400 && r.status<500){
+        // El servidor lo RECHAZO (no es falta de red): reintentar daria lo mismo para siempre.
+        var e1=await r.json().catch(function(){return {};});
+        alert('Un registro guardado no se pudo cargar: '+((e1&&e1.error)||r.status)+'. Cargalo a mano.');
+        enviados++;
+      }
+      else { quedan.push(c[i]); }
+    }catch(e){ quedan.push(c[i]); }
+  }
+  colaGuardar(quedan); colaPintar(); if(enviados) cargar();
+}
+window.addEventListener('online', colaEnviar);
+
 async function enviar(){
   if(_busy) return; _busy=true;
   var b=document.getElementById('btn'); b.disabled=true; b.textContent='Cargando...';
   var res=document.getElementById('res');
   try{
     var fd=new FormData();
+    // Un token por registro, estable entre reintentos: es lo que impide que un reintento de la
+    // cola cree un segundo registro del mismo hecho.
+    if(!window._ctgToken) window._ctgToken = (crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random());
+    fd.append('token', window._ctgToken);
     fd.append('tipo_registro',document.getElementById('tipo').value);
     fd.append('fecha_hecho',document.getElementById('fecha').value);
     fd.append('hora_hecho',document.getElementById('hora').value);
@@ -30456,14 +30522,42 @@ async function enviar(){
       var li=(d.avisos||[]).map(function(a){return '<li>'+esc(a)+'</li>';}).join('');
       res.innerHTML='<div class="avisos '+(li?'a-warn':'a-ok')+'"><b>'+esc(d.mensaje)+'</b>'+
         (li?'<ul>'+li+'</ul>':'')+'</div>';
+      window._ctgToken=null;          // entro de verdad: el proximo registro lleva token nuevo
       ['lote','area','producto','ejecutado','verificado','obs'].forEach(function(id){document.getElementById(id).value='';});
       document.getElementById('soporte').value='';
       cargar();
     }
-  }catch(e){ res.innerHTML='<div class="avisos a-err"><b>Error de red</b>'+esc(String(e))+'</div>'; }
+  }catch(e){
+    // Falla de RED: se guarda en la cola. Perder lo que la persona ya escribio seria reabrir el
+    // hueco que esta pantalla existe para tapar.
+    var campos={};
+    ['tipo_registro','fecha_hecho','hora_hecho','lote','area','producto','ejecutado_por','verificado_por','motivo','observaciones'].forEach(function(k,idx){
+      var ids=['tipo','fecha','hora','lote','area','producto','ejecutado','verificado','motivo','obs'];
+      campos[k]=document.getElementById(ids[idx]).value;
+    });
+    campos.token = window._ctgToken || '';
+    window._ctgToken = null;        // el encolado se lleva el suyo · el siguiente empieza limpio
+    var f=document.getElementById('soporte').files[0];
+    var guardar=function(foto){
+      var c=colaLeer(); c.push({campos:campos, foto:foto});
+      var ok=colaGuardar(c);
+      if(!ok && foto){ c[c.length-1].foto=null; ok=colaGuardar(c); }
+      res.innerHTML='<div class="avisos '+(ok?'a-warn':'a-err')+'"><b>'+
+        (ok?'Sin conexion: el registro quedo guardado en este navegador':'No pude guardarlo')+'</b>'+
+        (ok?('Se manda solo cuando vuelva la conexion.'+(foto&&!c[c.length-1].foto?' La foto no cupo: adjuntala despues.':'')):'Anotalo en papel.')+'</div>';
+      colaPintar();
+      if(ok){ ['lote','area','producto','ejecutado','verificado','obs'].forEach(function(id){document.getElementById(id).value='';}); document.getElementById('soporte').value=''; }
+    };
+    if(f){
+      var fr=new FileReader();
+      fr.onload=function(){ guardar({nombre:f.name, tipo:f.type, datos:fr.result.split(',')[1]}); };
+      fr.onerror=function(){ guardar(null); };
+      fr.readAsDataURL(f);
+    } else { guardar(null); }
+  }
   b.disabled=false; b.textContent='Cargar al sistema'; _busy=false;
 }
-cargar();
+cargar(); colaPintar(); colaEnviar();
 </script></body></html>""", mimetype='text/html')
 
 

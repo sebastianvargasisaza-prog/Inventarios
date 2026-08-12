@@ -11317,6 +11317,21 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_contingencia_lote ON registros_contingencia(lote)",
         "CREATE INDEX IF NOT EXISTS idx_contingencia_fecha ON registros_contingencia(fecha_hecho)",
     ]),
+    (425, "registros_contingencia.token · el reintento de la cola no puede duplicar · 12-ago-2026", [
+        # Tarea B-14. La cola del navegador reintenta cuando vuelve la conexion, y hay un caso que
+        # el reintento no puede distinguir: que el POST SI haya llegado al servidor y se haya
+        # perdido la RESPUESTA. Sin token, ese reintento crea un segundo registro del mismo hecho,
+        # y en un registro regulado un duplicado no es inocuo: infla lo que se anota y obliga a
+        # decidir despues cual de los dos es el bueno.
+        #
+        # El token lo genera el CLIENTE, uno por registro, y no cambia entre reintentos. Es el
+        # mismo patron que la recepcion (mig 265): el servidor no puede distinguir un duplicado de
+        # una repeticion legitima mirando los datos -- dos dispensaciones iguales el mismo dia
+        # existen -- asi que la unicidad la tiene que declarar quien origina (M45).
+        "ALTER TABLE registros_contingencia ADD COLUMN token TEXT DEFAULT ''",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_contingencia_token "
+        "ON registros_contingencia(token) WHERE COALESCE(token,'') <> ''",
+    ]),
 ]
 
 
