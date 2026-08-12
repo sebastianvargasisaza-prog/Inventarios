@@ -75,6 +75,7 @@ NORMALIZAR_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
     <input type="checkbox" id="solo" checked onchange="pintar()" style="width:15px;height:15px">
     Solo las incompletas
   </label>
+  <button type="button" id="btn-bloquean" onclick="verBloquean()" style="display:none;background:var(--cx-danger-pale,#fef2f2);color:var(--cx-danger-text,#b91c1c);border:1px solid var(--cx-danger-soft,#fecaca);border-radius:9px;padding:7px 14px;font-size:12.5px;font-weight:800;cursor:pointer">Ver solo las que frenan</button>
   <label style="font-size:12.5px;color:var(--cx-text-soft);display:flex;gap:6px;align-items:center;cursor:pointer">
     <input type="checkbox" id="verapag" onchange="pintar()" style="width:15px;height:15px">
     Ver tambi&eacute;n las apagadas
@@ -184,6 +185,10 @@ function opciones(col, sel){
   return h;
 }
 
+// Filtro por lo que FRENA: la lista corta que se puede terminar hoy.
+var SOLO_BLOQUEAN=false;
+function verBloquean(){ SOLO_BLOQUEAN=!SOLO_BLOQUEAN; pintar(); }
+
 function pintar(){
   if(!D) return;
   var q=(document.getElementById('q').value||'').trim().toUpperCase();
@@ -193,15 +198,27 @@ function pintar(){
     if(!verApag && !f.activo) return false;
     if(q && f.producto.toUpperCase().indexOf(q)<0) return false;
     if(solo && !incompleta(f)) return false;
+    if(SOLO_BLOQUEAN && !f.bloquea) return false;
     return true;
   });
   var listas=D.filas.filter(function(f){ return f.activo && !incompleta(f); }).length;
   var act=D.filas.filter(function(f){ return f.activo; }).length;
+  // Cuantas FRENAN una produccion real. Sin esto, una lista de decenas de pendientes -- casi
+  // todos de productos que nadie va a fabricar esta semana -- no se termina nunca, y lo que de
+  // verdad traba el cierre del batch record queda mezclado con lo que puede esperar (M129).
+  var bloq = D.resumen.bloquean||0, medido = D.resumen.bloquean_medido !== false;
   document.getElementById('kpis').innerHTML=
       '<div class="kpi"><b>'+listas+' / '+act+'</b><span>completas</span></div>'
+    + '<div class="kpi"'+(bloq?' style="background:var(--cx-danger-pale,#fef2f2);border-color:var(--cx-danger-soft,#fecaca)"':'')+'><b'+(bloq?' style="color:var(--cx-danger-text,#b91c1c)"':'')+'>'
+      +(medido?bloq:'?')+'</b><span>'+(medido?'frenan producci&oacute;n':'sin medir')+'</span></div>'
     + '<div class="kpi"><b>'+(D.resumen.se_arrastran||0)+'</b><span>se arrastran</span></div>'
     + '<div class="kpi"><b>'+(D.resumen.ambiguas||0)+'</b><span>ambiguas (vac&iacute;as)</span></div>'
     + '<div class="kpi"><b>'+Object.keys(CAMBIOS).length+'</b><span>sin guardar</span></div>';
+  var _bb=document.getElementById('btn-bloquean');
+  if(_bb){
+    _bb.style.display = (medido && bloq) ? 'inline-block' : 'none';
+    _bb.textContent = (SOLO_BLOQUEAN?'Ver todas':'Ver solo las '+bloq+' que frenan');
+  }
 
   var h='<table><thead><tr><th>Producto</th><th>ml</th>';
   D.columnas.forEach(function(c){ h+='<th>'+esc(c)+'</th>'; });

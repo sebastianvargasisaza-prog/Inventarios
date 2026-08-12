@@ -17815,6 +17815,36 @@ def mee_normalizar_tabla():
                                if v and _cat_norm(estado_de.get(v, 'Activo')) != 'ACTIVO']),
         })
 
+    # ── cuáles de estas filas FRENAN algo de verdad ──────────────────────────────────────────
+    #
+    # Sebastián: *"todo lo de MEE para poder ir cerrando el batch record sigue frenado"*. El
+    # resumen contaba todas las filas por igual, y así una lista de decenas de pendientes -- de
+    # los cuales la mayoría son productos que nadie va a fabricar esta semana -- no se termina
+    # nunca. Una lista que no cierra deja de mirarse (M129).
+    #
+    # Frena el que le falta algo Y tiene producción programada o en curso. El resto puede
+    # esperar, y decirlo es lo que vuelve la tarea finita.
+    _con_prod = set()
+    try:
+        for (_p,) in c.execute(
+                "SELECT DISTINCT producto FROM produccion_programada "
+                "WHERE LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado')").fetchall():
+            _con_prod.add(_norm_prod_fuerte(_p or ''))
+    except Exception as _e:
+        # Sin este dato la pantalla sigue sirviendo: se marca nada y el resumen lo declara, en
+        # vez de fingir que ninguna fila frena (M100).
+        log.warning('normalizar-envases · no pude leer producción programada: %s', _e)
+        _con_prod = None
+
+    _bloquean = 0
+    for f in filas:
+        _incompleta = any(not f['actual'][col] and not f['no_usa'].get(col) for col in _MEE_CATS)
+        f['incompleta'] = _incompleta
+        f['bloquea'] = bool(_incompleta and _con_prod is not None
+                            and _norm_prod_fuerte(f['producto']) in _con_prod)
+        if f['bloquea']:
+            _bloquean += 1
+
     return jsonify({
         'ok': True,
         'columnas': ['envase', 'tapa', 'etiqueta', 'caja'],
@@ -17827,6 +17857,11 @@ def mee_normalizar_tabla():
             'vacias': sum(1 for f in filas for col in _MEE_CATS
                           if not f['actual'][col] and not f['no_usa'].get(col)
                           and col not in f['sugerido']),
+            'incompletas': sum(1 for f in filas if f['incompleta']),
+            'bloquean': _bloquean,
+            # Se declara cuándo el dato no se pudo calcular: un cero que nadie midió se lee como
+            # "no hay nada que hacer" y significa lo contrario.
+            'bloquean_medido': _con_prod is not None,
         },
     })
 
@@ -30792,3 +30827,169 @@ def contingencia_paquete():
         + portada + ''.join(hojas) +
         '</body></html>')
     return Response(html, mimetype='text/html')
+
+
+@bp.route('/api/mee/tonos-diagnostico', methods=['GET'])
+def mee_tonos_diagnostico():
+    """Por qué un producto multitono no se puede expandir · y qué componente lleva el tono.
+
+    Sebastián (12-ago): *"nos falta normalizar los lip y los blush, en Shopify están muy bien
+    diferenciados y necesito que se traigan tal cual"*, y sobre todo: *"para los lip existe el
+    envase con el nombre del tono, y el blush todos son el mismo envase, solo cambia la etiqueta"*.
+
+    Eso último es lo que ninguna herramienta estaba mirando: **el tono no vive siempre en el mismo
+    componente**. En el lip serum lo lleva el FRASCO (hay un frasco por color) y en el blush lo
+    lleva la ETIQUETA (un solo frasco de aluminio para los ocho). Una expansión que asuma uno de
+    los dos deja al otro sin resolver, y desde afuera se ve igual: "no cambia nada".
+
+    Este endpoint no cambia nada: MIDE. Dice qué trae Shopify, qué hay en el catálogo, y cuál de
+    los dos componentes lleva el tono -- deducido de los datos y no de una lista escrita a mano
+    (M122). Con eso la acción siguiente deja de ser una apuesta.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    prod_q = (request.args.get('producto') or '').strip()
+    conn = get_db()
+    c = conn.cursor()
+
+    # ── lo que Shopify tiene mapeado ─────────────────────────────────────────────────────────
+    variantes = []
+    try:
+        _sql = ("SELECT COALESCE(sku,''), COALESCE(producto_nombre,''), COALESCE(tono_label,''), "
+                "COALESCE(volumen_ml,0) FROM sku_producto_map WHERE COALESCE(es_regalo,0)=0")
+        _par = []
+        if prod_q:
+            _sql += " AND UPPER(TRIM(producto_nombre)) LIKE ?"
+            _par.append('%' + prod_q.upper().strip() + '%')
+        for (sk, pn, tl, vol) in c.execute(_sql, _par).fetchall():
+            variantes.append({'sku': sk, 'producto': pn, 'tono': tl, 'volumen_ml': vol})
+    except Exception as e:
+        return jsonify({'error': 'no pude leer el mapa de SKU: %s' % str(e)[:160]}), 500
+
+    por_prod = {}
+    for v in variantes:
+        por_prod.setdefault(_norm_prod_fuerte(v['producto']), []).append(v)
+
+    # ── el catálogo, por componente ──────────────────────────────────────────────────────────
+    cat = {'envase': [], 'etiqueta': [], 'tapa': [], 'caja': []}
+    try:
+        for (cod, desc, categoria) in c.execute(
+                "SELECT codigo, COALESCE(descripcion,''), COALESCE(categoria,'') "
+                "FROM maestro_mee").fetchall():
+            _cn = _cat_norm(categoria)
+            for col, cats in _MEE_CATS.items():
+                if any(_cn.startswith(x) or x in _cn for x in cats):
+                    cat[col].append({'codigo': cod, 'desc': desc})
+                    break
+    except Exception as e:
+        log.warning('tonos-diagnostico · catálogo: %s', e)
+
+    # Palabras que NO identifican a un producto: aparecen en media planta y emparejarían
+    # cualquier cosa con cualquier cosa (M177 · una palabra de FAMILIA no sostiene una propuesta).
+    _GENERICAS = {'SERUM', 'CREMA', 'GEL', 'ACEITE', 'AGUA', 'BASE', 'FRASCO', 'ENVASE',
+                  'ETIQUETA', 'TAPA', 'CAJA', 'ML', 'DE', 'LA', 'EL', 'CON', 'SIN', 'PARA',
+                  'BALM', 'SET', 'KIT'}
+
+    def _tokens_producto(nombre):
+        return {w for w in _cat_norm(nombre or '').split()
+                if len(w) >= 4 and w not in _GENERICAS}
+
+    def _contiene(texto, tono):
+        """¿El nombre del componente NOMBRA este tono? Sin acentos: que 'MOCCA' aparezca dentro
+        de otra palabra no significa que sea ese tono."""
+        t = _cat_norm(tono or '')
+        if len(t) < 3:
+            return False
+        return t in _cat_norm(texto or '')
+
+    def _es_de_este_producto(texto, toks):
+        """El candidato tiene que nombrar TAMBIÉN al producto.
+
+        Sin esto, un frasco 'VERDE' de cualquier otro producto cuenta como el tono verde de éste,
+        y el diagnóstico diría que se puede expandir cuando lo que hay es una coincidencia de
+        color entre cosas que no tienen nada que ver. Es el mismo daño de siempre: al final se le
+        pone a un tono el empaque de otro producto (M19/M137).
+        """
+        if not toks:
+            return False
+        t = _cat_norm(texto or '')
+        return any(w in t for w in toks)
+
+    salida = []
+    for pn_norm, vs in sorted(por_prod.items()):
+        tonos = sorted({v['tono'] for v in vs if (v['tono'] or '').strip()})
+        nombre = vs[0]['producto']
+        # ¿En qué componente aparecen los tonos? Se CUENTA, no se supone.
+        # ── de qué FAMILIA son los componentes de este producto ──────────────────────────────
+        #
+        # Exigir que el nombre del empaque comparta una palabra con el del producto es demasiado
+        # estricto y el caso real lo demuestra: el producto se llama "LIP SERUM VOLUMINIZADOR
+        # PEPTIDOS" y su frasco "LIPS GLOSS BLANCO". Comercialmente son lo mismo y no comparten
+        # una sola palabra.
+        #
+        # La señal que SÍ es un hecho: los componentes que YA están asignados a alguna presentación
+        # de este producto. De sus nombres salen las palabras de la familia ("LIPS", "GLOSS"), y
+        # con eso se reconocen los hermanos sin adivinar por parecido (M19: se usa lo registrado,
+        # no lo que se parece).
+        _fam = set()
+        try:
+            _desc_de = {x['codigo']: x['desc'] for col2 in cat for x in cat[col2]}
+            for (_pn2, _env2, _etq2) in c.execute(
+                    "SELECT producto_nombre, COALESCE(envase_codigo,''), "
+                    "COALESCE(etiqueta_codigo,'') FROM producto_presentaciones "
+                    "WHERE COALESCE(activo,1)=1").fetchall():
+                if _norm_prod_fuerte(_pn2 or '') != pn_norm:
+                    continue
+                for _cod2 in (_env2, _etq2):
+                    if _cod2 and _cod2 in _desc_de:
+                        _fam |= _tokens_producto(_desc_de[_cod2])
+        except Exception as _ef:
+            log.warning('tonos-diagnostico · familia de %s: %s', nombre, _ef)
+        # Las palabras que son TONOS no identifican la familia: si no, cualquier frasco de un
+        # color ya asignado haría familia con todos los demás colores.
+        _fam -= {_cat_norm(t) for t in tonos}
+
+        conteo = {}
+        detalle = {}
+        _toks = _tokens_producto(nombre) | _fam
+        for col in ('envase', 'etiqueta'):
+            hits = {}
+            for t in tonos:
+                cands = [x['codigo'] for x in cat[col]
+                         if _contiene(x['desc'], t) and _es_de_este_producto(x['desc'], _toks)]
+                if cands:
+                    hits[t] = cands
+            conteo[col] = len(hits)
+            detalle[col] = hits
+        lleva = None
+        if conteo['envase'] or conteo['etiqueta']:
+            lleva = 'envase' if conteo['envase'] >= conteo['etiqueta'] else 'etiqueta'
+
+        # ¿por qué no se puede expandir? Se responde con el motivo exacto, no con un "no se pudo".
+        motivo = ''
+        if not vs:
+            motivo = 'Shopify no tiene ninguna variante mapeada a este producto.'
+        elif not tonos:
+            motivo = ('Las %d variantes de Shopify no traen el nombre del tono. Lo captura el '
+                      'trabajo que sincroniza el catálogo: hasta que corra, no hay tono que '
+                      'traer.' % len(vs))
+        elif lleva is None:
+            motivo = ('Hay %d tonos, y ninguno aparece en el nombre de un envase ni de una '
+                      'etiqueta que además nombre a este producto. Sin eso no se puede saber qué '
+                      'componente le corresponde a cada tono, y adivinarlo le pondría a un color '
+                      'el empaque de otro.' % len(tonos))
+
+        salida.append({
+            'producto': nombre, 'variantes': len(vs), 'tonos': tonos,
+            'tonos_n': len(tonos),
+            'lleva_el_tono': lleva,
+            'coincidencias': {'envase': conteo['envase'], 'etiqueta': conteo['etiqueta']},
+            'detalle': detalle,
+            'sin_tono': [v['sku'] for v in vs if not (v['tono'] or '').strip()][:20],
+            'puede_expandirse': bool(lleva),
+            'motivo': motivo,
+        })
+
+    salida.sort(key=lambda x: (-x['tonos_n'], x['producto']))
+    return jsonify({'ok': True, 'productos': salida,
+                    'multitono': [x for x in salida if x['tonos_n'] > 1]})

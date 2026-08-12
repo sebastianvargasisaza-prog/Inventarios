@@ -1338,3 +1338,27 @@ Enlazado desde `/planta/contingencia`, que es donde se entra a cargar: el paquet
 impreso ANTES de la falla, porque el día de la contingencia no hay con qué imprimirlo.
 
 Tests: `tests/test_contingencia.py` (en el gate).
+
+### INV-13 · La cola de contingencia reintenta, y reintentar no puede duplicar (12-ago-2026)
+
+Tarea B-14, primera etapa. Si la conexión se interrumpe al enviar el registro de contingencia, lo
+escrito queda en el navegador y se manda solo cuando la conexión vuelve.
+
+**La invariante:** `registros_contingencia.token` es único y lo genera el CLIENTE, uno por
+registro, estable entre reintentos. Es lo que impide que un reintento cree un segundo registro del
+mismo hecho.
+
+**Por qué el servidor no puede resolverlo solo:** un reintento ocurre cuando se pierde la
+RESPUESTA, no la petición, y desde el cliente esos dos casos son idénticos. El servidor tampoco
+puede distinguirlo comparando los datos, porque dos dispensaciones iguales el mismo día son dos
+hechos distintos y colapsarlas perdería registros reales, que es peor que duplicar (M45). Por eso
+la unicidad la declara quien origina, igual que la recepción (mig 265).
+
+Con token repetido el endpoint responde `duplicado: true` con el id del registro que ya existe, y
+no inserta. Sin token, dos envíos son dos registros.
+
+**Alcance declarado:** la cola cubre el formulario YA ABIERTO. No permite abrir la pantalla sin
+conexión, así que la planta no puede considerarse capaz de operar desconectada y la contingencia
+en papel sigue siendo el mecanismo previsto (ASG-PRO-014 numeral 5.6.3).
+
+Tests: `tests/test_contingencia.py` (los dos bordes del token) · mig 425.

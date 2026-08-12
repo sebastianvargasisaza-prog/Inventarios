@@ -528,6 +528,14 @@ CORAZON=(
   # quien. Y el indice enumera lo que FALTA: uno que solo liste lo que salio bien se lee como
   # completo justo cuando le falta lo unico que importaba senalar.
   "tests/test_exportar_expediente.py"
+  # Cuales presentaciones FRENAN una produccion real. El resumen contaba todas las filas por
+  # igual, asi que lo que traba el cierre del batch record se mezclaba con lo que puede
+  # esperar, y una lista que no cierra deja de mirarse.
+  "tests/test_mee_que_frena.py"
+  # El tono NO vive siempre en el mismo componente: en el lip serum lo lleva el frasco (uno
+  # por color) y en el blush la etiqueta (un solo frasco para los ocho). Una expansion que
+  # asuma uno deja al otro sin resolver, y desde afuera se ve igual que si no hiciera nada.
+  "tests/test_tonos_diagnostico.py"
 )
 
 echo ""
