@@ -514,6 +514,14 @@ CORAZON=(
   # Lo que se protege no es "el respaldo corre" sino que se pueda VOLVER A LEER: el test de ida
   # y vuelta vuelca, cifra, descifra y carga en una base nueva comparando fila por fila.
   "tests/test_respaldo_base.py"
+  # Lo que se registro en PAPEL durante un apagon entra al expediente del lote, y entra diciendo
+  # la verdad: la fecha del HECHO sale del papel y la de CARGA la pone el servidor. Si se pudiera
+  # cargar como contemporaneo, una contingencia legitima se volveria un registro falso.
+  "tests/test_contingencia.py"
+  # audit_log solo admite el cursor como posicional. Habia SIETE llamadas posicionales vivas en
+  # admin.py -- ninguna dejaba rastro y todas devolvian 500 en la ultima linea del endpoint,
+  # despues de haber hecho el trabajo. El golden no abre paginas de admin, asi que nadie las vio.
+  "tests/test_audit_log_firma.py"
 )
 
 echo ""

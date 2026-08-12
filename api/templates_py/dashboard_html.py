@@ -2635,6 +2635,15 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       title="Configuración · 📦 Presentaciones (envase por producto) · Lead times · Cadencias · Emails">
       &#9881; Configuración
     </button>
+    <!-- Registro en contingencia (tarea B-13 del ASG-PRO-014 · 12-ago-2026). Va en la barra
+         PRINCIPAL de Planta y no adentro de Configuración: se usa el dia que se fue la luz, o
+         sea justo cuando nadie va a andar buscando en que pestana quedo. Una pantalla sin un
+         enlace visible obliga a teclear la URL, y eso es lo mismo que no existir (M121). -->
+    <a href="/planta/contingencia" target="_blank" rel="noopener"
+      style="padding:9px 22px;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;background:linear-gradient(135deg,#b45309,#d97706);color:#fff;text-decoration:none;display:inline-block;box-shadow:0 3px 10px rgba(180,83,9,.3)"
+      title="Cargar al sistema lo que se registró en papel cuando no había luz o conexión · queda con la fecha REAL del hecho y colgado del expediente del lote">
+      &#128221; Contingencia
+    </a>
     <!-- Sebastián 20-may-2026: Operación Live OCULTA completa · "no la
          logramos, después la repensamos". Mantiene el botón en DOM
          (display:none) para que switchProgGroup('opera_grp') siga

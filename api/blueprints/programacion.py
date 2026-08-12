@@ -30063,3 +30063,396 @@ def planta_preflight_confirmar_limpieza(produccion_id):
     """, (area_id, produccion_id, user, nota))
     conn.commit()
     return jsonify({'ok': True, 'mensaje': 'Limpieza profunda registrada'})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# REGISTRO EN CONTINGENCIA · lo que se anotó en PAPEL entra al expediente
+# (tarea B-13 · numeral 5.6.2 del ASG-PRO-014)
+#
+# Sebastián: *"si se va todo y se hace manual, cómo se sube al sistema"*. Cuando no hay energía ni
+# conectividad la planta registra en los formatos impresos. Ese papel existe y está firmado, y
+# hasta hoy no tenía puerta de entrada: quedaba en una carpeta y el expediente electrónico del
+# lote se veía completo con un hueco adentro, que es la peor forma de estar incompleto.
+#
+# La regla que hace legítimo el registro tardío son las DOS fechas: la del hecho sale del papel,
+# la de carga la pone el servidor. Nunca se carga de manera que aparente haber sido capturado en
+# el momento, porque eso convertiría una contingencia legítima en un registro falso.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+_CONTINGENCIA_TIPOS = {
+    'recepcion': 'Recepción de material',
+    'dispensacion': 'Dispensación / pesaje',
+    'control_proceso': 'Control en proceso',
+    'despeje_linea': 'Despeje de línea',
+    'limpieza': 'Limpieza de área o equipo',
+    'produccion': 'Ejecución de producción',
+    'otro': 'Otro registro',
+}
+
+_CONTINGENCIA_MOTIVOS = {
+    'falla_electrica': 'Falla eléctrica',
+    'falla_conectividad': 'Falla de conectividad',
+    'sistema_no_disponible': 'Sistema no disponible',
+    'otro': 'Otro',
+}
+
+_CONTINGENCIA_EXT = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                     '.webp': 'image/webp', '.pdf': 'application/pdf'}
+
+
+def _contingencia_puede_cargar():
+    """Planta, Calidad y Aseguramiento, además de admin.
+
+    Quien registró en papel durante la contingencia es quien lo carga: restringirlo a un solo rol
+    dejaría al que estuvo en el turno sin poder subir lo que él mismo firmó (M171/M32).
+    """
+    u = session.get('compras_user', '')
+    if not u:
+        return None, (jsonify({'error': 'No autenticado'}), 401)
+    try:
+        from config import ASEGURAMIENTO_USERS as _ASEG
+    except ImportError:
+        _ASEG = set()
+    permitidos = set(ADMIN_USERS) | set(PLANTA_USERS) | set(CALIDAD_USERS) | set(_ASEG)
+    if u not in permitidos:
+        return None, (jsonify({'error': 'Solo planta, calidad o aseguramiento pueden cargar '
+                                        'registros de contingencia'}), 403)
+    return u, None
+
+
+@bp.route('/api/planta/contingencia', methods=['POST'])
+def contingencia_cargar():
+    """Carga un registro hecho en papel durante una contingencia.
+
+    Devuelve AVISOS en vez de bloquear cuando algo no se pudo cumplir (falta la foto, la carga va
+    fuera del plazo de 24 horas): el dato ya existe en papel, así que impedir su entrada no lo
+    mejora, sólo lo deja afuera del expediente. Lo único que se rechaza es lo imposible.
+    """
+    u, err = _contingencia_puede_cargar()
+    if err:
+        return err
+
+    f = request.form
+    tipo = (f.get('tipo_registro') or '').strip().lower()
+    if tipo not in _CONTINGENCIA_TIPOS:
+        return jsonify({'error': 'Tipo de registro inválido',
+                        'validos': sorted(_CONTINGENCIA_TIPOS)}), 400
+
+    fecha = (f.get('fecha_hecho') or '').strip()
+    ejecutado = (f.get('ejecutado_por') or '').strip()
+    if not fecha:
+        return jsonify({'error': 'Falta la fecha en que ocurrió · sale del papel, '
+                                 'no es la de hoy'}), 400
+    if not ejecutado:
+        return jsonify({'error': 'Falta quién ejecutó · es lo que firma el papel'}), 400
+
+    from datetime import datetime as _dtc, timedelta as _tdc
+    hoy_col = _dtc.utcnow() - _tdc(hours=5)
+    try:
+        f_hecho = _dtc.strptime(fecha[:10], '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'error': 'La fecha debe venir como AAAA-MM-DD'}), 400
+    # Una fecha futura no es un registro tardío: es un dato imposible, y en un registro regulado
+    # eso no se acepta ni con aviso.
+    if f_hecho.date() > hoy_col.date():
+        return jsonify({'error': 'La fecha del hecho no puede estar en el futuro'}), 400
+
+    avisos = []
+    atraso_dias = (hoy_col.date() - f_hecho.date()).days
+    if atraso_dias >= 2:
+        avisos.append('Se está cargando %d días después del hecho · el procedimiento pide hacerlo '
+                      'dentro de las 24 horas siguientes al restablecimiento.' % atraso_dias)
+
+    lote = (f.get('lote') or '').strip()
+    if not lote:
+        avisos.append('Sin número de lote el registro no se puede colgar del expediente de un '
+                      'lote: queda sólo en la lista de contingencias.')
+
+    # ── el soporte · la imagen del formato firmado ─────────────────────────────────────────────
+    r2_key = ''
+    sin_soporte = 1
+    archivo = request.files.get('soporte')
+    if archivo and archivo.filename:
+        datos = archivo.read()
+        if len(datos) > 12 * 1024 * 1024:
+            return jsonify({'error': 'El archivo pesa más de 12 MB · sacá la foto con menos '
+                                     'resolución'}), 400
+        ext = os.path.splitext(archivo.filename)[1].lower()
+        if ext not in _CONTINGENCIA_EXT:
+            return jsonify({'error': 'Formato no admitido · una foto (jpg, png, webp) '
+                                     'o un PDF'}), 400
+        try:
+            from r2_storage import r2_put, r2_configurado
+            _hay_r2 = r2_configurado()
+        except Exception:
+            _hay_r2 = False
+        if not _hay_r2:
+            avisos.append('El almacenamiento de archivos no está configurado: el registro entra '
+                          'SIN la imagen del papel.')
+        else:
+            import hashlib as _hc
+            sello = _hc.sha1(datos).hexdigest()[:12]
+            r2_key = 'contingencia/%s/%s-%s%s' % (f_hecho.strftime('%Y-%m'),
+                                                  hoy_col.strftime('%Y%m%d%H%M%S'), sello, ext)
+            if r2_put(r2_key, datos, content_type=_CONTINGENCIA_EXT[ext]):
+                sin_soporte = 0
+            else:
+                r2_key = ''
+                avisos.append('No pude guardar la imagen · el registro entra sin ella y queda en '
+                              'la lista de pendientes de soporte.')
+    else:
+        avisos.append('Sin la imagen del formato firmado el papel sigue siendo la única '
+                      'evidencia · el registro queda como pendiente de soporte.')
+
+    conn = get_db()
+    c = conn.cursor()
+    cargado_at = hoy_col.strftime('%Y-%m-%d %H:%M:%S')
+    c.execute("INSERT INTO registros_contingencia (tipo_registro, area, lote, producto, "
+              "fecha_hecho, hora_hecho, ejecutado_por, verificado_por, motivo, observaciones, "
+              "r2_key, sin_soporte, cargado_por, cargado_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              (tipo, (f.get('area') or '').strip(), lote, (f.get('producto') or '').strip(),
+               fecha[:10], (f.get('hora_hecho') or '').strip(), ejecutado,
+               (f.get('verificado_por') or '').strip(),
+               (f.get('motivo') or '').strip().lower(), (f.get('observaciones') or '').strip(),
+               r2_key, sin_soporte, u, cargado_at))
+    reg_id = c.lastrowid
+
+    # Se inscribe en el índice del expediente para que aparezca al buscar el lote. Es la razón de
+    # ser de esta pantalla: que el papel deje de vivir sólo en una carpeta física.
+    if lote:
+        try:
+            from audit_helpers import registrar_documento
+            registrar_documento(
+                c, tipo_doc='CONTINGENCIA-' + tipo.upper(),
+                url='/api/planta/contingencia/%d/soporte' % reg_id,
+                entidad='PT', codigo='', producto_nombre=(f.get('producto') or '').strip(),
+                lote=lote, formato='ASG-PRO-014-F05',
+                titulo='Registro en contingencia · ' + _CONTINGENCIA_TIPOS[tipo],
+                ref_tabla='registros_contingencia', ref_id=str(reg_id), generado_por=u)
+        except Exception:
+            log.warning('no pude inscribir el registro de contingencia en el expediente',
+                        exc_info=True)
+
+    audit_log(c, usuario=u, accion='CONTINGENCIA_CARGAR', tabla='registros_contingencia',
+              registro_id=str(reg_id),
+              detalle='%s · lote %s · hecho %s' % (tipo, lote or 'sin lote', fecha[:10]))
+    conn.commit()
+
+    return jsonify({'ok': True, 'id': reg_id, 'avisos': avisos,
+                    'sin_soporte': bool(sin_soporte),
+                    'mensaje': 'Registro cargado con la fecha del hecho (%s) y marcado como '
+                               'contingencia.' % fecha[:10]})
+
+
+@bp.route('/api/planta/contingencia', methods=['GET'])
+def contingencia_listar():
+    """Los registros de contingencia, y cuántos siguen sin la imagen del papel."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db()
+    c = conn.cursor()
+    lote = (request.args.get('lote') or '').strip()
+    where, params = ['COALESCE(anulado,0)=0'], []
+    if lote:
+        where.append('UPPER(TRIM(lote))=UPPER(TRIM(?))')
+        params.append(lote)
+    c.execute("SELECT id, tipo_registro, area, lote, producto, fecha_hecho, hora_hecho, "
+              "ejecutado_por, verificado_por, motivo, observaciones, r2_key, sin_soporte, "
+              "cargado_por, cargado_at FROM registros_contingencia WHERE " + ' AND '.join(where) +
+              " ORDER BY fecha_hecho DESC, id DESC LIMIT 300", params)
+    filas = []
+    for r in c.fetchall():
+        filas.append({
+            'id': r[0], 'tipo': r[1], 'tipo_nombre': _CONTINGENCIA_TIPOS.get(r[1], r[1]),
+            'area': r[2], 'lote': r[3], 'producto': r[4], 'fecha_hecho': r[5], 'hora_hecho': r[6],
+            'ejecutado_por': r[7], 'verificado_por': r[8],
+            'motivo': _CONTINGENCIA_MOTIVOS.get(r[9], r[9] or ''), 'observaciones': r[10],
+            'tiene_soporte': bool(r[11]) and not r[12], 'sin_soporte': bool(r[12]),
+            'cargado_por': r[13], 'cargado_at': r[14],
+        })
+    return jsonify({'ok': True, 'registros': filas,
+                    'pendientes_soporte': sum(1 for x in filas if x['sin_soporte']),
+                    'tipos': _CONTINGENCIA_TIPOS, 'motivos': _CONTINGENCIA_MOTIVOS})
+
+
+@bp.route('/api/planta/contingencia/<int:reg_id>/soporte', methods=['GET'])
+def contingencia_soporte(reg_id):
+    """Sirve la imagen del formato firmado."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/planta/contingencia')
+    conn = get_db()
+    r = conn.cursor().execute(
+        "SELECT r2_key FROM registros_contingencia WHERE id=? AND COALESCE(anulado,0)=0",
+        (reg_id,)).fetchone()
+    if not r or not (r[0] or ''):
+        return Response('Este registro no tiene imagen del formato firmado.', status=404,
+                        mimetype='text/plain')
+    try:
+        from r2_storage import r2_get
+        datos = r2_get(r[0])
+    except Exception:
+        datos = None
+    if not datos:
+        return Response('No pude recuperar la imagen.', status=502, mimetype='text/plain')
+    ext = os.path.splitext(r[0])[1].lower()
+    return Response(datos, mimetype=_CONTINGENCIA_EXT.get(ext, 'application/octet-stream'))
+
+
+@bp.route('/planta/contingencia', methods=['GET'])
+def contingencia_pagina():
+    """Pantalla · cargar al sistema lo que se registró en papel durante una contingencia."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/planta/contingencia')
+    return Response(r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Registro en contingencia &middot; EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--cx-bg, #faf9fb);color:var(--cx-text, #1c1917);margin:0;padding:26px 3vw}
+.wrap{max-width:96vw;margin:0 auto}
+a.back{color:var(--cx-primary-text, #6d28d9);text-decoration:none;font-size:13px;font-weight:700}
+h1{font-size:26px;margin:10px 0 4px;letter-spacing:-.01em}
+.sub{color:var(--cx-text-mute, #78716c);font-size:13.5px;line-height:1.65;max-width:880px;margin-bottom:22px}
+.cols{display:grid;grid-template-columns:minmax(340px,460px) 1fr;gap:22px;align-items:start}
+@media(max-width:900px){.cols{grid-template-columns:1fr}}
+.card{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #eef0f2);border-radius:18px;box-shadow:0 2px 16px rgba(15,23,42,.06);padding:22px 24px}
+.card h2{font-size:16px;margin:0 0 4px;font-weight:800}
+.card .hint{font-size:12.5px;color:var(--cx-text-mute, #78716c);line-height:1.6;margin-bottom:16px}
+label{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;color:var(--cx-text-mute, #78716c);margin:13px 0 5px}
+input,select,textarea{width:100%;box-sizing:border-box;font-family:inherit;font-size:14px;padding:10px 12px;border:1px solid var(--cx-border, #e7e5e4);border-radius:11px;background:var(--cx-bg, #fff);color:var(--cx-text, #1c1917)}
+textarea{min-height:66px;resize:vertical}
+.fila{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.req{color:var(--cx-danger-text, #b91c1c)}
+button{font-family:inherit;font-size:14px;font-weight:800;border-radius:12px;padding:12px 24px;border:none;background:var(--cx-primary-grad, linear-gradient(135deg,#7c3aed,#6d28d9));color:#fff;cursor:pointer;margin-top:20px;width:100%}
+button:disabled{opacity:.55;cursor:default}
+.avisos{border-radius:13px;padding:13px 16px;margin-top:14px;font-size:13px;line-height:1.65}
+.a-ok{background:var(--cx-success-pale, #f0fdf4);border:1px solid var(--cx-success-soft, #bbf7d0)}
+.a-warn{background:var(--cx-warn-pale, #fffbeb);border:1px solid var(--cx-warn-soft, #fde68a)}
+.a-err{background:var(--cx-danger-pale, #fef2f2);border:1px solid var(--cx-danger-soft, #fecaca)}
+.avisos b{display:block;margin-bottom:5px}
+.avisos ul{margin:6px 0 0;padding-left:18px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--cx-bg-alt, #f4f4f5);text-align:left;padding:10px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute, #78716c);position:sticky;top:0}
+td{padding:10px 12px;border-top:1px solid var(--cx-border, #eef0f2);vertical-align:top}
+.chip{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px}
+.c-falta{background:var(--cx-warn-pale, #fffbeb);color:var(--cx-warn-text, #b45309)}
+.c-ok{background:var(--cx-success-pale, #f0fdf4);color:var(--cx-success-text, #15803d)}
+.kpi{display:flex;gap:20px;margin-bottom:14px;flex-wrap:wrap}
+.kpi div span{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute, #78716c);font-weight:800}
+.kpi div b{font-size:20px}
+.scroll{max-height:62vh;overflow:auto;border-radius:12px;border:1px solid var(--cx-border, #eef0f2)}
+</style></head><body><div class="wrap">
+<a class="back" href="/inventarios">&larr; Volver</a>
+<h1>&#128221; Registro en contingencia</h1>
+<div class="sub">Cuando no hay energ&iacute;a ni conexi&oacute;n, la planta registra en los formatos impresos.
+Ac&aacute; ese papel entra al sistema y queda colgado del expediente del lote.
+<b>La fecha que se pide es la del hecho, la que dice el papel</b>, no la de hoy: el sistema guarda aparte
+cu&aacute;ndo se carg&oacute; y marca el registro como contingencia. Numeral 5.6.2 del ASG-PRO-014.</div>
+
+<div class="cols">
+  <div class="card">
+    <h2>Cargar un registro</h2>
+    <div class="hint">Lo marcado con <span class="req">*</span> es obligatorio. Si no pudiste sacarle
+    foto al papel, cargalo igual: queda como pendiente de soporte y no se pierde.</div>
+    <form id="frm" onsubmit="return false">
+      <label>Tipo de registro <span class="req">*</span></label>
+      <select id="tipo"></select>
+      <div class="fila">
+        <div><label>Fecha del hecho <span class="req">*</span></label><input type="date" id="fecha"></div>
+        <div><label>Hora del hecho</label><input type="time" id="hora"></div>
+      </div>
+      <div class="fila">
+        <div><label>Lote</label><input id="lote" placeholder="al que corresponde"></div>
+        <div><label>&Aacute;rea</label><input id="area" placeholder="sala o equipo"></div>
+      </div>
+      <label>Producto</label><input id="producto">
+      <div class="fila">
+        <div><label>Ejecut&oacute; <span class="req">*</span></label><input id="ejecutado" placeholder="quien firma el papel"></div>
+        <div><label>Verific&oacute;</label><input id="verificado"></div>
+      </div>
+      <label>Motivo de la contingencia</label>
+      <select id="motivo"></select>
+      <label>Observaciones</label><textarea id="obs"></textarea>
+      <label>Foto del formato firmado</label>
+      <input type="file" id="soporte" accept="image/*,application/pdf">
+      <button id="btn" onclick="enviar()">Cargar al sistema</button>
+    </form>
+    <div id="res"></div>
+  </div>
+
+  <div class="card">
+    <h2>Registros cargados</h2>
+    <div class="hint">Los que no tienen la imagen del papel salen marcados: mientras falte, el
+    original en papel es la &uacute;nica evidencia.</div>
+    <div class="kpi">
+      <div><span>Cargados</span><b id="k-tot">-</b></div>
+      <div><span>Sin la foto del papel</span><b id="k-falta">-</b></div>
+    </div>
+    <div class="scroll"><table><thead><tr><th>Hecho</th><th>Tipo</th><th>Lote</th><th>Ejecut&oacute;</th><th>Soporte</th><th>Cargado</th></tr></thead>
+    <tbody id="tb"><tr><td colspan="6">Cargando&hellip;</td></tr></tbody></table></div>
+  </div>
+</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+var _busy=false;
+async function tok(){var r=await fetch('/api/csrf-token',{credentials:'same-origin'});var d=await r.json();return d.csrf_token;}
+function opciones(sel,obj,vacio){
+  var h = vacio ? '<option value="">'+vacio+'</option>' : '';
+  for(var k in obj){ h += '<option value="'+esc(k)+'">'+esc(obj[k])+'</option>'; }
+  document.getElementById(sel).innerHTML=h;
+}
+async function cargar(){
+  var r=await fetch('/api/planta/contingencia',{credentials:'same-origin'});
+  if(!r.ok){ document.getElementById('tb').innerHTML='<tr><td colspan="6">No pude leer los registros.</td></tr>'; return; }
+  var d=await r.json();
+  if(!document.getElementById('tipo').options.length){
+    opciones('tipo',d.tipos,null); opciones('motivo',d.motivos,'Sin especificar');
+  }
+  document.getElementById('k-tot').textContent=d.registros.length;
+  document.getElementById('k-falta').textContent=d.pendientes_soporte;
+  var tb=document.getElementById('tb');
+  if(!d.registros.length){ tb.innerHTML='<tr><td colspan="6">Todav&iacute;a no se carg&oacute; ning&uacute;n registro de contingencia.</td></tr>'; return; }
+  tb.innerHTML=d.registros.map(function(x){
+    var sop = x.sin_soporte ? '<span class="chip c-falta">falta la foto</span>'
+              : '<a href="/api/planta/contingencia/'+x.id+'/soporte" target="_blank" rel="noopener" class="chip c-ok">ver papel</a>';
+    return '<tr><td><b>'+esc(x.fecha_hecho)+'</b>'+(x.hora_hecho?' '+esc(x.hora_hecho):'')+'</td>'+
+      '<td>'+esc(x.tipo_nombre)+'</td><td>'+esc(x.lote||'-')+'</td><td>'+esc(x.ejecutado_por)+'</td>'+
+      '<td>'+sop+'</td><td>'+esc(x.cargado_at)+'<br><small>'+esc(x.cargado_por)+'</small></td></tr>';
+  }).join('');
+}
+async function enviar(){
+  if(_busy) return; _busy=true;
+  var b=document.getElementById('btn'); b.disabled=true; b.textContent='Cargando...';
+  var res=document.getElementById('res');
+  try{
+    var fd=new FormData();
+    fd.append('tipo_registro',document.getElementById('tipo').value);
+    fd.append('fecha_hecho',document.getElementById('fecha').value);
+    fd.append('hora_hecho',document.getElementById('hora').value);
+    fd.append('lote',document.getElementById('lote').value);
+    fd.append('area',document.getElementById('area').value);
+    fd.append('producto',document.getElementById('producto').value);
+    fd.append('ejecutado_por',document.getElementById('ejecutado').value);
+    fd.append('verificado_por',document.getElementById('verificado').value);
+    fd.append('motivo',document.getElementById('motivo').value);
+    fd.append('observaciones',document.getElementById('obs').value);
+    var f=document.getElementById('soporte').files[0];
+    if(f) fd.append('soporte',f);
+    var r=await fetch('/api/planta/contingencia',{method:'POST',credentials:'same-origin',
+      headers:{'X-CSRF-Token':await tok()},body:fd});
+    var d=await r.json();
+    if(!r.ok){ res.innerHTML='<div class="avisos a-err"><b>No se carg&oacute;</b>'+esc(d.error||'')+'</div>'; }
+    else {
+      var li=(d.avisos||[]).map(function(a){return '<li>'+esc(a)+'</li>';}).join('');
+      res.innerHTML='<div class="avisos '+(li?'a-warn':'a-ok')+'"><b>'+esc(d.mensaje)+'</b>'+
+        (li?'<ul>'+li+'</ul>':'')+'</div>';
+      ['lote','area','producto','ejecutado','verificado','obs'].forEach(function(id){document.getElementById(id).value='';});
+      document.getElementById('soporte').value='';
+      cargar();
+    }
+  }catch(e){ res.innerHTML='<div class="avisos a-err"><b>Error de red</b>'+esc(String(e))+'</div>'; }
+  b.disabled=false; b.textContent='Cargar al sistema'; _busy=false;
+}
+cargar();
+</script></body></html>""", mimetype='text/html')

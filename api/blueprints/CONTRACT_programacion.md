@@ -1289,3 +1289,32 @@ método de marcación (`marcacion_tipo`/`marcacion_proveedor`, que decide si el 
 serigrafía y a qué proveedor se le paga).
 
 Tests: `tests/test_rastro_empaque.py`, `tests/test_rastro_maestro_envases.py` (en el gate).
+
+### INV-11 · Registro en contingencia · la fecha del HECHO y la de CARGA son dos cosas (12-ago-2026)
+
+Tarea B-13 del ASG-PRO-014 (numeral 5.6.2). Cuando no hay energía ni conectividad la planta
+registra en los formatos impresos; `registros_contingencia` es la puerta por la que ese papel
+entra al sistema.
+
+**La invariante:** `fecha_hecho` sale del papel y `cargado_at` / `cargado_por` los pone el
+SERVIDOR, nunca el cliente. Un registro cargado de manera que aparente haber sido capturado en el
+momento convertiría una contingencia legítima en un registro falso, y eso es peor que el hueco que
+el mecanismo viene a tapar.
+
+**Qué se rechaza y qué se avisa** (la distinción es deliberada): se rechaza lo IMPOSIBLE (fecha
+futura, tipo fuera de la lista blanca, archivo que no puede ser evidencia) y se AVISA lo demás
+(sin foto del papel, carga fuera del plazo de 24 h, sin lote) sin bloquear. El dato ya existe en
+papel: impedir su entrada no lo mejora, sólo lo deja afuera del expediente.
+
+**Con lote se inscribe en `documentos_regulados`** vía `registrar_documento`. Sin ese paso el
+registro viviría en una tabla propia y el expediente del lote seguiría teniendo el mismo hueco,
+que es justamente lo que se venía a resolver.
+
+Puede cargar quien estuvo en el turno: PLANTA ∪ CALIDAD ∪ ASEGURAMIENTO ∪ ADMIN. Restringirlo a un
+solo rol dejaría al que firmó el papel sin poder subirlo (M171/M32).
+
+Endpoints: `POST/GET /api/planta/contingencia`, `GET /api/planta/contingencia/<id>/soporte`,
+pantalla `GET /planta/contingencia` (enlazada desde la barra principal de Planta · M121).
+
+Tests: `tests/test_contingencia.py` (en el gate), incluidos los dos bordes de permiso y el guard
+de que el cliente no puede dictar la fecha de carga.

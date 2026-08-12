@@ -11277,6 +11277,46 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         )""",
         "CREATE INDEX IF NOT EXISTS idx_respaldolog_tipo_fecha ON respaldo_log(tipo, fecha)",
     ]),
+    (424, "registros_contingencia · lo que se registro en PAPEL entra al expediente · 12-ago-2026", [
+        # Tarea B-13 del ASG-PRO-014 (numeral 5.6.2). Sebastian: *"si se va todo y se hace manual
+        # como se sube al sistema el respaldo"*.
+        #
+        # Cuando no hay energia ni conectividad la planta registra en los formatos impresos. Ese
+        # papel existe y esta firmado, pero hasta hoy NO tenia forma de entrar: quedaba en una
+        # carpeta que alguien tiene que acordarse de buscar, y el expediente electronico del lote
+        # quedaba con un hueco que nada declaraba.
+        #
+        # Dos fechas SIEMPRE, y esa es la regla que hace legitimo el registro tardio: `fecha_hecho`
+        # es cuando paso de verdad (sale del papel) y `cargado_at` lo pone el SERVIDOR. Cargar un
+        # registro de manera que aparente haber sido capturado en el momento convertiria una
+        # contingencia legitima en un registro falso.
+        #
+        # `sin_soporte` en vez de exigir la foto: si la camara falla, el registro igual tiene que
+        # poder entrar -- bloquear la carga por falta de foto reabre el hueco que esto viene a
+        # tapar. Se marca y se lista (M100: lo que no se pudo cumplir se declara, no se bloquea).
+        """CREATE TABLE IF NOT EXISTS registros_contingencia (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo_registro TEXT NOT NULL,
+            area TEXT DEFAULT '',
+            lote TEXT DEFAULT '',
+            producto TEXT DEFAULT '',
+            fecha_hecho TEXT NOT NULL,
+            hora_hecho TEXT DEFAULT '',
+            ejecutado_por TEXT NOT NULL,
+            verificado_por TEXT DEFAULT '',
+            motivo TEXT DEFAULT '',
+            observaciones TEXT DEFAULT '',
+            r2_key TEXT DEFAULT '',
+            sin_soporte INTEGER NOT NULL DEFAULT 0,
+            cargado_por TEXT NOT NULL DEFAULT '',
+            cargado_at TEXT NOT NULL DEFAULT '',
+            anulado INTEGER NOT NULL DEFAULT 0,
+            anulado_por TEXT DEFAULT '',
+            anulado_motivo TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_contingencia_lote ON registros_contingencia(lote)",
+        "CREATE INDEX IF NOT EXISTS idx_contingencia_fecha ON registros_contingencia(fecha_hecho)",
+    ]),
 ]
 
 

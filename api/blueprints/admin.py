@@ -403,7 +403,8 @@ def admin_respaldo_ahora():
     # Anti doble-click (M63): dos volcados a la vez duplican el trabajo y compiten por la base.
     if _RESPALDO_EN_CURSO.get("tipo") and (_t.time() - _RESPALDO_EN_CURSO.get("desde", 0)) < 1800:
         return jsonify({"error": "ya hay una copia en curso (%s)" % _RESPALDO_EN_CURSO["tipo"]}), 409
-    audit_log(None, u, "RESPALDO_MANUAL", "respaldo_log", "", "", tipo)
+    audit_log(None, usuario=u, accion="RESPALDO_MANUAL", tabla="respaldo_log",
+              registro_id="", detalle=tipo)
     _lanzar_respaldo(current_app._get_current_object(), tipo)
     return jsonify({"ok": True, "tipo": tipo,
                     "mensaje": "La copia se está generando. Actualizá en un par de minutos."})
@@ -435,8 +436,9 @@ def admin_respaldo_verificar():
         conn.commit()
     except Exception:
         log.warning("no pude registrar la verificación del respaldo", exc_info=True)
-    audit_log(None, u, "RESPALDO_VERIFICAR", "respaldo_log", key, "",
-              "ok" if res.get("ok") else str(res.get("motivo"))[:120])
+    audit_log(None, usuario=u, accion="RESPALDO_VERIFICAR", tabla="respaldo_log",
+              registro_id=key,
+              detalle="ok" if res.get("ok") else str(res.get("motivo"))[:120])
     res["key"] = key
     return jsonify(res)
 
@@ -7795,7 +7797,8 @@ def admin_envase_set_ml():
         return jsonify({"error": f"envase {cod} no existe"}), 404
     c.execute("UPDATE maestro_mee SET volumen_ml=? WHERE codigo=?", (ml, cod))
     try:
-        audit_log(None, u, "ENVASE_SET_ML", "maestro_mee", cod, f"volumen_ml={ml}")
+        audit_log(None, usuario=u, accion="ENVASE_SET_ML", tabla="maestro_mee",
+                  registro_id=cod, detalle=f"volumen_ml={ml}")
     except Exception:
         pass
     conn.commit()
@@ -7840,7 +7843,8 @@ def admin_envase_crear():
     c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, volumen_ml, stock_actual, stock_minimo, "
               "estado, fecha_creacion) VALUES (?, ?, ?, ?, 0, 0, 'Activo', ?)", (newcod, desc, cat, ml, fecha))
     try:
-        audit_log(None, u, "ENVASE_CREAR", "maestro_mee", newcod, f"descripcion={desc} cat={cat} ml={ml}")
+        audit_log(None, usuario=u, accion="ENVASE_CREAR", tabla="maestro_mee",
+                  registro_id=newcod, detalle=f"descripcion={desc} cat={cat} ml={ml}")
     except Exception:
         pass
     conn.commit()
@@ -8973,7 +8977,8 @@ def admin_gloss_tonos_aplicar():
                   (prod, pcode, (p.get("tono") or sku or "tono"), vol, env, sku or None))
         n += 1
     try:
-        audit_log(None, u, "MAPEAR_GLOSS_TONOS", "producto_presentaciones", "gloss", f"{n} pares")
+        audit_log(None, usuario=u, accion="MAPEAR_GLOSS_TONOS", tabla="producto_presentaciones",
+                  registro_id="gloss", detalle=f"{n} pares")
     except Exception:
         pass
     conn.commit()
@@ -9071,7 +9076,8 @@ def admin_impresos_aplicar():
                   "VALUES (?, ?, ?, ?, ?, 1, 1)", (prod, vcode, _vstr + "ml (impreso)", vol, env))
         n += 1
     try:
-        audit_log(None, u, "ANCLAR_IMPRESOS", "producto_presentaciones", "impresos", f"{n} anclados")
+        audit_log(None, usuario=u, accion="ANCLAR_IMPRESOS", tabla="producto_presentaciones",
+                  registro_id="impresos", detalle=f"{n} anclados")
     except Exception:
         pass
     conn.commit()
@@ -9262,7 +9268,8 @@ def admin_componentes_aplicar():
                       "AND COALESCE(activo,1)=1", (mee, prod))
         n_plg += (r.rowcount or 0)
     try:
-        audit_log(None, u, "ANCLAR_COMPONENTES", "producto_presentaciones", "etq+plg", f"etq={n_etq} plg={n_plg}")
+        audit_log(None, usuario=u, accion="ANCLAR_COMPONENTES", tabla="producto_presentaciones",
+                  registro_id="etq+plg", detalle=f"etq={n_etq} plg={n_plg}")
     except Exception:
         pass
     conn.commit()
@@ -9430,7 +9437,8 @@ def admin_tapas_goteros_aplicar():
                           "VALUES (?, ?, ?, 1, ?)", (env, pv, tipo, ''))
                 n += 1
     try:
-        audit_log(None, u, "ANCLAR_TAPA_GOTERO", "mee_partes", "frasco", f"{n} partes")
+        audit_log(None, usuario=u, accion="ANCLAR_TAPA_GOTERO", tabla="mee_partes",
+                  registro_id="frasco", detalle=f"{n} partes")
     except Exception:
         pass
     conn.commit()
@@ -9632,7 +9640,8 @@ def admin_mapear_envase():
               "(producto_nombre, presentacion_codigo, etiqueta, volumen_ml, envase_codigo, es_default, activo) "
               "VALUES (?, ?, ?, ?, ?, 1, 1)", (prod, vcode, etq, vol, env))
     try:
-        audit_log(None, u, "MAPEAR_ENVASE", "producto_presentaciones", prod, f"envase={env} vol={vol}")
+        audit_log(None, usuario=u, accion="MAPEAR_ENVASE", tabla="producto_presentaciones",
+                  registro_id=prod, detalle=f"envase={env} vol={vol}")
     except Exception:
         pass
     conn.commit()
