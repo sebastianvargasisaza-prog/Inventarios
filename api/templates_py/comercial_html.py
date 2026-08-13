@@ -411,14 +411,14 @@ async function descartarRemitente(id){
   var n=(window._LEADS||[]).filter(function(x){
     return !x.descartado && !x.pipeline_id && String(x.remitente||'').toLowerCase().indexOf(correo.toLowerCase())>=0;
   }).length;
-  var m=prompt('Descarto '+n+' correo(s) pendientes de '+correo+'. Queda registrado y se puede recuperar. Motivo:','no es un prospecto');
+  var m=prompt('Descarto '+n+' correo(s) pendientes de '+correo+', y de ahora en mas los suyos entran ya descartados (se puede deshacer). Motivo:','correo interno');
   if(m===null) return;
   try{
     var r=await fetch('/api/comercial/leads-correo/descartar-remitente', _fetchOpts('POST',{correo:correo, motivo:m}));
     var d=await r.json();
     if(!r.ok){ _toast((d&&d.error)||('HTTP '+r.status), false); return; }
     await cargarLeadsCorreo();
-    _toast('Descartados '+d.descartados+' de '+correo, true);
+    _toast('Descartados '+d.descartados+' de '+correo+(d.recordado?' · los proximos entran ya descartados':''), true);
   }catch(e){ _toast('Error de red: '+e.message,false); }
 }
 

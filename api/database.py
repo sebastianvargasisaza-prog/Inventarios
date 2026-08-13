@@ -11368,6 +11368,26 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_leadscorreo_msgid ON leads_correo(message_id)",
         "CREATE INDEX IF NOT EXISTS idx_leadscorreo_fecha ON leads_correo(fecha_correo DESC)",
     ]),
+    (427, "leads_remitentes_ignorados · el barrido se queda hecho · 13-ago-2026", [
+        # Sebastian, viendo la primera lectura real: el ruido no era spam, era **correo interno**
+        # -- Aseguramiento, Recursos Humanos, un proveedor, respuestas de hilos.
+        #
+        # Descartarlos de a uno (o incluso en bloque) no alcanza: manana vuelven a llegar y hay
+        # que barrer otra vez. Un trabajo que hay que rehacer todos los dias se deja de hacer, y
+        # entonces el prospecto de verdad queda enterrado entre veinte correos internos.
+        #
+        # La lista la construye EL: sale de sus descartes, no de una regla que yo invente. Y es
+        # reversible -- si algun dia ese remitente escribe por otra cosa, se saca de la lista.
+        """CREATE TABLE IF NOT EXISTS leads_remitentes_ignorados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            correo TEXT NOT NULL,
+            motivo TEXT DEFAULT '',
+            creado_por TEXT DEFAULT '',
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_leadsignora_correo "
+        "ON leads_remitentes_ignorados(correo)",
+    ]),
 ]
 
 

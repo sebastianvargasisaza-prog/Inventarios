@@ -420,8 +420,62 @@ def leads_correo_descartar_remitente():
             detalle='%d correo(s) de %s · %s' % (len(ids), correo, motivo))
     except Exception as e:
         log.warning('descartar remitente: no pude auditar: %s', e)
+    # El barrido se QUEDA hecho: ese remitente vuelve a escribir manana, y un trabajo que hay
+    # que rehacer todos los dias se deja de hacer -- y ahi el prospecto real queda enterrado.
+    # La lista la construye el usuario con sus propios descartes, y es reversible.
+    recordado = False
+    if d.get('recordar', True):
+        try:
+            c.execute("INSERT INTO leads_remitentes_ignorados (correo, motivo, creado_por) "
+                      " VALUES (?,?,?) ON CONFLICT (correo) DO NOTHING",
+                      (correo, motivo, user))
+            recordado = bool(c.rowcount)
+        except Exception as e:
+            log.warning('ignorar remitente: %s', e)
     conn.commit()
-    return jsonify({'ok': True, 'descartados': len(ids), 'correo': correo, 'motivo': motivo})
+    return jsonify({'ok': True, 'descartados': len(ids), 'correo': correo, 'motivo': motivo,
+                    'recordado': recordado,
+                    'aviso': ('De ahora en mas los correos de %s entran ya descartados. '
+                              'Se puede deshacer.' % correo) if recordado else None})
+
+
+@bp.route('/api/comercial/leads-correo/ignorados', methods=['GET', 'DELETE'])
+def leads_correo_ignorados():
+    """Los remitentes que entran ya descartados · y como sacar a uno de la lista.
+
+    Una lista que filtra y NO se puede mirar ni deshacer es la que un dia se come un cliente sin
+    que nadie sepa por que (M138).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if not _pipeline_puede(user):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'DELETE':
+        correo = (request.args.get('correo') or '').strip().lower()
+        if not correo:
+            return jsonify({'error': 'falta el correo'}), 400
+        c.execute("DELETE FROM leads_remitentes_ignorados WHERE LOWER(TRIM(correo))=?", (correo,))
+        n = c.rowcount
+        if n:
+            try:
+                from audit_helpers import audit_log as _al
+                _al(c, usuario=user, accion='DESIGNORAR_REMITENTE',
+                    tabla='leads_remitentes_ignorados', registro_id=correo,
+                    antes={'ignorado': 1}, despues={'ignorado': 0}, detalle=correo)
+            except Exception as e:
+                log.warning('designorar: %s', e)
+        conn.commit()
+        return jsonify({'ok': True, 'quitados': n})
+    try:
+        rows = c.execute("SELECT correo, motivo, creado_por, creado_en "
+                         "  FROM leads_remitentes_ignorados ORDER BY correo").fetchall()
+    except Exception:
+        rows = []
+    return jsonify({'ok': True, 'ignorados': [
+        {'correo': r[0], 'motivo': r[1], 'por': r[2], 'desde': r[3]} for r in rows]})
 
 
 @bp.route('/api/comercial/leads-correo/<int:lid>/al-pipeline', methods=['POST'])

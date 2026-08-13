@@ -151,11 +151,26 @@ def leer(app, limite=40, presupuesto_seg=45, dias=30):
     clave = os.environ[ENV_PASS].strip()
     carpeta = os.environ.get(ENV_CARPETA, 'INBOX').strip() or 'INBOX'
     t0 = time.monotonic()
-    nuevos, vistos, fallos = [], 0, 0
+    nuevos, vistos, fallos, ignorados = [], 0, 0, 0
     with app.app_context():
         from database import get_db
         conn = get_db()
         c = conn.cursor()
+        # Los remitentes que ya se barrieron. El correo interno (Aseguramiento, RRHH, un
+        # proveedor) vuelve a llegar todos los dias: sin esto el barrido hay que rehacerlo, y un
+        # trabajo que se rehace a diario se deja de hacer -- y ahi el prospecto real queda
+        # enterrado entre veinte correos internos, que es justo lo que esto viene a impedir.
+        #
+        # NO se saltean: se guardan igual, ya descartados y con motivo. Un filtro que bota sin
+        # dejar rastro no se puede auditar ni revertir, y lo que bota podria ser un cliente.
+        _ignorar = set()
+        try:
+            for (_co,) in c.execute(
+                    "SELECT LOWER(TRIM(correo)) FROM leads_remitentes_ignorados").fetchall():
+                if _co:
+                    _ignorar.add(_co)
+        except Exception as e:
+            log.warning('leads: no pude leer la lista de ignorados: %s', e)
         try:
             imap = imaplib.IMAP4_SSL(host, timeout=25)
             imap.login(usuario, clave)
@@ -198,19 +213,26 @@ def leer(app, limite=40, presupuesto_seg=45, dias=30):
                     fecha = _hoy_col()
                 cuerpo = _texto(msg)
                 datos = parsear(asunto, cuerpo, remitente)
+                _ign = any(x in remitente.lower() for x in _ignorar)
+                if _ign:
+                    ignorados += 1
                 c.execute(
                     """INSERT INTO leads_correo
                          (message_id, remitente, asunto, fecha_correo, cuerpo, empresa,
                           contacto, telefono, email_contacto, producto, empresa_inferida,
-                          creado_en)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          descartado, motivo_descarte, creado_en)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (msg_id, remitente, asunto, fecha, cuerpo, datos['empresa'],
                      datos['contacto'], datos['telefono'],
                      datos['email_form'] or _eutils.parseaddr(remitente)[1],
-                     datos['producto'], 1 if datos['empresa_inferida'] else 0, _hoy_col()))
+                     datos['producto'], 1 if datos['empresa_inferida'] else 0,
+                     1 if _ign else 0,
+                     'remitente en la lista de ignorados' if _ign else '',
+                     _hoy_col()))
                 lid = c.lastrowid
-                nuevos.append({'id': lid, 'empresa': datos['empresa'], 'asunto': asunto,
-                               'fecha': fecha, 'inferida': datos['empresa_inferida']})
+                if not _ign:
+                    nuevos.append({'id': lid, 'empresa': datos['empresa'], 'asunto': asunto,
+                                   'fecha': fecha, 'inferida': datos['empresa_inferida']})
             try:
                 imap.close()
             except Exception:
@@ -221,5 +243,5 @@ def leer(app, limite=40, presupuesto_seg=45, dias=30):
             log.warning('leads: no pude leer el buzon: %s', e)
             return False, {'error': str(e)[:200]}, 0
         conn.commit()
-    return True, {'vistos': vistos, 'nuevos': nuevos, 'segundos': round(time.monotonic() - t0, 1)}, \
+    return True, {'vistos': vistos, 'nuevos': nuevos, 'ignorados': ignorados, 'segundos': round(time.monotonic() - t0, 1)}, \
         len(nuevos)

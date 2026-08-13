@@ -291,3 +291,63 @@ def test_con_empresa_DECLARADA_si_se_funden(app, luz):
     p2 = luz.post('/api/comercial/leads-correo/%d/al-pipeline' % b, json={},
                   headers={'Origin': 'http://localhost'}).get_json()
     assert p1['pipeline_id'] == p2['pipeline_id'] and p2['nueva_tarjeta'] is False
+
+
+# ------------------------------------------------ el barrido se queda hecho
+
+def test_barrer_un_remitente_lo_RECUERDA(app, luz):
+    """El ruido real no era spam: era correo interno (Aseguramiento, RRHH, un proveedor) que
+    vuelve a llegar TODOS los días.
+
+    Descartarlo hoy no sirve si mañana hay que rehacerlo: un trabajo que se rehace a diario se
+    deja de hacer, y ahí el prospecto real queda enterrado entre veinte correos internos.
+    """
+    _limpiar(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("DELETE FROM leads_remitentes_ignorados WHERE correo LIKE '%lctest%'")
+        c.execute("INSERT INTO leads_correo (message_id, remitente, asunto, empresa) "
+                  "VALUES ('LCTEST-INT','Calidad <calidad@lctest.co>','Re: Cierre del dia','x')")
+        conn.commit()
+    r = luz.post('/api/comercial/leads-correo/descartar-remitente',
+                 json={'correo': 'calidad@lctest.co', 'motivo': 'correo interno'},
+                 headers={'Origin': 'http://localhost'})
+    assert r.status_code == 200 and r.get_json()['recordado'] is True, r.get_data(as_text=True)[:200]
+    d = luz.get('/api/comercial/leads-correo/ignorados').get_json()
+    assert any(x['correo'] == 'calidad@lctest.co' for x in d['ignorados']), \
+        'no lo recordó: mañana hay que barrer otra vez'
+
+
+def test_se_puede_SACAR_a_alguien_de_la_lista(app, luz):
+    """Una lista que filtra y no se puede deshacer es la que un día se come un cliente."""
+    _limpiar(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        conn.cursor().execute(
+            "INSERT INTO leads_remitentes_ignorados (correo, motivo) VALUES "
+            "('viejo@lctest.co','ya no aplica') ON CONFLICT (correo) DO NOTHING")
+        conn.commit()
+    r = luz.delete('/api/comercial/leads-correo/ignorados?correo=viejo@lctest.co',
+                   headers={'Origin': 'http://localhost'})
+    assert r.status_code == 200 and r.get_json()['quitados'] == 1
+    d = luz.get('/api/comercial/leads-correo/ignorados').get_json()
+    assert not any(x['correo'] == 'viejo@lctest.co' for x in d['ignorados'])
+
+
+def test_lo_ignorado_se_GUARDA_igual_no_se_tira(app, luz):
+    """Un filtro que bota sin dejar rastro no se puede auditar ni revertir -- y lo que bota
+    podría ser un cliente. Entra descartado, con motivo, y sigue a la vista."""
+    _limpiar(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT INTO leads_correo (message_id, remitente, asunto, empresa, "
+                  " descartado, motivo_descarte) VALUES "
+                  "('LCTEST-IGN','Calidad <calidad@lctest.co>','Re: algo','x',1,"
+                  "'remitente en la lista de ignorados')")
+        conn.commit()
+    d = luz.get('/api/comercial/leads-correo').get_json()
+    fila = [x for x in d['leads'] if x['id'] and x['descartado']]
+    assert fila, 'lo ignorado desapareció de la vista en vez de quedar descartado'
