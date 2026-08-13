@@ -139,6 +139,7 @@ CORAZON=(
   "tests/test_cola_marcacion_agrupa.py"
   "tests/test_alta_cliente_maquila.py"
   "tests/test_progresion_cliente.py"
+  "tests/test_leads_correo.py"
   "tests/test_filas_sobrantes.py"
   "tests/test_sku_map_csrf.py"
   "tests/test_resolver_tonos.py"

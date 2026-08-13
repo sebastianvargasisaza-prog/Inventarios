@@ -728,6 +728,11 @@ JOBS_SCHEDULE = [
     # ano en curso: reconstruirlo una sola vez en enero dejaria once meses sin indice si algo
     # pasara en el medio, y el costo de rehacerlo es despreciable.
     ('exportar_expediente',    4, 40, None, [2],                'job_exportar_expediente'),
+    # Los prospectos de maquila que llegan al correo de direccion. Dos veces al dia: el
+    # valor de esto es que NO dependa de que alguien se acuerde de mirar el buzon -- que es
+    # exactamente como se pierden. Si las credenciales no estan cargadas retorna sin ruido.
+    ('leads_correo_am',        7, 20, None, None,               'job_leads_correo'),
+    ('leads_correo_pm',       15, 20, None, None,               'job_leads_correo'),
     ('archivar_r2_am',         6, 10, None, None,               'job_archivar_r2'),
     ('archivar_r2_pm',        14, 10, None, None,               'job_archivar_r2'),
     ('archivar_r2_noche',     22, 10, None, None,               'job_archivar_r2'),
@@ -4405,6 +4410,31 @@ def _job_respaldo(app, tipo):
         except Exception as e:
             log.warning('rotación de respaldos falló: %s', e)
     return bool(res.get('ok')), res, int(res.get('filas_totales') or 0)
+
+
+def job_leads_correo(app):
+    """Trae los prospectos que llegaron al correo de direccion.
+
+    Sebastian: *"que automaticamente desde GHL y desde mi correo EOS identifique los clientes para
+    que se creen automaticamente en el pipeline asi no se nos pierden"*. El valor esta en el
+    AUTOMATICAMENTE: un buzon que alguien tiene que acordarse de revisar es justo por donde se
+    pierden (M109).
+
+    El presupuesto de reloj no es decorativo: esto corre en el hilo UNICO del multi-cron, asi que
+    un servidor de correo lento congelaria todos los crons siguientes (M90/M92).
+    """
+    try:
+        from leads_correo import leer as _leer, configurado as _cfg
+    except Exception as e:
+        log.warning('[leads-correo] no pude cargar el lector: %s', e)
+        return True, {'skipped': True, 'razon': 'lector no disponible'}, 0
+    if not _cfg():
+        return True, {'skipped': True,
+                      'razon': 'IMAP_LEADS_* no configurados en Render'}, 0
+    ok, detalle, n = _leer(app, limite=40, presupuesto_seg=60)
+    if n:
+        log.info('[leads-correo] %d prospecto(s) nuevo(s)', n)
+    return ok, detalle, n
 
 
 def job_respaldo_diario(app):

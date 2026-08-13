@@ -296,6 +296,152 @@ def maquila_actualizar(mid):
 
 
 # ─── EOS LEADS ────────────────────────────────────────────────────────────
+# ─── LEADS QUE LLEGAN AL CORREO DE DIRECCION ───────────────────────────────
+#
+# Sebastián (13-ago): *"los leads llegan a mi correo direccion@animuslb.com y allí sólo llegan de
+# maquila (...) la mayoría son formularios de la página web · si querés le das una revisada al
+# correo para ver qué llega"*.
+#
+# No puedo mirarle el correo desde acá, así que esto es lo que lo reemplaza: una vista de sólo
+# lectura de QUE esta llegando, con el crudo guardado. Con eso el parseo se define contra lo que
+# llega de verdad y no contra lo que suponemos (M132: para afirmar que algo esta bien hace falta
+# una fuente externa, y acá la fuente es su bandeja).
+
+@bp.route('/api/comercial/leads-correo', methods=['GET'])
+def leads_correo_lista():
+    """Lo que llego al buzon de direccion, sin tocar nada."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    if not _pipeline_puede(session.get('compras_user', '')):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
+    c = get_db().cursor()
+    try:
+        rows = c.execute(
+            "SELECT id, remitente, asunto, fecha_correo, empresa, contacto, telefono, "
+            "       email_contacto, producto, empresa_inferida, pipeline_id, descartado, "
+            "       SUBSTR(COALESCE(cuerpo,''),1,600) "
+            "  FROM leads_correo ORDER BY fecha_correo DESC, id DESC LIMIT 200").fetchall()
+    except Exception as e:
+        log.warning('leads-correo: %s', e)
+        return jsonify({'ok': True, 'leads': [], 'aviso': 'la tabla todavia no existe'}), 200
+    campos = ('id', 'remitente', 'asunto', 'fecha_correo', 'empresa', 'contacto', 'telefono',
+              'email_contacto', 'producto', 'empresa_inferida', 'pipeline_id', 'descartado',
+              'cuerpo')
+    leads = [dict(zip(campos, r)) for r in rows]
+    try:
+        from leads_correo import configurado as _cfg
+        listo = _cfg()
+    except Exception:
+        listo = False
+    sin_tarjeta = len([x for x in leads if not x['pipeline_id'] and not x['descartado']])
+    return jsonify({
+        'ok': True, 'leads': leads,
+        'buzon_configurado': listo,
+        'resumen': {'total': len(leads), 'sin_tarjeta': sin_tarjeta},
+        # Un cero que nadie pudo medir se lee como "no hay nada que hacer" y significa lo
+        # contrario: "no se miro" (M154).
+        'aviso': (None if listo else
+                  'El buzon no esta configurado en Render (IMAP_LEADS_HOST / IMAP_LEADS_USER / '
+                  'IMAP_LEADS_PASSWORD), asi que esta lista esta vacia porque no se leyo nada, '
+                  'no porque no hayan llegado correos.'),
+    })
+
+
+@bp.route('/api/comercial/leads-correo/leer', methods=['POST'])
+def leads_correo_leer():
+    """Trae lo nuevo del buzon AHORA. Idempotente por Message-ID."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    if not _pipeline_puede(session.get('compras_user', '')):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
+    from flask import current_app
+    try:
+        from leads_correo import leer as _leer, configurado as _cfg
+    except Exception as e:
+        return jsonify({'error': 'no pude cargar el lector: %s' % e}), 500
+    if not _cfg():
+        return jsonify({'error': 'el buzon no esta configurado',
+                        'codigo': 'SIN_BUZON',
+                        'como': ('cargá IMAP_LEADS_HOST, IMAP_LEADS_USER e IMAP_LEADS_PASSWORD '
+                                 'en Render · las credenciales las ponés vos ahi, no viven en '
+                                 'el codigo')}), 503
+    ok, detalle, n = _leer(current_app._get_current_object(), limite=40, presupuesto_seg=45)
+    if not ok:
+        return jsonify({'ok': False, 'error': detalle.get('error', 'fallo la lectura')}), 502
+    return jsonify({'ok': True, 'nuevos': n, 'detalle': detalle})
+
+
+@bp.route('/api/comercial/leads-correo/<int:lid>/al-pipeline', methods=['POST'])
+def lead_correo_al_pipeline(lid):
+    """Convierte un correo en tarjeta del pipeline · o lo descarta con motivo.
+
+    ⚠ El descarte NO borra: queda con su motivo y se puede recuperar. Un filtro que bota sin
+    dejar rastro es un filtro en el que no se puede confiar (M138).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if not _pipeline_puede(user):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
+    d = request.get_json(silent=True) or {}
+    conn = get_db(); c = conn.cursor()
+    r = c.execute("SELECT id, empresa, contacto, telefono, email_contacto, producto, asunto, "
+                  "       pipeline_id, descartado FROM leads_correo WHERE id=?", (lid,)).fetchone()
+    if not r:
+        return jsonify({'error': 'ese correo no existe'}), 404
+    if r[7]:
+        return jsonify({'ok': True, 'pipeline_id': r[7], 'ya_estaba': True})
+
+    if d.get('descartar'):
+        motivo = (d.get('motivo') or '').strip() or 'no es un prospecto'
+        c.execute("UPDATE leads_correo SET descartado=1, motivo_descarte=? WHERE id=? "
+                  "  AND COALESCE(descartado,0)=0", (motivo, lid))
+        if not c.rowcount:
+            return jsonify({'error': 'ya estaba descartado'}), 409
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=user, accion='DESCARTAR_LEAD_CORREO', tabla='leads_correo',
+                registro_id=str(lid), antes={'descartado': 0},
+                despues={'descartado': 1, 'motivo': motivo}, detalle=motivo)
+        except Exception as e:
+            log.warning('descartar lead: no pude auditar: %s', e)
+        conn.commit()
+        return jsonify({'ok': True, 'descartado': True, 'motivo': motivo})
+
+    empresa = (d.get('empresa') or r[1] or '').strip()
+    if not empresa:
+        return jsonify({'error': 'sin empresa no se puede abrir la tarjeta'}), 400
+    # Si esa empresa ya tiene tarjeta viva, este correo se CUELGA de ella. Dos tarjetas del mismo
+    # cliente son dos personas persiguiendolo sin saberlo.
+    ya = c.execute("SELECT id FROM maquila_pipeline "
+                   " WHERE UPPER(TRIM(empresa))=UPPER(TRIM(?)) "
+                   "   AND stage NOT IN ('ganado','perdido') ORDER BY id LIMIT 1",
+                   (empresa,)).fetchone()
+    if ya:
+        pid, nuevo = ya[0], False
+    else:
+        c.execute("""INSERT INTO maquila_pipeline
+                       (empresa, contacto_nombre, contacto_email, contacto_telefono, origen,
+                        stage, producto_descripcion, owner, notas, actualizado_en)
+                     VALUES (?,?,?,?,?, 'consulta', ?,?,?,?)""",
+                  (empresa, r[2] or None, r[4] or None, r[3] or None,
+                   'correo direccion', r[5] or None, user, r[6] or None, _hoy_col()))
+        pid, nuevo = c.lastrowid, True
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=user, accion='ABRIR_PIPELINE_MAQUILA', tabla='maquila_pipeline',
+                registro_id=str(pid), antes={}, despues={'empresa': empresa, 'stage': 'consulta'},
+                detalle='abierto desde un correo que llego a direccion')
+        except Exception as e:
+            log.warning('lead al pipeline: no pude auditar: %s', e)
+    c.execute("UPDATE leads_correo SET pipeline_id=? WHERE id=?", (pid, lid))
+    conn.commit()
+    return jsonify({'ok': True, 'pipeline_id': pid, 'nueva_tarjeta': nuevo, 'empresa': empresa})
+
+
 # ─── PROGRESION DEL CLIENTE ────────────────────────────────────────────────
 #
 # Sebastián (13-ago): *"revisar bien la progresión de cada cliente, qué pasos deben llegar hasta

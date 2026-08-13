@@ -11332,6 +11332,42 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_contingencia_token "
         "ON registros_contingencia(token) WHERE COALESCE(token,'') <> ''",
     ]),
+    (426, "leads_correo · los prospectos de maquila que llegan al correo de direccion · 13-ago-2026", [
+        # Sebastian: *"los leads llegan a mi correo direccion@animuslb.com y alli solo llegan de
+        # maquila porque los de Animus llegan a otro"*. Eso resuelve la parte dificil sin ninguna
+        # heuristica: **el BUZON es el filtro**. Poner la regla en el contenido del mensaje habria
+        # llenado de ruido el unico lugar donde se mira quien falta, y un registro con ruido no
+        # queda incompleto: queda FALSO (M144).
+        #
+        # `message_id` es la llave de deduplicacion, no el remitente ni el asunto: la misma
+        # persona escribe dos veces legitimamente y los formularios web repiten el asunto, asi que
+        # deduplicar por eso pierde el segundo cliente en silencio (M127 lo pago con los PQR).
+        #
+        # El `cuerpo` se guarda a proposito: lo que hoy no se puede parsear se puede LEER, y la
+        # pregunta "que campo hay que mapear" deja de adivinarse (M130).
+        """CREATE TABLE IF NOT EXISTS leads_correo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id TEXT NOT NULL,
+            remitente TEXT DEFAULT '',
+            asunto TEXT DEFAULT '',
+            fecha_correo TEXT DEFAULT '',
+            cuerpo TEXT DEFAULT '',
+            empresa TEXT DEFAULT '',
+            contacto TEXT DEFAULT '',
+            telefono TEXT DEFAULT '',
+            email_contacto TEXT DEFAULT '',
+            producto TEXT DEFAULT '',
+            empresa_inferida INTEGER NOT NULL DEFAULT 0,
+            pipeline_id INTEGER,
+            descartado INTEGER NOT NULL DEFAULT 0,
+            motivo_descarte TEXT DEFAULT '',
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        # El nombre lleva la tabla adelante: los nombres de indice son GLOBALES y uno repetido es
+        # un indice que NO se crea, en silencio (M122).
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_leadscorreo_msgid ON leads_correo(message_id)",
+        "CREATE INDEX IF NOT EXISTS idx_leadscorreo_fecha ON leads_correo(fecha_correo DESC)",
+    ]),
 ]
 
 
