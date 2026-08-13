@@ -36,6 +36,17 @@ def _presentacion(app, producto, completa):
         from database import get_db
         conn = get_db()
         c = conn.cursor()
+        # Los codigos tienen que EXISTIR en el maestro: una presentacion que apunta a un codigo
+        # inexistente esta incompleta de verdad -- es el caso MEE-IMP-001 que tenia frenado el
+        # empaque -- asi que sembrar codigos fantasma media otra cosa (M153: si el fixture necesita
+        # un estado que produccion marcaria como roto, el fixture es el que esta mal).
+        for _cod, _desc, _cat in (('MEE-ENV-001', 'FRASCO DE PRUEBA 30ml', 'Frasco'),
+                                  ('MEE-TAP-001', 'TAPA DE PRUEBA', 'Tapa'),
+                                  ('MEE-PLG-001', 'PLEGADIZA DE PRUEBA', 'Plegadiza'),
+                                  ('MEE-ETQ-001', 'ETIQUETA DE PRUEBA', 'Etiqueta')):
+            c.execute("DELETE FROM maestro_mee WHERE codigo=?", (_cod,))
+            c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, stock_actual) "
+                      "VALUES (?,?,?,0)", (_cod, _desc, _cat))
         c.execute(
             "INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, "
             "volumen_ml, envase_codigo, tapa_codigo, caja_codigo, etiqueta_codigo, "
@@ -104,7 +115,11 @@ def test_no_usa_cuenta_como_resuelto(app, planta_client):
     with app.app_context():
         from database import get_db
         conn = get_db()
-        conn.cursor().execute(
+        c = conn.cursor()
+        c.execute("DELETE FROM maestro_mee WHERE codigo='MEE-ENV-001'")
+        c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, stock_actual) "
+                  "VALUES ('MEE-ENV-001','FRASCO DE PRUEBA 30ml','Frasco',0)")
+        c.execute(
             "INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, "
             "volumen_ml, envase_codigo, tapa_codigo, caja_codigo, etiqueta_codigo, "
             "sin_tapa, sin_caja, sin_etiqueta, activo, es_default) "
@@ -211,3 +226,30 @@ def test_el_contador_nunca_supera_el_total_de_filas(app, planta_client):
     activas = sum(1 for f in d['filas'] if f.get('activo'))
     assert r['bloquean'] <= activas, (
         'frenan (%s) > filas activas (%s)' % (r['bloquean'], activas))
+
+
+def test_una_SUGERENCIA_no_cuenta_como_completa(app, planta_client):
+    """DIENTES · una sugerencia no esta en la base: la presentacion tiene la celda VACIA.
+
+    La pantalla la contaba como valor, asi que el KPI decia "38/42 completas" con 13 sugerencias
+    sin aceptar -- exageraba -- y encima chocaba con el contador de las que frenan, que mide lo
+    guardado: "5 frenan" al lado de una lista de 4. Dos numeros del mismo tablero que se
+    contradicen hacen que se deje de creer en los dos (M5/M161).
+    """
+    _limpiar(app)
+    _presentacion(app, 'FRENA SUGERIDA', completa=False)
+    _programar(app, 'FRENA SUGERIDA')
+    d = planta_client.get('/api/mee/normalizar-tabla').get_json()
+    f = [x for x in d['filas'] if x['producto'] == 'FRENA SUGERIDA'][0]
+    # aunque el emparejador le proponga algo, mientras no este guardado la fila esta incompleta
+    assert f['incompleta'] is True
+    assert f['bloquea'] is True
+
+
+def test_los_dos_contadores_NO_se_contradicen(app, planta_client):
+    """La invariante que hace imposible volver a mostrar "5 frenan" sobre una lista de 4."""
+    d = planta_client.get('/api/mee/normalizar-tabla').get_json()
+    incompletas_activas = sum(1 for f in d['filas'] if f.get('activo') and f.get('incompleta'))
+    assert d['resumen']['bloquean'] <= incompletas_activas, (
+        'frenan (%s) > incompletas activas (%s): los dos contadores miden cosas distintas'
+        % (d['resumen']['bloquean'], incompletas_activas))

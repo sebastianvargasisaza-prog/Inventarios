@@ -129,11 +129,23 @@ function esSugerida(f, col){
   var k=f.id+'|'+col;
   return CAMBIOS[k]===undefined && !f.actual[col] && !f.no_usa[col] && !!f.sugerido[col];
 }
+// COMPLETA = GUARDADA. Una sugerencia no es un dato: mientras no se acepte, la presentacion
+// tiene la celda VACIA en la base y el envasado no encuentra su envase.
+//
+// Antes esta funcion contaba la sugerencia como valor (valorDe cae a `sugerido`), asi que el
+// KPI decia "38 / 42 completas" con 13 sugerencias sin aceptar: exageraba, y encima chocaba con
+// el contador de las que frenan produccion -- que mide lo guardado -- dejando "5 frenan" al lado
+// de una lista de 4. Dos numeros del mismo tablero que se contradicen hacen que se deje de creer
+// en los dos (M5/M161).
+//
+// La pendiente por aceptar sigue a la vista en "se arrastran" y se resuelve con un boton.
 function incompleta(f){
   var cols=D.columnas, i;
   for(i=0;i<cols.length;i++){
-    var v=valorDe(f, cols[i]);
-    if(!v) return true;
+    var k=f.id+'|'+cols[i];
+    var guardado = (CAMBIOS[k]!==undefined) ? CAMBIOS[k]
+                 : (f.no_usa[cols[i]] ? '__NO_USA__' : (f.actual[cols[i]]||''));
+    if(!guardado) return true;
   }
   if(Object.keys(f.sospechoso||{}).length) return true;   // una guardada que hay que revisar
   if((f.de_baja||[]).length) return true;                 // apunta a un codigo dado de baja

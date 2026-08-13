@@ -17849,7 +17849,13 @@ def mee_normalizar_tabla():
 
     _bloquean = 0
     for f in filas:
-        _incompleta = any(not f['actual'][col] and not f['no_usa'].get(col) for col in _MEE_CATS)
+        # La MISMA regla que usa la pantalla, o los dos numeros vuelven a contradecirse: falta un
+        # valor GUARDADO (la sugerencia no cuenta: no esta en la base), o lo guardado hay que
+        # revisarlo (nombra otro producto, apunta a un codigo de baja o a uno inexistente).
+        _incompleta = (any(not f['actual'][col] and not f['no_usa'].get(col) for col in _MEE_CATS)
+                       or bool(f.get('sospechoso'))
+                       or bool(f.get('de_baja'))
+                       or bool(f.get('fantasma')))
         f['incompleta'] = _incompleta
         # ⚠ Sólo las ACTIVAS. Contando también las dadas de baja el número salía MAYOR que el
         # total de filas -- "44 frenan" sobre 42 presentaciones -- y un contador imposible destruye
