@@ -10,14 +10,13 @@ cantidad de cada etiqueta**, sin importar que el borgoña venda cinco veces más
 
 La regla vive ahora en UNA función que usan las tres (M45: tres copias divergen).
 """
-import os
-import sys
-
-RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(RAIZ, 'api'))
 
 
 def _f():
+    # ⚠ El import va ADENTRO y NO se toca `sys.path` a nivel de módulo: eso corre en la
+    # COLECCIÓN, antes de que la fixture `app` prepare el entorno, y deja `config` cargado sin
+    # las claves de prueba -- lo que rompe el LOGIN del archivo siguiente, con un rojo que no
+    # habla de este archivo (M165). La fixture `app` ya pone `api/` en la ruta.
     from blueprints.programacion import _unidades_por_presentacion
     return _unidades_por_presentacion
 
@@ -73,8 +72,10 @@ def test_el_reparto_del_LOTE_usa_la_misma_regla(app):
     """Las tres funciones que reparten tenían la prioridad copiada. Si una se queda atrás, dos
     pantallas dicen números distintos del mismo hecho (M45/M73)."""
     import io as _io
+    import os
     import re
-    ruta = os.path.join(RAIZ, 'api', 'blueprints', 'programacion.py')
+    ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        'api', 'blueprints', 'programacion.py')
     src = _io.open(ruta, encoding='utf-8').read()
     codigo = '\n'.join(l.split('#')[0] for l in src.splitlines())
     # ⚠ Se cuenta la DEFINICION aparte: con `>= 3` el test pasaba con la definicion y solo DOS

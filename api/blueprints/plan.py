@@ -349,10 +349,17 @@ def _envases_para_kg(c, conn, producto, kg):
     res = {'estado': 'SIN_DATO', 'items': [], 'presentaciones': [], 'n_faltan': 0,
            'nota': '', 'fuente_reparto': ''}
     try:
+        # ⚠ La IDENTIDAD de cada presentacion viaja con ella. Sin esto, ocho tonos que comparten
+        # volumen y frasco llegan a la pantalla indistinguibles -- ocho tarjetas "60 uds de 6 ml ·
+        # MEE-ENV-034" -- y el usuario no puede revisar si el reparto tiene sentido, porque no
+        # sabe cual es cual (M124: un total sin su detalle es una afirmacion que no se puede
+        # verificar). El dato estaba en la tabla; simplemente no se leia.
         pres = c.execute(
             "SELECT COALESCE(volumen_ml,0), COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), "
             "       COALESCE(caja_codigo,''), COALESCE(etiqueta_codigo,''), "
-            "       COALESCE(ventas_mes_referencia,0), COALESCE(cantidad_fija_uds,0) "
+            "       COALESCE(ventas_mes_referencia,0), COALESCE(cantidad_fija_uds,0), "
+            "       COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), "
+            "       COALESCE(sku_shopify,'') "
             "  FROM producto_presentaciones "
             " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1",
             (producto,)).fetchall()
@@ -370,13 +377,56 @@ def _envases_para_kg(c, conn, producto, kg):
 
     # Peso de cada presentación = ventas × volumen. Sin ventas de referencia el reparto cae a
     # uniforme-pesado-por-volumen y se DECLARA: es un número estimado, no medido.
-    total_peso = sum(float(p[5] or 0) * float(p[0] or 0) for p in pres)
-    res['fuente_reparto'] = 'ventas por presentación' if total_peso > 0 else 'estimado por volumen'
+    # ⚠ CUARTO repartidor que no tenía la regla (M45/M180). Este pesaba con
+    # `ventas_mes_referencia`, una columna que se llena A MANO y que las filas nuevas tienen en
+    # CERO: por eso caía a "estimado por volumen" y, en un multitono donde los ocho tonos son de
+    # 6 ml, repartía IGUAL para los ocho. Sebastián lo vio: ocho tarjetas de 60 uds, y su
+    # diagnóstico fue exacto -- *"debemos hacer que identifique bien con las ventas de Shopify"*.
+    #
+    # Los otros tres repartidores ya usan `_unidades_por_presentacion`, que prioriza del dato más
+    # específico al más general: override manual → ventas por SKU → por (producto, volumen) →
+    # uniforme. Sin SKUs cargados se comporta igual que antes, así que el cambio no puede empeorar
+    # ningún producto: sólo mejora los que sí declaran su SKU.
+    from blueprints.programacion import (_unidades_por_presentacion, _ventas_sku_180d,
+                                         _norm_prod_fuerte)
+    _uds_pres = {}
+    _sku_vol = {}
+    try:
+        _vsku = _ventas_sku_180d(c)
+        _pn = _norm_prod_fuerte(producto)
+        for _sk, _pnom, _vml in c.execute(
+                "SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(volumen_ml,0) "
+                "FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+            if not _sk or _norm_prod_fuerte(_pnom) != _pn:
+                continue
+            _u = _vsku.get(str(_sk).strip().upper(), 0)
+            if _u > 0:
+                _k = int(round(float(_vml or 0)))
+                _sku_vol[_k] = _sku_vol.get(_k, 0) + _u
+        _uds_pres = _unidades_por_presentacion(
+            [{'cod': (p[7] if len(p) > 7 else '') or '', 'sku': (p[9] if len(p) > 9 else '') or '',
+              'vol': float(p[0] or 0), 'override': float(p[5] or 0)} for p in pres],
+            _vsku, _sku_vol)
+    except Exception as _eu:
+        # Nunca romper el modal por el reparto: sin este dato se cae al comportamiento anterior,
+        # que es el que habia, y se declara en `fuente_reparto`.
+        log.warning('disponibilidad: no pude repartir por ventas de %s: %s', producto, _eu)
+        _uds_pres = {}
+
+    _uds_de = lambda p: float(_uds_pres.get((p[7] if len(p) > 7 else '') or '', 0) or 0)
+    total_peso = sum(_uds_de(p) * float(p[0] or 0) for p in pres)
+    # ⚠ El repartidor canónico SIEMPRE devuelve números: cuando no hay venta registrada cae a
+    # uniforme. Así que un total > 0 no prueba que haya ventas, y decir "ventas por presentación"
+    # ahí sería declarar como MEDIDO algo que se estimó -- que es justo lo que el usuario necesita
+    # distinguir para saber si puede confiar en el reparto (M100).
+    _hay_venta = bool(_sku_vol) or any(float(p[5] or 0) > 0 for p in pres)
+    res['fuente_reparto'] = ('ventas por presentación' if (_hay_venta and total_peso > 0)
+                             else 'estimado por volumen')
     if total_peso <= 0:
         total_peso = sum(float(p[0] or 0) for p in pres)
         pesos = [float(p[0] or 0) / total_peso for p in pres] if total_peso > 0 else []
     else:
-        pesos = [(float(p[5] or 0) * float(p[0] or 0)) / total_peso for p in pres]
+        pesos = [(_uds_de(p) * float(p[0] or 0)) / total_peso for p in pres]
 
     necesarias = {}   # codigo -> {'tipo', 'uds'}
     # Sebastián 4-ago: *"aquí deben salir las PRESENTACIONES del producto"* y *"aquí debe decir
@@ -404,6 +454,15 @@ def _envases_para_kg(c, conn, producto, kg):
             'volumen_ml': round(vol, 1), 'uds': uds, 'kg': round(kg_p, 2),
             'porcion': round(w * 100, 1), 'componentes': _comp,
             'envase_codigo': (pr[1] or '').strip(),
+            # Que presentacion ES: el tono, su nombre y su SKU. La pantalla los pinta, y sin
+            # ellos las tarjetas de un producto multitono son indistinguibles entre si.
+            'presentacion_codigo': (pr[7] if len(pr) > 7 else '') or '',
+            'etiqueta': (pr[8] if len(pr) > 8 else '') or '',
+            'sku_shopify': (pr[9] if len(pr) > 9 else '') or '',
+            # Y de donde salio su parte del reparto. Un cero aca no es "no vende": es "no hay
+            # venta propia registrada", y entonces el reparto cae a parejo -- que es una decision
+            # muy distinta y el usuario tiene que poder distinguirlas (M100).
+            'ventas_90d_uds': _uds_de(pr),
         })
     detalle_pres.sort(key=lambda x: -x['volumen_ml'])
     res['presentaciones'] = detalle_pres
