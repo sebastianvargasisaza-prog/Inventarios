@@ -16745,11 +16745,25 @@ def serigrafia_cola():
             comp = None
         if not comp or not comp.get('variantes'):
             continue
-        for v in (comp.get('variantes') or []):
-            env = (v.get('envase_codigo') or '').strip()
-            uds = int(round(float(v.get('unidades_estimadas') or 0)))
-            if not env or uds <= 0:
+        # ⚠ Una fila de esta cola es una ORDEN DE TRABAJO, no un informe. Emitir una por
+        # PRESENTACIÓN hace que un envase compartido por varias -- los cinco tonos del lip serum
+        # usan el MISMO frasco -- aparezca cinco veces, cada una con su botón "Generar OC" y su
+        # "Solicitar alistamiento": actuar sobre las cinco pide CINCO VECES el mismo frasco, y la
+        # pantalla no tiene cómo darse cuenta. Se agrupa por ENVASE, se suman las unidades, y la
+        # fila DICE qué presentaciones cubre para que el número se pueda auditar (M178/M124).
+        _porenv = {}
+        for _v in (comp.get('variantes') or []):
+            _e = (_v.get('envase_codigo') or '').strip()
+            _u = int(round(float(_v.get('unidades_estimadas') or 0)))
+            if not _e or _u <= 0:
                 continue
+            _g = _porenv.setdefault(_e.upper(), {'env': _e, 'uds': 0, 'cubre': [], 'v': _v})
+            _g['uds'] += _u
+            _et = str(_v.get('etiqueta') or _v.get('presentacion_codigo') or '').strip()
+            if _et and _et not in _g['cubre']:
+                _g['cubre'].append(_et)
+        for _g in sorted(_porenv.values(), key=lambda x: x['env'].upper()):
+            v, env, uds = _g['v'], _g['env'], _g['uds']
             _mt, _mp = _marc.get(env.upper(), ('', ''))
             _envu = env.upper()
             _antes = _consumido.get(_envu, 0)
@@ -16786,7 +16800,10 @@ def serigrafia_cola():
                     'envase_codigo': _limpio,
                     'envase_desc': (_desc_mee.get(_limpio, '') if _limpio
                                     else 'falta anclar el envase limpio de ' + str(env)),
-                    'etiqueta': v.get('etiqueta', ''), 'volumen_ml': v.get('volumen_ml', 0),
+                    'etiqueta': ((' · '.join(_g['cubre'])) if len(_g['cubre']) > 1
+                                 else v.get('etiqueta', '')),
+                    'volumen_ml': v.get('volumen_ml', 0),
+                    'cubre': _g['cubre'], 'presentaciones': len(_g['cubre']),
                     'unidades': _falta, 'kg': float(kg or 0),
                     'marcacion_tipo': (_mt_lim or ('etiqueta' if (not _limpio and _etq) else '')),
                     'marcacion_proveedor': _mp_lim,
@@ -16820,7 +16837,10 @@ def serigrafia_cola():
             out.append({
                 'produccion_id': lid, 'producto': prod, 'fecha': fecha, 'fecha_envio': _fenv,
                 'envase_codigo': env, 'envase_desc': v.get('envase_descripcion', ''),
-                'etiqueta': v.get('etiqueta', ''), 'volumen_ml': v.get('volumen_ml', 0),
+                'etiqueta': ((' · '.join(_g['cubre'])) if len(_g['cubre']) > 1
+                             else v.get('etiqueta', '')),
+                'volumen_ml': v.get('volumen_ml', 0),
+                'cubre': _g['cubre'], 'presentaciones': len(_g['cubre']),
                 'unidades': uds, 'kg': float(kg or 0),
                 'marcacion_tipo': _mt, 'marcacion_proveedor': _mp,
                 'stock_envase': _stock.get(env.upper(), 0),
