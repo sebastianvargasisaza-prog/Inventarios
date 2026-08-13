@@ -16,7 +16,7 @@ import logging
 import time
 from datetime import date
 from database import get_db
-from config import ADMIN_USERS
+from config import ADMIN_USERS, ESPAGIRIA_ACCESS
 
 logger = logging.getLogger(__name__)
 log = logger
@@ -84,10 +84,31 @@ def _scrub_webhook_payload(d: dict) -> dict:
 
 
 # ─── Pagina /comercial ────────────────────────────────────────────────────
+def _pipeline_puede(user):
+    """Quien ve el pipeline de maquila.
+
+    Sebastián (13-ago): *"que en el módulo de Espagiria Luz pueda crearlos, además de que tenemos
+    que montar el pipeline de clientes para no perdernos"*. Luz es quien atiende a los clientes de
+    maquila, así que sin esto el pipeline existía y la única persona que lo iba a usar no lo veía
+    -- una capacidad que nadie puede alcanzar no existe (M121).
+
+    Sigue siendo cerrado a propósito (SEC-FIX 21-may: el pipeline B2B es confidencial y Catalina o
+    Mayerlin no lo ven). `ESPAGIRIA_ACCESS` son tres personas, así que esto suma exactamente a Luz.
+    """
+    u = (user or '').lower()
+    return u in {x.lower() for x in ADMIN_USERS} or u in {x.lower() for x in ESPAGIRIA_ACCESS}
+
+
 @bp.route('/comercial')
 def comercial_page():
     if 'compras_user' not in session:
         return redirect('/login?next=/comercial')
+    # ⚠ La PAGINA no gateaba nada: se abria para cualquiera que tuviera login y quedaba vacia
+    # porque la API devolvia 403. Una pantalla que abre en blanco se lee como rota, no como
+    # prohibida, y ademas confunde "no tiene gate" con "el gate esta en otro lado" (M170).
+    if not _pipeline_puede(session.get('compras_user', '')):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
     from templates_py.comercial_html import HTML
     user = session.get('compras_user', '')
     html = HTML.replace('{usuario}', user.capitalize())
@@ -102,9 +123,9 @@ def maquila_handler():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
-    if (user or '').lower() not in {x.lower() for x in ADMIN_USERS}:
+    if not _pipeline_puede(user):
         return jsonify({
-            'error': 'Pipeline comercial · solo admin (Sebas/Alejandro)',
+            'error': 'Pipeline comercial · sin acceso',
             'codigo': 'PIPELINE_PRIVADO',
         }), 403
     conn = get_db(); c = conn.cursor()
@@ -208,6 +229,13 @@ def maquila_actualizar(mid):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    # ⚠ Este PATCH NO gateaba nada: el GET era solo admin y el que MODIFICA estaba abierto a
+    # cualquiera con login -- se podia mover de etapa, cambiar el valor estimado o marcar perdido
+    # un cliente sin ser del pipeline. La asimetria entre leer y escribir es la firma del hueco
+    # (M45): al cerrar un gate hay que mirar TODOS los verbos del mismo recurso.
+    if not _pipeline_puede(user):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
     d = request.get_json(force=True, silent=True) or {}
     conn = get_db(); c = conn.cursor()
     sets = []; params = []

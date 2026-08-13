@@ -19,6 +19,9 @@ from flask import Blueprint, request, jsonify, session, render_template_string
 from config import DB_PATH, ESPAGIRIA_ACCESS
 from database import get_db
 
+import logging
+log = logging.getLogger("espagiria")
+
 bp = Blueprint("espagiria", __name__)
 
 
@@ -29,6 +32,12 @@ def _auth():
     if u not in ESPAGIRIA_ACCESS:
         return None, jsonify({"error": "Sin acceso al modulo Espagiria"}), 403
     return u, None, None
+
+
+def _ahora_col():
+    """El ahora de Colombia. El servidor corre en UTC: `datetime.now()` de noche ya es manana
+    aca, y desfasa contra todo lo que se lee anclado a -5h (M24)."""
+    return (datetime.utcnow() - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def _fmt_many(rows):
@@ -836,6 +845,133 @@ def clientes_maquila_lista():
              ORDER BY cm.nombre
         """).fetchall()
         return jsonify({"clientes": _fmt_many(rows)})
+
+
+@bp.route("/api/espagiria/clientes-maquila", methods=["POST"])
+def clientes_maquila_crear():
+    """Luz da de alta un cliente de maquila · y el cliente NACE en el pipeline.
+
+    Sebastián (13-ago): *"que en el módulo de Espagiria Luz pueda crearlos, además de que tenemos
+    que montar el pipeline de clientes para no perdernos"*. Las dos mitades son la misma cosa: un
+    cliente que se da de alta y no queda en ninguna cola de seguimiento **es exactamente el que se
+    pierde**, porque desde afuera se ve igual que uno atendido. Por eso el alta y la entrada al
+    pipeline son UN SOLO acto y no dos botones que alguien tiene que acordarse de apretar (M109:
+    un indicador que hay que recordar actualizar termina viejo).
+
+    ⚠ El alta NO crea el acceso al portal. Dar credenciales es una decisión de seguridad y hoy
+    vive en un endpoint de admin; ampliarla de callado sería abrir un perímetro por comodidad
+    (M32). La respuesta DICE si el cliente tiene acceso y qué falta para dárselo.
+    """
+    u, err, code = _auth()
+    if err:
+        return err, code
+    from audit_helpers import audit_log
+    d = request.get_json(silent=True) or {}
+    nombre = (d.get('nombre') or '').strip()
+    if not nombre:
+        return jsonify({'error': 'el nombre del cliente es obligatorio'}), 400
+    conn = get_db()
+    c = conn.cursor()
+
+    # ⚠ La existencia se chequea por la MISMA columna del UNIQUE (`nombre`), sin filtrar por
+    # `activo`: si filtrara, un cliente dado de baja con ese nombre no aparecería, el INSERT
+    # chocaría el UNIQUE y en PostgreSQL dejaría la transacción abortada -- y el error saldría
+    # tres statements después, hablando de otra cosa (el patrón del proveedor inactivo).
+    ya = c.execute("SELECT id, COALESCE(activo,1) FROM clientes_maquila "
+                   " WHERE UPPER(TRIM(nombre))=UPPER(TRIM(?))", (nombre,)).fetchone()
+    reactivado = False
+    if ya:
+        cid = ya[0]
+        if not ya[1]:
+            c.execute("UPDATE clientes_maquila SET activo=1, actualizado_en=? WHERE id=?",
+                      (_ahora_col(), cid))
+            reactivado = True
+            audit_log(c, usuario=u, accion='REACTIVAR_CLIENTE_MAQUILA',
+                      tabla='clientes_maquila', registro_id=str(cid),
+                      antes={'activo': 0}, despues={'activo': 1},
+                      detalle='alta desde Espagiria de un cliente que estaba dado de baja')
+        elif not d.get('permitir_existente'):
+            return jsonify({'error': 'ya existe un cliente con ese nombre',
+                            'cliente_id': cid, 'codigo': 'YA_EXISTE'}), 409
+    else:
+        c.execute("""INSERT INTO clientes_maquila
+                       (nombre, nit_cedula, email, telefono, es_marca_propia, empresa_grupo,
+                        comparte_formula_con, margen_seguridad_pct, activo, notas, actualizado_en)
+                     VALUES (?,?,?,?,?,?,?,?,1,?,?)""",
+                  (nombre,
+                   (d.get('nit_cedula') or '').strip() or None,
+                   (d.get('email') or '').strip() or None,
+                   (d.get('telefono') or '').strip() or None,
+                   1 if d.get('es_marca_propia') else 0,
+                   (d.get('empresa_grupo') or '').strip() or None,
+                   (d.get('comparte_formula_con') or '').strip() or None,
+                   int(d.get('margen_seguridad_pct') or 5),
+                   (d.get('notas') or '').strip() or None,
+                   _ahora_col()))
+        cid = c.lastrowid
+        audit_log(c, usuario=u, accion='CREAR_CLIENTE_MAQUILA',
+                  tabla='clientes_maquila', registro_id=str(cid),
+                  antes={}, despues={'nombre': nombre, 'email': d.get('email') or '',
+                                     'telefono': d.get('telefono') or ''},
+                  detalle='alta desde el modulo Espagiria')
+
+    # El cliente entra al pipeline en la etapa que corresponda. Idempotente por empresa: si ya
+    # tiene una tarjeta viva no se abre otra -- dos tarjetas del mismo cliente son dos personas
+    # persiguiendolo sin saberlo.
+    _ETAPAS = ('consulta', 'nda', 'brief', 'cotizacion', 'contrato', 'produccion', 'ganado',
+               'perdido')
+    stage = (d.get('stage') or 'consulta').strip().lower()
+    if stage not in _ETAPAS:
+        return jsonify({'error': 'etapa no valida', 'validas': list(_ETAPAS)}), 400
+    pipe = c.execute("SELECT id, stage FROM maquila_pipeline "
+                     " WHERE UPPER(TRIM(empresa))=UPPER(TRIM(?)) "
+                     "   AND stage NOT IN ('ganado','perdido') ORDER BY id LIMIT 1",
+                     (nombre,)).fetchone()
+    pipeline_id, pipeline_nuevo = (pipe[0] if pipe else None), False
+    if not pipe:
+        c.execute("""INSERT INTO maquila_pipeline
+                       (empresa, contacto_nombre, contacto_email, contacto_telefono, origen,
+                        stage, producto_descripcion, owner, notas, actualizado_en)
+                     VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                  (nombre,
+                   (d.get('contacto_nombre') or '').strip() or None,
+                   (d.get('email') or '').strip() or None,
+                   (d.get('telefono') or '').strip() or None,
+                   (d.get('origen') or 'alta manual Espagiria').strip(),
+                   stage,
+                   (d.get('producto_descripcion') or '').strip() or None,
+                   (d.get('owner') or u).strip(),
+                   (d.get('notas') or '').strip() or None,
+                   _ahora_col()))
+        pipeline_id, pipeline_nuevo = c.lastrowid, True
+        audit_log(c, usuario=u, accion='ABRIR_PIPELINE_MAQUILA',
+                  tabla='maquila_pipeline', registro_id=str(pipeline_id),
+                  antes={}, despues={'empresa': nombre, 'stage': stage},
+                  detalle='abierto junto con el alta del cliente para que no se pierda')
+
+    # ¿Puede pedirnos cosas? Se DICE, no se asume: un cliente sin credencial no ve el portal, y
+    # eso no da ningún error -- simplemente nunca entra (M100).
+    portal = None
+    try:
+        pr = c.execute("SELECT COUNT(*) FROM portal_clientes_credenciales "
+                       " WHERE UPPER(TRIM(COALESCE(cliente_nombre,'')))=UPPER(TRIM(?)) "
+                       "   AND COALESCE(activo,1)=1", (nombre,)).fetchone()
+        portal = bool(pr and pr[0])
+    except Exception as e:
+        log.warning('alta cliente maquila: no pude leer las credenciales del portal: %s', e)
+    conn.commit()
+    return jsonify({
+        'ok': True, 'cliente_id': cid, 'nombre': nombre, 'reactivado': reactivado,
+        'pipeline_id': pipeline_id, 'pipeline_nuevo': pipeline_nuevo, 'stage': stage,
+        'tiene_portal': portal,
+        'aviso': ('El cliente quedo dado de alta y abierto en el pipeline en la etapa "%s". '
+                  % stage) + (
+            'Ya tiene acceso al portal para solicitarnos cosas.' if portal is True else
+            ('AUN NO tiene acceso al portal: sin credencial no puede entrar a pedir, y eso no da '
+             'ningun error, simplemente nunca aparece. Se la crea un administrador desde '
+             '/admin/clientes-b2b.') if portal is False else
+            'No pude verificar si tiene acceso al portal.'),
+    })
 
 
 @bp.route("/api/espagiria/clientes-maquila/<int:cid>/360", methods=["GET"])

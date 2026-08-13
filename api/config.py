@@ -300,6 +300,13 @@ ANIMUS_ACCESS   = {"daniela", "alejandro", "sebastian"}
 # Acceso al módulo Espagiria (pendiente de crear blueprint): asist. gerencia + admins.
 ESPAGIRIA_ACCESS = {"luz", "alejandro", "sebastian"}
 
+# Luz atiende a los clientes de maquila y el pipeline vive en el modulo `comercial`, asi que sin
+# esto la UNICA persona que lo iba a usar no lo ve -- una capacidad que nadie puede alcanzar no
+# existe (M121). Se declara aca, y no arriba junto al resto de MODULOS_ACCESO, porque
+# ESPAGIRIA_ACCESS se define despues; y se DERIVA de el en vez de repetir la lista de nombres,
+# que es como dos copias de la misma regla terminan diciendo cosas distintas (M99).
+MODULOS_ACCESO['comercial'] = set(MODULOS_ACCESO['comercial']) | set(ESPAGIRIA_ACCESS)
+
 # ── Límites de aprobación de OC por usuario (en COP) ──────────────────────────
 # Operación que excede el límite del usuario requiere aprobación de admin.
 # Sebastian/Alejandro (admins): sin límite (None = ilimitado).
