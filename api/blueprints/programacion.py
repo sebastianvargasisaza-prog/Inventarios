@@ -18341,7 +18341,7 @@ def mee_expandir_tonos():
             {'id': pid, 'producto': prod, 'cod': pcod, 'vol': float(vol or 0), 'envase': env,
              'tapa': tap, 'caja': caj, 'etiqueta': etq, 'sku': (sku or '').strip()})
 
-    propuestas, sin_tono, ya_estan = [], [], []
+    propuestas, sin_tono, ya_estan, sin_modelo = [], [], [], []
     for _pn, _sks in skus.items():
         _filas = pres.get(_pn) or []
         if not _filas or len(_sks) < 2:
@@ -18376,30 +18376,71 @@ def mee_expandir_tonos():
                              'skus_sin_tono': [x['sku'] for x in _sks][:8],
                              'motivo': 'sin el tono no se puede saber que fila es cual'})
             continue
-        # La fila MODELO: la que ya esta cargada (de la que se copia el empaque comun)
-        _modelo = sorted(_filas, key=lambda f: (0 if f['envase'] else 1, f['id']))[0]
+        # La fila MODELO se elige POR VOLUMEN, nunca una sola para todo el producto.
+        #
+        # ⚠ Un tono es una variante del MISMO tamaño. Con un modelo único, el SKU de 30 ml nacía
+        # con el volumen y el FRASCO del modelo de 15 -- Sebastián lo vio de una: *"está clonando
+        # la de 30 como si fuera de 15 ml en varios productos"* -- y esa fila después pide el
+        # envase equivocado y se lleva la venta del tamaño que no es. El tamaño es la IDENTIDAD de
+        # la presentación (M177 lo dice de la tapa: un envase de 30 no envasa una de 10).
         _tomados = {f['sku'].upper() for f in _filas if f['sku']}
         _faltan = [x for x in _sks if x['sku'].upper() not in _tomados]
         if not _faltan:
             continue
+        _modelo_de = {}
+        for f in _filas:
+            if float(f['vol'] or 0) <= 0:
+                continue
+            _k = round(float(f['vol']), 2)
+            _ant = _modelo_de.get(_k)
+            if _ant is None or ((0 if f['envase'] else 1), f['id']) < ((0 if _ant['envase'] else 1), _ant['id']):
+                _modelo_de[_k] = f
+        _tonos_ok, _no_puedo = [], []
+        for x in _faltan:
+            _v = float(x.get('vol') or 0)
+            if _v <= 0:
+                _no_puedo.append({'sku': x['sku'], 'tono': x['tono'],
+                                  'motivo': 'el SKU no declara su volumen en Shopify'})
+                continue
+            _m = _modelo_de.get(round(_v, 2))
+            if not _m:
+                # Sin una presentación de ESE tamaño no hay de dónde copiar el frasco, y copiarlo
+                # del de otro tamaño es justo el defecto que esto viene a cerrar: se DECLARA (M100).
+                _no_puedo.append({'sku': x['sku'], 'tono': x['tono'],
+                                  'motivo': ('no hay una presentación de %s ml de la que copiar '
+                                             'el envase' % _ml_txt(_v))})
+                continue
+            _tonos_ok.append({'sku': x['sku'], 'tono': x['tono'],
+                              'fuente_tono': x.get('fuente_tono', ''), 'volumen_ml': _v,
+                              'modelo': {'id': _m['id'], 'presentacion': _m['cod'],
+                                         'envase': _m['envase'], 'tapa': _m['tapa'],
+                                         'caja': _m['caja'], 'volumen_ml': _m['vol']}})
+        if _no_puedo:
+            # ⚠ Lista PROPIA, no `sin_tono`: el tono se conoce perfectamente, lo que falta es la
+            # presentación de ese tamaño. Meterlo en "sin tono" mandaría a cargar un tono que ya
+            # está y dejaría el hueco real sin nombrar (M100).
+            sin_modelo.append({'producto': _filas[0]['producto'],
+                               'skus': [{'sku': x['sku'], 'tono': x['tono'],
+                                         'motivo': x['motivo']} for x in _no_puedo][:8]})
+        if not _tonos_ok:
+            continue
         propuestas.append({
-            'producto': _modelo['producto'],
-            'modelo': {'id': _modelo['id'], 'presentacion': _modelo['cod'],
-                       'envase': _modelo['envase'], 'tapa': _modelo['tapa'],
-                       'caja': _modelo['caja'], 'volumen_ml': _modelo['vol']},
+            'producto': _filas[0]['producto'],
+            'modelo': _tonos_ok[0]['modelo'],
             'filas_hoy': len(_filas),
-            'tonos': [{'sku': x['sku'], 'tono': x['tono'],
-                       'fuente_tono': x.get('fuente_tono', '')} for x in _faltan],
-            'que_hace': ('crea %d fila(s) copiando envase/tapa/caja y poniendole a cada una su '
-                         'SKU · la ETIQUETA queda vacia, que es lo unico que cambia entre tonos'
-                         % len(_faltan)),
+            'tonos': _tonos_ok,
+            'no_se_pueden': _no_puedo,
+            'que_hace': ('crea %d fila(s) copiando envase/tapa/caja de la presentación DEL MISMO '
+                         'tamaño y poniendole a cada una su SKU · la ETIQUETA queda vacia, que es '
+                         'lo unico que cambia entre tonos' % len(_tonos_ok)),
         })
 
     return jsonify({'ok': True, 'propuestas': propuestas, 'sin_tono': sin_tono,
-                    'ya_estan': ya_estan,
+                    'ya_estan': ya_estan, 'sin_modelo': sin_modelo,
                     'resumen': {'productos': len(propuestas),
                                 'filas_a_crear': sum(len(p['tonos']) for p in propuestas),
-                                'sin_tono': len(sin_tono)}})
+                                'sin_tono': len(sin_tono),
+                                'sin_modelo': sum(len(x['skus']) for x in sin_modelo)}})
 
 
 @bp.route('/api/mee/expandir-tonos-aplicar', methods=['POST'])
@@ -18423,8 +18464,9 @@ def mee_expandir_tonos_aplicar():
     for p in (_prev.get('propuestas') or []):
         if _norm_prod_fuerte(p['producto']) not in quiere:
             continue
-        m = p['modelo']
         for t in p['tonos']:
+            # el modelo es el de SU tamaño, no uno solo para todo el producto
+            m = t.get('modelo') or p['modelo']
             _cod = ('T-' + str(t['tono'] or t['sku'])).upper()[:40]
             _ya = c.execute(
                 "SELECT id FROM producto_presentaciones "
@@ -18457,12 +18499,17 @@ def mee_expandir_tonos_aplicar():
     for p in (_prev.get('propuestas') or []):
         if _norm_prod_fuerte(p['producto']) not in quiere:
             continue
-        _mid = p['modelo']['id']
-        if not any(x['producto'] == p['producto'] for x in creadas):
-            continue
-        _snap = c.execute("SELECT presentacion_codigo, COALESCE(sku_shopify,'') "
-                          "  FROM producto_presentaciones WHERE id=?", (_mid,)).fetchone()
-        if _snap and not (_snap[1] or '').strip():
+        # ⚠ Un modelo POR TAMAÑO, así que la baja se hace por cada modelo del que se copió, no
+        # sobre uno fijo: si no, la genérica del OTRO tamaño queda activa y su grupo vuelve a
+        # tener una fila sin SKU -- o sea que ese tamaño se sigue repartiendo por volumen Y
+        # además su venta la cuenta la fila nueva, contándose DOS VECES.
+        _usados = {t['modelo']['id'] for t in p['tonos']
+                   if t.get('modelo') and any(x['sku'] == t['sku'] for x in creadas)}
+        for _mid in sorted(_usados):
+            _snap = c.execute("SELECT presentacion_codigo, COALESCE(sku_shopify,'') "
+                              "  FROM producto_presentaciones WHERE id=?", (_mid,)).fetchone()
+            if not (_snap and not (_snap[1] or '').strip()):
+                continue
             c.execute("UPDATE producto_presentaciones SET activo=0 WHERE id=? AND activo=1",
                       (_mid,))
             if c.rowcount:
@@ -18478,6 +18525,192 @@ def mee_expandir_tonos_aplicar():
                               'cambia entre tonos y hay que elegirla. La fila generica quedo dada '
                               'de baja (reversible): si siguiera activa, el reparto volveria a '
                               'pedir la misma cantidad de cada etiqueta.')})
+
+
+def _pres_volumen_scan(c):
+    """Presentaciones cuyo VOLUMEN no coincide con el que su SKU declara en Shopify.
+
+    Sebastián (12-ago), mirando el modal: *"ya vi lo que pasa, está clonando la de 30 como si
+    fuera de 15 ml en varios productos"*. La expansión por tono copiaba el volumen y el frasco de
+    UNA presentación modelo para todos los SKU, así que el SKU de 30 ml nacía con el envase de 15.
+    Esas filas ya están creadas: la regla nueva impide que vuelva a pasar, no repara lo hecho.
+
+    El daño no es cosmético: esa fila pide el frasco equivocado a Compras, y además la venta del
+    tamaño de 30 se cuenta DOS VECES (una por la fila genérica de 30 ml, que quedó activa sin SKU
+    y por eso se reparte por volumen, y otra por la fila clonada que sí declara el SKU).
+
+    Devuelve dos listas SEPARADAS porque se resuelven distinto:
+
+      · `volumen_mal` -- el hecho es cierto (Shopify dice el volumen del SKU) y hay una
+        presentación de ese tamaño de la que copiar el frasco: se puede corregir solo.
+      · `sin_destino` -- el volumen no coincide pero NO hay presentación de ese tamaño: copiar el
+        frasco de otro tamaño es justo el defecto que se está cerrando, así que se DECLARA y no se
+        toca (M100).
+
+    Y aparte `genericas_conviviendo`: filas activas SIN SKU en un tamaño que ya tiene filas CON
+    SKU. Rompen el reparto por SKU (el grupo queda incompleto y vuelve a repartirse por volumen),
+    pero cuál es cuál lo decide una persona -- varias son tonos reales a los que sólo les falta el
+    SKU, y darlas de baja perdería su frasco (M19).
+    """
+    vol_sku = {}
+    try:
+        for _sk, _v in c.execute(
+                "SELECT UPPER(TRIM(sku)), COALESCE(volumen_ml,0) FROM sku_producto_map "
+                " WHERE COALESCE(activo,1)=1").fetchall():
+            if _sk and float(_v or 0) > 0:
+                vol_sku[_sk] = float(_v)
+    except Exception as e:
+        log.warning('pres-volumen: no pude leer sku_producto_map: %s', e)
+        return {'volumen_mal': [], 'sin_destino': [], 'genericas_conviviendo': [],
+                'aviso': 'no pude leer el catálogo de SKU de Shopify'}
+
+    filas = {}
+    for (pid, prod, pcod, etq, vol, env, tap, caj, sku) in c.execute(
+            "SELECT id, producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), "
+            "       COALESCE(volumen_ml,0), COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), "
+            "       COALESCE(caja_codigo,''), UPPER(TRIM(COALESCE(sku_shopify,''))) "
+            "  FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall():
+        filas.setdefault(_norm_prod_fuerte(prod), []).append(
+            {'id': pid, 'producto': prod, 'cod': pcod, 'etiqueta': etq, 'vol': float(vol or 0),
+             'envase': env, 'tapa': tap, 'caja': caj, 'sku': sku})
+
+    mal, sin_destino, genericas = [], [], []
+    for _pn, _fs in filas.items():
+        por_vol = {}
+        for f in _fs:
+            if f['vol'] > 0:
+                por_vol.setdefault(round(f['vol'], 2), []).append(f)
+        for f in _fs:
+            if not f['sku']:
+                continue
+            _real = vol_sku.get(f['sku'], 0)
+            if _real <= 0 or abs(_real - f['vol']) < 0.01:
+                continue
+            _dest = por_vol.get(round(_real, 2)) or []
+            # el modelo del tamaño correcto: el que tenga envase, el más viejo
+            _mod = None
+            for d in sorted(_dest, key=lambda x: ((0 if x['envase'] else 1), x['id'])):
+                if d['id'] != f['id']:
+                    _mod = d
+                    break
+            _base = {'id': f['id'], 'producto': f['producto'], 'presentacion': f['cod'],
+                     'etiqueta': f['etiqueta'], 'sku': f['sku'],
+                     'volumen_actual': f['vol'], 'volumen_real': _real,
+                     'envase_actual': f['envase']}
+            if not _mod or not _mod['envase']:
+                _base['motivo'] = ('no hay una presentación de %s ml de este producto de la que '
+                                   'copiar el frasco' % _ml_txt(_real))
+                sin_destino.append(_base)
+                continue
+            _base['envase_correcto'] = _mod['envase']
+            _base['tapa_correcta'] = _mod['tapa']
+            _base['caja_correcta'] = _mod['caja']
+            _base['copiado_de'] = {'id': _mod['id'], 'presentacion': _mod['cod'],
+                                   'sku': _mod['sku']}
+            # si la del tamaño correcto NO declara SKU, es la genérica que quedó conviviendo:
+            # al mover este SKU a su tamaño, esa fila pasa a ser el duplicado que doble-cuenta
+            _base['dar_de_baja'] = ({'id': _mod['id'], 'presentacion': _mod['cod']}
+                                    if not _mod['sku'] else None)
+            mal.append(_base)
+        # genéricas conviviendo: sin SKU, en un tamaño que ya tiene filas con SKU
+        for _v, _grupo in por_vol.items():
+            _con = [g for g in _grupo if g['sku']]
+            _sin = [g for g in _grupo if not g['sku']]
+            if _con and _sin:
+                for g in _sin:
+                    genericas.append({'id': g['id'], 'producto': g['producto'],
+                                      'presentacion': g['cod'], 'etiqueta': g['etiqueta'],
+                                      'volumen_ml': g['vol'], 'envase': g['envase'],
+                                      'convive_con': [x['sku'] for x in _con][:6],
+                                      'efecto': ('mientras esta fila siga sin SKU, las %s ml se '
+                                                 'reparten por volumen y no por venta de cada '
+                                                 'una' % _ml_txt(g['vol']))})
+    mal.sort(key=lambda x: (x['producto'], x['sku']))
+    sin_destino.sort(key=lambda x: (x['producto'], x['sku']))
+    genericas.sort(key=lambda x: (x['producto'], x['volumen_ml']))
+    return {'volumen_mal': mal, 'sin_destino': sin_destino, 'genericas_conviviendo': genericas}
+
+
+@bp.route('/api/mee/presentaciones-volumen', methods=['GET'])
+def mee_presentaciones_volumen():
+    """Read-only · qué presentaciones quedaron con el volumen de otro tamaño."""
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    r = _pres_volumen_scan(get_db().cursor())
+    r['ok'] = True
+    r['resumen'] = {'corregibles': len(r['volumen_mal']),
+                    'sin_destino': len(r['sin_destino']),
+                    'genericas_conviviendo': len(r['genericas_conviviendo'])}
+    return jsonify(r)
+
+
+@bp.route('/api/mee/presentaciones-volumen-aplicar', methods=['POST'])
+def mee_presentaciones_volumen_aplicar():
+    """Corrige las filas cuyo volumen no coincide con el que su SKU declara en Shopify.
+
+    Body: {ids:[...]} · sólo se tocan las que el diagnóstico marcó como CORREGIBLES (hay una
+    presentación del tamaño correcto de la que copiar el frasco). Las `sin_destino` no se tocan
+    nunca desde acá: adivinarles el frasco es el defecto original.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    quiere = {int(x) for x in (d.get('ids') or []) if str(x).strip().isdigit()}
+    if not quiere:
+        return jsonify({'error': 'no hay filas que corregir'}), 400
+    conn = get_db(); c = conn.cursor()
+    plan = _pres_volumen_scan(c)
+    corregidas, bajas, saltadas = [], [], []
+    for f in plan['volumen_mal']:
+        if f['id'] not in quiere:
+            continue
+        _antes = c.execute(
+            "SELECT COALESCE(volumen_ml,0), COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), "
+            "       COALESCE(caja_codigo,'') FROM producto_presentaciones WHERE id=?",
+            (f['id'],)).fetchone()
+        if not _antes:
+            saltadas.append({'id': f['id'], 'motivo': 'la fila ya no existe'})
+            continue
+        c.execute("UPDATE producto_presentaciones SET volumen_ml=?, envase_codigo=?, "
+                  "       tapa_codigo=?, caja_codigo=? "
+                  " WHERE id=? AND COALESCE(activo,1)=1",
+                  (f['volumen_real'], f['envase_correcto'], f['tapa_correcta'],
+                   f['caja_correcta'], f['id']))
+        if not c.rowcount:
+            saltadas.append({'id': f['id'], 'motivo': 'la fila ya no está activa'})
+            continue
+        corregidas.append(f)
+        audit_log(c, usuario=u, accion='PRES_VOLUMEN_CORREGIR',
+                  tabla='producto_presentaciones', registro_id=str(f['id']),
+                  antes={'volumen_ml': _antes[0], 'envase_codigo': _antes[1],
+                         'tapa_codigo': _antes[2], 'caja_codigo': _antes[3]},
+                  despues={'volumen_ml': f['volumen_real'], 'envase_codigo': f['envase_correcto'],
+                           'tapa_codigo': f['tapa_correcta'], 'caja_codigo': f['caja_correcta']},
+                  detalle=('el SKU %s declara %s ml en Shopify y la fila decia %s'
+                           % (f['sku'], _ml_txt(f['volumen_real']), _ml_txt(f['volumen_actual']))))
+        # la genérica de ese tamaño pasa a ser el duplicado que doble-cuenta la venta
+        _b = f.get('dar_de_baja')
+        if _b:
+            _snap = c.execute("SELECT COALESCE(sku_shopify,'') FROM producto_presentaciones "
+                              " WHERE id=?", (_b['id'],)).fetchone()
+            if _snap is not None and not (_snap[0] or '').strip():
+                c.execute("UPDATE producto_presentaciones SET activo=0 "
+                          " WHERE id=? AND COALESCE(activo,1)=1", (_b['id'],))
+                if c.rowcount:
+                    bajas.append(_b)
+                    audit_log(c, usuario=u, accion='PRES_GENERICA_DE_BAJA',
+                              tabla='producto_presentaciones', registro_id=str(_b['id']),
+                              antes={'activo': 1}, despues={'activo': 0},
+                              detalle=('dada de baja: el SKU %s se movio a sus %s ml y esta fila '
+                                       'quedaba sin SKU en el mismo tamano, contando la venta dos '
+                                       'veces' % (f['sku'], _ml_txt(f['volumen_real']))))
+    conn.commit()
+    return jsonify({'ok': True, 'corregidas': corregidas, 'bajas': bajas, 'saltadas': saltadas,
+                    'aviso': ('Se corrigio el volumen y se copio el frasco de la presentacion del '
+                              'MISMO tamano. Las que no tienen presentacion de ese tamano quedaron '
+                              'sin tocar y siguen listadas: para esas hay que cargar primero la '
+                              'presentacion del tamano que falta.')})
 
 
 @bp.route('/api/mee/normalizar-crear', methods=['POST'])

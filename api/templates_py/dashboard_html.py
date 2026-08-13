@@ -27827,8 +27827,8 @@ function empqTarjeta(g){
     const ventaMes = Math.round(p.velocidad_uds_dia * 30);
 
     const imgHtml = p.imagen_url
-      ? '<img loading="lazy" decoding="async" src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:8px" onerror="this.style.display=&#39;none&#39;">'
-      : '<div onclick="_traerFotoShopify(this)" data-prod="' + escapeHtmlNec(p.producto_nombre) + '" title="Click para traer la foto de Shopify" style="width:80px;height:80px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:26px;cursor:pointer">📦<span style="font-size:8px;color:var(--cx-text-soft);font-weight:700;margin-top:1px">traer foto</span></div>';
+      ? '<img loading="lazy" decoding="async" src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:118px;height:118px;object-fit:cover;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.10)" onerror="this.style.display=&#39;none&#39;">'
+      : '<div onclick="_traerFotoShopify(this)" data-prod="' + escapeHtmlNec(p.producto_nombre) + '" title="Click para traer la foto de Shopify" style="width:118px;height:118px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:34px;cursor:pointer">📦<span style="font-size:8px;color:var(--cx-text-soft);font-weight:700;margin-top:1px">traer foto</span></div>';
 
     // Presentación + 10ml info · usa ml_unidad real (Sebastián 13-may-2026:
     // "los sueros son de 30, los limpiadores de 150, geles e hidratantes de 50")
@@ -27844,7 +27844,20 @@ function empqTarjeta(g){
         if (_dom && _dom.ml_unidad) _mlShow = Math.round(_dom.ml_unidad * 10) / 10;
       }
     } catch(e){}
-    let presentacion = '<strong>' + _mlShow + ' ml</strong> (presentación DTC)';
+    // Sebastián (12-ago): *"arriba dice solo una única presentación · allí podría ir la foto
+    // grande y el nombre, ya que abajo ponemos las presentaciones"*. Tenía razón por partida
+    // doble: con tres presentaciones listadas en la sección ③, un encabezado que anuncia UNA
+    // sola no es redundante, se CONTRADICE con lo que se ve dos secciones más abajo -- y cuando
+    // dos partes de la misma pantalla dicen números distintos del mismo hecho, se deja de creer
+    // en las dos (M161). El conteo sale de las variantes que el propio producto trae, no de una
+    // suposición.
+    var _nPres = 0;
+    try { _nPres = (p.tonos || []).filter(function(t){ return t.ml_unidad; }).length; } catch(e){}
+    let presentacion = '<div style="font-size:20px;font-weight:800;line-height:1.15;color:var(--cx-text)">'
+      + escapeHtmlNec(p.producto_nombre || '') + '</div>';
+    presentacion += (_nPres >= 2)
+      ? '<div style="font-size:12px;color:var(--cx-text-mute);margin-top:4px;font-weight:600">' + _nPres + ' presentaciones · el detalle de cada una está abajo</div>'
+      : '<div style="font-size:12px;color:var(--cx-text-mute);margin-top:4px;font-weight:600">' + _mlShow + ' ml</div>';
     if (p.tiene_10ml) {
       const tipo10 = p.tipo_10ml === 'regalo' ? 'regalo automático' : 'venta';
       presentacion += '<br><span style="background:#fdf4ff;color:#7e22ce;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">10ml · ' + p.uds_10ml_por_lote + ' uds/lote · ' + tipo10 + '</span>';

@@ -81,6 +81,8 @@ NORMALIZAR_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
     Ver tambi&eacute;n las apagadas
   </label>
   <button class="btn btn-s" onclick="aceptarSugeridas()">Aceptar todas las sugeridas</button>
+  <button class="btn btn-s" id="btn-vol" onclick="revisarTamanos()"
+    title="Busca presentaciones que quedaron con el volumen y el frasco de OTRO tama&ntilde;o">&#128207; Revisar tama&ntilde;os</button>
 </div>
 <div class="tabla">
   <div id="cuerpo" style="padding:26px;text-align:center;color:var(--cx-text-faint)">Cargando&hellip;</div>
@@ -329,6 +331,36 @@ function aceptarSugeridas(){
   });
   pintar();
   document.getElementById('estado').textContent = n+' sugerencia(s) aceptadas. Revisa y guarda.';
+}
+
+async function revisarTamanos(){
+  // Sebastian (12-ago): "esta clonando la de 30 como si fuera de 15 ml en varios productos".
+  // La expansion copiaba el volumen y el frasco de UNA presentacion modelo para todos los SKU.
+  // La regla nueva impide que vuelva a pasar; esto repara lo que ya quedo mal.
+  var b=document.getElementById("btn-vol"); if(b&&b.disabled) return; if(b) b.disabled=true;
+  try{
+    var d=await (await fetch("/api/mee/presentaciones-volumen",{credentials:"same-origin"})).json();
+    var ok=d.volumen_mal||[], sd=d.sin_destino||[], gc=d.genericas_conviviendo||[];
+    // Lo que NO se puede arreglar solo se dice igual: un "no encontre nada" que en realidad
+    // esconde casos sin resolver ensena a no volver a mirar (M100).
+    var cola="";
+    if(sd.length) cola+=" | "+sd.length+" no las puedo tocar: "+sd.slice(0,3).map(function(x){return x.producto+" "+x.sku+" (falta cargar la presentacion de "+x.volumen_real+" ml)";}).join(", ");
+    if(gc.length) cola+=" | "+gc.length+" fila(s) activas SIN SKU conviven con filas que si lo tienen: mientras sigan asi ese tamano se reparte parejo. Son: "+gc.slice(0,3).map(function(x){return x.producto+" "+(x.etiqueta||x.presentacion);}).join(", ");
+    if(!ok.length){ alert((sd.length||gc.length)? ("Ninguna se puede corregir sola."+cola) : "Ninguna presentacion quedo con el volumen de otro tamano."); return; }
+    var txt=ok.slice(0,8).map(function(x){
+      return x.producto+" "+x.sku+": "+x.volumen_actual+" ml -> "+x.volumen_real+" ml, frasco "+(x.envase_actual||"(vacio)")+" -> "+x.envase_correcto;
+    }).join(" | ");
+    if(!confirm("Voy a corregir "+ok.length+" presentacion(es) que quedaron con el volumen y el frasco de otro tamano: "+txt+(ok.length>8?" ...":"")+" . Copia el frasco de la presentacion del MISMO tamano y da de baja la generica que quedaba contando la venta dos veces (reversible)."+cola)) return;
+    var t=await (await fetch("/api/csrf-token",{credentials:"same-origin"})).json();
+    var r=await fetch("/api/mee/presentaciones-volumen-aplicar",{method:"POST",credentials:"same-origin",
+      headers:{"Content-Type":"application/json","X-CSRF-Token":(t&&t.csrf_token)||""},
+      body:JSON.stringify({ids:ok.map(function(x){return x.id;})})});
+    var j=await r.json();
+    if(!r.ok){ alert("No se pudo: "+((j&&j.error)||r.status)); return; }
+    alert("Corregidas "+((j.corregidas||[]).length)+" · genericas dadas de baja "+((j.bajas||[]).length)+cola);
+    cargar();
+  }catch(e){ alert("No se pudo revisar los tamanos: "+e); }
+  finally{ if(b) b.disabled=false; }
 }
 
 async function resolverTonos(){

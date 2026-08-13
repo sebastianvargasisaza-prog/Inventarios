@@ -135,6 +135,7 @@ CORAZON=(
   "tests/test_tono_desde_shopify.py"
   "tests/test_expandir_por_tono.py"
   "tests/test_reparto_por_tono.py"
+  "tests/test_presentacion_volumen_clonado.py"
   "tests/test_filas_sobrantes.py"
   "tests/test_sku_map_csrf.py"
   "tests/test_resolver_tonos.py"
