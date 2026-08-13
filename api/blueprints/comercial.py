@@ -84,6 +84,13 @@ def _scrub_webhook_payload(d: dict) -> dict:
 
 
 # ─── Pagina /comercial ────────────────────────────────────────────────────
+def _hoy_col():
+    """Hoy en Colombia. El servidor corre en UTC: de noche `date.today()` ya es manana aca y
+    desfasa contra todo lo que se lee anclado a -5h (M24)."""
+    from datetime import datetime as _dt, timedelta as _td
+    return (_dt.utcnow() - _td(hours=5)).date().isoformat()
+
+
 def _pipeline_puede(user):
     """Quien ve el pipeline de maquila.
 
@@ -289,6 +296,177 @@ def maquila_actualizar(mid):
 
 
 # ─── EOS LEADS ────────────────────────────────────────────────────────────
+# ─── PROGRESION DEL CLIENTE ────────────────────────────────────────────────
+#
+# Sebastián (13-ago): *"revisar bien la progresión de cada cliente, qué pasos deben llegar hasta
+# ser cliente oficial y tener usuario"*.
+#
+# La regla de fondo: **cada etapa exige el HECHO que la justifica, no la intención de alguien**.
+# Un pipeline donde se puede arrastrar la tarjeta a "contrato" sin que exista un contrato firmado
+# no es un seguimiento: es una lista de deseos que se lee como un compromiso, y el que decide
+# mirando eso decide mal (M19: el estado se DERIVA de un hecho registrado).
+#
+# Las columnas de cada hito YA EXISTEN en `maquila_pipeline` desde que se creó la tabla y nadie
+# las estaba llenando. Acá se vuelven la condición para avanzar, así que el pipeline pasa de
+# decorativo a auditable sin migrar nada.
+PROGRESION = [
+    # (etapa, hito que la habilita, qué significa en una línea)
+    ('consulta',   None,
+     'llego por algun lado y todavia no sabemos que quiere'),
+    ('nda',        'nda_firmado_at',
+     'firmo confidencialidad · sin esto no se le muestra una formula'),
+    ('brief',      'brief_recibido_at',
+     'dijo que quiere: producto, volumen y mercado'),
+    ('cotizacion', 'cotizacion_enviada_at',
+     'se le paso precio'),
+    ('contrato',   'contrato_firmado_at',
+     'acepto · desde aca es cliente oficial y puede tener usuario del portal'),
+    ('produccion', None,
+     'tiene al menos una orden en marcha'),
+    ('ganado',     None,
+     'cliente recurrente'),
+]
+_ORDEN = [x[0] for x in PROGRESION]
+# Desde aca el cliente es OFICIAL. El usuario del portal no se crea antes, porque el portal sirve
+# para PEDIR: darle acceso a quien no firmo es dejar entrar pedidos sin respaldo.
+ETAPA_OFICIAL = 'contrato'
+
+
+def _progresion_de(row):
+    """Dónde está, qué sigue, y qué falta para poder avanzar.
+
+    `row` = dict con al menos stage + las columnas de hito.
+    """
+    stage = (row.get('stage') or 'consulta').strip().lower()
+    if stage == 'perdido':
+        return {'stage': stage, 'siguiente': None, 'falta': None, 'oficial': False,
+                'cerrado': True, 'que_significa': 'se cayo'}
+    try:
+        i = _ORDEN.index(stage)
+    except ValueError:
+        i = 0
+    oficial = i >= _ORDEN.index(ETAPA_OFICIAL)
+    sig = _ORDEN[i + 1] if i + 1 < len(_ORDEN) else None
+    falta = None
+    if sig:
+        hito = dict((e, h) for e, h, _ in PROGRESION)[sig]
+        if hito and not (row.get(hito) or '').strip():
+            falta = {'campo': hito,
+                     'que_hace_falta': dict((e, d) for e, _, d in PROGRESION)[sig]}
+    return {'stage': stage, 'siguiente': sig, 'falta': falta, 'oficial': oficial,
+            'cerrado': stage == 'ganado',
+            'que_significa': dict((e, d) for e, _, d in PROGRESION)[stage],
+            'puede_tener_usuario': oficial}
+
+
+@bp.route('/api/comercial/maquila/progresion', methods=['GET'])
+def maquila_progresion():
+    """Cada cliente del pipeline con lo que le falta para el siguiente paso.
+
+    Esto es lo que evita que se pierdan: la pregunta *"¿de quién estoy esperando qué?"* se
+    contesta mirando, no acordándose.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    if not _pipeline_puede(session.get('compras_user', '')):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
+    c = get_db().cursor()
+    cols = ('id, empresa, contacto_nombre, contacto_email, stage, owner, origen, '
+            'nda_firmado_at, brief_recibido_at, cotizacion_enviada_at, contrato_firmado_at, '
+            'valor_estimado_cop, creado_en, actualizado_en')
+    out, oficiales, trabados = [], 0, 0
+    for r in c.execute('SELECT ' + cols + ' FROM maquila_pipeline ORDER BY id').fetchall():
+        d = dict(zip([x.strip() for x in cols.split(',')], r))
+        p = _progresion_de(d)
+        d['progresion'] = p
+        if p['oficial']:
+            oficiales += 1
+        if p.get('falta'):
+            trabados += 1
+        out.append(d)
+    return jsonify({
+        'ok': True, 'clientes': out, 'etapas': [
+            {'etapa': e, 'hito': h, 'que_significa': q} for e, h, q in PROGRESION],
+        'etapa_oficial': ETAPA_OFICIAL,
+        'resumen': {'total': len(out), 'oficiales': oficiales,
+                    'esperando_algo': trabados},
+    })
+
+
+@bp.route('/api/comercial/maquila/<int:mid>/avanzar', methods=['POST'])
+def maquila_avanzar(mid):
+    """Avanza al cliente UNA etapa, y sólo si el hecho que la justifica está registrado.
+
+    Body opcional: {fecha: 'YYYY-MM-DD'} para registrar el hito en el mismo acto.
+
+    ⚠ No se puede saltar etapas: un cliente que aparece en "contrato" sin haber pasado por el
+    brief deja un hueco que nadie puede reconstruir después. Si de verdad hay que corregir el
+    estado a mano, para eso está el PATCH -- pero queda auditado como lo que es.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if not _pipeline_puede(user):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
+    d = request.get_json(silent=True) or {}
+    conn = get_db(); c = conn.cursor()
+    cols = ('id, empresa, stage, nda_firmado_at, brief_recibido_at, cotizacion_enviada_at, '
+            'contrato_firmado_at')
+    r = c.execute('SELECT ' + cols + ' FROM maquila_pipeline WHERE id=?', (mid,)).fetchone()
+    if not r:
+        return jsonify({'error': 'no existe ese cliente en el pipeline'}), 404
+    row = dict(zip([x.strip() for x in cols.split(',')], r))
+    p = _progresion_de(row)
+    if not p['siguiente']:
+        return jsonify({'error': 'ya esta en la ultima etapa', 'stage': p['stage']}), 409
+    sig = p['siguiente']
+    hito = dict((e, h) for e, h, _ in PROGRESION)[sig]
+
+    sets, params = ['stage=?'], [sig]
+    fecha = (d.get('fecha') or '').strip() or _hoy_col()
+    if hito and not (row.get(hito) or '').strip():
+        # El hecho se registra al avanzar. Si no viene y no estaba, no se inventa: se rechaza
+        # diciendo QUE falta -- un "no se pudo" sin motivo obliga a adivinar (M127).
+        if not d.get('registrar_hito'):
+            return jsonify({
+                'error': 'falta el hecho que justifica ese paso',
+                'codigo': 'FALTA_HITO', 'siguiente': sig, 'campo': hito,
+                'que_hace_falta': dict((e, q) for e, _, q in PROGRESION)[sig],
+                'como': ('mandá {"registrar_hito": true, "fecha": "YYYY-MM-DD"} para dejarlo '
+                         'registrado en el mismo acto'),
+            }), 422
+        sets.append(hito + '=?'); params.append(fecha)
+    sets.append('actualizado_en=?'); params.append(_hoy_col())
+    params.append(mid); params.append(row['stage'])
+    # CAS: dos personas avanzando la misma tarjeta a la vez la saltearian dos etapas (M27).
+    cur = c.execute('UPDATE maquila_pipeline SET ' + ', '.join(sets) +
+                    ' WHERE id=? AND stage=?', tuple(params))
+    if not cur.rowcount:
+        conn.rollback()
+        return jsonify({'error': 'la etapa cambio mientras tanto',
+                        'codigo': 'ESTADO_CAMBIO'}), 409
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='AVANZAR_PIPELINE_MAQUILA',
+            tabla='maquila_pipeline', registro_id=str(mid),
+            antes={'stage': row['stage']}, despues={'stage': sig},
+            detalle='%s -> %s%s' % (row['stage'], sig,
+                                    (' · %s=%s' % (hito, fecha)) if hito else ''))
+    except Exception as e:
+        log.warning('avanzar pipeline: no pude auditar: %s', e)
+    conn.commit()
+    nuevo = _progresion_de(dict(row, stage=sig, **({hito: fecha} if hito else {})))
+    return jsonify({
+        'ok': True, 'empresa': row['empresa'], 'stage': sig, 'progresion': nuevo,
+        'aviso': ('Ya es cliente OFICIAL: desde aca se le puede crear el usuario del portal para '
+                  'que pida solo.' if nuevo['oficial'] and not p['oficial'] else
+                  ('Sigue: %s · %s' % (nuevo['siguiente'], (nuevo.get('falta') or {}).get(
+                      'que_hace_falta', 'sin requisito')) if nuevo['siguiente'] else 'Cerrado.')),
+    })
+
+
 @bp.route('/api/eos/leads', methods=['GET'])
 def eos_leads_listar():
     if 'compras_user' not in session:
