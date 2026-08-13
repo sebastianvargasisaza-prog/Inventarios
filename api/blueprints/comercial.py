@@ -373,6 +373,57 @@ def leads_correo_leer():
     return jsonify({'ok': True, 'nuevos': n, 'detalle': detalle})
 
 
+@bp.route('/api/comercial/leads-correo/descartar-remitente', methods=['POST'])
+def leads_correo_descartar_remitente():
+    """Descarta de un golpe todo lo pendiente de un remitente.
+
+    Sebastián, tras la primera lectura: *"llegaron muchos que no son"*. Era esperable -- a un
+    correo de dirección le llega de todo, no sólo formularios. El filtro estructural (el buzón)
+    sigue siendo correcto: mantiene afuera a los de Ánimus. Lo que faltaba era poder barrer el
+    ruido sin ir de a uno.
+
+    ⚠ La regla sale de SUS descartes, no de una que yo invente: se descarta por REMITENTE, que es
+    un hecho del mensaje, y no por palabras del asunto -- un filtro de contenido botaría el
+    "cotización de maquila" que venga con una redacción rara, y perder un cliente es mucho peor
+    que dejar pasar publicidad (M144).
+
+    Nada se borra: queda con su motivo y se puede recuperar.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if not _pipeline_puede(user):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
+    d = request.get_json(silent=True) or {}
+    correo = (d.get('correo') or '').strip().lower()
+    if not correo:
+        return jsonify({'error': 'falta el correo del remitente'}), 400
+    motivo = (d.get('motivo') or '').strip() or 'no es un prospecto'
+    conn = get_db(); c = conn.cursor()
+    # Sólo lo PENDIENTE: lo que ya pasó al pipeline no se toca, porque ahí ya hubo una decisión.
+    ids = [r[0] for r in c.execute(
+        "SELECT id FROM leads_correo "
+        " WHERE LOWER(COALESCE(remitente,'')) LIKE ? "
+        "   AND COALESCE(descartado,0)=0 AND pipeline_id IS NULL",
+        ('%' + correo + '%',)).fetchall()]
+    if not ids:
+        return jsonify({'ok': True, 'descartados': 0,
+                        'aviso': 'no quedaba nada pendiente de ese remitente'})
+    c.execute("UPDATE leads_correo SET descartado=1, motivo_descarte=? "
+              " WHERE id IN (%s)" % ','.join('?' * len(ids)), tuple([motivo] + ids))
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='DESCARTAR_LEADS_REMITENTE', tabla='leads_correo',
+            registro_id=str(ids[0]), antes={'descartado': 0},
+            despues={'descartado': 1, 'motivo': motivo, 'n': len(ids)},
+            detalle='%d correo(s) de %s · %s' % (len(ids), correo, motivo))
+    except Exception as e:
+        log.warning('descartar remitente: no pude auditar: %s', e)
+    conn.commit()
+    return jsonify({'ok': True, 'descartados': len(ids), 'correo': correo, 'motivo': motivo})
+
+
 @bp.route('/api/comercial/leads-correo/<int:lid>/al-pipeline', methods=['POST'])
 def lead_correo_al_pipeline(lid):
     """Convierte un correo en tarjeta del pipeline · o lo descarta con motivo.

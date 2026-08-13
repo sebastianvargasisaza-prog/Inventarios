@@ -323,7 +323,7 @@ async function cargarLeadsCorreo(){
     est.innerHTML = d.buzon_configurado
       ? '<div style="background:var(--cx-success-pale,#f0fdf4);color:var(--cx-success-text,#15803d);border:1px solid var(--cx-success-soft,#bbf7d0);border-radius:10px;padding:9px 13px;font-size:12px;font-weight:700">&#9989; Buz&oacute;n conectado &middot; se lee solo a las 7:20 y 15:20</div>'
       : '<div style="background:var(--cx-warn-pale,#fef3c7);color:var(--cx-warn-text,#92400e);border:1px solid var(--cx-warn-soft,#fde68a);border-radius:10px;padding:9px 13px;font-size:12px;font-weight:700">&#9888; '+_esc(d.aviso||'buz&oacute;n sin configurar')+'</div>';
-    var L=d.leads||[];
+    var L=d.leads||[]; window._LEADS=L;
     if(!L.length){ cont.innerHTML='<div style="color:var(--cx-text-faint);padding:22px;text-align:center">'+(d.buzon_configurado?'No hay correos nuevos.':'Todav&iacute;a no se ley&oacute; el buz&oacute;n.')+'</div>'; return; }
     var h='<div style="display:flex;flex-direction:column;gap:9px">';
     L.forEach(function(x){
@@ -344,7 +344,8 @@ async function cargarLeadsCorreo(){
         +(des?('<span style="font-size:11px;font-weight:700;color:var(--cx-text-mute,#64748b)">descartado</span>')
            : ya?('<a href="#" onclick="switchPane(\'maq\');return false" style="font-size:11.5px;font-weight:700;color:var(--cx-success-text,#15803d);text-decoration:none">&#10003; ya est&aacute; en el pipeline</a>')
            : ('<button class="btn btn-primary" style="padding:6px 12px;font-size:12px" onclick="leadAlPipeline('+x.id+')">&rarr; Al pipeline</button>'
-             +'<button class="btn" style="padding:6px 12px;font-size:12px" onclick="leadDescartar('+x.id+')">Descartar</button>'))
+             +'<button class="btn" style="padding:6px 12px;font-size:12px" onclick="leadDescartar('+x.id+')">Descartar</button>'
+             +'<button class="btn" style="padding:6px 10px;font-size:11.5px" title="Descarta todo lo pendiente de este remitente" onclick="descartarRemitente('+x.id+')">y todos los de este remitente</button>'))
         +'</div></div>'
         +(x.cuerpo?('<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--cx-text-mute,#64748b);font-weight:700">ver el correo como lleg&oacute;</summary><pre style="white-space:pre-wrap;font-size:11px;color:var(--cx-text-soft,#475569);background:var(--cx-border-soft,#f8fafc);border-radius:8px;padding:9px;margin-top:6px;max-height:220px;overflow:auto">'+_esc(x.cuerpo)+'</pre></details>'):'')
         +'</div>';
@@ -360,8 +361,17 @@ async function leerBuzon(){
     var r=await fetch('/api/comercial/leads-correo/leer', _fetchOpts('POST',{}));
     var d=await r.json();
     if(!r.ok){ _toast((d&&(d.como||d.error))||('HTTP '+r.status), false); return; }
-    _toast(d.nuevos? (d.nuevos+' prospecto(s) nuevo(s)') : 'Sin correos nuevos', true);
-    cargarLeadsCorreo();
+    // ⚠ Refrescar ANTES de avisar. El alert BLOQUEA, asi que avisando primero el cartel dice
+    // "40 nuevos" mientras la lista de atras sigue diciendo "no hay correos nuevos" -- y dos
+    // partes de la misma pantalla contradiciendose hacen que se deje de creer en las dos (M161).
+    await cargarLeadsCorreo();
+    var est=document.getElementById('correo-estado');
+    if(est){
+      est.insertAdjacentHTML('beforeend','<div style="margin-top:8px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary-text,#5b21b6);border:1px solid var(--cx-primary-soft,#ddd6fe);border-radius:10px;padding:9px 13px;font-size:12px;font-weight:700">'
+        +(d.nuevos? ('&#128229; '+d.nuevos+' prospecto(s) nuevo(s) en esta lectura')
+                  : '&#128229; Sin correos nuevos &middot; los que ya estaban no se vuelven a traer')
+        +' &middot; revisados '+((d.detalle&&d.detalle.vistos)||0)+' en '+((d.detalle&&d.detalle.segundos)||0)+'s</div>');
+    }
   }catch(e){ _toast('Error de red: '+e.message,false); }
   finally{ if(b){b.disabled=false;b.innerHTML='&#128229; Leer ahora';} }
 }
@@ -373,6 +383,32 @@ async function leadAlPipeline(id){
     if(!r.ok){ _toast((d&&d.error)||('HTTP '+r.status), false); return; }
     _toast(d.nueva_tarjeta? ('Abierta la tarjeta de '+d.empresa) : ('Se sum&oacute; a la tarjeta que ya exist&iacute;a'), true);
     cargarLeadsCorreo();
+  }catch(e){ _toast('Error de red: '+e.message,false); }
+}
+
+function _correoDe(txt){
+  var m=String(txt||'').match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/);
+  return m? m[0] : '';
+}
+
+async function descartarRemitente(id){
+  // El barrido va por REMITENTE, que es un hecho del mensaje. Un filtro por palabras del asunto
+  // botaria el "cotizacion de maquila" con redaccion rara, y perder un cliente es mucho peor que
+  // dejar pasar publicidad.
+  var lead=(window._LEADS||[]).filter(function(x){return x.id===id;})[0];
+  var correo=_correoDe(lead&&lead.remitente);
+  if(!correo){ _toast('No pude leer el correo del remitente', false); return; }
+  var n=(window._LEADS||[]).filter(function(x){
+    return !x.descartado && !x.pipeline_id && String(x.remitente||'').toLowerCase().indexOf(correo.toLowerCase())>=0;
+  }).length;
+  var m=prompt('Descarto '+n+' correo(s) pendientes de '+correo+'. Queda registrado y se puede recuperar. Motivo:','no es un prospecto');
+  if(m===null) return;
+  try{
+    var r=await fetch('/api/comercial/leads-correo/descartar-remitente', _fetchOpts('POST',{correo:correo, motivo:m}));
+    var d=await r.json();
+    if(!r.ok){ _toast((d&&d.error)||('HTTP '+r.status), false); return; }
+    await cargarLeadsCorreo();
+    _toast('Descartados '+d.descartados+' de '+correo, true);
   }catch(e){ _toast('Error de red: '+e.message,false); }
 }
 

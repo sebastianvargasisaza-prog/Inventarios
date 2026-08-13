@@ -167,3 +167,66 @@ def test_la_pantalla_tiene_como_llegar_a_los_endpoints(app, luz):
         assert ('function %s' % fn) in html, 'el botón llama a %s y no está definida' % fn
     # y los botones apuntan a los endpoints que existen
     assert '/api/comercial/leads-correo' in html
+
+
+# ------------------------------------------------ barrer el ruido sin ir de a uno
+
+def test_descarta_todo_lo_pendiente_de_un_remitente(app, luz):
+    """Sebastián, tras la primera lectura: *"llegaron muchos que no son"*.
+
+    Era esperable: a un correo de dirección le llega de todo. El filtro estructural sigue siendo
+    correcto (mantiene afuera a los de Ánimus); lo que faltaba era barrer el ruido en bloque.
+
+    Se barre por REMITENTE, que es un hecho del mensaje. Por palabras del asunto se botaría el
+    "cotización de maquila" que venga con una redacción rara, y perder un cliente es mucho peor
+    que dejar pasar publicidad.
+    """
+    _limpiar(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        for i in range(3):
+            c.execute("INSERT INTO leads_correo (message_id, remitente, asunto, empresa) "
+                      "VALUES (?,?,?,?)",
+                      ('LCTEST-N%d' % i, 'Boletin <news@spam-lctest.co>', 'Novedades', 'LCTEST X'))
+        c.execute("INSERT INTO leads_correo (message_id, remitente, asunto, empresa) "
+                  "VALUES ('LCTEST-OK','Ana <ana@lctest.co>','Cotizacion','LCTEST COSMETICA SAS')")
+        conn.commit()
+
+    r = luz.post('/api/comercial/leads-correo/descartar-remitente',
+                 json={'correo': 'news@spam-lctest.co', 'motivo': 'boletin'},
+                 headers={'Origin': 'http://localhost'})
+    assert r.status_code == 200 and r.get_json()['descartados'] == 3, r.get_data(as_text=True)[:200]
+    with app.app_context():
+        from database import get_db
+        c = get_db().cursor()
+        otro = c.execute("SELECT descartado FROM leads_correo WHERE message_id='LCTEST-OK'").fetchone()
+        n = c.execute("SELECT COUNT(*) FROM leads_correo WHERE message_id LIKE 'LCTEST-N%' "
+                      "  AND descartado=1 AND motivo_descarte='boletin'").fetchone()
+    assert otro[0] == 0, 'se llevó puesto un remitente distinto'
+    assert n[0] == 3, 'no descartó los tres ni guardó el motivo'
+
+
+def test_el_barrido_NO_toca_lo_que_ya_paso_al_pipeline(app, luz):
+    """Ahí ya hubo una decisión de una persona; deshacerla en bloque sería pisarla."""
+    _limpiar(app)
+    lid = _lead(app, 'LCTEST-YA')
+    luz.post('/api/comercial/leads-correo/%d/al-pipeline' % lid, json={},
+             headers={'Origin': 'http://localhost'})
+    r = luz.post('/api/comercial/leads-correo/descartar-remitente',
+                 json={'correo': 'ana@lctest.co'}, headers={'Origin': 'http://localhost'})
+    assert r.status_code == 200 and r.get_json()['descartados'] == 0
+    with app.app_context():
+        from database import get_db
+        f = get_db().cursor().execute(
+            "SELECT descartado FROM leads_correo WHERE id=?", (lid,)).fetchone()
+    assert f[0] == 0, 'descartó uno que ya estaba en el pipeline'
+
+
+def test_compras_no_puede_barrer(app):
+    c = app.test_client()
+    c.post("/login", data={"username": "catalina", "password": TEST_PASSWORD},
+           headers={"Origin": "http://localhost"}, follow_redirects=False)
+    assert c.post('/api/comercial/leads-correo/descartar-remitente',
+                  json={'correo': 'x@y.co'},
+                  headers={'Origin': 'http://localhost'}).status_code == 403
