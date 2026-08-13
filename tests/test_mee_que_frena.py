@@ -174,3 +174,40 @@ def test_una_categoria_conocida_NO_se_reporta(app, planta_client):
     sin = {x['categoria'] for x in d.get('categorias_sin_clasificar', [])}
     assert 'Frasco' not in sin
     assert 'Impreso' not in sin, 'Impreso ya está reclamado por la columna envase'
+
+
+def test_una_fila_DADA_DE_BAJA_no_frena(app, planta_client):
+    """DIENTES · contando las inactivas el numero salia MAYOR que el total de filas.
+
+    En produccion mostro "44 frenan produccion" sobre 42 presentaciones. Un contador imposible
+    destruye la confianza en los otros tres que estan al lado y que si eran correctos (M161), y de
+    fondo una presentacion dada de baja no frena nada porque no se usa.
+    """
+    _limpiar(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        conn.cursor().execute(
+            "INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, "
+            "volumen_ml, envase_codigo, tapa_codigo, caja_codigo, etiqueta_codigo, "
+            "sin_tapa, sin_caja, sin_etiqueta, activo, es_default) "
+            "VALUES ('FRENA DE BAJA','V30','30 ml',30,'MEE-ENV-001','','','',0,0,0,0,0)")
+        conn.commit()
+    _programar(app, 'FRENA DE BAJA')
+    d = planta_client.get('/api/mee/normalizar-tabla').get_json()
+    fila = [f for f in d['filas'] if f['producto'] == 'FRENA DE BAJA']
+    assert fila, 'la fila sembrada no salio'
+    assert fila[0]['incompleta'] is True
+    assert fila[0]['bloquea'] is False, 'una fila dada de baja no puede frenar produccion'
+
+
+def test_el_contador_nunca_supera_el_total_de_filas(app, planta_client):
+    """La invariante que hace imposible el numero absurdo, sin depender de un caso puntual."""
+    d = planta_client.get('/api/mee/normalizar-tabla').get_json()
+    r = d['resumen']
+    assert r['bloquean'] <= r['filas'], (
+        'frenan (%s) > filas (%s): el contador esta midiendo mas de lo que existe'
+        % (r['bloquean'], r['filas']))
+    activas = sum(1 for f in d['filas'] if f.get('activo'))
+    assert r['bloquean'] <= activas, (
+        'frenan (%s) > filas activas (%s)' % (r['bloquean'], activas))

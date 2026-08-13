@@ -17851,7 +17851,16 @@ def mee_normalizar_tabla():
     for f in filas:
         _incompleta = any(not f['actual'][col] and not f['no_usa'].get(col) for col in _MEE_CATS)
         f['incompleta'] = _incompleta
-        f['bloquea'] = bool(_incompleta and _con_prod is not None
+        # ⚠ Sólo las ACTIVAS. Contando también las dadas de baja el número salía MAYOR que el
+        # total de filas -- "44 frenan" sobre 42 presentaciones -- y un contador imposible destruye
+        # la confianza en los otros tres que están al lado, que sí estaban bien (M161: cuando dos
+        # números del mismo tablero se contradicen, se deja de creer en los dos).
+        #
+        # Y de fondo: una presentación dada de baja no frena nada, porque no se usa. Incluirla
+        # convertía la lista corta -- que existe para poder terminarla hoy -- en una más larga que
+        # la original.
+        f['bloquea'] = bool(_incompleta and f.get('activo')
+                            and _con_prod is not None
                             and _norm_prod_fuerte(f['producto']) in _con_prod)
         if f['bloquea']:
             _bloquean += 1
