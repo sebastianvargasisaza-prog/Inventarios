@@ -253,3 +253,24 @@ def test_los_dos_contadores_NO_se_contradicen(app, planta_client):
     assert d['resumen']['bloquean'] <= incompletas_activas, (
         'frenan (%s) > incompletas activas (%s): los dos contadores miden cosas distintas'
         % (d['resumen']['bloquean'], incompletas_activas))
+
+
+def test_la_fila_declara_si_su_producto_tiene_produccion(app, planta_client):
+    """El HECHO va en la fila para que la pantalla pueda recalcular con lo editado sin guardar.
+
+    Si el veredicto viniera cerrado del servidor, organizar las filas no moveria el contador
+    hasta guardar: el usuario hace el trabajo y el numero no cambia, y no tiene como saber si
+    sirvio (M5 entre lo guardado y lo que esta en pantalla).
+    """
+    _limpiar(app)
+    _presentacion(app, 'FRENA CON PROD', completa=False)
+    _programar(app, 'FRENA CON PROD')
+    _presentacion(app, 'FRENA SIN PROD', completa=False)
+    d = planta_client.get('/api/mee/normalizar-tabla').get_json()
+    con = [f for f in d['filas'] if f['producto'] == 'FRENA CON PROD'][0]
+    sin = [f for f in d['filas'] if f['producto'] == 'FRENA SIN PROD'][0]
+    assert con['tiene_produccion'] is True
+    assert sin['tiene_produccion'] is False
+    # y el veredicto del servidor sigue siendo coherente con el hecho
+    assert con['bloquea'] is True
+    assert sin['bloquea'] is False

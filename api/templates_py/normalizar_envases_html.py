@@ -210,7 +210,7 @@ function pintar(){
     if(!verApag && !f.activo) return false;
     if(q && f.producto.toUpperCase().indexOf(q)<0) return false;
     if(solo && !incompleta(f)) return false;
-    if(SOLO_BLOQUEAN && !f.bloquea) return false;
+    if(SOLO_BLOQUEAN && !(f.tiene_produccion && incompleta(f))) return false;
     return true;
   });
   var listas=D.filas.filter(function(f){ return f.activo && !incompleta(f); }).length;
@@ -218,7 +218,12 @@ function pintar(){
   // Cuantas FRENAN una produccion real. Sin esto, una lista de decenas de pendientes -- casi
   // todos de productos que nadie va a fabricar esta semana -- no se termina nunca, y lo que de
   // verdad traba el cierre del batch record queda mezclado con lo que puede esperar (M129).
-  var bloq = D.resumen.bloquean||0, medido = D.resumen.bloquean_medido !== false;
+  // Se recalcula en la pantalla con lo que el usuario acaba de editar: el servidor solo aporta
+  // el HECHO (este producto tiene produccion programada). Si se usara el numero del servidor,
+  // organizar las filas no moveria el contador hasta guardar, y no habria forma de saber si el
+  // trabajo sirvio.
+  var medido = D.resumen.bloquean_medido !== false;
+  var bloq = D.filas.filter(function(f){ return f.tiene_produccion && incompleta(f); }).length;
   document.getElementById('kpis').innerHTML=
       '<div class="kpi"><b>'+listas+' / '+act+'</b><span>completas</span></div>'
     + '<div class="kpi"'+(bloq?' style="background:var(--cx-danger-pale,#fef2f2);border-color:var(--cx-danger-soft,#fecaca)"':'')+'><b'+(bloq?' style="color:var(--cx-danger-text,#b91c1c)"':'')+'>'

@@ -17865,9 +17865,14 @@ def mee_normalizar_tabla():
         # Y de fondo: una presentación dada de baja no frena nada, porque no se usa. Incluirla
         # convertía la lista corta -- que existe para poder terminarla hoy -- en una más larga que
         # la original.
-        f['bloquea'] = bool(_incompleta and f.get('activo')
-                            and _con_prod is not None
-                            and _norm_prod_fuerte(f['producto']) in _con_prod)
+        # El HECHO va en la fila (este producto tiene produccion programada) y la pantalla decide
+        # si frena, porque solo ella sabe lo que el usuario acaba de editar sin guardar. Si el
+        # veredicto se calcula solo aca, el contador no se mueve mientras se trabaja: Sebastian
+        # organizo las filas, vio que el numero seguia igual, y no tenia como saber si su trabajo
+        # habia servido (M5 otra vez, ahora entre lo guardado y lo que esta en pantalla).
+        f['tiene_produccion'] = bool(f.get('activo') and _con_prod is not None
+                                     and _norm_prod_fuerte(f['producto']) in _con_prod)
+        f['bloquea'] = bool(_incompleta and f['tiene_produccion'])
         if f['bloquea']:
             _bloquean += 1
 
