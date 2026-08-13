@@ -18622,8 +18622,16 @@ def _pres_volumen_scan(c):
                      'volumen_actual': f['vol'], 'volumen_real': _real,
                      'envase_actual': f['envase']}
             if not _mod or not _mod['envase']:
-                _base['motivo'] = ('no hay una presentación de %s ml de este producto de la que '
-                                   'copiar el frasco' % _ml_txt(_real))
+                # ⚠ Las DOS lecturas, porque llevan a arreglos opuestos y el sistema no puede
+                # elegir: o falta cargar esa presentación, o el volumen que el SKU declara en
+                # Shopify está mal. Sebastián, sobre el lip serum: *"es solo de 10 ml, no es de
+                # 30"* -- ahí la respuesta era la segunda, y un motivo que sólo ofrece la primera
+                # manda a crear una presentación que no existe (M100/M130).
+                _base['motivo'] = ('el SKU declara %s ml y este producto no tiene ninguna '
+                                   'presentación de ese tamaño: o falta cargarla, o el volumen '
+                                   'del SKU está mal en el catálogo de Shopify'
+                                   % _ml_txt(_real))
+                _base['tamanos_del_producto'] = sorted(por_vol.keys())
                 sin_destino.append(_base)
                 continue
             _base['envase_correcto'] = _mod['envase']

@@ -10035,6 +10035,25 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
   <span class="muted" id="vw-hint" style="font-size:11px;flex:1">Orden cronol&oacute;gico &middot; qu&eacute; enviar primero (15 d&iacute;as antes de cada producci&oacute;n).</span>
 </div>
 <input class="search" id="q" placeholder="Buscar producto/envase..." oninput="_dr()">
+<!-- Lo que hay que decidir, de un golpe. Antes habia que leer la tabla entera para saber cuanto
+     estaba vencido o sin metodo, y eso es justo lo que esta pantalla existe para responder. Los
+     numeros salen de las MISMAS filas que se pintan abajo, asi que no pueden discrepar (M5). -->
+<div id="marc-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:11px;margin:14px 0 4px"></div>
+<style>
+/* La cola es una lista de ORDENES DE TRABAJO: se escanea, no se lee. Lo que necesita atencion
+   tiene que leerse de un vistazo, asi que la urgencia va en la FORMA (un filete a la izquierda)
+   ademas de en el numero -- el color solo no alcanza. Se estiliza por el contenedor, sin tocar
+   la tabla de las otras pestanas. */
+#pane-prepenv table{border-collapse:separate;border-spacing:0 7px}
+#pane-prepenv tbody tr.mrow{background:var(--cx-card,#fff);box-shadow:0 1px 2px rgba(16,24,40,.05);transition:box-shadow .14s ease,transform .14s ease}
+#pane-prepenv tbody tr.mrow:hover{box-shadow:0 6px 18px -6px rgba(16,24,40,.18);transform:translateY(-1px)}
+#pane-prepenv tbody tr.mrow>td{border-top:1px solid var(--cx-border-soft,#f1f5f9);border-bottom:1px solid var(--cx-border-soft,#f1f5f9);padding:11px 10px;vertical-align:top}
+#pane-prepenv tbody tr.mrow>td:first-child{border-left:4px solid var(--cx-border,#e2e8f0);border-radius:11px 0 0 11px}
+#pane-prepenv tbody tr.mrow.urge>td:first-child{border-left-color:var(--cx-danger,#dc2626)}
+#pane-prepenv tbody tr.mrow.lista>td:first-child{border-left-color:var(--cx-success,#16a34a)}
+#pane-prepenv tbody tr.mrow>td:last-child{border-right:1px solid var(--cx-border-soft,#f1f5f9);border-radius:0 11px 11px 0}
+#pane-prepenv thead th{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--cx-text-mute,#64748b);font-weight:800;padding:4px 10px;border:none}
+</style>
 <datalist id="provlist"></datalist>
 <div id="alistar-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:16px">
   <div style="background:var(--cx-card, #fff);border-radius:12px;padding:22px;max-width:420px;width:100%">
@@ -10093,10 +10112,37 @@ async function cargar(){
 }
 function opt(v,sel,txt){return '<option value="'+v+'"'+(sel===v?' selected':'')+'>'+txt+'</option>';}
 var _drt; function _dr(){ clearTimeout(_drt); _drt=setTimeout(render,170); }
+function _kpiCard(icono,valor,rotulo,tono,detalle){
+  var pale='var(--cx-'+tono+'-pale)', txt='var(--cx-'+tono+'-text)', soft='var(--cx-'+tono+'-soft)';
+  return '<div style="background:'+pale+';border:1px solid '+soft+';border-radius:14px;padding:13px 15px;box-shadow:0 1px 2px rgba(16,24,40,.04)">'
+    +'<div style="font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:'+txt+';opacity:.82">'+icono+' '+rotulo+'</div>'
+    +'<div style="font-size:26px;font-weight:800;line-height:1.05;margin-top:5px;color:'+txt+';font-variant-numeric:tabular-nums">'+valor+'</div>'
+    +(detalle?('<div style="font-size:10.5px;color:'+txt+';opacity:.75;margin-top:3px;font-weight:600">'+detalle+'</div>'):'')
+    +'</div>';
+}
+function pintarKpisMarc(vis){
+  var box=document.getElementById('marc-kpis'); if(!box) return;
+  var hoyS=hoy(), venc=0, sinM=0, sinP=0, uds=0, agr=0;
+  vis.forEach(function(r){
+    if(r.fecha_envio && r.fecha_envio<=hoyS) venc++;
+    if(!(r.marcacion_tipo||'').trim()) sinM++;
+    if(!(r.marcacion_proveedor||'').trim()) sinP++;
+    uds+=Math.round(r.unidades||0);
+    if((r.presentaciones||0)>1) agr++;
+  });
+  var nf=function(n){return (n||0).toLocaleString('es-CO');};
+  box.innerHTML=
+     _kpiCard('&#128308;',nf(venc),'ya vencidas','danger', venc?'la fecha de envio ya paso':'ninguna atrasada')
+    +_kpiCard('&#9881;&#65039;',nf(sinM),'sin metodo','warn', sinM?'no se puede mandar a marcar':'todas definidas')
+    +_kpiCard('&#127981;',nf(sinP),'sin proveedor','info', sinP?'falta a quien pedirselo':'todos asignados')
+    +_kpiCard('&#128230;',nf(uds),'unidades en cola','primary', vis.length+' orden(es) de trabajo')
+    +(agr?_kpiCard('&#128279;',nf(agr),'frascos compartidos','success','varias presentaciones en una sola orden'):'');
+}
 function render(){
   if(window._VIEW==='env') return renderConsolidado();
   var q=(document.getElementById('q').value||'').toLowerCase();
   var vis=ROWS.filter(function(r){return !q || (r.producto+' '+r.envase_codigo+' '+(r.envase_desc||'')).toLowerCase().indexOf(q)>=0;});
+  pintarKpisMarc(vis);
   if(!vis.length){ document.getElementById('cont').innerHTML='<div class="muted" style="padding:20px;text-align:center">Sin envases a marcar (o no hay producciones futuras mapeadas).</div>'; return; }
   var MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   var curMes='';
@@ -10106,7 +10152,11 @@ function render(){
     var ym=String(r.fecha||'').slice(0,7);
     if(ym && ym!==curMes){ curMes=ym; var pp=ym.split('-'); var lbl=(pp.length===2 && MES[parseInt(pp[1],10)-1])?(MES[parseInt(pp[1],10)-1]+' '+pp[0]):ym; h+='<tr><td colspan="8" style="background:var(--cx-primary-soft, #ede9fe);color:var(--cx-primary-text, #5b21b6);font-weight:800;padding:9px;font-size:13px;border-top:2px solid var(--cx-primary-light, #c4b5fd)">&#128197; '+lbl+'</td></tr>'; }
     var urge=(r.fecha_envio && r.fecha_envio<=hoy());
-    h+='<tr>'+
+    // La urgencia va tambien en la FORMA (el filete de la izquierda), no solo en el color del
+    // chip: una fila que ya vencio tiene que saltar sin leerla. Y la que ya tiene metodo Y
+    // proveedor esta LISTA para mandar, que es el otro estado que importa de un vistazo.
+    var _lista=((r.marcacion_tipo||'').trim() && (r.marcacion_proveedor||'').trim());
+    h+='<tr class="mrow'+(urge?' urge':'')+(_lista?' lista':'')+'">'+
       '<td>'+(r.fecha_envio?('<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;'+(urge?'background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #b91c1c)':'background:var(--cx-border-soft, #f1f5f9);color:var(--cx-text-soft, #475569)')+'">'+(urge?'&#128308; ':'&#128197; ')+esc(r.fecha_envio)+'</span>'):'<span class="muted">-</span>')+'</td>'+
       '<td><b style="color:var(--cx-text, #0f172a)">'+esc(r.producto)+'</b>'+
         // Esta fila no nacio de un envase que siempre se manda a marcar: nacio porque el IMPRESO
@@ -10119,7 +10169,11 @@ function render(){
           ' y la produccion pide '+Math.round(r.unidades_produccion||0)+'</div>'):'')+
         '</td>'+
       '<td class="muted">'+esc(String(r.fecha||''))+'</td>'+
-      '<td><select id="e-'+i+'" onchange="cambiarEnvase('+i+')" style="max-width:235px;font-size:11px">'+envOpts(r.envase_codigo)+'</select> <button onclick="crearEnvase('+i+')" title="Crear nuevo envase" style="background:linear-gradient(135deg,#0d9488,#0f766e);padding:5px 10px">&#10133;</button><br><span class="muted" style="font-size:10px">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span></td>'+
+      '<td><select id="e-'+i+'" onchange="cambiarEnvase('+i+')" style="max-width:235px;font-size:11px">'+envOpts(r.envase_codigo)+'</select> <button onclick="crearEnvase('+i+')" title="Crear nuevo envase" style="background:linear-gradient(135deg,#0d9488,#0f766e);padding:5px 10px">&#10133;</button><br><span class="muted" style="font-size:10px">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span>'+
+        // Un total que AGRUPA sin decir qu&eacute; agrupa obliga a desconfiar del n&uacute;mero justo
+        // cuando hay que firmarlo: si esta fila junta varias presentaciones que comparten frasco,
+        // se enumeran (M124).
+        (((r.presentaciones||0)>1 && (r.cubre||[]).length)?('<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'+(r.cubre||[]).map(function(x){return '<span style="font-size:9.5px;font-weight:800;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary-text,#5b21b6);border:1px solid var(--cx-primary-soft,#ddd6fe);border-radius:999px;padding:2px 8px">'+esc(x)+'</span>';}).join('')+'</div><div style="font-size:9.5px;color:var(--cx-text-mute,#64748b);margin-top:4px;font-weight:600">'+r.presentaciones+' presentaciones comparten este frasco &middot; va en UNA sola orden</div>'):'')+'</td>'+
       '<td><input id="u-'+i+'" type="number" min="1" value="'+Math.round(r.unidades||0)+'" style="width:80px;font-weight:700;color:var(--cx-primary-text, #5b21b6);text-align:right"></td>'+
       '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('etiqueta',r.marcacion_tipo,'Etiqueta (solicitada)')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
       '<td><input class="prov" id="p-'+i+'" list="provlist" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+

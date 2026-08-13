@@ -198,8 +198,16 @@ def test_sin_presentacion_del_tamano_correcto_NO_se_toca(app, planta_client):
     assert huerf not in [x['id'] for x in d['volumen_mal']], \
         'la ofreció como corregible sin tener de dónde copiar el frasco'
     sd = [x for x in d['sin_destino'] if x['id'] == huerf]
-    assert sd and 'no hay una presentación' in sd[0]['motivo'], \
-        'no la declaró como sin destino: %s' % d['resumen']
+    assert sd, 'no la declaró como sin destino: %s' % d['resumen']
+    # ⚠ El motivo tiene que ofrecer las DOS lecturas, porque llevan a arreglos OPUESTOS y el
+    # sistema no puede elegir. Sebastián, sobre el lip serum: *"es solo de 10 ml, no es de 30"* --
+    # ahí la respuesta era corregir el SKU, y un motivo que sólo dice "falta cargar esa
+    # presentación" manda a crear una que no debería existir (M100/M130).
+    _mot = sd[0]['motivo']
+    assert 'falta cargarla' in _mot and 'volumen del SKU' in _mot, \
+        'el motivo ofrece una sola salida y puede ser la equivocada: %r' % _mot
+    assert sorted(sd[0].get('tamanos_del_producto') or []) == [10.0], \
+        'no dice qué tamaños SÍ tiene el producto: %s' % sd[0].get('tamanos_del_producto')
 
     # y el apply la ignora aunque se la manden a la fuerza
     planta_client.post('/api/mee/presentaciones-volumen-aplicar', json={'ids': [huerf]},
