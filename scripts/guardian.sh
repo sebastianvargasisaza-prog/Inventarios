@@ -536,6 +536,10 @@ CORAZON=(
   # por color) y en el blush la etiqueta (un solo frasco para los ocho). Una expansion que
   # asuma uno deja al otro sin resolver, y desde afuera se ve igual que si no hiciera nada.
   "tests/test_tonos_diagnostico.py"
+  # Ocho tonos que comparten volumen y frasco salian ocho tarjetas IDENTICAS en el reparto
+  # del lote: sin saber cual es cual, el numero no se puede revisar. El dato ya viajaba del
+  # backend; faltaba pintarlo. Se verifican las DOS puntas.
+  "tests/test_presentacion_identificada.py"
 )
 
 echo ""

@@ -28514,6 +28514,25 @@ function empqTarjeta(g){
           +   '<div style="font-size:15px;font-weight:800;color:var(--cx-text);line-height:1.1">'
           +     (pp.uds || 0).toLocaleString('es-CO') + ' <span style="font-size:11px;font-weight:700;color:var(--cx-text-mute)">uds</span></div>'
           +   '<div style="font-size:11.5px;color:var(--cx-text-soft);font-weight:700">de ' + pp.volumen_ml + ' ml</div>'
+          // QUE presentacion es. Sin esto, ocho tonos que comparten volumen y frasco salen ocho
+          // tarjetas IDENTICAS -- "60 uds de 6 ml · MEE-ENV-034" repetido ocho veces -- y no hay
+          // forma de saber cual es cual ni de revisar si el reparto tiene sentido (M124: un total
+          // sin su detalle no es informacion, es una afirmacion que no se puede verificar).
+          +   ((pp.etiqueta || pp.presentacion_codigo)
+                ? '<div style="font-size:11.5px;font-weight:800;color:var(--cx-primary-text);margin-top:1px">'
+                  + escapeHtmlNec(pp.etiqueta || pp.presentacion_codigo)
+                  + (pp.sku_shopify ? ' <span style="font-size:9.5px;font-weight:700;color:var(--cx-text-faint)">SKU ' + escapeHtmlNec(pp.sku_shopify) + '</span>' : '')
+                  + '</div>'
+                : '<div style="font-size:10.5px;color:var(--cx-danger-text);font-weight:700;margin-top:1px">sin identificar</div>')
+          // De donde salio el reparto: las ventas de ESTA presentacion. Si todas muestran 0, el
+          // reparto es uniforme por falta de dato y eso hay que poder VERLO, no deducirlo.
+          +   (pp.ventas_90d_uds !== undefined
+                ? '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:1px">'
+                  + (pp.ventas_90d_uds > 0
+                      ? ('vende ' + Number(pp.ventas_90d_uds).toLocaleString('es-CO') + ' uds')
+                      : '<span style="color:var(--cx-warn-text);font-weight:700">sin ventas propias · reparto parejo</span>')
+                  + '</div>'
+                : '')
           +   (fr.codigo ? '<div style="font-size:10px;color:var(--cx-text-mute);font-family:ui-monospace;margin-top:2px">' + escapeHtmlNec(fr.codigo) + (fr.descontinuado ? ' <span style="color:var(--cx-danger-text);font-family:inherit;font-weight:700">· descontinuado</span>' : '') + '</div>' : '<div style="font-size:10px;color:var(--cx-danger-text);margin-top:2px;font-weight:700">sin envase asignado</div>')
           +   (otros ? '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:1px">+ ' + otros + '</div>' : '')
           + '</div></div>';
