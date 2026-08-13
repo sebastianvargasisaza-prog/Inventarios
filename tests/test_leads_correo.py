@@ -230,3 +230,64 @@ def test_compras_no_puede_barrer(app):
     assert c.post('/api/comercial/leads-correo/descartar-remitente',
                   json={'correo': 'x@y.co'},
                   headers={'Origin': 'http://localhost'}).status_code == 403
+
+
+# ------------------------------------- lo que la gente escribe cuando NO SABE
+
+def test_Por_definir_NO_es_una_razon_social(app):
+    """El formulario real de la web trae `Empresa: Por definir` y `Unidades: no-se`.
+
+    Eso no es un dato: es la ausencia de uno. Tomarlo como razón social tendría una consecuencia
+    que no se ve venir -- las tarjetas se funden por nombre de empresa, así que TODOS los
+    formularios que digan "Por definir" colapsarían en una sola tarjeta, mezclando prospectos
+    distintos en silencio.
+    """
+    from leads_correo import parsear
+    d = parsear('Nueva solicitud de cotizacion recibida',
+                'Nombre: Eliana guedez\nEmpresa: Por definir\n'
+                'Email: eliana@x.co\nTelefono: 4145049787\n'
+                'Producto: Cuidado del cabello\nUnidades: no-se\nNotas: Soy de Venezuela',
+                'Eliana <eliana@x.co>')
+    assert d['empresa'] != 'Por definir', 'se tomó "Por definir" como razón social'
+    assert d['empresa_inferida'] is True
+    assert 'empresa' in d['sin_definir'] and 'unidades' in d['sin_definir'], \
+        'no declaró que el formulario los trajo en blanco: %s' % d['sin_definir']
+    # y lo que SÍ vino se leyó
+    assert d['contacto'] == 'Eliana guedez'
+    assert d['telefono'] == '4145049787'
+    assert d['producto'] == 'Cuidado del cabello'
+    assert d['mensaje'] == 'Soy de Venezuela', 'perdió las notas: %r' % d['mensaje']
+
+
+def test_dos_formularios_sin_empresa_NO_se_funden_en_una_tarjeta(app, luz):
+    """El daño concreto del caso anterior, probado punta a punta."""
+    _limpiar(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        ids = []
+        for i, quien in enumerate(('LCTEST Ana Uno', 'LCTEST Beto Dos')):
+            c.execute("INSERT INTO leads_correo (message_id, remitente, asunto, empresa, "
+                      " contacto, empresa_inferida) VALUES (?,?,?,?,?,1)",
+                      ('LCTEST-PD%d' % i, '%s <x%d@y.co>' % (quien, i), 'Cotizacion',
+                       quien, quien))
+            ids.append(c.lastrowid)
+        conn.commit()
+    p = [luz.post('/api/comercial/leads-correo/%d/al-pipeline' % i, json={},
+                  headers={'Origin': 'http://localhost'}).get_json() for i in ids]
+    assert p[0]['pipeline_id'] != p[1]['pipeline_id'], \
+        'dos prospectos distintos quedaron en la misma tarjeta'
+    assert all(x['nueva_tarjeta'] for x in p)
+
+
+def test_con_empresa_DECLARADA_si_se_funden(app, luz):
+    """El comportamiento bueno no se pierde: si el formulario declaró la empresa, el segundo
+    correo se cuelga de la tarjeta que ya existe."""
+    _limpiar(app)
+    a = _lead(app, 'LCTEST-DEC1')
+    b = _lead(app, 'LCTEST-DEC2')
+    p1 = luz.post('/api/comercial/leads-correo/%d/al-pipeline' % a, json={},
+                  headers={'Origin': 'http://localhost'}).get_json()
+    p2 = luz.post('/api/comercial/leads-correo/%d/al-pipeline' % b, json={},
+                  headers={'Origin': 'http://localhost'}).get_json()
+    assert p1['pipeline_id'] == p2['pipeline_id'] and p2['nueva_tarjeta'] is False

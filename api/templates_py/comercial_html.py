@@ -377,8 +377,18 @@ async function leerBuzon(){
 }
 
 async function leadAlPipeline(id){
+  // Si la empresa la INFERIMOS (el formulario la trajo en blanco o escrita "Por definir"), se
+  // pregunta en vez de abrir una tarjeta con nombre de persona: ese rotulo despues se lee como
+  // razon social y ensucia todo lo que venga.
+  var lead=(window._LEADS||[]).filter(function(x){return x.id===id;})[0];
+  var body={};
+  if(lead && lead.empresa_inferida){
+    var e=prompt('El formulario no trajo el nombre de la empresa. Escribilo, o dejalo asi para usar el nombre del contacto:', lead.empresa||'');
+    if(e===null) return;
+    if(e.trim()) body.empresa=e.trim();
+  }
   try{
-    var r=await fetch('/api/comercial/leads-correo/'+id+'/al-pipeline', _fetchOpts('POST',{}));
+    var r=await fetch('/api/comercial/leads-correo/'+id+'/al-pipeline', _fetchOpts('POST',body));
     var d=await r.json();
     if(!r.ok){ _toast((d&&d.error)||('HTTP '+r.status), false); return; }
     _toast(d.nueva_tarjeta? ('Abierta la tarjeta de '+d.empresa) : ('Se sum&oacute; a la tarjeta que ya exist&iacute;a'), true);

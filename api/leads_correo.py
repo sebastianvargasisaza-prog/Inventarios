@@ -86,18 +86,47 @@ _CAMPOS = (
     ('telefono', r'(?:tel[eé]fono|celular|whatsapp|phone)\s*[:\-]\s*(.+)'),
     ('email_form', r'(?:correo|e-?mail)\s*[:\-]\s*(.+)'),
     ('producto', r'(?:producto|categor[ií]a|qu[eé] necesita|servicio)\s*[:\-]\s*(.+)'),
-    ('mensaje', r'(?:mensaje|comentario|detalle)\s*[:\-]\s*(.+)'),
+    ('unidades', r'(?:unidades|cantidad|volumen)\s*[:\-]\s*(.+)'),
+    ('mensaje', r'(?:mensaje|comentario|detalle|notas?)\s*[:\-]\s*(.+)'),
 )
+
+# ⚠ Lo que la gente escribe cuando TODAVIA NO SABE. El formulario real de la web trae
+# `Empresa: Por definir` y `Unidades: no-se`, y eso NO es un dato: es la ausencia de uno.
+#
+# Tomarlo como razón social tiene una consecuencia que no se ve venir: las tarjetas del pipeline
+# se funden por NOMBRE DE EMPRESA, así que **todos los formularios que digan "Por definir"
+# colapsarían en una sola tarjeta** -- prospectos distintos mezclados en uno, en silencio, que es
+# justo la forma de perderlos que este circuito viene a evitar.
+_SIN_DATO = {
+    'por definir', 'pordefinir', 'sin definir', 'a definir', 'por confirmar', 'por asignar',
+    'no se', 'no-se', 'nose', 'no sé', 'no lo se', 'aun no', 'aún no', 'todavia no', 'todavía no',
+    'n/a', 'na', 'no aplica', 'ninguna', 'ninguno', 'nada', 'pendiente', 'sin nombre',
+    '-', '--', '---', '.', '..', 'x', 'xx', 'xxx', '?', '??', 'test',
+}
+
+
+def _es_vacio(v):
+    """Un valor que dice "todavía no sé" cuenta como vacío, no como dato."""
+    t = re.sub(r'[\s.]+$', '', str(v or '').strip().lower())
+    return (not t) or t in _SIN_DATO
 
 
 def parsear(asunto, cuerpo, remitente):
     """Lo que se pueda sacar del formulario. Lo que no, vacío y declarado."""
     out = {k: '' for k, _ in _CAMPOS}
+    out['sin_definir'] = []
     texto = (asunto or '') + '\n' + (cuerpo or '')
     for clave, patron in _CAMPOS:
         m = re.search(patron, texto, re.I)
-        if m:
-            out[clave] = m.group(1).strip()[:200]
+        if not m:
+            continue
+        val = m.group(1).strip()[:200]
+        if _es_vacio(val):
+            # Se DECLARA que el formulario lo trajo en blanco. No es lo mismo que no haberlo
+            # preguntado, y quien mire la ficha tiene que poder distinguirlo (M124).
+            out['sin_definir'].append(clave)
+            continue
+        out[clave] = val
     if not out['empresa']:
         # Sin empresa declarada, el nombre del contacto es lo único que identifica la tarjeta.
         # Se usa como rótulo, y se DICE que salió de ahí para que nadie lo lea como razón social.

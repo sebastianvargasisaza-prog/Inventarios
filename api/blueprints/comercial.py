@@ -440,7 +440,8 @@ def lead_correo_al_pipeline(lid):
     d = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
     r = c.execute("SELECT id, empresa, contacto, telefono, email_contacto, producto, asunto, "
-                  "       pipeline_id, descartado FROM leads_correo WHERE id=?", (lid,)).fetchone()
+                  "       pipeline_id, descartado, COALESCE(empresa_inferida,0) "
+                  "  FROM leads_correo WHERE id=?", (lid,)).fetchone()
     if not r:
         return jsonify({'error': 'ese correo no existe'}), 404
     if r[7]:
@@ -467,10 +468,19 @@ def lead_correo_al_pipeline(lid):
         return jsonify({'error': 'sin empresa no se puede abrir la tarjeta'}), 400
     # Si esa empresa ya tiene tarjeta viva, este correo se CUELGA de ella. Dos tarjetas del mismo
     # cliente son dos personas persiguiendolo sin saberlo.
-    ya = c.execute("SELECT id FROM maquila_pipeline "
-                   " WHERE UPPER(TRIM(empresa))=UPPER(TRIM(?)) "
-                   "   AND stage NOT IN ('ganado','perdido') ORDER BY id LIMIT 1",
-                   (empresa,)).fetchone()
+    #
+    # ⚠ PERO sólo si el nombre lo DECLARO el formulario. Un nombre INFERIDO (el del contacto,
+    # porque el formulario trajo la empresa en blanco o escrita "Por definir") no identifica a una
+    # empresa, así que fundir por él mezclaría prospectos distintos -- y dos prospectos fundidos
+    # en una tarjeta se pierden de la peor manera: en silencio y pareciendo atendidos (M19).
+    # Si el usuario escribe el nombre a mano en el modal, ese SI vale como declarado.
+    _inferida = bool(r[9]) and not (d.get('empresa') or '').strip()
+    ya = None
+    if not _inferida:
+        ya = c.execute("SELECT id FROM maquila_pipeline "
+                       " WHERE UPPER(TRIM(empresa))=UPPER(TRIM(?)) "
+                       "   AND stage NOT IN ('ganado','perdido') ORDER BY id LIMIT 1",
+                       (empresa,)).fetchone()
     if ya:
         pid, nuevo = ya[0], False
     else:
