@@ -234,3 +234,58 @@ def test_lista_las_genericas_que_conviven_con_filas_por_SKU(app, planta_client):
             "SELECT COALESCE(activo,1) FROM producto_presentaciones WHERE id=?",
             (suelta,)).fetchone()
     assert act and act[0] == 1, 'la dio de baja sola: eso pierde el frasco de ese tono'
+
+
+# ------------------------------------------------------- el texto de la etiqueta
+
+def test_la_etiqueta_no_puede_decir_un_volumen_y_la_fila_otro(app, planta_client):
+    """Sebastián, sobre la tarjeta YA corregida: arriba decía "de 30 ml" y la etiqueta
+    "30ML 10 ml".
+
+    El generador horneaba el volumen dentro del texto, así que al corregir la columna el texto
+    quedó viejo y la misma tarjeta mostró dos volúmenes del mismo hecho. Se alinea el volumen
+    FINAL -- lo único que escribió el generador -- y el nombre de adelante se conserva.
+    """
+    _limpiar(app)
+    _envase(app, 'VC-E30', 'Frasco 30 ml')
+    _sku(app, 'VCT30', 'Treinta', 30)
+    fid = _pres(app, 'T-VCT30', '30ML 10 ml', 30, 'VC-E30', 'VCT30')
+
+    d = planta_client.get('/api/mee/presentaciones-volumen').get_json()
+    e = [x for x in d.get('etiqueta_desalineada', []) if x['id'] == fid]
+    assert e, 'no vio que la etiqueta dice 10 ml y la fila es de 30: %s' % d['resumen']
+    assert e[0]['etiqueta_nueva'] == '30ML', \
+        'se comió el nombre en vez de sólo el volumen viejo: %r' % e[0]['etiqueta_nueva']
+
+    planta_client.post('/api/mee/presentaciones-volumen-aplicar', json={'ids': [fid]},
+                       headers={'Origin': 'http://localhost'})
+    with app.app_context():
+        from database import get_db
+        etq = get_db().cursor().execute(
+            "SELECT etiqueta FROM producto_presentaciones WHERE id=?", (fid,)).fetchone()
+    assert etq and etq[0] == '30ML', 'la etiqueta no quedó alineada: %s' % (etq,)
+
+
+def test_una_etiqueta_que_YA_coincide_no_se_toca(app, planta_client):
+    """Un texto redundante pero consistente ("10ML 10 ml" en una fila de 10 ml) no es un defecto.
+
+    Tocar datos que una persona ve, sin que estén mal, es cambiarle la pantalla por gusto propio.
+    """
+    _limpiar(app)
+    _envase(app, 'VC-E10', 'Frasco 10 ml')
+    _sku(app, 'VCT10', 'Diez', 10)
+    fid = _pres(app, 'T-VCT10', '10ML 10 ml', 10, 'VC-E10', 'VCT10')
+    d = planta_client.get('/api/mee/presentaciones-volumen').get_json()
+    assert fid not in [x['id'] for x in d.get('etiqueta_desalineada', [])], \
+        'ofreció cambiar una etiqueta que no contradice nada'
+
+
+def test_un_nombre_sin_volumen_al_final_nunca_se_toca(app, planta_client):
+    """"Café claro" no menciona ningún volumen: no hay nada que alinear y no se inventa."""
+    _limpiar(app)
+    _envase(app, 'VC-E10', 'Frasco 10 ml')
+    _sku(app, 'VCT10', 'Diez', 10)
+    fid = _pres(app, 'T-VCT10', 'Cafe claro', 10, 'VC-E10', 'VCT10')
+    d = planta_client.get('/api/mee/presentaciones-volumen').get_json()
+    assert fid not in [x['id'] for x in d.get('etiqueta_desalineada', [])], \
+        'quiso tocar un nombre escrito a mano'

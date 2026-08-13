@@ -340,24 +340,32 @@ async function revisarTamanos(){
   var b=document.getElementById("btn-vol"); if(b&&b.disabled) return; if(b) b.disabled=true;
   try{
     var d=await (await fetch("/api/mee/presentaciones-volumen",{credentials:"same-origin"})).json();
-    var ok=d.volumen_mal||[], sd=d.sin_destino||[], gc=d.genericas_conviviendo||[];
+    var ok=d.volumen_mal||[], sd=d.sin_destino||[], gc=d.genericas_conviviendo||[], et=d.etiqueta_desalineada||[];
     // Lo que NO se puede arreglar solo se dice igual: un "no encontre nada" que en realidad
     // esconde casos sin resolver ensena a no volver a mirar (M100).
     var cola="";
     if(sd.length) cola+=" | "+sd.length+" no las puedo tocar: "+sd.slice(0,3).map(function(x){return x.producto+" "+x.sku+" (falta cargar la presentacion de "+x.volumen_real+" ml)";}).join(", ");
     if(gc.length) cola+=" | "+gc.length+" fila(s) activas SIN SKU conviven con filas que si lo tienen: mientras sigan asi ese tamano se reparte parejo. Son: "+gc.slice(0,3).map(function(x){return x.producto+" "+(x.etiqueta||x.presentacion);}).join(", ");
-    if(!ok.length){ alert((sd.length||gc.length)? ("Ninguna se puede corregir sola."+cola) : "Ninguna presentacion quedo con el volumen de otro tamano."); return; }
+    if(!ok.length && !et.length){ alert((sd.length||gc.length)? ("Ninguna se puede corregir sola."+cola) : "Ninguna presentacion quedo con el volumen de otro tamano."); return; }
     var txt=ok.slice(0,8).map(function(x){
       return x.producto+" "+x.sku+": "+x.volumen_actual+" ml -> "+x.volumen_real+" ml, frasco "+(x.envase_actual||"(vacio)")+" -> "+x.envase_correcto;
     }).join(" | ");
-    if(!confirm("Voy a corregir "+ok.length+" presentacion(es) que quedaron con el volumen y el frasco de otro tamano: "+txt+(ok.length>8?" ...":"")+" . Copia el frasco de la presentacion del MISMO tamano y da de baja la generica que quedaba contando la venta dos veces (reversible)."+cola)) return;
+    // La etiqueta que contradice a su propia columna va en el MISMO paso: son el mismo defecto
+    // visto de dos lados (el generador horneaba el volumen en el texto).
+    var txtE=et.slice(0,6).map(function(x){
+      return x.producto+": ["+x.etiqueta_actual+"] -> ["+x.etiqueta_nueva+"] (la fila es de "+x.volumen_ml+" ml)";
+    }).join(" | ");
+    var pregunta="";
+    if(ok.length) pregunta+="Voy a corregir "+ok.length+" presentacion(es) que quedaron con el volumen y el frasco de otro tamano: "+txt+(ok.length>8?" ...":"")+" . Copia el frasco de la presentacion del MISMO tamano y da de baja la generica que quedaba contando la venta dos veces. ";
+    if(et.length) pregunta+="Y alineo "+et.length+" etiqueta(s) cuyo texto dice un volumen distinto al de su fila: "+txtE+(et.length>6?" ...":"")+" . Solo se toca el volumen del final; el nombre de adelante queda igual. ";
+    if(!confirm(pregunta+"Todo es reversible y queda auditado."+cola)) return;
     var t=await (await fetch("/api/csrf-token",{credentials:"same-origin"})).json();
     var r=await fetch("/api/mee/presentaciones-volumen-aplicar",{method:"POST",credentials:"same-origin",
       headers:{"Content-Type":"application/json","X-CSRF-Token":(t&&t.csrf_token)||""},
-      body:JSON.stringify({ids:ok.map(function(x){return x.id;})})});
+      body:JSON.stringify({ids:ok.map(function(x){return x.id;}).concat(et.map(function(x){return x.id;}))})});
     var j=await r.json();
     if(!r.ok){ alert("No se pudo: "+((j&&j.error)||r.status)); return; }
-    alert("Corregidas "+((j.corregidas||[]).length)+" · genericas dadas de baja "+((j.bajas||[]).length)+cola);
+    alert("Corregidas "+((j.corregidas||[]).length)+" presentacion(es) · etiquetas alineadas "+((j.etiquetas||[]).length)+" · genericas dadas de baja "+((j.bajas||[]).length)+cola);
     cargar();
   }catch(e){ alert("No se pudo revisar los tamanos: "+e); }
   finally{ if(b) b.disabled=false; }

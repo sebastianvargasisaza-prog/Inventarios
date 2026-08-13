@@ -18481,7 +18481,11 @@ def mee_expandir_tonos_aplicar():
                 " etiqueta, volumen_ml, envase_codigo, tapa_codigo, caja_codigo, etiqueta_codigo, "
                 " sku_shopify, activo) VALUES (?,?,?,?,?,?,?,'',?,1)",
                 (p['producto'], _cod,
-                 (str(t['tono'] or '') + ' ' + _ml_txt(m['volumen_ml']) + ' ml').strip()[:60],
+                 # ⚠ El volumen NO se hornea en el texto: la tarjeta ya lo imprime arriba y,
+                 # si la fila se corrige después, el texto queda viejo y la misma tarjeta
+                 # muestra dos volúmenes distintos del mismo hecho (M161). El volumen vive en
+                 # su columna, que es la que manda.
+                 (str(t['tono'] or '').strip() or (_ml_txt(m['volumen_ml']) + ' ml'))[:60],
                  m['volumen_ml'], m['envase'], m['tapa'], m['caja'], t['sku']))
             creadas.append({'producto': p['producto'], 'tono': t['tono'], 'sku': t['sku'],
                             'id': c.lastrowid})
@@ -18625,10 +18629,43 @@ def _pres_volumen_scan(c):
                                       'efecto': ('mientras esta fila siga sin SKU, las %s ml se '
                                                  'reparten por volumen y no por venta de cada '
                                                  'una' % _ml_txt(g['vol']))})
+    # Etiquetas cuyo texto termina en un volumen distinto al de su columna.
+    #
+    # Sebastián (12-ago), sobre la tarjeta ya corregida: arriba decía "de 30 ml" y la etiqueta
+    # "30ML 10 ml". El generador horneaba el volumen en el texto, así que al corregir la columna
+    # el texto quedó viejo -- y una tarjeta que muestra dos volúmenes del mismo hecho no se puede
+    # creer (M161). Se detecta por el volumen FINAL del texto, que es lo único que el generador
+    # escribió; lo que alguien haya escrito a mano en el medio se conserva.
+    import re as _re_etq
+    _pat = _re_etq.compile(r'^(.*?)[\s.,;:·-]*(\d{1,4}(?:[.,]\d+)?)\s*m\s*l\s*$', _re_etq.I)
+    etiquetas = []
+    for _pn, _fs in filas.items():
+        for f in _fs:
+            if f['vol'] <= 0 or not f['etiqueta']:
+                continue
+            _m = _pat.match(f['etiqueta'])
+            if not _m:
+                continue
+            try:
+                _tr = float(_m.group(2).replace(',', '.'))
+            except (TypeError, ValueError):
+                continue
+            if abs(_tr - f['vol']) < 0.01:
+                continue
+            _pref = (_m.group(1) or '').strip()
+            etiquetas.append({
+                'id': f['id'], 'producto': f['producto'], 'presentacion': f['cod'],
+                'sku': f['sku'], 'volumen_ml': f['vol'], 'etiqueta_actual': f['etiqueta'],
+                'dice_ml': _tr,
+                # si queda un nombre, ese es la etiqueta; si el texto era SOLO el volumen viejo,
+                # se reemplaza por el correcto (dejarla vacía la volvería indistinguible)
+                'etiqueta_nueva': (_pref if _pref else (_ml_txt(f['vol']) + ' ml'))[:60]})
+    etiquetas.sort(key=lambda x: (x['producto'], x['presentacion']))
     mal.sort(key=lambda x: (x['producto'], x['sku']))
     sin_destino.sort(key=lambda x: (x['producto'], x['sku']))
     genericas.sort(key=lambda x: (x['producto'], x['volumen_ml']))
-    return {'volumen_mal': mal, 'sin_destino': sin_destino, 'genericas_conviviendo': genericas}
+    return {'volumen_mal': mal, 'sin_destino': sin_destino, 'genericas_conviviendo': genericas,
+            'etiqueta_desalineada': etiquetas}
 
 
 @bp.route('/api/mee/presentaciones-volumen', methods=['GET'])
@@ -18640,7 +18677,8 @@ def mee_presentaciones_volumen():
     r['ok'] = True
     r['resumen'] = {'corregibles': len(r['volumen_mal']),
                     'sin_destino': len(r['sin_destino']),
-                    'genericas_conviviendo': len(r['genericas_conviviendo'])}
+                    'genericas_conviviendo': len(r['genericas_conviviendo']),
+                    'etiqueta_desalineada': len(r.get('etiqueta_desalineada') or [])}
     return jsonify(r)
 
 
@@ -18705,8 +18743,33 @@ def mee_presentaciones_volumen_aplicar():
                               detalle=('dada de baja: el SKU %s se movio a sus %s ml y esta fila '
                                        'quedaba sin SKU en el mismo tamano, contando la venta dos '
                                        'veces' % (f['sku'], _ml_txt(f['volumen_real']))))
+    # Etiquetas cuyo texto contradice a su propia columna de volumen. Se corrige SOLO el
+    # volumen final -- lo que el generador escribió --; el nombre que alguien haya puesto
+    # adelante se conserva intacto (M19: no se adivina lo que escribió una persona).
+    etiquetas = []
+    for e in (plan.get('etiqueta_desalineada') or []):
+        if e['id'] not in quiere:
+            continue
+        _a = c.execute("SELECT COALESCE(etiqueta,'') FROM producto_presentaciones WHERE id=?",
+                       (e['id'],)).fetchone()
+        if not _a or (_a[0] or '') != e['etiqueta_actual']:
+            saltadas.append({'id': e['id'], 'motivo': 'la etiqueta cambió mientras tanto'})
+            continue
+        c.execute("UPDATE producto_presentaciones SET etiqueta=? "
+                  " WHERE id=? AND COALESCE(activo,1)=1", (e['etiqueta_nueva'], e['id']))
+        if not c.rowcount:
+            saltadas.append({'id': e['id'], 'motivo': 'la fila ya no está activa'})
+            continue
+        etiquetas.append(e)
+        audit_log(c, usuario=u, accion='PRES_ETIQUETA_ALINEAR',
+                  tabla='producto_presentaciones', registro_id=str(e['id']),
+                  antes={'etiqueta': e['etiqueta_actual']},
+                  despues={'etiqueta': e['etiqueta_nueva']},
+                  detalle=('el texto decia %s ml y la fila es de %s ml'
+                           % (_ml_txt(e['dice_ml']), _ml_txt(e['volumen_ml']))))
     conn.commit()
     return jsonify({'ok': True, 'corregidas': corregidas, 'bajas': bajas, 'saltadas': saltadas,
+                    'etiquetas': etiquetas,
                     'aviso': ('Se corrigio el volumen y se copio el frasco de la presentacion del '
                               'MISMO tamano. Las que no tienen presentacion de ese tamano quedaron '
                               'sin tocar y siguen listadas: para esas hay que cargar primero la '
