@@ -59,6 +59,7 @@ label{font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;mar
 <div class="tabs">
   <button class="tabbtn on" data-pane="maq" onclick="switchPane('maq')">🏭 Pipeline Maquila B2B</button>
   <button class="tabbtn" data-pane="eos" onclick="switchPane('eos')">🚀 EOS Leads</button>
+  <button class="tabbtn" data-pane="correo" onclick="switchPane('correo')">📬 Correo de direcci&oacute;n</button>
 </div>
 
 <!-- PANE: Maquila -->
@@ -71,6 +72,19 @@ label{font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;mar
     </div>
   </div>
   <div id="maq-kanban" class="kanban"></div>
+</div>
+
+<!-- PANE: Correo de direccion · los prospectos de maquila que llegan al buzon -->
+<div id="pane-correo" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+    <div>
+      <h3 style="color:#581c87">Prospectos que llegaron al correo</h3>
+      <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px">A <b>direcci&oacute;n@animuslb.com</b> s&oacute;lo llegan los de maquila, as&iacute; que todo lo que aparece ac&aacute; es un prospecto. El correo se lee sin marcarlo como le&iacute;do.</div>
+    </div>
+    <button class="btn btn-primary" id="btn-leer-buzon" onclick="leerBuzon()">&#128229; Leer ahora</button>
+  </div>
+  <div id="correo-estado" style="margin-bottom:12px"></div>
+  <div id="correo-list">Cargando&hellip;</div>
 </div>
 
 <!-- PANE: EOS Leads -->
@@ -163,6 +177,7 @@ function switchPane(p){
   document.querySelectorAll('.tabbtn').forEach(function(b){b.classList.toggle('on', b.dataset.pane===p);});
   if(p==='maq') cargarMaquila();
   if(p==='eos') cargarEosLeads();
+  if(p==='correo') cargarLeadsCorreo();
 }
 
 // ── MAQUILA ────────────────────────────────────────────────
@@ -294,6 +309,83 @@ async function cambiarEstadoLead(id, nuevo){
     if(r.ok && d.ok){ cargarEosLeads(); }
     else { alert('No se pudo cambiar el estado: '+((d&&d.error)||('HTTP '+r.status))); }
   }catch(e){ alert('Error de red: '+e.message); }
+}
+
+// ── CORREO DE DIRECCION ───────────────────────────────────
+// Lo que evita que se pierdan: la bandeja se mira desde ac&aacute;, no desde la memoria de alguien.
+async function cargarLeadsCorreo(){
+  var cont=document.getElementById('correo-list');
+  try{
+    var d=await (await fetch('/api/comercial/leads-correo',{credentials:'same-origin'})).json();
+    var est=document.getElementById('correo-estado');
+    // Una lista vacia tiene que decir si esta vacia porque no llego nada o porque no se pudo
+    // leer: ese cero se lee como "no hay nada que hacer" y significa lo contrario.
+    est.innerHTML = d.buzon_configurado
+      ? '<div style="background:var(--cx-success-pale,#f0fdf4);color:var(--cx-success-text,#15803d);border:1px solid var(--cx-success-soft,#bbf7d0);border-radius:10px;padding:9px 13px;font-size:12px;font-weight:700">&#9989; Buz&oacute;n conectado &middot; se lee solo a las 7:20 y 15:20</div>'
+      : '<div style="background:var(--cx-warn-pale,#fef3c7);color:var(--cx-warn-text,#92400e);border:1px solid var(--cx-warn-soft,#fde68a);border-radius:10px;padding:9px 13px;font-size:12px;font-weight:700">&#9888; '+_esc(d.aviso||'buz&oacute;n sin configurar')+'</div>';
+    var L=d.leads||[];
+    if(!L.length){ cont.innerHTML='<div style="color:var(--cx-text-faint);padding:22px;text-align:center">'+(d.buzon_configurado?'No hay correos nuevos.':'Todav&iacute;a no se ley&oacute; el buz&oacute;n.')+'</div>'; return; }
+    var h='<div style="display:flex;flex-direction:column;gap:9px">';
+    L.forEach(function(x){
+      var ya=x.pipeline_id, des=x.descartado;
+      var borde = des ? 'var(--cx-border,#e2e8f0)' : (ya ? 'var(--cx-success,#16a34a)' : 'var(--cx-warn,#f59e0b)');
+      h+='<div style="background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f5f9);border-left:4px solid '+borde+';border-radius:12px;padding:12px 14px;'+(des?'opacity:.55':'')+'">'
+        +'<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">'
+        +'<div style="flex:1;min-width:240px">'
+        +'<div style="font-weight:800;font-size:14px;color:var(--cx-text,#0f172a)">'+_esc(x.empresa||'sin identificar')
+        // Lo inferido se dice: un nombre propio leido como razon social ensucia todo lo que siga.
+        +(x.empresa_inferida?'<span style="margin-left:6px;font-size:9.5px;font-weight:800;background:var(--cx-warn-pale,#fef3c7);color:var(--cx-warn-text,#92400e);border-radius:999px;padding:2px 8px">nombre del contacto, no razon social</span>':'')
+        +'</div>'
+        +'<div style="font-size:12px;color:var(--cx-text-soft,#475569);margin-top:3px">'+_esc(x.asunto||'')+'</div>'
+        +'<div style="font-size:11px;color:var(--cx-text-mute,#64748b);margin-top:4px">'+_esc(x.remitente||'')+' &middot; '+_esc(String(x.fecha_correo||'').slice(0,16))+'</div>'
+        +((x.contacto||x.telefono||x.producto)?('<div style="font-size:11.5px;color:var(--cx-text-soft,#475569);margin-top:5px">'+[x.contacto,x.telefono,x.producto].filter(Boolean).map(_esc).join(' &middot; ')+'</div>'):'')
+        +'</div>'
+        +'<div style="display:flex;gap:7px;align-items:center;white-space:nowrap">'
+        +(des?('<span style="font-size:11px;font-weight:700;color:var(--cx-text-mute,#64748b)">descartado</span>')
+           : ya?('<a href="#" onclick="switchPane(\'maq\');return false" style="font-size:11.5px;font-weight:700;color:var(--cx-success-text,#15803d);text-decoration:none">&#10003; ya est&aacute; en el pipeline</a>')
+           : ('<button class="btn btn-primary" style="padding:6px 12px;font-size:12px" onclick="leadAlPipeline('+x.id+')">&rarr; Al pipeline</button>'
+             +'<button class="btn" style="padding:6px 12px;font-size:12px" onclick="leadDescartar('+x.id+')">Descartar</button>'))
+        +'</div></div>'
+        +(x.cuerpo?('<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--cx-text-mute,#64748b);font-weight:700">ver el correo como lleg&oacute;</summary><pre style="white-space:pre-wrap;font-size:11px;color:var(--cx-text-soft,#475569);background:var(--cx-border-soft,#f8fafc);border-radius:8px;padding:9px;margin-top:6px;max-height:220px;overflow:auto">'+_esc(x.cuerpo)+'</pre></details>'):'')
+        +'</div>';
+    });
+    cont.innerHTML=h+'</div>';
+  }catch(e){ cont.innerHTML='<div style="color:var(--cx-danger-text,#b91c1c);padding:18px">No pude cargar: '+_esc(e.message)+'</div>'; }
+}
+
+async function leerBuzon(){
+  var b=document.getElementById('btn-leer-buzon');
+  if(b&&b.disabled) return; if(b){b.disabled=true;b.textContent='Leyendo\u2026';}
+  try{
+    var r=await fetch('/api/comercial/leads-correo/leer', _fetchOpts('POST',{}));
+    var d=await r.json();
+    if(!r.ok){ _toast((d&&(d.como||d.error))||('HTTP '+r.status), false); return; }
+    _toast(d.nuevos? (d.nuevos+' prospecto(s) nuevo(s)') : 'Sin correos nuevos', true);
+    cargarLeadsCorreo();
+  }catch(e){ _toast('Error de red: '+e.message,false); }
+  finally{ if(b){b.disabled=false;b.innerHTML='&#128229; Leer ahora';} }
+}
+
+async function leadAlPipeline(id){
+  try{
+    var r=await fetch('/api/comercial/leads-correo/'+id+'/al-pipeline', _fetchOpts('POST',{}));
+    var d=await r.json();
+    if(!r.ok){ _toast((d&&d.error)||('HTTP '+r.status), false); return; }
+    _toast(d.nueva_tarjeta? ('Abierta la tarjeta de '+d.empresa) : ('Se sum&oacute; a la tarjeta que ya exist&iacute;a'), true);
+    cargarLeadsCorreo();
+  }catch(e){ _toast('Error de red: '+e.message,false); }
+}
+
+async function leadDescartar(id){
+  // Se conserva con su motivo: un filtro que bota sin dejar rastro no es confiable.
+  var m=prompt('&#191;Por qu&eacute; no es un prospecto? (queda registrado y se puede recuperar)','publicidad');
+  if(m===null) return;
+  try{
+    var r=await fetch('/api/comercial/leads-correo/'+id+'/al-pipeline', _fetchOpts('POST',{descartar:true, motivo:m}));
+    var d=await r.json();
+    if(!r.ok){ _toast((d&&d.error)||('HTTP '+r.status), false); return; }
+    cargarLeadsCorreo();
+  }catch(e){ _toast('Error de red: '+e.message,false); }
 }
 
 // init

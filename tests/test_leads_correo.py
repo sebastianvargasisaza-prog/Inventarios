@@ -150,3 +150,20 @@ def test_compras_no_ve_los_leads(app):
     assert c.get('/api/comercial/leads-correo').status_code == 403
     assert c.post('/api/comercial/leads-correo/leer', json={},
                   headers={'Origin': 'http://localhost'}).status_code == 403
+
+
+# ------------------------------------------------------ la pantalla existe de verdad
+
+def test_la_pantalla_tiene_como_llegar_a_los_endpoints(app, luz):
+    """Casi le digo a Sebastián que apretara un botón que no existía.
+
+    Construí los tres endpoints y ninguna pantalla los llamaba: una capacidad a la que nadie puede
+    llegar no existe (M121). El guard mira el HTML REAL que se sirve, no el fuente.
+    """
+    html = luz.get('/comercial').get_data(as_text=True)
+    assert 'pane-correo' in html, 'no hay pestaña para el correo'
+    assert "switchPane('correo')" in html, 'la pestaña no lleva a ningún lado'
+    for fn in ('cargarLeadsCorreo', 'leerBuzon', 'leadAlPipeline', 'leadDescartar'):
+        assert ('function %s' % fn) in html, 'el botón llama a %s y no está definida' % fn
+    # y los botones apuntan a los endpoints que existen
+    assert '/api/comercial/leads-correo' in html
