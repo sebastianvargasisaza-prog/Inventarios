@@ -538,6 +538,95 @@ def cont_factura_pdf(numero):
     )
 
 
+def registrar_pago_factura(conn, numero, monto, fecha=None, medio='Transferencia',
+                           referencia='', usuario='sistema'):
+    """Registra el cobro de una factura de cliente · ÚNICO escritor de `facturas_pagos`.
+
+    Se extrajo de `cont_factura_pago` el 14-ago-2026 para que la conciliación de un pago
+    reportado desde el PORTAL entre por el MISMO camino: los guardas contra el over-payment
+    (el pre-check y el re-chequeo atómico posterior al INSERT), el estado de la factura, el
+    audit_log y el espejo a `flujo_ingresos` viven en un solo lugar. Una segunda copia de
+    esto diverge el día que se toque una sola (M3/M45).
+
+    NO commitea: el caller decide. Devuelve (ok, payload, status).
+    """
+    f = conn.execute("SELECT * FROM facturas WHERE numero=?", (numero,)).fetchone()
+    if not f:
+        return False, {'error': 'Factura no encontrada'}, 404
+    f_dict = dict(f)
+    if (f_dict.get('estado') or '') == 'Anulada':
+        return False, {'error': 'No se puede registrar pago sobre una factura anulada'}, 422
+    f_total = f_dict['total']
+    total_actual = conn.execute(
+        "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
+    ).fetchone()[0]
+    if (total_actual + monto) > (f_total + 0.01):
+        return False, {
+            'error': (f"Over-payment: pagado {total_actual:.0f} + nuevo {monto:.0f} > "
+                      f"total factura {f_total:.0f}"),
+            'codigo': 'OVER_PAYMENT',
+        }, 422
+
+    fecha_pago = fecha or _hoy_col().isoformat()
+    conn.execute("""
+        INSERT INTO facturas_pagos(numero_factura, fecha, monto, medio, referencia, registrado_por)
+        VALUES(?,?,?,?,?,?)
+    """, (numero, fecha_pago, monto, medio, referencia, usuario))
+
+    total_pagado = conn.execute(
+        "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
+    ).fetchone()[0]
+    # Re-chequeo ATÓMICO del over-payment (M27/M30): el pre-check de arriba es check-then-act y
+    # dos cobros concurrentes de la misma factura leen el mismo total. SQLite serializa; el
+    # riesgo real es PostgreSQL.
+    if total_pagado > (f_total + 0.01):
+        conn.rollback()
+        return False, {
+            'error': (f"Over-payment por cobro concurrente: total {total_pagado:.0f} excede "
+                      f"el de la factura {f_total:.0f}. No se registró este pago."),
+            'codigo': 'OVER_PAYMENT_RACE',
+        }, 409
+
+    # Tolerancia de 1 centavo · evita que un redondeo deje la factura eternamente 'Parcial'.
+    nuevo_estado = 'Pagada' if total_pagado >= f_total - 0.01 else 'Parcial'
+    conn.execute("UPDATE facturas SET estado=? WHERE numero=?", (nuevo_estado, numero))
+    try:
+        audit_log(conn.cursor(), usuario=usuario, accion='FACTURA_PAGO',
+                  tabla='facturas_pagos', registro_id=numero,
+                  antes={'total_pagado_antes': total_actual, 'estado_antes': f_dict.get('estado')},
+                  despues={'monto': monto, 'medio': medio, 'referencia': (referencia or '')[:200],
+                            'estado_nuevo': nuevo_estado, 'total_pagado_despues': total_pagado})
+    except Exception as e:
+        log.warning('audit_log FACTURA_PAGO fallo: %s', e)
+
+    # Cobranza → flujo_ingresos · idempotente por referencia.
+    try:
+        cliente = (f_dict.get('cliente_nombre') or '').strip()
+        empresa_emisora = (f_dict.get('empresa') or 'ANIMUS').upper()
+        seq = conn.execute(
+            "SELECT COUNT(*) FROM facturas_pagos WHERE numero_factura=?", (numero,)
+        ).fetchone()[0]
+        ref_flujo = f'FAC-{numero}-PAGO-{seq}'
+        ya_existe = conn.execute(
+            "SELECT id FROM flujo_ingresos WHERE referencia=?", (ref_flujo,)
+        ).fetchone()
+        if not ya_existe:
+            periodo = (fecha_pago or _hoy_col().isoformat())[:7]
+            concepto = f'Cobro factura {numero}' + (f' · {cliente[:40]}' if cliente else '')
+            conn.execute("""
+                INSERT INTO flujo_ingresos
+                (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por)
+                VALUES (?,?,?,?,?,?,?,?,?)
+            """, (fecha_pago, empresa_emisora, concepto, 'Cobranza B2B',
+                  monto, periodo, 'factura_pago_auto', ref_flujo, 'sistema_sync'))
+    except Exception:
+        # No bloquear el cobro si el espejo falla (mejor pago registrado sin flujo que
+        # pago caído por un error en el flujo).
+        pass
+
+    return True, {'ok': True, 'total_pagado': total_pagado, 'estado': nuevo_estado}, 200
+
+
 @bp.route('/api/contabilidad/facturas/<numero>/pago', methods=['POST'])
 def cont_factura_pago(numero):
     if not _auth():
@@ -549,100 +638,14 @@ def cont_factura_pago(numero):
         return jsonify(err), 400
 
     conn = get_db()
-    f = conn.execute("SELECT * FROM facturas WHERE numero=?", (numero,)).fetchone()
-    if not f:
-        return jsonify({'error': 'Factura no encontrada'}), 404
-
-    f_dict = dict(f)
-    if (f_dict.get('estado') or '') == 'Anulada':
-        return jsonify({'error': 'No se puede registrar pago sobre una factura anulada'}), 422
-    f_total = f_dict['total']
-    # Audit zero-error 2-may-2026: validar over-payment
-    total_actual = conn.execute(
-        "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
-    ).fetchone()[0]
-    if (total_actual + monto) > (f_total + 0.01):
-        return jsonify({
-            'error': f"Over-payment: pagado {total_actual:.0f} + nuevo {monto:.0f} > total factura {f_total:.0f}",
-            'codigo': 'OVER_PAYMENT'
-        }), 422
-
-    fecha_pago = data.get('fecha') or _hoy_col().isoformat()
-    medio = data.get('medio', 'Transferencia')
-    referencia = data.get('referencia', '')
-    conn.execute("""
-        INSERT INTO facturas_pagos(numero_factura, fecha, monto, medio, referencia, registrado_por)
-        VALUES(?,?,?,?,?,?)
-    """, (numero, fecha_pago, monto, medio, referencia, _user()))
-
-    # Actualizar estado si está totalmente pagada
-    total_pagado = conn.execute(
-        "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
-    ).fetchone()[0]
-    # FIX 16-jun · over-payment race ATÓMICO post-insert (M27/M30) · simétrico a
-    # pagar_oc (AP). El pre-check (555) es check-then-act: 2 cobros concurrentes de
-    # la misma factura leen el mismo total_actual y ambos pasan → over-cobro AR +
-    # doble espejo a flujo_ingresos (ref con seq distinto NO dedup) → P&L inflado.
-    # SQLite serializa; riesgo solo PG. Re-verificar el SUM real y revertir todo.
-    if total_pagado > (f_total + 0.01):
-        conn.rollback()
-        return jsonify({
-            'error': (f"Over-payment por cobro concurrente: total {total_pagado:.0f} "
-                      f"excede el de la factura {f_total:.0f}. No se registró este pago."),
-            'codigo': 'OVER_PAYMENT_RACE',
-        }), 409
-    # Tolerancia de 1 centavo · evita que un redondeo deje la factura
-    # eternamente 'Parcial' por un saldo fantasma de céntimos.
-    nuevo_estado = 'Pagada' if total_pagado >= f_total - 0.01 else 'Parcial'
-    conn.execute("UPDATE facturas SET estado=? WHERE numero=?", (nuevo_estado, numero))
-    # Audit log INVIMA · cobro de factura es operación financiera regulada
-    try:
-        audit_log(conn.cursor(), usuario=_user(), accion='FACTURA_PAGO',
-                  tabla='facturas_pagos', registro_id=numero,
-                  antes={'total_pagado_antes': total_actual, 'estado_antes': dict(f).get('estado')},
-                  despues={'monto': monto, 'medio': medio, 'referencia': referencia[:200],
-                            'estado_nuevo': nuevo_estado, 'total_pagado_despues': total_pagado})
-    except Exception as e:
-        log.warning('audit_log FACTURA_PAGO fallo: %s', e)
-
-    # ── Gap 5 cerrado: cobranza → flujo_ingresos automático ──
-    # Cada vez que se registra un pago de factura, espejarlo en flujo_ingresos
-    # con referencia FAC-{numero}-{seq}. Idempotente por (referencia).
-    # Esto cierra el ciclo cobranza para que el dashboard de gerencia y P&L
-    # de financiero reflejen el cobro real (antes solo veían pedido emitido,
-    # no el pago efectivo).
-    try:
-        f_dict = dict(f)
-        cliente = (f_dict.get('cliente_nombre') or f_dict.get('proveedor') or '').strip()
-        empresa_emisora = (f_dict.get('empresa') or 'ANIMUS').upper()
-        # Calcular sequence de pagos para esa factura
-        seq = conn.execute(
-            "SELECT COUNT(*) FROM facturas_pagos WHERE numero_factura=?",
-            (numero,)
-        ).fetchone()[0]
-        ref_flujo = f'FAC-{numero}-PAGO-{seq}'
-        # Idempotencia: si ya existe el ingreso con esa referencia, skip
-        ya_existe = conn.execute(
-            "SELECT id FROM flujo_ingresos WHERE referencia=?",
-            (ref_flujo,)
-        ).fetchone()
-        if not ya_existe:
-            periodo = (fecha_pago or _hoy_col().isoformat())[:7]
-            concepto = f'Cobro factura {numero}' + (f' — {cliente[:40]}' if cliente else '')
-            conn.execute("""
-                INSERT INTO flujo_ingresos
-                (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por)
-                VALUES (?,?,?,?,?,?,?,?,?)
-            """, (fecha_pago, empresa_emisora, concepto, 'Cobranza B2B',
-                  monto, periodo, 'factura_pago_auto', ref_flujo, 'sistema_sync'))
-    except Exception:
-        # No bloquear el pago si el espejo falla (mejor pago registrado sin
-        # flujo que pago caído por error en flujo).
-        pass
-
+    ok, payload, status = registrar_pago_factura(
+        conn, numero, monto,
+        fecha=data.get('fecha'), medio=data.get('medio', 'Transferencia'),
+        referencia=data.get('referencia', ''), usuario=_user())
+    if not ok:
+        return jsonify(payload), status
     conn.commit()
-
-    return jsonify({'ok': True, 'total_pagado': total_pagado, 'estado': nuevo_estado})
+    return jsonify(payload)
 
 
 @bp.route('/api/contabilidad/facturas/<numero>/anular', methods=['PATCH'])

@@ -2072,6 +2072,16 @@ def calidad_coa_pt_imprimible(lote):
     Agrega calidad_micro_resultados + calidad_fisicoquimica_resultados del lote en UN certificado (Fase 2)."""
     if 'compras_user' not in session:
         return Response('No autorizado', status=401)
+    return coa_pt_imprimible(lote)
+
+
+def coa_pt_imprimible(lote):
+    """El COA de PT SIN el gate de sesión interna · lo comparten Calidad y el portal.
+
+    Extraído 14-ago-2026: el cliente B2B necesita el certificado de SU lote y ese documento ya
+    existía acá. El portal lo sirve validando PROPIEDAD del lote (que salga de un pedido suyo)
+    en vez de `compras_user`; el documento es el MISMO, así que no se reimplementa (M3).
+    """
     lote = (lote or '').strip()
     conn = get_db(); c = conn.cursor()
     try:

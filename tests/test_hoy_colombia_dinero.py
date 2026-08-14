@@ -185,17 +185,65 @@ def test_el_helper_canonico_sigue_existiendo(app):
 
 
 def test_el_pago_sin_fecha_usa_la_de_colombia(app):
-    """De punta a punta: registrar un pago sin fecha lo guarda con la fecha de Colombia."""
-    from tz_colombia import hoy_colombia
+    """Un cobro sin fecha se guarda con la fecha de COLOMBIA, no con la del servidor.
+
+    14-ago-2026 · este guard buscaba el texto `fecha_pago = data.get`, y al extraer el
+    registro del cobro a `registrar_pago_factura` (para que el portal cobre por el mismo
+    camino) dejó de encontrarlo y dio rojo con el código correcto. Un guard anclado a una
+    línea concreta se rompe con cualquier refactor y deja de proteger sin avisar (M151):
+    ahora se mide el COMPORTAMIENTO, ejecutando el cobro sin fecha y mirando qué quedó
+    guardado, más la invariante de que el período se recorta de esa misma fecha (M165).
+    """
     import io
     import os
+    import sqlite3
+
+    from tz_colombia import hoy_colombia
+    from blueprints.contabilidad import registrar_pago_factura
+
+    numero = 'ZTZ-COL-001'
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10.0)
+    try:
+        conn.execute("DELETE FROM facturas_pagos WHERE numero_factura=?", (numero,))
+        conn.execute("DELETE FROM flujo_ingresos WHERE referencia LIKE ?", ('FAC-%s-%%' % numero,))
+        conn.execute("DELETE FROM facturas WHERE numero=?", (numero,))
+        conn.execute(
+            "INSERT INTO facturas (numero, tipo, cliente_nombre, empresa, fecha_emision, total, estado) "
+            "VALUES (?,'Factura','Cliente TZ','ANIMUS','2026-01-01',100000,'Emitida')", (numero,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    with app.app_context():
+        from database import get_db
+        db = get_db()
+        ok, payload, status = registrar_pago_factura(db, numero, 50000, usuario='test')
+        assert ok, (payload, status)
+        db.commit()
+
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10.0)
+    try:
+        fecha = conn.execute(
+            "SELECT fecha FROM facturas_pagos WHERE numero_factura=? ORDER BY id DESC LIMIT 1",
+            (numero,)).fetchone()[0]
+        periodo = conn.execute(
+            "SELECT periodo FROM flujo_ingresos WHERE referencia LIKE ? ORDER BY id DESC LIMIT 1",
+            ('FAC-%s-%%' % numero,)).fetchone()
+    finally:
+        conn.close()
+    assert fecha[:10] == hoy_colombia().isoformat(), (
+        'el cobro se guardó con la fecha del servidor (%s) en vez de la de Colombia' % fecha)
+    if periodo:
+        # El período se RECORTA de la fecha del hecho · no se vuelve a preguntar la hora
+        # (a la medianoche de fin de mes, dos relojes dan dos meses distintos · M165).
+        assert periodo[0] == fecha[:7], 'el período no salió de la fecha del pago'
+
+    # Y la invariante estructural: el único escritor de facturas_pagos no toca el reloj
+    # para el período.
     raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    s = io.open(os.path.join(raiz, 'api', 'blueprints', 'contabilidad.py'), encoding='utf-8').read()
-    i = s.find('fecha_pago = data.get')
-    assert i > 0, 'no existe la asignación de fecha_pago'
-    assert '_hoy_col()' in s[i:i + 120], (
-        'el pago volvió a tomar la fecha del servidor: %s' % s[i:i + 90])
-    # el período se deriva de esa misma fecha, así que queda anclado también
-    j = s.find('periodo = (fecha_pago')
-    assert j > 0 and '_hoy_col()' in s[j:j + 120], 'el período contable no quedó anclado'
-    assert hoy_colombia() is not None
+    src = io.open(os.path.join(raiz, 'api', 'blueprints', 'contabilidad.py'), encoding='utf-8').read()
+    assert src.count('INSERT INTO facturas_pagos') == 1, (
+        'apareció un segundo escritor de facturas_pagos: los guards de over-payment '
+        'y de fecha viven en uno solo (M3)')
+    j = src.find('periodo = (fecha_pago')
+    assert j > 0 and '_hoy_col()' in src[j:j + 120], 'el período contable no quedó anclado'

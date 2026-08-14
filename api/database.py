@@ -11465,6 +11465,49 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
             WHERE NOT EXISTS (SELECT 1 FROM maquila_pipeline mp
                                WHERE UPPER(TRIM(mp.empresa))=UPPER(TRIM(v.empresa)))""",
     ]),
+    (430, "El cliente del portal se enlaza con su cuenta de FACTURACION · 14-ago-2026. La credencial "
+          "guarda un cliente_id de TEXTO (un slug) y `facturas` apunta a `clientes.id` (INTEGER): sin "
+          "puente, un modulo de Facturas en el portal nace vacio para siempre y se lee como 'no tengo "
+          "facturas' cuando significa 'no se pudo cruzar'. La columna es NULEABLE a proposito (aditivo): "
+          "lo que ya existe sigue funcionando igual, y donde no se pueda resolver el portal lo DECLARA "
+          "en vez de mostrar una lista vacia.", [
+        "ALTER TABLE portal_clientes_credenciales ADD COLUMN cliente_ref_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_portalcred_ref ON portal_clientes_credenciales(cliente_ref_id)",
+    ]),
+    (431, "portal_pagos_reportados · el cliente carga el comprobante de su pago (Sebastian 14-ago-2026). "
+          "Es un AVISO, no un asiento: la plata entra a la contabilidad SOLO cuando alguien lo concilia "
+          "por el camino canonico (POST /api/contabilidad/facturas/<n>/pago), porque el estado del dinero "
+          "se deriva de un hecho de dinero, nunca de que el cliente diga que pago (M168). El comprobante "
+          "va a R2; si R2 no esta configurado se guarda el reporte igual y se DECLARA que el archivo no "
+          "quedo (perder el aviso seria peor que no tener el adjunto).", [
+        """CREATE TABLE IF NOT EXISTS portal_pagos_reportados (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id        TEXT    NOT NULL,
+            cliente_nombre    TEXT    DEFAULT '',
+            cliente_ref_id    INTEGER,
+            factura_numero    TEXT    DEFAULT '',
+            monto             REAL    NOT NULL DEFAULT 0,
+            fecha_pago        TEXT    DEFAULT '',
+            metodo            TEXT    DEFAULT 'Transferencia',
+            referencia        TEXT    DEFAULT '',
+            nota              TEXT    DEFAULT '',
+            archivo_key       TEXT    DEFAULT '',
+            archivo_nombre    TEXT    DEFAULT '',
+            archivo_bytes     INTEGER DEFAULT 0,
+            archivo_sha256    TEXT    DEFAULT '',
+            archivo_estado    TEXT    DEFAULT 'sin_archivo',
+            estado            TEXT    NOT NULL DEFAULT 'reportado'
+                              CHECK(estado IN ('reportado','conciliado','rechazado')),
+            resuelto_por      TEXT    DEFAULT '',
+            resuelto_at       TEXT    DEFAULT '',
+            motivo            TEXT    DEFAULT '',
+            pago_factura_id   INTEGER,
+            creado_at         TEXT    DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ppr_cliente ON portal_pagos_reportados(cliente_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ppr_estado ON portal_pagos_reportados(estado)",
+        "CREATE INDEX IF NOT EXISTS idx_ppr_factura ON portal_pagos_reportados(factura_numero)",
+    ]),
 ]
 
 
