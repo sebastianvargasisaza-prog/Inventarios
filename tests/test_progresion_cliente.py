@@ -174,3 +174,63 @@ def test_un_cliente_GANADO_no_espera_respuesta(app, luz):
     d = luz.get('/api/comercial/maquila/progresion').get_json()
     yo = [x for x in d['clientes'] if x['id'] == mid][0]
     assert yo.get('dias_sin_movimiento') is None, 'cuenta días de espera en un cliente cerrado'
+
+
+# -------------------------------------- de "firmo" a "ya esta pidiendo"
+
+def test_sin_contrato_NO_se_le_da_acceso_al_portal(app, luz):
+    """El portal sirve para PEDIR: darle acceso a quien no firmó es dejar entrar pedidos sin
+    respaldo. El gate es el HITO, no el criterio de quien aprieta el botón."""
+    _limpiar(app)
+    mid = _tarjeta(app, 'cotizacion')
+    r = luz.post('/api/comercial/maquila/%d/dar-acceso' % mid,
+                 json={'email': 'cliente@progtest.co'},
+                 headers={'Origin': 'http://localhost'})
+    assert r.status_code == 422 and r.get_json()['codigo'] == 'SIN_CONTRATO'
+
+
+def test_con_contrato_le_crea_el_usuario_y_arma_la_bienvenida(app, luz):
+    """Crear la credencial y avisarle son UN acto: una credencial que nadie comunica queda
+    guardada en una tabla y el cliente nunca se entera de que puede entrar."""
+    _limpiar(app)
+    mid = _tarjeta(app, 'contrato')
+    r = luz.post('/api/comercial/maquila/%d/dar-acceso' % mid,
+                 json={'email': 'cliente@progtest.co'},
+                 headers={'Origin': 'http://localhost'})
+    assert r.status_code == 200, r.get_data(as_text=True)[:250]
+    d = r.get_json()
+    assert d['password'] and len(d['password']) >= 10, 'no generó contraseña'
+    # el texto tiene que decir QUÉ puede hacer, no sólo entregar credenciales
+    t = d['texto_para_copiar']
+    assert '/portal/login' in t and 'cliente@progtest.co' in t and d['password'] in t
+    for que in ('cotizacion', 'pedido'):
+        assert que in t.lower(), 'la bienvenida no explica que puede hacer: falta %s' % que
+    # y si el correo no salió, lo DICE en vez de callarlo
+    if not d['correo_enviado']:
+        assert 'pasale vos' in (d['aviso'] or '').lower()
+    with app.app_context():
+        from database import get_db
+        f = get_db().cursor().execute(
+            "SELECT COUNT(*) FROM portal_clientes_credenciales "
+            "  WHERE LOWER(email)='cliente@progtest.co' AND COALESCE(activo,1)=1").fetchone()
+    assert f[0] == 1, 'no quedó la credencial'
+
+
+def test_darle_acceso_dos_veces_no_le_cambia_la_clave(app, luz):
+    """Re-generarla en silencio dejaría al cliente afuera con la contraseña que ya tenía."""
+    _limpiar(app)
+    mid = _tarjeta(app, 'contrato')
+    luz.post('/api/comercial/maquila/%d/dar-acceso' % mid, json={'email': 'cliente@progtest.co'},
+             headers={'Origin': 'http://localhost'})
+    r2 = luz.post('/api/comercial/maquila/%d/dar-acceso' % mid, json={'email': 'cliente@progtest.co'},
+                  headers={'Origin': 'http://localhost'})
+    assert r2.status_code == 200 and r2.get_json().get('ya_tenia') is True
+    assert not r2.get_json().get('password'), 'le regeneró la clave sin que nadie lo pidiera'
+
+
+def test_sin_correo_no_se_puede_dar_acceso(app, luz):
+    _limpiar(app)
+    mid = _tarjeta(app, 'contrato')
+    r = luz.post('/api/comercial/maquila/%d/dar-acceso' % mid, json={},
+                 headers={'Origin': 'http://localhost'})
+    assert r.status_code == 400 and r.get_json()['codigo'] == 'SIN_CORREO'

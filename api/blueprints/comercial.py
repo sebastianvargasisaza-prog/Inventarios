@@ -658,6 +658,33 @@ _ORDEN = [x[0] for x in PROGRESION]
 ETAPA_OFICIAL = 'contrato'
 
 
+def _texto_bienvenida(empresa, contacto, correo, clave):
+    """Lo que el cliente recibe. Dice QUE puede hacer, no solo que tiene un usuario.
+
+    Un correo que entrega credenciales y no explica para que sirven deja al cliente con acceso y
+    sin saber que hacer con el -- que en la practica es igual a no dárselo.
+    """
+    saludo = ('Hola %s,' % contacto.split(' ')[0]) if contacto else 'Hola,'
+    return (
+        saludo + '\n\n'
+        'Ya podes entrar al portal de Espagiria Laboratorio' +
+        ((' con la cuenta de ' + empresa) if empresa else '') + '.\n\n'
+        'Entra en: https://app.eossuite.com/portal/login\n'
+        'Usuario: ' + correo + '\n'
+        'Contrasena: ' + clave + '\n\n'
+        'Cambiala cuando entres.\n\n'
+        'Que podes hacer ahi:\n'
+        '  - Pedir una cotizacion de lo que necesites.\n'
+        '  - Hacer un pedido de tus productos.\n'
+        '  - Seguir tus pedidos y ver en que van.\n'
+        '  - Reportar cualquier novedad o reclamo.\n\n'
+        'Cuando hagas un pedido entra directo a nuestra planeacion de produccion, asi que no hace '
+        'falta que lo confirmes por otro lado.\n\n'
+        'Cualquier cosa, respondes este correo.\n\n'
+        'Espagiria Laboratorio'
+    )
+
+
 def _progresion_de(row):
     """Dónde está, qué sigue, y qué falta para poder avanzar.
 
@@ -738,6 +765,126 @@ def maquila_progresion():
                                               if (x.get('dias_sin_movimiento') or 0) > 7]),
                     'sin_movimiento_30d': len([x for x in out
                                                if (x.get('dias_sin_movimiento') or 0) > 30])},
+    })
+
+
+@bp.route('/api/comercial/maquila/<int:mid>/dar-acceso', methods=['POST'])
+def maquila_dar_acceso(mid):
+    """Le da al cliente su usuario del portal, y le avisa.
+
+    Sebastián: *"cuando se acaba todo se firma lo final, se crean credenciales, correo de
+    bienvenida explicando todo, y ellos tienen su portal donde pueden pedir"*.
+
+    Ese era el eslabon roto. La progresion ya decia *"puede tener usuario"* y no habia forma de
+    darselo desde ahi: habia que ir a otra pantalla de admin, que ademas Luz no ve. Un flujo que
+    se corta justo donde el cliente empieza a servir es el que nadie completa.
+
+    Dos reglas duras:
+
+      · **Sin contrato no hay usuario.** El portal sirve para PEDIR: darle acceso a quien no firmo
+        es dejar entrar pedidos sin respaldo. El gate es el HITO, no el criterio de quien aprieta.
+      · **Crear la credencial y avisarle son UN acto.** Una credencial que nadie comunica queda
+        guardada en una tabla y el cliente nunca se entera de que puede entrar -- que es
+        exactamente igual a no tenerla (M109).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if not _pipeline_puede(user):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
+    d = request.get_json(silent=True) or {}
+    conn = get_db()
+    c = conn.cursor()
+    cols = ('id, empresa, contacto_nombre, contacto_email, stage, nda_firmado_at, '
+            'brief_recibido_at, cotizacion_enviada_at, contrato_firmado_at')
+    r = c.execute('SELECT ' + cols + ' FROM maquila_pipeline WHERE id=?', (mid,)).fetchone()
+    if not r:
+        return jsonify({'error': 'no existe ese cliente en el pipeline'}), 404
+    row = dict(zip([x.strip() for x in cols.split(',')], r))
+    p = _progresion_de(row)
+    if not p.get('puede_tener_usuario'):
+        return jsonify({
+            'error': 'todavia no llego al contrato', 'codigo': 'SIN_CONTRATO',
+            'stage': p['stage'],
+            'como': ('el portal sirve para PEDIR: darle acceso a quien no firmo es dejar entrar '
+                     'pedidos sin respaldo · falta llegar a la etapa contrato'),
+        }), 422
+
+    correo = (d.get('email') or row.get('contacto_email') or '').strip().lower()
+    if not correo or '@' not in correo:
+        return jsonify({'error': 'falta el correo del cliente', 'codigo': 'SIN_CORREO',
+                        'como': 'es el usuario con el que va a entrar'}), 400
+
+    ya = None
+    try:
+        ya = c.execute("SELECT id, COALESCE(activo,1) FROM portal_clientes_credenciales "
+                       " WHERE LOWER(TRIM(email))=?", (correo,)).fetchone()
+    except Exception as e:
+        log.warning('dar-acceso: no pude leer credenciales: %s', e)
+    if ya and ya[1]:
+        return jsonify({'ok': True, 'ya_tenia': True, 'email': correo,
+                        'aviso': 'este cliente ya tenia acceso al portal'})
+
+    # La contrasena la genera el sistema y se muestra UNA vez, como el portal demo. No se guarda
+    # en claro en ningun lado.
+    import secrets as _sec
+    import string as _str
+    alfabeto = _str.ascii_letters + _str.digits
+    clave = ''.join(_sec.choice(alfabeto) for _ in range(12))
+    try:
+        from werkzeug.security import generate_password_hash as _hash
+        h = _hash(clave)
+    except Exception as e:
+        return jsonify({'error': 'no pude generar la credencial: %s' % e}), 500
+
+    empresa = row.get('empresa') or ''
+    if ya:
+        c.execute("UPDATE portal_clientes_credenciales SET activo=1, password_hash=? WHERE id=?",
+                  (h, ya[0]))
+        cred_id = ya[0]
+    else:
+        # `creado_por` es NOT NULL: quien dio el acceso queda en la fila, no sólo en el audit.
+        c.execute("INSERT INTO portal_clientes_credenciales "
+                  " (cliente_id, cliente_nombre, email, password_hash, activo, creado_por) "
+                  " VALUES (?,?,?,?,1,?)",
+                  (str(mid), empresa, correo, h, user))
+        cred_id = c.lastrowid
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='DAR_ACCESO_PORTAL', tabla='portal_clientes_credenciales',
+            registro_id=str(cred_id), antes={}, despues={'email': correo, 'empresa': empresa},
+            detalle='acceso al portal desde la ficha del pipeline · etapa %s' % p['stage'])
+    except Exception as e:
+        log.warning('dar-acceso: no pude auditar: %s', e)
+
+    # El correo de bienvenida. Si no se puede mandar, la credencial YA quedo creada y se DICE que
+    # hay que pasarsela a mano -- callarlo dejaria al cliente con acceso y sin enterarse.
+    enviado, motivo = False, ''
+    asunto = 'Tu acceso al portal de Espagiria Laboratorio'
+    cuerpo = _texto_bienvenida(empresa, row.get('contacto_nombre') or '', correo, clave)
+    try:
+        # ⚠ El helper canónico es el de `comunicacion`, que ya corta antes si SMTP no está
+        # configurado y loguea el resultado real. Importar uno inventado habría quedado tapado
+        # por este `try`: el correo no se mandaria NUNCA y el mensaje diria "no se pudo",
+        # indistinguible de un fallo pasajero (M164).
+        from blueprints.comunicacion import _enviar_email_async as _mail
+        enviado = bool(_mail(asunto, cuerpo.replace(chr(10), '<br>'), [correo]))
+    except Exception as e:
+        motivo = str(e)[:160]
+        log.warning('dar-acceso: no pude mandar la bienvenida: %s', e)
+    conn.commit()
+    return jsonify({
+        'ok': True, 'email': correo, 'empresa': empresa,
+        # Se muestra UNA vez, igual que el portal demo. Despues solo queda el hash.
+        'password': clave,
+        'correo_enviado': enviado,
+        'aviso': ('Le mandamos la bienvenida con su usuario y el enlace al portal.' if enviado else
+                  ('La credencial quedo creada pero NO se pudo mandar el correo%s. '
+                   'Pasale vos el usuario y la contrasena: el cliente no se entera solo, y una '
+                   'credencial que nadie comunica es igual a no tenerla.'
+                   % ((' (' + motivo + ')') if motivo else ''))),
+        'texto_para_copiar': cuerpo,
     })
 
 
