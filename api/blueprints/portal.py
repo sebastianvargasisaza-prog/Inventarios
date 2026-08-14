@@ -352,12 +352,12 @@ _PORTAL_HTML = r"""<!DOCTYPE html>
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
      background:var(--cx-bg, #f4f4f7);color:var(--cx-text, #18181b);min-height:100vh;font-size:15px;
      -webkit-font-smoothing:antialiased}
-.wrap{max-width:960px;margin:0 auto;padding:22px 18px 70px}
+.wrap{max-width:1500px;margin:0 auto;padding:22px 26px 70px}
 
 /* ── cabecera + navegación (un solo bloque pegajoso) ─────────────── */
 .top{position:sticky;top:0;z-index:20;background:var(--cx-card, #ffffff);
      border-bottom:1px solid var(--cx-border, #e6e6ea);box-shadow:var(--cx-sh-sm, 0 1px 2px rgba(15,23,42,.04))}
-.top .in{max-width:960px;margin:0 auto;padding:11px 18px;display:flex;align-items:center;gap:12px}
+.top .in{max-width:1500px;margin:0 auto;padding:11px 26px;display:flex;align-items:center;gap:12px}
 .brand{display:flex;align-items:center;gap:11px;min-width:0}
 .mark{width:38px;height:38px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;
       background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9));
@@ -376,7 +376,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,s
        align-items:center;gap:6px;transition:.15s;white-space:nowrap}
 .ghost:hover{background:var(--cx-bg-alt, #fbfbfd);border-color:var(--cx-primary-light, #a78bfa);
              color:var(--cx-primary-text, #6d28d9)}
-.nav{max-width:960px;margin:0 auto;padding:0 18px 9px;display:flex;gap:6px;overflow-x:auto}
+.nav{max-width:1500px;margin:0 auto;padding:0 26px 9px;display:flex;gap:6px;overflow-x:auto}
 .nav::-webkit-scrollbar{display:none}
 .nb{flex:1;min-width:104px;padding:9px 12px;border-radius:var(--cx-r-md, 10px);border:1px solid transparent;
     background:var(--cx-border-soft, #f1f1f4);color:var(--cx-text-mute, #6b6b74);font-size:13px;font-weight:700;
@@ -492,6 +492,16 @@ input:focus,select:focus,textarea:focus{border-color:var(--cx-primary-light, #a7
 .btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
 .btn.mini{padding:7px 14px;font-size:12.5px;box-shadow:none}
 .btn-fila{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:20px}
+.dosc{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}
+@media(min-width:1080px){.dosc{grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)}}
+.lado{background:var(--cx-card, #ffffff);border:1px solid var(--cx-border, #e6e6ea);
+      border-radius:var(--cx-r-lg, 14px);padding:20px}
+.lado h3{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.9px;
+         color:var(--cx-text-mute, #6b6b74);margin-bottom:12px}
+.paso{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:13px;line-height:1.4}
+.paso .n{width:21px;height:21px;border-radius:50%;background:var(--cx-primary-pale, #f5f3ff);
+         color:var(--cx-primary-text, #6d28d9);font-size:11px;font-weight:800;flex-shrink:0;
+         display:flex;align-items:center;justify-content:center;margin-top:1px}
 .dos{display:grid;grid-template-columns:1fr;gap:0}
 @media(min-width:660px){.dos{grid-template-columns:1fr 1fr;gap:0 16px}}
 .aviso{display:none;margin-top:8px;padding:10px 12px;border-radius:var(--cx-r-md, 10px);font-size:12.5px;
@@ -549,7 +559,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--cx-primary-light, #a7
 /* ── portada de módulos (mismo lenguaje que /modulos) ────────────── */
 .saludo-h{font-size:24px;font-weight:800;letter-spacing:-.7px}
 .saludo-s{font-size:13.5px;color:var(--cx-text-mute, #6b6b74);margin:3px 0 20px}
-.mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:12px}
+.mods{display:grid;grid-template-columns:repeat(auto-fill,minmax(188px,1fr));gap:14px}
 .mod{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
      padding:22px 12px 18px;background:var(--cx-card, #ffffff);border:1px solid var(--cx-border, #e6e6ea);
      border-radius:var(--cx-r-lg, 14px);cursor:pointer;font-family:inherit;text-align:center;
@@ -646,6 +656,7 @@ input[type=file]{padding:10px;background:var(--cx-bg-alt, #fbfbfd);cursor:pointe
     <button class="volver" onclick="irA('inicio')">Volver</button>
     <div class="h1">Pedir producto</div>
     <div class="h1s">Elegí qué necesitás y para cuándo. Te confirmamos la fecha real apenas entre al plan de producción.</div>
+    <div class="dosc">
     <div class="card">
       <label for="sol-producto">Producto</label>
       <select id="sol-producto"><option value="">Cargando productos...</option></select>
@@ -689,6 +700,16 @@ input[type=file]{padding:10px;background:var(--cx-bg-alt, #fbfbfd);cursor:pointe
       </div>
       <div class="msg" id="sol-msg"></div>
     </div>
+    <div class="lado">
+      <h3>Qué pasa después</h3>
+      <div class="paso"><span class="n">1</span><div><b>Lo recibimos</b> y lo revisamos con producción.</div></div>
+      <div class="paso"><span class="n">2</span><div><b>Te confirmamos la fecha</b> real, con el lote ya asignado en el plan.</div></div>
+      <div class="paso"><span class="n">3</span><div><b>Fabricación y envasado</b>, con las etapas a la vista en Mis pedidos.</div></div>
+      <div class="paso"><span class="n">4</span><div><b>Microbiología</b> y liberación de Control de Calidad.</div></div>
+      <div class="paso"><span class="n">5</span><div><b>Despacho</b>, con su certificado de análisis en Documentos.</div></div>
+      <div class="hint" style="margin-top:14px">Pedí con un mes de anticipación siempre que puedas: la producción se programa por lotes y el envase también se compra. Si es urgente, marcalo en Urgencia y lo miramos.</div>
+    </div>
+    </div>
   </section>
 
   <!-- ══ MIS PEDIDOS ═════════════════════════════════════════════ -->
@@ -704,6 +725,7 @@ input[type=file]{padding:10px;background:var(--cx-bg-alt, #fbfbfd);cursor:pointe
     <button class="volver" onclick="irA('inicio')">Volver</button>
     <div class="h1">Mensajes</div>
     <div class="h1s">Escribinos por lo que sea: un problema con un lote, un producto nuevo, una reunión o una duda.</div>
+    <div class="dosc">
     <div class="card">
       <label for="msg-tipo">¿De qué se trata?</label>
       <select id="msg-tipo" onchange="msgTipoChange()">
@@ -737,8 +759,11 @@ input[type=file]{padding:10px;background:var(--cx-bg-alt, #fbfbfd);cursor:pointe
       <div class="btn-fila"><button class="btn" id="btn-msg" onclick="enviarMensaje()">Enviar</button></div>
       <div class="msg" id="msg-salida"></div>
     </div>
-    <div class="rot">Conversaciones</div>
-    <div id="lista-hilos"><div class="vacio">Cargando...</div></div>
+    <div>
+      <div class="rot" style="margin-top:0">Conversaciones</div>
+      <div id="lista-hilos"><div class="vacio">Cargando...</div></div>
+    </div>
+    </div>
   </section>
 
 
@@ -756,6 +781,7 @@ input[type=file]{padding:10px;background:var(--cx-bg-alt, #fbfbfd);cursor:pointe
     <button class="volver" onclick="irA('inicio')">Volver</button>
     <div class="h1">Reportar un pago</div>
     <div class="h1s">Cargá el comprobante y lo cruzamos con tu factura. Te avisamos acá mismo cuando quede aplicado.</div>
+    <div class="dosc">
     <div class="card">
       <label for="pg-factura">Factura que estás pagando</label>
       <select id="pg-factura"><option value="">Sin factura puntual</option></select>
@@ -792,8 +818,11 @@ input[type=file]{padding:10px;background:var(--cx-bg-alt, #fbfbfd);cursor:pointe
       <div class="btn-fila"><button class="btn" id="pg-btn" onclick="enviarPago()">Enviar el pago</button></div>
       <div class="msg" id="pg-msg"></div>
     </div>
-    <div class="rot">Pagos que reportaste</div>
-    <div id="pg-lista"><div class="vacio">Cargando...</div></div>
+    <div>
+      <div class="rot" style="margin-top:0">Pagos que reportaste</div>
+      <div id="pg-lista"><div class="vacio">Cargando...</div></div>
+    </div>
+    </div>
   </section>
 
   <!-- ══ DOCUMENTOS ══════════════════════════════════════════════ -->
@@ -4528,7 +4557,7 @@ _PORTAL_PAGOS_HTML = r"""<!DOCTYPE html>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
      background:var(--cx-bg, #f4f4f7);color:var(--cx-text, #18181b);font-size:14px}
-.wrap{max-width:1240px;margin:0 auto;padding:22px 18px 60px}
+.wrap{max-width:1500px;margin:0 auto;padding:22px 26px 60px}
 .top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:6px}
 h1{font-size:24px;font-weight:800;letter-spacing:-.6px}
 .sub{font-size:13px;color:var(--cx-text-mute, #6b6b74);margin-bottom:18px}
@@ -4867,7 +4896,7 @@ _PORTAL_MENSAJES_HTML = r"""<!DOCTYPE html>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
      background:var(--cx-bg, #f4f4f7);color:var(--cx-text, #18181b);font-size:14px}
-.wrap{max-width:1120px;margin:0 auto;padding:22px 18px 60px}
+.wrap{max-width:1500px;margin:0 auto;padding:22px 26px 60px}
 .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 h1{font-size:24px;font-weight:800;letter-spacing:-.6px}
 .sub{font-size:13px;color:var(--cx-text-mute, #6b6b74);margin:4px 0 18px}
