@@ -188,3 +188,15 @@ def test_la_decision_queda_auditada(app, planta):
             "SELECT COUNT(*) FROM audit_log WHERE accion='REPARTO_ENVASES_FIJAR' "
             "  AND registro_id=?", (str(pid),)).fetchone()
     assert n[0] >= 1, 'fijar el reparto no dejó rastro'
+
+
+def test_la_pantalla_tiene_como_llegar_al_reparto(app, planta):
+    """Dos veces hoy construí endpoints sin puerta. El guard mira el HTML REAL que se sirve:
+    buscar el nombre en el fuente encontraría mi propio comentario (M121/M154)."""
+    html = planta.get('/admin/marcacion-envases').get_data(as_text=True)
+    assert 'abrirReparto(' in html, 'no hay botón para repartir'
+    assert 'id="reparto-modal"' in html, 'el botón abre un modal que no existe'
+    for fn in ('function abrirReparto', 'function guardarReparto', 'function sumaReparto',
+               'function quitarReparto'):
+        assert fn in html, 'el modal llama a algo que no está definido: %s' % fn
+    assert '/reparto-envases' in html, 'la pantalla no apunta al endpoint'

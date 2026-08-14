@@ -10055,6 +10055,24 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 #pane-prepenv thead th{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--cx-text-mute,#64748b);font-weight:800;padding:4px 10px;border:none}
 </style>
 <datalist id="provlist"></datalist>
+<div id="reparto-modal" style="display:none;position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:10002;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--cx-card,#fff);border-radius:16px;max-width:640px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">
+    <div style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-bottom:1px solid #ece9f6;padding:16px 20px">
+      <div style="font-size:16px;font-weight:800;color:#1e1b2e">&#9878;&#65039; Repartir el lote entre frascos</div>
+      <div id="rep-titulo" style="font-size:11.5px;color:#8b8b9e;margin-top:2px"></div>
+      <div style="font-size:11px;color:#8b8b9e;margin-top:4px">Cuando el frasco habitual no alcanza. El reparto tiene que <b>cerrar</b> contra lo que rinde el lote: uno que no cuadra se ve resuelto y con eso se compra y se descuenta.</div>
+    </div>
+    <div id="rep-body" style="padding:16px 20px;max-height:56vh;overflow:auto">Cargando&hellip;</div>
+    <div style="padding:0 20px 12px"><input id="rep-motivo" type="text" placeholder="Motivo (ej: no alcanza el habitual)" style="width:100%;font-size:12px;padding:7px 10px;border:1px solid var(--cx-border,#e2e8f0);border-radius:7px"></div>
+    <div style="border-top:1px solid #eef2f7;padding:12px 20px;display:flex;justify-content:space-between;gap:8px">
+      <button class="ra ra-neutral" onclick="quitarReparto()">Volver a lo autom&aacute;tico</button>
+      <div style="display:flex;gap:8px">
+        <button class="ra ra-neutral" onclick="cerrarReparto()">Cancelar</button>
+        <button class="ra ra-primary" id="rep-guardar" onclick="guardarReparto()">&#128190; Guardar el reparto</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="alistar-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:16px">
   <div style="background:var(--cx-card, #fff);border-radius:12px;padding:22px;max-width:420px;width:100%">
     <h3 style="margin:0 0 4px;color:var(--cx-primary-text, #5b21b6)">&#128203; Solicitar alistamiento a Planta</h3>
@@ -10177,12 +10195,123 @@ function render(){
       '<td><input id="u-'+i+'" type="number" min="1" value="'+Math.round(r.unidades||0)+'" style="width:80px;font-weight:700;color:var(--cx-primary-text, #5b21b6);text-align:right"></td>'+
       '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('etiqueta',r.marcacion_tipo,'Etiqueta (solicitada)')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
       '<td><input class="prov" id="p-'+i+'" list="provlist" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
-      '<td style="white-space:nowrap"><button id="b-'+i+'" class="ra ra-neutral" onclick="guardar('+i+')">Guardar</button> <button class="ra ra-primary" onclick="generarOC('+i+')" title="Crea la OC de la marcaci\u00f3n (servicio o etiquetas), agrupa por proveedor">&#128722; Generar OC</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #15803d);font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button class="ra ra-accent" onclick="enviar('+i+')">&#128203; Solicitar alistamiento</button>')+'</td>'+
+      '<td style="white-space:nowrap"><button id="b-'+i+'" class="ra ra-neutral" onclick="guardar('+i+')">Guardar</button> <button class="ra ra-primary" onclick="generarOC('+i+')" title="Crea la OC de la marcaci\u00f3n (servicio o etiquetas), agrupa por proveedor">&#128722; Generar OC</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:var(--cx-success-pale, #dcfce7);color:var(--cx-success-text, #15803d);font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button class="ra ra-accent" onclick="enviar('+i+')">&#128203; Solicitar alistamiento</button>')+' <button class="ra ra-neutral" onclick="abrirReparto('+i+')" title="Repartir el lote entre varios frascos cuando el habitual no alcanza">&#9878;&#65039; Repartir</button>'+'</td>'+
       '</tr>';
   });
   h+='</tbody></table>';
   document.getElementById('cont').innerHTML=h;
 }
+// ─── REPARTO DEL LOTE ENTRE FRASCOS (Sebastián 12-ago) ───────────────────────
+// *"no alcanza el envase habitual, entonces 70 unidades van en este envase y 30 en este otro"*.
+// El motor ya valida que el reparto CIERRE; acá se le da la puerta, con el stock de cada frasco
+// a la vista -- porque el caso que origina la decisión es justamente "no alcanza".
+var _REP = {pid:0, total:0, filas:[]};
+
+async function abrirReparto(i){
+  var r = ROWS[i]; if(!r || !r.produccion_id){ alert('Esta fila no tiene una produccion asociada'); return; }
+  var m = document.getElementById('reparto-modal'); if(!m) return;
+  m.style.display='flex';
+  document.getElementById('rep-body').innerHTML='Cargando&hellip;';
+  document.getElementById('rep-titulo').textContent = (r.producto||'') + ' \u00b7 ' + (r.fecha||'');
+  try{
+    var d = await (await fetch('/api/planta/produccion/'+r.produccion_id+'/reparto-envases',{cache:'no-store'})).json();
+    if(d.error){ document.getElementById('rep-body').innerHTML='<div style="color:var(--cx-danger-text,#b91c1c);padding:14px">'+esc(d.error)+'</div>'; return; }
+    _REP.pid = r.produccion_id;
+    _REP.total = d.unidades_totales||0;
+    _REP.filas = (d.variantes||[]).map(function(v){
+      return {cod:(v.envase_codigo||''), uds:Math.round(v.unidades_estimadas||0), hay:Math.round(v.hay_en_bodega||0)};
+    });
+    _REP.decidido = !!d.reparto_decidido;
+    pintarReparto();
+  }catch(e){ document.getElementById('rep-body').innerHTML='<div style="padding:14px">No pude cargar: '+esc(e.message)+'</div>'; }
+}
+
+function cerrarReparto(){ var m=document.getElementById('reparto-modal'); if(m) m.style.display='none'; }
+
+function pintarReparto(){
+  var h='';
+  h+='<div style="font-size:12px;color:var(--cx-text-soft,#475569);margin-bottom:10px">Este lote rinde <b>'+Math.round(_REP.total)+'</b> unidades'+(_REP.decidido?' &middot; <span style="color:var(--cx-success-text,#15803d);font-weight:700">ya hay un reparto decidido</span>':'')+'.</div>';
+  h+='<table style="width:100%;font-size:12px"><thead><tr><th style="text-align:left">Frasco</th><th style="text-align:right">Hay</th><th style="text-align:right">Unidades</th><th></th></tr></thead><tbody>';
+  _REP.filas.forEach(function(f,j){
+    // El stock a la vista y en rojo cuando no alcanza: es el dato que origina la decision.
+    var falta = f.uds > f.hay;
+    h+='<tr>'
+      +'<td><select id="rep-c-'+j+'" style="max-width:230px;font-size:11px">'+envOpts(f.cod)+'</select></td>'
+      +'<td style="text-align:right;font-variant-numeric:tabular-nums;'+(falta?'color:var(--cx-danger-text,#b91c1c);font-weight:800':'color:var(--cx-text-mute,#64748b)')+'">'+f.hay+'</td>'
+      +'<td style="text-align:right"><input id="rep-u-'+j+'" type="number" min="0" value="'+f.uds+'" oninput="sumaReparto()" style="width:92px;text-align:right;font-weight:700"></td>'
+      +'<td><button class="ra ra-neutral" onclick="quitarFilaReparto('+j+')">quitar</button></td>'
+      +'</tr>';
+  });
+  h+='</tbody></table>';
+  h+='<div style="margin-top:10px"><button class="ra ra-neutral" onclick="agregarFilaReparto()">+ Otro frasco</button></div>';
+  h+='<div id="rep-suma" style="margin-top:12px;font-size:12.5px;font-weight:800"></div>';
+  document.getElementById('rep-body').innerHTML=h;
+  sumaReparto();
+}
+
+function _leerReparto(){
+  var out=[];
+  _REP.filas.forEach(function(f,j){
+    var c=document.getElementById('rep-c-'+j), u=document.getElementById('rep-u-'+j);
+    if(!c||!u) return;
+    var uds=parseFloat(u.value||'0')||0;
+    if((c.value||'').trim() && uds>0) out.push({envase_codigo:c.value.trim(), unidades:uds});
+  });
+  return out;
+}
+
+function sumaReparto(){
+  // El total se ve MIENTRAS se escribe: descubrir que no cierra recien al guardar es hacer el
+  // trabajo dos veces.
+  var f=_leerReparto(), s=0; f.forEach(function(x){ s+=x.unidades; });
+  var d=Math.round(s-_REP.total), el=document.getElementById('rep-suma');
+  if(!el) return;
+  var ok=Math.abs(d)<=Math.max(1,_REP.total*0.02);
+  el.innerHTML='<span style="color:'+(ok?'var(--cx-success-text,#15803d)':'var(--cx-danger-text,#b91c1c)')+'">'
+    +'Reparte '+Math.round(s)+' de '+Math.round(_REP.total)
+    +(ok?' &middot; cierra':(' &middot; '+(d>0?'sobran ':'faltan ')+Math.abs(d)))+'</span>';
+  var b=document.getElementById('rep-guardar'); if(b) b.disabled=!ok;
+}
+
+function agregarFilaReparto(){
+  var actual=_leerReparto();
+  _REP.filas = actual.map(function(x){ return {cod:x.envase_codigo, uds:x.unidades, hay:0}; });
+  _REP.filas.push({cod:'', uds:0, hay:0});
+  pintarReparto();
+}
+
+function quitarFilaReparto(j){
+  var actual=_leerReparto();
+  _REP.filas = actual.map(function(x){ return {cod:x.envase_codigo, uds:x.unidades, hay:0}; });
+  _REP.filas.splice(j,1);
+  pintarReparto();
+}
+
+async function guardarReparto(){
+  var b=document.getElementById('rep-guardar'); if(b&&b.disabled) return; if(b) b.disabled=true;
+  try{
+    var t=await csrf();
+    var r=await fetch('/api/planta/produccion/'+_REP.pid+'/reparto-envases',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+      body:JSON.stringify({reparto:_leerReparto(), motivo:(document.getElementById('rep-motivo').value||'')})});
+    var d=await r.json();
+    if(!r.ok){ alert((d&&(d.como||d.error))||('HTTP '+r.status)); return; }
+    cerrarReparto();
+    cargar();
+  }catch(e){ alert('Error de red: '+e); }
+  finally{ if(b) b.disabled=false; }
+}
+
+async function quitarReparto(){
+  if(!confirm('Vuelve al reparto calculado por ventas. Queda auditado.')) return;
+  try{
+    var t=await csrf();
+    await fetch('/api/planta/produccion/'+_REP.pid+'/reparto-envases',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body:JSON.stringify({reparto:[]})});
+    cerrarReparto(); cargar();
+  }catch(e){ alert('Error de red: '+e); }
+}
+
 // ─── Vista consolidada POR ENVASE · horizonte (Sebastián 13-jul) ──────────────
 // Junta las producciones del horizonte por FRASCO → Catalina ve Jul 1000 + Ago 1000
 // + Sep 1000 = 3000 y adelanta la marcación en un solo pedido (más barato en lote).

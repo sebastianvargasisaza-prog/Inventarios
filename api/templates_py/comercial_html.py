@@ -81,7 +81,10 @@ label{font-size:12px;font-weight:600;color:var(--cx-text-soft);display:block;mar
       <h3 style="color:#581c87">Prospectos que llegaron al correo</h3>
       <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px">A <b>direcci&oacute;n@animuslb.com</b> s&oacute;lo llegan los de maquila, as&iacute; que todo lo que aparece ac&aacute; es un prospecto. El correo se lee sin marcarlo como le&iacute;do.</div>
     </div>
-    <button class="btn btn-primary" id="btn-leer-buzon" onclick="leerBuzon()">&#128229; Leer ahora</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="btn-reanalizar" onclick="reanalizarLeads()" title="Vuelve a leer el cuerpo que ya esta guardado, con el parseo de hoy · no toca el buzon">&#128260; Re-analizar</button>
+      <button class="btn btn-primary" id="btn-leer-buzon" onclick="leerBuzon()">&#128229; Leer ahora</button>
+    </div>
   </div>
   <div id="correo-estado" style="margin-bottom:12px"></div>
   <div id="correo-list">Cargando&hellip;</div>
@@ -374,6 +377,21 @@ async function leerBuzon(){
     }
   }catch(e){ _toast('Error de red: '+e.message,false); }
   finally{ if(b){b.disabled=false;b.innerHTML='&#128229; Leer ahora';} }
+}
+
+async function reanalizarLeads(){
+  // Los primeros correos entraron con un parseo anterior y el lector no los vuelve a traer
+  // (deduplica por Message-ID, que es correcto). Por eso se guarda el cuerpo: lo que se puede
+  // volver a leer no hay que volver a pedirlo.
+  var b=document.getElementById("btn-reanalizar"); if(b&&b.disabled) return; if(b) b.disabled=true;
+  try{
+    var r=await fetch("/api/comercial/leads-correo/reanalizar", _fetchOpts("POST",{}));
+    var d=await r.json();
+    if(!r.ok){ _toast((d&&d.error)||("HTTP "+r.status), false); return; }
+    await cargarLeadsCorreo();
+    _toast("Revisados "+d.revisados+" · cambiaron "+d.n_cambiados+" · lo ya decidido no se toco", true);
+  }catch(e){ _toast("Error de red: "+e.message,false); }
+  finally{ if(b) b.disabled=false; }
 }
 
 async function leadAlPipeline(id){
