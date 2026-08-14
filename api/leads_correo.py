@@ -80,14 +80,20 @@ def _asunto(msg):
 
 # Los campos que mandan los formularios de la web. Se buscan por ETIQUETA, y lo que no aparece
 # queda vacío -- rellenar adivinando le pone a un cliente el dato de otro (M19).
+# ⚠ La etiqueta va anclada a INICIO DE LINEA y exige DOS PUNTOS, y el separador se come el `:-`
+# que usa GHL. Sin el ancla, el titulo "Diagnostico de MARCA - Lina Gaitan" hacia match con
+# `marca` + ` - ` y llenaba `empresa` con un nombre de persona **marcandolo como DECLARADO** --
+# o sea que despues fundiria tarjetas por el (M193). Un patron que puede matchear en medio de una
+# frase encuentra cosas que no son campos.
+_ETQ = r'(?:^|\n)[ \t]*(?:%s)[ \t]*:[ \t\-]*(.+)'
 _CAMPOS = (
-    ('empresa', r'(?:empresa|compa[nñ][ií]a|marca|negocio)\s*[:\-]\s*(.+)'),
-    ('contacto', r'(?:nombre|contacto|nombre completo)\s*[:\-]\s*(.+)'),
-    ('telefono', r'(?:tel[eé]fono|celular|whatsapp|phone)\s*[:\-]\s*(.+)'),
-    ('email_form', r'(?:correo|e-?mail)\s*[:\-]\s*(.+)'),
-    ('producto', r'(?:producto|categor[ií]a|qu[eé] necesita|servicio)\s*[:\-]\s*(.+)'),
-    ('unidades', r'(?:unidades|cantidad|volumen)\s*[:\-]\s*(.+)'),
-    ('mensaje', r'(?:mensaje|comentario|detalle|notas?)\s*[:\-]\s*(.+)'),
+    ('empresa', _ETQ % r'empresa|compa[nñ][ií]a|marca|negocio|razon social|raz[oó]n social'),
+    ('contacto', _ETQ % r'nombre|contacto|nombre completo'),
+    ('telefono', _ETQ % r'tel[eé]fono|celular|whatsapp|phone'),
+    ('email_form', _ETQ % r'correo|e-?mail'),
+    ('producto', _ETQ % r'producto|categor[ií]a|qu[eé] necesita|servicio'),
+    ('unidades', _ETQ % r'unidades|cantidad|volumen'),
+    ('mensaje', _ETQ % r'mensaje|comentario|detalle|notas?'),
 )
 
 # ⚠ Lo que la gente escribe cuando TODAVIA NO SABE. El formulario real de la web trae
@@ -111,6 +117,41 @@ def _es_vacio(v):
     return (not t) or t in _SIN_DATO
 
 
+# La firma de GoHighLevel. Sus correos y sus eventos traen los enlaces de reagendar y cancelar,
+# y ese dominio no lo genera nadie mas. Se distingue por AHI y no por el asunto, que cambia cada
+# vez que alguien edita la plantilla -- una regla anclada al asunto se rompe sola y en silencio.
+_FIRMA_GHL = ('msgsndr.com', 'leadconnectorhq.com')
+
+# Lo que en el correo de GHL viene rotulado, para no depender del orden.
+_RE_GHL_MAIL = re.compile(r'(?:^|\n)\s*Email\s*:-?\s*([^\s<>]+@[^\s<>]+)', re.I)
+_RE_GHL_TEL = re.compile(r'(?:^|\n)\s*Phone\s*:-?\s*([+\d][\d\s\-()]{5,})', re.I)
+
+
+def es_reunion(asunto, cuerpo):
+    """Si este correo es una reunion agendada por GHL.
+
+    Sebastián conectó GHL de Espagiria para que avise cada vez que alguien reserva. Ese correo NO
+    es un formulario: es alguien que **ya pidió hablar**, que es la señal más fuerte que hay en
+    todo el circuito. Tratarlo igual que una consulta la pierde.
+    """
+    t = ((asunto or '') + ' ' + (cuerpo or '')).lower()
+    return any(f in t for f in _FIRMA_GHL)
+
+
+def _fecha_reunion(cuerpo):
+    """La fecha de la reunión, si el correo la trae en un formato reconocible.
+
+    Lo que no se pueda leer queda vacío: una fecha inventada en una agenda es peor que ninguna,
+    porque alguien se organiza con ella (M19).
+    """
+    for pat in (r'(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})',
+                r'(\d{4}-\d{2}-\d{2})'):
+        m = re.search(pat, str(cuerpo or ''))
+        if m:
+            return (m.group(1) + (' ' + m.group(2) if m.lastindex and m.lastindex > 1 else ''))
+    return ''
+
+
 def parsear(asunto, cuerpo, remitente):
     """Lo que se pueda sacar del formulario. Lo que no, vacío y declarado."""
     out = {k: '' for k, _ in _CAMPOS}
@@ -127,6 +168,23 @@ def parsear(asunto, cuerpo, remitente):
             out['sin_definir'].append(clave)
             continue
         out[clave] = val
+    # Los correos de GHL traen el contacto rotulado a su manera (`Email:-`, `Phone:-`), y el
+    # NOMBRE en el asunto despues de un guion: "Diagnostico de Marca - Lina Gaitan | Mentalidad Y
+    # Negocios". Se aprovecha lo que viene rotulado; lo del titulo es un rotulo, no una razon
+    # social, y por eso queda marcado como inferido igual que el resto.
+    out['tipo'] = 'reunion' if es_reunion(asunto, cuerpo) else 'formulario'
+    out['reunion_at'] = _fecha_reunion(cuerpo) if out['tipo'] == 'reunion' else ''
+    if out['tipo'] == 'reunion':
+        if not out.get('email_form'):
+            _m = _RE_GHL_MAIL.search(texto)
+            if _m:
+                out['email_form'] = _m.group(1).strip()[:200]
+        if not out.get('telefono'):
+            _m = _RE_GHL_TEL.search(texto)
+            if _m:
+                out['telefono'] = _m.group(1).strip()[:60]
+        if not out.get('contacto') and ' - ' in (asunto or ''):
+            out['contacto'] = str(asunto).split(' - ', 1)[1].strip()[:160]
     if not out['empresa']:
         # Sin empresa declarada, el nombre del contacto es lo único que identifica la tarjeta.
         # Se usa como rótulo, y se DICE que salió de ahí para que nadie lo lea como razón social.
@@ -220,14 +278,15 @@ def leer(app, limite=40, presupuesto_seg=45, dias=30):
                     """INSERT INTO leads_correo
                          (message_id, remitente, asunto, fecha_correo, cuerpo, empresa,
                           contacto, telefono, email_contacto, producto, empresa_inferida,
-                          descartado, motivo_descarte, creado_en)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          descartado, motivo_descarte, tipo, reunion_at, creado_en)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (msg_id, remitente, asunto, fecha, cuerpo, datos['empresa'],
                      datos['contacto'], datos['telefono'],
                      datos['email_form'] or _eutils.parseaddr(remitente)[1],
                      datos['producto'], 1 if datos['empresa_inferida'] else 0,
                      1 if _ign else 0,
                      'remitente en la lista de ignorados' if _ign else '',
+                     datos.get('tipo', 'formulario'), datos.get('reunion_at', ''),
                      _hoy_col()))
                 lid = c.lastrowid
                 if not _ign:

@@ -138,3 +138,39 @@ def test_compras_no_puede_avanzar_a_nadie(app):
     assert c.post('/api/comercial/maquila/1/avanzar', json={},
                   headers={'Origin': 'http://localhost'}).status_code == 403
     assert c.get('/api/comercial/maquila/progresion').status_code == 403
+
+
+def test_dice_cuantos_DIAS_lleva_sin_movimiento(app, luz):
+    """Sebastián lo dejó escrito en el calendario, sobre un cliente real: *"un lead del 25 de
+    junio que estuvo 37 días sin respuesta de nuestra parte"*.
+
+    Eso no lo ve nadie mirando una tarjeta: se ve mirando la columna. Y no aplica a lo cerrado --
+    un cliente ganado no "espera respuesta".
+    """
+    _limpiar(app)
+    mid = _tarjeta(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        conn.cursor().execute("UPDATE maquila_pipeline SET creado_en=?, actualizado_en=NULL "
+                              " WHERE id=?", ('2026-06-25 09:00:00', mid))
+        conn.commit()
+    d = luz.get('/api/comercial/maquila/progresion').get_json()
+    yo = [x for x in d['clientes'] if x['id'] == mid][0]
+    assert (yo.get('dias_sin_movimiento') or 0) > 30, \
+        'no cuenta los días sin respuesta: %s' % yo.get('dias_sin_movimiento')
+    assert d['resumen']['sin_movimiento_7d'] >= 1
+
+
+def test_un_cliente_GANADO_no_espera_respuesta(app, luz):
+    _limpiar(app)
+    mid = _tarjeta(app, 'ganado')
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        conn.cursor().execute("UPDATE maquila_pipeline SET creado_en=? WHERE id=?",
+                              ('2026-01-01 09:00:00', mid))
+        conn.commit()
+    d = luz.get('/api/comercial/maquila/progresion').get_json()
+    yo = [x for x in d['clientes'] if x['id'] == mid][0]
+    assert yo.get('dias_sin_movimiento') is None, 'cuenta días de espera en un cliente cerrado'

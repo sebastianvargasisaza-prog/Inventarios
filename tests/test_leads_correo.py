@@ -351,3 +351,90 @@ def test_lo_ignorado_se_GUARDA_igual_no_se_tira(app, luz):
     d = luz.get('/api/comercial/leads-correo').get_json()
     fila = [x for x in d['leads'] if x['id'] and x['descartado']]
     assert fila, 'lo ignorado desapareció de la vista en vez de quedar descartado'
+
+
+# ------------------------------------------- reuniones de GHL y re-analisis
+
+def test_reconoce_una_reunion_de_GHL_por_su_FIRMA(app):
+    """Sebastián conectó GHL para que avise cada vez que alguien reserva. Ese correo NO es un
+    formulario: es alguien que YA pidió hablar, que es la señal más fuerte del circuito.
+
+    Se distingue por `msgsndr.com` -- que sólo genera GHL -- y no por el asunto, que cambia cada
+    vez que alguien edita la plantilla.
+    """
+    from leads_correo import parsear
+    cuerpo = ('\n==========\nPhone:- 318 6407140\nEmail:- linagaitanpe29@gmail.com\n'
+              'Reschedule:- https://msgsndr.com/widget/booking/x\nFecha: 2026-08-07 10:00\n')
+    d = parsear('Diagnostico de Marca - Lina Gaitan | Mentalidad Y Negocios', cuerpo,
+                'GHL <no-reply@msgsndr.com>')
+    assert d['tipo'] == 'reunion'
+    assert d['reunion_at'].startswith('2026-08-07')
+    # el `:-` de GHL no puede quedar pegado al valor
+    assert d['telefono'] == '318 6407140', 'el separador se coló en el dato: %r' % d['telefono']
+    assert d['email_form'] == 'linagaitanpe29@gmail.com'
+
+
+def test_el_titulo_NO_puede_llenar_la_empresa_por_accidente(app):
+    """"Diagnostico de MARCA - Lina Gaitán" hacía match con la etiqueta `marca` seguida de " - ",
+    llenaba `empresa` con un nombre de persona y lo marcaba como DECLARADO -- o sea que después
+    fundiría tarjetas por él.
+
+    Las etiquetas van ancladas a inicio de línea y exigen dos puntos: un patrón que puede matchear
+    en medio de una frase encuentra cosas que no son campos.
+    """
+    from leads_correo import parsear
+    d = parsear('Diagnostico de Marca - Lina Gaitan | Mentalidad Y Negocios',
+                'Reschedule:- https://msgsndr.com/x', 'GHL <no-reply@msgsndr.com>')
+    assert d['empresa_inferida'] is True, \
+        'tomó el título como razón social declarada: fundiría tarjetas'
+
+
+def test_un_formulario_normal_NO_es_una_reunion(app):
+    from leads_correo import parsear
+    d = parsear('Nueva solicitud de cotizacion', 'Nombre: Ana\nEmpresa: ACME SAS', 'a@b.co')
+    assert d['tipo'] == 'formulario'
+
+
+def test_reanalizar_arregla_lo_que_entro_con_el_parseo_viejo(app, luz):
+    """Los primeros 40 entraron con la versión que tomaba "Por definir" como razón social, y el
+    lector no los vuelve a traer (deduplica por Message-ID, que es correcto).
+
+    Por eso se guarda el cuerpo: lo que se puede volver a leer no hay que volver a pedirlo.
+    """
+    _limpiar(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT INTO leads_correo (message_id, remitente, asunto, cuerpo, empresa, "
+                  " empresa_inferida) VALUES ('LCTEST-OLD','Ana <ana@lctest.co>','Cotizacion',"
+                  " 'Nombre: Ana Perez' || char(10) || 'Empresa: Por definir', 'Por definir', 0)")
+        conn.commit()
+        lid = c.lastrowid
+    r = luz.post('/api/comercial/leads-correo/reanalizar', json={},
+                 headers={'Origin': 'http://localhost'})
+    assert r.status_code == 200, r.get_data(as_text=True)[:250]
+    with app.app_context():
+        from database import get_db
+        f = get_db().cursor().execute(
+            "SELECT empresa, empresa_inferida FROM leads_correo WHERE id=?", (lid,)).fetchone()
+    assert f[0] != 'Por definir' and f[1] == 1, 'quedó con el análisis viejo: %s' % (f,)
+
+
+def test_reanalizar_NO_toca_lo_que_ya_se_decidio(app, luz):
+    """Si alguien ya lo mandó al pipeline o lo descartó, hubo una decisión de una persona."""
+    _limpiar(app)
+    lid = _lead(app, 'LCTEST-DEC')
+    luz.post('/api/comercial/leads-correo/%d/al-pipeline' % lid, json={},
+             headers={'Origin': 'http://localhost'})
+    with app.app_context():
+        from database import get_db
+        conn = get_db()
+        conn.cursor().execute("UPDATE leads_correo SET empresa='NO ME TOQUES' WHERE id=?", (lid,))
+        conn.commit()
+    luz.post('/api/comercial/leads-correo/reanalizar', json={},
+             headers={'Origin': 'http://localhost'})
+    with app.app_context():
+        from database import get_db
+        f = get_db().cursor().execute(
+            "SELECT empresa FROM leads_correo WHERE id=?", (lid,)).fetchone()
+    assert f[0] == 'NO ME TOQUES', 'pisó un lead que ya se había decidido'

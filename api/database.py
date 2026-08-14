@@ -11419,6 +11419,52 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_prodenvreparto_prod "
         "ON produccion_envase_reparto(produccion_id)",
     ]),
+    (429, "leads_correo.tipo + prospectos conocidos que estaban sin registrar · 13-ago-2026", [
+        # (a) Sebastian conecto GHL de Espagiria para que mande el correo de "reunion agendada" al
+        # buzon de direccion. Ese correo NO es un formulario: es un cliente que ya pidio hablar, y
+        # tratarlo igual que una consulta pierde la unica senal fuerte que hay -- que ya avanzo.
+        # Se distingue por la firma `msgsndr.com` (los links de reagendar/cancelar que solo genera
+        # GHL), no por el asunto, que cambia con la plantilla.
+        "ALTER TABLE leads_correo ADD COLUMN tipo TEXT DEFAULT 'formulario'",
+        "ALTER TABLE leads_correo ADD COLUMN reunion_at TEXT DEFAULT ''",
+        # (b) Los prospectos que YA existian y no estaban en ninguna parte. Siete salen del guion
+        # del pre-comite del 23-jul escrito por Sebastian, y tres de las reuniones que GHL ya
+        # agendo. Van con su origen dicho: quien los mire despues tiene que saber de donde salieron
+        # y que la ficha esta incompleta a proposito, no por descuido (M124).
+        #
+        # Idempotente por empresa: correrlo dos veces no abre dos tarjetas del mismo cliente.
+        """INSERT INTO maquila_pipeline (empresa, contacto_nombre, contacto_email, origen,
+               stage, producto_descripcion, owner, notas)
+           SELECT v.empresa, v.contacto, v.correo, v.origen, 'consulta', v.producto,
+                  'sebastian', v.notas
+             FROM (SELECT 'Macarena' AS empresa, 'Macarena' AS contacto, '' AS correo,
+                          'comite 23-jul' AS origen, '300 u marca blanca' AS producto,
+                          'Anotado en el pre-comite del 23-jul. Falta contacto y correo.' AS notas
+                   UNION ALL SELECT 'Maria Jose Salas - Ageless Perfection',
+                          'Maria Jose Salas', 'msalas@agelessperfectionmed.com',
+                          'comite 23-jul', 'maquillaje / seis productos marca propia',
+                          'Lead del 25-jun que estuvo 37 dias sin respuesta; se recupero el 5-ago. NDA firmado el 12-ago.'
+                   UNION ALL SELECT 'Central de Soldaduras', '', '', 'comite 23-jul',
+                          '3.500 bloqueadores', 'Anotado en el pre-comite del 23-jul.'
+                   UNION ALL SELECT 'Fundacion Sin Limite', '', '', 'comite 23-jul', '',
+                          'Anotado en el pre-comite del 23-jul. Falta detalle.'
+                   UNION ALL SELECT 'Nilson (Australia)', 'Nilson', '', 'comite 23-jul', '',
+                          'Anotado en el pre-comite del 23-jul. Mercado Australia.'
+                   UNION ALL SELECT 'Maria Paz', 'Maria Paz', '', 'comite 23-jul', '',
+                          'Anotado en el pre-comite del 23-jul. Falta detalle.'
+                   UNION ALL SELECT 'Lina Gaitan - Mentalidad Y Negocios', 'Lina Gaitan',
+                          'linagaitanpe29@gmail.com', 'GHL - reunion agendada',
+                          'diagnostico de marca', 'Reunion agendada por GHL para el 7-ago.'
+                   UNION ALL SELECT 'Daniel Ortega', 'Daniel Ortega', 'dfov97@gmail.com',
+                          'GHL - reunion agendada', 'diagnostico de marca',
+                          'Reunion agendada por GHL para el 12-ago.'
+                   UNION ALL SELECT 'Shadde', 'Shadde', 'shaddet@hotmail.com',
+                          'GHL - reunion agendada', 'maquila',
+                          'Reunion agendada por GHL para el 18-ago.'
+                  ) v
+            WHERE NOT EXISTS (SELECT 1 FROM maquila_pipeline mp
+                               WHERE UPPER(TRIM(mp.empresa))=UPPER(TRIM(v.empresa)))""",
+    ]),
 ]
 
 

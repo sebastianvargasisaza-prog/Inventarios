@@ -84,6 +84,13 @@ def _scrub_webhook_payload(d: dict) -> dict:
 
 
 # ─── Pagina /comercial ────────────────────────────────────────────────────
+def _hoy_fecha():
+    """Hoy en Colombia como date. El servidor corre en UTC: de noche ya es manana aca
+    y la cuenta de dias saldria uno de mas (M24)."""
+    from datetime import datetime as _dt, timedelta as _td
+    return (_dt.utcnow() - _td(hours=5)).date()
+
+
 def _hoy_col():
     """Hoy en Colombia. El servidor corre en UTC: de noche `date.today()` ya es manana aca y
     desfasa contra todo lo que se lee anclado a -5h (M24)."""
@@ -439,6 +446,64 @@ def leads_correo_descartar_remitente():
                               'Se puede deshacer.' % correo) if recordado else None})
 
 
+@bp.route('/api/comercial/leads-correo/reanalizar', methods=['POST'])
+def leads_correo_reanalizar():
+    """Vuelve a leer el CRUDO que ya esta guardado, con el parseo de hoy.
+
+    Los primeros 40 correos entraron con la version anterior, que tomaba `Empresa: Por definir`
+    como razon social. El lector no los vuelve a traer -- deduplica por Message-ID, que es
+    correcto -- asi que quedarian con el analisis viejo para siempre.
+
+    Por eso se guarda el cuerpo: **lo que se puede volver a leer no hay que volver a pedirlo**. No
+    toca el buzon ni la red.
+
+    Solo re-analiza lo que NO se decidio todavia: si alguien ya lo mando al pipeline o lo
+    descarto, hubo una decision de una persona y no se pisa.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if not _pipeline_puede(user):
+        return jsonify({'error': 'Pipeline comercial · sin acceso',
+                        'codigo': 'PIPELINE_PRIVADO'}), 403
+    try:
+        from leads_correo import parsear as _parsear
+    except Exception as e:
+        return jsonify({'error': 'no pude cargar el lector: %s' % e}), 500
+    conn = get_db()
+    c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, asunto, COALESCE(cuerpo,''), remitente, empresa "
+        "  FROM leads_correo "
+        " WHERE pipeline_id IS NULL AND COALESCE(descartado,0)=0").fetchall()
+    cambiados = []
+    for (lid, asunto, cuerpo, remitente, empresa_antes) in rows:
+        d = _parsear(asunto or '', cuerpo or '', remitente or '')
+        c.execute("UPDATE leads_correo SET empresa=?, contacto=?, telefono=?, email_contacto=?, "
+                  "       producto=?, empresa_inferida=?, tipo=?, reunion_at=? "
+                  " WHERE id=? AND pipeline_id IS NULL AND COALESCE(descartado,0)=0",
+                  (d['empresa'], d.get('contacto', ''), d.get('telefono', ''),
+                   d.get('email_form') or '', d.get('producto', ''),
+                   1 if d.get('empresa_inferida') else 0,
+                   d.get('tipo', 'formulario'), d.get('reunion_at', ''), lid))
+        if c.rowcount and (empresa_antes or '') != d['empresa']:
+            cambiados.append({'id': lid, 'antes': empresa_antes, 'ahora': d['empresa']})
+    if cambiados:
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=user, accion='LEADS_REANALIZAR', tabla='leads_correo',
+                registro_id=str(cambiados[0]['id']), antes={}, despues={'n': len(cambiados)},
+                detalle='%d correo(s) releidos con el parseo de hoy' % len(cambiados))
+        except Exception as e:
+            log.warning('reanalizar: no pude auditar: %s', e)
+    conn.commit()
+    return jsonify({'ok': True, 'revisados': len(rows), 'cambiados': cambiados[:40],
+                    'n_cambiados': len(cambiados),
+                    'aviso': ('Se releyo el cuerpo que ya estaba guardado · no se toco el buzon. '
+                              'Lo que ya se decidio (mandado al pipeline o descartado) no se '
+                              'toca: ahi hubo una decision de una persona.')})
+
+
 @bp.route('/api/comercial/leads-correo/ignorados', methods=['GET', 'DELETE'])
 def leads_correo_ignorados():
     """Los remitentes que entran ya descartados · y como sacar a uno de la lista.
@@ -640,6 +705,22 @@ def maquila_progresion():
     for r in c.execute('SELECT ' + cols + ' FROM maquila_pipeline ORDER BY id').fetchall():
         d = dict(zip([x.strip() for x in cols.split(',')], r))
         p = _progresion_de(d)
+        # ⚠ El numero que faltaba. Sebastián lo dejó escrito en el calendario sobre un cliente
+        # real: *"un lead del 25 de junio que estuvo 37 días sin respuesta de nuestra parte"*. Eso
+        # no lo ve nadie mirando una tarjeta: se ve mirando la COLUMNA. Se mide desde el último
+        # movimiento -- y si nunca hubo, desde que entró, que es el caso que más duele.
+        _ref = (d.get('actualizado_en') or d.get('creado_en') or '')[:10]
+        d['dias_sin_movimiento'] = None
+        try:
+            if _ref:
+                from datetime import date as _dd
+                _a, _m, _di = (int(x) for x in _ref.split('-')[:3])
+                d['dias_sin_movimiento'] = (_hoy_fecha() - _dd(_a, _m, _di)).days
+        except Exception:
+            d['dias_sin_movimiento'] = None
+        # No aplica a lo cerrado: un cliente ganado o perdido no "espera respuesta".
+        if p.get('cerrado') or p['stage'] == 'perdido':
+            d['dias_sin_movimiento'] = None
         d['progresion'] = p
         if p['oficial']:
             oficiales += 1
@@ -651,7 +732,12 @@ def maquila_progresion():
             {'etapa': e, 'hito': h, 'que_significa': q} for e, h, q in PROGRESION],
         'etapa_oficial': ETAPA_OFICIAL,
         'resumen': {'total': len(out), 'oficiales': oficiales,
-                    'esperando_algo': trabados},
+                    'esperando_algo': trabados,
+                    # Lo que se pregunta al abrir la pantalla: de quien me estoy olvidando.
+                    'sin_movimiento_7d': len([x for x in out
+                                              if (x.get('dias_sin_movimiento') or 0) > 7]),
+                    'sin_movimiento_30d': len([x for x in out
+                                               if (x.get('dias_sin_movimiento') or 0) > 30])},
     })
 
 
