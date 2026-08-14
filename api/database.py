@@ -11388,6 +11388,37 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_leadsignora_correo "
         "ON leads_remitentes_ignorados(correo)",
     ]),
+    (428, "produccion_envase_reparto · Catalina reparte el lote entre frascos · 13-ago-2026", [
+        # Sebastian: *"no alcanza el envase habitual, entonces 70 unidades van en este envase y 30
+        # en este otro, y esto se va a reflejar en el calendario"*.
+        #
+        # Hasta hoy solo existia `produccion_programada.envase_codigo_override`: UN envase para
+        # todo el lote. Alcanza cuando se cambia el frasco entero, no cuando hay que PARTIRLO --
+        # que es justo el caso que aparece cuando el stock no da.
+        #
+        # Es una DECISION, con el mismo peso que lo que el usuario fija en el calendario: ningun
+        # proceso automatico la pisa. Y una sola decision alimenta a los TRES consumidores (lo que
+        # se compra, lo que se descuenta del kardex y lo que el operario alista), porque escribirla
+        # en un solo lado es como se termina comprando una cosa y descontando otra (M55).
+        """CREATE TABLE IF NOT EXISTS produccion_envase_reparto (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            produccion_id INTEGER NOT NULL,
+            envase_codigo TEXT NOT NULL,
+            unidades REAL NOT NULL DEFAULT 0,
+            volumen_ml REAL DEFAULT 0,
+            tapa_codigo TEXT DEFAULT '',
+            caja_codigo TEXT DEFAULT '',
+            etiqueta_codigo TEXT DEFAULT '',
+            orden INTEGER NOT NULL DEFAULT 0,
+            motivo TEXT DEFAULT '',
+            decidido_por TEXT DEFAULT '',
+            decidido_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        # El nombre lleva la tabla adelante: los nombres de indice son GLOBALES y uno repetido es
+        # un indice que NO se crea, en silencio (M122).
+        "CREATE INDEX IF NOT EXISTS idx_prodenvreparto_prod "
+        "ON produccion_envase_reparto(produccion_id)",
+    ]),
 ]
 
 

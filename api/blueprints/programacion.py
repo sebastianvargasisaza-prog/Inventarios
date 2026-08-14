@@ -11599,6 +11599,41 @@ def _unidades_por_presentacion(pres, ventas_sku, ventas_por_volumen):
     return {p['cod']: 1.0 for p in pres}
 
 
+def _hoy_col_dt():
+    """El ahora de Colombia. El servidor corre en UTC: de noche ya es manana aca y
+    desfasa contra todo lo que se lee anclado a -5h (M24)."""
+    from datetime import datetime as _dt, timedelta as _td
+    return (_dt.utcnow() - _td(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def _reparto_envases_decidido(c, evento_id):
+    """El reparto que Catalina DECIDIO para este lote, o None si no decidio nada.
+
+    Sebastián: *"no alcanza el envase habitual, entonces 70 unidades van en este envase y 30 en
+    este otro"*. Hasta hoy sólo existía un override de UN envase para todo el lote, que sirve para
+    cambiar el frasco entero pero no para partirlo -- que es justo lo que pasa cuando el stock no
+    da.
+
+    Es una DECISIÓN, con el mismo peso que lo que el usuario fija en el calendario: ningún proceso
+    automático la pisa.
+    """
+    try:
+        rows = c.execute(
+            "SELECT UPPER(TRIM(envase_codigo)), COALESCE(unidades,0), COALESCE(volumen_ml,0), "
+            "       COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), COALESCE(etiqueta_codigo,''), "
+            "       COALESCE(motivo,'') "
+            "  FROM produccion_envase_reparto WHERE produccion_id=? ORDER BY orden, id",
+            (evento_id,)).fetchall()
+    except Exception as e:
+        log.warning('reparto de envases: no pude leerlo (lote %s): %s', evento_id, e)
+        return None
+    if not rows:
+        return None
+    return [{'envase_codigo': r[0], 'unidades': float(r[1] or 0), 'volumen_ml': float(r[2] or 0),
+             'tapa_codigo': r[3], 'caja_codigo': r[4], 'etiqueta_codigo': r[5], 'motivo': r[6]}
+            for r in rows if r[0] and float(r[1] or 0) > 0]
+
+
 def _composicion_envases_lote(c, evento_id):
     """Composición de envases (variantes) de un lote · helper reusable por
     composicion-mee y por la preparación de envases. Devuelve dict o None
@@ -11868,7 +11903,32 @@ def _composicion_envases_lote(c, evento_id):
     # M73: la cola de serigrafía y la compra deben honrar el frasco que Compras fijó por lote,
     # no el default de la presentación. Para 1 presentación es exacto; para multi va al tamaño
     # dominante (el modal deja elegir UN envase). La descripción se resuelve del maestro.
-    if _env_override_lote and variantes_out:
+    # ⚠ La DECISIÓN de Catalina manda sobre todo lo automático. Va acá, antes del override de un
+    # solo envase, porque repartir entre varios es la forma general y el override es el caso de
+    # uno solo. Reemplaza las variantes: así la MISMA decisión llega a los tres consumidores que
+    # leen este helper -- lo que se compra, lo que se descuenta y lo que el operario alista --
+    # sin que nadie la vuelva a teclear (M55: comprar una cosa y descontar otra empieza cuando la
+    # decisión se escribe en un solo lado).
+    _dec = _reparto_envases_decidido(c, evento_id)
+    if _dec:
+        _base = (variantes_out[0] if variantes_out else {})
+        variantes_out = []
+        for _i, _d in enumerate(_dec):
+            _v = dict(_base)
+            _v.update({
+                'envase_codigo': _d['envase_codigo'],
+                'envase_descripcion': mee_descs.get(_d['envase_codigo'], _d['envase_codigo']),
+                'unidades_estimadas': _d['unidades'],
+                'volumen_ml': _d['volumen_ml'] or _base.get('volumen_ml', 0),
+                'decidido': True,
+                'motivo_decision': _d['motivo'],
+            })
+            for _k, _c2 in (('tapa_codigo', 'tapa_codigo'), ('caja_codigo', 'caja_codigo'),
+                            ('etiqueta_codigo', 'etiqueta_codigo')):
+                if _d.get(_c2):
+                    _v[_k] = _d[_c2]
+            variantes_out.append(_v)
+    if not _dec and _env_override_lote and variantes_out:
         _dom = max(variantes_out, key=lambda x: float(x.get('unidades_estimadas') or 0))
         if (_dom.get('envase_codigo') or '').strip().upper() != _env_override_lote:
             _dom['envase_codigo'] = _env_override_lote
@@ -11882,6 +11942,9 @@ def _composicion_envases_lote(c, evento_id):
         'tiene_fija': hay_fija,
         'tiene_override': bool(fija_override),
         'envase_override_lote': _env_override_lote,
+        # Se DECLARA que el reparto salió de una decisión y no del cálculo: quien mire el número
+        # tiene que poder distinguirlo (M124).
+        'reparto_decidido': bool(_dec),
         'sin_variantes': False,
     }
 
@@ -18227,6 +18290,161 @@ def mee_traer_tonos_shopify():
     return jsonify({'ok': True,
                     'mensaje': ('Le pedi el catalogo a Shopify. Tarda hasta un minuto: recarga la '
                                 'pantalla y volve a intentar abrir las filas por tono.')}), 202
+
+
+@bp.route('/api/planta/produccion/<int:pid>/reparto-envases', methods=['GET'])
+def reparto_envases_ver(pid):
+    """Con que frascos se va a envasar este lote · lo automatico y lo decidido."""
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    c = get_db().cursor()
+    comp = _composicion_envases_lote(c, pid)
+    if not comp:
+        return jsonify({'error': 'ese lote no existe'}), 404
+    dec = _reparto_envases_decidido(c, pid)
+    total = sum(float(v.get('unidades_estimadas') or 0) for v in (comp.get('variantes') or []))
+    # Lo que HAY de cada frasco, para que la decision no se tome a ciegas: el caso que la origina
+    # es justamente "no alcanza el habitual".
+    stock = {}
+    try:
+        stock = _get_mee_stock(get_db())
+    except Exception as e:
+        log.warning('reparto-envases: no pude leer el stock de envases: %s', e)
+    for v in (comp.get('variantes') or []):
+        _k = (v.get('envase_codigo') or '').strip().upper()
+        v['hay_en_bodega'] = float(stock.get(_k, 0) or 0) if _k else 0
+    return jsonify({
+        'ok': True, 'produccion_id': pid, 'producto': comp.get('producto'),
+        'cantidad_kg': comp.get('cantidad_kg'),
+        'unidades_totales': round(total, 2),
+        'reparto_decidido': bool(dec),
+        'variantes': comp.get('variantes') or [],
+        'decision': dec or [],
+        'aviso': ('Este reparto lo decidio una persona: ningun proceso automatico lo cambia.'
+                  if dec else
+                  'Reparto calculado por ventas. Si el frasco habitual no alcanza, se puede '
+                  'repartir entre varios y esa decision manda.'),
+    })
+
+
+@bp.route('/api/planta/produccion/<int:pid>/reparto-envases', methods=['POST'])
+def reparto_envases_guardar(pid):
+    """Catalina fija con que frascos se envasa el lote · 70 en uno, 30 en otro.
+
+    Body: {reparto: [{envase_codigo, unidades, tapa_codigo?, caja_codigo?, etiqueta_codigo?}],
+           motivo?, tolerancia_uds?}
+
+    El reparto tiene que CERRAR contra las unidades del lote. Un reparto que no cuadra es peor
+    que ninguno: se ve resuelto, y con eso se compra y se descuenta, asi que faltarian o
+    sobrarian frascos sin que nadie se entere hasta el piso (M155).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    filas = d.get('reparto')
+    if not isinstance(filas, list):
+        return jsonify({'error': 'falta el reparto'}), 400
+    conn = get_db()
+    c = conn.cursor()
+    comp = _composicion_envases_lote(c, pid)
+    if not comp:
+        return jsonify({'error': 'ese lote no existe'}), 404
+
+    # Un lote YA descontado no se re-reparte: el kardex salio con los frascos viejos y cambiar la
+    # decision despues no devuelve nada, dejaria la compra apuntando a un frasco y el kardex a
+    # otro. Se dice, no se hace en silencio.
+    try:
+        _ej = c.execute("SELECT COALESCE(inventario_descontado_at,'') "
+                        "  FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+        if _ej and (_ej[0] or '').strip():
+            return jsonify({'error': 'este lote ya desconto sus envases del kardex',
+                            'codigo': 'YA_DESCONTADO',
+                            'como': 'para cambiarlo hay que revertir el descuento primero'}), 409
+    except Exception as e:
+        log.warning('reparto-envases: no pude verificar si ya desconto: %s', e)
+
+    limpio, vistos = [], set()
+    for i, f in enumerate(filas):
+        cod = str((f or {}).get('envase_codigo') or '').strip().upper()
+        try:
+            uds = float((f or {}).get('unidades') or 0)
+        except (TypeError, ValueError):
+            uds = 0
+        if not cod or uds <= 0:
+            continue
+        if cod in vistos:
+            return jsonify({'error': 'el envase ' + cod + ' esta dos veces en el reparto',
+                            'codigo': 'ENVASE_REPETIDO'}), 400
+        vistos.add(cod)
+        # Un codigo que no existe en el maestro no se puede comprar ni descontar: la decision
+        # quedaria apuntando al vacio y nadie lo veria hasta que falte el frasco.
+        for _campo in ('envase_codigo', 'tapa_codigo', 'caja_codigo'):
+            _val = (cod if _campo == 'envase_codigo'
+                    else str((f or {}).get(_campo) or '').strip().upper())
+            if not _val:
+                continue
+            if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?",
+                             (_val,)).fetchone():
+                return jsonify({'error': _campo + ' ' + _val + ' no existe en el maestro',
+                                'codigo': 'CODIGO_INEXISTENTE'}), 400
+        limpio.append({
+            'cod': cod, 'uds': uds, 'orden': i,
+            'vol': float((f or {}).get('volumen_ml') or 0),
+            'tapa': str((f or {}).get('tapa_codigo') or '').strip().upper(),
+            'caja': str((f or {}).get('caja_codigo') or '').strip().upper(),
+            'etiqueta': str((f or {}).get('etiqueta_codigo') or '').strip().upper(),
+        })
+
+    antes = _reparto_envases_decidido(c, pid) or []
+    if not limpio:
+        # Quitar el reparto es volver a lo automatico · es legitimo y se audita.
+        c.execute("DELETE FROM produccion_envase_reparto WHERE produccion_id=?", (pid,))
+        audit_log(c, usuario=u, accion='REPARTO_ENVASES_QUITAR',
+                  tabla='produccion_envase_reparto', registro_id=str(pid),
+                  antes={'reparto': antes}, despues={},
+                  detalle='vuelve al reparto calculado por ventas')
+        conn.commit()
+        return jsonify({'ok': True, 'reparto': [], 'volvio_a_automatico': True})
+
+    total_lote = sum(float(v.get('unidades_estimadas') or 0)
+                     for v in (comp.get('variantes') or []))
+    suma = sum(x['uds'] for x in limpio)
+    try:
+        tol = float(d.get('tolerancia_uds') or 0)
+    except (TypeError, ValueError):
+        tol = 0
+    tol = max(tol, max(1.0, total_lote * 0.02))     # 2% o 1 unidad, lo que sea mayor
+    if total_lote > 0 and abs(suma - total_lote) > tol:
+        return jsonify({
+            'error': 'el reparto no cierra', 'codigo': 'NO_CIERRA',
+            'reparte': round(suma, 2), 'lote_rinde': round(total_lote, 2),
+            'diferencia': round(suma - total_lote, 2), 'tolerancia': round(tol, 2),
+            'como': ('un reparto que no cuadra se ve resuelto y con eso se compra y se descuenta: '
+                     'faltarian o sobrarian frascos sin que nadie se entere hasta el piso'),
+        }), 422
+
+    motivo = str(d.get('motivo') or '').strip()[:200]
+    c.execute("DELETE FROM produccion_envase_reparto WHERE produccion_id=?", (pid,))
+    for x in limpio:
+        c.execute("INSERT INTO produccion_envase_reparto "
+                  " (produccion_id, envase_codigo, unidades, volumen_ml, tapa_codigo, "
+                  "  caja_codigo, etiqueta_codigo, orden, motivo, decidido_por, decidido_en) "
+                  " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                  (pid, x['cod'], x['uds'], x['vol'], x['tapa'], x['caja'], x['etiqueta'],
+                   x['orden'], motivo, u, _hoy_col_dt()))
+    audit_log(c, usuario=u, accion='REPARTO_ENVASES_FIJAR',
+              tabla='produccion_envase_reparto', registro_id=str(pid),
+              antes={'reparto': antes},
+              despues={'reparto': [{'envase': x['cod'], 'uds': x['uds']} for x in limpio]},
+              detalle=motivo or 'reparto del lote entre frascos')
+    conn.commit()
+    return jsonify({'ok': True, 'produccion_id': pid,
+                    'reparto': [{'envase_codigo': x['cod'], 'unidades': x['uds']}
+                                for x in limpio],
+                    'suma': round(suma, 2), 'lote_rinde': round(total_lote, 2),
+                    'aviso': ('Queda fijado: ningun proceso automatico lo cambia, y es lo que se '
+                              'compra, lo que se descuenta y lo que el operario alista.')})
 
 
 @bp.route('/api/mee/expandir-tonos', methods=['GET'])

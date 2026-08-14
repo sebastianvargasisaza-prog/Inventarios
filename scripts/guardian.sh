@@ -137,6 +137,7 @@ CORAZON=(
   "tests/test_reparto_por_tono.py"
   "tests/test_presentacion_volumen_clonado.py"
   "tests/test_cola_marcacion_agrupa.py"
+  "tests/test_reparto_envases_lote.py"
   "tests/test_alta_cliente_maquila.py"
   "tests/test_progresion_cliente.py"
   "tests/test_leads_correo.py"
