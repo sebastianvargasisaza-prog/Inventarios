@@ -114,6 +114,8 @@ CORAZON=(
   "tests/test_instructivos_completos.py"
   "tests/test_instructivo_por_fase.py"
   "tests/test_deuda_diseno_no_crece.py"
+  "tests/test_portal_facturas_pagos.py"
+  "tests/test_login_premium.py"
   "tests/test_envasado_lista_premium.py"
   "tests/test_despeje_orden_mybatch.py"
   "tests/test_diag_envases_partes.py"
