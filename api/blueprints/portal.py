@@ -2428,7 +2428,7 @@ def portal_crear_pqr():
                 tipo=f'portal_pqr_{tipo}',
                 titulo=f'{emoji} PQR · {tipo} · {cnom}',
                 body=f'{titulo[:80]} · click para ver',
-                link='/admin?tab=portal_pqr',
+                link='/admin/portal-mensajes',
                 remitente=f'portal:{email}',
                 importante=es_importante,
             )
@@ -2483,7 +2483,7 @@ def admin_portal_pqr_lista():
       ?tipo=peticion|queja|reclamo|sugerencia
       ?cliente_id=XXX
     """
-    u, err = _require_admin_backoffice()
+    u, err = _require_pqr()
     if err:
         return err
     estado = (request.args.get('estado') or '').strip().lower()
@@ -2527,7 +2527,7 @@ def admin_portal_pqr_responder(pqr_id):
 
     Body: {estado?, respuesta?}
     """
-    u, err = _require_admin_backoffice()
+    u, err = _require_pqr()
     if err:
         return err
     body = request.get_json(silent=True) or {}
@@ -3071,7 +3071,7 @@ def portal_crear_solicitud():
         for _d in ('luz', 'sebastian'):
             _pn(destinatario=_d, tipo='portal_solicitud_nueva',
                 titulo=f'{_lbl} · {cnom}', body=_body,
-                link='/admin/portal-rfq', remitente=f'portal:{email}', importante=True)
+                link='/admin/portal-mensajes', remitente=f'portal:{email}', importante=True)
     except Exception:
         pass
     return jsonify({
@@ -3387,6 +3387,19 @@ def portal_badge_cliente():
 
 @bp.route('/admin/portal-rfq', methods=['GET'])
 def admin_portal_rfq_pagina():
+    """14-ago-2026 · la bandeja de solicitudes se fundió con la de PQR en
+    /admin/portal-mensajes (el cliente escribe desde un solo lugar, se lee desde uno
+    solo). La ruta se conserva REDIRIGIENDO porque está enlazada en avisos viejos y
+    en marcadores: una URL enlazada que empieza a dar 404 no explica nada (M120)."""
+    return redirect('/admin/portal-mensajes')
+
+
+@bp.route('/admin/portal-rfq-old', methods=['GET'])
+def admin_portal_rfq_pagina_vieja():
+    """La bandeja VIEJA de solicitudes · queda accesible por si hay que comparar.
+
+    Se le dio URL propia en vez de dejarla como función sin llamador: una función que
+    nadie puede ejecutar se ve viva en el código y no existe para nadie (M112)."""
     """Página HTML admin para gestionar cotizaciones/muestras/ficha técnica.
 
     Sebastián 25-may-2026 · Fase 3 paso 1 · bloqueador del flujo RFQ.
@@ -4541,6 +4554,7 @@ select,input,textarea{padding:9px 11px;border:1px solid var(--cx-border, #e6e6ea
 <div class="wrap">
   <div class="top">
     <h1>Pagos del portal</h1>
+    <a class="volver" href="/admin/portal-mensajes">Mensajes</a>
     <a class="volver" href="/admin/clientes-b2b">Clientes B2B</a>
     <a class="volver" href="/modulos">Volver</a>
   </div>
@@ -4748,3 +4762,379 @@ def admin_portal_pagos_pagina():
         return Response('<p style="font-family:sans-serif;padding:40px">Esta pantalla es de '
                         'administración y contabilidad.</p>', status=403, mimetype='text/html')
     return Response(_PORTAL_PAGOS_HTML, mimetype='text/html')
+# ══════════════════════════════════════════════════════════════════════
+# La bandeja donde se RESPONDE lo que el cliente escribe (14-ago-2026)
+#
+# Hasta hoy no existía: los endpoints para responder un PQR estaban desde
+# mayo, la campana avisaba con un enlace a `/admin?tab=portal_pqr` y el cron
+# de plazos con otro a `/admin/portal/pqr` · NINGUNA de las dos rutas existe.
+# O sea que un reclamo formal (registro regulado, con plazo) sólo se podía
+# responder por API. Es M121 en su forma más cara: construido, avisado, y sin
+# una pantalla por donde entrar.
+#
+# El cliente ahora escribe desde UN solo lugar, así que acá se lee igual: los
+# PQR formales y lo comercial en la misma cola, ordenados por lo que urge.
+# ══════════════════════════════════════════════════════════════════════
+
+def _CALIDAD():
+    try:
+        from config import CALIDAD_USERS as _CU
+        return set(_CU)
+    except Exception:
+        return set()
+
+
+def _COMPRAS():
+    try:
+        from config import COMPRAS_ACCESS as _CA
+        return set(_CA)
+    except Exception:
+        return set()
+
+
+def _require_pqr():
+    """Un PQR es un registro REGULADO y su dueño es CALIDAD, no sólo el admin.
+
+    Estaba gateado a ADMIN_USERS: Calidad recibía la campana del reclamo y al
+    entrar le daba 403, que es justo el hueco de M32 (dividir un cargo y dejar
+    al dueño del módulo sin escritura sobre lo suyo).
+    """
+    u = session.get('compras_user', '')
+    if not u:
+        return None, (jsonify({'error': 'No autenticado'}), 401)
+    if u not in (ADMIN_USERS | _CALIDAD()):
+        return None, (jsonify({'error': 'Solo admin o calidad'}), 403)
+    return u, None
+
+
+@bp.route('/admin/portal-mensajes', methods=['GET'])
+def admin_portal_mensajes_pagina():
+    u = session.get('compras_user', '')
+    if not u:
+        return redirect('/login?next=/admin/portal-mensajes')
+    if u not in (ADMIN_USERS | _CALIDAD() | _COMPRAS()):
+        return Response('<p style="font-family:sans-serif;padding:40px">Esta bandeja es de '
+                        'administración, calidad y compras.</p>', status=403, mimetype='text/html')
+    return Response(_PORTAL_MENSAJES_HTML, mimetype='text/html')
+
+
+_PORTAL_MENSAJES_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mensajes de clientes · EOS</title>
+<script>(function(){try{var t=localStorage.getItem('cx-theme');if(t==='dark'){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}})();</script>
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+     background:var(--cx-bg, #f4f4f7);color:var(--cx-text, #18181b);font-size:14px}
+.wrap{max-width:1120px;margin:0 auto;padding:22px 18px 60px}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:24px;font-weight:800;letter-spacing:-.6px}
+.sub{font-size:13px;color:var(--cx-text-mute, #6b6b74);margin:4px 0 18px}
+.volver{margin-left:auto;text-decoration:none;font-size:12.5px;font-weight:700;
+        color:var(--cx-text-soft, #3f3f46);border:1px solid var(--cx-border, #e6e6ea);
+        background:var(--cx-card, #fff);border-radius:10px;padding:8px 13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e6e6ea);
+     border-radius:12px;padding:14px 16px}
+.kpi .k{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;
+        color:var(--cx-text-mute, #6b6b74)}
+.kpi .v{font-size:23px;font-weight:800;letter-spacing:-.6px;margin-top:4px}
+.kpi.alerta .v{color:var(--cx-danger-text, #b91c1c)}
+.filtros{display:flex;gap:7px;margin-bottom:16px;flex-wrap:wrap}
+.fb{padding:9px 15px;border-radius:10px;border:1px solid var(--cx-border, #e6e6ea);
+    background:var(--cx-card, #fff);color:var(--cx-text-mute, #6b6b74);font-size:13px;
+    font-weight:700;cursor:pointer;font-family:inherit}
+.fb.on{background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9));color:#fff;
+       border-color:transparent;box-shadow:0 6px 16px rgba(109,40,217,.26)}
+.msj{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e6e6ea);
+     border-radius:14px;padding:16px 18px;margin-bottom:11px;position:relative;overflow:hidden}
+.msj::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+             background:var(--cx-border, #e6e6ea)}
+.msj.urge::before{background:var(--cx-danger, #dc2626)}
+.msj.espera::before{background:var(--cx-warn, #f59e0b)}
+.msj.hecho::before{background:var(--cx-success, #15803d)}
+.msj-top{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.msj-tit{font-size:15px;font-weight:800;letter-spacing:-.2px}
+.msj-cli{font-size:12px;color:var(--cx-text-mute, #6b6b74);margin-top:2px}
+.msj-edad{margin-left:auto;text-align:right;white-space:nowrap}
+.msj-edad .d{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+.msj-edad .l{font-size:10px;color:var(--cx-text-mute, #6b6b74);text-transform:uppercase;letter-spacing:.6px}
+.msj-txt{font-size:13px;color:var(--cx-text-soft, #3f3f46);margin-top:9px;white-space:pre-wrap;
+         word-break:break-word;line-height:1.5}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;
+      font-size:11px;font-weight:800}
+.chip.rojo{background:var(--cx-danger-pale, #fef2f2);color:var(--cx-danger-text, #b91c1c)}
+.chip.ambar{background:var(--cx-warn-pale, #fffbeb);color:var(--cx-warn-text, #b45309)}
+.chip.verde{background:var(--cx-success-pale, #f0fdf4);color:var(--cx-success-text, #15803d)}
+.chip.violeta{background:var(--cx-primary-pale, #f5f3ff);color:var(--cx-primary-text, #6d28d9)}
+.chip.gris{background:var(--cx-border-soft, #f1f1f4);color:var(--cx-text-mute, #6b6b74)}
+.resp{margin-top:10px;padding:11px 13px;border-radius:10px;
+      background:var(--cx-primary-pale, #f5f3ff);border-left:3px solid var(--cx-primary-light, #a78bfa);
+      font-size:13px;color:var(--cx-text, #18181b);white-space:pre-wrap;line-height:1.5}
+.resp b{color:var(--cx-primary-text, #6d28d9);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+.acc{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+.btn{background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9));color:#fff;border:none;
+     border-radius:9px;padding:9px 15px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sec{background:var(--cx-card, #fff);color:var(--cx-text-soft, #3f3f46);
+         border:1px solid var(--cx-border, #e6e6ea)}
+.vacio{padding:36px;text-align:center;color:var(--cx-text-mute, #6b6b74);
+       background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e6e6ea);border-radius:14px}
+.aviso{padding:11px 14px;border-radius:10px;font-size:12.5px;margin-bottom:14px;
+       background:var(--cx-warn-pale, #fffbeb);color:var(--cx-warn-text, #b45309);
+       border-left:3px solid var(--cx-warn, #f59e0b);display:none}
+.aviso.on{display:block}
+.ov{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:60;padding:18px;
+    display:none;align-items:center;justify-content:center}
+.ov.on{display:flex}
+.mo{background:var(--cx-card, #fff);border-radius:16px;padding:22px;width:100%;max-width:540px;
+    max-height:90vh;overflow:auto}
+.mo h2{font-size:17px;font-weight:800}
+.mo .ctx{font-size:12.5px;color:var(--cx-text-mute, #6b6b74);margin-top:4px}
+.mo .orig{margin-top:12px;padding:11px 13px;border-radius:10px;background:var(--cx-bg-alt, #fbfbfd);
+          font-size:13px;white-space:pre-wrap;line-height:1.5;max-height:180px;overflow:auto}
+label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;
+      color:var(--cx-text-mute, #6b6b74);margin:14px 0 5px}
+textarea,select{width:100%;padding:11px 13px;border:1px solid var(--cx-border, #e6e6ea);
+       border-radius:10px;background:var(--cx-bg-alt, #fbfbfd);color:var(--cx-text, #18181b);
+       font-family:inherit;font-size:14px;outline:none}
+textarea:focus,select:focus{border-color:var(--cx-primary-light, #a78bfa);
+       box-shadow:0 0 0 3px var(--cx-primary-pale, #f5f3ff)}
+.msg{margin-top:12px;padding:10px 13px;border-radius:9px;font-size:13px;display:none}
+.msg.ok{display:block;background:var(--cx-success-pale, #f0fdf4);color:var(--cx-success-text, #15803d)}
+.msg.err{display:block;background:var(--cx-danger-pale, #fef2f2);color:var(--cx-danger-text, #b91c1c)}
+</style></head><body>
+<div class="wrap">
+  <div class="top">
+    <h1>Mensajes de clientes</h1>
+    <a class="volver" href="/admin/portal-pagos">Pagos del portal</a>
+    <a class="volver" href="/admin/clientes-b2b">Clientes B2B</a>
+    <a class="volver" href="/modulos">Volver</a>
+  </div>
+  <div class="sub">Todo lo que los clientes escriben desde su portal, en una sola cola: los PQR formales (van al registro regulado que ve Calidad) y lo comercial. Ordenado por lo que lleva más tiempo esperando.</div>
+
+  <div class="aviso" id="aviso-parcial"></div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="filtros">
+    <button class="fb on" id="f-pendientes" onclick="filtrar('pendientes')">Sin responder</button>
+    <button class="fb" id="f-formales" onclick="filtrar('formales')">PQR formales</button>
+    <button class="fb" id="f-comercial" onclick="filtrar('comercial')">Comerciales</button>
+    <button class="fb" id="f-todo" onclick="filtrar('todo')">Todo</button>
+  </div>
+
+  <div id="lista"><div class="vacio">Cargando...</div></div>
+</div>
+
+<div class="ov" id="ov" onclick="if(event.target===this)cerrar()">
+  <div class="mo">
+    <h2 id="mo-tit">Responder</h2>
+    <div class="ctx" id="mo-ctx"></div>
+    <div class="orig" id="mo-orig"></div>
+    <div id="mo-estado-box">
+      <label for="mo-estado">Estado</label>
+      <select id="mo-estado">
+        <option value="respondido">Respondido</option>
+        <option value="en_revision">En revisión</option>
+        <option value="cerrado">Cerrado</option>
+      </select>
+    </div>
+    <label for="mo-texto">Respuesta (la lee el cliente en su portal)</label>
+    <textarea id="mo-texto" rows="5" placeholder="Contale qué encontramos y qué vamos a hacer."></textarea>
+    <div class="msg" id="mo-msg"></div>
+    <div class="acc">
+      <button class="btn" id="mo-btn" onclick="enviar()">Enviar respuesta</button>
+      <button class="btn sec" onclick="cerrar()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var _CSRF = '', _ITEMS = [], _FILTRO = 'pendientes', _ACTUAL = null;
+var _TIPO_LBL = {peticion:'Petición', queja:'Queja', reclamo:'Reclamo', sugerencia:'Sugerencia',
+                 nuevo_producto:'Producto nuevo', reunion:'Reunión', consulta:'Consulta',
+                 cotizacion:'Cotización', muestras:'Muestras', ficha_tecnica:'Ficha técnica'};
+var _EST_LBL = {abierto:'Sin responder', en_revision:'En revisión', respondido:'Respondido',
+                cerrado:'Cerrado', nueva:'Sin responder', respondida:'Respondida',
+                convertida:'Convertida en pedido', cerrada:'Cerrada', rechazada:'Rechazada'};
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function $(i){return document.getElementById(i);}
+async function csrf(){
+  if(_CSRF) return _CSRF;
+  try{ var d = await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+       _CSRF = d.csrf_token || ''; }catch(e){}
+  return _CSRF;
+}
+function dias(f){
+  if(!f) return 0;
+  var t = Date.parse(String(f).replace(' ', 'T'));
+  if(isNaN(t)) return 0;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+}
+function pendiente(m){
+  return m.formal ? (m.estado === 'abierto' || m.estado === 'en_revision')
+                  : (m.estado === 'nueva');
+}
+function urgente(m){
+  return m.formal && (m.tipo === 'reclamo' || m.tipo === 'queja') && pendiente(m);
+}
+
+async function cargar(){
+  var parciales = [];
+  var items = [];
+  try{
+    var r = await fetch('/api/admin/portal/pqr', {credentials:'same-origin'});
+    if(r.status === 403){
+      parciales.push('Los PQR formales los ve Calidad · acá estás viendo sólo lo comercial.');
+    } else {
+      var d = await r.json();
+      (d.items || []).forEach(function(p){
+        items.push({id:p.id, formal:true, tipo:p.tipo, titulo:p.titulo, texto:p.descripcion,
+                    cliente:p.cliente_nombre || p.cliente_id, email:p.email_cliente,
+                    estado:p.estado, respuesta:p.respuesta_admin, quien:p.respondido_por,
+                    fecha:p.creado_at_utc});
+      });
+    }
+  }catch(e){ parciales.push('No se pudieron traer los PQR formales.'); }
+  try{
+    var r2 = await fetch('/api/admin/portal/solicitudes', {credentials:'same-origin'});
+    if(r2.status === 403){
+      parciales.push('Lo comercial lo ve Compras · acá estás viendo sólo los PQR formales.');
+    } else {
+      var d2 = await r2.json();
+      (d2.items || []).forEach(function(s){
+        var pn = (s.producto_nombre || '').trim();
+        var tit = (_TIPO_LBL[s.tipo] || s.tipo) + (/[a-z0-9]/i.test(pn) ? (' · ' + pn) : '');
+        items.push({id:s.id, formal:false, tipo:s.tipo, titulo:tit, texto:s.mensaje,
+                    cliente:s.cliente_nombre || s.cliente_id, email:s.cliente_email,
+                    estado:s.estado, respuesta:s.respuesta_notas, quien:s.respondido_por,
+                    fecha:s.creada_at});
+      });
+    }
+  }catch(e){ parciales.push('No se pudo traer lo comercial.'); }
+
+  // Lo que NO se pudo traer se DICE · si no, la bandeja se lee como "no hay nada".
+  var av = $('aviso-parcial');
+  av.className = parciales.length ? 'aviso on' : 'aviso';
+  av.textContent = parciales.join(' ');
+
+  _ITEMS = items;
+  pintarKpis();
+  pintar();
+}
+
+function pintarKpis(){
+  var pend = _ITEMS.filter(pendiente);
+  var urg = _ITEMS.filter(urgente);
+  var viejo = pend.map(function(m){ return dias(m.fecha); }).sort(function(a,b){ return b-a; })[0];
+  $('kpis').innerHTML =
+      '<div class="kpi"><div class="k">Sin responder</div><div class="v">' + pend.length + '</div></div>'
+    + '<div class="kpi' + (urg.length ? ' alerta' : '') + '"><div class="k">Quejas y reclamos abiertos</div>'
+    +   '<div class="v">' + urg.length + '</div></div>'
+    + '<div class="kpi' + (viejo >= 5 ? ' alerta' : '') + '"><div class="k">El que más espera</div>'
+    +   '<div class="v">' + (pend.length ? (viejo + (viejo === 1 ? ' día' : ' días')) : '-') + '</div></div>';
+}
+
+function filtrar(f){
+  _FILTRO = f;
+  ['pendientes','formales','comercial','todo'].forEach(function(k){
+    $('f-' + k).classList.toggle('on', k === f);
+  });
+  pintar();
+}
+
+function pintar(){
+  var lista = _ITEMS.filter(function(m){
+    if(_FILTRO === 'pendientes') return pendiente(m);
+    if(_FILTRO === 'formales') return m.formal;
+    if(_FILTRO === 'comercial') return !m.formal;
+    return true;
+  });
+  // Primero lo que urge, después lo que lleva más tiempo esperando · un aviso que no
+  // envejece a la vista se vuelve ruido (M129).
+  lista.sort(function(a, b){
+    if(urgente(a) !== urgente(b)) return urgente(a) ? -1 : 1;
+    if(pendiente(a) !== pendiente(b)) return pendiente(a) ? -1 : 1;
+    return dias(b.fecha) - dias(a.fecha);
+  });
+  var box = $('lista');
+  if(!lista.length){
+    box.innerHTML = '<div class="vacio">No hay mensajes con este filtro.</div>';
+    return;
+  }
+  box.innerHTML = lista.map(function(m){
+    var d = dias(m.fecha);
+    var cls = urgente(m) ? 'urge' : (pendiente(m) ? 'espera' : 'hecho');
+    var chipTipo = m.formal
+      ? '<span class="chip ' + ((m.tipo === 'reclamo' || m.tipo === 'queja') ? 'rojo' : 'violeta') + '">'
+        + esc(_TIPO_LBL[m.tipo] || m.tipo) + '</span><span class="chip violeta">PQR formal</span>'
+      : '<span class="chip gris">' + esc(_TIPO_LBL[m.tipo] || m.tipo) + '</span>';
+    var chipEst = '<span class="chip ' + (pendiente(m) ? 'ambar' : 'verde') + '">'
+      + esc(_EST_LBL[m.estado] || m.estado) + '</span>';
+    return '<div class="msj ' + cls + '">'
+      + '<div class="msj-top"><div style="min-width:0">'
+      +   '<div class="msj-tit">' + esc(m.titulo || '(sin título)') + '</div>'
+      +   '<div class="msj-cli">' + esc(m.cliente) + (m.email ? ' · ' + esc(m.email) : '') + '</div>'
+      + '</div><div class="msj-edad"><div class="d">' + d + '</div>'
+      +   '<div class="l">' + (d === 1 ? 'día' : 'días') + '</div></div></div>'
+      + '<div class="chips">' + chipTipo + chipEst + '</div>'
+      + (m.texto ? '<div class="msj-txt">' + esc(m.texto) + '</div>' : '')
+      + (m.respuesta ? '<div class="resp"><b>Respondido por ' + esc(m.quien || 'EOS') + '</b><br>'
+                       + esc(m.respuesta) + '</div>' : '')
+      + '<div class="acc"><button class="btn" onclick="abrir(' + m.id + ',' + (m.formal ? 1 : 0) + ')">'
+      +   (m.respuesta ? 'Responder de nuevo' : 'Responder') + '</button></div>'
+      + '</div>';
+  }).join('');
+}
+
+function abrir(id, formal){
+  var m = _ITEMS.filter(function(x){ return x.id === id && x.formal === !!formal; })[0];
+  if(!m) return;
+  _ACTUAL = m;
+  $('mo-tit').textContent = m.formal ? 'Responder PQR formal' : 'Responder';
+  $('mo-ctx').textContent = m.cliente + ' · ' + (_TIPO_LBL[m.tipo] || m.tipo)
+    + ' · hace ' + dias(m.fecha) + (dias(m.fecha) === 1 ? ' día' : ' días');
+  $('mo-orig').textContent = (m.titulo ? m.titulo + '\n\n' : '') + (m.texto || '');
+  $('mo-estado-box').style.display = m.formal ? 'block' : 'none';
+  $('mo-texto').value = m.respuesta || '';
+  $('mo-msg').className = 'msg';
+  $('ov').classList.add('on');
+}
+function cerrar(){ $('ov').classList.remove('on'); _ACTUAL = null; }
+
+async function enviar(){
+  if(!_ACTUAL) return;
+  var texto = $('mo-texto').value.trim();
+  var btn = $('mo-btn'), msg = $('mo-msg');
+  if(texto.length < 5){
+    msg.className = 'msg err'; msg.textContent = 'Escribí la respuesta: el cliente la va a leer.'; return;
+  }
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  try{
+    var t = await csrf();
+    var url, cuerpo;
+    if(_ACTUAL.formal){
+      url = '/api/admin/portal/pqr/' + _ACTUAL.id;
+      cuerpo = {respuesta: texto, estado: $('mo-estado').value};
+    } else {
+      url = '/api/admin/portal/solicitudes/' + _ACTUAL.id;
+      cuerpo = {respuesta_notas: texto, estado: 'respondida'};
+    }
+    var r = await fetch(url, {method:'PATCH', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(cuerpo)});
+    var d = await r.json();
+    if(!r.ok){ msg.className = 'msg err'; msg.textContent = d.error || ('Error ' + r.status); return; }
+    cerrar();
+    cargar();
+  }catch(e){ msg.className = 'msg err'; msg.textContent = 'Error de red'; }
+  finally{ btn.disabled = false; btn.textContent = 'Enviar respuesta'; }
+}
+
+cargar();
+</script></body></html>
+"""

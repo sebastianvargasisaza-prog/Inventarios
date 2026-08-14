@@ -8154,10 +8154,24 @@ def test_golden_portal_rfq_cotizacion_flujo(app, db_clean):
                             headers=csrf_headers())
         assert r14.status_code == 404
 
-    # 15) Acceso admin RFQ HTML page
-    r15 = cs_admin.get('/admin/portal-rfq')
-    assert r15.status_code == 200
-    assert b'Cotizaciones B2B' in r15.data
+    # 15) Acceso admin a la pantalla donde se ATIENDE lo que el cliente pidió.
+    #
+    # 14-ago-2026 · la bandeja de solicitudes se fundió con la de PQR en
+    # /admin/portal-mensajes: el cliente escribe desde un solo lugar y el backoffice
+    # lo lee desde uno solo. La URL vieja quedó REDIRIGIENDO (está en avisos y
+    # marcadores · M120), así que este paso ya no puede exigir un 200 en el acto.
+    # Lo que protege el golden es la garantía, no la URL: que el admin llegue a una
+    # pantalla desde la que pueda responder. Se sigue el redirect y se verifica el
+    # destino, que además ahora incluye los PQR formales.
+    r15 = cs_admin.get('/admin/portal-rfq', follow_redirects=False)
+    assert r15.status_code in (301, 302), r15.status_code
+    assert '/admin/portal-mensajes' in r15.headers.get('Location', '')
+    r15b = cs_admin.get('/admin/portal-mensajes')
+    assert r15b.status_code == 200
+    assert b'Mensajes de clientes' in r15b.data
+    assert b'/api/admin/portal/solicitudes' in r15b.data, 'la bandeja perdió las solicitudes'
+    # y la pantalla vieja sigue existiendo con URL propia, por si hace falta comparar
+    assert cs_admin.get('/admin/portal-rfq-old').status_code == 200
 
     # Cleanup
     _exec("DELETE FROM portal_solicitudes WHERE producto_nombre LIKE 'TEST_RFQ_%'")

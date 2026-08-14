@@ -4594,7 +4594,7 @@ def job_pqr_sla_vencido(app):
                 destinatarios, 'pqr',
                 f'🚨 {len(rows)} PQR con SLA legal vencido',
                 body='\n'.join(partes),
-                link='/admin/portal/pqr',
+                link='/admin/portal-mensajes',
                 remitente='cron-pqr-sla',
                 importante=True,
             )
@@ -4642,7 +4642,7 @@ def job_auto_programar_sugeridas(app):
                         f'  · {c["producto"]} · {c["fecha"]} · {c["cantidad_kg"]}kg ({c["urgencia"]})'
                         for c in resultado.get('creados', [])[:15]
                     ),
-                    link='/admin/centro-mando',
+                    link='/hoy',
                     remitente='cron-auto-sugerir',
                 )
             except Exception:
@@ -4775,7 +4775,7 @@ def job_ocs_atrasadas(app):
                 list(destinatarios), 'oc_atrasada',
                 f'🚨 {len(atrasadas_a_notificar)} OC(s) sin recibir tras lead_time + {buffer_dias}d buffer',
                 body='\n'.join(partes),
-                link='/admin/compras?filtro=atrasadas',
+                link='/compras',
                 remitente='cron-ocs-atrasadas',
                 importante=True,
             )

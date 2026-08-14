@@ -11819,6 +11819,7 @@ def admin_clientes_b2b_pagina():
     <button class="btn btn-prim" onclick="abrirModalCliente()">+ Nuevo cliente</button>
     <button class="btn btn-sec" onclick="migrarMaquila()" title="Trae clientes que están en clientes_maquila (legacy) al maestro B2B">📦 Migrar desde Maquila</button>
     <a href="/admin/diag-flujo-abast" class="btn btn-link" style="text-decoration:none;line-height:1.4">📊 Abastecimiento</a>
+    <a href="/admin/portal-mensajes" class="btn btn-link" style="text-decoration:none;line-height:1.4">💬 Mensajes de clientes</a>
     <a href="/admin/portal-clientes" class="btn btn-link" style="text-decoration:none;line-height:1.4">🔑 Accesos al portal</a>
     <a href="/admin/portal-pagos" class="btn btn-link" style="text-decoration:none;line-height:1.4">💳 Pagos del portal</a>
     <a href="/" class="btn btn-link" style="text-decoration:none;line-height:1.4">← Dashboard</a>
