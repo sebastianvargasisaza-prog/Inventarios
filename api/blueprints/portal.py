@@ -1065,7 +1065,10 @@ async function cargarFacturas(forzar){
         + '</div></div>'
         + '<div class="der"><div class="plata ' + (f.saldo > 0.01 ? 'debe' : 'paga') + '">'
         +   plata(f.saldo > 0.01 ? f.saldo : f.total) + '</div>'
-        + '<div class="t2">' + (f.saldo > 0.01 ? 'saldo de ' + plata(f.total) : 'total') + '</div></div></div>';
+        + '<div class="t2">' + (f.saldo > 0.01 ? 'saldo de ' + plata(f.total) : 'total') + '</div>'
+        + '<a class="ghost" style="margin-top:8px;display:inline-flex" target="_blank" rel="noopener"'
+        +   ' href="/portal/factura/' + encodeURIComponent(f.numero) + '.pdf">Ver PDF</a>'
+        + '</div></div>';
     }).join('');
   }catch(e){
     box.innerHTML = '<div class="vacio">No pudimos traer tus facturas. Revisá la conexión.</div>';
@@ -3957,6 +3960,42 @@ def portal_facturas():
         'enlazado': True, 'como': como, 'facturas': out, 'total': len(out),
         'saldo_total': round(saldo_total, 2), 'vencido_total': round(vencido_total, 2),
     })
+
+
+@bp.route('/portal/factura/<numero>.pdf', methods=['GET'])
+def portal_factura_pdf(numero):
+    """La factura del cliente en PDF · es el MISMO documento que emite Contabilidad.
+
+    Gateado por PROPIEDAD: la factura tiene que estar a nombre de la cuenta enlazada
+    a este portal. Se delega en `_generar_pdf_bytes` en vez de armar otro PDF: dos
+    generadores del mismo documento divergen el día que se toque uno (M3).
+    """
+    auth = _require_portal_login()
+    if not auth:
+        return redirect('/portal/login')
+    cid, cnom, _email = auth
+    numero = (numero or '').strip()
+    conn = get_db()
+    ref, _como = _cliente_ref(conn, cid, cnom)
+    if not ref:
+        return Response('Todavía no tenemos tu portal enlazado con tu facturación',
+                        status=403, mimetype='text/plain')
+    fila = conn.execute("SELECT * FROM facturas WHERE numero=? AND cliente_id=?",
+                        (numero, ref)).fetchone()
+    if not fila:
+        return Response('Esa factura no figura a tu nombre', status=403, mimetype='text/plain')
+    try:
+        items = [dict(r) for r in conn.execute(
+            "SELECT * FROM facturas_items WHERE numero_factura=?", (numero,)).fetchall()]
+        from blueprints.contabilidad import _generar_pdf_bytes
+        pdf = _generar_pdf_bytes(dict(fila), items)
+    except Exception as e:
+        # Se dice que no se pudo · un 500 mudo se lee como "el botón no sirve" (M154).
+        log.warning('PDF de la factura %s no se pudo generar: %s', numero, e)
+        return Response('El PDF no está disponible en este momento. Escribinos por Mensajes '
+                        'y te lo mandamos.', status=503, mimetype='text/plain')
+    return Response(pdf, mimetype='application/pdf',
+                    headers={'Content-Disposition': 'inline; filename="%s.pdf"' % numero})
 
 
 @bp.route('/api/portal/pagos', methods=['GET', 'POST'])

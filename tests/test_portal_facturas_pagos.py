@@ -392,3 +392,26 @@ def test_ninguna_pantalla_del_portal_queda_tapada_por_otra_ruta(app, db_clean):
     repetidas = {u: n for u, n in cuenta.items() if n > 1
                  and ('portal' in u or 'clientes-b2b' in u)}
     assert not repetidas, 'URLs declaradas dos veces: %s' % repetidas
+
+
+def test_el_cliente_baja_su_factura_en_pdf_y_no_la_de_otro(app, db_clean):
+    """Es el MISMO documento que emite Contabilidad, gateado por propiedad."""
+    _limpiar()
+    ref1 = _exec("INSERT INTO clientes (codigo, nombre, activo) VALUES ('ZPF1','Cliente Uno',1)")
+    ref2 = _exec("INSERT INTO clientes (codigo, nombre, activo) VALUES ('ZPF2','Cliente Dos',1)")
+    _factura('ZPF-001', ref1, 500000)
+    _factura('ZPF-002', ref2, 900000)
+    _exec("INSERT INTO facturas_items (numero_factura, descripcion, cantidad, precio_unitario, "
+          "subtotal) VALUES ('ZPF-001','Serum niacinamida 30 ml',100,5000,500000)")
+    cli, _ = _cliente_portal(app, 'ZPF1', 'Cliente Uno')
+
+    r = cli.get('/portal/factura/ZPF-001.pdf')
+    # 200 con el PDF, o 503 diciendo que no se pudo · lo que NO puede es fallar mudo
+    assert r.status_code in (200, 503), r.data[:200]
+    if r.status_code == 200:
+        assert r.data[:4] == b'%PDF', 'no devolvió un PDF'
+    else:
+        assert b'Mensajes' in r.data, 'si no se puede, tiene que decir qué hacer'
+
+    ajena = cli.get('/portal/factura/ZPF-002.pdf')
+    assert ajena.status_code == 403, 'AISLAMIENTO: bajó la factura de otro cliente'

@@ -501,7 +501,12 @@ def aliados_scores():
         ltvs = []  # para calcular percentil LTV después
 
         for (aid, nombre) in aliados:
-            BASE = "p.estado NOT IN ('Cancelado','Borrador') AND p.cliente_id=?"
+            # El alias `p.` estaba escrito pero ninguna de las cuatro consultas declara
+            # alias (`FROM pedidos` a secas), así que el scoring de aliados NUNCA corrió:
+            # daba 500 apenas hubiera un cliente cargado. Lo cazó el barrido de rutas GET
+            # con la base sembrada · sin datos, la lista de aliados sale vacía y el bucle
+            # ni entra (M96: la columna fantasma que sólo revienta con datos).
+            BASE = "estado NOT IN ('Cancelado','Borrador') AND cliente_id=?"
 
             # Todas las fechas de pedido ordenadas
             fechas_rows = c.execute(
