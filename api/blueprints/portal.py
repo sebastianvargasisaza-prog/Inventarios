@@ -97,81 +97,102 @@ _LOGIN_HTML = r"""<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>EOS · Portal Clientes</title>
-<meta name="application-name" content="EOS · Portal">
-<meta name="apple-mobile-web-app-title" content="EOS Portal">
+<title>Espagiria · Portal de clientes</title>
+<meta name="application-name" content="Espagiria · Portal">
+<meta name="apple-mobile-web-app-title" content="Portal Espagiria">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#6d28d9">
-<meta name="description" content="EOS · Portal Clientes B2B · Espagiria & ÁNIMUS Lab">
+<meta name="description" content="Portal de clientes de Espagiria Laboratorio">
 <meta name="author" content="HHA Group">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=eos11">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=eos11">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=eos11">
+<script>(function(){try{var t=localStorage.getItem('cx-theme');if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches){t='dark';}if(t==='dark'){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}})();</script>
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:radial-gradient(ellipse at top,#1e1b4b 0%,#0f172a 50%,#0a0a0f 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;color:var(--cx-border, #e2e8f0);}
-.card{background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(167,139,250,0.2);border-radius:20px;padding:48px 40px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(109,40,217,0.15);}
-.logo{text-align:center;margin-bottom:36px;}
-.brand-mark{display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;border-radius:18px;margin-bottom:18px;box-shadow:0 12px 36px rgba(109,40,217,0.45);}
-.brand-name{font-size:30px;font-weight:800;letter-spacing:-0.8px;background:linear-gradient(135deg,#c4b5fd,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:4px;}
-.brand-tag{color:var(--cx-primary-light, #a78bfa);font-size:12px;font-style:italic;margin-bottom:8px;}
-.brand-sub{color:var(--cx-border, #cbd5e1);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;}
-.brand-by{color:var(--cx-text-mute, #64748b);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;}
-.brand-by strong{color:var(--cx-border, #cbd5e1);}
-label{display:block;color:var(--cx-text-faint, #94a3b8);font-size:0.8em;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;}
-.fg{margin-bottom:20px;}
-input[type=email],input[type=password]{width:100%;background:rgba(15,23,42,0.6);border:1px solid var(--cx-text-soft, #334155);border-radius:10px;padding:14px 16px;color:white;font-size:1em;outline:none;transition:.2s;}
-input[type=email]:focus,input[type=password]:focus{border-color:var(--cx-primary-light, #a78bfa);background:rgba(15,23,42,0.9);box-shadow:0 0 0 3px rgba(167,139,250,0.15);}
-.btn{width:100%;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:white;border:none;border-radius:10px;padding:14px;font-size:1em;font-weight:700;cursor:pointer;margin-top:8px;transition:.2s;letter-spacing:0.3px;}
-.btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(109,40,217,0.4);}
-.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;padding:12px 16px;border-radius:8px;font-size:0.88em;margin-bottom:20px;text-align:center;display:none;}
-.help{text-align:center;color:var(--cx-text-soft, #475569);font-size:0.78em;margin-top:14px;}
-.help a{color:var(--cx-primary-light, #a78bfa);text-decoration:none;}
-.app-footer{margin-top:32px;text-align:center;font-size:10px;color:var(--cx-text-soft, #475569);letter-spacing:0.5px;line-height:1.6;}
-.app-footer strong{color:var(--cx-text-faint, #94a3b8);}
-@media(max-width:480px){
-  .card{padding:36px 24px;}
-  .brand-name{font-size:26px;}
-}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+     background:var(--cx-bg, #f4f4f7);color:var(--cx-text, #18181b);min-height:100vh;font-size:15px;
+     display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 18px;
+     -webkit-font-smoothing:antialiased}
+.aura{position:fixed;inset:0;pointer-events:none;z-index:0;
+      background:radial-gradient(700px 420px at 50% -10%, rgba(167,139,250,.18), transparent 70%)}
+.shell{position:relative;z-index:1;width:100%;max-width:430px}
+.card{background:var(--cx-card, #ffffff);border:1px solid var(--cx-border, #e6e6ea);
+      border-radius:var(--cx-r-xl, 20px);padding:38px 32px 30px;
+      box-shadow:var(--cx-sh-lg, 0 12px 32px rgba(15,23,42,.08))}
+.brand{text-align:center;margin-bottom:26px}
+.mark{display:inline-flex;align-items:center;justify-content:center;width:66px;height:66px;border-radius:19px;
+      background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9));
+      box-shadow:0 12px 28px rgba(109,40,217,.32);margin-bottom:16px}
+.name{font-size:29px;font-weight:800;letter-spacing:-.9px;line-height:1.1}
+.tag{color:var(--cx-primary-text, #6d28d9);font-size:12.5px;font-style:italic;margin-top:3px}
+.sub{color:var(--cx-text-mute, #6b6b74);font-size:11px;font-weight:800;text-transform:uppercase;
+     letter-spacing:1.6px;margin-top:12px}
+label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;
+      color:var(--cx-text-mute, #6b6b74);margin:0 0 6px}
+.fg{margin-bottom:16px}
+input{width:100%;padding:13px 15px;font-size:15px;font-family:inherit;
+      background:var(--cx-bg-alt, #fbfbfd);color:var(--cx-text, #18181b);
+      border:1px solid var(--cx-border, #e6e6ea);border-radius:var(--cx-r-md, 10px);outline:none;transition:.15s}
+input:focus{border-color:var(--cx-primary-light, #a78bfa);background:var(--cx-card, #ffffff);
+            box-shadow:0 0 0 3px var(--cx-primary-pale, #f5f3ff)}
+.btn{width:100%;background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9));color:#fff;
+     border:none;border-radius:var(--cx-r-md, 10px);padding:14px;font-size:15px;font-weight:800;
+     letter-spacing:.2px;cursor:pointer;font-family:inherit;margin-top:6px;transition:.15s;
+     box-shadow:0 8px 20px rgba(109,40,217,.28)}
+.btn:hover{transform:translateY(-1px);box-shadow:0 12px 26px rgba(109,40,217,.36)}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.err{background:var(--cx-danger-pale, #fef2f2);color:var(--cx-danger-text, #b91c1c);
+     border-left:3px solid var(--cx-danger, #dc2626);padding:11px 14px;border-radius:var(--cx-r-sm, 6px);
+     font-size:13px;margin-bottom:16px;display:none}
+.help{text-align:center;color:var(--cx-text-mute, #6b6b74);font-size:12.5px;margin-top:18px;line-height:1.5}
+.foot{text-align:center;font-size:11px;color:var(--cx-text-mute, #6b6b74);line-height:1.8;margin-top:22px}
+.foot .sello{font-weight:800;color:var(--cx-text-soft, #3f3f46);letter-spacing:.3px}
+@media(max-width:420px){.card{padding:30px 22px 26px}.name{font-size:25px}}
 </style>
 </head>
 <body>
-<div class="card">
-  <div class="logo">
-    <span class="brand-mark" style="color:var(--cx-primary-text, #6d28d9);" aria-label="EOS">
-      <svg viewBox="0 0 32 32" width="64" height="64" fill="none" stroke="#a78bfa" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="16" cy="12" r="3" fill="#a78bfa"/>
-        <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
-        <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/>
-      </svg>
-    </span>
-    <div class="brand-name">EOS</div>
-    <div class="brand-tag">Tu marca, nuestra fórmula</div>
-    <div class="brand-sub">Portal Clientes B2B</div>
-    <div class="brand-by">by <strong>HHA Group</strong></div>
+<div class="aura"></div>
+<main class="shell">
+  <div class="card">
+    <div class="brand">
+      <span class="mark" aria-label="Espagiria">
+        <svg viewBox="0 0 32 32" width="36" height="36" fill="none" stroke="#ffffff" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="12" r="3" fill="#ffffff"/>
+          <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.6" stroke-linecap="round" opacity=".8"/>
+          <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.6" stroke-linecap="round" opacity=".45"/>
+        </svg>
+      </span>
+      <div class="name">Espagiria</div>
+      <div class="tag">Tu marca, nuestra fórmula</div>
+      <div class="sub">Portal de clientes</div>
+    </div>
+    <div class="err" id="err"></div>
+    <form id="form-login">
+      <div class="fg"><label for="email">Correo</label>
+        <input type="email" id="email" placeholder="vos@tuempresa.com" required autocomplete="username" autofocus></div>
+      <div class="fg"><label for="password">Contraseña</label>
+        <input type="password" id="password" placeholder="Tu contraseña" required autocomplete="current-password"></div>
+      <button type="submit" class="btn" id="btn-entrar">Entrar</button>
+    </form>
+    <p class="help">¿Todavía no tenés acceso? Pedíselo a tu ejecutivo comercial.</p>
   </div>
-  <div class="err" id="err"></div>
-  <form id="form-login">
-    <div class="fg"><label>Email</label><input type="email" id="email" placeholder="cliente@empresa.com" required autocomplete="username" autofocus></div>
-    <div class="fg"><label>Contraseña</label><input type="password" id="password" placeholder="••••••••" required autocomplete="current-password"></div>
-    <button type="submit" class="btn">Ingresar →</button>
-  </form>
-  <div class="help">¿No tenés credenciales? Contactá a tu ejecutivo.</div>
-</div>
-<footer class="app-footer">
-  <div><strong>EOS v1.0</strong> &middot; Edición Espagiria</div>
-  <div style="margin-top:4px;">Desarrollado por <strong>HHA Group</strong></div>
-  <div style="margin-top:6px;color:var(--cx-text-soft, #334155);">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
-</footer>
+  <footer class="foot">
+    <div><span class="sello">Espagiria Laboratorio</span> sobre <span class="sello">EOS</span></div>
+    <div>&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
+  </footer>
+</main>
 <script>
 document.getElementById('form-login').addEventListener('submit', async function(e){
   e.preventDefault();
   var email = document.getElementById('email').value.trim().toLowerCase();
   var pw = document.getElementById('password').value;
   var err = document.getElementById('err');
+  var btn = document.getElementById('btn-entrar');
   err.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Entrando...';
   try {
     var r = await fetch('/api/portal/login', {
       method: 'POST',
@@ -181,14 +202,16 @@ document.getElementById('form-login').addEventListener('submit', async function(
     });
     var d = await r.json();
     if (!r.ok) {
-      err.textContent = d.error || 'Login fallido';
+      err.textContent = d.error || 'No pudimos entrar con esos datos';
       err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Entrar';
       return;
     }
     window.location.href = '/portal';
   } catch(ex){
-    err.textContent = 'Error de red: ' + ex.message;
+    err.textContent = 'No hay conexión con el servidor: ' + ex.message;
     err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Entrar';
   }
 });
 </script></body></html>
@@ -309,459 +332,612 @@ def portal_logout():
 # ────────────────────────────────────────────────────────────────────
 
 _PORTAL_HTML = r"""<!DOCTYPE html>
-<html lang="es" translate="no"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EOS · Portal Clientes</title>
-<meta name="theme-color" content="#6d28d9">
-<meta name="application-name" content="EOS · Portal">
-<meta name="apple-mobile-web-app-title" content="EOS Portal">
+<html lang="es" translate="no">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Espagiria · Portal de clientes</title>
+<meta name="application-name" content="Espagiria · Portal">
+<meta name="apple-mobile-web-app-title" content="Portal Espagiria">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#6d28d9">
 <meta name="author" content="HHA Group">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=eos11">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=eos11">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=eos11">
+<script>(function(){try{var t=localStorage.getItem('cx-theme');if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches){t='dark';}if(t==='dark'){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}})();</script>
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
-     background:radial-gradient(ellipse at top,#1e1b4b 0%,#0f172a 50%,#0a0a0f 100%);
-     color:var(--cx-border, #e2e8f0);min-height:100vh;font-size:14px}
-header{background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-       border-bottom:1px solid rgba(167,139,250,0.2);
-       color:#fff;padding:14px 22px;display:flex;justify-content:space-between;align-items:center;
-       flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:10}
-header .brand{display:flex;align-items:center;gap:12px}
-header .brand-mark{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;
-                   border-radius:10px;background:rgba(109,40,217,.18);box-shadow:0 4px 12px rgba(109,40,217,0.25)}
-header h1{font-size:18px;font-weight:800;letter-spacing:-0.4px;
-          background:linear-gradient(135deg,#c4b5fd,#a78bfa);
-          -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-header .sub{font-size:10px;color:var(--cx-primary-light, #a78bfa);font-style:italic;font-weight:500}
-header .meta{font-size:11px;color:var(--cx-border, #cbd5e1);margin-top:2px}
-header a.logout{color:var(--cx-border, #cbd5e1);text-decoration:none;font-size:12px;font-weight:600;
-                background:rgba(167,139,250,.12);padding:7px 14px;border-radius:8px;
-                border:1px solid rgba(167,139,250,.25);transition:.15s}
-header a.logout:hover{background:rgba(167,139,250,.22);color:#fff}
-.wrap{max-width:820px;margin:0 auto;padding:24px 18px 60px}
-.tabs{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
-.tab{flex:1;min-width:120px;padding:11px 12px;background:rgba(30,41,59,0.5);
-     border:1px solid rgba(167,139,250,.15);border-radius:10px;font-size:13px;
-     font-weight:700;cursor:pointer;color:var(--cx-text-faint, #94a3b8);transition:.15s;font-family:inherit}
-.tab:hover{background:rgba(30,41,59,0.7);color:var(--cx-border, #e2e8f0);border-color:rgba(167,139,250,.3)}
-.tab.active{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;
-            border-color:transparent;box-shadow:0 6px 18px rgba(109,40,217,.35)}
-.card{background:rgba(30,41,59,0.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-      border:1px solid rgba(167,139,250,.15);border-radius:14px;padding:22px;margin-bottom:14px;
-      box-shadow:0 8px 24px rgba(0,0,0,.18)}
-.card h2{font-size:16px;font-weight:800;margin-bottom:6px;
-         background:linear-gradient(135deg,#c4b5fd,#a78bfa);
-         -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.card > p{color:var(--cx-text-faint, #94a3b8);font-size:12px;margin-bottom:12px}
-label{display:block;font-size:11px;color:var(--cx-text-faint, #94a3b8);font-weight:700;
-      margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px}
-input,select,textarea{width:100%;padding:12px 14px;
-                       background:rgba(15,23,42,0.7);border:1px solid var(--cx-text-soft, #334155);
-                       border-radius:10px;font-size:14px;outline:none;font-family:inherit;
-                       color:var(--cx-border, #e2e8f0);transition:.2s}
-input::placeholder,textarea::placeholder{color:var(--cx-text-mute, #64748b)}
-input:focus,select:focus,textarea:focus{border-color:var(--cx-primary-light, #a78bfa);background:rgba(15,23,42,0.9);
-                                          box-shadow:0 0 0 3px rgba(167,139,250,.12)}
-select option{background:#1e1b4b;color:var(--cx-border, #e2e8f0)}
-button.primary{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;
-                padding:13px 24px;border-radius:10px;font-size:14px;font-weight:700;
-                cursor:pointer;margin-top:16px;letter-spacing:.3px;transition:.15s;font-family:inherit}
-button.primary:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(109,40,217,.45)}
-button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
-.lista{display:flex;flex-direction:column;gap:10px}
-.pedido{background:rgba(15,23,42,0.6);border:1px solid rgba(167,139,250,.12);
-        border-left:4px solid var(--cx-primary-light, #a78bfa);border-radius:10px;padding:14px 18px}
-.pedido.pendiente{border-left-color:var(--cx-text-faint, #94a3b8)}
-.pedido.confirmado{border-left-color:var(--cx-primary-light, #a78bfa)}
-.pedido.en_produccion{border-left-color:var(--cx-warn, #f59e0b)}
-.pedido.despachado{border-left-color:var(--cx-success, #16a34a)}
-.pedido.cancelado{border-left-color:var(--cx-danger, #dc2626);opacity:.6}
-.pedido-prod{font-weight:700;font-size:14px;color:var(--cx-border, #e2e8f0)}
-.pedido-meta{font-size:11px;color:var(--cx-text-faint, #94a3b8);margin-top:3px}
-.pedido-estado{display:inline-block;background:rgba(167,139,250,.15);color:var(--cx-primary-light, #c4b5fd);
-                padding:3px 10px;border-radius:8px;font-size:10px;font-weight:700;
-                text-transform:uppercase;letter-spacing:.5px;margin-top:6px}
-.empty{text-align:center;color:var(--cx-text-mute, #64748b);font-style:italic;padding:30px;font-size:13px}
-.chip{display:inline-block;background:rgba(148,163,184,.15);color:var(--cx-border, #cbd5e1);
-      padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700}
-.chip.libre{background:rgba(22,163,74,.18);color:#86efac}
-.chip.ocupada{background:rgba(202,138,4,.2);color:#fcd34d}
-.chip.sucia{background:rgba(220,38,38,.2);color:#fca5a5}
-.chip.area{background:rgba(167,139,250,.18);color:var(--cx-primary-light, #c4b5fd)}
-.tl{margin-top:14px;padding-top:12px;border-top:1px dashed rgba(167,139,250,.2);
-    display:flex;flex-direction:column;gap:8px}
-.tl-step{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;
-         background:rgba(15,23,42,0.5);border-left:3px solid rgba(148,163,184,.3);opacity:.55}
-.tl-step.completado{opacity:1;background:rgba(22,163,74,.12);border-left-color:var(--cx-success, #16a34a)}
-.tl-step.en_curso{opacity:1;background:rgba(202,138,4,.12);border-left-color:var(--cx-warn, #f59e0b)}
-.tl-step.rechazado{opacity:1;background:rgba(220,38,38,.12);border-left-color:var(--cx-danger, #dc2626)}
-.tl-step.pendiente{opacity:.45}
-.tl-ico{font-size:18px;line-height:1.2;flex-shrink:0;width:24px;text-align:center}
-.tl-body{flex:1;min-width:0}
-.tl-lbl{font-size:13px;font-weight:700;color:var(--cx-border, #e2e8f0)}
-.tl-step.pendiente .tl-lbl{color:var(--cx-text-mute, #64748b)}
-.tl-fecha{font-size:10px;color:var(--cx-text-faint, #94a3b8);margin-top:1px}
-.tl-det{font-size:11px;color:var(--cx-border, #cbd5e1);margin-top:2px}
-.msg{padding:11px 14px;border-radius:10px;font-size:13px;margin-top:12px;display:none;
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+     background:var(--cx-bg, #f4f4f7);color:var(--cx-text, #18181b);min-height:100vh;font-size:15px;
+     -webkit-font-smoothing:antialiased}
+.wrap{max-width:960px;margin:0 auto;padding:22px 18px 70px}
+
+/* ── cabecera + navegación (un solo bloque pegajoso) ─────────────── */
+.top{position:sticky;top:0;z-index:20;background:var(--cx-card, #ffffff);
+     border-bottom:1px solid var(--cx-border, #e6e6ea);box-shadow:var(--cx-sh-sm, 0 1px 2px rgba(15,23,42,.04))}
+.top .in{max-width:960px;margin:0 auto;padding:11px 18px;display:flex;align-items:center;gap:12px}
+.brand{display:flex;align-items:center;gap:11px;min-width:0}
+.mark{width:38px;height:38px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;
+      background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9));
+      box-shadow:0 6px 16px rgba(109,40,217,.26);flex-shrink:0}
+.bname{font-size:17px;font-weight:800;letter-spacing:-.4px;line-height:1.15;display:flex;align-items:center;gap:7px}
+.sello{font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;
+       color:var(--cx-primary-text, #6d28d9);background:var(--cx-primary-pale, #f5f3ff);
+       border-radius:var(--cx-r-pill, 999px);padding:3px 8px}
+.bsub{font-size:11px;color:var(--cx-text-mute, #6b6b74);font-weight:600;margin-top:1px}
+.right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.saludo{font-size:13px;font-weight:700;color:var(--cx-text-soft, #3f3f46);max-width:210px;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghost{border:1px solid var(--cx-border, #e6e6ea);background:var(--cx-card, #ffffff);
+       color:var(--cx-text-soft, #3f3f46);border-radius:var(--cx-r-md, 10px);padding:8px 13px;font-size:12.5px;
+       font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;
+       align-items:center;gap:6px;transition:.15s;white-space:nowrap}
+.ghost:hover{background:var(--cx-bg-alt, #fbfbfd);border-color:var(--cx-primary-light, #a78bfa);
+             color:var(--cx-primary-text, #6d28d9)}
+.nav{max-width:960px;margin:0 auto;padding:0 18px 9px;display:flex;gap:6px;overflow-x:auto}
+.nav::-webkit-scrollbar{display:none}
+.nb{flex:1;min-width:104px;padding:9px 12px;border-radius:var(--cx-r-md, 10px);border:1px solid transparent;
+    background:var(--cx-border-soft, #f1f1f4);color:var(--cx-text-mute, #6b6b74);font-size:13px;font-weight:700;
+    cursor:pointer;font-family:inherit;transition:.15s;white-space:nowrap;position:relative}
+.nb:hover{color:var(--cx-text, #18181b);background:var(--cx-bg-alt, #fbfbfd);border-color:var(--cx-border, #e6e6ea)}
+.nb.on{background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9));color:#fff;
+       border-color:transparent;box-shadow:0 6px 16px rgba(109,40,217,.28)}
+.punto{position:absolute;top:5px;right:7px;width:8px;height:8px;border-radius:50%;
+       background:var(--cx-danger, #dc2626);display:none}
+.punto.on{display:block}
+
+/* ── vistas ───────────────────────────────────────────────────────── */
+.vista{display:none}
+.vista.on{display:block}
+.h1{font-size:23px;font-weight:800;letter-spacing:-.6px;margin-bottom:3px}
+.h1s{font-size:13.5px;color:var(--cx-text-mute, #6b6b74);margin-bottom:18px}
+.rot{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.1px;
+     color:var(--cx-text-mute, #6b6b74);margin:22px 0 10px}
+.card{background:var(--cx-card, #ffffff);border:1px solid var(--cx-border, #e6e6ea);
+      border-radius:var(--cx-r-lg, 14px);padding:22px;margin-bottom:14px;
+      box-shadow:var(--cx-sh-sm, 0 1px 2px rgba(15,23,42,.04))}
+.card h2{font-size:16.5px;font-weight:800;letter-spacing:-.3px}
+.hint{font-size:12.5px;color:var(--cx-text-mute, #6b6b74);margin-top:5px;line-height:1.5}
+
+/* ── franja de KPIs ──────────────────────────────────────────────── */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--cx-card, #ffffff);border:1px solid var(--cx-border, #e6e6ea);
+     border-radius:var(--cx-r-md, 10px);padding:13px 15px}
+.kpi .k{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;
+        color:var(--cx-text-mute, #6b6b74)}
+.kpi .v{font-size:21px;font-weight:800;letter-spacing:-.6px;margin-top:4px;line-height:1.15}
+.kpi .v.chico{font-size:15px;letter-spacing:-.2px;padding-top:4px}
+
+/* ── tarjeta de pedido ───────────────────────────────────────────── */
+.ped{background:var(--cx-card, #ffffff);border:1px solid var(--cx-border, #e6e6ea);
+     border-radius:var(--cx-r-lg, 14px);padding:18px 20px 16px;margin-bottom:12px;position:relative;
+     overflow:hidden;box-shadow:var(--cx-sh-sm, 0 1px 2px rgba(15,23,42,.04))}
+.ped.destacado{box-shadow:var(--cx-sh-md, 0 4px 12px rgba(15,23,42,.06))}
+.ped::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+             background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9))}
+.ped.encurso::before{background:var(--cx-warn, #f59e0b)}
+.ped.listo::before{background:var(--cx-success, #15803d)}
+.ped.frenado::before{background:var(--cx-danger, #dc2626)}
+.ped.anulado{opacity:.62}
+.ped.anulado::before{background:var(--cx-text-faint, #a1a1aa)}
+.ped-top{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.ped-prod{font-size:17px;font-weight:800;letter-spacing:-.4px;line-height:1.25}
+.ped-meta{font-size:12.5px;color:var(--cx-text-mute, #6b6b74);margin-top:3px}
+.ped-num{font-size:11px;font-weight:800;color:var(--cx-text-faint, #a1a1aa);letter-spacing:.4px}
+.ped-acc{margin-left:auto;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:var(--cx-r-pill, 999px);
+      font-size:11.5px;font-weight:800;letter-spacing:.1px}
+.chip.ok{background:var(--cx-success-pale, #f0fdf4);color:var(--cx-success-text, #15803d)}
+.chip.now{background:var(--cx-warn-pale, #fffbeb);color:var(--cx-warn-text, #b45309)}
+.chip.wait{background:var(--cx-border-soft, #f1f1f4);color:var(--cx-text-mute, #6b6b74)}
+.chip.bad{background:var(--cx-danger-pale, #fef2f2);color:var(--cx-danger-text, #b91c1c)}
+.chip.info{background:var(--cx-primary-pale, #f5f3ff);color:var(--cx-primary-text, #6d28d9)}
+.nota{font-size:12.5px;color:var(--cx-text-soft, #3f3f46);margin-top:10px;
+      background:var(--cx-bg-alt, #fbfbfd);border-radius:var(--cx-r-sm, 6px);padding:8px 11px;
+      white-space:pre-wrap;word-break:break-word}
+
+/* ── riel de avance (horizontal) ─────────────────────────────────── */
+.riel{display:flex;margin-top:16px}
+.rp{flex:1;min-width:0;text-align:center;position:relative}
+.rp::before{content:'';position:absolute;top:10px;left:-50%;width:100%;height:2px;
+            background:var(--cx-border, #e6e6ea)}
+.rp:first-child::before{display:none}
+.rp.ok::before,.rp.now::before{background:var(--cx-success, #15803d)}
+.rp .dot{width:21px;height:21px;border-radius:50%;margin:0 auto;position:relative;z-index:1;
+         border:2px solid var(--cx-border, #e6e6ea);background:var(--cx-card, #ffffff);
+         display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1}
+.rp.ok .dot{background:var(--cx-success, #15803d);border-color:var(--cx-success, #15803d);color:#fff}
+.rp.now .dot{background:var(--cx-warn, #f59e0b);border-color:var(--cx-warn, #f59e0b);color:#fff;
+             box-shadow:0 0 0 4px var(--cx-warn-pale, #fffbeb)}
+.rp.bad .dot{background:var(--cx-danger, #dc2626);border-color:var(--cx-danger, #dc2626);color:#fff}
+.rp .lb{font-size:9.5px;font-weight:700;color:var(--cx-text-faint, #a1a1aa);margin-top:7px;line-height:1.3;
+        padding:0 2px}
+.rp.ok .lb,.rp.now .lb{color:var(--cx-text-soft, #3f3f46)}
+@media(max-width:600px){.rp .lb{display:none}.rp.now .lb{display:block;font-size:9px}}
+
+/* ── detalle (línea de tiempo vertical) ──────────────────────────── */
+.det{display:none;margin-top:14px;padding-top:13px;border-top:1px dashed var(--cx-border, #e6e6ea)}
+.det.on{display:block}
+.tl{display:flex;flex-direction:column;gap:6px}
+.tls{display:flex;gap:11px;padding:9px 11px;border-radius:var(--cx-r-md, 10px);
+     background:var(--cx-bg-alt, #fbfbfd);border-left:3px solid var(--cx-border, #e6e6ea)}
+.tls.completado{background:var(--cx-success-pale, #f0fdf4);border-left-color:var(--cx-success, #15803d)}
+.tls.en_curso{background:var(--cx-warn-pale, #fffbeb);border-left-color:var(--cx-warn, #f59e0b)}
+.tls.rechazado{background:var(--cx-danger-pale, #fef2f2);border-left-color:var(--cx-danger, #dc2626)}
+.tls.pendiente{opacity:.62}
+.tls .ico{font-size:17px;line-height:1.2;width:22px;text-align:center;flex-shrink:0}
+.tls .lb{font-size:13.5px;font-weight:700;color:var(--cx-text, #18181b)}
+.tls.pendiente .lb{color:var(--cx-text-mute, #6b6b74)}
+.tls .fe{font-size:10.5px;color:var(--cx-text-mute, #6b6b74);margin-top:1px}
+.tls .de{font-size:11.5px;color:var(--cx-text-soft, #3f3f46);margin-top:2px}
+
+/* ── formularios ─────────────────────────────────────────────────── */
+label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;
+      color:var(--cx-text-mute, #6b6b74);margin:17px 0 6px}
+input,select,textarea{width:100%;padding:12px 14px;font-size:15px;font-family:inherit;
+                      background:var(--cx-bg-alt, #fbfbfd);color:var(--cx-text, #18181b);
+                      border:1px solid var(--cx-border, #e6e6ea);border-radius:var(--cx-r-md, 10px);
+                      outline:none;transition:.15s}
+textarea{resize:vertical;line-height:1.5}
+input::placeholder,textarea::placeholder{color:var(--cx-text-faint, #a1a1aa)}
+input:focus,select:focus,textarea:focus{border-color:var(--cx-primary-light, #a78bfa);
+      background:var(--cx-card, #ffffff);box-shadow:0 0 0 3px var(--cx-primary-pale, #f5f3ff)}
+.btn{background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9));color:#fff;border:none;
+     border-radius:var(--cx-r-md, 10px);padding:13px 24px;font-size:14.5px;font-weight:800;cursor:pointer;
+     font-family:inherit;transition:.15s;box-shadow:0 7px 18px rgba(109,40,217,.26)}
+.btn:hover{transform:translateY(-1px);box-shadow:0 11px 24px rgba(109,40,217,.34)}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
+.btn.mini{padding:7px 14px;font-size:12.5px;box-shadow:none}
+.btn-fila{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:20px}
+.dos{display:grid;grid-template-columns:1fr;gap:0}
+@media(min-width:660px){.dos{grid-template-columns:1fr 1fr;gap:0 16px}}
+.aviso{display:none;margin-top:8px;padding:10px 12px;border-radius:var(--cx-r-md, 10px);font-size:12.5px;
+       line-height:1.5;background:var(--cx-warn-pale, #fffbeb);color:var(--cx-warn-text, #b45309);
+       border-left:3px solid var(--cx-warn, #f59e0b)}
+.aviso.grave{background:var(--cx-danger-pale, #fef2f2);color:var(--cx-danger-text, #b91c1c);
+             border-left-color:var(--cx-danger, #dc2626)}
+.aviso.on{display:block}
+.msg{display:none;margin-top:14px;padding:12px 15px;border-radius:var(--cx-r-md, 10px);font-size:13.5px;
      border-left:3px solid}
-.msg.ok{background:rgba(22,163,74,.12);color:#86efac;border-left-color:var(--cx-success, #16a34a);display:block}
-.msg.err{background:rgba(220,38,38,.12);color:#fca5a5;border-left-color:var(--cx-danger, #dc2626);display:block}
-.app-footer{text-align:center;font-size:10px;color:var(--cx-text-soft, #475569);letter-spacing:.5px;
-            line-height:1.6;padding:24px 16px 32px;margin-top:20px}
-.app-footer strong{color:var(--cx-text-faint, #94a3b8)}
-@media (min-width:680px){
-  .row{display:flex;gap:10px}
-  .row > div{flex:1}
+.msg.ok{display:block;background:var(--cx-success-pale, #f0fdf4);color:var(--cx-success-text, #15803d);
+        border-left-color:var(--cx-success, #15803d)}
+.msg.err{display:block;background:var(--cx-danger-pale, #fef2f2);color:var(--cx-danger-text, #b91c1c);
+         border-left-color:var(--cx-danger, #dc2626)}
+
+/* ── hilos de mensajes ───────────────────────────────────────────── */
+.hilo{background:var(--cx-card, #ffffff);border:1px solid var(--cx-border, #e6e6ea);
+      border-radius:var(--cx-r-lg, 14px);padding:16px 18px;margin-bottom:11px}
+.hilo-top{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.hilo-tit{font-size:14.5px;font-weight:800;letter-spacing:-.2px}
+.hilo-fe{font-size:11px;color:var(--cx-text-mute, #6b6b74);margin-left:auto;white-space:nowrap;padding-top:2px}
+.hilo-txt{font-size:13px;color:var(--cx-text-soft, #3f3f46);margin-top:7px;white-space:pre-wrap;
+          word-break:break-word;line-height:1.5}
+.resp{margin-top:11px;padding:11px 13px;border-radius:var(--cx-r-md, 10px);
+      background:var(--cx-primary-pale, #f5f3ff);border-left:3px solid var(--cx-primary-light, #a78bfa);
+      font-size:13px;color:var(--cx-text, #18181b);line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.resp b{color:var(--cx-primary-text, #6d28d9);font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+
+/* ── vacíos y modal ──────────────────────────────────────────────── */
+.vacio{text-align:center;padding:36px 20px;color:var(--cx-text-mute, #6b6b74);font-size:14px;line-height:1.6}
+.vacio .em{font-size:36px;display:block;margin-bottom:10px}
+.vacio .t{font-size:16px;font-weight:800;color:var(--cx-text, #18181b);margin-bottom:5px}
+.ov{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:60;padding:18px;
+    display:none;align-items:center;justify-content:center}
+.ov.on{display:flex}
+.mo{background:var(--cx-card, #ffffff);border-radius:var(--cx-r-xl, 20px);padding:24px;width:100%;
+    max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:var(--cx-sh-lg, 0 12px 32px rgba(15,23,42,.08))}
+.mo h2{font-size:18px;font-weight:800;letter-spacing:-.3px}
+.pie{text-align:center;font-size:11px;color:var(--cx-text-mute, #6b6b74);line-height:1.8;
+     padding:26px 16px 34px}
+.pie .sello2{font-weight:800;color:var(--cx-text-soft, #3f3f46);letter-spacing:.3px}
+@media(max-width:560px){
+  .top .in{padding:10px 14px;gap:9px}
+  .saludo{display:none}
+  .nav{padding:0 14px 9px}
+  .nb{min-width:88px;font-size:12.5px;padding:9px 8px}
+  .wrap{padding:18px 14px 60px}
+  .h1{font-size:20px}
 }
-</style></head><body>
-<header>
-  <div class="brand">
-    <span class="brand-mark" aria-label="EOS">
-      <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="#a78bfa" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="16" cy="12" r="3" fill="#a78bfa"/>
-        <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
-        <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/>
-      </svg>
-    </span>
-    <div>
-      <h1>EOS · Portal Clientes</h1>
-      <div class="sub">Tu marca, nuestra fórmula</div>
-      <div class="meta" id="hdr-cliente">Cargando...</div>
-    </div>
-  </div>
-  <a href="/portal/logout" class="logout">Cerrar sesión</a>
-</header>
-<div class="wrap">
-  <div class="tabs">
-    <button class="tab active" data-tab="solicitar" onclick="setTab('solicitar')">📦 Solicitar</button>
-    <button class="tab" data-tab="mis" onclick="setTab('mis')">📋 Mis pedidos</button>
-    <button class="tab" data-tab="pqr" onclick="setTab('pqr')">💬 PQR</button>
-    <button class="tab" data-tab="mis-pqr" onclick="setTab('mis-pqr')">📜 Mis PQR</button>
-    <button class="tab" data-tab="comm" onclick="setTab('comm')">✨ Comunicación</button>
-  </div>
+</style>
+</head>
+<body>
 
-  <div id="panel-solicitar">
-    <div class="card">
-      <h2>Solicitar producto</h2>
-      <p style="font-size:12px;color:var(--cx-text-mute, #64748b);margin-bottom:8px">Elegí producto, cantidad y fecha estimada · te confirmamos por correo.</p>
-      <label>Producto</label>
-      <select id="sol-producto">
-        <option value="">— Cargando productos —</option>
-      </select>
-      <label>Cantidad (unidades)</label>
-      <input id="sol-cant" type="number" min="1" step="1" placeholder="Ej. 500 frascos">
-      <input type="hidden" id="sol-ml" value="0">
-      <label>Fecha estimada de entrega</label>
-      <input id="sol-fecha" type="date">
-      <div id="sol-fecha-aviso" style="display:none;margin-top:6px;padding:8px 10px;background:var(--cx-warn-pale, #fef3c7);border-left:3px solid var(--cx-warn, #f59e0b);border-radius:4px;font-size:12px;color:var(--cx-warn-text, #92400e)"></div>
-      <label>Urgencia</label>
-      <select id="sol-urgencia">
-        <option value="media" selected>🟡 Media · planificación normal</option>
-        <option value="baja">🟢 Baja · sin apuro</option>
-        <option value="alta">🔴 Alta · necesitamos prioridad</option>
-      </select>
-      <label>Notas (opcional)</label>
-      <textarea id="sol-notas" rows="3" placeholder="Detalles, color, arte, etc."></textarea>
-      <label>🔁 Repetir este pedido (opcional)</label>
-      <select id="sol-repetir">
-        <option value="0">No repetir (pedido único)</option>
-        <option value="15">Cada 15 días</option>
-        <option value="30">Cada mes (30 días)</option>
-        <option value="60">Cada 2 meses</option>
-        <option value="90">Cada 3 meses</option>
-      </select>
-      <button class="primary" id="btn-enviar" onclick="enviarPedido()">📨 Enviar solicitud</button>
-      <div class="msg" id="sol-msg"></div>
+<div class="top">
+  <div class="in">
+    <div class="brand">
+      <span class="mark" aria-label="Espagiria">
+        <svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="#ffffff" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="12" r="3" fill="#ffffff"/>
+          <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.8" stroke-linecap="round" opacity=".8"/>
+          <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.8" stroke-linecap="round" opacity=".45"/>
+        </svg>
+      </span>
+      <div>
+        <div class="bname">Espagiria <span class="sello">sobre EOS</span></div>
+        <div class="bsub">Portal de clientes</div>
+      </div>
+    </div>
+    <div class="right">
+      <span class="saludo" id="saludo"></span>
+      <button class="ghost" onclick="cambiarTema()" title="Cambiar entre claro y oscuro" aria-label="Cambiar tema">◐</button>
+      <a href="/portal/logout" class="ghost">Salir</a>
     </div>
   </div>
-
-  <div id="panel-mis" style="display:none">
-    <div class="card">
-      <h2>Mis pedidos</h2>
-      <div id="mis-lista" class="lista"><div class="empty">Cargando...</div></div>
-    </div>
+  <div class="nav">
+    <button class="nb on" id="nav-inicio" onclick="irA('inicio')">Inicio</button>
+    <button class="nb" id="nav-pedir" onclick="irA('pedir')">Pedir</button>
+    <button class="nb" id="nav-pedidos" onclick="irA('pedidos')">Mis pedidos</button>
+    <button class="nb" id="nav-mensajes" onclick="irA('mensajes')">Mensajes<span class="punto" id="punto-msg"></span></button>
   </div>
-
-  <div id="panel-pqr" style="display:none">
-    <div class="card">
-      <h2>💬 PQR · Petición · Queja · Reclamo · Sugerencia</h2>
-      <p style="font-size:12px;color:var(--cx-text-mute, #64748b);margin-bottom:8px">Contanos qué pasa · revisamos en máximo 5 días hábiles.</p>
-      <label>Tipo</label>
-      <select id="pqr-tipo">
-        <option value="peticion">📨 Petición</option>
-        <option value="queja">⚠️ Queja</option>
-        <option value="reclamo">🚨 Reclamo</option>
-        <option value="sugerencia">💡 Sugerencia</option>
-      </select>
-      <label>Título corto</label>
-      <input id="pqr-titulo" type="text" maxlength="200" placeholder="Ej. Lote llegó con tapa rota">
-      <label>Descripción detallada</label>
-      <textarea id="pqr-desc" rows="5" maxlength="5000" placeholder="Contanos qué pasó, cuándo, qué esperás de solución..."></textarea>
-      <button class="primary" id="btn-pqr" onclick="enviarPqr()">📨 Enviar PQR</button>
-      <div class="msg" id="pqr-msg"></div>
-    </div>
-  </div>
-
-  <div id="panel-mis-pqr" style="display:none">
-    <div class="card">
-      <h2>📜 Mis PQR</h2>
-      <div id="mis-pqr-lista" class="lista"><div class="empty">Cargando...</div></div>
-    </div>
-  </div>
-
-  <div id="panel-comm" style="display:none">
-    <div class="card">
-      <h2>✨ Comunicación con nosotros</h2>
-      <p style="color:var(--cx-text-faint, #94a3b8);font-size:13px;margin-bottom:14px">Pedí un producto nuevo, una reunión con gerencia o mandanos una consulta · te respondemos.</p>
-      <label>Tipo</label>
-      <select id="comm-tipo" onchange="commTipoChange()">
-        <option value="nuevo_producto">🆕 Solicitar producto nuevo</option>
-        <option value="reunion">📅 Reunión con gerencia</option>
-        <option value="consulta">💬 Consulta general</option>
-      </select>
-      <label id="comm-prod-lbl">¿Qué producto querés que desarrollemos?</label>
-      <input id="comm-prod" placeholder="Ej. Serum de niacinamida 30ml">
-      <label id="comm-fecha-lbl" style="display:none">Fecha deseada (opcional)</label>
-      <input id="comm-fecha" type="date" style="display:none">
-      <label>Mensaje / detalle</label>
-      <textarea id="comm-msg" rows="4" placeholder="Contanos lo que necesitás…"></textarea>
-      <button class="primary" id="comm-btn" onclick="enviarComunicacion()">📨 Enviar</button>
-      <div class="msg" id="comm-msg-out"></div>
-    </div>
-    <div class="card">
-      <h2>📜 Mis solicitudes</h2>
-      <div id="mis-sol-lista" class="lista"><div class="empty">Cargando...</div></div>
-    </div>
-  </div>
-
-  <!-- panel cotizar removido 25-may-2026 PM · Sebastián: "no me sirve, el
-       cliente debe pedir productos del catálogo sin valores" · backend RFQ
-       queda inactivo sin UI · si en el futuro se reactiva, restaurar tab -->
 </div>
 
+<div class="wrap">
+
+  <!-- ══ INICIO ══════════════════════════════════════════════════ -->
+  <section class="vista on" id="v-inicio">
+    <div class="h1" id="ini-titulo">Tus pedidos en curso</div>
+    <div class="h1s">Acá ves en qué va cada uno, sin tener que preguntar.</div>
+    <div class="kpis" id="ini-kpis"></div>
+    <div id="ini-lista"><div class="vacio">Cargando...</div></div>
+    <div class="btn-fila" id="ini-acciones" style="display:none">
+      <button class="btn" onclick="irA('pedir')">Hacer un pedido nuevo</button>
+      <button class="ghost" onclick="irA('pedidos')">Ver todo el historial</button>
+    </div>
+  </section>
+
+  <!-- ══ PEDIR ═══════════════════════════════════════════════════ -->
+  <section class="vista" id="v-pedir">
+    <div class="h1">Pedir producto</div>
+    <div class="h1s">Elegí qué necesitás y para cuándo. Te confirmamos la fecha real apenas entre al plan de producción.</div>
+    <div class="card">
+      <label for="sol-producto">Producto</label>
+      <select id="sol-producto"><option value="">Cargando productos...</option></select>
+      <div class="dos">
+        <div>
+          <label for="sol-cant">Cantidad (unidades)</label>
+          <input id="sol-cant" type="number" min="1" step="1" placeholder="Ej. 500">
+        </div>
+        <div>
+          <label for="sol-fecha">Fecha de entrega deseada</label>
+          <input id="sol-fecha" type="date">
+        </div>
+      </div>
+      <div class="aviso" id="sol-aviso"></div>
+      <input type="hidden" id="sol-ml" value="0">
+      <div class="dos">
+        <div>
+          <label for="sol-urgencia">Urgencia</label>
+          <select id="sol-urgencia">
+            <option value="media" selected>Media · planificación normal</option>
+            <option value="baja">Baja · sin apuro</option>
+            <option value="alta">Alta · necesitamos prioridad</option>
+          </select>
+        </div>
+        <div>
+          <label for="sol-repetir">Repetir el pedido</label>
+          <select id="sol-repetir">
+            <option value="0">No repetir (pedido único)</option>
+            <option value="15">Cada 15 días</option>
+            <option value="30">Cada mes</option>
+            <option value="60">Cada 2 meses</option>
+            <option value="90">Cada 3 meses</option>
+          </select>
+        </div>
+      </div>
+      <label for="sol-notas">Notas para producción (opcional)</label>
+      <textarea id="sol-notas" rows="3" placeholder="Color, arte, tipo de envase, cualquier detalle que debamos saber."></textarea>
+      <div class="btn-fila">
+        <button class="btn" id="btn-enviar" onclick="enviarPedido()">Enviar solicitud</button>
+        <span class="hint" style="margin-top:0">Pedimos avisar con un mes de anticipación.</span>
+      </div>
+      <div class="msg" id="sol-msg"></div>
+    </div>
+  </section>
+
+  <!-- ══ MIS PEDIDOS ═════════════════════════════════════════════ -->
+  <section class="vista" id="v-pedidos">
+    <div class="h1">Mis pedidos</div>
+    <div class="h1s">Todo lo que nos pediste, con el detalle de cada etapa.</div>
+    <div id="lista-pedidos"><div class="vacio">Cargando...</div></div>
+  </section>
+
+  <!-- ══ MENSAJES ════════════════════════════════════════════════ -->
+  <section class="vista" id="v-mensajes">
+    <div class="h1">Mensajes</div>
+    <div class="h1s">Escribinos por lo que sea: un problema con un lote, un producto nuevo, una reunión o una duda.</div>
+    <div class="card">
+      <label for="msg-tipo">¿De qué se trata?</label>
+      <select id="msg-tipo" onchange="msgTipoChange()">
+        <optgroup label="Comercial">
+          <option value="consulta" selected>Consulta general</option>
+          <option value="nuevo_producto">Quiero un producto nuevo</option>
+          <option value="reunion">Reunión con gerencia</option>
+        </optgroup>
+        <optgroup label="Sobre un pedido o un problema">
+          <option value="reclamo">Reclamo · algo llegó mal</option>
+          <option value="queja">Queja · algo no salió como esperabas</option>
+          <option value="peticion">Petición formal</option>
+          <option value="sugerencia">Sugerencia</option>
+        </optgroup>
+      </select>
+      <div id="msg-box-tit">
+        <label for="msg-titulo" id="msg-titulo-lbl">Asunto</label>
+        <input id="msg-titulo" maxlength="200" placeholder="Una línea que resuma el tema">
+      </div>
+      <div id="msg-box-prod" style="display:none">
+        <label for="msg-prod">¿Qué producto querés que desarrollemos?</label>
+        <input id="msg-prod" placeholder="Ej. Serum de niacinamida 30 ml">
+      </div>
+      <div id="msg-box-fecha" style="display:none">
+        <label for="msg-fecha">Fecha que te sirve</label>
+        <input id="msg-fecha" type="date">
+      </div>
+      <label for="msg-texto" id="msg-texto-lbl">Contanos el detalle</label>
+      <textarea id="msg-texto" rows="5" maxlength="5000" placeholder="Mientras más contexto nos des, mejor te podemos responder."></textarea>
+      <div class="aviso" id="msg-aviso"></div>
+      <div class="btn-fila"><button class="btn" id="btn-msg" onclick="enviarMensaje()">Enviar</button></div>
+      <div class="msg" id="msg-salida"></div>
+    </div>
+    <div class="rot">Conversaciones</div>
+    <div id="lista-hilos"><div class="vacio">Cargando...</div></div>
+  </section>
+
+</div>
+
+<!-- ══ modal editar pedido ═══════════════════════════════════════ -->
+<div class="ov" id="ov-editar" onclick="if(event.target===this)cerrarEditar()">
+  <div class="mo">
+    <h2>Editar pedido</h2>
+    <p class="hint" id="ed-prod"></p>
+    <div class="dos">
+      <div>
+        <label for="ed-cant">Cantidad (unidades)</label>
+        <input id="ed-cant" type="number" min="1" step="1">
+      </div>
+      <div>
+        <label for="ed-fecha">Fecha de entrega deseada</label>
+        <input id="ed-fecha" type="date">
+      </div>
+    </div>
+    <label for="ed-notas">Notas</label>
+    <textarea id="ed-notas" rows="3" placeholder="Detalles para producción"></textarea>
+    <div class="msg" id="ed-msg"></div>
+    <div class="btn-fila">
+      <button class="btn" id="ed-btn" onclick="guardarEdicion()">Guardar cambios</button>
+      <button class="ghost" onclick="cerrarEditar()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<footer class="pie">
+  <div><span class="sello2">Espagiria Laboratorio</span> sobre <span class="sello2">EOS</span></div>
+  <div>Desarrollado por <span class="sello2">HHA Group</span> &middot; &copy; 2026 HHA Group S.A.S.</div>
+</footer>
+
 <script>
-function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function setTab(t){
-  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
-  document.getElementById('panel-solicitar').style.display = (t==='solicitar')?'block':'none';
-  document.getElementById('panel-mis').style.display = (t==='mis')?'block':'none';
-  document.getElementById('panel-pqr').style.display = (t==='pqr')?'block':'none';
-  document.getElementById('panel-mis-pqr').style.display = (t==='mis-pqr')?'block':'none';
-  document.getElementById('panel-comm').style.display = (t==='comm')?'block':'none';
-  if(t==='mis') cargarMisPedidos();
-  if(t==='mis-pqr') cargarMisPqr();
-  if(t==='comm') cargarMisSolicitudes();
-}
-// ✨ Comunicación 26-jun (Sebastián) · nuevo producto / reunión / consulta · reusa /api/portal/solicitudes.
-function commTipoChange(){
-  var t=document.getElementById('comm-tipo').value;
-  var pl=document.getElementById('comm-prod-lbl'), pi=document.getElementById('comm-prod');
-  var fl=document.getElementById('comm-fecha-lbl'), fi=document.getElementById('comm-fecha');
-  if(t==='nuevo_producto'){ pl.textContent='¿Qué producto querés que desarrollemos?'; pl.style.display='block'; pi.style.display='block'; fl.style.display='none'; fi.style.display='none'; }
-  else if(t==='reunion'){ pl.textContent='Tema de la reunión'; pl.style.display='block'; pi.style.display='block'; fl.style.display='block'; fi.style.display='block'; }
-  else { pl.style.display='none'; pi.style.display='none'; fl.style.display='none'; fi.style.display='none'; }
-}
-async function enviarComunicacion(){
-  var tipo=document.getElementById('comm-tipo').value;
-  var prod=document.getElementById('comm-prod').value.trim();
-  var fecha=document.getElementById('comm-fecha').value;
-  var msg=document.getElementById('comm-msg').value.trim();
-  var out=document.getElementById('comm-msg-out'), btn=document.getElementById('comm-btn');
-  if(tipo==='nuevo_producto' && !prod){ out.className='msg err'; out.textContent='Decinos qué producto querés.'; return; }
-  if(!msg){ out.className='msg err'; out.textContent='Escribí un mensaje con el detalle.'; return; }
-  btn.disabled=true; btn.textContent='Enviando...';
-  try{
-    var r=await fetch('/api/portal/solicitudes',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({tipo:tipo,producto_nombre:prod,mensaje:msg,fecha_requerida:fecha})});
-    var d=await r.json();
-    if(!r.ok){ out.className='msg err'; out.textContent=d.error||'Error'; return; }
-    out.className='msg ok'; out.textContent=d.mensaje||'Enviado · te respondemos pronto.';
-    document.getElementById('comm-prod').value=''; document.getElementById('comm-msg').value=''; document.getElementById('comm-fecha').value='';
-    cargarMisSolicitudes();
-  }catch(e){ out.className='msg err'; out.textContent='Error de red'; }
-  finally{ btn.disabled=false; btn.textContent='📨 Enviar'; }
-}
-async function cargarMisSolicitudes(){
-  var box=document.getElementById('mis-sol-lista'); if(!box) return;
-  try{
-    var d=await (await fetch('/api/portal/mis-solicitudes',{credentials:'same-origin'})).json();
-    var items=d.solicitudes||d.items||[];
-    if(!items.length){ box.innerHTML='<div class="empty">Sin solicitudes todavía.</div>'; return; }
-    var EM={nuevo_producto:'🆕',reunion:'📅',consulta:'💬',cotizacion:'💰',muestras:'🧪',ficha_tecnica:'📄'};
-    var LB={nuevo_producto:'Nuevo producto',reunion:'Reunión con gerencia',consulta:'Consulta',cotizacion:'Cotización',muestras:'Muestras',ficha_tecnica:'Ficha técnica'};
-    box.innerHTML=items.map(function(s){
-      var pn=(s.producto_nombre&&s.producto_nombre!=='—')?(' · '+esc(s.producto_nombre)):'';
-      var resp=s.respuesta_notas?('<div style="font-size:12px;color:var(--cx-success-text, #16a34a);margin-top:6px;border-left:3px solid #6ee7b7;padding-left:8px">💬 '+esc(s.respuesta_notas)+'</div>'):'';
-      return '<div class="pedido"><div class="pedido-prod">'+(EM[s.tipo]||'•')+' '+esc(LB[s.tipo]||s.tipo)+pn+'</div>'+(s.mensaje?'<div style="font-size:12px;color:var(--cx-text-faint, #94a3b8);margin-top:4px">'+esc(s.mensaje)+'</div>':'')+'<span class="chip area" style="margin-top:4px;display:inline-block">'+esc(s.estado||'nueva')+'</span>'+resp+'</div>';
-    }).join('');
-  }catch(e){ box.innerHTML='<div class="empty">Error</div>'; }
+var _PEDIDOS = [], _PEDIDOS_OK = false, _HILOS_OK = false, _EDITANDO = 0;
+var _PQR_TIPOS = ['peticion', 'queja', 'reclamo', 'sugerencia'];
+var _TIPO_LBL = {
+  peticion: 'Petición', queja: 'Queja', reclamo: 'Reclamo', sugerencia: 'Sugerencia',
+  nuevo_producto: 'Producto nuevo', reunion: 'Reunión con gerencia', consulta: 'Consulta',
+  cotizacion: 'Cotización', muestras: 'Muestras', ficha_tecnica: 'Ficha técnica'
+};
+// El estado que ve el cliente se escribe como se habla · el valor crudo de la
+// base ('en_revision') es de la base, no de la pantalla.
+var _EST_LBL = {
+  abierto: 'Abierta', en_revision: 'En revisión', respondido: 'Respondida',
+  respondida: 'Respondida', cerrado: 'Cerrada', cerrada: 'Cerrada', nueva: 'Recibida',
+  convertida: 'Convertida en pedido', rechazada: 'No procede'
+};
+function estadoLbl(e){
+  var k = String(e || '').toLowerCase();
+  return _EST_LBL[k] || (k ? k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ') : '');
 }
 
-// Funciones enviarCotizacion / aceptarCotizacion / actualizarBadge /
-// cargarMisCotizaciones removidas 25-may-2026 PM · tab Cotizar eliminado.
-// Backend RFQ (/api/portal/solicitudes y siblings) queda inactivo · si
-// alguna vez se reactiva, restaurar este bloque desde git history.
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function $(id){return document.getElementById(id);}
+// El cliente lee "8 sep", no "2026-09-08". El año sólo aparece cuando no es
+// el actual (si no, ocupa lugar y no informa nada).
+var _MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function fmtFecha(f){
+  if(!f) return '';
+  var s = String(f).slice(0, 10), p = s.split('-');
+  if(p.length !== 3) return s;
+  var d = parseInt(p[2], 10), m = parseInt(p[1], 10) - 1;
+  if(isNaN(d) || isNaN(m) || !_MES[m]) return s;
+  return d + ' ' + _MES[m] + (String(new Date().getFullYear()) === p[0] ? '' : (' ' + p[0]));
+}
+function cambiarTema(){
+  var h = document.documentElement;
+  var n = h.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  if(n === 'dark'){ h.setAttribute('data-theme','dark'); } else { h.removeAttribute('data-theme'); }
+  try{ localStorage.setItem('cx-theme', n); }catch(e){}
+}
+function irA(v){
+  ['inicio','pedir','pedidos','mensajes'].forEach(function(k){
+    var s = $('v-' + k); if(s) s.classList.toggle('on', k === v);
+    var b = $('nav-' + k); if(b) b.classList.toggle('on', k === v);
+  });
+  window.scrollTo(0, 0);
+  if(v === 'inicio' || v === 'pedidos') cargarPedidos();
+  if(v === 'mensajes') cargarHilos();
+}
 
-async function enviarPqr(){
-  var btn = document.getElementById('btn-pqr');
-  var msg = document.getElementById('pqr-msg');
-  msg.style.display = 'none';
-  var tipo = document.getElementById('pqr-tipo').value;
-  var titulo = document.getElementById('pqr-titulo').value.trim();
-  var desc = document.getElementById('pqr-desc').value.trim();
-  if(!titulo){
-    msg.className='msg err'; msg.textContent='Falta título'; msg.style.display='block'; return;
-  }
-  if(desc.length < 10){
-    msg.className='msg err'; msg.textContent='Descripción muy corta (≥10 chars)'; msg.style.display='block'; return;
-  }
-  btn.disabled=true; btn.textContent='Enviando...';
+/* ── pedidos ─────────────────────────────────────────────────────── */
+function activo(p){ return ['despachado','cancelado'].indexOf(p.estado) < 0; }
+function nombreDe(p){ return p.producto_mostrar || p.producto_nombre || 'Producto'; }
+function acentoDe(p){
+  if(p.estado === 'cancelado') return 'anulado';
+  if(p.estado === 'despachado') return 'listo';
+  var k = p.estado_visible_kind || 'pendiente';
+  if(k === 'rechazado') return 'frenado';
+  if(k === 'en_curso') return 'encurso';
+  return '';
+}
+function chipDe(p){
+  var k = p.estado_visible_kind || 'pendiente';
+  if(p.estado === 'cancelado') return 'wait';
+  return {completado:'ok', en_curso:'now', rechazado:'bad', pendiente:'wait'}[k] || 'wait';
+}
+function rielHtml(tl){
+  if(!tl || !tl.length) return '';
+  return '<div class="riel">' + tl.map(function(s){
+    var e = s.estado || 'pendiente';
+    var c = e === 'completado' ? 'ok' : (e === 'en_curso' ? 'now' : (e === 'rechazado' ? 'bad' : ''));
+    var m = e === 'completado' ? '✓' : (e === 'rechazado' ? '!' : '');
+    return '<div class="rp ' + c + '"><div class="dot">' + m + '</div>'
+         + '<div class="lb">' + esc(s.label || '') + '</div></div>';
+  }).join('') + '</div>';
+}
+function tlHtml(tl){
+  if(!tl || !tl.length) return '<div class="hint">Todavía no hay etapas registradas.</div>';
+  return '<div class="tl">' + tl.map(function(s){
+    return '<div class="tls ' + esc(s.estado || 'pendiente') + '">'
+      + '<div class="ico">' + esc(s.icon || '·') + '</div><div style="min-width:0">'
+      + '<div class="lb">' + esc(s.label || '') + '</div>'
+      + (s.fecha ? '<div class="fe">' + esc(fmtFecha(s.fecha)) + '</div>' : '')
+      + (s.detalle ? '<div class="de">' + esc(s.detalle) + '</div>' : '')
+      + '</div></div>';
+  }).join('') + '</div>';
+}
+// `ctx` dice en QUÉ lista se dibuja la tarjeta: un pedido en curso aparece en
+// Inicio y en Mis pedidos, así que sin prefijo los dos paneles de detalle
+// nacen con el MISMO id y getElementById devuelve el de Inicio, que está
+// oculto (el botón de Mis pedidos no hacía nada · M120).
+function tarjetaPedido(p, destacada, ctx){
+  var urg = {alta:'Urgencia alta', media:'Urgencia media', baja:'Sin apuro'}[p.urgencia || 'media'] || 'Urgencia media';
+  var urgCls = (p.urgencia === 'alta') ? 'bad' : 'wait';
+  var fechaChip = p.fecha_lista
+    ? '<span class="chip ok">Listo estimado: ' + esc(fmtFecha(p.fecha_lista)) + '</span>'
+    : (p.fecha_estimada
+        ? '<span class="chip wait">Pediste para ' + esc(fmtFecha(p.fecha_estimada)) + ' · a confirmar</span>' : '');
+  var editable = (p.estado === 'pendiente');
+  return '<div class="ped ' + acentoDe(p) + (destacada ? ' destacado' : '') + '">'
+    + '<div class="ped-top"><div style="min-width:0">'
+    +   '<div class="ped-num">Pedido #' + p.id + '</div>'
+    +   '<div class="ped-prod">' + esc(nombreDe(p)) + '</div>'
+    +   '<div class="ped-meta">' + p.cantidad_uds + ' unidades'
+    +     (p.ml_unidad ? ' de ' + p.ml_unidad + ' ml' : '')
+    +     (p.kg_equivalente ? ' · ' + p.kg_equivalente + ' kg' : '') + '</div>'
+    + '</div><div class="ped-acc">'
+    +   (editable ? '<button class="ghost" onclick="abrirEditar(' + p.id + ')">Editar</button>' : '')
+    +   '<button class="ghost" onclick="verDetalle(&quot;' + ctx + '&quot;,' + p.id + ')" id="btn-det-' + ctx + '-' + p.id + '">Ver detalle</button>'
+    + '</div></div>'
+    + '<div class="chips">'
+    +   '<span class="chip ' + chipDe(p) + '">' + esc(p.estado === 'cancelado' ? 'Cancelado' : (p.estado_visible || 'Recibido')) + '</span>'
+    +   fechaChip
+    +   '<span class="chip ' + urgCls + '">' + urg + '</span>'
+    + '</div>'
+    + rielHtml(p.timeline)
+    + (p.notas ? '<div class="nota">' + esc(p.notas) + '</div>' : '')
+    + '<div class="det" id="det-' + ctx + '-' + p.id + '">' + tlHtml(p.timeline) + '</div>'
+    + '</div>';
+}
+function verDetalle(ctx, id){
+  var d = $('det-' + ctx + '-' + id); if(!d) return;
+  var abierto = d.classList.toggle('on');
+  var b = $('btn-det-' + ctx + '-' + id);
+  if(b) b.textContent = abierto ? 'Ocultar detalle' : 'Ver detalle';
+}
+async function cargarPedidos(forzar){
+  if(_PEDIDOS_OK && !forzar){ pintarInicio(); pintarPedidos(); return; }
   try{
-    var r = await fetch('/api/portal/pqr', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      credentials:'same-origin',
-      body: JSON.stringify({tipo: tipo, titulo: titulo, descripcion: desc}),
-    });
+    var r = await fetch('/api/portal/mis-pedidos', {credentials:'same-origin'});
+    if(r.status === 401){ window.location.href = '/portal/login'; return; }
     var d = await r.json();
-    if(!r.ok){
-      msg.className='msg err'; msg.textContent='Error: '+(d.error||r.status);
-      msg.style.display='block';
-      btn.disabled=false; btn.textContent='📨 Enviar PQR'; return;
-    }
-    msg.className='msg ok'; msg.textContent='✓ PQR #'+d.id+' registrado · te respondemos pronto';
-    msg.style.display='block';
-    document.getElementById('pqr-titulo').value='';
-    document.getElementById('pqr-desc').value='';
-    btn.disabled=false; btn.textContent='📨 Enviar PQR';
+    _PEDIDOS = d.pedidos || [];
+    _PEDIDOS_OK = true;
   }catch(e){
-    msg.className='msg err'; msg.textContent='Error red: '+e.message;
-    msg.style.display='block';
-    btn.disabled=false; btn.textContent='📨 Enviar PQR';
+    var err = '<div class="vacio">No pudimos traer tus pedidos. Revisá la conexión y volvé a intentar.</div>';
+    $('ini-lista').innerHTML = err; $('lista-pedidos').innerHTML = err;
+    return;
   }
+  pintarInicio(); pintarPedidos();
 }
-
-async function cargarMisPqr(){
-  var box = document.getElementById('mis-pqr-lista');
-  box.innerHTML = '<div class="empty">Cargando...</div>';
-  try{
-    var r = await fetch('/api/portal/mis-pqr', {credentials:'same-origin'});
-    if(r.status===401){ window.location.href='/portal/login'; return; }
-    var d = await r.json();
-    var items = d.pqrs || [];
-    if(!items.length){
-      box.innerHTML = '<div class="empty">Sin PQRs · usá la pestaña PQR para crear uno</div>';
-      return;
-    }
-    var EMOJI = {peticion:'📨', queja:'⚠️', reclamo:'🚨', sugerencia:'💡'};
-    box.innerHTML = items.map(p =>
-      '<div class="pedido '+esc(p.estado)+'">'
-      + '<div class="pedido-prod">'+(EMOJI[p.tipo]||'📨')+' '+esc(p.titulo)+'</div>'
-      + '<div class="pedido-meta">'+esc(p.tipo)+' · creado '+esc((p.creado_at_utc||'').slice(0,10))+'</div>'
-      + '<span class="pedido-estado">'+esc(p.estado)+'</span>'
-      + '<div style="font-size:11px;color:var(--cx-text-soft, #475569);margin-top:6px;white-space:pre-wrap">'+esc(p.descripcion)+'</div>'
-      + (p.respuesta_admin
-          ? '<div style="margin-top:8px;padding:8px;background:var(--cx-info-pale, #dbeafe);border-radius:6px;font-size:11px"><b>Respuesta de '+esc(p.respondido_por||'Espagiria')+':</b><br>'+esc(p.respuesta_admin)+'</div>'
-          : '')
-      + '</div>'
-    ).join('');
-  }catch(e){ box.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; }
-}
-
-async function cargarSesionYProductos(){
-  try{
-    var rp = await fetch('/api/portal/productos', {credentials:'same-origin'});
-    if(rp.status === 401){ window.location.href = '/portal/login'; return; }
-    var d = await rp.json();
-    document.getElementById('hdr-cliente').textContent = d.cliente_nombre ? ('Hola, ' + d.cliente_nombre) : '';
-    var sel = document.getElementById('sol-producto');
-    sel.innerHTML = '<option value="">— Elegí un producto —</option>' +
-      (d.productos||[]).map(p=>'<option value="'+esc(p.nombre)+'">'+esc(p.mostrar||p.nombre)+'</option>').join('');
-  } catch(e){
-    document.getElementById('hdr-cliente').textContent = 'Error: ' + e.message;
+function pintarInicio(){
+  var box = $('ini-lista'), kpis = $('ini-kpis'), acc = $('ini-acciones');
+  var enCurso = _PEDIDOS.filter(activo);
+  var entregados = _PEDIDOS.filter(function(p){ return p.estado === 'despachado'; }).length;
+  var fechas = enCurso.map(function(p){ return p.fecha_lista; }).filter(Boolean).sort();
+  kpis.innerHTML =
+      '<div class="kpi"><div class="k">En curso</div><div class="v">' + enCurso.length + '</div></div>'
+    + '<div class="kpi"><div class="k">Próximo listo</div><div class="v'
+    +   (fechas.length ? '' : ' chico') + '">' + (fechas.length ? esc(fmtFecha(fechas[0])) : 'A confirmar') + '</div></div>'
+    + '<div class="kpi"><div class="k">Entregados</div><div class="v">' + entregados + '</div></div>';
+  acc.style.display = 'flex';
+  if(!enCurso.length){
+    $('ini-titulo').textContent = 'Todo al día';
+    box.innerHTML = '<div class="card"><div class="vacio">'
+      + '<span class="em">📦</span>'
+      + '<div class="t">No tenés pedidos en curso</div>'
+      + 'Cuando nos pidas un producto, acá vas a ver en qué etapa va: producción, envasado, microbiología y despacho.'
+      + '</div></div>';
+    return;
   }
+  $('ini-titulo').textContent = enCurso.length === 1 ? 'Tu pedido en curso' : 'Tus pedidos en curso';
+  box.innerHTML = enCurso.map(function(p){ return tarjetaPedido(p, true, 'ini'); }).join('');
+}
+function pintarPedidos(){
+  var box = $('lista-pedidos');
+  if(!_PEDIDOS.length){
+    box.innerHTML = '<div class="card"><div class="vacio"><span class="em">📋</span>'
+      + '<div class="t">Todavía no nos pediste nada</div>'
+      + 'Andá a <b>Pedir</b> y mandanos tu primera solicitud.</div></div>';
+    return;
+  }
+  box.innerHTML = _PEDIDOS.map(function(p){ return tarjetaPedido(p, false, 'lis'); }).join('');
 }
 
-// Sebastián 25-may-2026 PM · alerta visual cuando cliente elige fecha
-// < 30 días · "le sale pop up de que debe solicitar con un mes". El
-// aviso se muestra inline al cambiar el input + valida al enviar.
-function _diasHastaFecha(fechaIso){
-  if(!fechaIso) return null;
+/* ── nuevo pedido ────────────────────────────────────────────────── */
+function diasHasta(f){
+  if(!f) return null;
   var hoy = new Date(); hoy.setHours(0,0,0,0);
-  var f = new Date(fechaIso + 'T12:00:00');
-  return Math.round((f - hoy) / 86400000);
+  return Math.round((new Date(f + 'T12:00:00') - hoy) / 86400000);
 }
-function _actualizarAvisoFecha(){
-  var box = document.getElementById('sol-fecha-aviso');
-  if(!box) return;
-  var fecha = document.getElementById('sol-fecha').value;
-  var dias = _diasHastaFecha(fecha);
-  if(dias === null || dias >= 30){ box.style.display = 'none'; return; }
-  if(dias < 0){
-    box.style.background = '#fee2e2';
-    box.style.borderLeftColor = '#dc2626';
-    box.style.color = '#991b1b';
-    box.innerHTML = '⛔ La fecha está en el pasado · elegí una futura';
+function avisoFecha(){
+  var box = $('sol-aviso'); if(!box) return;
+  var d = diasHasta($('sol-fecha').value);
+  box.className = 'aviso';
+  if(d === null || d >= 30){ return; }
+  if(d < 0){
+    box.className = 'aviso grave on';
+    box.textContent = 'Esa fecha ya pasó. Elegí una futura.';
   } else {
-    box.style.background = '#fef3c7';
-    box.style.borderLeftColor = '#f59e0b';
-    box.style.color = '#92400e';
-    box.innerHTML = '⚠ Tu fecha es en ' + dias + ' día' + (dias===1?'':'s')
-      + ' · pedimos solicitar con <b>mínimo 1 mes</b> de anticipación · '
-      + 'al enviar te confirmaremos si podemos cumplir o sugerimos otra fecha.';
+    box.className = 'aviso on';
+    box.innerHTML = 'Pediste para dentro de ' + d + (d === 1 ? ' día' : ' días')
+      + '. La producción necesita un mes de anticipación, así que al recibirla te confirmamos '
+      + 'si llegamos o te proponemos otra fecha.';
   }
-  box.style.display = 'block';
 }
-document.addEventListener('DOMContentLoaded', function(){
-  var f = document.getElementById('sol-fecha');
-  if(f) f.addEventListener('change', _actualizarAvisoFecha);
-});
-
 async function enviarPedido(){
-  var btn = document.getElementById('btn-enviar');
-  var msg = document.getElementById('sol-msg');
-  msg.style.display = 'none';
-  var producto = document.getElementById('sol-producto').value;
-  var cant = parseInt(document.getElementById('sol-cant').value);
-  var ml = parseFloat(document.getElementById('sol-ml').value || '30');
-  var fecha = document.getElementById('sol-fecha').value;
-  var urgEl = document.getElementById('sol-urgencia');
-  var urgencia = urgEl ? urgEl.value : 'media';
-  var notas = document.getElementById('sol-notas').value.trim();
-  if(!producto || !cant || cant<=0){
-    msg.className = 'msg err';
-    msg.textContent = 'Falta producto o cantidad';
-    msg.style.display = 'block';
-    return;
+  var btn = $('btn-enviar'), msg = $('sol-msg');
+  msg.className = 'msg';
+  var producto = $('sol-producto').value;
+  var cant = parseInt($('sol-cant').value, 10);
+  var ml = parseFloat($('sol-ml').value || '30');
+  var fecha = $('sol-fecha').value;
+  var urgencia = $('sol-urgencia').value;
+  var notas = $('sol-notas').value.trim();
+  if(!producto || !cant || cant <= 0){
+    msg.className = 'msg err'; msg.textContent = 'Falta elegir el producto o la cantidad.'; return;
   }
-  // Validación blanda · fecha < 30 días pide confirmación · alta urgencia
-  // pasa directo (cliente sabe que es apurado). Sin fecha también pasa
-  // (queda como "sin fecha estimada" · admin la define).
-  var dias = _diasHastaFecha(fecha);
-  if(dias !== null && dias < 0){
-    msg.className = 'msg err';
-    msg.textContent = 'La fecha está en el pasado · elegí una futura';
-    msg.style.display = 'block';
-    return;
+  var d = diasHasta(fecha);
+  if(d !== null && d < 0){
+    msg.className = 'msg err'; msg.textContent = 'Esa fecha ya pasó. Elegí una futura.'; return;
   }
-  if(dias !== null && dias < 30 && urgencia !== 'alta'){
-    if(!confirm('⚠ Pediste para dentro de ' + dias + ' días.\n\n'
-                + 'Lo ideal es solicitar con mínimo 1 mes de anticipación '
-                + 'porque la producción tiene lead time.\n\n'
-                + '¿Continuar de todos modos? Si es URGENTE, mejor cerrá '
-                + 'esto, cambiá urgencia a "🔴 Alta" y reenviá.')){
-      return;
-    }
+  if(d !== null && d < 30 && urgencia !== 'alta'){
+    if(!confirm('Pediste para dentro de ' + d + ' días y lo ideal es un mes de anticipación. ¿Lo enviamos igual? Si es urgente, cancelá y marcá urgencia Alta.')) return;
   }
   btn.disabled = true; btn.textContent = 'Enviando...';
   try{
     var r = await fetch('/api/portal/pedidos', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      credentials:'same-origin',
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
       body: JSON.stringify({
         producto_nombre: producto,
         cantidad_uds: cant,
@@ -769,117 +945,231 @@ async function enviarPedido(){
         fecha_estimada: fecha,
         urgencia: urgencia,
         notas: notas,
-        repetir_cada_dias: (parseInt((document.getElementById('sol-repetir')||{}).value||'0',10)||0),
-      }),
+        repetir_cada_dias: (parseInt(($('sol-repetir') || {}).value || '0', 10) || 0)
+      })
     });
-    var d = await r.json();
+    var dd = await r.json();
     if(!r.ok){
-      msg.className = 'msg err';
-      msg.textContent = 'Error: ' + (d.error || r.status);
-      msg.style.display = 'block';
-      btn.disabled = false; btn.textContent = '📨 Enviar solicitud';
+      msg.className = 'msg err'; msg.textContent = dd.error || ('No se pudo enviar (' + r.status + ')');
       return;
     }
     msg.className = 'msg ok';
-    msg.textContent = '✓ Pedido enviado · #' + d.id + ' · ' + (d.kg_b2b||0) + ' kg · te avisamos pronto';
-    msg.style.display = 'block';
-    // limpiar form
-    document.getElementById('sol-cant').value = '';
-    document.getElementById('sol-fecha').value = '';
-    document.getElementById('sol-notas').value = '';
-    document.getElementById('sol-fecha-aviso').style.display = 'none';
-    if(urgEl) urgEl.value = 'media';
-    btn.disabled = false; btn.textContent = '📨 Enviar solicitud';
-  } catch(e){
-    msg.className = 'msg err';
-    msg.textContent = 'Error de red: ' + e.message;
-    msg.style.display = 'block';
-    btn.disabled = false; btn.textContent = '📨 Enviar solicitud';
+    msg.textContent = 'Listo, recibimos tu pedido #' + dd.id + '. Lo revisamos y te confirmamos la fecha.';
+    $('sol-cant').value = ''; $('sol-fecha').value = ''; $('sol-notas').value = '';
+    $('sol-urgencia').value = 'media'; $('sol-repetir').value = '0';
+    $('sol-aviso').className = 'aviso';
+    cargarPedidos(true);
+  }catch(e){
+    msg.className = 'msg err'; msg.textContent = 'No hay conexión con el servidor: ' + e.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Enviar solicitud';
   }
 }
 
-async function cargarMisPedidos(){
-  var box = document.getElementById('mis-lista');
-  box.innerHTML = '<div class="empty">Cargando...</div>';
-  try{
-    var r = await fetch('/api/portal/mis-pedidos', {credentials:'same-origin'});
-    if(r.status === 401){ window.location.href = '/portal/login'; return; }
-    var d = await r.json();
-    var items = d.pedidos || [];
-    if(!items.length){
-      box.innerHTML = '<div class="empty">No tenés pedidos todavía · andá a Solicitar</div>';
-      return;
-    }
-    box.innerHTML = items.map(p => {
-      var tlHtml = '';
-      if (p.timeline && p.timeline.length) {
-        tlHtml = '<div class="tl">' + p.timeline.map(function(s){
-          var clsState = 'tl-step ' + (s.estado || 'pendiente');
-          return '<div class="' + clsState + '">'
-               + '<div class="tl-ico">' + esc(s.icon || '·') + '</div>'
-               + '<div class="tl-body">'
-               +   '<div class="tl-lbl">' + esc(s.label || '') + '</div>'
-               +   (s.fecha ? '<div class="tl-fecha">' + esc(s.fecha) + '</div>' : '')
-               +   (s.detalle ? '<div class="tl-det">' + esc(s.detalle) + '</div>' : '')
-               + '</div></div>';
-        }).join('') + '</div>';
-      }
-      var estLbl = p.estado_visible || p.estado || 'pendiente';
-      var estKind = p.estado_visible_kind || 'pendiente';
-      var estChipCls = {
-        completado: 'libre', en_curso: 'ocupada',
-        rechazado: 'sucia', pendiente: 'area',
-      }[estKind] || 'area';
-      // Sebastián 25-may-2026 PM · chip urgencia (alta/media/baja).
-      var urgIco = {alta:'🔴', media:'🟡', baja:'🟢'}[p.urgencia || 'media'] || '🟡';
-      var urgTxt = {alta:'Alta', media:'Media', baja:'Baja'}[p.urgencia || 'media'] || 'Media';
-      var urgChip = '<span style="display:inline-block;margin-left:6px;padding:2px 7px;border-radius:10px;background:var(--cx-border-soft, #f1f5f9);font-size:10px;color:var(--cx-text-soft, #475569)">' + urgIco + ' ' + urgTxt + '</span>';
-      return '<div class="pedido '+esc(p.estado)+'">'
-        + '<div class="pedido-prod">'+esc(p.producto_nombre)+'</div>'
-        + '<div class="pedido-meta">'+p.cantidad_uds+' uds × '+p.ml_unidad+' ml · '+(p.kg_equivalente||0)+' kg</div>'
-        + (p.fecha_lista
-             ? '<div class="pedido-meta" style="color:var(--cx-success-text, #15803d);font-weight:700">📅 Listo estimado: '+esc(p.fecha_lista)+'</div>'
-             : (p.fecha_estimada ? '<div class="pedido-meta" style="color:var(--cx-warn-text, #92400e)">📅 Fecha pedida: ~'+esc(p.fecha_estimada)+' · <span style="font-weight:400">a confirmar</span></div>' : ''))
-        + '<span class="chip '+estChipCls+'" style="margin-top:4px;display:inline-block">'+esc(estLbl)+'</span>'
-        + urgChip
-        + (p.notas?'<div style="font-size:11px;color:var(--cx-text-mute, #64748b);margin-top:6px">📝 '+esc(p.notas)+'</div>':'')
-        + (p.estado === 'pendiente' ? '<div style="margin-top:8px"><button onclick="editarPedidoPortal('+p.id+')" style="background:var(--cx-card, #fff);border:1px solid var(--cx-primary, #6d28d9);color:var(--cx-primary-text, #6d28d9);border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600">✏️ Editar</button></div>' : '')
-        + tlHtml
-        + '</div>';
-    }).join('');
-  } catch(e){
-    box.innerHTML = '<div class="empty">Error: '+esc(e.message)+'</div>';
-  }
+/* ── editar pedido pendiente ─────────────────────────────────────── */
+function abrirEditar(id){
+  var p = _PEDIDOS.filter(function(x){ return x.id === id; })[0];
+  if(!p) return;
+  _EDITANDO = id;
+  $('ed-prod').textContent = 'Pedido #' + id + ' · ' + nombreDe(p);
+  $('ed-cant').value = p.cantidad_uds || '';
+  $('ed-fecha').value = (p.fecha_estimada || '').slice(0, 10);
+  $('ed-notas').value = p.notas || '';
+  $('ed-msg').className = 'msg';
+  $('ov-editar').classList.add('on');
 }
-
-// B2B mejora 4/4 (Sebastián 26-jun) · el cliente edita su pedido mientras esté pendiente.
-async function editarPedidoPortal(pid){
-  var cant = prompt('Nueva cantidad de unidades (vacío = no cambiar):', '');
-  if (cant === null) return;
-  var fecha = prompt('Nueva fecha de entrega deseada YYYY-MM-DD (vacío = no cambiar):', '');
-  if (fecha === null) return;
-  var body = {};
-  if (cant && cant.trim()) { var n = parseInt(cant, 10); if (n > 0) body.cantidad_uds = n; }
-  if (fecha && fecha.trim()) body.fecha_estimada = fecha.trim();
-  if (!Object.keys(body).length) { return; }
+function cerrarEditar(){ $('ov-editar').classList.remove('on'); _EDITANDO = 0; }
+async function guardarEdicion(){
+  if(!_EDITANDO) return;
+  var btn = $('ed-btn'), msg = $('ed-msg');
+  var cant = parseInt($('ed-cant').value, 10);
+  if(!cant || cant <= 0){
+    msg.className = 'msg err'; msg.textContent = 'La cantidad tiene que ser mayor a cero.'; return;
+  }
+  btn.disabled = true; btn.textContent = 'Guardando...';
   try{
-    var r = await fetch('/api/portal/pedidos/' + pid, {
-      method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      credentials: 'same-origin', body: JSON.stringify(body),
+    var r = await fetch('/api/portal/pedidos/' + _EDITANDO, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        cantidad_uds: cant,
+        fecha_estimada: $('ed-fecha').value,
+        notas: $('ed-notas').value.trim()
+      })
     });
     var d = await r.json();
-    if (!r.ok) { alert(d.error || 'No se pudo editar'); return; }
-    cargarMisPedidos();
-  } catch(e){ alert('Error al editar el pedido'); }
+    if(!r.ok){
+      msg.className = 'msg err'; msg.textContent = d.error || 'No se pudo guardar';
+      return;
+    }
+    cerrarEditar();
+    cargarPedidos(true);
+  }catch(e){
+    msg.className = 'msg err'; msg.textContent = 'No hay conexión con el servidor';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Guardar cambios';
+  }
 }
 
-cargarSesionYProductos();
+/* ── mensajes (PQR regulado + comercial, una sola entrada) ───────── */
+function esPqr(t){ return _PQR_TIPOS.indexOf(t) >= 0; }
+function msgTipoChange(){
+  var t = $('msg-tipo').value;
+  $('msg-box-prod').style.display = (t === 'nuevo_producto') ? 'block' : 'none';
+  $('msg-box-fecha').style.display = (t === 'reunion') ? 'block' : 'none';
+  $('msg-box-tit').style.display = esPqr(t) ? 'block' : (t === 'consulta' ? 'block' : 'block');
+  $('msg-titulo-lbl').textContent = esPqr(t) ? 'Título corto' : 'Asunto';
+  $('msg-texto-lbl').textContent = esPqr(t) ? 'Contanos qué pasó' : 'Contanos el detalle';
+  var av = $('msg-aviso');
+  if(esPqr(t)){
+    av.className = 'aviso on';
+    av.textContent = 'Esto queda registrado como PQR formal y le llega a Calidad. Te respondemos en máximo 5 días hábiles.';
+  } else {
+    av.className = 'aviso';
+  }
+}
+async function enviarMensaje(){
+  var t = $('msg-tipo').value;
+  var titulo = $('msg-titulo').value.trim();
+  var texto = $('msg-texto').value.trim();
+  var btn = $('btn-msg'), out = $('msg-salida');
+  out.className = 'msg';
+  if(esPqr(t)){
+    if(!titulo){ out.className = 'msg err'; out.textContent = 'Ponele un título corto.'; return; }
+    if(texto.length < 10){ out.className = 'msg err'; out.textContent = 'Contanos un poco más (mínimo 10 caracteres).'; return; }
+  } else {
+    if(!texto){ out.className = 'msg err'; out.textContent = 'Escribinos el detalle.'; return; }
+    if(t === 'nuevo_producto' && !$('msg-prod').value.trim()){
+      out.className = 'msg err'; out.textContent = 'Decinos qué producto querés.'; return;
+    }
+  }
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  try{
+    var r, d;
+    if(esPqr(t)){
+      r = await fetch('/api/portal/pqr', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin',
+        body: JSON.stringify({tipo: t, titulo: titulo, descripcion: texto})
+      });
+      d = await r.json();
+      if(!r.ok){ out.className = 'msg err'; out.textContent = d.error || ('Error ' + r.status); return; }
+      out.className = 'msg ok';
+      out.textContent = 'Registramos tu ' + (_TIPO_LBL[t] || 'mensaje').toLowerCase() + ' #' + d.id + '. Te respondemos pronto.';
+    } else {
+      r = await fetch('/api/portal/solicitudes', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin',
+        body: JSON.stringify({
+          tipo: t,
+          producto_nombre: $('msg-prod').value.trim(),
+          mensaje: (titulo ? titulo + ' · ' : '') + texto,
+          fecha_requerida: $('msg-fecha').value
+        })
+      });
+      d = await r.json();
+      if(!r.ok){ out.className = 'msg err'; out.textContent = d.error || ('Error ' + r.status); return; }
+      out.className = 'msg ok';
+      out.textContent = d.mensaje || 'Enviado. Te respondemos pronto.';
+    }
+    $('msg-titulo').value = ''; $('msg-texto').value = '';
+    $('msg-prod').value = ''; $('msg-fecha').value = '';
+    cargarHilos(true);
+  }catch(e){
+    out.className = 'msg err'; out.textContent = 'No hay conexión con el servidor';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Enviar';
+  }
+}
+async function cargarHilos(forzar){
+  var box = $('lista-hilos');
+  if(_HILOS_OK && !forzar) return;
+  try{
+    var res = await Promise.all([
+      fetch('/api/portal/mis-pqr', {credentials:'same-origin'}),
+      fetch('/api/portal/mis-solicitudes', {credentials:'same-origin'})
+    ]);
+    if(res[0].status === 401){ window.location.href = '/portal/login'; return; }
+    var dp = await res[0].json(), ds = await res[1].json();
+    var hilos = [];
+    (dp.pqrs || []).forEach(function(p){
+      hilos.push({
+        fecha: (p.creado_at_utc || '').slice(0, 10),
+        tipo: p.tipo, formal: true, titulo: p.titulo || (_TIPO_LBL[p.tipo] || 'PQR'),
+        texto: p.descripcion || '', estado: p.estado || 'abierto',
+        respuesta: p.respuesta_admin || '', quien: p.respondido_por || 'Espagiria'
+      });
+    });
+    (ds.items || ds.solicitudes || []).forEach(function(s){
+      // una reunión o una consulta no llevan producto: el backend guarda un
+      // guión de relleno · un relleno NO es un dato (M193), así que se pregunta
+      // si tiene letras o números, no si es igual a un carácter concreto.
+      var pn = (s.producto_nombre || '').trim();
+      var t = /[a-z0-9]/i.test(pn)
+        ? (_TIPO_LBL[s.tipo] || s.tipo) + ' · ' + pn
+        : (_TIPO_LBL[s.tipo] || s.tipo);
+      hilos.push({
+        fecha: (s.creada_at || '').slice(0, 10),
+        tipo: s.tipo, formal: false, titulo: t,
+        texto: s.mensaje || '', estado: s.estado || 'nueva',
+        respuesta: s.respuesta_notas || '', quien: s.respondido_por || 'Espagiria'
+      });
+    });
+    hilos.sort(function(a, b){ return (b.fecha || '').localeCompare(a.fecha || ''); });
+    _HILOS_OK = true;
+    if(!hilos.length){
+      box.innerHTML = '<div class="card"><div class="vacio"><span class="em">💬</span>'
+        + '<div class="t">Todavía no hay conversaciones</div>'
+        + 'Escribinos con el formulario de arriba y acá vas a ver nuestra respuesta.</div></div>';
+      return;
+    }
+    box.innerHTML = hilos.map(function(h){
+      var cls = h.respuesta ? 'ok' : (h.formal ? 'info' : 'wait');
+      return '<div class="hilo">'
+        + '<div class="hilo-top"><div style="min-width:0">'
+        +   '<div class="hilo-tit">' + esc(h.titulo) + '</div>'
+        +   '<div class="chips" style="margin-top:6px">'
+        +     '<span class="chip ' + cls + '">' + esc(estadoLbl(h.estado)) + '</span>'
+        +     (h.formal ? '<span class="chip info">PQR formal</span>' : '')
+        +   '</div>'
+        + '</div><div class="hilo-fe">' + esc(fmtFecha(h.fecha)) + '</div></div>'
+        + (h.texto ? '<div class="hilo-txt">' + esc(h.texto) + '</div>' : '')
+        + (h.respuesta ? '<div class="resp"><b>Respuesta de ' + esc(h.quien) + '</b><br>' + esc(h.respuesta) + '</div>' : '')
+        + '</div>';
+    }).join('');
+    actualizarPunto();
+  }catch(e){
+    box.innerHTML = '<div class="vacio">No pudimos traer las conversaciones. Revisá la conexión.</div>';
+  }
+}
+async function actualizarPunto(){
+  try{
+    var d = await (await fetch('/api/portal/badge', {credentials:'same-origin'})).json();
+    var p = $('punto-msg');
+    if(p) p.classList.toggle('on', (d.total || 0) > 0);
+  }catch(e){}
+}
+
+/* ── arranque ────────────────────────────────────────────────────── */
+async function arrancar(){
+  try{
+    var r = await fetch('/api/portal/productos', {credentials:'same-origin'});
+    if(r.status === 401){ window.location.href = '/portal/login'; return; }
+    var d = await r.json();
+    $('saludo').textContent = d.cliente_nombre ? ('Hola, ' + d.cliente_nombre) : '';
+    $('sol-producto').innerHTML = '<option value="">Elegí un producto</option>'
+      + (d.productos || []).map(function(p){
+          return '<option value="' + esc(p.nombre) + '">' + esc(p.mostrar || p.nombre) + '</option>';
+        }).join('');
+  }catch(e){
+    $('sol-producto').innerHTML = '<option value="">No pudimos cargar el catálogo</option>';
+  }
+  var f = $('sol-fecha'); if(f) f.addEventListener('change', avisoFecha);
+  msgTipoChange();
+  cargarPedidos();
+  actualizarPunto();
+}
+arrancar();
 </script>
-<footer class="app-footer">
-  <div><strong>EOS v1.0</strong> &middot; Edición Espagiria</div>
-  <div style="margin-top:4px;">Desarrollado por <strong>HHA Group</strong></div>
-  <div style="margin-top:6px;color:var(--cx-text-soft, #334155);">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
-</footer>
 </body></html>
 """
 
@@ -1645,6 +1935,25 @@ def portal_mis_pedidos():
                         break
         except Exception as _e:
             log.warning('bulk lotes pre-load fallo: %s', _e)
+    # FIX · 13-ago-2026 · rediseño del portal · el catálogo (/api/portal/productos)
+    # muestra el nombre GENÉRICO (mig 293) y esta lista mostraba el comercial de
+    # ÁNIMUS: el cliente pedía "Niacinamida" y en sus pedidos leía otro nombre.
+    # Dos pantallas del mismo portal nombrando distinto el mismo producto (M161).
+    # `producto_nombre` NO se toca (es el valor real con el que se produce).
+    _gen = {}
+    try:
+        for _gr in conn.execute(
+            """SELECT producto_nombre, COALESCE(MAX(nombre_generico),'')
+               FROM formula_headers
+               WHERE COALESCE(activo,1) = 1
+               GROUP BY producto_nombre""",
+        ).fetchall():
+            _g = (_gr[1] or '').strip()
+            if _g:
+                _gen[(_gr[0] or '').strip().upper()] = _g
+    except Exception as _e:
+        # mig 293 no aplicada · cae al nombre real (nunca deja la lista sin nombre)
+        log.warning('mapa de nombres genéricos del portal falló: %s', _e)
     out = []
     for r in rows:
         uds = int(r[2] or 0); ml = float(r[3] or 0)
@@ -1678,6 +1987,7 @@ def portal_mis_pedidos():
         out.append({
             'id': pid,
             'producto_nombre': r[1] or '',
+            'producto_mostrar': _gen.get((r[1] or '').strip().upper(), '') or (r[1] or ''),
             'cantidad_uds': uds,
             'ml_unidad': ml,
             'kg_equivalente': round(uds * ml / 1000.0, 2),
