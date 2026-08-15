@@ -314,14 +314,20 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div class="form-group"><label>Urgencia</label>
         <select id="sol-urg" style="width:100%;"><option value="Alta">Alta</option><option value="Normal" selected>Normal</option><option value="Baja">Baja</option></select>
       </div>
+      <!-- ids PROPIOS (Sebastián 14-ago-2026): este modal y el de "Solicitar Compra"
+           compartían id="sol-obs" e id="sol-msg". getElementById devuelve el PRIMERO
+           del documento -el del otro modal, oculto-, así que la justificación que se
+           escribía acá no se leía nunca y los mensajes de error se pintaban en una
+           caja invisible: el botón "Enviar a Compras" no podía funcionar y no daba
+           ninguna señal (M199). -->
       <div class="form-group"><label>Observaci&#243;n / justificaci&#243;n *</label>
-        <textarea id="sol-obs" rows="3" placeholder="Ej: Stock por debajo del m&#237;nimo, requerido para producci&#243;n GEL HID semana del 5 mayo"></textarea>
+        <textarea id="sollote-obs" rows="3" placeholder="Ej: Stock por debajo del m&#237;nimo, requerido para producci&#243;n GEL HID semana del 5 mayo"></textarea>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px;">
         <button onclick="enviarSolicitarLote()" style="flex:1;background:#27ae60;padding:9px;font-weight:700;">&#10003; Enviar a Compras</button>
         <button onclick="cerrarSolicitarLote()" style="flex:1;background:#6c757d;padding:9px;">Cancelar</button>
       </div>
-      <div id="sol-msg" style="margin-top:10px;font-size:0.85em;"></div>
+      <div id="sollote-msg" style="margin-top:10px;font-size:0.85em;"></div>
     </div>
   </div>
 </div>
@@ -1584,7 +1590,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button onclick="crearDemoLegajo(this)" class="cx-btn cx-btn-ghost cx-btn-sm" title="Crea una orden DEMO + legajo para ver los Pasos inline SIN descontar MP (se borra con 🧹 Limpiar)">&#129514; Demo legajo</button>
-          <button onclick="limpiarDemos(this)" class="cx-btn cx-btn-danger cx-btn-sm" title="Borra TODOS los demos (producciones demo + legajos) · no salen más en el calendario">&#129529; Limpiar demos</button>
+          <!-- En tono neutro: es una herramienta de práctica, y en rojo brillante
+               al lado de la tabla de producción real compite con lo que importa.
+               Sigue siendo la misma acción, con el mismo aviso. -->
+          <button onclick="limpiarDemos(this)" class="cx-btn cx-btn-ghost cx-btn-sm" title="Borra TODOS los demos (producciones demo + legajos) · no salen más en el calendario">&#129529; Limpiar demos</button>
         </div>
       </div>
       <div id="mi-trabajo-panel" style="display:none;margin-top:12px"></div>
@@ -2464,20 +2473,29 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
 
 <div id="acondicionamiento" class="tab-content">
 <div style="padding:18px">
-  <h2 style="margin:0 0 4px;color:var(--cx-primary-text)">&#128295; Acondicionamiento PT</h2>
-  <p style="color:var(--cx-text-mute);font-size:13px;margin-bottom:16px">Registra etiquetas, plegadizas y unidades salientes para entrega al cliente.</p>
+  <!-- Sebastián 14-ago-2026, revisando Producción: Fabricación y Envasado están
+       premium y esta pantalla se veía de otra época (tabla azul sólida, formulario
+       gris plano, "Registrar Batch" en inglés, encabezados sin tildes). Mismo
+       lenguaje que sus dos hermanas · ids y funciones INTACTOS. -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+    <span style="display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;background:var(--cx-primary-grad);border-radius:12px;font-size:20px;box-shadow:0 4px 12px rgba(109,40,217,.28)">&#128295;</span>
+    <div>
+      <h2 style="margin:0;color:var(--cx-text);font-size:20px;font-weight:800;letter-spacing:-.01em">Acondicionamiento</h2>
+      <div style="color:var(--cx-text-mute);font-size:13px">Etiquetas, plegadizas y unidades que salen para el cliente. Lo que se registra acá cierra el lote.</div>
+    </div>
+  </div>
 
-  <div id="cola-sin-acond" style="background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:14px;margin-bottom:18px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h3 style="margin:0;font-size:14px;color:#0d47a1">&#128295; Cola: lotes listos para acondicionar</h3>
-      <button onclick="loadColaAcond()" style="background:#0d47a1;color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer">&#8635; Actualizar</button>
+  <div id="cola-sin-acond" style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:16px;margin-bottom:18px;box-shadow:0 1px 3px rgba(15,23,42,.05)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:14px;font-weight:800;color:var(--cx-primary-text)">&#128295; Lotes listos para acondicionar</h3>
+      <button onclick="loadColaAcond()" style="background:var(--cx-primary);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Actualizar</button>
     </div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="background:#1565c0;color:#fff">
-          <th style="padding:7px">Lote</th><th style="padding:7px">Producto</th><th style="padding:7px">Uds</th><th style="padding:7px">Presentacion</th><th style="padding:7px">Fecha</th><th style="padding:7px">Accion</th>
+        <thead><tr style="background:var(--cx-border-soft);color:var(--cx-text-soft)">
+          <th style="padding:9px;text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Lote</th><th style="padding:9px;text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Producto</th><th style="padding:9px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Uds</th><th style="padding:9px;text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Presentaci&oacute;n</th><th style="padding:9px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Fecha</th><th style="padding:9px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Acci&oacute;n</th>
         </tr></thead>
-        <tbody id="cola-acond-tbody"><tr><td colspan="6" style="text-align:center;color:var(--cx-text-faint);padding:10px">Cargando...</td></tr></tbody>
+        <tbody id="cola-acond-tbody"><tr><td colspan="6" style="text-align:center;color:var(--cx-text-faint);padding:10px">Cargando&hellip;</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2492,12 +2510,12 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <!-- Panel activo de acondicionamiento - aparece al clic en Acondicionar desde la cola -->
-  <div id="ac-panel-activo" style="display:none;background:var(--cx-card);border:2px solid #0d47a1;border-radius:10px;padding:18px;margin-bottom:18px">
+  <div id="ac-panel-activo" style="display:none;background:var(--cx-card);border:2px solid var(--cx-primary);border-radius:12px;padding:18px;margin-bottom:18px;box-shadow:0 6px 20px rgba(109,40,217,.12)">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div>
-        <h3 style="margin:0;color:#0d47a1;font-size:15px">&#128295; Acondicionando lote</h3>
+        <h3 style="margin:0;color:var(--cx-primary-text);font-size:15px;font-weight:800">&#128295; Acondicionando lote</h3>
         <div style="font-size:13px;color:var(--cx-text-soft);margin-top:4px">
-          Producto: <strong id="ac-act-prod" style="color:#0d47a1"></strong> &nbsp;&middot;&nbsp;
+          Producto: <strong id="ac-act-prod" style="color:var(--cx-primary-text)"></strong> &nbsp;&middot;&nbsp;
           Lote: <strong id="ac-act-lote"></strong> &nbsp;&middot;&nbsp;
           <span id="ac-act-uds-info" style="color:var(--cx-text-soft)"></span>
         </div>
@@ -2518,60 +2536,61 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
     </div>
     <div id="ac-pres-rows" style="margin-bottom:10px"></div>
-    <button onclick="addAcPresRow()" style="background:transparent;border:2px dashed #0d47a1;color:#0d47a1;border-radius:6px;padding:7px 18px;font-size:13px;cursor:pointer;margin-bottom:14px;width:100%">+ Agregar presentacion</button>
+    <button onclick="addAcPresRow()" style="background:transparent;border:2px dashed var(--cx-primary);color:var(--cx-primary-text);border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:14px;width:100%">+ Agregar presentaci&oacute;n</button>
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">Observaciones</label>
       <textarea id="ac-act-obs" rows="2" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px"></textarea>
     </div>
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-      <button onclick="registrarAcondDesdePanel()" style="background:#0d47a1;color:#fff;border:none;border-radius:6px;padding:10px 26px;font-size:14px;font-weight:700;cursor:pointer">&#9989; Registrar Acondicionamiento</button>
+      <button onclick="registrarAcondDesdePanel()" style="background:var(--cx-primary-grad);color:#fff;border:none;border-radius:9px;padding:11px 26px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 3px 10px rgba(109,40,217,.28)">&#9989; Registrar acondicionamiento</button>
       <div id="ac-act-msg" style="font-size:13px"></div>
     </div>
   </div>
 
-  <div id="ac-form-manual" style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
-    <h3 style="margin:0 0 12px;font-size:14px;color:var(--cx-text)">Registrar Acondicionamiento</h3>
+  <div id="ac-form-manual" style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px rgba(15,23,42,.05)">
+    <h3 style="margin:0 0 3px;font-size:15px;font-weight:800;color:var(--cx-text)">Registrar a mano</h3>
+    <div style="color:var(--cx-text-mute);font-size:12.5px;margin-bottom:14px">Para lo que no viene de la cola de arriba (reprocesos, entregas puntuales).</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div>
-        <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">Producto</label>
+        <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Producto</label>
         <select id="ac-prod-sel" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
           <option value="">-- Selecciona producto --</option>
         </select>
       </div>
       <div>
-        <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">Lote PT</label>
+        <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Lote PT</label>
         <input id="ac-lote" placeholder="Ej: ESP260425LBHA" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
       </div>
       <div>
-        <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">Unidades acondicionadas</label>
-        <input id="ac-uds" type="number" min="1" placeholder="66" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
+        <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Unidades acondicionadas</label>
+        <input id="ac-uds" type="number" min="1" placeholder="Ej: 500" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
       </div>
       <div>
-        <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">Fecha</label>
+        <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Fecha</label>
         <input id="ac-fecha" type="date" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
       </div>
       <div>
-        <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">Etiquetas usadas</label>
-        <input id="ac-etiquetas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
+        <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Etiquetas usadas</label>
+        <input id="ac-etiquetas" type="number" min="0" placeholder="Ej: 500" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
       </div>
       <div>
-        <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">Plegadizas usadas</label>
-        <input id="ac-plegadizas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
+        <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Plegadizas usadas</label>
+        <input id="ac-plegadizas" type="number" min="0" placeholder="Ej: 500" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
       </div>
       <div>
-        <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">Destino / Cliente</label>
+        <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Destino / Cliente</label>
         <input id="ac-destino" placeholder="ANIMUS Lab / nombre cliente" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
       </div>
       <div>
-        <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">SKU PT</label>
+        <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">SKU PT</label>
         <input id="ac-sku" placeholder="LBHA-30ML" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px">
       </div>
     </div>
     <div style="margin-bottom:10px">
-      <label style="font-size:12px;color:var(--cx-text-soft);font-weight:600;display:block;margin-bottom:3px">Observaciones</label>
+      <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Observaciones</label>
       <textarea id="ac-obs" rows="2" style="width:100%;padding:8px;border:1px solid var(--cx-border);border-radius:4px;box-sizing:border-box;font-size:13px"></textarea>
     </div>
-    <button onclick="registrarAcondSimple()" style="background:var(--cx-primary);color:#fff;padding:9px 22px;border:none;border-radius:5px;cursor:pointer;font-weight:bold;font-size:13px">&#9989; Registrar Batch</button>
+    <button onclick="registrarAcondSimple()" style="background:var(--cx-primary-grad);color:#fff;padding:10px 24px;border:none;border-radius:9px;cursor:pointer;font-weight:800;font-size:13.5px;box-shadow:0 3px 10px rgba(109,40,217,.28)">&#9989; Registrar acondicionamiento</button>
     <div id="ac-form-msg" style="margin-top:8px;font-size:13px"></div>
   </div>
 
@@ -3239,8 +3258,8 @@ function abrirSolicitarLote(idx){
   document.getElementById('sol-cant').value='';
   document.getElementById('sol-unidad').value='g';
   document.getElementById('sol-urg').value='Normal';
-  document.getElementById('sol-obs').value='';
-  document.getElementById('sol-msg').innerHTML='';
+  document.getElementById('sollote-obs').value='';
+  document.getElementById('sollote-msg').innerHTML='';
   // Cargar proveedores existentes en el desplegable (mismo datalist global
   // que usa Editar Proveedor) - evita typos y registra implicitamente
   // proveedores nuevos cuando el usuario escribe uno que no esta en la lista.
@@ -3250,12 +3269,12 @@ function abrirSolicitarLote(idx){
 function cerrarSolicitarLote(){document.getElementById('modal-solicitar-lote').style.display='none';_solLote=null;}
 async function enviarSolicitarLote(){
   if(!_solLote)return;
-  var msg=document.getElementById('sol-msg');
+  var msg=document.getElementById('sollote-msg');
   var prov=document.getElementById('sol-prov').value.trim();
   var cant=parseFloat(document.getElementById('sol-cant').value||0);
   var und=document.getElementById('sol-unidad').value;
   var urg=document.getElementById('sol-urg').value;
-  var obs=document.getElementById('sol-obs').value.trim();
+  var obs=document.getElementById('sollote-obs').value.trim();
   if(!cant||cant<=0){msg.innerHTML='<span style="color:var(--cx-danger-text);">Cantidad debe ser mayor a 0.</span>';return;}
   if(obs.length<5){msg.innerHTML='<span style="color:var(--cx-danger-text);">Justificacion requerida (min. 5 chars).</span>';return;}
   // Convertir a gramos para solicitudes_compra (cantidad_g)
@@ -6942,8 +6961,8 @@ function solicitarMPAlerta(codigo, nombre, deficit, proveedor){
   document.getElementById('sol-cant').value = Math.round(deficit*1.5);
   document.getElementById('sol-unidad').value = 'g';
   document.getElementById('sol-urg').value = 'Urgente';
-  document.getElementById('sol-obs').value = 'Generado desde Alertas · déficit '+Math.round(deficit)+' g';
-  document.getElementById('sol-msg').innerHTML = '';
+  document.getElementById('sollote-obs').value = 'Generado desde Alertas · déficit '+Math.round(deficit)+' g';
+  document.getElementById('sollote-msg').innerHTML = '';
   _cargarProveedoresUnicos();
   document.getElementById('modal-solicitar-lote').style.display = 'flex';
 }

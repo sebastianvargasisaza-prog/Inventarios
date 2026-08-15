@@ -122,6 +122,7 @@ CORAZON=(
   "tests/test_pedido_del_portal_avisa.py"
   "tests/test_catalina_acepta_pedido.py"
   "tests/test_calendario_premium.py"
+  "tests/test_solicitar_lote_ids_propios.py"
   "tests/test_login_premium.py"
   "tests/test_envasado_lista_premium.py"
   "tests/test_despeje_orden_mybatch.py"
