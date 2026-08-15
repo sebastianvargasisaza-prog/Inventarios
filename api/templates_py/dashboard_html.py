@@ -4701,7 +4701,29 @@ function switchTab(n,btn){
     // Sebastián 13-may-2026: default a Necesidades (no a Plan v2 legacy)
     // porque ahora Necesidades es la vista de decisión y Plan en curso
     // es solo la bitácora.
-    if(typeof switchProgTab==='function') switchProgTab('necesidades');
+    // 14-ago-2026 · va por el GRUPO, que es lo que hace el click real: sincroniza la
+    // sub-barra y de ahí llama al sub-tab por defecto. Llamar sólo al sub-tab dejaba
+    // la barra y el panel desincronizados.
+    if(typeof switchProgGroup==='function') switchProgGroup('plan');
+    else if(typeof switchProgTab==='function') switchProgTab('necesidades');
+    // Red de seguridad · Programación NO puede quedar en blanco (Sebastián: "toca
+    // darle a Necesidades para que cargue"). El conmutador apaga todos los paneles
+    // antes de encender el destino, así que cualquier falla en el medio deja la
+    // pantalla vacía y sin un error a la vista (M112). Si tras entrar no quedó
+    // ninguno visible, se enciende el de Necesidades.
+    setTimeout(function(){
+      try{
+        var prog = document.getElementById('programacion');
+        if(!prog) return;
+        var paneles = prog.querySelectorAll('[id^="ptab-"]');
+        var visible = false;
+        paneles.forEach(function(d){ if(d.style.display && d.style.display !== 'none') visible = true; });
+        if(!visible && typeof switchProgTab==='function'){
+          console.warn('Programación abrió sin panel · encendiendo Necesidades');
+          switchProgTab('necesidades');
+        }
+      }catch(e){ console.warn('red de seguridad de Programación:', e); }
+    }, 250);
   }
 }
 
@@ -15233,6 +15255,28 @@ async function ckMarcar(itemId, estado){
         'tareas': 'ptab-tareas',
         'plano': 'ptab-plano',
       };
+      // ENCENDER EL PANEL PRIMERO · 14-ago-2026 (Sebastián: "Programación abre en
+      // blanco, toca darle a Necesidades"). Antes esto iba DESPUÉS de las cargas de
+      // datos, y como toda la función vive dentro de un try que sólo hace
+      // console.warn, una excepción en cualquier lazy-load dejaba los paneles
+      // apagados y ninguno encendido: pantalla en blanco sin un error a la vista.
+      // Lo que se ve no puede depender de que la carga de datos salga bien (M112).
+      // Ocultar TODOS los ptab-* dentro de #programacion
+      var prog = document.getElementById('programacion');
+      if(prog){
+        var todos = prog.querySelectorAll('[id^="ptab-"]');
+        todos.forEach(function(div){ div.style.display = 'none'; });
+      }
+      // Mostrar el div objetivo
+      var targetId = TAB_TO_DIV[tab];
+      if(targetId){
+        var elT = document.getElementById(targetId);
+        if(elT){
+          elT.style.display = 'block';
+        } else {
+          console.warn('switchProgTab: div '+targetId+' no encontrado');
+        }
+      }
       // Lazy-load Abastecimiento al activar tab · Sebastián 23-may-2026
       // FIX 24-may noche · NO HACER return aquí · corta la función antes
       // de toggle de visibilidad de divs y el tab no se ve cambiado.
@@ -15327,29 +15371,17 @@ async function ckMarcar(itemId, estado){
       }
       // Lazy-load Necesidades al activar tab
       if (tab === 'necesidades') {
-        if (typeof cargarNecesidades === 'function') cargarNecesidades();
+        try {
+          if (typeof cargarNecesidades === 'function') cargarNecesidades();
+        } catch(e) { console.warn('cargarNecesidades:', e); }
       }
       // (Abastecimiento ya se carga arriba vía setAbastFoco · PERF 9-jul: se quitó el
       //  segundo cargarAbastecimiento() que disparaba el endpoint más pesado 2× · workflow speed-audit #3)
       // Lazy-load Plan en curso al activar tab
       if (tab === 'planv2') {
-        if (typeof cargarPlanEnCurso === 'function') cargarPlanEnCurso();
-      }
-      // Ocultar TODOS los ptab-* dentro de #programacion
-      var prog = document.getElementById('programacion');
-      if(prog){
-        var todos = prog.querySelectorAll('[id^="ptab-"]');
-        todos.forEach(function(div){ div.style.display = 'none'; });
-      }
-      // Mostrar el div objetivo
-      var targetId = TAB_TO_DIV[tab];
-      if(targetId){
-        var elT = document.getElementById(targetId);
-        if(elT){
-          elT.style.display = 'block';
-        } else {
-          console.warn('switchProgTab: div '+targetId+' no encontrado');
-        }
+        try {
+          if (typeof cargarPlanEnCurso === 'function') cargarPlanEnCurso();
+        } catch(e) { console.warn('cargarPlanEnCurso:', e); }
       }
       // Hooks específicos por tab - cada uno se invoca solo si la función existe
       if(tab==='maquila' && typeof maquilaInit==='function') maquilaInit();
