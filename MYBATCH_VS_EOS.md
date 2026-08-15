@@ -138,6 +138,14 @@ rango, y ahí queda el rastro.
 
 ## 5 · Lo que falta para el clon (lista corta y verificada)
 
+> **Al cierre del 15-ago quedan DOS cosas**, y ninguna es una función que falte en el
+> motor: (a) una **vista de maestro de lotes** cruzando lote × presentación con teóricas
+> vs liberadas, que MyBatch tiene en Aseguramiento y EOS no arma aunque tenga el dato; y
+> (b) una **decisión de Sebastián**: si los checklists (despeje y controles de atributos)
+> se quedan en código -versionados y revisados- o pasan a ser configurables por el
+> director técnico como en MyBatch.
+
+
 | # | Hueco | Dónde | Estado |
 |---|---|---|---|
 | 1 | `cant_averiada` + diferencia en la conciliación | envasado y acondicionamiento | ✅ **hecho** 15-ago (mig 433 · `tests/test_conciliacion_averiada.py`) |
@@ -224,8 +232,32 @@ Tres cosas que vale la pena copiar:
 3. **Calidad no trabaja sobre el legajo, trabaja sobre la cola**: sus controles
    pendientes salen de todos los lotes abiertos en una sola lista.
 
-**Falta:** director técnico. (Analista de calidad: se asume igual que jefe de control de
-calidad hasta ver una diferencia.)
+**Director técnico / Administrador** (Hernando Acevedo, 15-ago): 9 tarjetas y **tres
+secciones que nadie más tiene**:
+
+- **Audit Trail** · siete pantallas, una por dominio (materiales, productos, manufactura,
+  envasado, acondicionamiento, **observaciones**, documentos), con `Tipo · Cambios
+  realizados · Elemento · Fecha · Realizado por`. Sólo la de observaciones tiene 506
+  registros.
+- **Usuarios** (`/user/list/`).
+- **Configuración** · Áreas productivas · Equipos productivos · **Despejes de línea** ·
+  Microbiología · **Control de atributos** · Formatos · Códigos QR.
+
+Dos cosas que salen de ahí:
+
+1. **En MyBatch los checklists son CONFIGURABLES por el director técnico** (los ítems del
+   despeje de línea y los 14 controles de atributos son pantallas de configuración). En
+   EOS son constantes del código. Las dos posturas son defendibles -en código quedan
+   versionadas y revisadas; en pantalla el DT las cambia sin depender de un despliegue- y
+   **es una decisión de Sebastián**, no un hueco que se tape solo.
+2. **El audit trail de MyBatch muestra el JSON crudo de Django** en "Cambios realizados"
+   (`{"model": "assurance.observationprocess", "pk": "ecaacab3-…", "fields": {…}}`).
+   Es trazabilidad real, pero un auditor no la lee. EOS guarda antes/después en
+   `audit_log` y puede presentarlo en lenguaje humano: acá conviene **no copiar**.
+
+(Analista de calidad: se asume igual que jefe de control de calidad hasta ver una
+diferencia. Y en los registros aparece un rol más, **Asistente de Gerencia**, corrigiendo
+observaciones.)
 
 ---
 
