@@ -76,9 +76,9 @@ cuarentena; y calcula el rendimiento contra la fórmula.
 |---|---|
 | N° lote bulk · Tamaño bulk (Gr **y** mL) | ✅ |
 | **Densidad bulk (g/mL)** | ✅ existe (mig 212, "puente OP→OF") |
-| **Cantidad por envasar** = saldo del granel | ⚠️ se calcula el mL envasable; **el saldo no se muestra como tal** |
+| **Cantidad por envasar** = saldo del granel | ✅ y con más: remanente declarado, tolerancia y si la cuenta cuadra (15-ago) |
 | Estado · elaborado por · supervisado por · observaciones | ✅ |
-| **Lotes de producto por presentación**: presentación · lote · unidades · **área/línea** · cantidad (mL) · **unid. final** · **% rendimiento** · estado | ✅ presentaciones con unidades y cliente · ⚠️ **falta % de rendimiento por presentación** |
+| **Lotes de producto por presentación**: presentación · lote · unidades · **área/línea** · cantidad (mL) · **unid. final** · **% rendimiento** · estado | ✅ presentaciones con unidades y cliente · rendimiento en VOLUMEN siempre, y unidades teóricas + % por presentación cuando hay UNA sola. Con varias no se parte el granel a ojo: se declara el total (MyBatch tiene la columna y la deja vacía) |
 | **Materiales de envase**: requerida · devuelta · utilizada · **averiada** · **diferencia** | ✅ las seis (mig 433 · la diferencia se deriva, no se guarda) |
 
 ### 3.2 El instructivo
@@ -144,7 +144,7 @@ rango, y ahí queda el rastro.
 | 3 | Los 14 controles de atributos | acondicionamiento | ✅ **hecho** 15-ago · y de paso envasado pasó a pedir control de llenado en vez de densidad y pH (`tests/test_ipc_estandar_por_fase.py`) |
 | 2 | Las dos etapas del despeje (dispensación / fabricación) | fabricación | pendiente · MyBatch registra dos momentos distintos; EOS los junta |
 | 4 | Justificación del rendimiento | fabricación (y cualquier fase) | ✅ **hecho** 15-ago (mig 434): queda en el legajo y en el PDF, no sólo en el audit · y el control salió del bloque `strict`, donde **no corría nunca** (`tests/test_yield_justificacion_queda.py`) · falta todavía el % **por presentación** |
-| 5 | Saldo del granel ("cantidad por envasar") visible | envasado | pendiente · hoy hay que calcularlo de cabeza |
+| 5 | Saldo del granel ("cantidad por envasar") | envasado | ✅ **hecho** 15-ago · resultó que EOS **ya lo calculaba** (con remanente, tolerancia y si la cuenta CUADRA, que MyBatch no tiene) y sólo lo exponía en `/vista-completa`, que el legajo no llama: el número existía y no lo veía nadie. Ahora se pinta (`tests/test_conciliacion_granel_visible.py`) |
 
 Ninguno de los cinco rompe nada hoy: son **campos y datos que se agregan**, no cambios
 en lo que ya está firmado (aditivo · M117).

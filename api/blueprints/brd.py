@@ -4358,6 +4358,16 @@ def detalle_ebr(ebr_id):
         d["area_nombre"] = ""
     # Rol del usuario en el batch (segregación de funciones GMP · el runner se adapta)
     d["mi_rol"] = _batch_role_info(session.get("compras_user", ""))
+    # CONCILIACIÓN DEL GRANEL · cuánto entró, cuánto se envasó, cuánto quedó y qué
+    # diferencia hay. Estaba calculada y expuesta sólo en /vista-completa, que el
+    # legajo no llama: el número existía y nadie lo veía (M115). Es lo que MyBatch
+    # muestra como "Cantidad por Envasar" y "% rendimiento", y acá es más completo
+    # (incluye el remanente y si la cuenta CUADRA dentro de la tolerancia).
+    try:
+        d["conciliacion_granel"] = _conciliacion_granel(conn, ebr_id, d)
+    except Exception as _e:
+        log.warning("conciliacion_granel (detalle) ebr=%s: %s", ebr_id, _e)
+        d["conciliacion_granel"] = None
     # Cierre · 3ª firma Director Técnico + correcciones (Part 11) + ajustes de MP
     try:
         dt = conn.execute("SELECT COALESCE(aprobado_dt_por,''), COALESCE(aprobado_dt_at_utc,'') "

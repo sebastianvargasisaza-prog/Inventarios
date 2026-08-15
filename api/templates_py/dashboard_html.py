@@ -8558,6 +8558,48 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+='</tbody></table>';
   // Conciliación de material de envase/empaque (SOLO envasado/acondicionamiento)
   if((d.fase||'')!=='fabricacion'){
+  // CONCILIACIÓN DEL GRANEL · el equivalente de "Cantidad por Envasar" de MyBatch, y
+  // más completo: cuánto granel entró, cuánto terminó en unidades, cuánto quedó de
+  // remanente y qué diferencia no se explica. El backend ya lo calculaba y sólo lo
+  // exponía en /vista-completa, que esta pantalla no llama: el número existía y nadie
+  // lo veía (M115).
+  var _cg = d.conciliacion_granel;
+  if(_cg && _cg.aplica){
+    h+='</div>'+_secOpen('🧪 Conciliación del granel');
+    var _cgT=function(lbl,val,col){
+      return '<div style="min-width:120px"><div style="font-size:10px;color:var(--cx-text-mute);'
+        +'text-transform:uppercase;letter-spacing:.4px">'+lbl+'</div>'
+        +'<div style="font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;color:'
+        +(col||'var(--cx-text)')+'">'+val+'</div></div>';
+    };
+    var _ml=function(v){ return (v==null)?'—':(Number(v).toLocaleString('es-CO')+' mL'); };
+    h+='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">';
+    h+=_cgT('Granel disponible', _ml(_cg.disponible_ml));
+    h+=_cgT('Envasado', _ml(_cg.envasado_ml), 'var(--cx-success-text)');
+    h+=_cgT('Remanente', (_cg.remanente_ml!=null?_ml(_cg.remanente_ml):(_cg.remanente_g!=null?(_cg.remanente_g+' g'):'—')));
+    h+=_cgT('Diferencia', (_cg.diferencia_ml!=null?(_ml(_cg.diferencia_ml)+(_cg.diferencia_pct!=null?(' ('+_cg.diferencia_pct+'%)'):'')):'—'),
+            (_cg.cuadra?'var(--cx-success-text)':'var(--cx-danger-text)'));
+    if(_cg.rendimiento_ml_pct!=null) h+=_cgT('Rendimiento', _cg.rendimiento_ml_pct+'%', 'var(--cx-primary-text)');
+    if(_cg.unidades_teoricas!=null) h+=_cgT('Unid. teóricas', Number(_cg.unidades_teoricas).toLocaleString('es-CO'));
+    h+='</div>';
+    // Lo que NO se pudo calcular se DICE, en vez de mostrar un cero que se lee como
+    // "la cuenta cierra" (M100/M124).
+    var _av=[];
+    if(_cg.falta_remanente) _av.push('falta declarar el remanente · sin eso la cuenta no cierra');
+    if(_cg.falta_densidad) _av.push('falta la densidad · sin ella el remanente en gramos no se puede pasar a mL');
+    if(_cg.presentaciones_sin_volumen) _av.push(_cg.presentaciones_sin_volumen+' presentación(es) sin volumen cargado');
+    if(_av.length){
+      h+='<div style="margin-top:9px;font-size:12px;color:var(--cx-warn-text);background:var(--cx-warn-pale);'
+        +'border-radius:8px;padding:8px 11px">&#9888; '+_av.join(' &middot; ')+'</div>';
+    } else if(_cg.cuadra){
+      h+='<div style="margin-top:9px;font-size:12px;color:var(--cx-success-text)">&#10003; La cuenta del granel '
+        +'cuadra dentro de la tolerancia ('+_cg.tolerancia_pct+'%).</div>';
+    }
+    if(_cg.origen_granel==='fabricacion'){
+      h+='<div style="margin-top:6px;font-size:11px;color:var(--cx-text-mute)">El granel viene del legajo de '
+        +'fabricación de este mismo lote · no se tecleó.</div>';
+    }
+  }
   h+='</div>'+_secOpen('📦 Conciliación de material (envase/empaque)');
   if(conc&&conc.length){
     // MyBatch concilia con SEIS columnas y EOS mostraba cuatro: sin "averiada" lo que
