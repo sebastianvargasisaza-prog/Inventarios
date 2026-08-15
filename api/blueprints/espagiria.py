@@ -429,6 +429,42 @@ def quick_actions():
         })
         total += len(items)
 
+    # 1b) Pedidos que los clientes mandaron por el PORTAL y esperan confirmación.
+    # Sebastián 14-ago-2026: "también le debe salir a Luz aquí: tu cliente tal acaba
+    # de pedir". El pedido entra al plan sólo cuando alguien lo confirma, así que si
+    # nadie lo ve, el cliente queda esperando sin que nada falle a la vista.
+    try:
+        rows = c.execute("""
+            SELECT id, cliente_nombre, producto_nombre, cantidad_uds,
+                   COALESCE(fecha_estimada,''), COALESCE(creado_at_utc,''),
+                   COALESCE(urgencia,'media')
+              FROM pedidos_b2b
+             WHERE estado = 'pendiente'
+             ORDER BY (COALESCE(urgencia,'media')='alta') DESC, creado_at_utc DESC
+             LIMIT 10
+        """).fetchall()
+    except Exception:
+        rows = []
+    if rows:
+        items_p = [{
+            'id': r[0],
+            'titulo': '%s pidió %s' % (r[1] or 'Un cliente', r[2] or 'un producto'),
+            'detalle': '%s unidades%s%s' % (
+                r[3] or 0,
+                (' · para ' + r[4]) if r[4] else '',
+                ' · URGENTE' if (r[6] or '') == 'alta' else ''),
+            'fecha': (r[5] or '')[:10],
+        } for r in rows]
+        out["secciones"].append({
+            "id": "pedidos_portal_por_confirmar",
+            "titulo": "🛎️ %d pedido(s) de clientes esperando confirmación" % len(items_p),
+            "severidad": "alta",
+            "accion": "Confirmalos en Planta · Programación · Necesidades",
+            "link": "/inventarios",
+            "items": items_p,
+        })
+        total += len(items_p)
+
     # 2) OOS abiertos sin investigador
     try:
         rows = c.execute("""

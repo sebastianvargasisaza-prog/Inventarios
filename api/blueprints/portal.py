@@ -1789,23 +1789,66 @@ def portal_crear_pedido():
         except Exception as _er:
             log.warning('crear recurrente B2B fallo: %s', _er)
 
-    # Notif in-app a Sebastián+Catalina (no email · CLAUDE.md memoria)
+    # ── Que el pedido se VEA donde cada uno mira (Sebastián 14-ago-2026) ──────────
+    # "también le debe salir a Luz aquí: tu cliente tal acaba de pedir · y a mí en CEO
+    # · y generar alerta por correo". El pedido no entra al plan hasta que alguien lo
+    # confirma, así que un aviso que no llega es un cliente esperando sin que nada falle
+    # a la vista.
+    #
+    # ⚠ El link iba a `/dashboard#programacion`, una ruta que NO EXISTE (Planta vive en
+    # /inventarios): la campana sonaba y el click no llevaba a ningún lado (M202).
+    _resumen = (f'{producto} · {cantidad} uds × {ml} ml · {kg_b2b} kg'
+                + (f' para {fecha}' if fecha else ''))
+    _dest_app = ('sebastian', 'catalina', 'luz')
     try:
         from blueprints.notif import push_notif as _push_notif
-        for dest in ('sebastian', 'catalina'):
+        for dest in _dest_app:
             _push_notif(
                 destinatario=dest,
                 tipo='portal_pedido_nuevo',
-                titulo=f'📦 Pedido B2B para CONFIRMAR · {cnom}',
-                body=f'{producto} · {cantidad} uds × {ml} ml · {kg_b2b} kg' +
-                      (f' para {fecha}' if fecha else '') +
-                      ' · revisá y confirmá para que entre al plan',
-                link='/dashboard#programacion',
+                titulo=f'📦 {cnom} acaba de pedir · falta confirmar',
+                body=_resumen + ' · confirmalo para que entre al plan',
+                link='/inventarios',
                 remitente=f'portal:{email}',
                 importante=True,
             )
-    except Exception:
-        pass
+    except Exception as _en:
+        log.warning('aviso in-app del pedido del portal no salió: %s', _en)
+
+    # Correo · best-effort. Si no hay a quién mandarlo o el correo no está configurado
+    # se DICE en el log: un envío que se da por hecho y no salió es peor que no tenerlo
+    # (M198), y la campana de arriba ya deja el aviso adentro del sistema.
+    try:
+        _correos = []
+        try:
+            _ph = ','.join('?' * len(_dest_app))
+            _correos = [r[0].strip() for r in conn.execute(
+                f"SELECT email FROM usuarios_identidad WHERE username IN ({_ph}) "
+                "AND COALESCE(activo,1)=1", _dest_app).fetchall()
+                if r[0] and '@' in r[0]]
+        except Exception as _ec:
+            log.warning('no se pudieron resolver los correos del aviso: %s', _ec)
+        if _correos:
+            from blueprints.comunicacion import _enviar_email_async
+            _urg = ' · URGENTE' if urgencia == 'alta' else ''
+            _enviar_email_async(
+                f'{cnom} acaba de pedir{_urg}',
+                ('<p style="font-family:system-ui;font-size:15px">'
+                 f'<b>{cnom}</b> hizo un pedido desde el portal.</p>'
+                 f'<p style="font-family:system-ui;font-size:15px">{_resumen}</p>'
+                 + (f'<p style="font-family:system-ui;font-size:14px">Nota del cliente: {notas}</p>'
+                    if notas else '')
+                 + '<p style="font-family:system-ui;font-size:14px">El pedido queda '
+                   '<b>pendiente</b>: entra al plan de producción cuando alguien lo confirma en '
+                   'Planta · Programación · Necesidades.</p>'
+                 '<p style="font-family:system-ui;font-size:12px;color:#6b6b74">EOS · '
+                 'Espagiria</p>'),
+                _correos)
+        else:
+            log.warning('pedido %s: no hay correos cargados para %s · el aviso quedó sólo '
+                        'en la campana', pid, ', '.join(_dest_app))
+    except Exception as _em:
+        log.warning('correo del pedido del portal no salió: %s', _em)
 
     return jsonify({
         'ok': True, 'id': pid, 'kg_b2b': kg_b2b,

@@ -119,6 +119,7 @@ CORAZON=(
   "tests/test_aliados_scores.py"
   "tests/test_programacion_abre_con_panel.py"
   "tests/test_pedido_del_portal_cae_en_necesidades.py"
+  "tests/test_pedido_del_portal_avisa.py"
   "tests/test_login_premium.py"
   "tests/test_envasado_lista_premium.py"
   "tests/test_despeje_orden_mybatch.py"

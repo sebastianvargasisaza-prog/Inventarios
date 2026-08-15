@@ -380,6 +380,40 @@ def centro_decisiones():
         try: conn.rollback()
         except Exception: pass
 
+    # ── CLIENTES: pidieron por el portal y esperan que alguien confirme ──────────
+    # Sebastián 14-ago-2026: "a mí en CEO, cliente acaba de pedir". El pedido no entra
+    # al calendario hasta que se confirma, así que un pedido sin mirar es un cliente
+    # esperando sin que nada falle a la vista. La antigüedad va en el detalle: un aviso
+    # que no envejece se vuelve ruido (M129).
+    try:
+        _ped = c.execute(
+            """SELECT cliente_nombre, producto_nombre, cantidad_uds,
+                      COALESCE(fecha_estimada,''), COALESCE(creado_at_utc,''),
+                      COALESCE(urgencia,'media')
+                 FROM pedidos_b2b
+                WHERE estado = 'pendiente'
+                ORDER BY creado_at_utc DESC LIMIT 12""").fetchall()
+        if _ped:
+            def _dias_desde(v):
+                try:
+                    from datetime import datetime as _d
+                    return max(0, (_d.utcnow() - _d.fromisoformat(
+                        str(v)[:19].replace('Z', ''))).days)
+                except Exception:
+                    return 0
+            _viejo = max((_dias_desde(r[4]) for r in _ped), default=0)
+            _urg = sum(1 for r in _ped if (r[5] or '') == 'alta')
+            _quien = ', '.join(sorted({(r[0] or 'Cliente') for r in _ped})[:3])
+            _add('alta' if (_urg or _viejo >= 2) else 'media', 'clientes',
+                 '%d pedido(s) de clientes esperando confirmación' % len(_ped),
+                 '%s · el más viejo lleva %d día(s)%s · sin confirmar no entran al plan'
+                 % (_quien, _viejo, ' · %d urgente(s)' % _urg if _urg else ''),
+                 '/inventarios',
+                 sum(int(r[2] or 0) for r in _ped))
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
     # ── PAGOS A CREADORES · la decisión llega acá, no hay que ir a Marketing ──────
     # Sebastián 27-jul: "Marketing es de Jefferson, el que paga soy yo como CEO... mejor que me
     # llegue aquí, para ir centralizando mi módulo y no ir a otros". Hoy tenía que entrar a
