@@ -1435,7 +1435,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <button onclick="simularProduccion()" title="Simula el lote: revisa si las MP alcanzan (FEFO) y estima el costo. No descuenta nada, solo verifica antes de fabricar." class="cx-btn cx-btn-ghost">&#128269; Verificar Stock</button>
         <button onclick="iniciarRegistroProd()" style="display:none">&#9989; Registrar Producción</button>
         <button onclick="abrirRotulos()" title="Genera los rótulos de las MP a dispensar para el producto y los kg cargados · se abren en pestaña nueva, listos para imprimir." class="cx-btn cx-btn-ghost">&#128209; Rótulos de MP</button>
-        <button onclick="window.open('/planta/rotulos-limpieza','_blank')" class="cx-btn cx-btn-ghost" title="Elegís qué equipos se van a usar en esta tanda y salen SOLO esos rótulos F02, en etiqueta térmica, listos para firmar en el piso">&#127991;&#65039; Rótulos de limpieza</button>
+        <button onclick="abrirRotulosLimpieza()" class="cx-btn cx-btn-ghost" title="Abre los rótulos F02 de la SALA que elegiste arriba: marcás qué equipos se van a usar y quién limpia. Salen en etiqueta térmica, listos para firmar en el piso">&#127991;&#65039; Rótulos de limpieza</button>
       </div>
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>
@@ -7732,6 +7732,22 @@ if(typeof document !== 'undefined' && !window._FAB_PEND_DELEG){
     var pmsg = document.getElementById('prod-msg');
     if(pmsg) pmsg.innerHTML = '<div style="background:var(--cx-info-pale);color:var(--cx-info-text);padding:8px 12px;border-radius:6px;font-size:12px">📋 Pre-cargado de Programación: '+_escHTML(prod)+' · '+kg+'kg · Revisá y apretá ▶ Registrar Producción</div>';
   });
+}
+
+function abrirRotulosLimpieza(){
+  // El area y el operario ya se eligieron ACA: viajan al selector en vez de volver a
+  // preguntarlos (Sebastian 15-ago). Si todavia no eligio area, se abre igual y elige alli.
+  var p = [];
+  try{
+    var sa = document.getElementById('prod-area');
+    var op = (sa && sa.selectedOptions && sa.selectedOptions[0]) || null;
+    var cod = op ? (op.dataset ? op.dataset.codigo : '') : '';
+    if (cod) p.push('area=' + encodeURIComponent(cod));
+    // El operario que FABRICA no viaja: el que limpia puede ser otro -hay operaria de
+    // limpieza- y poner su nombre en la linea del F02 induciria a que firme quien no
+    // limpio. Ese dato lo pregunta el selector (Sebastian 15-ago).
+  }catch(e){}
+  window.open('/planta/rotulos-limpieza' + (p.length ? ('?' + p.join('&')) : ''), '_blank');
 }
 
 async function cargarAreasFab(){

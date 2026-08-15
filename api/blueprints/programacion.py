@@ -8486,7 +8486,7 @@ def _rotulo_firma_vigente(realizado_at):
     return (ahora - cuando) <= _td(days=_ROTULO_FIRMA_VIGENTE_DIAS)
 
 
-def _rotulo_f02_sheet(c, area_id, equipo=None):
+def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado=''):
     """Devuelve el <div class="sheet"> del rótulo F02. Si equipo=(codigo,nombre), el rótulo es de ESE
     equipo (uno por máquina · Sebastián 25-jun); si no, del área. '' si el área no existe."""
     from html import escape as _e
@@ -8552,6 +8552,12 @@ def _rotulo_f02_sheet(c, area_id, equipo=None):
         fila_equipo_val = equipos_txt
     estado_fisico = base['estado_fisico']
     realizado_full = _persona_corta(c, realizado_por)
+    # Sin limpieza registrada vigente, se imprime el operario que la orden ya asignó -sólo
+    # el NOMBRE, con la línea en blanco- para que no haya que escribirlo a mano en el piso.
+    _solo_nombre = False
+    if not realizado_full and operario_asignado:
+        realizado_full = _persona_corta(c, operario_asignado) or str(operario_asignado)
+        _solo_nombre = True
     verificado_full = _persona_corta(c, verificado_por)
 
     def _chip(label, activo):
@@ -8573,7 +8579,15 @@ def _rotulo_f02_sheet(c, area_id, equipo=None):
     except Exception:
         _logo_src = '/static/logos/espagiria.svg'
 
-    def _firma(rol, nombre, fecha):
+    def _firma(rol, nombre, fecha, solo_nombre=False):
+        if nombre and solo_nombre:
+            # El nombre se imprime para ahorrar escribirlo a mano; la LINEA queda para que
+            # la persona firme. La marca "firma electrónica" certifica que alguien ejecutó
+            # el acto y la registró en el sistema: ponerla acá sería certificar por él,
+            # que es justo lo que este rótulo dejó de hacer (Sebastián 15-ago).
+            cuerpo = (f'<div class="who">{_e(nombre)}</div>'
+                      f'<div class="sig-line"></div><div class="f">Firma y fecha</div>')
+            return f'<div class="firma"><div class="l">{_e(rol)}</div>{cuerpo}</div>'
         if nombre:
             cuerpo = (f'<div class="who">{_e(nombre)}</div>'
                       f'<div class="sig-ok">✔ Firma electrónica</div>'
@@ -8610,7 +8624,7 @@ def _rotulo_f02_sheet(c, area_id, equipo=None):
     {_row('Lote anterior', lote_prev, num=True)}
   </table>
   <div class="firmas">
-    {_firma('Realizado por (Operario)', realizado_full, realizado_at)}
+    {_firma('Realizado por (Operario)', realizado_full, realizado_at, _solo_nombre)}
     {_firma('Verificado por (Calidad)', verificado_full, verificado_at)}
   </div>
 </div>'''
@@ -8711,7 +8725,7 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
 </body></html>'''
 
 
-def _rotulos_limpieza_selector(c, areas):
+def _rotulos_limpieza_selector(c, areas, area_foco='', operario=''):
     """Pantalla para elegir QUE EQUIPOS se van a usar antes de sacar los rotulos F02.
 
     Sebastian 15-ago-2026: *"no van a usar todos los equipos, deberian poder seleccionarlos,
@@ -8729,6 +8743,12 @@ def _rotulos_limpieza_selector(c, areas):
     bloques = []
     total_eq = 0
     vistos = set()
+    # La sala que se eligio en Registrar Produccion va PRIMERO: es de la que se van a
+    # sacar los rotulos. Las demas quedan abajo por si hace falta una mas -esconderlas
+    # dejaria a la persona sin salida cuando la tanda toca dos salas (M179).
+    _foco = (area_foco or '').strip().upper()
+    if _foco:
+        areas = sorted(areas, key=lambda a: 0 if str(a[2] or '').upper() == _foco else 1)
     for a in areas:
         nom = (a[1] or '').strip()
         if nom.lower() in vistos:
@@ -8736,25 +8756,69 @@ def _rotulos_limpieza_selector(c, areas):
         vistos.add(nom.lower())
         eqs = _equipos_de_area(c, a[2])
         total_eq += len(eqs)
+        _es_foco = bool(_foco) and str(a[2] or '').upper() == _foco
         if eqs:
             filas = ''.join(
                 '<label class="eq"><input type="checkbox" class="ck" value="%s" '
-                'data-area="%s"> <b>%s</b> <span class="cod">%s</span></label>'
+                'data-area="%s"%s> <b>%s</b> <span class="cod">%s</span></label>'
                 % (_e(str(e.get('codigo') or '')), _e(nom),
+                   (' checked' if _es_foco else ''),
                    _e(str(e.get('nombre') or '')), _e(str(e.get('codigo') or '')))
                 for e in eqs)
         else:
             filas = ('<div class="vacio">Esta sala no tiene equipos cargados: sale un '
                      'r&oacute;tulo del &aacute;rea.</div>')
         bloques.append(
-            '<div class="sala"><div class="shead">'
-            '<label class="todos"><input type="checkbox" class="ckall"> '
-            '<b>%s</b> <span class="cod">%s</span></label>'
+            '<div class="sala%s"><div class="shead">'
+            '<label class="todos"><input type="checkbox" class="ckall"%s> '
+            '<b>%s</b> <span class="cod">%s</span>%s</label>'
             '<span class="n">%d equipo(s)</span></div>'
             '<div class="eqs">%s</div></div>'
-            % (_e(nom), _e(str(a[2] or '')), len(eqs), filas))
+            % (' foco' if _es_foco else '', (' checked' if _es_foco else ''),
+               _e(nom), _e(str(a[2] or '')),
+               (' <span class="badge">la que elegiste</span>' if _es_foco else ''),
+               len(eqs), filas))
 
     cuerpo = ''.join(bloques) or '<div class="vacio">No hay salas configuradas.</div>'
+
+    # QUIEN LIMPIA, no quien fabrica. Sebastián 15-ago: *"el que limpia no siempre es el
+    # que fabrica... tenemos operaria de limpieza, entonces mejor limpia"*. Poner en la
+    # línea del F02 al operario de fabricación induciría a que firme quien no limpió, que
+    # es la misma falsificación que este rótulo acaba de dejar de hacer.
+    #
+    # Se PROPONE a quien tenga el rol de limpieza, y sólo si hay UNA: con dos no hay forma
+    # de saber cuál va, así que no se elige ninguna (M179/M19). Y el nombre se imprime sin
+    # la marca de firma: certificar el acto es de quien lo ejecuta.
+    try:
+        _ops = c.execute(
+            "SELECT nombre, COALESCE(apellido,''), COALESCE(rol_predeterminado,'') "
+            "  FROM operarios_planta WHERE COALESCE(activo,1)=1 "
+            " ORDER BY nombre, apellido").fetchall()
+    except Exception as _e2:
+        log.warning('operarios para el rótulo de limpieza no legibles: %s', _e2)
+        _ops = []
+    _nombres = [(str(r[0] or '').strip() + ' ' + str(r[1] or '').strip()).strip()
+                for r in _ops]
+    _de_limpieza = [(str(r[0] or '').strip() + ' ' + str(r[1] or '').strip()).strip()
+                    for r in _ops if str(r[2] or '').strip().lower() == 'limpieza']
+    _sug = (operario or '').strip() or (_de_limpieza[0] if len(_de_limpieza) == 1 else '')
+    _opts = ''.join(
+        '<option value="%s"%s>%s</option>'
+        % (_e(n2), (' selected' if n2 == _sug else ''), _e(n2))
+        for n2 in _nombres if n2)
+    aviso_quien = (
+        '<div class="quien"><b>&iquest;Qui&eacute;n limpia?</b> '
+        '<select id="quien" class="cx-input" style="max-width:280px;display:inline-block;'
+        'margin:0 8px">'
+        '<option value="">-- dejar la l&iacute;nea en blanco --</option>' + _opts +
+        '</select>'
+        '<div style="font-size:11.5px;margin-top:6px;opacity:.85">Su nombre se imprime en '
+        'la l&iacute;nea del r&oacute;tulo para no escribirlo a mano. La <b>firma</b> la '
+        'pone ella al limpiar: el sistema no firma por nadie.'
+        + ('' if _de_limpieza or not _nombres else
+           ' Ning&uacute;n operario tiene el rol <i>limpieza</i> todav&iacute;a: se puede '
+           'asignar en el maestro de operarios.')
+        + '</div></div>')
     return """<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">
 <meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width,initial-scale=1.0"><title>R&oacute;tulos de limpieza &middot; qu&eacute; equipos</title>
@@ -8775,6 +8839,9 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
 .eq:hover{border-color:var(--cx-primary-light);}
 .cod{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--cx-text-mute);}
 .vacio{font-size:12.5px;color:var(--cx-text-mute);padding:6px 0;}
+.sala.foco{border-color:var(--cx-primary-light);box-shadow:0 0 0 2px var(--cx-primary-soft);}
+.badge{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--cx-primary-soft);color:var(--cx-primary-text);margin-left:6px;}
+.quien{background:var(--cx-primary-soft);border:1px solid var(--cx-primary-light);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--cx-primary-text);margin-bottom:10px;}
 .barra{position:fixed;left:0;right:0;bottom:0;background:var(--cx-card);border-top:1px solid var(--cx-hairline);padding:12px 22px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 -4px 20px rgba(15,23,42,.07);z-index:50;}
 .barra .cuenta{font-size:13.5px;font-weight:700;}
 .barra .der{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap;}
@@ -8791,8 +8858,8 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
   </div>
 </header>
 <div class="wrap">
-<div class="card"><div class="intro">Marc&aacute; <b>los equipos que se van a usar</b> en esta tanda: se imprime un r&oacute;tulo por cada uno. Sacar el r&oacute;tulo de una m&aacute;quina que nadie va a tocar termina en papel descartado o pegado donde no corresponde.<br>El formato sale <b>para firmar</b>: la firma la pone quien ejecuta la limpieza, en el piso.</div></div>
-""" + cuerpo + """
+<div class="card">AVISO_QUIEN<div class="intro">Marc&aacute; <b>los equipos que se van a usar</b> en esta tanda: se imprime un r&oacute;tulo por cada uno. Sacar el r&oacute;tulo de una m&aacute;quina que nadie va a tocar termina en papel descartado o pegado donde no corresponde.<br>El formato sale <b>para firmar</b>: la firma la pone quien ejecuta la limpieza, en el piso.</div></div>
+""".replace('AVISO_QUIEN', aviso_quien) + cuerpo + """
 </div>
 <div class="barra">
   <span class="cuenta" id="cuenta">Ning&uacute;n equipo seleccionado</span>
@@ -8824,14 +8891,17 @@ document.addEventListener('change', function(ev){
 function imprimir(){
   var cods = sel().map(function(x){ return x.value; }).filter(Boolean);
   if (!cods.length) return;
-  window.location.href = '/planta/rotulos-limpieza?equipos=' + encodeURIComponent(cods.join(','));
+  var q = document.getElementById('quien');
+  var quien = q ? (q.value || '') : '';
+  window.location.href = '/planta/rotulos-limpieza?equipos=' + encodeURIComponent(cods.join(','))
+    + (quien ? ('&operario=' + encodeURIComponent(quien)) : '');
 }
 refrescar();
 </script>
 </body></html>"""
 
 
-def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None):
+def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None, operario_asignado=''):
     """Lista de hojas F02 de una sala: UNA POR EQUIPO (cada máquina su etiqueta · reusa el catálogo
     canónico _equipos_de_area, que devuelve dicts). Si la sala no tiene equipos, una hoja de área.
 
@@ -8846,9 +8916,10 @@ def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None):
         if not equipos:
             return []   # esta sala no aporta equipos a la selección
     if equipos:
-        return [s for s in (_rotulo_f02_sheet(c, area_id, equipo=(e['codigo'], e['nombre']))
+        return [s for s in (_rotulo_f02_sheet(c, area_id, equipo=(e['codigo'], e['nombre']),
+                                              operario_asignado=operario_asignado)
                             for e in equipos) if s]
-    s = _rotulo_f02_sheet(c, area_id)
+    s = _rotulo_f02_sheet(c, area_id, operario_asignado=operario_asignado)
     return [s] if s else []
 
 
@@ -9181,10 +9252,17 @@ def planta_rotulos_limpieza_todas():
     # que sigue enlazado desde el dashboard (una URL viva no se rompe · M120).
     _sel = (request.args.get('equipos') or '').strip()
     _todos = (request.args.get('todos') or '').strip() in ('1', 'true', 'si', 'sí')
+    # El ÁREA y el OPERARIO ya se eligieron en Registrar Producción: el contexto VIAJA en
+    # vez de volver a preguntarlo (Sebastián 15-ago: *"se supone que yo aquí elijo el área,
+    # entonces debería mostrarme"*). Con `?area=` el selector abre esa sala; el operario
+    # asignado se imprime como NOMBRE en la línea -la firma la sigue poniendo la persona.
+    _area_ctx = (request.args.get('area') or '').strip().upper()
+    _oper_ctx = (request.args.get('operario') or '').strip()[:80]
     if not _sel and not _todos:
         # charset explicito, como las rutas vecinas: el <meta> ya lo cubre, pero un
         # encabezado que no lo declara deja los acentos a merced del navegador.
-        return Response(_rotulos_limpieza_selector(c, areas),
+        return Response(_rotulos_limpieza_selector(c, areas, area_foco=_area_ctx,
+                                                   operario=_oper_ctx),
                         mimetype='text/html; charset=utf-8')
     solo = None
     if _sel:
@@ -9196,7 +9274,8 @@ def planta_rotulos_limpieza_todas():
         if nm in vistos:
             continue
         vistos.add(nm)
-        sheets.extend(_rotulos_de_area(c, a[0], a[2], solo_codigos=solo))
+        sheets.extend(_rotulos_de_area(c, a[0], a[2], solo_codigos=solo,
+                                       operario_asignado=_oper_ctx))
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:var(--cx-text-mute, #888);padding:40px">No hay salas configuradas.</div>')
     _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)
@@ -9232,7 +9311,8 @@ def planta_listar_operarios():
         if not nombre:
             return jsonify({'error': 'nombre requerido'}), 400
         rol = (d.get('rol_predeterminado') or 'todero').strip().lower()
-        if rol not in ('dispensacion', 'envasado', 'acondicionamiento', 'todero', 'jefe'):
+        if rol not in ('dispensacion', 'envasado', 'acondicionamiento', 'limpieza',
+                       'todero', 'jefe'):
             rol = 'todero'
         fija = 1 if d.get('fija_en_dispensacion') else 0
         jefe = 1 if d.get('es_jefe_produccion') else 0
@@ -9299,7 +9379,8 @@ def planta_actualizar_operario(op_id):
         sets.append('apellido=?'); params.append((d['apellido'] or '').strip() or None)
     if 'rol_predeterminado' in d:
         rol = (d['rol_predeterminado'] or 'todero').strip().lower()
-        if rol not in ('dispensacion','envasado','acondicionamiento','todero','jefe'):
+        if rol not in ('dispensacion','envasado','acondicionamiento','limpieza',
+                       'todero','jefe'):
             rol = 'todero'
         sets.append('rol_predeterminado=?'); params.append(rol)
     if 'fija_en_dispensacion' in d:

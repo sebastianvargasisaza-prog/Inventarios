@@ -1414,3 +1414,14 @@ por lote.
   problema con un paso extra.
 
 Tests: `tests/test_rotulo_limpieza_firma_y_equipos.py` (en el gate) + `test_rotulo_limpieza.py`.
+
+**Quién firma el F02 es QUIEN LIMPIA, no quien fabrica** (Sebastián 15-ago-2026: *"el que
+limpia no siempre es el que fabrica... tenemos operaria de limpieza"*). El selector lo
+pregunta y propone al operario con `rol_predeterminado='limpieza'`, **sólo si hay uno**
+(con dos no hay forma de saber cuál va · M179). El nombre se imprime en la línea para no
+escribirlo a mano, **sin la marca de firma electrónica** — ésa certifica que la persona
+ejecutó el acto. El operario de FABRICACIÓN no viaja a este rótulo.
+
+⚠ El rol `limpieza` se valida en **DOS** whitelists (`POST` y `PATCH` de
+`/api/planta/operarios`): agregarlo en una sola lo convierte en `todero` en silencio
+(M116/M45). Hay un guard que recorre todas.

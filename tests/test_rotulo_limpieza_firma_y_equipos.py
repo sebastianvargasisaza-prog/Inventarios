@@ -153,3 +153,120 @@ def test_los_botones_dicen_lo_que_hacen(app, db_clean):
         "el botón 'Imprimir TODOS' perdió el modo todos: abriría el selector")
     assert "qu&eacute; equipos se van a usar" in html or "qué equipos se van a usar" in html, (
         "el botón de Registrar Producción no avisa que ahora se eligen los equipos")
+
+
+def test_el_area_elegida_viaja_y_queda_en_foco(app, db_clean):
+    """Sebastián: *"se supone que yo aquí elijo el área, entonces debería mostrarme"*.
+
+    El contexto que ya llenó en Registrar Producción no se vuelve a preguntar: la sala
+    elegida abre primero y con sus equipos marcados. Las demás quedan abajo -esconderlas
+    dejaría sin salida a una tanda que toca dos salas (M179).
+    """
+    aid, acod = _area()
+    c = _login(app)
+    html = c.get("/planta/rotulos-limpieza?area=%s" % acod).data.decode("utf-8")
+    assert "la que elegiste" in html, "no marca cuál es la sala elegida"
+    assert 'class="sala foco"' in html, "la sala elegida no queda destacada"
+    assert "checked" in html, "los equipos de esa sala no vienen marcados"
+    # y las otras salas siguen disponibles
+    assert html.count('class="sala') >= 2 or html.count('class="sala') == 1
+
+
+def test_quien_limpia_se_imprime_sin_firmar_por_el(app, db_clean):
+    """El nombre ahorra escribirlo a mano; la marca de firma electrónica certifica que
+    alguien ejecutó el acto, así que NO se pone por él (es lo que se acaba de arreglar)."""
+    aid, acod = _area()
+    _exec("DELETE FROM rotulos_limpieza WHERE area_id=?", (aid,))
+    c = _login(app)
+    from api.blueprints.programacion import _equipos_de_area
+    from api.database import get_db
+    with app.app_context():
+        eqs = _equipos_de_area(get_db(), acod)
+    if not eqs:
+        import pytest
+        pytest.skip("el área sembrada no tiene equipos")
+    html = c.get("/planta/rotulos-limpieza?equipos=%s&operario=mayerlin"
+                 % eqs[0]["codigo"]).data.decode("utf-8")
+    assert "mayerlin" in html.lower(), "no imprimió el nombre del operario asignado"
+    assert "Firma electr" not in html, (
+        "certificó la firma de alguien que no registró la limpieza")
+    assert "Firma y fecha" in html, "no dejó la línea para firmar"
+
+
+def test_el_selector_pregunta_quien_limpia(app, db_clean):
+    """El que limpia NO siempre es el que fabrica: hay operaria de limpieza (Sebastián).
+
+    Poner en la línea del F02 al operario de fabricación induciría a que firme quien no
+    limpió, que es la misma falsificación que este rótulo dejó de hacer. Así que el dato
+    se pregunta acá, y se aclara que el nombre no es la firma.
+    """
+    aid, acod = _area()
+    c = _login(app)
+    html = c.get("/planta/rotulos-limpieza?area=%s" % acod).data.decode("utf-8")
+    assert 'id="quien"' in html, "no pregunta quién limpia"
+    assert "Qui&eacute;n limpia" in html or "Quién limpia" in html, "no lo dice con esas palabras"
+    assert "dejar la l" in html, "no deja la opción de imprimir la línea en blanco"
+    assert "no firma por nadie" in html, "no aclara que el nombre no es la firma"
+
+
+def test_se_propone_al_operario_de_limpieza(app, db_clean):
+    """Se ofrece a quien tiene el rol, y sólo si hay UNA: con dos no hay forma de saber
+    cuál va, así que no se elige ninguna (M179/M19)."""
+    aid, acod = _area()
+    _exec("DELETE FROM operarios_planta WHERE nombre LIKE 'ZLIMP%'")
+    _exec("INSERT INTO operarios_planta (nombre, apellido, rol_predeterminado, activo) "
+          "VALUES ('ZLIMPA','Uno','limpieza',1)")
+    c = _login(app)
+    html = c.get("/planta/rotulos-limpieza?area=%s" % acod).data.decode("utf-8")
+    assert "ZLIMPA" in html, "no ofrece a la operaria de limpieza"
+    assert 'value="ZLIMPA Uno" selected' in html, "no la propone estando sola"
+
+    _exec("INSERT INTO operarios_planta (nombre, apellido, rol_predeterminado, activo) "
+          "VALUES ('ZLIMPB','Dos','limpieza',1)")
+    html2 = c.get("/planta/rotulos-limpieza?area=%s" % acod).data.decode("utf-8")
+    assert "ZLIMPB" in html2, "no ofrece a la segunda"
+    assert " selected" not in html2.split('id="quien"')[1][:1200], (
+        "eligió una habiendo dos candidatas")
+    _exec("DELETE FROM operarios_planta WHERE nombre LIKE 'ZLIMP%'")
+
+
+def test_el_rol_limpieza_no_se_convierte_en_todero(app, db_clean):
+    """Hay DOS whitelists de rol (crear y editar): si el rol se agrega en una sola, la
+    otra lo pisa en silencio y la operaria queda como 'todero' (M116/M45)."""
+    ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "api", "blueprints", "programacion.py")
+    fuente = open(ruta, encoding="utf-8").read()
+    listas = [l for l in fuente.splitlines() if "if rol not in (" in l]
+    assert len(listas) >= 2, "cambió la forma de validar el rol: revisar este guard"
+    # cada whitelist tiene que estar completa: se mira la línea y su continuación
+    for i, linea in enumerate(fuente.splitlines()):
+        if "if rol not in (" in linea:
+            ventana = " ".join(fuente.splitlines()[i:i + 3])
+            assert "'limpieza'" in ventana, (
+                "una de las whitelists de rol no acepta 'limpieza': ahí se convierte en "
+                "todero sin avisar")
+
+
+def test_el_boton_lleva_el_area_y_el_operario(app, db_clean):
+    """Si el contexto no viaja, la persona vuelve a elegir lo que ya eligió.
+
+    ⚠ El JS del dashboard NO está inline: vive en los bundles `/planta-app.js` y
+    `/planta-core.js`, así que un test que sólo mire el HTML concluye que la función no
+    existe (M166 · me pasó al escribir este mismo guard). Se mira el HTML para el BOTÓN y
+    los bundles para la FUNCIÓN.
+    """
+    c = _login(app)
+    html = c.get("/inventarios").data.decode("utf-8")
+    assert "abrirRotulosLimpieza()" in html, "el botón no llama a la función"
+    js = ""
+    for ruta in ("/planta-app.js", "/planta-core.js"):
+        r = c.get(ruta)
+        assert r.status_code == 200, (ruta, r.status_code)
+        js += r.data.decode("utf-8")
+    assert "function abrirRotulosLimpieza()" in js, "falta la función del botón"
+    assert "'area=' + encodeURIComponent(cod)" in js, "no manda el área elegida"
+    # El operario que FABRICA no viaja: el que limpia puede ser otro (hay operaria de
+    # limpieza) y poner su nombre induciría a que firme quien no limpió. Ese dato lo
+    # pregunta el selector.
+    assert "'operario=' + encodeURIComponent(nom)" not in js, (
+        "manda el operario de fabricación al rótulo de limpieza")
