@@ -123,6 +123,14 @@ CORAZON=(
   "tests/test_catalina_acepta_pedido.py"
   "tests/test_calendario_premium.py"
   "tests/test_solicitar_lote_ids_propios.py"
+  # Las tres fases del batch record recorridas de punta a punta. Es lo que se le
+  # muestra a INVIMA al pedir la certificación, así que un rojo acá bloquea el
+  # push igual que un golden. El de fabricación existía desde junio y NO corría
+  # en ningún gate (M95: un test del corazón fuera del gate no protege nada).
+  "tests/test_ebr_e2e_demo.py"
+  "tests/test_ebr_e2e_envasado_acond.py"
+  "tests/test_conciliacion_averiada.py"
+  "tests/test_ipc_estandar_por_fase.py"
   "tests/test_login_premium.py"
   "tests/test_envasado_lista_premium.py"
   "tests/test_despeje_orden_mybatch.py"

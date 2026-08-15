@@ -247,6 +247,58 @@ IPC_ESTANDAR = [
     ("apariencia", "Apariencia",      ""),
 ]
 
+# Los controles dependen de la FASE (Sebastián 15-ago-2026, clonando MyBatch para la
+# certificación). Pedir "Densidad a 25°C" y "pH" en un legajo de ACONDICIONAMIENTO es
+# pedirle la densidad a una caja: el control no aplica, se marca "No aplica" por
+# inercia, y el que sí importa -que la etiqueta esté adherida y derecha- no está.
+# MyBatch usa control de llenado en envasado y 14 controles de ATRIBUTOS en
+# acondicionamiento; son los que firma Calidad antes de liberar.
+IPC_ESTANDAR_ENVASADO = [
+    ("llenado",        "Control de llenado (volumen)",              "mL"),
+    ("peso_llenado",   "Control de peso del llenado",               "g"),
+    ("sellado",        "Sellado (continuo, sin interrupciones)",    ""),
+    ("aspecto_envase", "Aspecto del envase (limpio, sin daños)",    ""),
+]
+
+IPC_ESTANDAR_ACONDICIONAMIENTO = [
+    ("etq_adherencia",  "Adherencia de la etiqueta (sin bordes levantados ni burbujas)", ""),
+    ("etq_alineacion",  "Alineación de la etiqueta (centrada según el envase)", ""),
+    ("etq_integridad",  "Integridad de la etiqueta (sin arrugas, rasgaduras ni decoloración)", ""),
+    ("etiquetado",      "Etiquetado conforme a la lista de chequeo de etiquetas", ""),
+    ("legibilidad",     "Legibilidad (información clara, sin manchas ni errores)", ""),
+    ("caja_integridad", "Integridad de la caja plegadiza (bien armada, sin deformaciones)", ""),
+    ("caja_impresion",  "Impresión de la caja plegadiza (nítida, sin manchas)", ""),
+    ("caja_aspecto",    "Aspecto de la caja plegadiza (limpia, sin arrugas)", ""),
+    ("caja_limpieza",   "Limpieza de la caja plegadiza (sin polvo, pegamento o partículas)", ""),
+    ("sellado",         "Sellado (continuo, conforme y sin interrupciones visibles)", ""),
+    ("derrames",        "Derrames (sin residuos dentro ni fuera del envase)", ""),
+    ("particulas",      "Partículas (producto libre de partículas extrañas)", ""),
+    ("aspecto_final",   "Aspecto final (envase/empaque sin abolladuras, raspones ni manchas)", ""),
+    ("aspecto_general", "Aspecto general del producto", ""),
+]
+
+
+def _ipc_estandar_de_fase(fase):
+    """Qué controles en proceso se piden en esta fase. UN solo lugar decide (M3)."""
+    f = _fase_canonica(fase or "fabricacion")
+    if f == "envasado":
+        return IPC_ESTANDAR_ENVASADO
+    if f == "acondicionamiento":
+        return IPC_ESTANDAR_ACONDICIONAMIENTO
+    return IPC_ESTANDAR
+
+
+def _ipc_estandar_ebr(conn, ebr_id):
+    """La lista de controles del legajo · si no se puede leer la fase, cae a la de
+    fabricación (la de siempre) en vez de quedarse sin controles."""
+    try:
+        row = conn.execute("SELECT COALESCE(fase,'fabricacion') FROM ebr_ejecuciones "
+                           "WHERE id=?", (ebr_id,)).fetchone()
+        return _ipc_estandar_de_fase(row[0] if row else "fabricacion")
+    except Exception as _e:
+        log.warning("fase del EBR %s no legible para IPC estándar: %s", ebr_id, _e)
+        return IPC_ESTANDAR
+
 
 def _batch_role_info(usuario):
     """Rol del usuario en el batch record (segregación de funciones GMP · 25-jun).
@@ -4141,7 +4193,7 @@ def ebr_vista_completa(ebr_id):
         except Exception as _e:
             log.warning("ipc estandar (vista) ebr=%s: %s", ebr_id, _e)
             est = {}
-        for cod, nom, uni in IPC_ESTANDAR:
+        for cod, nom, uni in _ipc_estandar_ebr(conn, ebr_id):
             if nom.strip().lower() in nombres_mbr:
                 continue  # el MBR ya define este control · no duplicar
             er = est.get(cod)
@@ -4549,7 +4601,7 @@ def completar_ebr(ebr_id):
         except Exception as _ee:
             log.warning("ipc_estandar_resultados no legible (ebr %s): %s", ebr_id, _ee)
             _regs = {}
-        _falt = [nom for cod, nom, _u in IPC_ESTANDAR
+        _falt = [nom for cod, nom, _u in _ipc_estandar_ebr(conn, ebr_id)
                  if _regs.get(cod) not in (0, 1, 2)]
         if _falt:
             return jsonify({
@@ -6071,7 +6123,7 @@ def reportar_ipc_estandar(ebr_id):
             log.warning("ipc-estandar GET ebr=%s: %s", ebr_id, _e)
             est = {}
         items = []
-        for cod, nom, uni in IPC_ESTANDAR:
+        for cod, nom, uni in _ipc_estandar_ebr(cur, ebr_id):
             er = est.get(cod)
             items.append({
                 "control_codigo": cod, "control_nombre": nom, "unidad": uni,
@@ -6089,7 +6141,11 @@ def reportar_ipc_estandar(ebr_id):
         return err
     body = request.get_json(silent=True) or {}
     cod = (body.get("control_codigo") or "").strip().lower()
-    validos = {c[0]: c[1] for c in IPC_ESTANDAR}
+    # Se aceptan los controles de la fase del legajo Y los de fabricación: un legajo
+    # viejo puede tener registrados los cinco de siempre, y rechazarlos ahora dejaría
+    # sin poder corregir lo ya escrito (aditivo · M117).
+    _de_fase = _ipc_estandar_ebr(get_db(), ebr_id)
+    validos = {c[0]: c[1] for c in list(_de_fase) + list(IPC_ESTANDAR)}
     if cod not in validos:
         return jsonify({"error": "control_codigo inválido"}), 400
     nombre = (body.get("control_nombre") or validos[cod]).strip()[:120]
@@ -7371,21 +7427,45 @@ def verificar_pesaje_ebr(ebr_id, pesaje_id):
     return jsonify({"ok": True, "verificado_por": user})
 
 
+def _conc_diferencia(requerida, recibida, devuelta, utilizada, averiada):
+    """Lo que no se puede explicar de una línea de conciliación.
+
+    Se mide contra lo que ENTRÓ a la línea (lo recibido; si nadie cargó recibido,
+    lo requerido), porque es de ahí que tiene que salir todo: lo que se usó, lo que
+    volvió a bodega y lo que se rompió. Lo que sobra es el faltante sin explicar,
+    y ése es justamente el número que mira una auditoría.
+
+    NO se guarda en la tabla: un total guardado al lado de sus sumandos diverge el
+    día que alguien corrige uno solo (M99).
+    """
+    base = recibida if (recibida or 0) > 0 else (requerida or 0)
+    return round((base or 0) - (utilizada or 0) - (devuelta or 0) - (averiada or 0), 3)
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/conciliacion-material", methods=["GET"])
 def listar_conciliacion_material(ebr_id):
     """Conciliación de material de envase/empaque del legajo (MyBatch OF/OA):
-    cuánto se requirió / recibió / devolvió / utilizó."""
+    cuánto se requirió / recibió / devolvió / utilizó / se averió, y qué diferencia
+    queda sin explicar."""
     err = _require_login()
     if err:
         return err
     rows = get_db().execute(
         """SELECT id, ebr_id, tipo, material_codigo, material_nombre, lote_material,
                   cant_requerida, cant_recibida, cant_devuelta, cant_utilizada,
+                  COALESCE(cant_averiada, 0) AS cant_averiada,
                   registrado_por, registrado_at_utc, e_sign_id, notas
            FROM ebr_conciliacion_material WHERE ebr_id = ? ORDER BY id""",
         (ebr_id,),
     ).fetchall()
-    return jsonify({"items": [dict(r) for r in rows]})
+    items = []
+    for r in rows:
+        d = dict(r)
+        d["diferencia"] = _conc_diferencia(
+            d.get("cant_requerida"), d.get("cant_recibida"), d.get("cant_devuelta"),
+            d.get("cant_utilizada"), d.get("cant_averiada"))
+        items.append(d)
+    return jsonify({"items": items})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/conciliacion-material", methods=["POST"])
@@ -7411,10 +7491,14 @@ def registrar_conciliacion_material(ebr_id):
     requerida = _num("cant_requerida")
     recibida = _num("cant_recibida")
     devuelta = _num("cant_devuelta")
+    # Lo AVERIADO no es lo devuelto: lo devuelto vuelve a bodega y lo averiado no
+    # vuelve de ninguna forma. Mezclarlos deja la conciliación cuadrando con un
+    # material que ya no existe (mig 433 · clon de MyBatch).
+    averiada = _num("cant_averiada")
     if body.get("cant_utilizada") not in (None, ""):
         utilizada = _num("cant_utilizada")
     else:
-        utilizada = max(0.0, recibida - devuelta)
+        utilizada = max(0.0, recibida - devuelta - averiada)
 
     conn = get_db()
     cur = conn.cursor()
@@ -7432,20 +7516,23 @@ def registrar_conciliacion_material(ebr_id):
         """INSERT INTO ebr_conciliacion_material
              (ebr_id, tipo, material_codigo, material_nombre, lote_material,
               cant_requerida, cant_recibida, cant_devuelta, cant_utilizada,
-              registrado_por, registrado_at_utc, notas)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'utc'), ?)""",
+              cant_averiada, registrado_por, registrado_at_utc, notas)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'utc'), ?)""",
         (ebr_id, tipo, (body.get("material_codigo") or "").strip(), nombre,
          (body.get("lote_material") or "").strip(),
-         requerida, recibida, devuelta, utilizada, user,
+         requerida, recibida, devuelta, utilizada, averiada, user,
          (body.get("notas") or "").strip()),
     )
     rid = cur.lastrowid
     audit_log(cur, usuario=user, accion="REGISTRAR_CONCILIACION_MATERIAL",
               tabla="ebr_conciliacion_material", registro_id=rid,
               despues={"ebr_id": ebr_id, "material": nombre,
-                        "utilizada": utilizada})
+                        "utilizada": utilizada, "averiada": averiada})
     conn.commit()
-    return jsonify({"ok": True, "id": rid, "cant_utilizada": utilizada}), 201
+    return jsonify({"ok": True, "id": rid, "cant_utilizada": utilizada,
+                    "cant_averiada": averiada,
+                    "diferencia": _conc_diferencia(requerida, recibida, devuelta,
+                                                   utilizada, averiada)}), 201
 
 
 # ── ENVASADO Fase 3 (Sebastián 26-jun) · captura de unidades por presentación + descuento de envases ──

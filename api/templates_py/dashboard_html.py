@@ -8556,9 +8556,15 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   if((d.fase||'')!=='fabricacion'){
   h+='</div>'+_secOpen('📦 Conciliación de material (envase/empaque)');
   if(conc&&conc.length){
-    h+='<table class="table" style="font-size:12px;"><thead><tr><th>Tipo</th><th>Material</th><th>Lote</th><th style="text-align:right;">Req.</th><th style="text-align:right;">Recib.</th><th style="text-align:right;">Devuelta</th><th style="text-align:right;">Utilizada</th></tr></thead><tbody>';
+    // MyBatch concilia con SEIS columnas y EOS mostraba cuatro: sin "averiada" lo que
+    // se rompió en la línea se mezcla con lo devuelto a bodega -y uno de los dos NO
+    // vuelve al stock-, y sin "diferencia" nadie ve el faltante sin explicar, que es
+    // justo el número que mira una auditoría.
+    h+='<table class="table" style="font-size:12px;"><thead><tr><th>Tipo</th><th>Material</th><th>Lote</th><th style="text-align:right;">Req.</th><th style="text-align:right;">Recib.</th><th style="text-align:right;">Devuelta</th><th style="text-align:right;">Utilizada</th><th style="text-align:right;">Averiada</th><th style="text-align:right;">Diferencia</th></tr></thead><tbody>';
     for(var k=0;k<conc.length;k++){var m=conc[k];
-      h+='<tr><td>'+(m.tipo||'')+'</td><td>'+(m.material_nombre||'')+'</td><td>'+(m.lote_material||'')+'</td><td style="text-align:right;">'+(m.cant_requerida||0)+'</td><td style="text-align:right;">'+(m.cant_recibida||0)+'</td><td style="text-align:right;">'+(m.cant_devuelta||0)+'</td><td style="text-align:right;font-weight:700;">'+(m.cant_utilizada||0)+'</td></tr>';
+      var _dif=(m.diferencia!=null)?m.diferencia:0;
+      var _difCol=(Math.abs(_dif)>0.001)?'var(--cx-danger-text)':'var(--cx-text-faint)';
+      h+='<tr><td>'+(m.tipo||'')+'</td><td>'+(m.material_nombre||'')+'</td><td>'+(m.lote_material||'')+'</td><td style="text-align:right;">'+(m.cant_requerida||0)+'</td><td style="text-align:right;">'+(m.cant_recibida||0)+'</td><td style="text-align:right;">'+(m.cant_devuelta||0)+'</td><td style="text-align:right;font-weight:700;">'+(m.cant_utilizada||0)+'</td><td style="text-align:right;">'+(m.cant_averiada||0)+'</td><td style="text-align:right;font-weight:800;color:'+_difCol+'" title="Lo que entró menos lo utilizado, lo devuelto y lo averiado. Distinto de cero = falta explicar dónde quedó ese material.">'+_dif+'</td></tr>';
     }
     h+='</tbody></table>';
   }else{h+='<div style="color:var(--cx-text-faint);font-size:12px;">Sin material conciliado aún.</div>';}
@@ -8570,8 +8576,9 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='<input id="cm-req-'+d.id+'" type="number" placeholder="Req." style="padding:5px;border:1px solid var(--cx-border);border-radius:5px;width:70px;">';
     h+='<input id="cm-rec-'+d.id+'" type="number" placeholder="Recib." style="padding:5px;border:1px solid var(--cx-border);border-radius:5px;width:70px;">';
     h+='<input id="cm-dev-'+d.id+'" type="number" placeholder="Devuelta" style="padding:5px;border:1px solid var(--cx-border);border-radius:5px;width:80px;">';
+    h+='<input id="cm-ave-'+d.id+'" type="number" placeholder="Averiada" title="Lo que se dañó en la línea · no vuelve a bodega" style="padding:5px;border:1px solid var(--cx-border);border-radius:5px;width:80px;">';
     h+='<button onclick="ebrAgregarConciliacion('+d.id+')" style="background:var(--cx-success);color:#fff;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;">+ Agregar</button>';
-    h+='<span style="color:var(--cx-text-faint);">utilizada = recibida &minus; devuelta</span>';
+    h+='<span style="color:var(--cx-text-faint);">utilizada = recibida &minus; devuelta &minus; averiada</span>';
     h+='</div>';
   }
   }
@@ -9048,7 +9055,8 @@ async function ebrAgregarConciliacion(ebrId){
   var nom=(g('cm-nom-')||'').trim();
   if(!nom){alert('Indica el material');return;}
   var body={tipo:g('cm-tipo-'),material_nombre:nom,lote_material:g('cm-lote-'),
-            cant_requerida:g('cm-req-')||0,cant_recibida:g('cm-rec-')||0,cant_devuelta:g('cm-dev-')||0};
+            cant_requerida:g('cm-req-')||0,cant_recibida:g('cm-rec-')||0,cant_devuelta:g('cm-dev-')||0,
+            cant_averiada:g('cm-ave-')||0};
   try{
     var r=await fetch('/api/brd/ebr/'+ebrId+'/conciliacion-material',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     var d=await r.json();

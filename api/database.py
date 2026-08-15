@@ -11518,6 +11518,16 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE pedidos_b2b ADD COLUMN materiales_por TEXT DEFAULT ''",
         "ALTER TABLE pedidos_b2b ADD COLUMN materiales_at TEXT DEFAULT ''",
     ]),
+    (433, "ebr_conciliacion_material · cantidad AVERIADA (Sebastián 15-ago-2026, clonando "
+          "MyBatch para la certificación). La conciliación de material de envase y de empaque "
+          "de MyBatch lleva requerida / recibida / devuelta / utilizada / AVERIADA / diferencia. "
+          "Sin la averiada, lo que se rompió en la línea se mezcla con lo devuelto a bodega y la "
+          "cuenta no cierra: son dos destinos distintos del mismo material y uno de los dos NO "
+          "vuelve al stock. La diferencia NO se guarda: se deriva "
+          "(recibida - utilizada - devuelta - averiada), porque un total guardado al lado de sus "
+          "sumandos diverge el día que alguien corrige uno solo (M99).", [
+        "ALTER TABLE ebr_conciliacion_material ADD COLUMN cant_averiada REAL DEFAULT 0",
+    ]),
 ]
 
 
