@@ -1931,6 +1931,43 @@ def admin_portal_credenciales():
     ).fetchone()
     if dup_cid:
         return jsonify({'error': f'cliente_id "{cid}" ya está en uso (id={dup_cid[0]}) · usá otro ID'}), 409
+
+    # ── El cliente tiene que quedar en la cola donde Luz mira quién necesita qué ──
+    # 14-ago-2026 · dar el acceso NO lo dejaba en `clientes_b2b_maestro`, que es de
+    # donde salen las secciones de "Necesidades por cliente". Consecuencia: el cliente
+    # no aparecía hasta que pidiera algo, y si el identificador del portal no era el
+    # mismo del maestro, al pedir salía DOS VECES (su fila en cero y otra sección con
+    # los pedidos). Un alta que alguien tiene que acordarse de completar en otro lado
+    # termina sin completarse (M189).
+    #
+    # Si ya existe una ficha con el MISMO nombre y es la única, se adopta SU id para
+    # que el pedido caiga en esa fila. Si hay varias, no se elige: se crea la ficha
+    # nueva y se declara la ambigüedad (M19).
+    ficha = 'creada'
+    ficha_aviso = ''
+    try:
+        ya = c.execute("SELECT cliente_id FROM clientes_b2b_maestro WHERE cliente_id = ?",
+                       (cid,)).fetchone()
+        if ya:
+            ficha = 'reusada'
+        else:
+            objetivo = _norm_txt(cnom)
+            candidatos = [r[0] for r in c.execute(
+                "SELECT cliente_id, cliente_nombre FROM clientes_b2b_maestro "
+                "WHERE COALESCE(activo,1)=1").fetchall() if _norm_txt(r[1]) == objetivo]
+            libres = [x for x in candidatos if not c.execute(
+                "SELECT 1 FROM portal_clientes_credenciales WHERE cliente_id=? "
+                "AND COALESCE(activo,1)=1", (x,)).fetchone()]
+            if len(libres) == 1:
+                cid = libres[0]
+                ficha = 'enlazada'
+                ficha_aviso = 'Se enganchó a la ficha que ya existía con ese nombre.'
+            elif len(candidatos) > 1:
+                ficha_aviso = ('Hay más de una ficha con ese nombre · se creó una nueva '
+                               'para no engancharlo al cliente equivocado.')
+    except Exception as e:
+        log.warning('cruce con el maestro de clientes B2B falló: %s', e)
+
     pw_hash = generate_password_hash(pw)
     c.execute(
         """INSERT INTO portal_clientes_credenciales
@@ -1940,13 +1977,29 @@ def admin_portal_credenciales():
         (cid, cnom, email, pw_hash, u),
     )
     new_id = c.lastrowid
+    # La ficha se crea en la MISMA transacción que el acceso: si el acceso existe,
+    # el cliente ya está en la cola de Necesidades, sin que nadie tenga que acordarse.
+    if ficha == 'creada':
+        try:
+            c.execute(
+                "INSERT INTO clientes_b2b_maestro (cliente_id, cliente_nombre, email, activo, tipo) "
+                "SELECT ?, ?, ?, 1, 'B2B' WHERE NOT EXISTS "
+                "(SELECT 1 FROM clientes_b2b_maestro WHERE cliente_id = ?)",
+                (cid, cnom, email, cid))
+        except Exception as e:
+            # No se rompe el alta por esto · se declara en la respuesta (M4).
+            log.warning('no se pudo crear la ficha del cliente %s: %s', cid, e)
+            ficha = 'sin_ficha'
+            ficha_aviso = ('El acceso quedó, pero el cliente no entró a la lista de '
+                           'Necesidades · agregalo a mano en Clientes B2B.')
     audit_log(c, usuario=u, accion='PORTAL_CREAR_CREDENCIAL',
               tabla='portal_clientes_credenciales', registro_id=new_id,
               despues={'cliente_id': cid, 'email': email,
-                       'cliente_nombre': cnom})
+                       'cliente_nombre': cnom, 'ficha_cliente': ficha})
     conn.commit()
     return jsonify({
-        'ok': True, 'id': new_id,
+        'ok': True, 'id': new_id, 'cliente_id': cid, 'ficha_cliente': ficha,
+        'aviso': ficha_aviso,
         'mensaje': f'Credencial creada para {cnom} ({email})',
     }), 201
 
