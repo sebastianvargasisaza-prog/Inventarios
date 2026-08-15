@@ -8460,6 +8460,32 @@ def _persona_corta(c, username):
     return f'{nom} · {cargo}' if cargo else nom
 
 
+# Cuántos días vale la firma de un ciclo de limpieza para PREIMPRIMIRSE en el rótulo.
+# El F02 acompaña la producción del momento: pasado ese plazo el rótulo sale en blanco
+# para que lo firme quien ejecute la limpieza, en vez de salir prefirmado por el último
+# que la hizo (que puede ser de hace meses · Sebastián 15-ago-2026).
+_ROTULO_FIRMA_VIGENTE_DIAS = 3
+
+
+def _rotulo_firma_vigente(realizado_at):
+    """¿La limpieza registrada es lo bastante reciente como para imprimirla firmada?"""
+    txt = (realizado_at or '').strip()
+    if not txt:
+        return False
+    from datetime import datetime as _d, timedelta as _td
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d'):
+        try:
+            cuando = _d.strptime(txt[:19] if len(txt) >= 19 else txt[:10], fmt)
+            break
+        except ValueError:
+            continue
+    else:
+        return False   # fecha ilegible → se trata como vieja (el formato sale en blanco)
+    # "Hoy" anclado a Colombia, nunca al UTC del server (M24).
+    ahora = _d.utcnow() - _td(hours=5)
+    return (ahora - cuando) <= _td(days=_ROTULO_FIRMA_VIGENTE_DIAS)
+
+
 def _rotulo_f02_sheet(c, area_id, equipo=None):
     """Devuelve el <div class="sheet"> del rótulo F02. Si equipo=(codigo,nombre), el rótulo es de ESE
     equipo (uno por máquina · Sebastián 25-jun); si no, del área. '' si el área no existe."""
@@ -8478,6 +8504,24 @@ def _rotulo_f02_sheet(c, area_id, equipo=None):
     if rot:
         (prod_elab, lote_elab, prod_prev, lote_prev, sanit, deterg, eq_json,
          realizado_por, realizado_at, verificado_por, verificado_at) = rot
+        # ⚠ El rótulo que se IMPRIME es un formato para llenar en el piso, no la
+        # reimpresión de un registro viejo (para eso está la URL por registro, que es la
+        # que va al expediente). Traía SIEMPRE el último ciclo del área: en producción
+        # eso era una demo del 24-jun firmada por Sebastián, así que TODAS las salas
+        # salían de la impresora ya firmadas por alguien que no hizo esa limpieza, con
+        # "SIMULACRO Demo" como producto. Un registro regulado que sale prefirmado por
+        # quien no ejecutó el acto es un registro FALSO (Sebastián 15-ago: *"siempre sale
+        # que fui yo sin importar el usuario"*).
+        #
+        # Regla: la firma acompaña a la producción del momento. Si el ciclo tiene más de
+        # `_ROTULO_FIRMA_VIGENTE_DIAS`, el rótulo sale EN BLANCO para que lo firme quien
+        # limpie — y sus datos de proceso se descartan también, porque el producto de un
+        # ciclo viejo no es el que se va a elaborar ahora (M19: el estado se deriva de un
+        # hecho registrado, y un hecho de hace dos meses no habla de este lote).
+        if not _rotulo_firma_vigente(realizado_at):
+            prod_elab = lote_elab = prod_prev = lote_prev = ''
+            sanit = deterg = eq_json = ''
+            realizado_por = realizado_at = verificado_por = verificado_at = ''
     else:
         prod_elab, lote_elab = base['producto_elaborar'], base['lote_elaborar']
         prod_prev, lote_prev = base['producto_anterior'], base['lote_anterior']
@@ -8667,10 +8711,140 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
 </body></html>'''
 
 
-def _rotulos_de_area(c, area_id, area_codigo):
+def _rotulos_limpieza_selector(c, areas):
+    """Pantalla para elegir QUE EQUIPOS se van a usar antes de sacar los rotulos F02.
+
+    Sebastian 15-ago-2026: *"no van a usar todos los equipos, deberian poder seleccionarlos,
+    elegir cuales usaran en esa area ... que primero pregunte cuales usaran para que sean
+    esos rotulos los que se impriman"*.
+
+    Antes esta URL imprimia de una TODOS los equipos de TODAS las salas. Un rotulo de una
+    maquina que nadie va a tocar termina en la basura o -peor- pegado donde no corresponde,
+    que en un registro regulado es exactamente lo que no puede pasar.
+
+    Nace con NADA marcado a proposito: marcar todo por defecto reproduce el problema con
+    un paso extra, y el punto es que la persona diga cuales usa.
+    """
+    from html import escape as _e
+    bloques = []
+    total_eq = 0
+    vistos = set()
+    for a in areas:
+        nom = (a[1] or '').strip()
+        if nom.lower() in vistos:
+            continue
+        vistos.add(nom.lower())
+        eqs = _equipos_de_area(c, a[2])
+        total_eq += len(eqs)
+        if eqs:
+            filas = ''.join(
+                '<label class="eq"><input type="checkbox" class="ck" value="%s" '
+                'data-area="%s"> <b>%s</b> <span class="cod">%s</span></label>'
+                % (_e(str(e.get('codigo') or '')), _e(nom),
+                   _e(str(e.get('nombre') or '')), _e(str(e.get('codigo') or '')))
+                for e in eqs)
+        else:
+            filas = ('<div class="vacio">Esta sala no tiene equipos cargados: sale un '
+                     'r&oacute;tulo del &aacute;rea.</div>')
+        bloques.append(
+            '<div class="sala"><div class="shead">'
+            '<label class="todos"><input type="checkbox" class="ckall"> '
+            '<b>%s</b> <span class="cod">%s</span></label>'
+            '<span class="n">%d equipo(s)</span></div>'
+            '<div class="eqs">%s</div></div>'
+            % (_e(nom), _e(str(a[2] or '')), len(eqs), filas))
+
+    cuerpo = ''.join(bloques) or '<div class="vacio">No hay salas configuradas.</div>'
+    return """<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1.0"><title>R&oacute;tulos de limpieza &middot; qu&eacute; equipos</title>
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
+<style>
+body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',system-ui,-apple-system,sans-serif;}
+*{box-sizing:border-box}
+.wrap{width:96vw;max-width:1200px;margin:0 auto;padding:22px 18px 96px;}
+.card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:18px;box-shadow:0 1px 3px rgba(15,23,42,.04),0 10px 30px rgba(15,23,42,.05);padding:20px 22px;margin-bottom:16px;}
+.intro{color:var(--cx-text-mute);font-size:13.5px;line-height:1.55;max-width:900px;}
+.sala{border:1px solid var(--cx-hairline);border-radius:14px;padding:14px 16px;margin-bottom:12px;background:var(--cx-card);}
+.shead{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;}
+.shead .n{margin-left:auto;font-size:11.5px;color:var(--cx-text-mute);font-weight:700;}
+.todos{display:flex;align-items:center;gap:8px;font-size:14.5px;cursor:pointer;}
+.eqs{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;}
+.eq{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:7px 10px;border:1px solid var(--cx-hairline);border-radius:10px;cursor:pointer;background:var(--cx-bg-alt);}
+.eq:hover{border-color:var(--cx-primary-light);}
+.cod{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--cx-text-mute);}
+.vacio{font-size:12.5px;color:var(--cx-text-mute);padding:6px 0;}
+.barra{position:fixed;left:0;right:0;bottom:0;background:var(--cx-card);border-top:1px solid var(--cx-hairline);padding:12px 22px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 -4px 20px rgba(15,23,42,.07);z-index:50;}
+.barra .cuenta{font-size:13.5px;font-weight:700;}
+.barra .der{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap;}
+</style></head><body>
+<header class="cx-mod-header cx-fade-in">
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 3.4a2 2 0 0 0-2.8 0l-9 9L3 18.2V21h2.8l5.8-5.8 9-9a2 2 0 0 0 0-2.8z"/></svg></span>
+  <div>
+    <div class="cx-mod-header__title">R&oacute;tulos de limpieza</div>
+    <div class="cx-mod-header__sub"><strong>Planta</strong> &middot; F02 &middot; eleg&iacute; qu&eacute; equipos se van a usar</div>
+  </div>
+  <div class="cx-mod-header__nav">
+    <a href="/inventarios" class="cx-btn cx-btn-ghost cx-btn-sm">&larr; Planta</a>
+    <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm">M&oacute;dulos</a>
+  </div>
+</header>
+<div class="wrap">
+<div class="card"><div class="intro">Marc&aacute; <b>los equipos que se van a usar</b> en esta tanda: se imprime un r&oacute;tulo por cada uno. Sacar el r&oacute;tulo de una m&aacute;quina que nadie va a tocar termina en papel descartado o pegado donde no corresponde.<br>El formato sale <b>para firmar</b>: la firma la pone quien ejecuta la limpieza, en el piso.</div></div>
+""" + cuerpo + """
+</div>
+<div class="barra">
+  <span class="cuenta" id="cuenta">Ning&uacute;n equipo seleccionado</span>
+  <div class="der">
+    <button class="cx-btn cx-btn-ghost" onclick="marcarTodos(true)">Marcar todos</button>
+    <button class="cx-btn cx-btn-ghost" onclick="marcarTodos(false)">Limpiar</button>
+    <button class="cx-btn cx-btn-grad" id="btn-imp" onclick="imprimir()" disabled>Imprimir los seleccionados</button>
+  </div>
+</div>
+<script>
+function cks(){return Array.prototype.slice.call(document.querySelectorAll('.ck'));}
+function sel(){return cks().filter(function(x){return x.checked;});}
+function refrescar(){
+  var n = sel().length;
+  document.getElementById('cuenta').textContent =
+    n === 0 ? 'Ningun equipo seleccionado' : (n === 1 ? '1 equipo seleccionado' : n + ' equipos seleccionados');
+  document.getElementById('btn-imp').disabled = (n === 0);
+}
+function marcarTodos(v){ cks().forEach(function(x){ x.checked = v; });
+  document.querySelectorAll('.ckall').forEach(function(x){ x.checked = v; }); refrescar(); }
+document.addEventListener('change', function(ev){
+  var t = ev.target;
+  if (t && t.classList && t.classList.contains('ckall')){
+    var sala = t.closest('.sala');
+    if (sala) sala.querySelectorAll('.ck').forEach(function(x){ x.checked = t.checked; });
+  }
+  refrescar();
+});
+function imprimir(){
+  var cods = sel().map(function(x){ return x.value; }).filter(Boolean);
+  if (!cods.length) return;
+  window.location.href = '/planta/rotulos-limpieza?equipos=' + encodeURIComponent(cods.join(','));
+}
+refrescar();
+</script>
+</body></html>"""
+
+
+def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None):
     """Lista de hojas F02 de una sala: UNA POR EQUIPO (cada máquina su etiqueta · reusa el catálogo
-    canónico _equipos_de_area, que devuelve dicts). Si la sala no tiene equipos, una hoja de área."""
+    canónico _equipos_de_area, que devuelve dicts). Si la sala no tiene equipos, una hoja de área.
+
+    `solo_codigos` (set de códigos de equipo) acota a los que se VAN A USAR: en una tanda no
+    se usan todos los equipos de la planta, y sacar el rótulo de una máquina que nadie va a
+    tocar obliga a descartar papel firmado o -peor- a pegar un rótulo que no corresponde
+    (Sebastián 15-ago-2026). Sin el parámetro, salen todos (comportamiento de siempre)."""
     equipos = _equipos_de_area(c, area_codigo)
+    if solo_codigos is not None:
+        equipos = [e for e in equipos
+                   if str(e.get('codigo') or '').strip().upper() in solo_codigos]
+        if not equipos:
+            return []   # esta sala no aporta equipos a la selección
     if equipos:
         return [s for s in (_rotulo_f02_sheet(c, area_id, equipo=(e['codigo'], e['nombre']))
                             for e in equipos) if s]
@@ -8998,13 +9172,31 @@ def planta_rotulos_limpieza_todas():
     areas = c.execute(
         "SELECT id, nombre, codigo FROM areas_planta WHERE activo=1 "
         "AND (tipo='produccion' OR codigo IN ('DISP','ACOND')) ORDER BY orden, codigo").fetchall()
+
+    # PRIMERO se elige qué equipos se van a usar (Sebastián 15-ago-2026: *"no van a usar
+    # todos los equipos, deberían poder seleccionar cuáles usarán en esa área"*). Sacar el
+    # rótulo de una máquina que nadie va a tocar obliga a descartar papel firmado o -peor-
+    # a pegar un rótulo que no corresponde. Sin elegir nada se muestra el selector; con
+    # `?equipos=` se imprimen esos; `?todos=1` conserva el comportamiento del botón viejo,
+    # que sigue enlazado desde el dashboard (una URL viva no se rompe · M120).
+    _sel = (request.args.get('equipos') or '').strip()
+    _todos = (request.args.get('todos') or '').strip() in ('1', 'true', 'si', 'sí')
+    if not _sel and not _todos:
+        # charset explicito, como las rutas vecinas: el <meta> ya lo cubre, pero un
+        # encabezado que no lo declara deja los acentos a merced del navegador.
+        return Response(_rotulos_limpieza_selector(c, areas),
+                        mimetype='text/html; charset=utf-8')
+    solo = None
+    if _sel:
+        solo = {x.strip().upper() for x in _sel.split(',') if x.strip()}
+
     sheets, vistos = [], set()
     for a in areas:
         nm = (a[1] or '').strip().lower()
         if nm in vistos:
             continue
         vistos.add(nm)
-        sheets.extend(_rotulos_de_area(c, a[0], a[2]))
+        sheets.extend(_rotulos_de_area(c, a[0], a[2], solo_codigos=solo))
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:var(--cx-text-mute, #888);padding:40px">No hay salas configuradas.</div>')
     _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)

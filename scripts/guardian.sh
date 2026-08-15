@@ -599,6 +599,10 @@ CORAZON=(
   # El enlace de facturacion se SUGIERE cuando el cruce es inequivoco y lo confirma una
   # persona: enlazar mal deja a un cliente viendo las facturas de otro.
   "tests/test_enlace_facturacion_sugerido.py"
+  # El rotulo F02 sale PARA FIRMAR: traia el ultimo ciclo del area, que en produccion era
+  # una demo de junio, asi que todas las salas salian prefirmadas por quien no ejecuto esa
+  # limpieza. Y ahora pregunta QUE EQUIPOS se van a usar antes de imprimir.
+  "tests/test_rotulo_limpieza_firma_y_equipos.py"
 )
 
 echo ""

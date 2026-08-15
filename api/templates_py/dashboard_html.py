@@ -1097,7 +1097,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <p style="color:var(--cx-text-mute);font-size:13px;margin:4px 0 0">Estado de limpieza de cada sala · fluye con la producción · el operario registra la limpieza, Calidad verifica con firma. Click en una sala para abrir su rótulo.</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button onclick="window.open('/planta/rotulos-limpieza','_blank')" style="padding:6px 14px;background:var(--cx-info);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Saca TODOS los rótulos F02 en una hoja (uno por página) para imprimir y entregar de una">&#128424;&#65039; Imprimir TODOS</button>
+        <button onclick="window.open('/planta/rotulos-limpieza?todos=1','_blank')" style="padding:6px 14px;background:var(--cx-info);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Saca TODOS los rótulos F02 en una hoja (uno por página) para imprimir y entregar de una">&#128424;&#65039; Imprimir TODOS</button>
         <button onclick="cargarRotulosLimp()" style="padding:6px 12px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
       </div>
     </div>
@@ -1435,7 +1435,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <button onclick="simularProduccion()" title="Simula el lote: revisa si las MP alcanzan (FEFO) y estima el costo. No descuenta nada, solo verifica antes de fabricar." class="cx-btn cx-btn-ghost">&#128269; Verificar Stock</button>
         <button onclick="iniciarRegistroProd()" style="display:none">&#9989; Registrar Producción</button>
         <button onclick="abrirRotulos()" title="Genera los rótulos de las MP a dispensar para el producto y los kg cargados · se abren en pestaña nueva, listos para imprimir." class="cx-btn cx-btn-ghost">&#128209; Rótulos de MP</button>
-        <button onclick="window.open('/planta/rotulos-limpieza','_blank')" class="cx-btn cx-btn-ghost" title="Abre los rótulos de limpieza F02 listos para imprimir en etiqueta térmica (igual que los de MP · uno por equipo)">&#127991;&#65039; Rótulos de limpieza</button>
+        <button onclick="window.open('/planta/rotulos-limpieza','_blank')" class="cx-btn cx-btn-ghost" title="Elegís qué equipos se van a usar en esta tanda y salen SOLO esos rótulos F02, en etiqueta térmica, listos para firmar en el piso">&#127991;&#65039; Rótulos de limpieza</button>
       </div>
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>

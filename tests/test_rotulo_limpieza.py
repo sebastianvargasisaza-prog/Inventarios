@@ -177,7 +177,12 @@ def test_rotulos_limpieza_impresion_termica(admin_client, app):
     """La página de rótulos de limpieza F02 imprime en etiqueta TÉRMICA (una por sticker),
     igual que los de MP · @page en mm configurable, no en hoja carta (Sebastián 1-jul)."""
     _area_sucia(app)
-    r = admin_client.get("/planta/rotulos-limpieza")
+    # Desde el 15-ago la URL sin parámetros PREGUNTA qué equipos se van a usar (Sebastián:
+    # *"no van a usar todos los equipos"*), así que la impresión se pide explícitamente.
+    # Lo que este test cuida es la GARANTÍA -que el imprimible salga en etiqueta térmica-,
+    # no la URL: un test anclado a la URL se rompe con cualquier reorganización y empuja a
+    # deformar el código para calmarlo (M97/M202).
+    r = admin_client.get("/planta/rotulos-limpieza?todos=1")
     assert r.status_code == 200, r.data
     body = r.get_data(as_text=True)
     assert "@page{size:100mm 100mm" in body        # térmico default 100×100mm (Sebastián 7-jul)
@@ -187,6 +192,6 @@ def test_rotulos_limpieza_impresion_termica(admin_client, app):
 
 def test_rotulos_limpieza_tamano_configurable(admin_client, app):
     _area_sucia(app)
-    r = admin_client.get("/planta/rotulos-limpieza?w=100&h=75")
+    r = admin_client.get("/planta/rotulos-limpieza?todos=1&w=100&h=75")
     assert r.status_code == 200
     assert "@page{size:100mm 75mm" in r.get_data(as_text=True)
