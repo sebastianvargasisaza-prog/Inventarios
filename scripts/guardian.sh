@@ -588,6 +588,17 @@ CORAZON=(
   # Que falta para reemplazar MyBatch, medido contra la base: un batch record completo pero
   # OCULTO y con los controles apagados se ve, desde afuera, igual que uno que no existe.
   "tests/test_estado_reemplazo_mybatch.py"
+  # El aviso de contrasenas miraba SOLO las env vars y desde ahi afirmaba que esos usuarios
+  # "NO pueden entrar" -- falso para quien tiene su clave en users_passwords, que es lo que
+  # el login mira primero. Un aviso HIGH que miente en cada arranque ensena a ignorar todos.
+  "tests/test_aviso_claves_no_miente.py"
+  # La etiqueta y la caja del cliente eran una marca sin efecto: sin el CODIGO no se compra,
+  # ni se alista, ni se descuenta. Ahora el lote lo dice, y lo que falta definir se DECLARA
+  # en vez de adivinarse con un codigo parecido (que es como se compra lo de otro cliente).
+  "tests/test_material_cliente_lote.py"
+  # El enlace de facturacion se SUGIERE cuando el cruce es inequivoco y lo confirma una
+  # persona: enlazar mal deja a un cliente viendo las facturas de otro.
+  "tests/test_enlace_facturacion_sugerido.py"
 )
 
 echo ""

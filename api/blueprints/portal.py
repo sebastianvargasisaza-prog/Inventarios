@@ -1921,6 +1921,66 @@ def _require_admin_backoffice():
     return u, None
 
 
+def _sugerir_cuenta_facturacion(c, items):
+    """Propone con qué cuenta de facturación enlazar cada cliente del portal.
+
+    Sin el enlace, el cliente entra y su módulo de Facturas sale VACÍO -- y una lista
+    vacía se lee como "no debo nada", que es lo contrario de "no se pudo cruzar" (M200).
+    Enlazarlo automáticamente NO es opción: enlazar mal deja a un cliente viendo las
+    facturas de otro, y eso no se descubre hasta que alguien reclama.
+
+    Entonces se SUGIERE y lo confirma una persona (M179: se ofrece, no se elige solo). La
+    sugerencia sólo sale cuando es inequívoca:
+      · por NIT idéntico -- es identidad fuerte, no parecido;
+      · por nombre normalizado idéntico Y ÚNICO. Si dos cuentas normalizan igual no hay
+        forma de saber cuál es, así que no se propone ninguna (M179/M19).
+    Modifica `items` en el sitio; nunca escribe nada.
+    """
+    pendientes = [it for it in items if not it.get('cliente_ref_id')]
+    if not pendientes:
+        return
+    try:
+        cuentas = c.execute(
+            "SELECT id, COALESCE(nombre,''), COALESCE(nit,'') FROM clientes "
+            "WHERE COALESCE(activo,1)=1").fetchall()
+    except Exception as e:
+        log.warning('sugerencia de enlace de facturacion no disponible: %s', e)
+        return
+
+    def _norm(x):
+        import unicodedata as _ud
+        base = ''.join(ch for ch in _ud.normalize('NFKD', str(x or '').lower())
+                       if not _ud.combining(ch))
+        return ' '.join(''.join(ch if ch.isalnum() else ' ' for ch in base).split())
+
+    def _nit(x):
+        return ''.join(ch for ch in str(x or '') if ch.isdigit())
+
+    por_nit, por_nombre = {}, {}
+    for cid, nombre, nit in cuentas:
+        n = _nit(nit)
+        if n:
+            por_nit.setdefault(n, []).append((cid, nombre))
+        k = _norm(nombre)
+        if k:
+            por_nombre.setdefault(k, []).append((cid, nombre))
+
+    for it in pendientes:
+        it['sugerido_id'] = None
+        it['sugerido_nombre'] = ''
+        it['sugerido_por'] = ''
+        cands = por_nit.get(_nit(it.get('nit') or ''), [])
+        if len(cands) == 1:
+            it['sugerido_id'], it['sugerido_nombre'] = cands[0][0], cands[0][1]
+            it['sugerido_por'] = 'NIT'
+            continue
+        cands = por_nombre.get(_norm(it.get('cliente_nombre')), [])
+        # Sólo si es UNA: con dos cuentas que normalizan igual no hay forma de saber cuál.
+        if len(cands) == 1:
+            it['sugerido_id'], it['sugerido_nombre'] = cands[0][0], cands[0][1]
+            it['sugerido_por'] = 'nombre'
+
+
 @bp.route('/api/admin/portal/credenciales', methods=['GET', 'POST'])
 def admin_portal_credenciales():
     """GET · lista credenciales del portal (sin password_hash).
@@ -1946,6 +2006,7 @@ def admin_portal_credenciales():
             'ultimo_login_at_utc': r[7], 'ultimo_login_ip': r[8],
             'cliente_ref_id': (r[9] if len(r) > 9 else None),
         } for r in rows]
+        _sugerir_cuenta_facturacion(c, items)
         return jsonify({'items': items, 'total': len(items)})
 
     body = request.get_json(silent=True) or {}
@@ -4889,11 +4950,21 @@ async function cargarEnlace(){
       + creds.map(function(c){
         return '<tr><td><b>'+esc(c.cliente_nombre)+'</b><div class="mut">'+esc(c.cliente_id)+'</div></td>'
           + '<td class="mut">'+esc(c.email)+'</td>'
-          + '<td><select id="sel-'+c.id+'">'+opciones+'</select></td>'
+          + '<td><select id="sel-'+c.id+'">'+opciones+'</select>'
+          + '<div class="mut" id="sug-'+c.id+'" style="font-size:11px"></div></td>'
           + '<td><button class="btn" onclick="enlazar('+c.id+')">Guardar</button></td></tr>';
       }).join('') + '</tbody></table>';
     creds.forEach(function(c){
-      var s = $('sel-'+c.id); if(s && c.cliente_ref_id) s.value = String(c.cliente_ref_id);
+      var s = $('sel-'+c.id); if(!s) return;
+      if(c.cliente_ref_id){ s.value = String(c.cliente_ref_id); return; }
+      // Sin enlace: si el cruce es inequivoco se PRESELECCIONA y se dice de donde sale,
+      // pero lo confirma una persona. Enlazar solo dejaria a un cliente viendo las
+      // facturas de otro, y eso no se descubre hasta que alguien reclama.
+      if(c.sugerido_id){
+        s.value = String(c.sugerido_id);
+        var av = document.getElementById('sug-'+c.id);
+        if(av) av.innerHTML = 'sugerido por ' + esc(c.sugerido_por) + ' &middot; confirm&aacute;';
+      }
     });
   }catch(e){ $('tabla-enlace').innerHTML = '<div class="vacio">No se pudo cargar.</div>'; }
 }

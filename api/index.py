@@ -757,8 +757,14 @@ def _inject_chat_widget(response):
         # 25-jul · se suman las 2 páginas que viven como pestaña (iframe) de /aseguramiento:
         # dentro del iframe salían campana+chat DUPLICADOS sobre los del padre, y en la vista
         # directa el widget flotante tapaba los botones de acción de las últimas filas.
+        # 15-ago · las tres pestañas nuevas de /aseguramiento (verificaciones GMP, audit
+        # trail y estado del reemplazo) también viven como iframe dentro del módulo: sin
+        # esto salen campana+chat DUPLICADOS encima de los del padre, que es exactamente
+        # lo que las dos anteriores vinieron a arreglar.
         _embebidas = ('/admin/plan-calendario', '/planta/kanban', '/admin/factibilidad-plan',
-                      '/admin/marcacion-envases', '/aseguramiento/calibracion', '/admin/firmas-usuarios')
+                      '/admin/marcacion-envases', '/aseguramiento/calibracion', '/admin/firmas-usuarios',
+                      '/aseguramiento/checklists', '/aseguramiento/audit-trail',
+                      '/aseguramiento/reemplazo-mybatch')
         # 9-jul · páginas de RÓTULO / impresión: NO inyectar campana+chat (flotan encima del rótulo
         # y tapan el QR/datos al imprimir · Sebastián). Cubre /rotulos, /rotulo-recepcion, /rotulo-recepcion-mee, etc.
         _es_impresion = path.startswith('/rotulo') or '/rotulos' in path

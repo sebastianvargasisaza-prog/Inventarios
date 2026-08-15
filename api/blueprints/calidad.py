@@ -5140,6 +5140,7 @@ def calidad_maestro_lotes():
                              'diferencia': None, 'yield_uds_pct': None},
                 'presentaciones': [], 'clientes': [], 'unidades_clientes': 0,
                 'materiales': [], 'material_sin_entregar': 0.0,
+                'material_cliente': [], 'material_cliente_sin_definir': 0,
                 'material_sin_explicar': 0.0,
                 'pt_vigente': 0.0, 'pt_cuarentena': 0.0,
             }
@@ -5312,6 +5313,26 @@ def calidad_maestro_lotes():
                 L['unidades_clientes'] = sum(c['unidades'] for c in L['clientes'])
         except Exception as _e:
             log.warning('maestro-lotes clientes fallo: %s', _e)
+
+        # El material de MARCA DEL CLIENTE (etiqueta y caja): Catalina define al aceptar
+        # SI el pedido lo lleva, y sin el código no se puede comprar ni alistar. Se
+        # resuelve con el helper canónico -no se recalcula acá (M3)- y lo que falta
+        # definir se DECLARA, que es justo lo que antes quedaba en silencio.
+        try:
+            try:
+                from blueprints.programacion import _material_cliente_lotes
+            except Exception:
+                from api.blueprints.programacion import _material_cliente_lotes
+            # UNA consulta para toda la página, no una por lote: pedirlo fila por fila es
+            # exactamente lo que satura los tres workers (M43/M63).
+            _mat_cli = _material_cliente_lotes(conn, list(pid_de_lote.values()))
+            for lf, L in vista.items():
+                mats = _mat_cli.get(pid_de_lote.get(lf) or 0, [])
+                L['material_cliente'] = mats
+                L['material_cliente_sin_definir'] = len(
+                    [m for m in mats if m.get('falta_definir')])
+        except Exception as _e:
+            log.warning('maestro-lotes material de cliente fallo: %s', _e)
 
     # 6) El estado del LOTE es el de su fase mas avanzada.
     salida = []
@@ -5537,7 +5558,22 @@ function mlDetalle(x){
       h+='<div class="u">'+num(c.unidades)+'</div></div>';
     });
     h+='<div class="origen" style="margin-top:8px">El resto del lote es de ÁNIMUS.</div>';
-  } else { h+='<div class="origen">Lote completo de ÁNIMUS: ningún pedido de cliente se sumó acá.</div>'; }
+  }
+  if(x.material_cliente && x.material_cliente.length){
+    h+='<div class="origen" style="margin-top:10px"><b>Material de marca del cliente</b><br>';
+    x.material_cliente.forEach(function(m){
+      h+='&middot; '+esc(m.descripcion)+' &times; '+num(m.unidades)+' ';
+      h+= m.falta_definir
+        ? '<span style="color:var(--cx-danger-text, #b91c1c);font-weight:700">falta definir cu&aacute;l</span>'
+        : '<span style="color:var(--cx-text-mute)">('+esc(m.codigo)+')</span>';
+      h+='<br>';
+    });
+    if(x.material_cliente_sin_definir>0) h+='<span style="color:var(--cx-danger-text, #b91c1c)">Sin el c&oacute;digo no se puede comprar ni alistar: def&iacute;nilo al aceptar el pedido.</span>';
+    h+='</div>';
+  }
+  if(!(x.clientes && x.clientes.length)){
+    h+='<div class="origen">Lote completo de ÁNIMUS: ningún pedido de cliente se sumó acá.</div>';
+  }
   h+='</div>';
   h+='<div class="det-full"><h3>Material de envase</h3>';
   if(x.materiales && x.materiales.length){

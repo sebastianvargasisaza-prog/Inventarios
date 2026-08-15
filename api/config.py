@@ -410,6 +410,41 @@ AREA_USERS = {
 }
 
 
+def _usuarios_con_clave_en_bd():
+    """Los usuarios que tienen hash ACTIVO en `users_passwords`, o None si no se pudo ver.
+
+    Devuelve None -no un set vacío- cuando la base no se puede consultar: distinguir "no
+    tiene clave" de "no pude mirar" es justamente lo que este chequeo hacía mal.
+
+    Se conecta sin pasar por `database` a propósito: ese módulo importa `config`, así que
+    importarlo desde acá cerraría el ciclo en pleno arranque. Es de sólo lectura, con
+    timeout corto, y cualquier problema devuelve None.
+    """
+    import os as _os
+    url = (_os.environ.get("DATABASE_URL") or "").strip()
+    sql = ("SELECT username FROM users_passwords "
+           "WHERE COALESCE(activo,1)=1 AND COALESCE(password_hash,'') <> ''")
+    try:
+        if url:
+            import psycopg
+            with psycopg.connect(url, connect_timeout=4) as cn:
+                with cn.cursor() as cur:
+                    cur.execute(sql)
+                    return {str(r[0]).strip().lower() for r in cur.fetchall() if r and r[0]}
+        ruta = _os.environ.get("DB_PATH", "")
+        if ruta and _os.path.exists(ruta):
+            import sqlite3 as _sq
+            cn = _sq.connect(ruta, timeout=3.0)
+            try:
+                return {str(r[0]).strip().lower() for r in cn.execute(sql).fetchall()
+                        if r and r[0]}
+            finally:
+                cn.close()
+    except Exception:
+        return None
+    return None
+
+
 def validate_config():
     """Valida configuración de seguridad al startup.
 
@@ -449,14 +484,51 @@ def validate_config():
             # password en lugar del hash en la env var. Inseguro.
             plaintext_users.append(user)
 
+    # El login resuelve la clave PRIMERO por `users_passwords` (quien la cambió o le
+    # hicieron reset desde la app tiene su hash ahí) y SÓLO después por la env var. Este
+    # aviso miraba únicamente las env vars y desde ahí afirmaba que esos usuarios "NO
+    # pueden entrar" — falso para José y Milton, que entran todos los días (Sebastián,
+    # 15-ago-2026: *"ellos sí tienen usuario y clave"*). Un aviso de severidad HIGH que
+    # miente en cada arranque es lo que enseña a ignorar todos los demás: un chequeo que
+    # no puede ver la mitad de la evidencia declara lo que midió, no dicta un veredicto
+    # (M100/M170).
+    sin_clave, solo_en_bd, no_verificables = list(missing_users), [], []
     if missing_users:
+        try:
+            en_bd = _usuarios_con_clave_en_bd()
+            if en_bd is None:                       # no se pudo consultar
+                no_verificables, sin_clave = list(missing_users), []
+            else:
+                solo_en_bd = [u for u in missing_users if u.strip().lower() in en_bd]
+                sin_clave = [u for u in missing_users if u.strip().lower() not in en_bd]
+        except Exception:
+            no_verificables, sin_clave = list(missing_users), []
+
+    if sin_clave:
         issues.append({
             "severity": "HIGH",
             "code": "MISSING_USER_PASSWORD",
-            "msg": f"{len(missing_users)} usuario(s) sin password configurada "
-                   f"(env var PASS_<USER> ausente). Estos usuarios NO pueden "
-                   f"entrar hasta que se configure su variable en Render. "
-                   f"Usuarios afectados: {', '.join(missing_users)}"
+            "msg": f"{len(sin_clave)} usuario(s) sin clave por ningún lado: no tienen "
+                   f"PASS_<USER> en Render NI hash activo en users_passwords, así que no "
+                   f"pueden entrar. Se resuelve con la env var o reseteando su clave "
+                   f"desde /admin. Usuarios afectados: {', '.join(sin_clave)}"
+        })
+    if no_verificables:
+        issues.append({
+            "severity": "INFO",
+            "code": "USER_PASSWORD_NO_VERIFICABLE",
+            "msg": f"{len(no_verificables)} usuario(s) sin PASS_<USER> en Render, y no se "
+                   f"pudo consultar users_passwords para saber si igual tienen clave. "
+                   f"Esto NO significa que no puedan entrar. "
+                   f"Usuarios: {', '.join(no_verificables)}"
+        })
+    if solo_en_bd:
+        issues.append({
+            "severity": "INFO",
+            "code": "USER_PASSWORD_SOLO_EN_BD",
+            "msg": f"{len(solo_en_bd)} usuario(s) entran con la clave guardada en la base "
+                   f"(no tienen PASS_<USER> en Render). Funciona; dejar también la env "
+                   f"var sirve de respaldo. Usuarios: {', '.join(solo_en_bd)}"
         })
 
     if plaintext_users:

@@ -80,7 +80,7 @@ function rmCargar(){
            +(p.detalle.length>12?' y '+(p.detalle.length-12)+' m&aacute;s':'')+'</div>';
        }
        h+='</div>';
-       if(p.donde) h+='<a class="don" href="'+esc(p.donde)+'">Ir &rarr;</a>';
+       if(p.donde) h+='<a class="don" href="'+esc(p.donde)+'">'+esc(p.accion||'Ir')+' &rarr;</a>';
        return h+'</div>';
      }).join('');
      document.getElementById('aviso').textContent=j.aviso||'';

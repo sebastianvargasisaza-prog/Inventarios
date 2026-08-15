@@ -24165,6 +24165,72 @@ def _calcular_disponibilidad_mp(c, codigo_mp, fecha_horizonte=None):
     return out
 
 
+def _material_cliente_lotes(c, produccion_ids):
+    """El material de MARCA DEL CLIENTE (etiqueta y caja) de VARIOS lotes, de una vez.
+
+    Sebastián 14-ago define al aceptar el pedido SI lleva etiqueta y SI lleva caja
+    (`pedidos_b2b.lleva_etiqueta` / `lleva_caja`, mig 432). Esa decisión sola no alcanza
+    para actuar: sin el CÓDIGO del material no se puede comprar, ni alistar, ni descontar,
+    así que la marca quedaba de adorno y el material se olvidaba hasta el piso.
+
+    Este es el ÚNICO lugar que resuelve qué material de cliente lleva un lote (M3), y
+    resuelve la LISTA en UNA consulta: pedirlo lote por lote desde una pantalla es
+    exactamente lo que satura los tres workers (M43/M63).
+
+    La etiqueta de un cliente lleva SU marca, así que nunca sale de
+    `producto_presentaciones` (esa es la de ÁNIMUS). Si la marca está y el código no, la
+    fila sale con `codigo=''` y `falta_definir=True`: adivinar un código parecido es como
+    se termina comprando el material de otro cliente (M19/M100).
+
+    Devuelve {produccion_id: [filas]} · sólo con los lotes que tienen algo.
+    """
+    pids = sorted({int(p) for p in (produccion_ids or []) if p})
+    if not pids:
+        return {}
+    ph = ','.join('?' for _ in pids)
+    try:
+        filas = c.execute(
+            "SELECT pbl.lote_produccion_id, p.id, COALESCE(p.cliente_nombre,''), "
+            "       COALESCE(pbl.unidades_aporte,0), COALESCE(p.lleva_etiqueta,0), "
+            "       COALESCE(p.lleva_caja,0), COALESCE(p.etiqueta_codigo,''), "
+            "       COALESCE(p.caja_codigo,'') "
+            "  FROM pedidos_b2b_lote pbl "
+            "  JOIN pedidos_b2b p ON p.id = pbl.pedido_b2b_id "
+            " WHERE pbl.lote_produccion_id IN (%s)" % ph, pids).fetchall()
+    except Exception as _e:
+        # Sin las columnas (instancia sin migrar) no se devuelve un vacío silencioso: se
+        # deja rastro, que un except mudo convierte "no pude leer" en "no lleva nada".
+        log.warning('material de cliente no legible para %d lote(s): %s', len(pids), _e)
+        return {}
+    out = {}
+    for r in filas:
+        pid = int(r[0])
+        uds = int(float(r[3] or 0))
+        for lleva, codigo, tipo, etiqueta in ((r[4], r[6], 'etiqueta', 'Etiqueta'),
+                                              (r[5], r[7], 'caja', 'Caja')):
+            if not int(lleva or 0):
+                continue
+            cod = (codigo or '').strip()
+            out.setdefault(pid, []).append({
+                'pedido_id': int(r[1]),
+                'cliente': r[2] or '(sin nombre)',
+                'tipo': tipo,
+                'descripcion': '%s de %s' % (etiqueta, r[2] or 'cliente'),
+                'codigo': cod,
+                'unidades': uds,
+                'falta_definir': not cod,
+            })
+    return out
+
+
+def _material_cliente_lote(c, produccion_id):
+    """El material de marca del cliente de UN lote. Delega en el de muchos: dos copias de
+    la misma regla divergen el día que alguien corrige una (M3/M99)."""
+    if not produccion_id:
+        return []
+    return _material_cliente_lotes(c, [produccion_id]).get(int(produccion_id), [])
+
+
 def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_planeada,
                                    cantidad_kg, generar_mps=True, usuario='sistema'):
     """Genera items de checklist para una produccion.

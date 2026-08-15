@@ -2568,6 +2568,34 @@ def confirmar_pedido_b2b(pid):
         cur.execute("UPDATE pedidos_b2b SET envase_codigo=? WHERE id=?", (envase_elegido, pid))
     # Etiqueta y caja: lo que Catalina define al aceptar. Se guardan sólo si vinieron en
     # el cuerpo, para que confirmar desde otra pantalla no borre lo que ella decidió.
+    # QUÉ etiqueta y QUÉ caja, no sólo SI las lleva (mig 436). Sin el código no se puede
+    # comprar, ni alistar, ni descontar: la marca sola dejaba el material en silencio
+    # hasta que faltaba en el piso. Se guarda validado contra el maestro de envases -un
+    # código que no existe apunta al vacío y nadie lo ve hasta ese día (M179/M195)- y lo
+    # que no se define queda DECLARADO como pendiente, nunca adivinado.
+    for _campo, _col in (("etiqueta_codigo", "etiqueta_codigo"), ("caja_codigo", "caja_codigo")):
+        if _campo in body:
+            _cod = (str(body.get(_campo) or "")).strip().upper()
+            if _cod:
+                try:
+                    _existe = cur.execute(
+                        "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=? LIMIT 1",
+                        (_cod,)).fetchone()
+                except Exception:
+                    _existe = True   # sin poder verificar, no se traba a Catalina
+                if not _existe:
+                    conn.rollback()
+                    return jsonify({"error": "El código %s no está en el maestro de envases. "
+                                             "Cargalo primero o dejá el campo vacío para "
+                                             "definirlo después." % _cod,
+                                    "codigo": "MATERIAL_INEXISTENTE"}), 400
+            try:
+                cur.execute(f"UPDATE pedidos_b2b SET {_col}=?, materiales_por=?, "
+                            "materiales_at=? WHERE id=?",
+                            (_cod, user,
+                             __import__("datetime").datetime.utcnow().replace(microsecond=0).isoformat(), pid))
+            except Exception as _ef:
+                log.warning("no se pudo guardar %s del pedido %s: %s", _campo, pid, _ef)
     for _campo, _col in (("lleva_etiqueta", "lleva_etiqueta"), ("lleva_caja", "lleva_caja")):
         if _campo in body:
             try:

@@ -5503,7 +5503,11 @@ def estado_reemplazo_mybatch():
                   if (aprobados is not None and activos is not None) else 'no se pudo medir'),
         'porque': 'Un producto sin instructivo aprobado no puede abrir legajo: el lote se '
                   'fabrica igual, pero sin registro de lote digital.',
-        'donde': '/admin/cargar-instructivo',
+        # Lleva a donde SE RESUELVE, no a una pantalla del tema: esa pantalla genera el
+        # instructivo desde la fórmula y lo aprueba con una re-autenticación (firma
+        # Part 11 §11.200). Un "dónde" que apunta a un vecino obliga a buscar (M202).
+        'donde': '/planta/activar-legajos',
+        'accion': 'Generar y aprobar los que faltan',
         'detalle': faltan_mbr,
     })
 

@@ -11572,6 +11572,18 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_checklist_items_ambito "
         "ON checklist_items(tipo, ambito, activo, orden)",
     ]),
+    (436, "pedidos_b2b · QUÉ etiqueta y QUÉ caja lleva el pedido del cliente (Sebastián "
+          "15-ago-2026). La mig 432 guardó SI lleva (`lleva_etiqueta`/`lleva_caja`), que es "
+          "la decisión de Catalina, pero eso no alcanza para actuar: sin el CÓDIGO del "
+          "material no se puede comprar, ni alistar, ni descontar — la marca quedaba como "
+          "un dato informativo y el material se olvidaba. La etiqueta de un cliente B2B "
+          "lleva SU marca, así que no puede salir de `producto_presentaciones` (que es la "
+          "de ÁNIMUS): es propia del pedido. Cuando la marca está y el código no, se "
+          "DECLARA como pendiente de definir en vez de adivinar un código parecido, que "
+          "es como se termina comprando el material de otro cliente (M19/M100).", [
+        "ALTER TABLE pedidos_b2b ADD COLUMN etiqueta_codigo TEXT DEFAULT ''",
+        "ALTER TABLE pedidos_b2b ADD COLUMN caja_codigo TEXT DEFAULT ''",
+    ]),
 ]
 
 

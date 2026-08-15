@@ -356,3 +356,39 @@ Luz; `/compras` y `/tecnica` a Luz.
 
 Quedó alineado: **ver** un módulo sale de la matriz, **firmar** sigue con el guard propio
 de cada acción, que es la separación que `config.py` ya declaraba.
+
+---
+
+## Cierre de pendientes · 15-ago-2026 (tarde)
+
+Cuatro cosas que quedaban abiertas y ya no lo están:
+
+**1. El aviso de contraseñas mentía.** Decía, con severidad alta y en cada arranque, que
+José y Milton *"NO pueden entrar"*. Falso: el login resuelve primero por la tabla de
+contraseñas y ellos la tienen. Ahora el chequeo mira la base antes de opinar y distingue
+tres casos: sin clave por ningún lado (problema real), sólo en la base (funciona) y **no
+se pudo verificar** (que es lo que responde cuando no puede consultar). Un aviso de
+severidad alta que miente todos los días es lo que hace que se ignoren los demás.
+
+**2. Los instructivos que faltan se resuelven desde donde se mide.** El punto de la
+pantalla de estado ahora lleva a `/planta/activar-legajos`, que genera el instructivo
+desde la fórmula y lo aprueba con una re-autenticación — la firma queda a nombre de quien
+la da. Un enlace a una pantalla del tema, en vez de a la que resuelve, obliga a buscar.
+
+**3. La etiqueta y la caja del cliente dejaron de ser una marca sin efecto.** Catalina
+definía *si* el pedido las lleva, pero sin el **código** del material nadie puede
+comprarlo, alistarlo ni descontarlo: la marca quedaba de adorno y el material se olvidaba
+hasta que faltaba en el piso. Ahora el pedido guarda **cuál** etiqueta y **cuál** caja
+(validadas contra el maestro de envases), el lote lo dice, y lo que falta definir se
+**declara** en vez de adivinarse con un código parecido — que es como se termina
+comprando el material de otro cliente.
+
+**4. El enlace de facturación se sugiere.** Cuando el cruce es inequívoco (mismo NIT, o
+nombre idéntico y único) el selector viene preseleccionado y dice de dónde sale la
+sugerencia; con dos candidatas no propone ninguna. Confirmar cuesta un clic, pero sigue
+siendo una decisión de una persona: enlazar mal deja a un cliente viendo las facturas de
+otro.
+
+**Y uno que se cerró sin escribir código:** el reparto manual cuando un pedido de cliente
+se suma a un lote compartido **ya estaba resuelto** (el reparto sale por volumen y el
+ajuste por lote existe desde el 12-ago). Se verificó y se sacó de la lista.

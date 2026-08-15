@@ -164,3 +164,26 @@ def test_la_pantalla_existe_y_se_alcanza(app, db_clean):
     assert "'tab-reemplazo'" in aseg.split("_tabIds")[1][:400], (
         "la pestaña no está en el mapa: abrirla dejaría la pantalla en blanco")
     assert 'id="tab-reemplazo"' in aseg, "falta el panel"
+
+
+def test_cada_enlace_apunta_a_una_ruta_que_existe(app, db_clean):
+    """Un aviso que lleva a una pantalla que no existe es peor que no avisar: la persona
+    aprende que el tablero no sirve (M202). Se verifica contra el mapa de rutas REAL, no
+    contra la memoria de quien lo escribió.
+    """
+    j = _estado(app)
+    rutas = {str(r.rule) for r in app.url_map.iter_rules()}
+    rotas = []
+    for p in j["puntos"]:
+        d = (p.get("donde") or "").split("?")[0].rstrip("/") or "/"
+        if d and d not in rutas and (d + "/") not in rutas:
+            rotas.append("%s -> %s" % (p["clave"], d))
+    assert not rotas, "estos puntos enlazan a rutas que no existen: %s" % rotas
+
+
+def test_el_punto_de_instructivos_lleva_a_donde_se_resuelve(app, db_clean):
+    """No a una pantalla del tema: a la que genera desde la fórmula y aprueba con la
+    re-autenticación del usuario (firma Part 11). Yo no puedo aprobar por él."""
+    p = _punto(_estado(app), "instructivos")
+    assert p["donde"] == "/planta/activar-legajos", p["donde"]
+    assert p.get("accion"), "no dice qué se hace al llegar"
