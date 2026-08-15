@@ -1388,3 +1388,29 @@ que **nunca sale de `producto_presentaciones`** — esa es la de ÁNIMUS.
   al resto del material de envase.
 
 Tests: `tests/test_material_cliente_lote.py` (en el gate).
+
+---
+
+## INV · El rótulo F02 que se IMPRIME es un formato, no un registro
+
+**Desde el 15-ago-2026.** `/planta/rotulos-limpieza` y `/planta/rotulo-limpieza/<area>/pdf`
+imprimen un **formato para llenar**. El **registro** firmado tiene su propia URL estable
+por-registro (`/planta/rotulo-limpieza/registro/<id>/pdf`), que es la que va al expediente
+por lote.
+
+- **La firma sólo se preimprime si la limpieza es reciente** (`_ROTULO_FIRMA_VIGENTE_DIAS`,
+  hoy 3 días · helper `_rotulo_firma_vigente`). El F02 acompaña la producción del momento.
+  Antes se tomaba el último ciclo del área sin mirar la fecha: en producción ése era una
+  demo de junio, así que **todas las salas salían prefirmadas por quien no ejecutó esa
+  limpieza** — un registro regulado prefirmado es un registro falso.
+- **Si el ciclo es viejo se descarta ENTERO**, no sólo la firma: el producto, el lote y los
+  equipos de un ciclo de hace dos meses no hablan de este lote (M19).
+- **Se elige qué equipos se imprimen.** Sin parámetros, la ruta muestra el selector
+  (`_rotulos_limpieza_selector`); con `?equipos=COD1,COD2` imprime ésos;
+  `?todos=1` conserva el comportamiento anterior y es lo que usa el botón "Imprimir TODOS"
+  del dashboard — esa URL está enlazada y no se rompe (M120). `_rotulos_de_area` acepta
+  `solo_codigos` para acotar.
+- Nada viene marcado de fábrica en el selector: marcar todo por defecto reproduce el
+  problema con un paso extra.
+
+Tests: `tests/test_rotulo_limpieza_firma_y_equipos.py` (en el gate) + `test_rotulo_limpieza.py`.
