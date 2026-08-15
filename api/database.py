@@ -11528,6 +11528,22 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
           "sumandos diverge el día que alguien corrige uno solo (M99).", [
         "ALTER TABLE ebr_conciliacion_material ADD COLUMN cant_averiada REAL DEFAULT 0",
     ]),
+    (434, "ebr_ejecuciones · la JUSTIFICACIÓN del rendimiento se guarda en el legajo "
+          "(Sebastián 15-ago-2026, clonando MyBatch). El gate ya EXIGÍA justificar un yield "
+          "fuera del 80-115% para poder liberar, pero el texto se iba únicamente adentro del "
+          "`despues` del audit_log: en el legajo no se veía POR QUÉ se liberó un lote al 127%, "
+          "y en el PDF -que es lo que se le muestra a INVIMA- tampoco. Un dato que se exige, se "
+          "captura y no llega al consumidor es un dato que no existe (M115). MyBatch lo muestra "
+          "en la cabecera del instructivo, al lado del rendimiento.", [
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN yield_justificacion TEXT DEFAULT ''",
+        # El control de "yield anómalo se justifica antes de liberar" existía pero vivía
+        # dentro del bloque EBR_MODE='strict', y el modo real es warn: no corría nunca
+        # (M119). Sale de ahí y pasa a tener interruptor propio, APAGADO de fábrica -
+        # encenderlo a ciegas trabaría la liberación el mismo día (M126). Mientras esté
+        # apagado, liberar sin justificar queda registrado en el audit.
+        """INSERT INTO app_settings (clave, valor) VALUES ('exigir_justificacion_yield','0')
+           ON CONFLICT (clave) DO NOTHING""",
+    ]),
 ]
 
 

@@ -8327,6 +8327,10 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+=_sec('Densidad', d.densidad_g_ml?(d.densidad_g_ml+' g/mL'):'');
   h+=_sec('Elaborado por', _escHTML(d.iniciado_por||'')+(d.iniciado_at_utc?(' · '+_dt(d.iniciado_at_utc)):''));
   h+=_sec('Aprobado (Calidad)', _escHTML(d.liberado_por||'')+(d.liberado_at_utc?(' · '+_dt(d.liberado_at_utc)):''));
+  // El sistema EXIGE justificar un rendimiento fuera del 80-115% para poder liberar.
+  // Ese texto vivía sólo dentro del audit, así que el legajo mostraba un 127% sin decir
+  // por qué (M115). MyBatch lo lleva en la cabecera, al lado del rendimiento.
+  if(d.yield_justificacion){ h+=_sec('Justificación del rendimiento', _escHTML(d.yield_justificacion)); }
   if(d.notas){ h+=_sec('Observaciones', _escHTML(d.notas)); }
   h+='</div></div>';
   // ── Rol del usuario · la vista se adapta (segregación de funciones GMP) ──

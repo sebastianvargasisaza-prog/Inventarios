@@ -448,6 +448,30 @@ def _exige_ipc_estandar(conn) -> bool:
         return False
 
 
+def _exige_justificacion_yield(conn) -> bool:
+    """Toggle de `app_settings` · default OFF.
+
+    El control ("un rendimiento fuera del 80-115% no se libera sin explicación")
+    existía desde antes, pero vivía DENTRO del bloque `EBR_MODE == 'strict'`, y el
+    modo real es warn: o sea que hoy un lote al 127% se libera en silencio y el
+    control estaba muerto (M119 · un control que vive en un camino por el que no
+    pasa el tráfico no es un control).
+
+    Se saca de ahí y se le da interruptor propio, como el de los IPC estándar:
+    encenderlo a ciegas trabaría la liberación el mismo día (M126), así que nace
+    apagado y, mientras tanto, liberar sin justificar DEJA RASTRO en el audit en
+    vez de pasar sin que nadie se entere (M100).
+    """
+    try:
+        r = conn.execute(
+            "SELECT valor FROM app_settings WHERE clave='exigir_justificacion_yield'"
+        ).fetchone()
+        return bool(r) and str(r[0]).strip() in ("1", "true", "True")
+    except Exception as _e:
+        log.warning("exigir_justificacion_yield no legible: %s", _e)
+        return False
+
+
 def _gate_aprobacion_orden():
     """Si el toggle está ON, un legajo SIN aprobar no deja ejecutar el proceso.
 
@@ -1844,6 +1868,11 @@ def _ebr_to_dict(row, pasos=None):
         "cantidad_objetivo_g": row["cantidad_objetivo_g"],
         "cantidad_real_g": row["cantidad_real_g"],
         "yield_pct": row["yield_pct"],
+        # Por qué se liberó un lote con un rendimiento anómalo · el gate la exige, así
+        # que tiene que poder LEERSE después (mig 434). Defensivo: un SELECT viejo o una
+        # instancia sin la migración no rompe la pantalla.
+        "yield_justificacion": ((row["yield_justificacion"] or "")
+                                if "yield_justificacion" in row.keys() else ""),
         "notas": row["notas"] or "",
         # fase del legajo · defensivo: SELECTs viejos pueden no traer la columna
         "fase": (row["fase"] if "fase" in row.keys() and row["fase"] else "fabricacion"),
@@ -5063,6 +5092,30 @@ def liberar_ebr(ebr_id):
                     "codigo": "MICRO_FALTANTE",
                 }), 409
 
+    # RENDIMIENTO ANÓMALO · un yield fuera del 80-115% (pérdida de batch, error de tara,
+    # unidades sumadas de otra orden) no se libera sin explicación.
+    #
+    # El control ya existía, pero vivía DENTRO del bloque `EBR_MODE == 'strict'` de abajo
+    # y el modo real es warn: no corría nunca, o sea que hoy un lote al 127% se libera en
+    # silencio (M119 · un control que vive en un camino por el que no pasa el tráfico no
+    # es un control). Ahora corre SIEMPRE, y bloquea si el modo es strict -igual que
+    # antes, y en el mismo orden respecto de los otros gates- o si se prende su
+    # interruptor propio, que nace apagado para no trabar la liberación el mismo día
+    # (M126). Con el interruptor apagado, liberar sin justificar DEJA RASTRO (M100).
+    _yjust_pre = (body.get('yield_justificacion') or '').strip()
+    try:
+        _yp = (cur.execute("SELECT yield_pct FROM ebr_ejecuciones WHERE id=?",
+                           (ebr_id,)).fetchone() or [None])[0]
+    except Exception:
+        _yp = None
+    _libera_sin_justificar = bool(_yp is not None and (_yp < 80 or _yp > 115)
+                                  and not _yjust_pre)
+    if _libera_sin_justificar and (_exige_justificacion_yield(conn)
+                                   or _ebr_mode_now(cur) == 'strict'):
+        return jsonify({"error": f"Rendimiento fuera de rango ({_yp}%) · GMP exige justificar "
+                                 f"un yield anómalo (<80% o >115%) antes de liberar.",
+                        "codigo": "YIELD_FUERA_RANGO", "yield_pct": _yp}), 409
+
     # Audit 3-jun · GATE DE COMPLETITUD del legajo · solo EBR_MODE='strict' (BPM
     # duro). En 'warn' (piloto) NO bloquea, para no frenar mientras se adopta.
     if _ebr_mode_now(cur) == 'strict':
@@ -5079,17 +5132,7 @@ def liberar_ebr(ebr_id):
             if _n_pes == 0:
                 return jsonify({"error": "No se puede liberar: no hay registro de pesaje/dispensado de "
                                 "materias primas del lote.", "codigo": "SIN_PESAJES"}), 409
-            # #6 · rendimiento (yield) fuera de rango razonable (80-115%) exige justificación (GMP · un yield
-            # anómalo ·pérdida de batch o error de tara· no puede liberarse en silencio · queda en el audit).
-            try:
-                _yp = (cur.execute("SELECT yield_pct FROM ebr_ejecuciones WHERE id=?",
-                                   (ebr_id,)).fetchone() or [None])[0]
-            except Exception:
-                _yp = None
-            if _yp is not None and (_yp < 80 or _yp > 115) and not (body.get('yield_justificacion') or '').strip():
-                return jsonify({"error": f"Rendimiento fuera de rango ({_yp}%) · GMP exige justificar un yield "
-                                f"anómalo (<80% o >115%) antes de liberar.",
-                                "codigo": "YIELD_FUERA_RANGO", "yield_pct": _yp}), 409
+
         try:
             _pes_sin_verif = cur.execute(
                 "SELECT COUNT(*) FROM ebr_pesajes "
@@ -5167,14 +5210,23 @@ def liberar_ebr(ebr_id):
     # estado liberable. Sin esto, un liberar y un rechazar concurrentes (ambos
     # pasan el check-then-act de arriba) podían dejar el EBR 'rechazado' pero con
     # el PT ya promovido a VIGENTE = producto rechazado vendible (riesgo INVIMA).
+    # RENDIMIENTO ANÓMALO · un yield fuera del 80-115% (pérdida de batch, error de tara,
+    # unidades que se sumaron de otra orden) no se libera sin explicación. El control
+    # existía pero vivía dentro del bloque `EBR_MODE == 'strict'` y el modo real es warn:
+    # o sea que no corría nunca (M119). Ahora corre siempre, con su propio interruptor
+    # -apagado de fábrica, para no trabar la liberación el mismo día (M126)- y cuando está
+    # apagado igual DEJA RASTRO de que se liberó sin justificar (M100).
+    _yjust = (body.get('yield_justificacion') or '').strip()[:600]
     cur.execute(
         """UPDATE ebr_ejecuciones
              SET estado = 'liberado',
                  liberado_por = ?,
                  liberado_at_utc = datetime('now', 'utc'),
-                 liberado_signature_id = ?
+                 liberado_signature_id = ?,
+                 yield_justificacion = CASE WHEN ? <> '' THEN ?
+                                            ELSE COALESCE(yield_justificacion, '') END
            WHERE id = ? AND estado IN ('completado', 'en_revision_qc')""",
-        (user, (int(signature_id) if signature_id else None), ebr_id),
+        (user, (int(signature_id) if signature_id else None), _yjust, _yjust, ebr_id),
     )
     if cur.rowcount == 0:
         conn.rollback()
@@ -5226,7 +5278,11 @@ def liberar_ebr(ebr_id):
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"liberado_por": user, "signature_id": signature_id,
                        "pt_lotes_promovidos": pt_lote_promovidos,
-                       "yield_justificacion": (body.get('yield_justificacion') or '').strip() or None})
+                       "yield_pct": _yp,
+                       "yield_justificacion": _yjust or None,
+                       # Con el control apagado esto es lo único que queda: que se sepa
+                       # que se liberó un rendimiento anómalo sin explicarlo.
+                       "liberado_sin_justificar_yield": _libera_sin_justificar or None})
     # ENVASADO Fase 2 (26-jun · Sebastián) · al LIBERAR el granel de FABRICACIÓN (QC aprobó → PT VIGENTE)
     # se HABILITA automático el legajo de Envasado del MISMO lote físico (idempotente vía crear_ebr_desde_mbr
     # · best-effort · NO bloquea la liberación si falla). SOLO fase='fabricacion' (no encadenar al liberar un
@@ -7004,6 +7060,16 @@ def pdf_ebr(ebr_id):
         _line(f"DECISIÓN QC: PENDIENTE (estado actual: {_est})", h=6, font_size=10)
     if yld is not None:
         _line(f"Rendimiento: {yld:.2f} %", h=5, font_size=9)
+        # Si el rendimiento se salió de rango, el sistema EXIGIÓ justificarlo para poder
+        # liberar: ese texto tiene que salir en el PDF, que es el documento que se le
+        # muestra a la auditoría. Sin él, el legajo deja un 127% sin explicación.
+        try:
+            _yj = (ebr["yield_justificacion"] or "").strip() if (
+                "yield_justificacion" in ebr.keys()) else ""
+        except Exception:
+            _yj = ""
+        if _yj:
+            _line(f"Justificación del rendimiento: {_yj}", h=5, font_size=9)
 
     # Hash de contenido (NO de los bytes del PDF · esos cambian con timestamp).
     # Este hash es estable: depende solo de los datos del EBR. Sirve para que

@@ -132,6 +132,7 @@ CORAZON=(
   "tests/test_conciliacion_averiada.py"
   "tests/test_ipc_estandar_por_fase.py"
   "tests/test_envasado_para_que_cliente.py"
+  "tests/test_yield_justificacion_queda.py"
   "tests/test_login_premium.py"
   "tests/test_envasado_lista_premium.py"
   "tests/test_despeje_orden_mybatch.py"

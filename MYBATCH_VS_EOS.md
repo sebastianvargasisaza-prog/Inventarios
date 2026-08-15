@@ -143,7 +143,7 @@ rango, y ahí queda el rastro.
 | 1 | `cant_averiada` + diferencia en la conciliación | envasado y acondicionamiento | ✅ **hecho** 15-ago (mig 433 · `tests/test_conciliacion_averiada.py`) |
 | 3 | Los 14 controles de atributos | acondicionamiento | ✅ **hecho** 15-ago · y de paso envasado pasó a pedir control de llenado en vez de densidad y pH (`tests/test_ipc_estandar_por_fase.py`) |
 | 2 | Las dos etapas del despeje (dispensación / fabricación) | fabricación | pendiente · MyBatch registra dos momentos distintos; EOS los junta |
-| 4 | Rendimiento por presentación + justificación | envasado y acondicionamiento | pendiente · el % existe a nivel lote; falta por presentación y el motivo cuando se sale de rango |
+| 4 | Justificación del rendimiento | fabricación (y cualquier fase) | ✅ **hecho** 15-ago (mig 434): queda en el legajo y en el PDF, no sólo en el audit · y el control salió del bloque `strict`, donde **no corría nunca** (`tests/test_yield_justificacion_queda.py`) · falta todavía el % **por presentación** |
 | 5 | Saldo del granel ("cantidad por envasar") visible | envasado | pendiente · hoy hay que calcularlo de cabeza |
 
 Ninguno de los cinco rompe nada hoy: son **campos y datos que se agregan**, no cambios
