@@ -2617,13 +2617,17 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
        sub-bar al activarse y disparan switchProgTab al default del grupo.
   -->
   <div style="display:flex;gap:10px;margin-bottom:8px;border-bottom:2px solid var(--cx-border);padding-bottom:10px;align-items:center;flex-wrap:wrap">
+    <!-- Sebastián 14-ago-2026: los tres grupos eran violeta, ámbar y gris, y el
+         activo se marcaba SOLO con opacidad · dos señales distintas para la misma
+         cosa. Ahora los tres comparten forma y el activo se pinta violeta desde
+         _paintProgGroup (una sola fuente del estado). -->
     <button data-prog-grp="plan" onclick="switchProgGroup('plan')"
-      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#6d28d9,#7c3aed);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"
+      style="padding:9px 24px;border:1px solid transparent;border-bottom:none;border-radius:10px 10px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:var(--cx-primary-grad);color:#fff;box-shadow:0 3px 10px rgba(109,40,217,.28)"
       title="Demanda + oferta del plan · Necesidades · Abastecimiento">
       &#128202; Plan
     </button>
     <button data-prog-grp="calendario_grp" onclick="switchProgGroup('calendario_grp')"
-      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#ca8a04,#f59e0b);color:#fff;box-shadow:0 3px 10px rgba(245,158,11,.35);opacity:.6"
+      style="padding:9px 24px;border:1px solid var(--cx-border);border-bottom:none;border-radius:10px 10px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:var(--cx-card);color:var(--cx-text-soft)"
       title="Calendario IA · Vista calendario · Factibilidad de MPs">
       &#129302; Calendario IA
     </button>
@@ -2631,7 +2635,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
          Lead times, Cadencias…) NO tenía botón visible · solo se llegaba por deeplink → nadie
          encontraba dónde configurar los envases. Botón directo a switchProgTab('config'). -->
     <button data-prog-grp="config" onclick="switchProgTab('config')"
-      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#475569,#64748b);color:#fff;box-shadow:0 3px 10px rgba(71,85,105,.3)"
+      style="padding:9px 24px;border:1px solid var(--cx-border);border-bottom:none;border-radius:10px 10px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:var(--cx-card);color:var(--cx-text-soft)"
       title="Configuración · 📦 Presentaciones (envase por producto) · Lead times · Cadencias · Emails">
       &#9881; Configuración
     </button>
@@ -2639,8 +2643,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
          PRINCIPAL de Planta y no adentro de Configuración: se usa el dia que se fue la luz, o
          sea justo cuando nadie va a andar buscando en que pestana quedo. Una pantalla sin un
          enlace visible obliga a teclear la URL, y eso es lo mismo que no existir (M121). -->
+    <!-- No es una pestaña: abre otra pantalla. Va con forma de acción (contorno
+         ámbar) para que no compita con los tres grupos de arriba. -->
     <a href="/planta/contingencia" target="_blank" rel="noopener"
-      style="padding:9px 22px;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;background:linear-gradient(135deg,#b45309,#d97706);color:#fff;text-decoration:none;display:inline-block;box-shadow:0 3px 10px rgba(180,83,9,.3)"
+      style="padding:8px 18px;margin-left:auto;border:1px solid var(--cx-accent-dark, #d97706);border-radius:8px;font-size:13px;font-weight:800;background:var(--cx-warn-pale, #fef3c7);color:var(--cx-warn-text, #92400e);text-decoration:none;display:inline-block"
       title="Cargar al sistema lo que se registró en papel cuando no había luz o conexión · queda con la fecha REAL del hecho y colgado del expediente del lote">
       &#128221; Contingencia
     </a>
@@ -2661,7 +2667,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <!-- Sub-bars · solo una visible a la vez según el grupo activo -->
   <div id="prog-sub-plan" class="prog-subbar" style="display:flex;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed var(--cx-border);flex-wrap:wrap">
     <button data-prog-sub="plan" onclick="switchProgTab('necesidades')"
-      style="padding:6px 14px;border:1px solid var(--cx-primary);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--cx-primary);color:#fff"
+      style="padding:7px 15px;border:1px solid transparent;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:var(--cx-primary-grad);color:#fff;box-shadow:0 2px 8px rgba(109,40,217,.28)"
       title="Bandeja entrada · Animus DTC + B2B">
       &#128202; Necesidades
     </button>
@@ -2671,28 +2677,33 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
        grupo Plan al grupo Calendario IA · queda al lado de Vista calendario
        + Factibilidad porque las 3 leen del MISMO calendario. -->
   <div id="prog-sub-calendario_grp" class="prog-subbar" style="display:none;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed var(--cx-border);flex-wrap:wrap">
+    <!-- Sebastián 14-ago-2026 ("¿calendario es premium?"): las 5 sub-pestañas tenían
+         cada una su propio color (naranja, violeta, verde, violeta oscuro, ámbar), así
+         que la barra se leía como cinco cosas sueltas y NO se distinguía cuál estaba
+         abierta. Un solo sistema: apagado = tarjeta con borde, encendido = violeta.
+         El pintado lo hace _highlightProgSubTab (una sola fuente · M5). -->
     <button data-prog-sub="calendario_grp" onclick="switchProgTab('calendario')"
-      style="padding:6px 14px;border:1px solid var(--cx-accent-dark);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--cx-accent-dark);color:#fff"
+      style="padding:7px 15px;border:1px solid transparent;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:var(--cx-primary-grad);color:#fff;box-shadow:0 2px 8px rgba(109,40,217,.28)"
       title="Vista mes + autoplan IA">
       &#129302; Vista calendario
     </button>
     <button data-prog-sub="calendario_grp" onclick="switchProgTab('abastecimiento')"
-      style="padding:6px 14px;border:1px solid var(--cx-primary);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--cx-card);color:var(--cx-primary-text)"
+      style="padding:7px 15px;border:1px solid var(--cx-border);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:var(--cx-card);color:var(--cx-text-soft)"
       title="MP/envases que faltan · suma TODO lo que está en el calendario">
       &#128230; Abastecimiento
     </button>
     <button data-prog-sub="calendario_grp" onclick="switchProgTab('factibilidad')"
-      style="padding:6px 14px;border:1px solid var(--cx-success);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--cx-card);color:var(--cx-success-text)"
+      style="padding:7px 15px;border:1px solid var(--cx-border);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:var(--cx-card);color:var(--cx-text-soft)"
       title="¿Alcanzan las MP para todo el plan?">
       &#9989; Factibilidad
     </button>
     <button data-prog-sub="calendario_grp" onclick="switchProgTab('serigrafia');cargarSerigrafiaCola()"
-      style="padding:6px 14px;border:1px solid var(--cx-primary-dark);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--cx-card);color:var(--cx-primary-text)"
+      style="padding:7px 15px;border:1px solid var(--cx-border);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:var(--cx-card);color:var(--cx-text-soft)"
       title="Envases por producción · enviar a serigrafía con tiempo">
       &#128230; Alistar envases
     </button>
     <button data-prog-sub="calendario_grp" onclick="switchProgTab('estacionalidad')"
-      style="padding:6px 14px;border:1px solid var(--cx-accent-dark);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--cx-card);color:var(--cx-warn-text)"
+      style="padding:7px 15px;border:1px solid var(--cx-border);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:var(--cx-card);color:var(--cx-text-soft)"
       title="Ver cómo se elevan las ventas por mes (Black Friday, Día Madres) · histórico Shopify">
       &#128200; Estacionalidad
     </button>
@@ -15132,18 +15143,31 @@ async function ckMarcar(itemId, estado){
     'calendario': 'calendario_grp',
     'factibilidad': 'calendario_grp',
     'serigrafia': 'calendario_grp',
+    // Faltaban las dos de abajo: sin entrada acá, switchProgTab NO tocaba la barra
+    // (ni el grupo ni el resaltado), así que Estacionalidad se abría con la barra de
+    // otro grupo encendida y Configuración nunca se veía activa (M112).
+    'estacionalidad': 'calendario_grp',
+    'config': 'config',
     'mando': 'opera_grp',
     'kanban': 'opera_grp',
     'midia': 'opera_grp',
   };
+  function _paintProgGroup(group){
+    // Un solo lugar que pinta cuál grupo está abierto (antes eran dos bloques
+    // sueltos moviendo opacidad · si uno se olvidaba, la barra mentía).
+    document.querySelectorAll('[data-prog-grp]').forEach(function(b){
+      var act = b.getAttribute('data-prog-grp') === group;
+      b.style.background = act ? 'var(--cx-primary-grad)' : 'var(--cx-card)';
+      b.style.color = act ? '#fff' : 'var(--cx-text-soft)';
+      b.style.borderColor = act ? 'transparent' : 'var(--cx-border)';
+      b.style.boxShadow = act ? '0 3px 10px rgba(109,40,217,.28)' : 'none';
+      b.style.opacity = '1';
+    });
+  }
   function switchProgGroup(group){
     try {
       // Activar/desactivar botones grupo
-      var btns = document.querySelectorAll('[data-prog-grp]');
-      btns.forEach(function(b){
-        var isActive = b.getAttribute('data-prog-grp') === group;
-        b.style.opacity = isActive ? '1' : '0.6';
-      });
+      _paintProgGroup(group);
       // Mostrar sub-bar correcta
       ['plan','calendario_grp','opera_grp'].forEach(function(g){
         var sb = document.getElementById('prog-sub-'+g);
@@ -15155,37 +15179,36 @@ async function ckMarcar(itemId, estado){
     } catch(err) { console.warn('switchProgGroup:', err); }
   }
   function _highlightProgSubTab(tab){
-    // Resalta el sub-tab activo dentro de su grupo (fill vs outline)
+    // Resalta el sub-tab activo dentro de su grupo · UN solo sistema de color
+    // (Sebastián 14-ago-2026): apagado = tarjeta con borde, encendido = violeta.
+    // Antes cada pestaña tenía su propio color y el fondo apagado era '#fff' fijo,
+    // que en tema oscuro queda blanco (M104/M114).
+    // ⚠ Y faltaban DOS pestañas en el mapa ('Alistar envases' y 'Estacionalidad'):
+    // al abrirlas el panel cambiaba pero la barra seguía resaltando la anterior,
+    // o sea que la pantalla decía que estabas en otro lado (M161).
     var group = _PROG_TAB_TO_GROUP[tab];
     if(!group) return;
-    var COLORS = {
-      'necesidades': '#6d28d9', 'abastecimiento': '#7c3aed',
-      'calendario': '#ca8a04', 'factibilidad': '#059669',
-      'mando': '#1a4a7a', 'kanban': '#7c3aed', 'midia': '#1e40af',
-    };
-    var SUB_TAB_FROM = {
-      'necesidades': "switchProgTab('necesidades')",
-      'abastecimiento': "switchProgTab('abastecimiento')",
-      'calendario': "switchProgTab('calendario')",
-      'factibilidad': "switchProgTab('factibilidad')",
-      'mando': "switchProgTab('mando')",
-      'kanban': "switchProgTab('kanban')",
-      'midia': "switchProgTab('midia')",
-    };
+    var TABS = ['necesidades','abastecimiento','calendario','factibilidad',
+                'serigrafia','estacionalidad','mando','kanban','midia'];
     var sb = document.getElementById('prog-sub-'+group);
     if(!sb) return;
     sb.querySelectorAll('button[data-prog-sub]').forEach(function(b){
       var onc = b.getAttribute('onclick') || '';
       var matchTab = null;
-      Object.keys(SUB_TAB_FROM).forEach(function(t){
-        if(onc.indexOf(SUB_TAB_FROM[t]) !== -1) matchTab = t;
+      TABS.forEach(function(t){
+        if(onc.indexOf("switchProgTab('"+t+"')") !== -1) matchTab = t;
       });
-      if(matchTab && matchTab === tab){
-        b.style.background = COLORS[matchTab] || '#475569';
+      if(!matchTab) return;
+      if(matchTab === tab){
+        b.style.background = 'var(--cx-primary-grad)';
         b.style.color = '#fff';
-      } else if(matchTab){
-        b.style.background = '#fff';
-        b.style.color = COLORS[matchTab] || '#475569';
+        b.style.borderColor = 'transparent';
+        b.style.boxShadow = '0 2px 8px rgba(109,40,217,.28)';
+      } else {
+        b.style.background = 'var(--cx-card)';
+        b.style.color = 'var(--cx-text-soft)';
+        b.style.borderColor = 'var(--cx-border)';
+        b.style.boxShadow = 'none';
       }
     });
   }
@@ -15219,9 +15242,7 @@ async function ckMarcar(itemId, estado){
           var sb = document.getElementById('prog-sub-'+g);
           if(sb) sb.style.display = (g===grp) ? 'flex' : 'none';
         });
-        document.querySelectorAll('[data-prog-grp]').forEach(function(b){
-          b.style.opacity = (b.getAttribute('data-prog-grp')===grp) ? '1' : '0.6';
-        });
+        _paintProgGroup(grp);
         _highlightProgSubTab(tab);
       }
       // Mapeo tab → ID del div objetivo

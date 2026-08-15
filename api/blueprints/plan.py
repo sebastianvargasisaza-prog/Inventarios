@@ -582,7 +582,7 @@ def _require_login():
 def _require_clientes_access():
     """Gestión de CLIENTES B2B + sus pedidos. Sebastián 2-jul: Luz (asistente Espagiria que
     maneja clientes) y el equipo comercial (Valentina, Daniela) deben poder crear clientes y
-    pedidos B2B — se cargan solos al plan. Antes exigía admin/compras (COMPRAS_ACCESS) y Luz
+    pedidos B2B · se cargan solos al plan. Antes exigía admin/compras (COMPRAS_ACCESS) y Luz
     quedaba afuera. CLIENTES_ACCESS = {mayra,catalina,valentina,daniela,luz,alejandro,sebastian}."""
     user = session.get("compras_user", "")
     if not user:
@@ -1219,19 +1219,19 @@ async function ir(){
     // Fórmulas
     h+='<div class="card"><h3>📋 Fórmulas ('+d.n_formulas+')</h3>';
     h+='<table><tr><th>Producto (formula_headers)</th><th>Canónico</th><th>Variante</th><th>Activo</th><th>Lote kg</th><th>codigo_pt</th></tr>';
-    d.formulas.forEach(function(f){ h+='<tr><td class="mono">'+esc(f.producto_nombre)+'</td><td>'+esc(f.producto_canonico||'—')+'</td><td>'+esc(f.variante_label||'—')+'</td><td>'+(f.activo?'sí':'<span style="color:var(--cx-danger-text, #b91c1c)">no</span>')+'</td><td>'+f.lote_size_kg+'</td><td>'+esc(f.codigo_pt||'')+'</td></tr>'; });
+    d.formulas.forEach(function(f){ h+='<tr><td class="mono">'+esc(f.producto_nombre)+'</td><td>'+esc(f.producto_canonico||'-')+'</td><td>'+esc(f.variante_label||'-')+'</td><td>'+(f.activo?'sí':'<span style="color:var(--cx-danger-text, #b91c1c)">no</span>')+'</td><td>'+f.lote_size_kg+'</td><td>'+esc(f.codigo_pt||'')+'</td></tr>'; });
     if(!d.formulas.length) h+='<tr><td colspan="6" class="muted">sin fórmulas</td></tr>';
     h+='</table></div>';
     // SKUs
     h+='<div class="card"><h3>🔗 SKUs mapeados ('+d.n_skus+')</h3>';
     h+='<table><tr><th>SKU</th><th>Mapea a producto</th><th>Tono</th><th>Regalo</th><th>Activo</th></tr>';
-    d.skus.forEach(function(s){ h+='<tr><td class="mono">'+esc(s.sku)+'</td><td>'+esc(s.producto_nombre)+'</td><td>'+esc(s.tono_label||'—')+'</td><td>'+(s.es_regalo?'🎁':'')+'</td><td>'+(s.activo?'sí':'no')+'</td></tr>'; });
+    d.skus.forEach(function(s){ h+='<tr><td class="mono">'+esc(s.sku)+'</td><td>'+esc(s.producto_nombre)+'</td><td>'+esc(s.tono_label||'-')+'</td><td>'+(s.es_regalo?'🎁':'')+'</td><td>'+(s.activo?'sí':'no')+'</td></tr>'; });
     if(!d.skus.length) h+='<tr><td colspan="5" class="muted">sin SKUs · las ventas no se asocian</td></tr>';
     h+='</table></div>';
     // Presentaciones
     h+='<div class="card"><h3>📐 Presentaciones / tonos ('+d.n_presentaciones+')</h3>';
     h+='<table><tr><th>Producto</th><th>Presentación</th><th>Etiqueta</th><th>ml</th><th>Envase</th><th>Fija</th></tr>';
-    d.presentaciones.forEach(function(p){ h+='<tr><td>'+esc(p.producto_nombre)+'</td><td class="mono">'+esc(p.presentacion_codigo)+'</td><td>'+esc(p.etiqueta)+'</td><td>'+p.volumen_ml+'</td><td class="mono">'+esc(p.envase_codigo||'—')+'</td><td>'+(p.cantidad_fija_uds||'')+'</td></tr>'; });
+    d.presentaciones.forEach(function(p){ h+='<tr><td>'+esc(p.producto_nombre)+'</td><td class="mono">'+esc(p.presentacion_codigo)+'</td><td>'+esc(p.etiqueta)+'</td><td>'+p.volumen_ml+'</td><td class="mono">'+esc(p.envase_codigo||'-')+'</td><td>'+(p.cantidad_fija_uds||'')+'</td></tr>'; });
     if(!d.presentaciones.length) h+='<tr><td colspan="6" class="muted">sin presentaciones</td></tr>';
     h+='</table></div>';
     // Stock por SKU · "dice que no hay pero en Shopify sí"
@@ -1246,10 +1246,10 @@ async function ir(){
       h+='<tr><td class="mono">'+esc(s.sku)+'</td>'
         +'<td>'+(s.mapeado?'sí':'<span style="color:var(--cx-danger-text, #b91c1c)">NO</span>')+'</td>'
         +'<td style="font-weight:700;color:'+resColor+'">'+s.resolved_uds+'</td>'
-        +'<td>'+esc(s.fuente||'—')+'</td>'
+        +'<td>'+esc(s.fuente||'-')+'</td>'
         +'<td>'+s.cc_uds_disponible+'</td>'
         +'<td>'+s.shopify_uds_disponible+'</td>'
-        +'<td class="muted">'+esc((s.empresas||[]).join(', ')||'—')+'</td>'
+        +'<td class="muted">'+esc((s.empresas||[]).join(', ')||'-')+'</td>'
         +'<td style="color:'+diagColor+'">'+esc(s.diagnostico)+'</td></tr>';
     });
     if(!sps.length) h+='<tr><td colspan="8" class="muted">sin SKUs con stock para revisar</td></tr>';
@@ -1597,7 +1597,7 @@ def plan_lote_agregar_cliente(lote_id):
     envase = (str(body.get('envase_codigo') or '')).strip()[:60]
     if not envase and cliente:
         # El envase del cliente SE SABE: `clientes_b2b_envases` lo guarda desde mayo. Pero sólo se
-        # usaba para VALIDAR (rechazar uno que no fuera suyo), nunca para SUGERIR — así que había
+        # usaba para VALIDAR (rechazar uno que no fuera suyo), nunca para SUGERIR · así que había
         # que teclearlo pedido por pedido, y si alguien lo olvidaba ese cliente se llevaba en
         # silencio el frasco de ÁNIMUS. Sebastián 26-jul: "que jale el envase del cliente".
         # Sólo se auto-completa cuando NO hay ambigüedad (un único envase activo); con varios, la
@@ -2544,6 +2544,18 @@ def confirmar_pedido_b2b(pid):
         if not _ok_env:
             return jsonify({"error": f"el envase '{envase_elegido}' no está en el maestro",
                             "codigo": "ENVASE_DESCONOCIDO"}), 400
+    # Los kilos NO se teclean: salen de unidades × ml. Si dan 0 (el pedido quedó sin
+    # unidades o sin volumen), aceptarlo metería en el calendario un lote de 0 kg:
+    # ocupa el día, no produce nada y no le pide materia prima al abastecimiento, o
+    # sea que le promete al cliente algo que no va a salir. Se rechaza ANTES del CAS
+    # para no dejar el pedido reclamado por un camino que no puede terminar.
+    kg_b2b = round(cantidad * ml / 1000.0, 2)
+    if kg_b2b <= 0:
+        conn.rollback()
+        return jsonify({"error": "el pedido no da kilos (%s uds x %s ml) · revisá la "
+                                 "cantidad y el volumen antes de confirmarlo"
+                                 % (cantidad, ml),
+                        "codigo": "SIN_KG"}), 400
     # CAS: reclamar pendiente → confirmado (un solo worker · M27) + guardar ajustes
     cur.execute("UPDATE pedidos_b2b SET estado='confirmado', cantidad_uds=?, fecha_estimada=? "
                 "WHERE id=? AND estado='pendiente'", (cantidad, fecha, pid))
@@ -2551,7 +2563,6 @@ def confirmar_pedido_b2b(pid):
         conn.rollback()
         return jsonify({"error": "el pedido ya fue confirmado/cancelado o cambió · refrescá",
                         "codigo": "ESTADO_CAMBIO"}), 409
-    kg_b2b = round(cantidad * ml / 1000.0, 2)
     envase_final = envase_elegido or row[7]
     if envase_elegido and envase_elegido != row[7]:
         cur.execute("UPDATE pedidos_b2b SET envase_codigo=? WHERE id=?", (envase_elegido, pid))
@@ -3957,7 +3968,7 @@ def clientes_b2b_crear():
                 f"Contraseña: {pw_plain}\n\n"
                 f"Te recomiendo cambiarla al primer ingreso.\n"
                 f"Cualquier duda me avisás.\n\n"
-                f"— Sebastián"
+                f"- Sebastián"
             )
             portal_info = {
                 'email': email_lower,
@@ -4522,8 +4533,8 @@ def plan_alertas_ia():
         prox = prox_lote.get(key)
         # FIX 1-jun-2026 · la alerta IA decide crítico por urgencia (= stock físico
         # de góndola) · el texto DEBE usar el MISMO dato (dias_gondola), no
-        # dias_cobertura (con pipeline). Antes mostraba "95.7d (≤20d crítico)" —
-        # contradictorio — porque mezclaba cobertura-con-pipeline con la urgencia física.
+        # dias_cobertura (con pipeline). Antes mostraba "95.7d (≤20d crítico)" -
+        # contradictorio · porque mezclaba cobertura-con-pipeline con la urgencia física.
         cob = p.get("dias_gondola")
         if cob is None:
             cob = p.get("dias_cobertura")
@@ -8187,9 +8198,9 @@ function render(d) {
     out += '<div class="muted" style="margin-bottom:10px">El código existe pero la MP en BD parece ser DISTINTA a la del Excel. Importar fórmulas con estos códigos crearía formulas que referencian MPs equivocadas. Revisar uno a uno antes de proceder.</div>';
     out += '<table><thead><tr><th>Código</th><th>Excel · INCI</th><th>Excel · Comercial</th><th>BD · INCI</th><th>BD · Comercial</th></tr></thead><tbody>';
     d.mismatches.forEach(m => {
-      var exInci = (m.info_excel && m.info_excel.inci) || '<span class="bad">—</span>';
-      var exCom = (m.info_excel && m.info_excel.comercial) || '<span class="bad">—</span>';
-      out += '<tr><td class="mono">' + escapeHtml(m.codigo) + '</td><td>' + escapeHtml(exInci) + '</td><td>' + escapeHtml(exCom) + '</td><td style="background:var(--cx-warn-pale, #fff7ed)">' + escapeHtml(m.nombre_inci_bd || '—') + '</td><td style="background:var(--cx-warn-pale, #fff7ed)">' + escapeHtml(m.nombre_comercial_bd || '—') + '</td></tr>';
+      var exInci = (m.info_excel && m.info_excel.inci) || '<span class="bad">-</span>';
+      var exCom = (m.info_excel && m.info_excel.comercial) || '<span class="bad">-</span>';
+      out += '<tr><td class="mono">' + escapeHtml(m.codigo) + '</td><td>' + escapeHtml(exInci) + '</td><td>' + escapeHtml(exCom) + '</td><td style="background:var(--cx-warn-pale, #fff7ed)">' + escapeHtml(m.nombre_inci_bd || '-') + '</td><td style="background:var(--cx-warn-pale, #fff7ed)">' + escapeHtml(m.nombre_comercial_bd || '-') + '</td></tr>';
     });
     out += '</tbody></table></div>';
   }
@@ -8199,8 +8210,8 @@ function render(d) {
     out += '<div class="muted" style="margin:10px 0">Existen en maestro_mps pero nombre_inci y nombre_comercial están vacíos en BD. No se pudo comparar contra Excel. Recomendado: llenar los nombres en BD desde el Excel.</div>';
     out += '<table><thead><tr><th>Código</th><th>Excel · INCI</th><th>Excel · Comercial</th></tr></thead><tbody>';
     d.existentes_sin_info_bd.forEach(e => {
-      var exInci = (e.info_excel && e.info_excel.inci) || '—';
-      var exCom = (e.info_excel && e.info_excel.comercial) || '—';
+      var exInci = (e.info_excel && e.info_excel.inci) || '-';
+      var exCom = (e.info_excel && e.info_excel.comercial) || '-';
       out += '<tr><td class="mono">' + escapeHtml(e.codigo) + '</td><td>' + escapeHtml(exInci) + '</td><td>' + escapeHtml(exCom) + '</td></tr>';
     });
     out += '</tbody></table></details>';
@@ -8210,8 +8221,8 @@ function render(d) {
     out += '<div class="card"><h3 style="margin:0 0 8px;color:var(--cx-danger-text, #dc2626)">🔴 FALTANTES · ' + d.total_faltantes + ' MPs no existen en BD</h3>';
     out += '<table><thead><tr><th>Código</th><th>Nombre INCI (Excel)</th><th>Nombre Comercial (Excel)</th></tr></thead><tbody>';
     d.faltantes.forEach(f => {
-      var inci = (f.info_excel && f.info_excel.inci) || '<span class="bad">—</span>';
-      var com = (f.info_excel && f.info_excel.comercial) || '<span class="bad">—</span>';
+      var inci = (f.info_excel && f.info_excel.inci) || '<span class="bad">-</span>';
+      var com = (f.info_excel && f.info_excel.comercial) || '<span class="bad">-</span>';
       out += '<tr><td class="mono">' + escapeHtml(f.codigo) + '</td><td>' + escapeHtml(inci) + '</td><td>' + escapeHtml(com) + '</td></tr>';
     });
     out += '</tbody></table></div>';
@@ -8713,10 +8724,10 @@ function render(d) {
     g.forEach(p => {
       var diffCls = Math.abs(p.diff_pct||0) <= 20 ? 'diff-ok' : ((p.diff_kg||0) < 0 ? 'diff-neg' : 'diff-pos');
       var timCls = p.timing_status === 'ALINEADO' ? 'tim-OK' : (p.timing_status === 'TARDE' ? 'tim-TARDE' : (p.timing_status === 'TEMPRANO' ? 'tim-TEMPRANO' : ''));
-      var timTxt = p.diff_dias_timing != null ? (p.diff_dias_timing > 0 ? '+' + p.diff_dias_timing + 'd tarde' : (p.diff_dias_timing < 0 ? p.diff_dias_timing + 'd temprano' : 'mismo día')) : '—';
-      var todasFechas = (p.fechas_calendar||[]).slice(1).map(f => f.fecha + ' (' + f.kg + 'kg)').join(' · ') || '—';
+      var timTxt = p.diff_dias_timing != null ? (p.diff_dias_timing > 0 ? '+' + p.diff_dias_timing + 'd tarde' : (p.diff_dias_timing < 0 ? p.diff_dias_timing + 'd temprano' : 'mismo día')) : '-';
+      var todasFechas = (p.fechas_calendar||[]).slice(1).map(f => f.fecha + ' (' + f.kg + 'kg)').join(' · ') || '-';
       var pipeline = (p.pipeline_kg||0) > 0 ? ' <span style="color:var(--cx-info-text, #0891b2);font-weight:700" title="ya producido últ 7d · aún no en Shopify">+' + p.pipeline_kg + ' pipe</span>' : '';
-      var realesTxt = '—';
+      var realesTxt = '-';
       if ((p.producciones_reales_30d||[]).length) {
         realesTxt = p.producciones_reales_30d.map(r => r.fin_real_at + ' (' + r.kg_real + 'kg' + (r.numero_op ? ' · ' + r.numero_op : '') + ')').join('<br>');
       }
@@ -8725,13 +8736,13 @@ function render(d) {
       tbl += '<td><strong>' + escapeHtml(p.producto_nombre) + '</strong><br><span style="color:var(--cx-text-mute, #64748b);font-size:10px">' + p.stock_uds + ' uds</span></td>';
       tbl += '<td style="text-align:right"><strong>' + (p.stock_kg_gondola||0) + '</strong>' + pipeline + '</td>';
       tbl += '<td style="text-align:right">' + (p.velocidad_kg_dia||0).toFixed(2) + '</td>';
-      tbl += '<td style="text-align:center">' + (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—') + '</td>';
-      tbl += '<td style="text-align:center;color:var(--cx-danger-text, #dc2626);font-weight:600">' + (p.fecha_agotamiento || '—') + '</td>';
-      tbl += '<td style="text-align:center;color:var(--cx-success-text, #166534);font-weight:700">' + (p.fecha_producir_sugerida || '—') + '</td>';
+      tbl += '<td style="text-align:center">' + (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '-') + '</td>';
+      tbl += '<td style="text-align:center;color:var(--cx-danger-text, #dc2626);font-weight:600">' + (p.fecha_agotamiento || '-') + '</td>';
+      tbl += '<td style="text-align:center;color:var(--cx-success-text, #166534);font-weight:700">' + (p.fecha_producir_sugerida || '-') + '</td>';
       tbl += '<td style="font-size:10px;color:var(--cx-info-text, #0891b2)">' + realesTxt + '</td>';
-      tbl += '<td style="text-align:center">' + (p.primer_lote_calendar_fecha || '—') + '</td>';
+      tbl += '<td style="text-align:center">' + (p.primer_lote_calendar_fecha || '-') + '</td>';
       tbl += '<td style="text-align:center" class="' + timCls + '">' + timTxt + '</td>';
-      tbl += '<td style="text-align:right;color:var(--cx-text-mute, #64748b);font-size:11px">' + (p.lote_bulk_kg ? p.lote_bulk_kg + 'kg' : '—') + '</td>';
+      tbl += '<td style="text-align:right;color:var(--cx-text-mute, #64748b);font-size:11px">' + (p.lote_bulk_kg ? p.lote_bulk_kg + 'kg' : '-') + '</td>';
       tbl += '<td style="text-align:right" class="' + diffCls + '">' + (p.kg_necesario_horizonte||0) + ' / ' + (p.kg_calendar_horizonte||0) + 'kg</td>';
       tbl += '<td style="font-size:10px;color:var(--cx-text-mute, #64748b)">' + escapeHtml(todasFechas) + '</td>';
       tbl += '</tr>';
@@ -9740,7 +9751,7 @@ tr{border-bottom:1px solid var(--cx-border-soft, #f1f5f9)}
             except Exception:
                 dia = "?"
             tag_class = f"tag tag-{lt['origen']}" if lt["origen"] else "tag"
-            html_str += f'<tr><td class="dia">{dia}</td><td>{html.escape(lt["fecha"])}</td><td><strong>{html.escape(lt["producto"])}</strong></td><td class="kg">{lt["kg"]:.0f}</td><td><span class="{tag_class}">{html.escape(lt["origen"] or "—")}</span></td></tr>'
+            html_str += f'<tr><td class="dia">{dia}</td><td>{html.escape(lt["fecha"])}</td><td><strong>{html.escape(lt["producto"])}</strong></td><td class="kg">{lt["kg"]:.0f}</td><td><span class="{tag_class}">{html.escape(lt["origen"] or "-")}</span></td></tr>'
         html_str += '</table></div>'
 
     html_str += '</div></body></html>'
@@ -12114,9 +12125,9 @@ async function cargarClientes() {
   CLIENTES.forEach(c => {
     const tr = document.createElement('tr');
     tr.className = 'row-cli';
-    const ult = c.ultimo_pedido_fecha ? String(c.ultimo_pedido_fecha).slice(0, 10) : '—';
+    const ult = c.ultimo_pedido_fecha ? String(c.ultimo_pedido_fecha).slice(0, 10) : '-';
     const badge = '<span class="badge b-' + (c.tipo || 'B2B') + '">' + (c.tipo || 'B2B') + '</span>';
-    const contacto = [c.email, c.telefono].filter(x => x).join(' · ') || '—';
+    const contacto = [c.email, c.telefono].filter(x => x).join(' · ') || '-';
     const pendientes = c.pedidos_pendientes || 0;
     const total = c.pedidos_total || 0;
     tr.innerHTML = '<td><strong>' + esc(c.cliente_nombre) + '</strong><br><span style="font-size:10px;color:var(--cx-text-faint, #94a3b8);font-family:monospace">' + esc(c.cliente_id) + '</span></td>' +
@@ -12168,8 +12179,8 @@ async function verDetalle(cliente_id) {
       '<td><strong>' + esc(p.producto_nombre) + '</strong></td>' +
       '<td style="text-align:right">' + p.cantidad_uds + '</td>' +
       '<td style="text-align:right">' + (p.ml_unidad || 30) + '</td>' +
-      '<td>' + (p.fecha_estimada || '—') + '</td>' +
-      '<td><code style="font-size:10px">' + (p.envase_codigo || '—') + '</code></td>' +
+      '<td>' + (p.fecha_estimada || '-') + '</td>' +
+      '<td><code style="font-size:10px">' + (p.envase_codigo || '-') + '</code></td>' +
       '<td><span class="badge b-' + (p.estado === 'cancelado' ? 'OTRO' : 'B2B') + '">' + p.estado + '</span></td>' +
       '<td style="font-size:11px">' + loteHtml + '</td>' +
       '<td>' + (p.estado !== 'cancelado' ? '<button class="btn btn-link" onclick="cancelarPedido(' + p.id + ')">✕</button>' : '') + '</td>' +
@@ -12467,7 +12478,7 @@ def admin_fusionar_formulas_nf():
     rows = ''
     for p in parejas:
         nf_warn = '⚠' if p['nf_lote'] < 1 else '✓'
-        old_warn = '⚠' if p['old_existe'] and p['old_lote'] < 1 else ('—' if not p['old_existe'] else '✓')
+        old_warn = '⚠' if p['old_existe'] and p['old_lote'] < 1 else ('-' if not p['old_existe'] else '✓')
         bg = '#fef3c7' if p['nf_lote'] < 1 else '#f8fafc'
         boton = f'<form method="POST" style="margin:0" onsubmit="return confirm(\'¿Fusionar {p["nf"]} → {p["base"]}?\\n\\nVieja se marca [ANTIGUA] inactiva. NF se renombra al nombre base.\');"><input type="hidden" name="accion" value="fusionar"><input type="hidden" name="nf_target" value="{p["nf"]}"><button type="submit" style="background:var(--cx-primary, #7c3aed);color:#fff;border:none;padding:6px 12px;border-radius:5px;font-weight:700;cursor:pointer">🔄 Fusionar</button></form>'
         rows += f'<tr style="background:{bg}">'\
@@ -12475,7 +12486,7 @@ def admin_fusionar_formulas_nf():
                 f'<td style="padding:10px;text-align:right">{nf_warn} {p["nf_lote"]:.2f} kg</td>'\
                 f'<td style="padding:10px;text-align:right">{p["cnt_nf"]}</td>'\
                 f'<td style="padding:10px"><strong style="color:var(--cx-info-text, #0f766e)">{p["base"]}</strong></td>'\
-                f'<td style="padding:10px;text-align:right">{old_warn} {("%.2f kg" % p["old_lote"]) if p["old_existe"] else "—"}</td>'\
+                f'<td style="padding:10px;text-align:right">{old_warn} {("%.2f kg" % p["old_lote"]) if p["old_existe"] else "-"}</td>'\
                 f'<td style="padding:10px;text-align:right">{p["cnt_old"]}</td>'\
                 f'<td style="padding:10px;text-align:center">{boton}</td>'\
                 f'</tr>'
@@ -13242,13 +13253,13 @@ def admin_llenar_calendario_pagina():
             (hoy.isoformat(), hasta),
         ).fetchone()
         total = int(row[0] or 0)
-        ult = (row[1] or '')[:10] or '—'
+        ult = (row[1] or '')[:10] or '-'
         kg_total = float(row[2] or 0)
     except Exception:
-        total = 0; ult = '—'; kg_total = 0
+        total = 0; ult = '-'; kg_total = 0
     try:
         from datetime import date as _d
-        cobertura = (_d.fromisoformat(ult) - hoy).days if ult and ult != '—' else 0
+        cobertura = (_d.fromisoformat(ult) - hoy).days if ult and ult != '-' else 0
     except Exception:
         cobertura = 0
     boquete = max(0, 365 - cobertura)
@@ -13552,7 +13563,7 @@ def plan_sellar_horizonte():
 def plan_dedup_mismo_dia():
     """Sebastián 15-jun · limpia lotes DUPLICADOS del mismo producto el MISMO día
     (apilón del 16-jun tras el rescate · BOOSTER TENSOR ×4, etc.). Mantiene UNO por
-    (producto, fecha) — el de mayor kg (desempate: menor id) — y cancela el resto.
+    (producto, fecha) · el de mayor kg (desempate: menor id) · y cancela el resto.
     Solo toca pendientes futuros NO ejecutados, NO B2B/retroactivo. dry_run por
     defecto → preview. Reversible (estado='cancelado' + audit)."""
     user, err = _require_admin_or_compras()
@@ -13996,7 +14007,7 @@ def plan_revertir_hoy():
          sellar/recalcular · creado_en >= cutoff · no ejecutados, no B2B, no
          retroactivo).
       2. RESTAURA (descancela) los lotes que la cirugía de hoy CANCELÓ
-         (SELLAR_CANCELAR_LOTE / CANCELAR_LOTE_REEMPLAZO / DEDUP_MISMO_DIA) — esto
+         (SELLAR_CANCELAR_LOTE / CANCELAR_LOTE_REEMPLAZO / DEDUP_MISMO_DIA) · esto
          devuelve lo de Alejandro y los originales.
       3. REVIERTE las fechas movidas hoy (REPROGRAMAR · usa el 'antes' del audit).
     CONSERVA a propósito lo RECUPERADO de verdad (rescate anti-vanish + backfill de
@@ -14386,7 +14397,7 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
     LOTES_MAX = 2
     PIPELINE_LAG = 7
     # "Producir 20 días ANTES de que se agote": el disparo es la MISMA constante que usa el resto
-    # del sistema (regla de reorden). Estaba como literal 20 duplicado acá — hoy coincidía, pero
+    # del sistema (regla de reorden). Estaba como literal 20 duplicado acá · hoy coincidía, pero
     # cambiar el buffer en un solo lado dejaba a este generador proyectando con otro criterio que
     # el modal y el diagnóstico de cadenas. El cerebro ya lo prohíbe: el buffer sale SIEMPRE de
     # BUFFER_REORDEN_DIAS, nunca de un número suelto.
@@ -14840,7 +14851,7 @@ def plan_reprogramar_desde_mes():
     """Sebastián 2-jul · FIJA todo lo de ANTES del ancla (ej. julio) y RECALCULA de ahí
     en adelante: cancela lo NO ejecutado con fecha >= ancla y regenera la cadencia a 2
     años con desde_floor=ancla. Decisión Sebastián: 'borrar TODO ago+' PERO se PRESERVAN
-    los pedidos B2B reales de clientes (eos_b2b) y lo histórico (eos_retroactivo) — esos
+    los pedidos B2B reales de clientes (eos_b2b) y lo histórico (eos_retroactivo) · esos
     son compromisos, no plan; el motor los cuenta como llegadas. NUNCA toca lo ejecutado.
     GET/dry_run → preview (cuántos cancela + cuántos crearía) · POST dry_run:false → aplica."""
     user, err = _require_admin_or_compras()
@@ -15037,7 +15048,7 @@ def plan_programar_cadencia_desde_lote(lote_id):
     # (Semana Santa/festivo+finde): antes -2 comprimía el gap bajo _dw en cadencias cortas → saltaba un slot (hueco).
     _dw = min(14, max(2, interval_dias - 6))  # ventana dedup del propio ritmo (evita 2 lotes de la cadena juntos)
     # Sebastián 4-jul (workflow ultracode · BUG cadena de 1 solo lote): _preservados debe ser SIMÉTRICO
-    # con el CANCEL — SOLO lo que el cancel NO tocó (B2B/histórico/ejecutado). Antes traía TODO futuro no
+    # con el CANCEL · SOLO lo que el cancel NO tocó (B2B/histórico/ejecutado). Antes traía TODO futuro no
     # cancelado; si el producto tenía muchos lotes preservados densos (cada <14d), la dedup ±14 mataba
     # CADA slot de la cadena → creaba 1 lote (SUERO MULTIPEPTIDOS). Y el bloqueo contra preservados es de
     # MISMO DÍA (un B2B/otro cliente NO cubre demanda Animus · no debe borrar un lote de la cadena a 10d).
@@ -16413,7 +16424,7 @@ def plan_revisar_page():
             if p['n_proyectados'] > 4:
                 prox_txt += ' … +' + str(p['n_proyectados'] - 4)
         else:
-            prox_txt = '<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">— sin lotes planeados —</span>'
+            prox_txt = '<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">- sin lotes planeados -</span>'
         razones = (' '.join(['<span style="background:var(--cx-danger-pale, #fee2e2);color:var(--cx-danger-text, #991b1b);padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">' + _html.escape(r) + '</span>' for r in p['razones']])) if p['razones'] else '<span style="color:var(--cx-success-text, #166534);font-weight:700">✓ ok</span>'
         filas.append(
             '<tr style="background:' + bg + '">'
@@ -16628,7 +16639,7 @@ def plan_verificar_volumenes_page():
     for p in productos:
         bg = '#fff7ed' if p['requiere_atencion'] else '#ffffff'
         nombre = _html.escape(p['producto'])
-        alcanza = (p['alcanza_hasta'] + ' · ' + str(int(p['cobertura_dias'])) + 'd') if p['alcanza_hasta'] else '—'
+        alcanza = (p['alcanza_hasta'] + ' · ' + str(int(p['cobertura_dias'])) + 'd') if p['alcanza_hasta'] else '-'
         flags = []
         if not p['tiene_formula']:
             flags.append('<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ sin fórmula/lote</span>')
@@ -16949,6 +16960,15 @@ def plan_programar_manual():
         kg = 0.0
     if not producto or not fecha:
         return jsonify({'ok': False, 'error': 'Producto y fecha son obligatorios'}), 400
+    # Sebastián 14-ago-2026, mirando el calendario: había un "BLUSH BALM 0kg" agendado.
+    # Este endpoint (el ➕ del calendario) aceptaba kg vacío y guardaba 0 en silencio.
+    # Un lote de 0 kg ocupa un día del calendario, NO produce nada y NO pide materia
+    # prima al abastecimiento, así que promete una producción que no va a existir.
+    # A diferencia del día no hábil, acá no hay caso legítimo: no se ofrece forzar.
+    if kg <= 0:
+        return jsonify({'ok': False, 'codigo': 'SIN_KG',
+                        'error': 'El lote necesita kilos: uno de 0 kg no produce nada '
+                                 'ni pide materia prima, pero igual ocupa el día.'}), 400
     try:
         from datetime import date as _date
         _f_obj = _date.fromisoformat(fecha)
@@ -17055,7 +17075,7 @@ def plan_diag_rescate():
             "FROM produccion_programada WHERE id IN (%s) AND COALESCE(estado,'')='cancelado' "
             "ORDER BY fecha_programada" % ph, tuple(bug_ids)).fetchall():
             aun_cancelados.append({'id': r[0], 'producto': r[1], 'fecha': r[2], 'origen': r[3]})
-    # 5) FORENSE: desglose por origen (futuro activo) — saber qué es Fijo vs Sugerido
+    # 5) FORENSE: desglose por origen (futuro activo) · saber qué es Fijo vs Sugerido
     origen_breakdown = [{'origen': r[0] or '(vacío)', 'lotes': r[1]} for r in cur.execute(
         "SELECT COALESCE(origen,''), COUNT(*) FROM produccion_programada "
         "WHERE substr(fecha_programada,1,10) >= ? AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
@@ -18079,16 +18099,16 @@ function render(){
     if (it.actualizado_por) html += '<br><span class="muted" style="font-size:9px">✓ ' + (it.actualizado_at || '').slice(0,16) + '</span>';
     html += '</td>';
     html += '<td><span class="urg-' + it.urgencia + '">' + it.urgencia + '</span></td>';
-    html += '<td style="text-align:right">' + (it.histor_kg_prom || '—') + (it.histor_n > 0 ? '<br><span class="muted" style="font-size:9px">' + it.histor_n + ' lotes</span>' : '') + '</td>';
+    html += '<td style="text-align:right">' + (it.histor_kg_prom || '-') + (it.histor_n > 0 ? '<br><span class="muted" style="font-size:9px">' + it.histor_n + ' lotes</span>' : '') + '</td>';
     html += '<td><input class="cell" type="number" step="0.1" min="0" value="' + (it.kg_lote_actual || it.histor_kg_prom || it.lote_excel_kg || 0) + '" data-field="kg" oninput="onChange(this)"></td>';
     html += '<td><input class="cell" type="number" min="1" value="' + it.ml_actual + '" data-field="ml" oninput="onChange(this)"></td>';
-    html += '<td style="text-align:right;color:var(--cx-info-text, #0891b2);font-weight:700">' + (it.frecuencia_sugerida || '—') + (it.frecuencia_sugerida ? ' <button class="btn-sug" onclick="aplicarSug(this)">💡</button>' : '') + '</td>';
+    html += '<td style="text-align:right;color:var(--cx-info-text, #0891b2);font-weight:700">' + (it.frecuencia_sugerida || '-') + (it.frecuencia_sugerida ? ' <button class="btn-sug" onclick="aplicarSug(this)">💡</button>' : '') + '</td>';
     html += '<td><input class="cell" type="number" min="0" value="' + (it.frecuencia_actual || '') + '" data-field="freq" oninput="onChange(this)" placeholder="días"></td>';
     html += '<td style="text-align:right">' + it.kg_mes_shopify + '</td>';
     html += '<td style="text-align:right;color:' + (it.b2b_n_pedidos > 0 ? '#7c3aed' : '#94a3b8') + '">' + it.kg_mes_b2b + (it.b2b_n_pedidos > 0 ? '<br><span class="muted" style="font-size:9px">' + it.b2b_n_pedidos + ' ped</span>' : '') + '</td>';
     html += '<td style="text-align:right;font-weight:700;color:var(--cx-success-text, #16a34a)">' + it.kg_mes_total + '</td>';
     html += '<td style="text-align:right">' + (it.stock_kg || 0) + '</td>';
-    html += '<td style="text-align:right">' + (it.dias_cobertura !== null ? it.dias_cobertura + 'd' : '—') + '</td>';
+    html += '<td style="text-align:right">' + (it.dias_cobertura !== null ? it.dias_cobertura + 'd' : '-') + '</td>';
     html += '<td><input class="cell" type="text" value="' + esc(it.notas || '') + '" data-field="notas" oninput="onChange(this)" placeholder="opcional" style="min-width:120px"></td>';
     html += '</tr>';
   });
@@ -18331,7 +18351,7 @@ function render(d){
     html += '<div class="metric shopify"><div class="metric-lbl">🛍 Shopify Animus DTC</div><div class="metric-val">' + s.kg_mes + ' kg/mes</div><div class="metric-sub">' + s.velocidad_uds_dia + ' uds/día · ' + s.velocidad_uds_mes + ' uds/mes</div></div>';
     html += '<div class="metric b2b"><div class="metric-lbl">🤝 B2B (Fernando + futuros)</div><div class="metric-val">' + b.kg_mes_estimado + ' kg/mes</div><div class="metric-sub">' + b.kg_pendiente_total + ' kg pendiente / 3 meses</div></div>';
     html += '<div class="metric total"><div class="metric-lbl">📦 TOTAL consumo</div><div class="metric-val">' + c.kg_mes_total + ' kg/mes</div><div class="metric-sub">' + c.kg_anual_estimado + ' kg/año</div></div>';
-    html += '<div class="metric freq"><div class="metric-lbl">🎯 Frecuencia óptima</div><div class="metric-val">' + (f.frecuencia_optima_dias ? 'cada ' + f.frecuencia_optima_dias + 'd' : '—') + '</div><div class="metric-sub">' + (f.lotes_anuales ? f.lotes_anuales + ' lotes/año' : '') + (f.dias_dura_un_lote ? ' · 1 lote dura ' + f.dias_dura_un_lote + 'd' : '') + '</div></div>';
+    html += '<div class="metric freq"><div class="metric-lbl">🎯 Frecuencia óptima</div><div class="metric-val">' + (f.frecuencia_optima_dias ? 'cada ' + f.frecuencia_optima_dias + 'd' : '-') + '</div><div class="metric-sub">' + (f.lotes_anuales ? f.lotes_anuales + ' lotes/año' : '') + (f.dias_dura_un_lote ? ' · 1 lote dura ' + f.dias_dura_un_lote + 'd' : '') + '</div></div>';
     html += '</div>';
 
     // Histórico
@@ -18346,7 +18366,7 @@ function render(d){
     if (b.pedidos && b.pedidos.length) {
       html += '<div style="background:#faf5ff;border-radius:6px;padding:10px;margin-top:6px;font-size:11px"><strong>🤝 Pedidos B2B activos:</strong><br>';
       b.pedidos.forEach(p => {
-        html += '• ' + esc(p.cliente) + ' · ' + p.n_pedidos + ' pedido(s) · ' + p.kg_total_pendiente + 'kg pendiente · próx ' + (p.proxima_fecha || '—') + '<br>';
+        html += '• ' + esc(p.cliente) + ' · ' + p.n_pedidos + ' pedido(s) · ' + p.kg_total_pendiente + 'kg pendiente · próx ' + (p.proxima_fecha || '-') + '<br>';
       });
       html += '</div>';
     } else {
@@ -18354,7 +18374,7 @@ function render(d){
     }
 
     // Stock + cobertura
-    html += '<div style="margin-top:6px;font-size:11px;color:var(--cx-text-soft, #475569)">Stock actual: <strong>' + it.stock_actual_kg + ' kg</strong> · Cobertura: <strong>' + (it.dias_cobertura_actual || '—') + ' días</strong></div>';
+    html += '<div style="margin-top:6px;font-size:11px;color:var(--cx-text-soft, #475569)">Stock actual: <strong>' + it.stock_actual_kg + ' kg</strong> · Cobertura: <strong>' + (it.dias_cobertura_actual || '-') + ' días</strong></div>';
 
     html += '</div>';
   });
@@ -18685,7 +18705,7 @@ function render(d){
       const col = sev === 'CRITICO' ? '#dc2626' : (sev === 'URGENTE' ? '#ea580c' : (sev === 'BOOM' ? '#7c3aed' : '#ca8a04'));
       hv += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;margin-top:6px;background:var(--cx-card, #fff);border-left:4px solid ' + col + '">';
       hv += '<div><strong>' + esc(a.producto) + '</strong> <span style="background:' + col + ';color:white;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">' + sev + '</span></div>';
-      hv += '<div style="font-size:12px;text-align:right"><span style="color:' + col + ';font-weight:800">+' + a.delta_pct + '%</span> ventas<br><span class="muted">cobertura ajustada: ' + (a.cob_ajustada_dias || '—') + 'd</span></div>';
+      hv += '<div style="font-size:12px;text-align:right"><span style="color:' + col + ';font-weight:800">+' + a.delta_pct + '%</span> ventas<br><span class="muted">cobertura ajustada: ' + (a.cob_ajustada_dias || '-') + 'd</span></div>';
       hv += '</div>';
     });
     hv += '</div>';
@@ -19019,7 +19039,7 @@ function render(){
     html += '</td>';
     html += '<td><span class="score-' + it.score + '">' + it.score + '</span></td>';
     html += '<td class="num">' + it.lote_size_kg_excel.toFixed(2) + '</td>';
-    html += '<td class="num">' + (it.lote_real_kg_promedio || '—') + '</td>';
+    html += '<td class="num">' + (it.lote_real_kg_promedio || '-') + '</td>';
     html += '<td class="num">' + it.n_items + (it.n_vacios > 0 ? ' <span style="color:var(--cx-danger-text, #dc2626)">(' + it.n_vacios + ' vacíos)</span>' : '') + '</td>';
     html += '<td class="num">' + it.suma_kg_items.toFixed(2) + ' kg</td>';
     html += '<td class="num" style="color:' + covColor + ';font-weight:700">' + cobertura + '%</td>';
@@ -19280,11 +19300,11 @@ CAPB</textarea>
 <script>
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmtCOP(n){
-  if (n == null) return '—';
+  if (n == null) return '-';
   return '$ ' + Math.round(n).toLocaleString('es-CO');
 }
 function fmtKg(n){
-  if (n == null) return '—';
+  if (n == null) return '-';
   return n.toLocaleString('es-CO', {maximumFractionDigits: 2}) + ' kg';
 }
 
@@ -19358,7 +19378,7 @@ function render(d, queries){
 
     html += '<tr>';
     html += '<td class="mono">' + escapeHtml(it.codigo_mp) + '</td>';
-    html += '<td><strong>' + escapeHtml(it.nombre_comercial) + '</strong>' + badges + '<br><span style="color:var(--cx-text-faint, #94a3b8);font-size:10px">' + escapeHtml(it.nombre_inci) + '</span><br><span style="color:var(--cx-text-soft, #475569);font-size:10px">' + escapeHtml(it.proveedor || '—') + ' · match: ' + escapeHtml(it.matched_query) + '</span></td>';
+    html += '<td><strong>' + escapeHtml(it.nombre_comercial) + '</strong>' + badges + '<br><span style="color:var(--cx-text-faint, #94a3b8);font-size:10px">' + escapeHtml(it.nombre_inci) + '</span><br><span style="color:var(--cx-text-soft, #475569);font-size:10px">' + escapeHtml(it.proveedor || '-') + ' · match: ' + escapeHtml(it.matched_query) + '</span></td>';
     html += '<td class="num" style="color:var(--cx-text-soft, #475569)">' + fmtKg(it.stock_actual_kg) + '</td>';
     html += '<td class="num" style="color:var(--cx-info-text, #0891b2)">' + fmtKg(it.kg_consumido_anual_historico) + '<br><span style="font-size:10px;color:var(--cx-text-faint, #94a3b8)">' + (it.n_movimientos || 0) + ' mov</span></td>';
     html += '<td class="num" style="color:var(--cx-primary-text, #7c3aed)">' + fmtKg(it.kg_necesidad_calendar_12m) + '<br><span style="font-size:10px;color:var(--cx-text-faint, #94a3b8)">ventas: ' + fmtKg(it.kg_necesidad_ventas_12m) + '</span></td>';
@@ -19380,7 +19400,7 @@ function render(d, queries){
       });
       html += '</tbody></table></details>';
     } else {
-      html += '<span class="muted">—</span>';
+      html += '<span class="muted">-</span>';
     }
     html += '</td>';
     html += '</tr>';
@@ -20110,6 +20130,14 @@ def plan_calendario_page():
 _PLAN_CALENDARIO_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>📅 Calendario EOS · Plan autónomo</title>
+<!-- Sebastián 14-ago-2026 ("¿calendario es premium?"): esta pantalla va DENTRO de
+     un iframe, y el CSS no cruza el borde del iframe · sin este enlace ninguno de
+     sus var(--cx-*) resolvía y TODO se pintaba con el color de respaldo, o sea
+     fuera del sistema de diseño y clavado en tema claro. Con el enlace, los tokens
+     son reales y el tema del usuario manda (el script de abajo lo trae, porque el
+     data-theme del documento de afuera tampoco cruza). -->
+<link rel="stylesheet" href="/static/cortex.css">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--cx-bg-alt, #f8fafc);color:var(--cx-text, #1e293b);margin:0;padding:18px}
 .wrap{max-width:min(1780px,97vw);margin:0 auto}
@@ -20140,19 +20168,38 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
 .cal-day{background:var(--cx-card, #fff);border:1px solid var(--cx-border, #e2e8f0);border-radius:8px;padding:6px;min-height:110px;position:relative;font-size:11px}
 .cal-day.festivo{background:var(--cx-danger-pale, #fef2f2);border-color:#fca5a5}
 .cal-day.weekend{background:var(--cx-bg-alt, #f8fafc);opacity:.7}
-.cal-day.hoy{border:2px solid var(--cx-info, #0f766e);background:#f0fdfa}
-.cal-day.suggest{background:linear-gradient(135deg,#f0fdfa,#ecfeff)}
+/* El día de HOY y el sugerido llevaban un pálido FIJO: con el tema oscuro el
+   fondo se quedaba claro y el número del día (que sí sigue al tema) desaparecía
+   sobre él · un par donde sólo un lado sigue al tema (M114). */
+.cal-day.hoy{border:2px solid var(--cx-info, #0f766e);background:var(--cx-info-pale, #f0fdfa)}
+.cal-day.suggest{background:var(--cx-info-pale, #f0fdfa)}
 .day-num{font-weight:800;color:var(--cx-text, #1e293b);font-size:13px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
 .day-num .festivo-tag{font-size:9px;background:var(--cx-danger-pale, #fecaca);color:var(--cx-danger-text, #7f1d1d);padding:1px 5px;border-radius:3px;font-weight:700}
-.lote{background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af);padding:3px 5px;border-radius:4px;margin-bottom:3px;font-size:10px;font-weight:600;cursor:pointer;border-left:3px solid var(--cx-info, #1e40af);display:flex;justify-content:space-between;align-items:center;gap:3px}
-.lote:hover{background:#bfdbfe}
+.lote{background:var(--cx-info-pale, #dbeafe);color:var(--cx-info-text, #1e40af);padding:4px 6px;border-radius:5px;margin-bottom:4px;font-size:10px;font-weight:600;cursor:pointer;border-left:3px solid var(--cx-info, #1e40af);display:flex;justify-content:space-between;align-items:center;gap:3px;transition:transform .08s ease,box-shadow .08s ease}
+/* El hover no cambia el COLOR (un hex fijo acá se lleva puesto el tema oscuro y
+   además taparía el rojo del lote sin kg): levanta y sombrea, que funciona igual
+   en los dos temas y no pisa el estado del chip. */
+.lote:hover{transform:translateY(-1px);box-shadow:0 3px 8px rgba(15,23,42,.16);filter:brightness(.97)}
+/* El nombre COMPLETO en dos lineas: cortarlo a 18 caracteres dejaba
+   "SUERO TRIACTIVE RE" y "SUERO DE NIACINAMI", que no distinguen un producto
+   de otro justo en la pantalla donde se decide que se fabrica. */
+.lote .lote-txt{display:block;flex:1;min-width:0}
+.lote .lote-nom{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;line-height:1.18;font-weight:700;letter-spacing:-.01em}
+.lote .lote-kg{display:block;margin-top:2px;font-size:9.5px;font-weight:800;opacity:.8;font-variant-numeric:tabular-nums}
 .lote.calendar{background:#fef9c3;border-left-color:var(--cx-accent-dark, #ca8a04);color:#854d0e}
 .lote.eos_plan{background:var(--cx-success-pale, #dcfce7);border-left-color:var(--cx-success, #16a34a);color:var(--cx-success-text, #166534)}
-.lote.eos_canonico{background:#e0e7ff;border-left-color:#6366f1;color:#3730a3}
+.lote.eos_canonico{background:var(--cx-primary-pale, #e0e7ff);border-left-color:var(--cx-primary, #6366f1);color:var(--cx-primary-text, #3730a3)}
 .lote.eos_b2b{background:#fce7f3;border-left-color:#db2777;color:#9d174d}
 .lote.esperando_recurso{background:var(--cx-warn-pale, #fde68a);border-left-color:var(--cx-accent-dark, #d97706);color:var(--cx-warn-text, #78350f);opacity:.85}
 .lote.sugerido{background:var(--cx-warn-pale, #fef3c7);border-left-color:var(--cx-warn, #f59e0b);color:var(--cx-warn-text, #92400e);border-style:dashed;border-width:1px}
 .lote.grande{font-weight:800;border-left-width:4px}
+/* Un lote de 0 kg no produce nada ni pide materia prima: tiene que verse
+   distinto del resto o se lee como una produccion normal que si va a salir.
+   Va DESPUES de las variantes por origen (.eos_plan, .eos_b2b...): con la misma
+   especificidad manda la ultima, y puesta antes el verde del origen la tapaba
+   (la previa lo mostro: el chip salia verde con el texto de alerta adentro). */
+.lote.sinkg{background:var(--cx-danger-pale, #fee2e2);border-left-color:var(--cx-danger, #dc2626);color:var(--cx-danger-text, #991b1b)}
+.lote.sinkg .lote-kg{opacity:1}
 .lote[draggable=true]{cursor:grab}
 .lote[draggable=true]:active{cursor:grabbing}
 .cal-day.drop-target{background:var(--cx-success-pale, #dcfce7) !important;border:2px dashed var(--cx-success, #16a34a) !important}
@@ -20239,7 +20286,7 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
     <div style="display:flex;align-items:center;gap:8px">
       <button onclick="cambiarMes(-1)" class="navq" title="Mes anterior">&lsaquo;</button>
-      <strong id="mesActual" style="font-size:17px;font-weight:800;color:var(--cx-text, #0f172a);min-width:132px;text-align:center">—</strong>
+      <strong id="mesActual" style="font-size:17px;font-weight:800;color:var(--cx-text, #0f172a);min-width:132px;text-align:center">-</strong>
       <button onclick="cambiarMes(1)" class="navq" title="Mes siguiente">&rsaquo;</button>
       <button onclick="irHoy()" class="navq" style="font-size:12.5px;font-weight:700" title="Ir al mes actual">Hoy</button>
     </div>
@@ -20269,10 +20316,10 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
   <div id="cal-grid-wrap"></div>
 </div>
 
-<!-- Lista TODOS los lotes · fallback siempre visible si grid falla -->
+<!-- Lista de TODOS los lotes · siempre visible, también si el grid falla -->
 <div class="card">
-  <h2 style="margin:0 0 8px;color:var(--cx-text-soft, #475569);font-size:15px">📋 Todos los lotes agendados (fallback · siempre visible)</h2>
-  <div style="color:var(--cx-text-mute, #64748b);font-size:11px;margin-bottom:8px">Si el calendario visual aparece vacío, abajo ves lista textual de los mismos lotes desde el backend.</div>
+  <h2 style="margin:0 0 8px;color:var(--cx-text-soft, #475569);font-size:15px">📋 Todos los lotes agendados</h2>
+  <div style="color:var(--cx-text-mute, #64748b);font-size:11px;margin-bottom:8px">Los mismos lotes del calendario, en lista, mes por mes. Si el calendario de arriba se ve vacío, acá se leen igual.</div>
   <div id="lista-completa"></div>
 </div>
 
@@ -20303,7 +20350,7 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
       <button onclick="cerrarNuevaProduccion()" style="background:transparent;border:none;color:white;font-size:22px;cursor:pointer;line-height:1">✕</button>
     </div>
     <div class="modal-body">
-      <p style="margin:0 0 12px;font-size:12.5px;color:var(--cx-text-mute, #64748b)">Programa cualquier producto en el calendario — incluso pilotos o productos de otros clientes que no están en Necesidades. Queda <strong>Fijo</strong> (los automáticos no lo tocan).</p>
+      <p style="margin:0 0 12px;font-size:12.5px;color:var(--cx-text-mute, #64748b)">Programa cualquier producto en el calendario · incluso pilotos o productos de otros clientes que no están en Necesidades. Queda <strong>Fijo</strong> (los automáticos no lo tocan).</p>
       <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Producto *</label>
       <input id="np-producto" list="np-productos-list" placeholder="Ej: CREMA FACIAL UREA 10" autocomplete="off" onchange="_npResumen()" oninput="_npResumenDebounced()"
         style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px;margin-bottom:11px">
@@ -20417,7 +20464,7 @@ async function recuperarCancelados(){
     const d = await r.json();
     if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
     if (!d.a_restaurar){
-      alert('✓ No hay lotes perdidos por recuperar.\\n\\n' + (d.recuperables_total ? ('Se cancelaron ' + d.recuperables_total + ' lote(s) por el bug, pero el plan ya los recreó — no hace falta restaurar nada.') : 'No se encontraron cancelaciones del bug.'));
+      alert('✓ No hay lotes perdidos por recuperar.\\n\\n' + (d.recuperables_total ? ('Se cancelaron ' + d.recuperables_total + ' lote(s) por el bug, pero el plan ya los recreó · no hace falta restaurar nada.') : 'No se encontraron cancelaciones del bug.'));
       return;
     }
     const lista = (d.productos||[]).filter(p=>p.a_restaurar>0).slice(0,12)
@@ -20807,7 +20854,7 @@ function render(){
       // siempre visible, sin clics. Es la vista "ver todo".
       const porProd = {};
       ag.forEach(a => {
-        const p = a.producto || '—';
+        const p = a.producto || '-';
         (porProd[p] = porProd[p] || []).push((a.fecha_programada||'').slice(0,10));
       });
       html += '<div style="font-weight:700;color:var(--cx-info-text, #0f766e);margin:8px 0 4px">📦 Los ' +
@@ -20819,7 +20866,7 @@ function render(){
       const _hoyP = fechaLocalStr(new Date());
       Object.keys(porProd).sort().forEach(p => {
         const fechas = porProd[p].filter(Boolean).sort();
-        const prox = fechas.find(f => f >= _hoyP) || fechas[fechas.length - 1] || '—';
+        const prox = fechas.find(f => f >= _hoyP) || fechas[fechas.length - 1] || '-';
         html += '<tr style="border-top:1px solid var(--cx-border-soft, #f1f5f9)"><td>' + escapeHtml(p) +
           '</td><td>' + escapeHtml(prox) +
           '</td><td style="text-align:right">' + porProd[p].length + '</td></tr>';
@@ -20837,7 +20884,7 @@ function render(){
       document.getElementById('lista-completa').innerHTML = html;
     }
   } catch(e){
-    document.getElementById('lista-completa').innerHTML = '<div style="color:var(--cx-danger-text, #dc2626);padding:10px">Error rellenando lista fallback: ' + e.message + '</div>';
+    document.getElementById('lista-completa').innerHTML = '<div style="color:var(--cx-danger-text, #dc2626);padding:10px">No se pudo armar la lista de lotes: ' + e.message + '</div>';
   }
 
   // KPIs
@@ -20854,6 +20901,20 @@ function render(){
     html += '<span class="kpi"><div class="kpi-lbl">⚠ Sin fórmula</div><div class="kpi-val" style="color:var(--cx-warn-text, #ca8a04)">' + ((k.sin_formula || []).length) + '</div></span>';
   }
   html += '<span class="kpi"><div class="kpi-lbl">📅 Ya agendadas</div><div class="kpi-val" style="color:var(--cx-text-soft, #475569)">' + (PLAN_DATA.agendadas.length || 0) + '</div></span>';
+  // Lotes SIN KG · un lote de 0 kg ocupa un dia y no produce nada ni pide materia
+  // prima. Se cuenta siempre (tambien cuando da cero) para que se vea que el
+  // chequeo corrio: un indicador que solo aparece cuando falla no se puede leer
+  // como "esto ya se miro" el dia que esta en cero.
+  try {
+    const _sk = (PLAN_DATA.agendadas || []).filter(a => !((a.kg || 0) > 0));
+    const _skCol = _sk.length ? 'var(--cx-danger-text, #dc2626)' : 'var(--cx-success-text, #16a34a)';
+    const _skTit = _sk.length
+      ? 'Sin kilos: ' + _sk.slice(0, 6).map(a => a.producto + ' (' + (a.fecha_programada || '').slice(0, 10) + ')').join(' · ')
+        + (_sk.length > 6 ? ' · y ' + (_sk.length - 6) + ' mas' : '')
+        + ' · abri el lote en el calendario y ponele los kilos'
+      : 'Todos los lotes agendados tienen kilos definidos';
+    html += '<span class="kpi" title="' + escapeHtml(_skTit) + '"><div class="kpi-lbl">⚖ Sin kg</div><div class="kpi-val" style="color:' + _skCol + '">' + _sk.length + '</div></span>';
+  } catch(e){}
   // KPI productos únicos detectados (diag visual del bug)
   try {
     const _ps = new Set();
@@ -20951,14 +21012,18 @@ function render(){
       lotes.forEach((lt, lotIdx) => {
         const ltCls = 'lote ' + (lt.tipo === 'sugerido' ? 'sugerido' : (lt.estado === 'esperando_recurso' ? 'esperando_recurso' : (lt.origen || 'eos_plan')));
         const esGrande = (lt.kg || 0) > 50 ? ' grande' : '';
-        const prodCorto = (lt.producto || '').slice(0, 18);
+        // El nombre va COMPLETO · el CSS lo acota a dos lineas (.lote-nom).
+        const prodCorto = (lt.producto || '');
+        // Un lote sin kilos ocupa un dia del calendario y no produce nada: se
+        // marca en rojo en vez de dibujarse igual que uno de 90 kg.
+        const sinKg = !((lt.kg || 0) > 0);
         // Identificador único para localizar el lote en drop · sugeridos
         // usan sug:<idx> · agendados usan id:<id>
         const dragKey = lt.tipo === 'sugerido' ? 'sug:' + lotIdx + ':' + fStr : 'id:' + lt.id;
         if (lt.tipo === 'sugerido'){
           // Sugerencia IA · NO está en BD · click abre modal especial
           grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" onclick="abrirSugerenciaModal(&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;,' + lt.kg + ',&quot;' + escapeHtml(lt.motivo || '') + '&quot;)" title="✨ Sugerencia IA · click para detalles · arrastrá para mover">';
-          grid += '<span>✨ ' + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
+          grid += '<span class="lote-txt"><span class="lote-nom">✨ ' + escapeHtml(prodCorto) + '</span><span class="lote-kg">' + lt.kg + 'kg</span></span>';
           grid += '</div>';
         } else {
           // Sebastián 19-may-2026: lo Fijo (eos_plan / eos_b2b / eos_retroactivo)
@@ -20971,10 +21036,10 @@ function render(){
           // Si hay B2B atribuido: muestra "12kg · 8 DTC + 4 Fer" (cliente corto).
           // Si no hay desglose: muestra solo "12kg" (asumido DTC).
           // split_inconsistente: más B2B atribuido que el total · marca ⚠.
-          let lineaKg = lt.kg + 'kg';
-          let tipSplit = '';
+          let lineaKg = sinKg ? '⚠ sin kg definidos' : (lt.kg + 'kg');
+          let tipSplit = sinKg ? ' · ⚠ SIN KG: este lote no produce nada ni pide materia prima · abrilo y ponele los kilos' : '';
           const desg = lt.desglose_b2b || [];
-          if (desg.length > 0){
+          if (desg.length > 0 && !sinKg){
             const kgB2B = lt.kg_b2b_total || 0;
             const kgDTC = lt.kg_dtc || 0;
             const partes = [];
@@ -20989,8 +21054,8 @@ function render(){
               desg.map(d => d.kg + 'kg ' + d.cliente).join(' + ');
             if (lt.split_inconsistente) lineaKg = '⚠ ' + lineaKg;
           }
-          grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" onclick="abrirLoteModal(' + lt.id + ',&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;,' + lt.kg + ')" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · click detalle · arrastrá para mover' + fijoTip + tipSplit) + '">';
-          grid += '<span>' + candado + escapeHtml(prodCorto) + '<br><span style="opacity:.7;font-size:9.5px">' + escapeHtml(lineaKg) + '</span></span>';
+          grid += '<div class="' + ltCls + esGrande + (sinKg ? ' sinkg' : '') + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" onclick="abrirLoteModal(' + lt.id + ',&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;,' + lt.kg + ')" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · click detalle · arrastrá para mover' + fijoTip + tipSplit) + '">';
+          grid += '<span class="lote-txt"><span class="lote-nom">' + candado + escapeHtml(prodCorto) + '</span><span class="lote-kg">' + escapeHtml(lineaKg) + '</span></span>';
           grid += '</div>';
         }
       });
@@ -21369,7 +21434,7 @@ async function abrirSugerenciaModal(producto, fecha, kg, motivo){
     html += '<div class="metric-card"><div class="metric-lbl">Vende/día</div><div class="metric-val">' + velUds.toFixed(1) + '</div><div class="metric-sub">' + velKgDia.toFixed(2) + ' kg/día</div></div>';
     html += '<div class="metric-card"><div class="metric-lbl">Vende/mes</div><div class="metric-val">' + velMes + '</div></div>';
     html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + (info.stock_uds_total || 0) + ' uds</div></div>';
-    html += '<div class="metric-card"><div class="metric-lbl">Cobertura actual</div><div class="metric-val">' + (info.dias_cobertura != null ? info.dias_cobertura + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
+    html += '<div class="metric-card"><div class="metric-lbl">Cobertura actual</div><div class="metric-val">' + (info.dias_cobertura != null ? info.dias_cobertura + 'd' : '-') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
     html += '</div>';
     // Próxima producción tras este lote · buffer 25d (sincronizado con
     // cob_alerta backend · Sebastián 23-may-2026)
@@ -21815,8 +21880,8 @@ async function _cargarComposicionMee(loteId, _try){
 
 function _opcionesEnvaseInline(sel){
   var mees = (window._MEES_CACHE||[]).filter(function(m){var _c=((m&&m.categoria)||'').toLowerCase();return _c==='frasco'||_c==='envase';});  // ENVASE DEL LOTE = solo frascos (no etiquetas/tapas/cajas · Sebastian 29-jun)
-  if(!mees || !mees.length) return '<option value="">— Cargando envases —</option>';
-  var h = '<option value="">— Envase default del producto —</option>';
+  if(!mees || !mees.length) return '<option value="">- Cargando envases -</option>';
+  var h = '<option value="">- Envase default del producto -</option>';
   for(var i=0;i<mees.length;i++){ var m=mees[i]; h += '<option value="'+escapeHtml(m.codigo)+'"'+(m.codigo===sel?' selected':'')+'>'+escapeHtml(m.label||m.codigo)+'</option>'; }
   return h;
 }
@@ -21963,7 +22028,7 @@ function _pintarOpcionesEnvase(sel, mees, envActual, defaults){
     const defLbl = defaults.map(function(c){ const m = meeByCode[c]; return c + (m && m.descripcion ? (' · ' + m.descripcion) : ''); }).join('  +  ').slice(0, 88);
     html = '<option value="">📦 Envase del producto: ' + defLbl.replace(/</g,'&lt;').replace(/"/g,'&quot;') + ' (sin forzar)</option>';
   } else {
-    html = '<option value="">— Sin override (usa el envase default del producto) —</option>';
+    html = '<option value="">- Sin override (usa el envase default del producto) -</option>';
   }
   // Grupo destacado con el/los envase(s) del producto arriba (fácil de re-elegir)
   if(defaults.length){
@@ -22615,7 +22680,7 @@ async function _npResumen(){
   // Sebastián 11-jul · lo que TIENE hoy + para cuánto alcanza (como en Necesidades)
   const _urgTxt = {CRITICO:'🔴 crítico', URGENTE:'🟠 urgente', VIGILAR:'🟡 vigilar', POR_ENTRAR:'🔵 por entrar', OK:'🟢 ok', SIN_VENTAS:'⚪ sin ventas'};
   const _dg = (p.dias_gondola != null) ? p.dias_gondola : null;
-  h += '📊 Stock góndola: <b>' + (p.stock_uds_total != null ? p.stock_uds_total : '—') + ' uds</b> · alcanza <b>' + (_dg != null ? _dg + ' días' : '—') + '</b> ' + (_urgTxt[p.urgencia] || '') + ' · vende ~' + Math.round((p.velocidad_uds_dia||0)*30.44) + ' uds/mes<br>';
+  h += '📊 Stock góndola: <b>' + (p.stock_uds_total != null ? p.stock_uds_total : '-') + ' uds</b> · alcanza <b>' + (_dg != null ? _dg + ' días' : '-') + '</b> ' + (_urgTxt[p.urgencia] || '') + ' · vende ~' + Math.round((p.velocidad_uds_dia||0)*30.44) + ' uds/mes<br>';
   if (p.ultima_produccion_fecha) h += '📜 Última producción: <b>' + p.ultima_produccion_fecha + '</b> · ' + p.ultima_produccion_kg + ' kg<br>';
   else h += '📜 Sin producción previa registrada<br>';
   const hoyc = new Date(Date.now() - 5*3600*1000).toISOString().slice(0,10);
@@ -22699,9 +22764,9 @@ function _npCadPreview(){
   }
   let _first = '';
   try{ const _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
-  const _firstTxt = cc.dhpManual ? 'la 1ª nueva <b style="color:var(--cx-primary-text, #7c3aed)">fijada por vos</b> = '+(_first||'—')
-    : (cc.dhpCap ? 'la 1ª nueva <b>una cadencia después</b> del origen (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+')'
-                 : 'la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+')');
+  const _firstTxt = cc.dhpManual ? 'la 1ª nueva <b style="color:var(--cx-primary-text, #7c3aed)">fijada por vos</b> = '+(_first||'-')
+    : (cc.dhpCap ? 'la 1ª nueva <b>una cadencia después</b> del origen (~<b>'+cc.dhp+'d</b> = '+(_first||'-')+')'
+                 : 'la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b> = '+(_first||'-')+')');
   el.innerHTML = ref + '📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.interval+' días</b> · '+_firstTxt+' · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> desde <b>'+cc.partida+'</b>';
 }
 async function _npCrearCadena(){
@@ -23020,9 +23085,9 @@ async function abrirLoteModal(id, producto, fecha, kg){
           + '<td style="padding:6px 8px;font-weight:700;color:var(--cx-info-text, #1e40af)">🛍️ Animus DTC</td>'
           + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + kgDTC + ' kg<br><span style="font-size:10px;font-weight:600;color:var(--cx-text-mute, #64748b)">' + (kg > 0 ? Math.round(kgDTC / kg * 100) : 0) + '%</span></td>'
           + '<td style="padding:6px 8px;text-align:center;font-size:11px;color:var(--cx-text, #1e293b)">' + _dtcEnvCell + '</td>'
-          + '<td style="padding:6px 8px;text-align:center;color:var(--cx-text-soft, #475569)">' + (_dtcUds ? _dtcUds.toLocaleString('es-CO') + ' uds' : '—') + '</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:var(--cx-text-soft, #475569)">' + (_dtcUds ? _dtcUds.toLocaleString('es-CO') + ' uds' : '-') + '</td>'
           + '<td style="padding:6px 8px;text-align:center;color:var(--cx-text-faint, #94a3b8);font-size:10px">auto · no editable</td>'
-          + '<td style="padding:6px 8px;text-align:center;color:var(--cx-border, #cbd5e1)">—</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:var(--cx-border, #cbd5e1)">-</td>'
           + '</tr>';
       }
       // Filas B2B (editables)
@@ -23103,7 +23168,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // PARA CUÁNTO ALCANZA (físico · con las ventas actuales) · color de urgencia · cobertura-con-plan como nota
   html += '<div class="metric-card" style="border-color:' + _cobCol + '33;background:linear-gradient(180deg,#fff,' + _cobCol + '0d)">'
     + '<div class="metric-lbl">Alcanza (con lo que hay)</div>'
-    + '<div class="metric-val" style="color:' + _cobCol + '">' + (diasFisico != null ? diasFisico + 'd' : '—') + '</div>'
+    + '<div class="metric-val" style="color:' + _cobCol + '">' + (diasFisico != null ? diasFisico + 'd' : '-') + '</div>'
     + '<div class="metric-sub" style="color:' + _cobCol + '">' + (info.urgencia || '') + ' &middot; al ritmo actual (' + velUds.toFixed(1) + ' uds/d&iacute;a)</div>'
     + (diasCob != null ? '<div class="metric-sub" style="margin-top:2px;color:var(--cx-text-faint, #94a3b8)">con lo ya programado: ~' + diasCob + 'd</div>' : '')
     + '</div>';
@@ -25674,7 +25739,7 @@ function render(d){
         html += '<td><strong>' + escapeHtml(p.producto) + '</strong> ' + tags + '</td>';
         html += '<td style="text-align:right"><strong>' + p.kg + ' kg</strong></td>';
         html += '<td>' + escapeHtml(item.motivo||'') + '</td>';
-        html += '<td style="text-align:right">' + (item.cob_dias_actual!=null ? item.cob_dias_actual + 'd' : '—') + '</td>';
+        html += '<td style="text-align:right">' + (item.cob_dias_actual!=null ? item.cob_dias_actual + 'd' : '-') + '</td>';
         html += '<td style="text-align:right">' + (item.pipeline_7d_kg||0) + ' kg</td>';
         html += '</tr>';
       });
@@ -27033,7 +27098,7 @@ def diagnostico_migracion_detalle():
             'inventario_descontado_at': r[6], 'origen': r[7],
         })
 
-    # ── 2) Movimientos (kardex MP) — comparar todos los IDs ──
+    # ── 2) Movimientos (kardex MP) · comparar todos los IDs ──
     sq_cur.execute("SELECT id FROM movimientos")
     sq_mov = {r[0] for r in sq_cur.fetchall()}
     pg_cur.execute("SELECT id FROM movimientos")
