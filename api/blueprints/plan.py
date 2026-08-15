@@ -2414,6 +2414,89 @@ def match_preview_pedido_b2b(pid):
     return jsonify({"ok": True, "match": False})
 
 
+@bp.route("/api/pedidos-b2b/por-asignar", methods=["GET"])
+def pedidos_b2b_por_asignar():
+    """Lo que Catalina tiene que resolver antes de que el pedido entre al plan.
+
+    Devuelve cada pedido pendiente con los KILOS que va a significar y con los
+    materiales que HOY se le aplicarían (frasco, tapa, caja), sacados de la
+    presentación del producto. Ella confirma o cambia el frasco, y esa decisión
+    viaja con el lote (compra, descuento y serigrafía leen la misma).
+
+    El dato que ORIGINA la decisión va en la misma pantalla: sin el frasco actual
+    y sin los kilos a la vista, decidir es acordarse (M197).
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        rows = c.execute(
+            """SELECT id, cliente_id, COALESCE(cliente_nombre,''), producto_nombre,
+                      COALESCE(cantidad_uds,0), COALESCE(ml_unidad,0),
+                      COALESCE(fecha_estimada,''), COALESCE(urgencia,'media'),
+                      COALESCE(notas,''), COALESCE(envase_codigo,''),
+                      COALESCE(creado_at_utc,'')
+                 FROM pedidos_b2b
+                WHERE estado = 'pendiente'
+                ORDER BY (COALESCE(urgencia,'media')='alta') DESC, creado_at_utc ASC"""
+        ).fetchall()
+    except Exception as e:
+        log.warning("cola de pedidos por asignar falló: %s", e)
+        rows = []
+
+    # Materiales por producto · lo que hoy se aplicaría si nadie toca nada.
+    pres = {}
+    try:
+        for pr in c.execute(
+            """SELECT producto_nombre, COALESCE(volumen_ml,0), COALESCE(envase_codigo,''),
+                      COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''),
+                      COALESCE(es_default,0)
+                 FROM producto_presentaciones
+                WHERE COALESCE(activo,1)=1
+                ORDER BY es_default DESC, id ASC"""
+        ).fetchall():
+            pres.setdefault((pr[0] or '').strip().upper(), {
+                'volumen_ml': float(pr[1] or 0), 'envase': pr[2],
+                'tapa': pr[3], 'caja': pr[4]})
+    except Exception as e:
+        log.warning("presentaciones para la cola: %s", e)
+
+    # Nombre legible de cada envase, para que el desplegable no sea una lista de códigos.
+    envases = []
+    try:
+        envases = [{'codigo': r[0], 'nombre': (r[1] or ''), 'stock': float(r[2] or 0)}
+                   for r in c.execute(
+                       "SELECT codigo, COALESCE(descripcion,''), COALESCE(stock_actual,0) "
+                       "FROM maestro_mee WHERE COALESCE(estado,'Activo') NOT IN "
+                       "('Archivado') ORDER BY codigo ASC LIMIT 400").fetchall()]
+    except Exception as e:
+        log.warning("catálogo de envases para la cola: %s", e)
+
+    items = []
+    for r in rows:
+        uds = int(r[4] or 0)
+        ml = float(r[5] or 0)
+        p = pres.get((r[3] or '').strip().upper(), {})
+        if not ml:
+            ml = float(p.get('volumen_ml') or 0)
+        items.append({
+            'id': r[0], 'cliente_id': r[1], 'cliente_nombre': r[2] or r[1],
+            'producto': r[3], 'unidades': uds, 'ml_unidad': ml,
+            'kg': round(uds * ml / 1000.0, 2),
+            'fecha_estimada': (r[6] or '')[:10], 'urgencia': r[7],
+            'notas': r[8], 'creado_at': (r[10] or '')[:10],
+            # el frasco que quedaría si nadie decide nada
+            'envase_sugerido': r[9] or p.get('envase', ''),
+            'envase_pedido': r[9],
+            'tapa': p.get('tapa', ''), 'caja': p.get('caja', ''),
+            'sin_presentacion': not bool(p),
+        })
+    return jsonify({'items': items, 'total': len(items), 'envases': envases})
+
+
 @bp.route("/api/pedidos-b2b/<int:pid>/confirmar", methods=["POST"])
 def confirmar_pedido_b2b(pid):
     """CONFIRMACIÓN 26-jun (Sebastián) · el equipo (Catalina) revisa el pedido del portal y lo CONFIRMA:
@@ -2448,6 +2531,19 @@ def confirmar_pedido_b2b(pid):
             return jsonify({"error": "cantidad_uds debe ser > 0"}), 400
     if "fecha_estimada" in body:
         fecha = (body["fecha_estimada"] or "").strip() or None
+    # ── El envase que va a llevar ESTE pedido (Sebastián 14-ago-2026) ────────────
+    # "Catalina es la encargada de mandar todo a serigrafía y etiquetas · ella debe
+    # saber cuándo llega y asignarle todo · también puede ser un envase diferente".
+    # Se valida contra el maestro: un código que no existe apuntaría al vacío y nadie
+    # lo vería hasta que falte el frasco en el piso (M100).
+    envase_elegido = (body.get("envase_codigo") or "").strip()
+    if envase_elegido:
+        _ok_env = cur.execute(
+            "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo)) = ?",
+            (envase_elegido.upper(),)).fetchone()
+        if not _ok_env:
+            return jsonify({"error": f"el envase '{envase_elegido}' no está en el maestro",
+                            "codigo": "ENVASE_DESCONOCIDO"}), 400
     # CAS: reclamar pendiente → confirmado (un solo worker · M27) + guardar ajustes
     cur.execute("UPDATE pedidos_b2b SET estado='confirmado', cantidad_uds=?, fecha_estimada=? "
                 "WHERE id=? AND estado='pendiente'", (cantidad, fecha, pid))
@@ -2456,19 +2552,68 @@ def confirmar_pedido_b2b(pid):
         return jsonify({"error": "el pedido ya fue confirmado/cancelado o cambió · refrescá",
                         "codigo": "ESTADO_CAMBIO"}), 409
     kg_b2b = round(cantidad * ml / 1000.0, 2)
+    envase_final = envase_elegido or row[7]
+    if envase_elegido and envase_elegido != row[7]:
+        cur.execute("UPDATE pedidos_b2b SET envase_codigo=? WHERE id=?", (envase_elegido, pid))
+    # Etiqueta y caja: lo que Catalina define al aceptar. Se guardan sólo si vinieron en
+    # el cuerpo, para que confirmar desde otra pantalla no borre lo que ella decidió.
+    for _campo, _col in (("lleva_etiqueta", "lleva_etiqueta"), ("lleva_caja", "lleva_caja")):
+        if _campo in body:
+            try:
+                cur.execute(f"UPDATE pedidos_b2b SET {_col}=?, materiales_por=?, "
+                            "materiales_at=? WHERE id=?",
+                            (1 if body.get(_campo) else 0, user,
+                             __import__("datetime").datetime.utcnow().replace(microsecond=0).isoformat(), pid))
+            except Exception as _ef:
+                # mig 432 sin aplicar · el pedido se confirma igual (M4: se dice, no se traga)
+                log.warning("no se pudo guardar %s del pedido %s: %s", _campo, pid, _ef)
     try:
         integracion = _integrar_pedido_b2b_al_plan(
             cur, pid, row[2], kg_b2b, fecha, row[1], user,
-            unidades=cantidad, ml_unidad=ml, envase_codigo=row[7])
+            unidades=cantidad, ml_unidad=ml, envase_codigo=envase_final)
     except Exception as _e:
         conn.rollback()  # deshace el CAS → vuelve a 'pendiente', reintentable
         log.warning("confirmar B2B integracion fallo pid=%s: %s", pid, _e)
         return jsonify({"error": "falló la integración al plan · reintentá", "detalle": str(_e)[:200]}), 500
+    # La elección tiene que llegar a lo que se COMPRA, se DESCUENTA y se ALISTA.
+    #
+    # Lote DEDICADO: el frasco es el del pedido · va como override del lote, que es lo
+    # que ya leen el abastecimiento, el descuento de envasado y la cola de serigrafía.
+    #
+    # Lote COMPARTIDO: no se le puede cambiar el frasco a todo el lote, porque también
+    # se lo cambiaría a las unidades de ÁNIMUS que van en el mismo bulto. Ese caso es un
+    # REPARTO (tantas unidades en este frasco, tantas en el otro) y se DECLARA para que
+    # Catalina lo reparta con la herramienta que ya existe, en vez de aceptar la
+    # elección y no aplicarla nunca (M100: lo que no se puede resolver se dice).
+    requiere_reparto = False
+    if envase_final and integracion.get("lote_id"):
+        if integracion.get("modo") == "lote_dedicado":
+            try:
+                cur.execute("UPDATE produccion_programada SET envase_codigo_override=? WHERE id=?",
+                            (envase_final, integracion["lote_id"]))
+                integracion["envase_aplicado"] = envase_final
+            except Exception as _ee:
+                log.warning("no se pudo fijar el envase del lote %s: %s",
+                            integracion.get("lote_id"), _ee)
+        else:
+            _def = cur.execute(
+                "SELECT COALESCE(envase_codigo_override,'') FROM produccion_programada WHERE id=?",
+                (integracion["lote_id"],)).fetchone()
+            if (_def[0] if _def else '') != envase_final:
+                requiere_reparto = True
+                integracion["requiere_reparto"] = True
+                integracion["reparto_link"] = "/inventarios"
+                integracion["aviso"] = (
+                    "Este pedido se sumó a un lote que ya existía, así que el frasco no se le "
+                    "puede cambiar a todo el lote: repartilo (unidades de este cliente en su "
+                    "frasco, el resto en el de siempre).")
     audit_log(cur, usuario=user, accion="CONFIRMAR_PEDIDO_B2B",
               tabla="pedidos_b2b", registro_id=pid,
-              despues={"cantidad_uds": cantidad, "fecha": fecha, "kg_b2b": kg_b2b})
+              despues={"cantidad_uds": cantidad, "fecha": fecha, "kg_b2b": kg_b2b,
+                       "envase": envase_final, "requiere_reparto": requiere_reparto})
     conn.commit()
     return jsonify({"ok": True, "id": pid, "estado": "confirmado", "kg_b2b": kg_b2b,
+                    "envase": envase_final, "requiere_reparto": requiere_reparto,
                     "integracion_plan": integracion})
 
 
@@ -21212,11 +21357,14 @@ async function abrirSugerenciaModal(producto, fecha, kg, motivo){
 
   if (info){
     const ml = info.ml_unidad || 30;
+  // 26.002258610954264 ml es el promedio ponderado entre presentaciones · se muestra
+  // redondeado: un número con 15 decimales hace dudar de toda la pantalla.
+  const mlTxt = (Math.round(ml * 10) / 10).toString();
     const velUds = info.velocidad_uds_dia || 0;
     const velMes = Math.round(velUds * 30);
     const velKgDia = info.velocidad_kg_dia || 0;
     html += '<div class="metric-grid">';
-    html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + ml + ' ml</div></div>';
+    html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + mlTxt + ' ml</div></div>';
     html += '<div class="metric-card"><div class="metric-lbl">Kg a producir</div><div class="metric-val">' + kg + ' kg</div><div class="metric-sub">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>';
     html += '<div class="metric-card"><div class="metric-lbl">Vende/día</div><div class="metric-val">' + velUds.toFixed(1) + '</div><div class="metric-sub">' + velKgDia.toFixed(2) + ' kg/día</div></div>';
     html += '<div class="metric-card"><div class="metric-lbl">Vende/mes</div><div class="metric-val">' + velMes + '</div></div>';
@@ -22639,6 +22787,9 @@ async function abrirLoteModal(id, producto, fecha, kg){
 
   // Cálculos clave
   const ml = info.ml_unidad || 30;
+  // 26.002258610954264 ml es el promedio ponderado entre presentaciones · se muestra
+  // redondeado: un número con 15 decimales hace dudar de toda la pantalla.
+  const mlTxt = (Math.round(ml * 10) / 10).toString();
   const velUds = info.velocidad_uds_dia || 0;
   const velMes = Math.round(velUds * 30);
   const stockUds = info.stock_uds_total || 0;
@@ -22929,7 +23080,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
     : (diasFisico + ' d&iacute;as de g&oacute;ndola al ritmo actual &middot; '
        + (diasFisico <= 20
           ? '<strong>hay que producir YA</strong>'
-          : ('produc&iacute; alrededor del d&iacute;a <strong>' + Math.max(0, diasFisico - 20) + '</strong>, que son 20 antes de agotarse')));
+          : ('produc&iacute; alrededor del d&iacute;a <strong>' + Math.round(Math.max(0, diasFisico - 20)) + '</strong>, que son 20 antes de agotarse')));
   html += '<div style="display:flex;align-items:center;gap:10px;background:var(--cx-card, #fff);'
     + 'border:1px solid ' + _cobCol + '55;border-left:5px solid ' + _cobCol + ';border-radius:12px;'
     + 'padding:12px 15px;margin:2px 0 14px">'
@@ -22938,11 +23089,11 @@ async function abrirLoteModal(id, producto, fecha, kg){
     + '</div>';
   html += '<div style="font-size:11px;color:var(--cx-primary-text, #5b21b6);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;padding-bottom:4px;border-bottom:2px solid var(--cx-primary, #7c3aed)">&#9312; C&oacute;mo va <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--cx-text-faint, #94a3b8)">&middot; lo que pasa hoy con este producto</span></div>';
   html += '<div class="metric-grid">';
-  html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + ml + ' ml</div></div>';
+  html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + mlTxt + ' ml</div></div>';
   // Sebastián 20-jul · "Kg a producir" NO va en Estado (es estado = volumen/venta/lo que hay/alcanza) ·
   // se movió a la sección 🏭 Producción de abajo.
   // Sebastián 17-jul · ventas CONSOLIDADAS en una tarjeta limpia: vende/mes (uds) + ml + kg/mes sugeridos.
-  html += '<div class="metric-card"><div class="metric-lbl">Vende / mes</div><div class="metric-val">' + velMes + ' <span style="font-size:12px;font-weight:600;color:var(--cx-text-mute, #64748b)">uds</span></div><div class="metric-sub">' + ml + ' ml &middot; <b>' + (velKgDia * 30).toFixed(1) + ' kg/mes</b> sugeridos &middot; ' + velUds.toFixed(1) + ' uds/d&iacute;a</div></div>';
+  html += '<div class="metric-card"><div class="metric-lbl">Vende / mes</div><div class="metric-val">' + velMes + ' <span style="font-size:12px;font-weight:600;color:var(--cx-text-mute, #64748b)">uds</span></div><div class="metric-sub">' + mlTxt + ' ml &middot; <b>' + (velKgDia * 30).toFixed(1) + ' kg/mes</b> sugeridos &middot; ' + velUds.toFixed(1) + ' uds/d&iacute;a</div></div>';
   // FIX 30-may-2026 · "237 uds / 72.1 kg" era incoherente · 237 uds × 30ml = 7.1kg,
   // no 72.1 (eso era góndola + lote programado). Mostrar el FÍSICO de góndola, que
   // sí cuadra con las uds. La cobertura (que sí cuenta lo programado) va en su tarjeta.

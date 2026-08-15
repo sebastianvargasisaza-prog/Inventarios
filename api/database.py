@@ -11508,6 +11508,16 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_ppr_estado ON portal_pagos_reportados(estado)",
         "CREATE INDEX IF NOT EXISTS idx_ppr_factura ON portal_pagos_reportados(factura_numero)",
     ]),
+    (432, "pedidos_b2b · lo que Catalina define cuando acepta el pedido de un cliente "
+          "(Sebastián 14-ago-2026): si ese pedido lleva etiqueta y si lleva caja. El frasco ya "
+          "viajaba en envase_codigo y ahora llega hasta el lote; la marcación NO se guarda acá "
+          "porque vive en el envase (maestro_mee.marcacion_tipo) y es la que dispara la cola de "
+          "serigrafía: una segunda copia del mismo hecho diverge sola.", [
+        "ALTER TABLE pedidos_b2b ADD COLUMN lleva_etiqueta INTEGER",
+        "ALTER TABLE pedidos_b2b ADD COLUMN lleva_caja INTEGER",
+        "ALTER TABLE pedidos_b2b ADD COLUMN materiales_por TEXT DEFAULT ''",
+        "ALTER TABLE pedidos_b2b ADD COLUMN materiales_at TEXT DEFAULT ''",
+    ]),
 ]
 
 

@@ -9983,6 +9983,7 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 <!-- Header propio eliminado (Sebastián 21-jul): el wrapper de Compras ya titula "Envases a marcar" · evitamos el doble header. Sub-pestañas + acción de arte quedan acá. -->
 <div style="display:flex;gap:4px;align-items:center;border-bottom:2px solid #eef2f7;margin:0 0 16px">
   <button id="smt-marcar" class="smt smt-on" onclick="subTabMarc('marcar')">&#128203; Por marcar</button>
+  <button id="smt-pedidos" class="smt" onclick="subTabMarc('pedidos')" title="Pedidos que los clientes mandaron por el portal · aceptalos para que entren al calendario">&#128100; Pedidos de clientes <span id="smt-pedidos-badge" style="display:none;background:var(--cx-danger, #dc2626);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:2px"></span></button>
   <button id="smt-curso" class="smt" onclick="subTabMarc('curso')">&#128230; En curso <span id="smt-curso-badge" style="display:none;background:var(--cx-info, #0891b2);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:2px"></span></button>
   <button onclick="abrirVincularModal()" title="Vincular cada envase impreso (serigrafiado) con su base limpio · así al mandar a marcar el código cambia de verdad" style="margin-left:auto;margin-bottom:6px;background:var(--cx-success-pale, #f0fdf4);color:var(--cx-success-text, #15803d);border:1px solid #bbf7d0;border-radius:9px;padding:8px 13px;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer">&#128279; Vincular base&harr;impreso <span id="vinc-badge" style="display:none;background:var(--cx-danger, #dc2626);color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px;margin-left:2px"></span></button>
   <a href="/artes" target="_blank" rel="noopener" style="margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;text-decoration:none;border-radius:9px;padding:8px 15px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 4px 12px rgba(124,58,237,.25)">&#127991; Solicitar revisi&oacute;n de arte a DT &rarr;</a>
@@ -10107,6 +10108,10 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 </div>
 <div id="cont"><div class="muted" style="padding:20px">Cargando...</div></div>
 </div><!-- /sub-marcar -->
+<div id="sub-pedidos" style="display:none">
+  <div style="font-size:12.5px;color:#6b6b74;margin:2px 0 12px">Lo que los clientes pidieron por su portal. Al aceptar, el pedido entra al calendario con los kilos que salen de las unidades, y el envase que elijas es el que se compra, se descuenta y se manda a marcar.</div>
+  <div id="pedcli-body"></div>
+</div>
 <div id="sub-curso" style="display:none">
   <div style="display:flex;align-items:center;gap:11px;margin:2px 0 16px">
     <span style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px">&#128230;</span>
@@ -10436,7 +10441,7 @@ function alistarCons(env){
   var G=_consGroups(); var g=G[env]; if(!g) return;
   var tipo=(document.getElementById('mc-'+env)||{}).value||'';
   var prov=(document.getElementById('pc-'+env)||{}).value||'';
-  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'||tipo==='etiqueta'){ alert('Este envase lleva etiqueta o no se marca — no se envía a serigrafía.'); return; }
+  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'||tipo==='etiqueta'){ alert('Este envase lleva etiqueta o no se marca, no se envía a serigrafía.'); return; }
   if(!prov){ alert('Definí el proveedor antes de solicitar'); return; }
   var tot=consSelTotal(env,G);
   if(!(tot>0)){ alert('Seleccioná al menos un mes'); return; }
@@ -10540,12 +10545,118 @@ async function actualizarVincBadge(){
 }
 function subTabMarc(t){
   var m=document.getElementById('sub-marcar'), c=document.getElementById('sub-curso');
+  var p=document.getElementById('sub-pedidos');
   if(m) m.style.display=(t==='marcar')?'':'none';
   if(c) c.style.display=(t==='curso')?'':'none';
+  if(p) p.style.display=(t==='pedidos')?'':'none';
   var bm=document.getElementById('smt-marcar'), bc=document.getElementById('smt-curso');
+  var bp=document.getElementById('smt-pedidos');
   if(bm) bm.classList.toggle('smt-on',t==='marcar');
   if(bc) bc.classList.toggle('smt-on',t==='curso');
+  if(bp) bp.classList.toggle('smt-on',t==='pedidos');
   if(t==='curso') cargarOrdenes();
+  if(t==='pedidos') cargarPedidosClientes();
+}
+
+/* ── Pedidos que llegan del portal · Catalina acepta y arma los materiales ──────
+   El pedido NO entra al calendario hasta que ella acepta: acá decide el frasco (que
+   puede ser otro), si lleva etiqueta y si lleva caja, y al aceptar se programa. Los
+   kilos NO se teclean: salen de las unidades por el volumen del envase.            */
+var _PEDCLI = [], _PEDCLI_ENV = [];
+function _pcEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+async function cargarPedidosClientes(){
+  var box=document.getElementById('pedcli-body'); if(!box) return;
+  box.innerHTML='<div style="padding:18px;color:#8b8b9e">Cargando&hellip;</div>';
+  try{
+    var d=await (await fetch('/api/pedidos-b2b/por-asignar',{cache:'no-store'})).json();
+    _PEDCLI=d.items||[]; _PEDCLI_ENV=d.envases||[];
+    var bdg=document.getElementById('smt-pedidos-badge');
+    if(bdg){ if(_PEDCLI.length){ bdg.textContent=_PEDCLI.length; bdg.style.display='inline-block'; }
+             else bdg.style.display='none'; }
+    if(!_PEDCLI.length){
+      box.innerHTML='<div style="padding:26px;text-align:center;color:#8b8b9e">'
+        +'Ning&uacute;n cliente tiene pedidos esperando. Cuando pidan por el portal, aparecen ac&aacute;.</div>';
+      return;
+    }
+    var opciones=_PEDCLI_ENV.map(function(e){
+      return '<option value="'+_pcEsc(e.codigo)+'">'+_pcEsc(e.codigo)+' &middot; '+_pcEsc(e.nombre)+'</option>';
+    }).join('');
+    box.innerHTML=_PEDCLI.map(function(p){
+      var urg = p.urgencia==='alta';
+      return '<div style="border:1px solid '+(urg?'#fecaca':'var(--cx-border, #e6e6ea)')+';border-left:4px solid '
+        +(urg?'#dc2626':'#7c3aed')+';border-radius:12px;padding:14px 16px;margin-bottom:10px;background:#fff">'
+        +'<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">'
+        +  '<div style="min-width:0;flex:1">'
+        +    '<div style="font-size:15px;font-weight:800">'+_pcEsc(p.cliente_nombre)+' pidi&oacute; '+_pcEsc(p.producto)+'</div>'
+        +    '<div style="font-size:12.5px;color:#6b6b74;margin-top:3px">'
+        +      '<b>'+p.unidades+'</b> unidades &middot; <b>'+p.kg+' kg</b>'
+        +      (p.ml_unidad?(' &middot; '+p.ml_unidad+' ml c/u'):'')
+        +      (p.fecha_estimada?(' &middot; para '+_pcEsc(p.fecha_estimada)):'')
+        +      (urg?' &middot; <b style="color:#b91c1c">URGENTE</b>':'')+'</div>'
+        +    (p.notas?('<div style="font-size:12px;color:#3f3f46;margin-top:6px;background:#fbfbfd;padding:7px 10px;border-radius:8px">&#128221; '+_pcEsc(p.notas)+'</div>'):'')
+        +  '</div>'
+        +  '<div style="text-align:right;font-size:11px;color:#8b8b9e">pedido #'+p.id+'<br>'+_pcEsc(p.creado_at)+'</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">'
+        +  '<div><div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#6b6b74;margin-bottom:4px">Envase</div>'
+        +    '<select id="pc-env-'+p.id+'" style="min-width:290px;padding:8px 10px;border:1px solid var(--cx-border, #e6e6ea);border-radius:8px;font-size:13px">'
+        +      '<option value="">- sin definir -</option>'+opciones+'</select>'
+        +    (p.sin_presentacion?'<div style="font-size:11px;color:#b45309;margin-top:4px">Este producto no tiene presentaci&oacute;n cargada &middot; eleg&iacute; el frasco a mano</div>':'')
+        +  '</div>'
+        +  '<label style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px"><input type="checkbox" id="pc-eti-'+p.id+'"> Lleva etiqueta</label>'
+        +  '<label style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px"><input type="checkbox" id="pc-caj-'+p.id+'"> Lleva caja</label>'
+        +  '<button onclick="aceptarPedidoCliente('+p.id+',this)" style="margin-left:auto;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:9px;padding:10px 20px;font-size:13.5px;font-weight:800;cursor:pointer">&#10003; Aceptar y programar</button>'
+        +'</div>'
+        +'<div id="pc-msg-'+p.id+'" style="font-size:12.5px;margin-top:10px"></div>'
+        +'</div>';
+    }).join('');
+    _PEDCLI.forEach(function(p){
+      var sel=document.getElementById('pc-env-'+p.id);
+      if(sel && p.envase_sugerido) sel.value=p.envase_sugerido;
+    });
+  }catch(e){
+    box.innerHTML='<div style="padding:18px;color:#b91c1c">No se pudo cargar la cola de pedidos.</div>';
+  }
+}
+async function aceptarPedidoCliente(pid, btn){
+  var msg=document.getElementById('pc-msg-'+pid);
+  var env=(document.getElementById('pc-env-'+pid)||{}).value||'';
+  if(!env){
+    if(msg){ msg.style.color='#b91c1c'; msg.textContent='Eleg\u00ed el envase antes de aceptar: con eso se compra y se descuenta.'; }
+    return;
+  }
+  if(btn){ btn.disabled=true; btn.textContent='Programando\u2026'; }
+  try{
+    var body={envase_codigo:env,
+              lleva_etiqueta:!!(document.getElementById('pc-eti-'+pid)||{}).checked,
+              lleva_caja:!!(document.getElementById('pc-caj-'+pid)||{}).checked};
+    var t=''; try{ t=(await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }catch(e){}
+    var r=await fetch('/api/pedidos-b2b/'+pid+'/confirmar',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok){
+      if(msg){ msg.style.color='#b91c1c'; msg.textContent=d.error||('Error '+r.status); }
+      if(btn){ btn.disabled=false; btn.textContent='\u2713 Aceptar y programar'; }
+      return;
+    }
+    var ip=d.integracion_plan||{};
+    var txt='Programado: '+(d.kg_b2b||0)+' kg'
+      + (ip.fecha?(' para el '+ip.fecha):'')
+      + (ip.modo==='lote_dedicado'?' en un lote propio de este cliente':' sumado al lote que ya estaba');
+    if(d.requiere_reparto){
+      msg.style.color='#b45309';
+      msg.innerHTML=txt+'. <b>Ojo:</b> '+_pcEsc(ip.aviso||'')+' <a href="/inventarios" target="_blank" style="font-weight:700">Ir a repartir</a>';
+    } else {
+      msg.style.color='#15803d';
+      msg.textContent=txt+'. Ya est\u00e1 en el calendario.';
+    }
+    if(btn){ btn.textContent='\u2713 Aceptado'; }
+    setTimeout(cargarPedidosClientes, 1500);
+  }catch(e){
+    if(msg){ msg.style.color='#b91c1c'; msg.textContent='Error de red'; }
+    if(btn){ btn.disabled=false; btn.textContent='\u2713 Aceptar y programar'; }
+  }
 }
 async function cargarOrdenes(){
   var box=document.getElementById('ordenes'); if(!box) return;
@@ -10682,6 +10793,9 @@ async function submitCrearEnvase(){
   }catch(e){ alert('Error de conexi\u00f3n'); }
 }
 cargar(); cargarOrdenes(); cargarCatalogos(); actualizarVincBadge();
+/* El numero de pedidos de clientes se carga al abrir la pantalla: si el badge solo
+   apareciera al entrar a la pestania, Catalina no se entera de que llego uno. */
+cargarPedidosClientes();
 </script></body></html>"""
 
 
