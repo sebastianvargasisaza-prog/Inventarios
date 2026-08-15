@@ -9907,6 +9907,53 @@ def ordenes_unificadas():
                             "unidades": int(r[3] or 0)})
             except Exception as _e:
                 log.warning("ordenes-unificadas presentaciones fallo: %s", _e)
+        # CLIENTES del lote, en la LISTA (Sebastián 15-ago-2026: "que aparezca foto con
+        # cantidades que son para cada cliente en el envasado"). El dato ya se mostraba
+        # dentro del legajo, pero para verlo había que abrir orden por orden; en el piso
+        # lo que se mira es esta lista. Van DOS consultas agregadas para toda la lista, no
+        # una por fila: pedir el detalle por orden desde el navegador es lo que satura los
+        # tres workers y deja la pantalla en "Cargando" (M43).
+        _clientes = {}
+        if fase in ("envasado", "acondicionamiento"):
+            try:
+                _codigos = set()
+                for r in conn.execute(
+                    "SELECT e.id, COALESCE(p.cliente_nombre,''), "
+                    "       SUM(COALESCE(p.unidades_aporte,0)), "
+                    "       MAX(COALESCE(p.envase_codigo,'')), MAX(COALESCE(p.ml_unidad,0)) "
+                    "  FROM ebr_ejecuciones e "
+                    "  JOIN pedidos_b2b_lote p ON p.lote_produccion_id = e.produccion_id "
+                    " WHERE e.id IN (%s) AND COALESCE(e.produccion_id,0) > 0 "
+                    " GROUP BY e.id, p.cliente_nombre" % _ph, _ids).fetchall():
+                    if (r[2] or 0) <= 0:
+                        continue
+                    cod = (r[3] or "").strip()
+                    if cod:
+                        _codigos.add(cod.upper())
+                    _clientes.setdefault(r[0], []).append({
+                        "cliente": r[1] or "(sin nombre)",
+                        "unidades": int(r[2] or 0),
+                        "volumen_ml": float(r[4] or 0),
+                        "envase_codigo": cod, "envase_foto": "", "envase_desc": "",
+                    })
+                if _codigos:
+                    _fp = ",".join("?" for _ in _codigos)
+                    _fotos = {}
+                    for r in conn.execute(
+                        "SELECT UPPER(TRIM(codigo)), COALESCE(imagen_url,''), "
+                        "COALESCE(descripcion,'') FROM maestro_mee "
+                        "WHERE UPPER(TRIM(codigo)) IN (%s)" % _fp,
+                            sorted(_codigos)).fetchall():
+                        _fotos[r[0]] = (r[1], r[2])
+                    for filas in _clientes.values():
+                        for c in filas:
+                            f = _fotos.get((c["envase_codigo"] or "").upper())
+                            if f:
+                                c["envase_foto"], c["envase_desc"] = f[0], f[1]
+            except Exception as _e:
+                # Que la lista siga saliendo aunque esto falle · pero se DICE en el log:
+                # un except mudo convierte "no pude leer" en "no hay clientes" (M4/M94).
+                log.warning("ordenes-unificadas clientes del lote fallo: %s", _e)
         # import local: este archivo no importa datetime a nivel de módulo (cada función lo hace)
         from datetime import date as _dfecha, datetime as _dnow, timedelta as _dtd
         _hoy = (_dnow.utcnow() - _dtd(hours=5)).date()  # ancla Colombia, nunca UTC crudo (M24)
@@ -9920,6 +9967,8 @@ def ordenes_unificadas():
             it["avance_pct"] = (round(100.0 * hechos / tot) if tot else None)
             it["presentaciones"] = _pres.get(eid, [])
             it["unidades_total"] = sum(p["unidades"] for p in _pres.get(eid, []))
+            it["clientes"] = _clientes.get(eid, [])
+            it["unidades_clientes"] = sum(c["unidades"] for c in _clientes.get(eid, []))
             # Edad en días: una orden de envasado parada 6 días es el dato que hace falta ver de
             # un vistazo, y hoy había que abrir el legajo para deducirlo de la fecha.
             it["dias"] = None

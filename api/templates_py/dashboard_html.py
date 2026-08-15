@@ -11172,6 +11172,27 @@ function ordenesRenderLista(items, res, fase){
       h+='<div style="margin-top:9px;font-size:12px;color:var(--cx-warn-text)">'
         +'&#9888; Sin unidades registradas todavía</div>';
     }
+    // línea 4 · PARA QUIÉN es este lote (Sebastián 15-ago-2026: "que aparezca foto con
+    // cantidades que son para cada cliente en el envasado"). El dato ya estaba dentro del
+    // legajo; en el piso se mira ESTA lista, y sin esto un lote con unidades de un cliente
+    // se ve idéntico a uno de ÁNIMUS. Con la foto del frasco que lleva ese cliente, porque
+    // un código como MEE-ENV-012 no le dice nada al operario y la foto sí.
+    if(o.clientes&&o.clientes.length){
+      h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;align-items:center">'
+        +'<span style="font-size:11px;font-weight:800;color:var(--cx-text-mute);'
+        +'text-transform:uppercase;letter-spacing:.4px">&#128101; Para</span>';
+      o.clientes.forEach(function(c){
+        h+='<span style="display:inline-flex;align-items:center;gap:7px;background:var(--cx-info-pale);'
+          +'border:1px solid var(--cx-border);border-radius:9px;padding:4px 9px">'
+          +(c.envase_codigo?envMiniatura({foto:c.envase_foto,descripcion:c.envase_desc,codigo:c.envase_codigo},false):'')
+          +'<span style="display:block;line-height:1.2">'
+          +'<b style="font-size:12px;color:var(--cx-info-text)">'+_escHTML(c.cliente)+'</b>'
+          +'<span style="display:block;font-size:11px;color:var(--cx-text-soft);font-variant-numeric:tabular-nums">'
+          +(c.unidades||0).toLocaleString('es-CO')+' uds'+(c.volumen_ml?(' &middot; '+c.volumen_ml+' ml'):'')
+          +(c.envase_codigo?'':' &middot; frasco de ÁNIMUS')+'</span></span></span>';
+      });
+      h+='</div>';
+    }
     // acciones
     h+='<div style="display:flex;gap:8px;margin-top:11px">'
       +'<button onclick="abrirEBR('+o.ebr_id+',&#39;envasado-runner&#39;)" '

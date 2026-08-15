@@ -94,7 +94,9 @@ cuarentena; y calcula el rendimiento contra la fórmula.
 | 7 | Registros físicos | ✅ |
 
 **Lo que EOS hace y MyBatch no:** el envase sale del kardex de verdad (con su cuarentena
-y su serigrafiado), y las unidades se reparten **por cliente**.
+y su serigrafiado), y las unidades se reparten **por cliente** — desde el 15-ago eso se
+ve en la LISTA de órdenes (cliente, unidades y la foto del frasco que le corresponde),
+no sólo abriendo el legajo.
 
 ---
 
