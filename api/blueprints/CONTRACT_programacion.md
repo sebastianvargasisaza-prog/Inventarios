@@ -1362,3 +1362,29 @@ conexión, así que la planta no puede considerarse capaz de operar desconectada
 en papel sigue siendo el mecanismo previsto (ASG-PRO-014 numeral 5.6.3).
 
 Tests: `tests/test_contingencia.py` (los dos bordes del token) · mig 425.
+
+---
+
+## INV · El material de MARCA DEL CLIENTE se DERIVA de los pedidos, nunca se copia
+
+**Desde el 15-ago-2026.** Catalina define al aceptar un pedido B2B **si** lleva etiqueta y
+**si** lleva caja (`pedidos_b2b.lleva_etiqueta` / `lleva_caja`, mig 432) y **cuál**
+(`etiqueta_codigo` / `caja_codigo`, mig 436). Esa etiqueta lleva la marca del cliente, así
+que **nunca sale de `producto_presentaciones`** — esa es la de ÁNIMUS.
+
+- **UN solo resolvedor:** `_material_cliente_lotes(c, produccion_ids)` (y
+  `_material_cliente_lote` para uno, que delega en él). Dos copias de la misma regla
+  divergen el día que alguien corrige una (M3/M99).
+- **Se DERIVA en cada lectura**, no se copia al `produccion_checklist`: un total guardado
+  al lado de sus sumandos diverge (M99).
+- **Resuelve la LISTA en UNA consulta.** Pedirlo lote por lote desde una pantalla es lo
+  que satura los tres workers (M43/M63) — se escribió mal la primera vez, dentro del
+  recorrido, y hay un guard que lo impide.
+- **Sin código se DECLARA** (`falta_definir: True`), nunca se adivina un código parecido:
+  así es como se termina comprando el material de otro cliente (M19/M100). Y al guardar,
+  un código que no está en `maestro_mee` se **rechaza** (400 `MATERIAL_INEXISTENTE`):
+  apuntar al vacío no da error, da un material que nadie ve hasta el día que falta.
+- Lo consume el maestro de lotes (`/calidad/maestro-lotes`), que lo muestra por lote junto
+  al resto del material de envase.
+
+Tests: `tests/test_material_cliente_lote.py` (en el gate).
