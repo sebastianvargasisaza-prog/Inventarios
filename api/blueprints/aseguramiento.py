@@ -123,12 +123,18 @@ def aseguramiento_page():
     # Cargo Aseguramiento de la Calidad (AC) · distinto de Control de Calidad. Admin y
     # equipo de calidad también entran (mismo equipo hasta separar membresías).
     u = session.get('compras_user', '')
+    # El acceso sale de la MATRIZ de módulos (`config.MODULOS_ACCESO`), que es la única
+    # fuente y la que ya usan el menú y el gate global de rutas. Antes esta página tenía
+    # su propio set (`ASEGURAMIENTO_USERS`), más estricto: el menú le ofrecía el módulo
+    # al director técnico y a Luz -que la matriz sí incluye-, pasaban el gate global, y
+    # acá recibían "sin acceso". Dos gates del mismo módulo con criterios distintos es el
+    # patrón M32/M97, y se vive como "el sistema me miente" (M161).
     try:
-        from config import ASEGURAMIENTO_USERS, ADMIN_USERS as _ADM
-        permitidos = set(ASEGURAMIENTO_USERS) | set(_ADM)
+        from config import puede_ver_modulo as _puede_mod
+        permitido = _puede_mod(u, 'aseguramiento')
     except Exception:
-        permitidos = set()
-    if permitidos and u not in permitidos:
+        permitido = True   # ante la duda no se traba al usuario: el gate global ya corrió
+    if not permitido:
         from auth import sin_acceso_html
         return Response(sin_acceso_html('Aseguramiento de la Calidad'), mimetype='text/html')
     html = ASEGURAMIENTO_HTML
@@ -2961,16 +2967,30 @@ def reporte_audit_trail():
         ORDER BY fecha DESC, id DESC
         LIMIT 500
     """
-    rows = get_db().execute(sql, params).fetchall()
+    _db = get_db()
+    rows = _db.execute(sql, params).fetchall()
     items = [{
         'id': r[0], 'usuario': r[1], 'accion': r[2], 'tabla': r[3],
         'registro_id': r[4], 'antes': r[5], 'despues': r[6],
         'detalle': r[7], 'ip': r[8], 'fecha': r[9],
     } for r in rows]
+    # El total se cuenta APARTE del LIMIT 500. Antes devolvía `len(items)`, así que con
+    # 3.000 cambios en el rango el reporte decía "total: 500" y quien audita creía que ya
+    # los había visto todos: un total calculado sobre un recorte es un total falso, y
+    # este es el número con el que se cierra una auditoría (M155/M207).
+    total = len(items)
+    try:
+        total = int(_db.execute(
+            'SELECT COUNT(*) FROM audit_log WHERE ' + ' AND '.join(where),
+            params).fetchone()[0] or 0)
+    except Exception as _e:
+        log.warning('audit-trail total fallo: %s', _e)
     return jsonify({
         'desde': desde, 'hasta': hasta,
         'filtros': {'accion': accion, 'tabla': tabla, 'usuario': usuario_filtro},
-        'total': len(items),
+        'total': total,
+        'mostrados': len(items),
+        'recortado': max(0, total - len(items)),
         'items': items,
     })
 
@@ -5049,3 +5069,521 @@ def aseguramiento_calibracion_page():
         return Response(sin_acceso_html('Bitácora de calibración de equipos'), mimetype='text/html')
     from templates_py.calibracion_html import CALIBRACION_HTML
     return Response(CALIBRACION_HTML, mimetype='text/html; charset=utf-8')
+
+
+@bp.route('/aseguramiento/checklists', methods=['GET'])
+def aseguramiento_checklists_page():
+    """Pagina · el director tecnico configura las verificaciones GMP (despeje + controles).
+
+    Se sirve desde Aseguramiento y NO desde brd.py a proposito: las paginas del batch
+    record estan ocultas hasta terminar la validacion Part 11 (`_brd_visible`), y esta
+    es justo la pantalla que el DT necesita para preparar esa validacion. Ponerla detras
+    de ese gate la dejaria inalcanzable para quien la necesita (M121).
+
+    La LECTURA la tiene cualquiera con sesion -ver el procedimiento vigente es parte de
+    ejecutarlo-; la ESCRITURA la gatea el endpoint (director tecnico, Aseguramiento y
+    admin), y la pantalla lo dice en vez de ofrecer un boton que va a dar 403.
+    """
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/aseguramiento/checklists')
+    from templates_py.checklists_html import CHECKLISTS_HTML
+    return Response(CHECKLISTS_HTML, mimetype='text/html; charset=utf-8')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUDIT TRAIL LEGIBLE · aca EOS no copia a MyBatch, lo mejora (15-ago-2026)
+#
+# El Audit Trail de MyBatch muestra el JSON crudo de Django:
+#     {"model": "assurance.observationprocess", "pk": "ecaacab3-...", "fields": {...}}
+# Es trazabilidad de verdad, pero un auditor no lee eso, y quien tiene que revisar un
+# ano de cambios menos. EOS ya guarda el ANTES y el DESPUES completos, asi que puede
+# presentar la misma evidencia en lenguaje humano: quien, que cambio, de que a que.
+#
+# La traduccion es por ESTRUCTURA, no por diccionario de acciones: un diccionario con
+# las ~300 acciones del sistema se pudre el dia que alguien agrega la 301 (M122). Se
+# traduce el VERBO (la primera palabra de la accion), el OBJETO (la tabla) y se COMPARAN
+# los campos del antes contra el despues. Lo que no se pueda traducir se muestra crudo y
+# se DECLARA como no traducido, porque un renglon a medio traducir que parece completo
+# es peor que uno crudo (M124/M170).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# El verbo sale de la primera palabra de la accion. Son pocos y crecen despacio.
+_AUDIT_VERBOS = {
+    'CREAR': 'creó', 'CREO': 'creó', 'NUEVO': 'creó', 'ALTA': 'dio de alta',
+    'EDITAR': 'modificó', 'ACTUALIZAR': 'actualizó', 'MODIFICAR': 'modificó',
+    'CAMBIAR': 'cambió', 'CORREGIR': 'corrigió', 'AJUSTAR': 'ajustó',
+    'APROBAR': 'aprobó', 'RECHAZAR': 'rechazó', 'LIBERAR': 'liberó',
+    'ANULAR': 'anuló', 'CANCELAR': 'canceló', 'ELIMINAR': 'eliminó',
+    'BORRAR': 'eliminó', 'ARCHIVAR': 'archivó', 'DESACTIVAR': 'desactivó',
+    'VERIFICAR': 'verificó', 'FIRMAR': 'firmó', 'VALIDAR': 'validó',
+    'REGISTRAR': 'registró', 'INICIAR': 'inició', 'COMPLETAR': 'completó',
+    'CERRAR': 'cerró', 'ABRIR': 'abrió', 'ASIGNAR': 'asignó',
+    'CONFIGURAR': 'configuró', 'RESTAURAR': 'restauró', 'REVERTIR': 'revirtió',
+    'PAGAR': 'pagó', 'RECIBIR': 'recibió', 'DESPACHAR': 'despachó',
+    'ENVIAR': 'envió', 'GENERAR': 'generó', 'IMPORTAR': 'importó',
+    'MAPEAR': 'mapeó', 'FUSIONAR': 'fusionó', 'RENOMBRAR': 'renombró',
+    'RECONCILIAR': 'reconcilió', 'SINCRONIZAR': 'sincronizó',
+    'OBSOLETAR': 'obsoletó', 'DESCONTAR': 'descontó', 'PROGRAMAR': 'programó',
+    'REPROGRAMAR': 'reprogramó', 'SOLICITAR': 'solicitó', 'AUTORIZAR': 'autorizó',
+    'VINCULAR': 'vinculó', 'REVINCULAR': 'revinculó', 'BACKFILL': 'reconstruyó',
+    'AUTO': 'el sistema ejecutó', 'MARCAR': 'marcó', 'DISPONER': 'dispuso',
+}
+
+# Que es cada tabla, en palabras, y a que dominio del proceso pertenece.
+# Un auditor pregunta por DOMINIO ("mostrame todo lo de envasado"), no por tabla.
+_AUDIT_TABLAS = {
+    'movimientos': ('el kardex de materia prima', 'materiales'),
+    'movimientos_mee': ('el kardex de envases', 'materiales'),
+    'maestro_mps': ('el maestro de materias primas', 'materiales'),
+    'maestro_mee': ('el maestro de envases', 'materiales'),
+    'conteo_items': ('el conteo cíclico', 'materiales'),
+    'marcacion_ordenes': ('la marcación de envases', 'materiales'),
+    'mbr_templates': ('el instructivo maestro (MBR)', 'manufactura'),
+    'ebr_ejecuciones': ('el legajo del lote (batch record)', 'manufactura'),
+    'ebr_pasos_ejecutados': ('los pasos del legajo', 'manufactura'),
+    'ebr_pesajes': ('el pesaje de materias primas', 'manufactura'),
+    'ebr_despeje_items': ('el despeje de línea', 'manufactura'),
+    'ebr_ajustes_mp': ('los ajustes de materia prima en proceso', 'manufactura'),
+    'produccion_programada': ('el calendario de producción', 'manufactura'),
+    'producciones': ('el registro de fabricación', 'manufactura'),
+    'formula_headers': ('la fórmula maestra', 'manufactura'),
+    'formula_items': ('los ingredientes de la fórmula', 'manufactura'),
+    'ebr_envasado_unidades': ('las unidades envasadas', 'envasado'),
+    'ebr_conciliacion_material': ('la conciliación de material de envase', 'envasado'),
+    'ebr_artes_codificacion': ('las artes y la codificación', 'acondicionamiento'),
+    'producto_presentaciones': ('las presentaciones del producto', 'envasado'),
+    'ipc_estandar_resultados': ('los controles en proceso', 'calidad'),
+    'ipc_resultados': ('los controles en proceso del instructivo', 'calidad'),
+    'no_conformidades': ('las no conformidades', 'calidad'),
+    'desviaciones': ('las desviaciones', 'calidad'),
+    'capa_acciones': ('las acciones correctivas (CAPA)', 'calidad'),
+    'quejas_clientes': ('las quejas de clientes', 'calidad'),
+    'calidad_oos': ('los resultados fuera de especificación', 'calidad'),
+    'coa_resultados': ('los certificados de análisis', 'calidad'),
+    'equipos_planta': ('los equipos de planta', 'calidad'),
+    'equipos_eventos': ('la bitácora de calibración', 'calidad'),
+    'checklist_items': ('las verificaciones GMP', 'procedimientos'),
+    'documentos_sgd': ('el sistema de gestión documental', 'procedimientos'),
+    'documentos_regulados': ('el expediente de documentos', 'procedimientos'),
+    'control_cambios': ('el control de cambios', 'procedimientos'),
+    'e_signatures': ('las firmas electrónicas', 'procedimientos'),
+    'ordenes_compra': ('las órdenes de compra', 'compras'),
+    'solicitudes_compra': ('las solicitudes de compra', 'compras'),
+    'proveedores': ('el maestro de proveedores', 'compras'),
+    'facturas_proveedor': ('las facturas de proveedor', 'compras'),
+    'flujo_egresos': ('el libro de egresos', 'dinero'),
+    'flujo_ingresos': ('el libro de ingresos', 'dinero'),
+    'caja_movimientos': ('la caja', 'dinero'),
+    'pagos_oc': ('los pagos de órdenes de compra', 'dinero'),
+    'pagos_influencers': ('los pagos a creadores', 'dinero'),
+    'pedidos_b2b': ('los pedidos de clientes', 'clientes'),
+    'clientes': ('el maestro de clientes', 'clientes'),
+    'stock_pt': ('el inventario de producto terminado', 'materiales'),
+    'users_passwords': ('las cuentas de usuario', 'personas'),
+    'app_settings': ('la configuración del sistema', 'procedimientos'),
+}
+
+# Campos que no aportan nada al leer un cambio (ruido tecnico).
+_AUDIT_CAMPOS_RUIDO = {
+    'id', 'creado_at', 'actualizado_at', 'creado_at_utc', 'updated_at',
+    'created_at', 'ip', 'signature_id', 'hash', 'token',
+}
+
+_AUDIT_CAMPOS_NOMBRE = {
+    'estado': 'estado', 'estado_lote': 'estado del lote', 'cantidad': 'cantidad',
+    'cantidad_kg': 'kilos', 'cantidad_real_g': 'gramos reales', 'lote': 'lote',
+    'texto': 'texto', 'motivo': 'motivo', 'observaciones': 'observaciones',
+    'precio_referencia': 'precio de referencia', 'proveedor': 'proveedor',
+    'fecha_programada': 'fecha programada', 'yield_pct': 'rendimiento',
+    'yield_justificacion': 'justificación del rendimiento',
+    'conforme': 'conformidad', 'valor_texto': 'valor medido',
+    'envase_codigo': 'envase', 'unidades': 'unidades', 'activo': 'activo',
+}
+
+
+def _audit_json(valor):
+    """El antes/despues como dict, o None si no es JSON legible."""
+    if valor is None or valor == '':
+        return None
+    if isinstance(valor, dict):
+        return valor
+    try:
+        d = json.loads(valor)
+        return d if isinstance(d, dict) else None
+    except Exception:
+        return None
+
+
+def _audit_valor_corto(v):
+    if v is None:
+        return 'vacío'
+    if isinstance(v, bool):
+        return 'sí' if v else 'no'
+    if isinstance(v, (list, dict)):
+        try:
+            return '%d elemento(s)' % len(v)
+        except Exception:
+            return 'estructura'
+    s = str(v).strip()
+    if s == '':
+        return 'vacío'
+    return s if len(s) <= 120 else (s[:117] + '...')
+
+
+def _audit_cambios(antes, despues):
+    """Los campos que cambiaron, en palabras. Esto es lo que MyBatch no muestra."""
+    a, d = _audit_json(antes), _audit_json(despues)
+    if a is None and d is None:
+        return []
+    a, d = (a or {}), (d or {})
+    cambios = []
+    for campo in sorted(set(a) | set(d)):
+        if campo in _AUDIT_CAMPOS_RUIDO:
+            continue
+        va, vd = a.get(campo, None), d.get(campo, None)
+        if va == vd:
+            continue
+        cambios.append({
+            'campo': _AUDIT_CAMPOS_NOMBRE.get(campo, campo.replace('_', ' ')),
+            'de': _audit_valor_corto(va) if campo in a else None,
+            'a': _audit_valor_corto(vd) if campo in d else None,
+        })
+    return cambios[:25]
+
+
+def _audit_legible(usuario, accion, tabla, registro_id, antes, despues, detalle):
+    """Una fila del audit trail en lenguaje humano.
+
+    Devuelve `traducido=False` cuando no se pudo armar la frase: un renglon a medio
+    traducir que parece completo es peor que uno crudo, porque el que audita creeria
+    que ya lo leyo (M124/M170).
+    """
+    acc = (accion or '').strip().upper()
+    verbo_clave = acc.split('_')[0] if acc else ''
+    verbo = _AUDIT_VERBOS.get(verbo_clave)
+    nombre_tabla, dominio = _AUDIT_TABLAS.get((tabla or '').strip(), (None, 'otros'))
+    cambios = _audit_cambios(antes, despues)
+
+    quien = (usuario or 'alguien').strip() or 'alguien'
+    if verbo and nombre_tabla:
+        titulo = '%s %s %s' % (quien, verbo, nombre_tabla)
+        traducido = True
+    elif verbo:
+        objeto = ' '.join(acc.split('_')[1:]).lower() or (tabla or '')
+        titulo = '%s %s %s' % (quien, verbo, objeto) if objeto else '%s %s' % (quien, verbo)
+        traducido = bool(objeto)
+    elif nombre_tabla:
+        titulo = '%s tocó %s (%s)' % (quien, nombre_tabla, acc.lower().replace('_', ' '))
+        traducido = True
+    else:
+        titulo = '%s · %s' % (quien, acc.lower().replace('_', ' ') or 'acción sin nombre')
+        traducido = False
+
+    if registro_id not in (None, '', 'auto'):
+        titulo += ' · %s' % _audit_valor_corto(registro_id)
+    return {
+        'titulo': titulo,
+        'dominio': dominio,
+        'cambios': cambios,
+        'traducido': traducido,
+        'nota': (detalle or '').strip()[:300],
+    }
+
+
+_AUDIT_DOMINIOS = ('materiales', 'manufactura', 'envasado', 'acondicionamiento',
+                   'calidad', 'procedimientos', 'compras', 'dinero', 'clientes',
+                   'personas', 'otros')
+
+
+@bp.route('/api/aseguramiento/audit-trail-legible', methods=['GET'])
+def reporte_audit_trail_legible():
+    """El audit trail en lenguaje humano, por dominio del proceso.
+
+    Misma evidencia que `/api/aseguramiento/reportes/audit-trail` (el JSON crudo sigue
+    viniendo en cada fila · es la prueba), presentada de forma que se pueda LEER.
+    """
+    user = session.get('compras_user', '')
+    # Lo ve quien audita: Aseguramiento, Calidad, el director tecnico y admin. Antes el
+    # reporte crudo gateaba solo con CALIDAD_USERS, asi que el DIRECTOR TECNICO -que es
+    # quien responde ante INVIMA- no podia abrir el audit trail (M32).
+    try:
+        from config import ASEGURAMIENTO_USERS as _ASEG, TECNICA_USERS as _TEC
+    except Exception:
+        _ASEG, _TEC = set(), set()
+    if user not in (set(CALIDAD_USERS) | set(ADMIN_USERS) | set(_ASEG) | set(_TEC)):
+        return jsonify({'error': 'Solo Calidad, Aseguramiento, Dirección Técnica o admin'}), 403
+
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    dominio = (request.args.get('dominio') or '').strip().lower()
+    usuario_f = (request.args.get('usuario') or '').strip()
+    q = (request.args.get('q') or '').strip()
+    if not desde:
+        desde = (_hoy_co() - timedelta(days=30)).isoformat()
+    if not hasta:
+        hasta = (_hoy_co() + timedelta(days=1)).isoformat()
+
+    where = ['date(fecha) >= ?', 'date(fecha) <= ?']
+    params = [desde, hasta]
+    if usuario_f:
+        where.append('usuario = ?')
+        params.append(usuario_f)
+    if q:
+        where.append("(UPPER(COALESCE(accion,'')) LIKE ? OR UPPER(COALESCE(tabla,'')) LIKE ? "
+                     "OR UPPER(COALESCE(registro_id,'')) LIKE ?)")
+        like = '%' + q.upper() + '%'
+        params += [like, like, like]
+    # El dominio filtra por las TABLAS de ese dominio, en SQL: filtrarlo en Python
+    # despues del LIMIT haria que "envasado" devolviera 3 de 500 y pareciera que hubo 3
+    # cambios en el mes (M155).
+    if dominio and dominio in _AUDIT_DOMINIOS and dominio != 'otros':
+        tablas = [t for t, (_n, d) in _AUDIT_TABLAS.items() if d == dominio]
+        if tablas:
+            where.append('tabla IN (%s)' % ','.join('?' for _ in tablas))
+            params += tablas
+    w = ' AND '.join(where)
+
+    conn = get_db()
+    # El TOTAL se cuenta aparte del recorte: un total calculado sobre la ventana es un
+    # total falso, y es el numero con el que alguien decide si ya reviso todo (M207).
+    total = 0
+    try:
+        total = int(conn.execute(
+            'SELECT COUNT(*) FROM audit_log WHERE ' + w, params).fetchone()[0] or 0)
+    except Exception as _e:
+        log.warning('audit-trail-legible total fallo: %s', _e)
+
+    limite = 300
+    rows = conn.execute(
+        'SELECT id, usuario, accion, tabla, registro_id, antes, despues, detalle, fecha '
+        'FROM audit_log WHERE ' + w + ' ORDER BY fecha DESC, id DESC LIMIT %d' % limite,
+        params).fetchall()
+
+    items, por_dominio, sin_traducir = [], {}, 0
+    for r in rows:
+        leg = _audit_legible(r[1], r[2], r[3], r[4], r[5], r[6], r[7])
+        if not leg['traducido']:
+            sin_traducir += 1
+        por_dominio[leg['dominio']] = por_dominio.get(leg['dominio'], 0) + 1
+        items.append({
+            'id': r[0], 'fecha': r[8], 'usuario': r[1], 'accion': r[2], 'tabla': r[3],
+            'registro_id': r[4], 'titulo': leg['titulo'], 'dominio': leg['dominio'],
+            'cambios': leg['cambios'], 'traducido': leg['traducido'], 'nota': leg['nota'],
+            # La evidencia cruda SIEMPRE viaja: la traduccion es para leer, el JSON es
+            # la prueba. Esconderla seria empeorar el registro para que se vea lindo.
+            'antes': r[5], 'despues': r[6],
+        })
+
+    return jsonify({
+        'ok': True, 'desde': desde, 'hasta': hasta,
+        'dominio': dominio, 'usuario': usuario_f, 'q': q,
+        'total': total, 'mostrados': len(items),
+        'recortado': max(0, total - len(items)),
+        'sin_traducir': sin_traducir,
+        'por_dominio': por_dominio,
+        'dominios': list(_AUDIT_DOMINIOS),
+        'items': items,
+    })
+
+
+@bp.route('/aseguramiento/audit-trail', methods=['GET'])
+def aseguramiento_audit_trail_page():
+    """Pagina · el audit trail en lenguaje humano (lo que MyBatch muestra como JSON crudo)."""
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/aseguramiento/audit-trail')
+    from templates_py.audit_trail_html import AUDIT_TRAIL_HTML
+    return Response(AUDIT_TRAIL_HTML, mimetype='text/html; charset=utf-8')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ¿QUE FALTA PARA REEMPLAZAR MYBATCH? · medido, no supuesto (15-ago-2026)
+#
+# EOS clono el batch record de MyBatch fase por fase, pero el clon puede estar completo y
+# aun asi no reemplazar nada: el registro de lote nace OCULTO (`brd_visible` default '0')
+# y el modo de control nace en 'off'. Un sistema construido y apagado se ve, desde
+# afuera, exactamente igual que uno que no existe (M181: un respaldo que no corre se ve
+# igual que uno que corre, hasta el dia que hace falta).
+#
+# Esta pantalla contesta con NUMEROS lo que hoy solo se puede contestar de memoria: quien
+# ve el registro de lote, que controles estan encendidos, cuantos productos pueden abrir
+# legajo y cuantos lotes recorrieron cada fase. Cada punto dice DONDE se cambia; no
+# duplica el interruptor (M3: un solo lugar decide).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _rmb_setting(conn, clave, default=''):
+    try:
+        r = conn.execute("SELECT valor FROM app_settings WHERE clave=? LIMIT 1",
+                         (clave,)).fetchone()
+        return (str(r[0]).strip() if (r and r[0] is not None) else default)
+    except Exception:
+        return default
+
+
+def _rmb_conteo(conn, sql, params=()):
+    """Un COUNT que, si no se puede leer, devuelve None en vez de 0.
+
+    Un cero que nadie pudo calcular se lee como "no hay nada que hacer" y significa lo
+    contrario (M154/M100). La pantalla distingue None de 0.
+    """
+    try:
+        r = conn.execute(sql, params).fetchone()
+        return int(r[0] or 0) if r else 0
+    except Exception as _e:
+        log.warning('estado-reemplazo: no se pudo medir (%s): %s', sql[:60], _e)
+        return None
+
+
+@bp.route('/api/aseguramiento/estado-reemplazo-mybatch', methods=['GET'])
+def estado_reemplazo_mybatch():
+    """Que falta para que EOS reemplace a MyBatch, medido contra la base real."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    puntos = []
+
+    # 1) ¿Quien VE el registro de lote? Nace oculto a proposito (Part 11 sin validar).
+    vis = (_rmb_setting(conn, 'brd_visible', '') or '').lower()
+    if vis in ('1', 'true', 'yes', 'si', 'sí', 'on'):
+        quien, estado = 'todo el equipo', 'ok'
+    elif vis in ('', '0', 'false', 'no', 'off'):
+        quien, estado = 'nadie (está oculto)', 'falta'
+    elif vis == 'admin':
+        quien, estado = 'solo administradores', 'parcial'
+    else:
+        quien, estado = 'solo %s' % vis, 'parcial'
+    puntos.append({
+        'clave': 'visibilidad', 'titulo': 'Quién ve el registro de lote',
+        'estado': estado, 'valor': quien,
+        'porque': 'El batch record nace oculto hasta terminar la validación por un '
+                  'tercero (21 CFR Part 11). Mientras esté oculto, el piso sigue '
+                  'trabajando en MyBatch aunque EOS ya lo tenga todo.',
+        'donde': '/admin/seguridad-planta',
+    })
+
+    # 2) Modo de control: off no bloquea nada, warn avisa, strict bloquea como MyBatch.
+    modo = (_rmb_setting(conn, 'ebr_mode', 'off') or 'off').lower()
+    puntos.append({
+        'clave': 'modo', 'titulo': 'Modo del registro de lote',
+        'estado': {'strict': 'ok', 'warn': 'parcial'}.get(modo, 'falta'),
+        'valor': {'off': 'apagado', 'warn': 'avisa pero no bloquea',
+                  'strict': 'bloquea (como MyBatch)'}.get(modo, modo),
+        'porque': 'En "avisa" un lote se puede liberar con pasos sin firmar. Para '
+                  'presentarlo a INVIMA como reemplazo, el modo tiene que bloquear.',
+        'donde': '/admin/seguridad-planta',
+    })
+
+    # 3) Instructivos aprobados: sin MBR aprobado, un producto no puede abrir legajo.
+    aprobados = _rmb_conteo(
+        conn, "SELECT COUNT(DISTINCT UPPER(TRIM(producto_nombre))) FROM mbr_templates "
+              "WHERE estado='aprobado'")
+    activos = _rmb_conteo(
+        conn, "SELECT COUNT(DISTINCT UPPER(TRIM(producto_nombre))) FROM formula_headers "
+              "WHERE COALESCE(activo,1)=1")
+    faltan_mbr = []
+    if aprobados is not None and activos is not None:
+        try:
+            for r in conn.execute(
+                "SELECT TRIM(f.producto_nombre) FROM formula_headers f "
+                " WHERE COALESCE(f.activo,1)=1 "
+                "   AND UPPER(TRIM(f.producto_nombre)) NOT IN "
+                "       (SELECT UPPER(TRIM(producto_nombre)) FROM mbr_templates "
+                "         WHERE estado='aprobado') "
+                " ORDER BY 1 LIMIT 40").fetchall():
+                if r[0]:
+                    faltan_mbr.append(r[0])
+        except Exception as _e:
+            log.warning('estado-reemplazo: productos sin MBR no legibles: %s', _e)
+    puntos.append({
+        'clave': 'instructivos', 'titulo': 'Productos con instructivo aprobado',
+        'estado': ('ok' if (activos and aprobados and aprobados >= activos)
+                   else ('parcial' if aprobados else 'falta')),
+        'valor': ('%s de %s productos activos' % (aprobados, activos)
+                  if (aprobados is not None and activos is not None) else 'no se pudo medir'),
+        'porque': 'Un producto sin instructivo aprobado no puede abrir legajo: el lote se '
+                  'fabrica igual, pero sin registro de lote digital.',
+        'donde': '/admin/cargar-instructivo',
+        'detalle': faltan_mbr,
+    })
+
+    # 4) Los controles que MyBatch aplica y EOS trae apagados de fábrica.
+    for clave, titulo, porque, donde in (
+        ('exigir_area_limpia', 'Exigir el área limpia antes de producir',
+         'MyBatch no deja arrancar sin el despeje firmado.', '/admin/seguridad-planta'),
+        ('exigir_ipc_estandar', 'Exigir los controles en proceso antes de cerrar',
+         'Sin esto un lote cierra con controles sin registrar.', '/admin/seguridad-planta'),
+        ('exigir_justificacion_yield', 'Exigir justificar un rendimiento anómalo',
+         'Un rendimiento fuera del 80-115% es pérdida de batch, error de tara o '
+         'unidades de otra orden: MyBatch obliga a explicarlo antes de liberar.',
+         '/admin/seguridad-planta'),
+        ('exigir_aprobacion_orden', 'Exigir la aprobación de la orden',
+         'La orden se aprueba una vez y sus lotes la heredan.', '/admin/seguridad-planta'),
+    ):
+        v = (_rmb_setting(conn, clave, '0') or '0').lower()
+        encendido = v in ('1', 'true', 'on', 'si', 'sí', 'yes', 'strict')
+        puntos.append({
+            'clave': clave, 'titulo': titulo,
+            'estado': 'ok' if encendido else 'falta',
+            'valor': 'encendido' if encendido else 'apagado',
+            'porque': porque, 'donde': donde,
+        })
+
+    # 5) ¿El director técnico ya revisó las verificaciones? (configuradas vs de fábrica)
+    cfg = _rmb_conteo(conn, "SELECT COUNT(*) FROM checklist_items")
+    puntos.append({
+        'clave': 'checklists', 'titulo': 'Verificaciones revisadas por el director técnico',
+        'estado': 'ok' if (cfg or 0) > 0 else 'parcial',
+        'valor': ('%s ítems configurados' % cfg) if (cfg or 0) > 0
+                 else 'se usan las listas de fábrica de EOS',
+        'porque': 'Las listas de fábrica ya son las de MyBatch. Que el director técnico '
+                  'las revise y guarde deja constancia de que las aprobó.',
+        'donde': '/aseguramiento/checklists',
+    })
+
+    # 6) Uso REAL: un sistema encendido que nadie usa tampoco reemplaza nada.
+    fases = {}
+    for fase in ('fabricacion', 'envasado', 'acondicionamiento'):
+        fases[fase] = {
+            'legajos': _rmb_conteo(
+                conn, "SELECT COUNT(*) FROM ebr_ejecuciones "
+                      "WHERE COALESCE(fase,'fabricacion')=?", (fase,)),
+            'liberados': _rmb_conteo(
+                conn, "SELECT COUNT(*) FROM ebr_ejecuciones "
+                      "WHERE COALESCE(fase,'fabricacion')=? AND estado='liberado'", (fase,)),
+        }
+    total_legajos = sum((f['legajos'] or 0) for f in fases.values())
+    puntos.append({
+        'clave': 'uso', 'titulo': 'Lotes que ya se registraron en EOS',
+        'estado': 'ok' if total_legajos >= 3 else ('parcial' if total_legajos else 'falta'),
+        'valor': '%d legajos (%s)' % (
+            total_legajos,
+            ' · '.join('%s: %s' % (k[:4], (v['legajos'] or 0)) for k, v in fases.items())),
+        'porque': 'Para pedir la certificación hay que poder mostrar lotes recorridos de '
+                  'punta a punta en EOS, no sólo la capacidad de hacerlo.',
+        'donde': '/calidad/maestro-lotes',
+    })
+
+    ok = len([p for p in puntos if p['estado'] == 'ok'])
+    falta = len([p for p in puntos if p['estado'] == 'falta'])
+    return jsonify({
+        'ok': True, 'puntos': puntos, 'fases': fases,
+        'listos': ok, 'pendientes': falta, 'total': len(puntos),
+        'parciales': len(puntos) - ok - falta,
+        # Se dice explicitamente que esto NO mide la validacion Part 11 por un tercero,
+        # que es un requisito aparte y no se puede leer de la base: un tablero que promete
+        # mas de lo que mide enseña a desconfiar de todos los demas (M181).
+        'aviso': 'Esto mide lo que EOS puede leer de su propia base. La validación del '
+                 'sistema por un tercero (GAMP 5 · 21 CFR Part 11), que INVIMA pide '
+                 'aparte, no se mide acá.',
+    })
+
+
+@bp.route('/aseguramiento/reemplazo-mybatch', methods=['GET'])
+def aseguramiento_reemplazo_mybatch_page():
+    """Pagina · que falta para que EOS reemplace a MyBatch, medido contra la base real."""
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/aseguramiento/reemplazo-mybatch')
+    from templates_py.reemplazo_mybatch_html import REEMPLAZO_MYBATCH_HTML
+    return Response(REEMPLAZO_MYBATCH_HTML, mimetype='text/html; charset=utf-8')

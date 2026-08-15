@@ -164,6 +164,37 @@ DESPEJE_LINEA_ITEMS = [
 ]
 
 
+def _checklist_configurado(conn, tipo, ambito):
+    """Lo que el director técnico configuró para este ámbito, o None si no tocó nada.
+
+    En MyBatch los ítems del despeje y los controles de atributos son pantallas de
+    configuración del DT; en EOS eran constantes del código y cambiar un ítem exigía un
+    despliegue. Ahora se configuran (Sebastián 15-ago-2026) sin perder lo que el código
+    daba gratis: cada cambio deja su rastro en `audit_log` y el texto de lo YA FIRMADO
+    no se toca nunca (M105 · lo firmado se muestra con el texto que se guardó con él).
+
+    Devuelve None -no una lista vacía- cuando el DT no configuró este ámbito: ahí manda
+    la lista de fábrica. Distinguir "no configurado" de "configurado sin ítems" importa,
+    porque lo segundo dejaría un legajo SIN verificaciones y se vería igual (M124).
+
+    Sólo devuelve los ítems ACTIVOS: uno retirado del procedimiento no se borra (los
+    lotes donde se registró lo siguen mostrando), simplemente deja de pedirse.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT clave, texto, COALESCE(unidad,''), COALESCE(activo,1) "
+            "  FROM checklist_items WHERE tipo=? AND ambito=? "
+            " ORDER BY orden, id", (str(tipo), str(ambito))).fetchall()
+    except Exception as _e:
+        # Sin la tabla (instancia sin migrar) se sigue con las de fábrica · pero se dice,
+        # que un except mudo convierte "no pude leer" en "no hay nada" (M4/M94).
+        log.warning("checklist_items(%s, %s) no legible: %s", tipo, ambito, _e)
+        return None
+    if not rows:
+        return None
+    return [(str(r[0]), str(r[1]), str(r[2] or '')) for r in rows if int(r[3] or 0) == 1]
+
+
 def _fecha_colombia(ts):
     """La fecha (YYYY-MM-DD) de una marca de tiempo UTC, en hora de Colombia (UTC-5).
 
@@ -230,6 +261,26 @@ def despeje_checklist(conn, ebr_id, etapa='dispensacion'):
             'historico': historico,
         }
 
+    # Lo que el DT configuró manda; sin configuración, la lista de fábrica (M3: un solo
+    # lugar decide). La CLAVE de cada ítem es su `item_idx`, no su posición: así el DT
+    # puede reordenar la pantalla sin cambiarle el texto a lo que ya se firmó.
+    cfg = _checklist_configurado(conn, 'despeje', etapa or 'dispensacion')
+    if cfg:
+        filas, vistos = [], set()
+        for clave, texto, _u in cfg:
+            try:
+                idx = int(clave)
+            except (TypeError, ValueError):
+                continue
+            vistos.add(idx)
+            filas.append(_fila(idx, texto))
+        # Un ítem RETIRADO del procedimiento no desaparece del lote donde se registró:
+        # se conserva al final, marcado. Un registro regulado no se borra porque el
+        # procedimiento haya cambiado después.
+        for idx in sorted(k for k in reg if k not in vistos):
+            filas.append(_fila(idx, '', historico=True))
+        return filas
+
     filas = [_fila(i, t) for i, t in enumerate(DESPEJE_LINEA_ITEMS)]
     # ítems registrados que ya no están en el procedimiento vigente (se conservan, al final)
     for idx in sorted(k for k in reg if k >= len(DESPEJE_LINEA_ITEMS)):
@@ -278,8 +329,8 @@ IPC_ESTANDAR_ACONDICIONAMIENTO = [
 ]
 
 
-def _ipc_estandar_de_fase(fase):
-    """Qué controles en proceso se piden en esta fase. UN solo lugar decide (M3)."""
+def _ipc_estandar_fabrica(fase):
+    """La lista de FÁBRICA de esta fase (lo que EOS trae escrito en el código)."""
     f = _fase_canonica(fase or "fabricacion")
     if f == "envasado":
         return IPC_ESTANDAR_ENVASADO
@@ -288,13 +339,28 @@ def _ipc_estandar_de_fase(fase):
     return IPC_ESTANDAR
 
 
+def _ipc_estandar_de_fase(fase, conn=None):
+    """Qué controles en proceso se piden en esta fase. UN solo lugar decide (M3).
+
+    `conn` es opcional a propósito: con conexión se mira lo que el director técnico
+    configuró, y sin ella se responde la lista de fábrica igual que siempre, así que
+    ningún llamador viejo cambia de comportamiento (aditivo · M117).
+    """
+    f = _fase_canonica(fase or "fabricacion")
+    if conn is not None:
+        cfg = _checklist_configurado(conn, 'ipc', f)
+        if cfg:
+            return [(c, t, u) for c, t, u in cfg]
+    return _ipc_estandar_fabrica(f)
+
+
 def _ipc_estandar_ebr(conn, ebr_id):
     """La lista de controles del legajo · si no se puede leer la fase, cae a la de
     fabricación (la de siempre) en vez de quedarse sin controles."""
     try:
         row = conn.execute("SELECT COALESCE(fase,'fabricacion') FROM ebr_ejecuciones "
                            "WHERE id=?", (ebr_id,)).fetchone()
-        return _ipc_estandar_de_fase(row[0] if row else "fabricacion")
+        return _ipc_estandar_de_fase((row[0] if row else "fabricacion"), conn)
     except Exception as _e:
         log.warning("fase del EBR %s no legible para IPC estándar: %s", ebr_id, _e)
         return IPC_ESTANDAR
@@ -13293,3 +13359,286 @@ def ebr_produccion_id(ebr_id):
             (lote,)).fetchone()
         pid = pr[0] if pr else None
     return jsonify({"ok": True, "produccion_id": pid, "lote": lote})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURACION DE LAS VERIFICACIONES · el director tecnico las edita (15-ago-2026)
+#
+# En MyBatch los items del despeje de linea y los controles de atributos son pantallas
+# de configuracion del DT. En EOS eran constantes del codigo: cambiar un item exigia un
+# despliegue, y el DT dependia de que alguien lo hiciera por el.
+#
+# Se hace configurable SIN perder lo que el codigo daba gratis:
+#   · cada cambio queda en `audit_log` con el ANTES y el DESPUES (Part 11 §11.10(e));
+#   · el texto de lo YA FIRMADO no se toca nunca -la vista muestra el texto guardado
+#     con cada registro, no el que hoy ocupe esa posicion (M105);
+#   · un item RETIRADO no se borra: deja de pedirse y sigue apareciendo en los lotes
+#     donde se registro, marcado como historico;
+#   · la identidad de un item es su CLAVE, no su posicion, asi que reordenar la pantalla
+#     no le cambia el significado a ningun `item_idx` ya firmado.
+#
+# La tabla nace VACIA: sin filas manda la lista de fabrica y todo funciona igual que
+# antes de este cambio (aditivo · M117).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CHECKLIST_AMBITOS = {
+    'despeje': ('dispensacion', 'fabricacion', 'envasado', 'acondicionamiento'),
+    'ipc': ('fabricacion', 'envasado', 'acondicionamiento'),
+}
+
+
+def _checklist_puede_configurar(usuario):
+    """Quien puede cambiar un procedimiento GMP: el director tecnico, Aseguramiento y
+    admin. NO Calidad ni produccion: ellos EJECUTAN el procedimiento, no lo definen
+    (segregacion de funciones · el mismo criterio con el que MyBatch se lo da al DT)."""
+    try:
+        return (_batch_role_info(usuario) or {}).get('tipo') in (
+            'director_tecnico', 'aseguramiento', 'admin')
+    except Exception:
+        return False
+
+
+def _checklist_fabrica(tipo, ambito):
+    """La lista de fabrica del ambito, normalizada a (clave, texto, unidad)."""
+    if tipo == 'ipc':
+        return [(c, t, u) for c, t, u in _ipc_estandar_fabrica(ambito)]
+    return [(str(i), t, '') for i, t in enumerate(DESPEJE_LINEA_ITEMS)]
+
+
+def _checklist_filas(conn, tipo, ambito):
+    """Las filas configuradas del ambito, activas e inactivas, en orden."""
+    try:
+        return conn.execute(
+            "SELECT clave, texto, COALESCE(unidad,''), COALESCE(orden,0), COALESCE(activo,1), "
+            "       COALESCE(actualizado_por, creado_por, ''), "
+            "       COALESCE(actualizado_at, creado_at, '') "
+            "  FROM checklist_items WHERE tipo=? AND ambito=? ORDER BY orden, id",
+            (tipo, ambito)).fetchall()
+    except Exception as _e:
+        log.warning('checklist_filas(%s,%s) fallo: %s', tipo, ambito, _e)
+        return []
+
+
+@bp.route('/api/brd/checklists', methods=['GET'])
+def brd_checklists_ver():
+    """Las verificaciones vigentes de un ambito, y de donde salen."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    tipo = (request.args.get('tipo') or 'despeje').strip().lower()
+    if tipo not in _CHECKLIST_AMBITOS:
+        return jsonify({'error': 'tipo invalido', 'validos': sorted(_CHECKLIST_AMBITOS)}), 400
+    ambito = (request.args.get('ambito') or _CHECKLIST_AMBITOS[tipo][0]).strip().lower()
+    conn = get_db()
+    filas = _checklist_filas(conn, tipo, ambito)
+    usuario = session.get('compras_user', '')
+
+    if filas:
+        items = [{'clave': r[0], 'texto': r[1], 'unidad': r[2], 'orden': int(r[3] or 0),
+                  'activo': bool(int(r[4] or 0))} for r in filas]
+        cambios = [(r[6], r[5]) for r in filas if r[6]]
+        ultimo = max(cambios)[0] if cambios else ''
+        por = max(cambios)[1] if cambios else ''
+        origen = 'configurado'
+    else:
+        items = [{'clave': c, 'texto': t, 'unidad': u, 'orden': i, 'activo': True}
+                 for i, (c, t, u) in enumerate(_checklist_fabrica(tipo, ambito))]
+        ultimo, por, origen = '', '', 'fabrica'
+
+    # Cuantos lotes ya firmaron con esta lista: cambiar un procedimiento con lotes
+    # abiertos es una decision, y quien la toma tiene que ver el numero ANTES (M126).
+    abiertos = 0
+    try:
+        if tipo == 'ipc':
+            abiertos = int(conn.execute(
+                "SELECT COUNT(*) FROM ebr_ejecuciones WHERE COALESCE(fase,'fabricacion')=? "
+                "AND estado NOT IN ('liberado','rechazado','cancelado')", (ambito,)
+            ).fetchone()[0] or 0)
+        else:
+            abiertos = int(conn.execute(
+                "SELECT COUNT(DISTINCT ebr_id) FROM ebr_despeje_items "
+                "WHERE COALESCE(etapa,'dispensacion')=?", (ambito,)).fetchone()[0] or 0)
+    except Exception as _e:
+        log.warning('checklists abiertos(%s,%s) fallo: %s', tipo, ambito, _e)
+
+    return jsonify({
+        'ok': True, 'tipo': tipo, 'ambito': ambito, 'items': items,
+        'origen': origen, 'ultimo_cambio': ultimo, 'ultimo_por': por,
+        'legajos_en_curso': abiertos,
+        'puede_configurar': _checklist_puede_configurar(usuario),
+        'ambitos': list(_CHECKLIST_AMBITOS[tipo]),
+    })
+
+
+@bp.route('/api/brd/checklists', methods=['POST'])
+def brd_checklists_guardar():
+    """Guarda las verificaciones de un ambito. Reemplaza el ambito completo.
+
+    Un item NUEVO se agrega SIEMPRE con una clave que nunca se uso: para el despeje eso
+    es el siguiente `item_idx` libre, contando tambien los que ya se retiraron. Reciclar
+    una clave le cambiaria el significado a lo que ya se firmo con ella.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if not _checklist_puede_configurar(user):
+        return jsonify({'error': 'Solo el director tecnico, Aseguramiento o admin pueden '
+                                 'cambiar un procedimiento GMP',
+                        'codigo': 'SIN_PERMISO_CHECKLIST'}), 403
+    d = request.get_json(silent=True) or {}
+    tipo = (d.get('tipo') or '').strip().lower()
+    if tipo not in _CHECKLIST_AMBITOS:
+        return jsonify({'error': 'tipo invalido'}), 400
+    ambito = (d.get('ambito') or '').strip().lower()
+    if ambito not in _CHECKLIST_AMBITOS[tipo]:
+        return jsonify({'error': 'ambito invalido para %s' % tipo,
+                        'validos': list(_CHECKLIST_AMBITOS[tipo])}), 400
+    entrantes = d.get('items')
+    if not isinstance(entrantes, list):
+        return jsonify({'error': 'items debe ser una lista'}), 400
+    limpios = []
+    for it in entrantes:
+        if not isinstance(it, dict):
+            continue
+        texto = (it.get('texto') or '').strip()
+        if not texto:
+            continue
+        limpios.append({
+            'clave': (str(it.get('clave') or '').strip()),
+            'texto': texto[:600],
+            'unidad': (str(it.get('unidad') or '').strip())[:20],
+        })
+    if not limpios:
+        # Una lista vacia dejaria el legajo SIN verificaciones y se veria igual que uno
+        # bien configurado: eso no es relajar un control, es borrarlo (M124/M126).
+        return jsonify({'error': 'La lista no puede quedar vacia: un legajo sin '
+                                 'verificaciones no es un legajo',
+                        'codigo': 'CHECKLIST_VACIO'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    antes_filas = _checklist_filas(conn, tipo, ambito)
+    antes = [{'clave': r[0], 'texto': r[1], 'unidad': r[2], 'activo': bool(int(r[4] or 0))}
+             for r in antes_filas]
+    if not antes:
+        # Primera vez que se configura: la base es la lista de fabrica, para no perder
+        # los items que nadie toco en esta edicion.
+        antes = [{'clave': c, 'texto': t, 'unidad': u, 'activo': True}
+                 for c, t, u in _checklist_fabrica(tipo, ambito)]
+    claves_usadas = {a['clave'] for a in antes}
+
+    # Claves que YA se firmaron alguna vez: no se reciclan jamas.
+    if tipo == 'despeje':
+        try:
+            for r in cur.execute(
+                "SELECT DISTINCT item_idx FROM ebr_despeje_items "
+                "WHERE COALESCE(etapa,'dispensacion')=?", (ambito,)).fetchall():
+                claves_usadas.add(str(int(r[0])))
+        except Exception as _e:
+            log.warning('checklists claves firmadas(%s) fallo: %s', ambito, _e)
+    else:
+        try:
+            for r in cur.execute(
+                "SELECT DISTINCT control_codigo FROM ipc_estandar_resultados").fetchall():
+                if r[0]:
+                    claves_usadas.add(str(r[0]).strip())
+        except Exception as _e:
+            log.warning('checklists codigos usados fallo: %s', _e)
+
+    def _clave_nueva(texto):
+        if tipo == 'despeje':
+            n = 0
+            for k in claves_usadas:
+                try:
+                    n = max(n, int(k) + 1)
+                except (TypeError, ValueError):
+                    continue
+            return str(n)
+        base = ''
+        import unicodedata as _ud
+        plano = ''.join(ch for ch in _ud.normalize('NFKD', texto.lower())
+                        if not _ud.combining(ch))
+        for ch in plano:
+            base += ch if (ch.isalnum()) else '_'
+        base = '_'.join(x for x in base.split('_') if x)[:28] or 'control'
+        cand, i = base, 2
+        while cand in claves_usadas:
+            cand = '%s_%d' % (base[:24], i)
+            i += 1
+        return cand
+
+    finales = []
+    for orden, it in enumerate(limpios):
+        clave = it['clave']
+        if not clave or clave not in claves_usadas:
+            clave = _clave_nueva(it['texto'])
+        claves_usadas.add(clave)
+        finales.append((clave, it['texto'], it['unidad'], orden))
+
+    # import local: este archivo no importa datetime a nivel de modulo
+    from datetime import datetime as _dch, timedelta as _tdch
+    ahora = (_dch.utcnow() - _tdch(hours=5)).isoformat(timespec='seconds')  # ancla Colombia (M24)
+    vivos = {f[0] for f in finales}
+    try:
+        cur.execute("DELETE FROM checklist_items WHERE tipo=? AND ambito=?", (tipo, ambito))
+        for clave, texto, unidad, orden in finales:
+            cur.execute(
+                "INSERT INTO checklist_items (tipo, ambito, clave, texto, unidad, orden, "
+                "activo, creado_por, creado_at, actualizado_por, actualizado_at) "
+                "VALUES (?,?,?,?,?,?,1,?,?,?,?)",
+                (tipo, ambito, clave, texto, unidad, orden, user, ahora, user, ahora))
+        # Lo RETIRADO se conserva inactivo, al final: los lotes donde se registro lo
+        # siguen mostrando. Un registro regulado no se borra porque el procedimiento
+        # haya cambiado despues.
+        base = len(finales)
+        for i, a in enumerate(antes):
+            if a['clave'] in vivos:
+                continue
+            cur.execute(
+                "INSERT INTO checklist_items (tipo, ambito, clave, texto, unidad, orden, "
+                "activo, creado_por, creado_at, actualizado_por, actualizado_at) "
+                "VALUES (?,?,?,?,?,?,0,?,?,?,?)",
+                (tipo, ambito, a['clave'], a['texto'], a.get('unidad', ''), base + i,
+                 user, ahora, user, ahora))
+    except Exception as e:
+        conn.rollback()
+        log.warning('checklists guardar(%s,%s) fallo: %s', tipo, ambito, e)
+        return jsonify({'error': 'No se pudo guardar: %s' % e}), 500
+
+    audit_log(cur, usuario=user, accion='CONFIGURAR_CHECKLIST',
+              tabla='checklist_items', registro_id='%s:%s' % (tipo, ambito),
+              antes={'items': antes},
+              despues={'items': [{'clave': c, 'texto': t, 'unidad': u, 'orden': o}
+                                 for c, t, u, o in finales],
+                       'motivo': (d.get('motivo') or '')[:400]})
+    conn.commit()
+    return jsonify({'ok': True, 'tipo': tipo, 'ambito': ambito,
+                    'items': len(finales),
+                    'retirados': len([a for a in antes if a['clave'] not in vivos])})
+
+
+@bp.route('/api/brd/checklists/restaurar', methods=['POST'])
+def brd_checklists_restaurar():
+    """Vuelve el ambito a la lista de FABRICA (borra la personalizacion, no los registros)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if not _checklist_puede_configurar(user):
+        return jsonify({'error': 'Solo el director tecnico, Aseguramiento o admin',
+                        'codigo': 'SIN_PERMISO_CHECKLIST'}), 403
+    d = request.get_json(silent=True) or {}
+    tipo = (d.get('tipo') or '').strip().lower()
+    ambito = (d.get('ambito') or '').strip().lower()
+    if tipo not in _CHECKLIST_AMBITOS or ambito not in _CHECKLIST_AMBITOS[tipo]:
+        return jsonify({'error': 'tipo o ambito invalido'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    antes = [{'clave': r[0], 'texto': r[1], 'unidad': r[2], 'activo': bool(int(r[4] or 0))}
+             for r in _checklist_filas(conn, tipo, ambito)]
+    if not antes:
+        return jsonify({'ok': True, 'ya_era_de_fabrica': True, 'tipo': tipo, 'ambito': ambito})
+    cur.execute("DELETE FROM checklist_items WHERE tipo=? AND ambito=?", (tipo, ambito))
+    audit_log(cur, usuario=user, accion='RESTAURAR_CHECKLIST',
+              tabla='checklist_items', registro_id='%s:%s' % (tipo, ambito),
+              antes={'items': antes}, despues={'origen': 'fabrica'})
+    conn.commit()
+    return jsonify({'ok': True, 'tipo': tipo, 'ambito': ambito, 'restaurados': len(antes)})

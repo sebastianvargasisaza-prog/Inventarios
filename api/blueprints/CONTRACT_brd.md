@@ -690,3 +690,34 @@ con `CASE WHEN`, no con `MAX(a,b)`, que es escalar en SQLite y agregada en PG (M
 
 Tests: `tests/test_salida_envasado_canonica.py` (en el gate · el guard cubre los DOS cierres y fue
 el que encontró el hermano de acondicionamiento).
+
+---
+
+## INV-14 · Las verificaciones GMP son CONFIGURABLES, pero la clave de un ítem es inmutable
+
+**Desde el 15-ago-2026** el director técnico configura los ítems del despeje de línea y los
+controles en proceso de cada fase (`/aseguramiento/checklists` → `POST /api/brd/checklists`),
+igual que en MyBatch. Antes eran constantes del código y cambiar un ítem exigía un despliegue.
+
+Reglas duras, todas cubiertas por `tests/test_checklists_configurables.py` (en el gate):
+
+- **`checklist_items` nace VACÍA.** Sin filas para un ámbito, mandan las constantes
+  (`DESPEJE_LINEA_ITEMS`, `IPC_ESTANDAR*`). La tabla es la personalización, no la fuente: sin
+  configurar, el sistema se comporta exactamente como antes (aditivo · M117).
+- **UN solo resolvedor por familia.** `despeje_checklist()` y `_ipc_estandar_de_fase(fase, conn)`
+  leen la configuración y caen a la lista de fábrica. Todo consumidor pasa la conexión: sin ella
+  el resolvedor responde la de fábrica, y una pantalla que pide controles distintos a los del
+  legajo se contradice con él (M161 · pasó con la cola de Calidad).
+- **La identidad de un ítem es su CLAVE, no su posición.** Para el despeje la clave es el
+  `item_idx`; **nunca se recicla** — el siguiente libre se calcula contando también los retirados
+  y los que alguna vez se firmaron en `ebr_despeje_items`. El orden de visualización es una
+  columna aparte, así que reordenar la pantalla no le cambia el significado a nada firmado.
+- **El texto de lo ya firmado NO cambia** (Part 11): la vista muestra el `item_texto` guardado con
+  cada registro, no el que hoy ocupe esa posición.
+- **Retirar no borra.** El ítem queda `activo=0`: deja de pedirse y sigue apareciendo, marcado
+  como histórico, en los lotes donde se registró.
+- **Una lista vacía se rechaza** (400 `CHECKLIST_VACIO`): dejar un legajo sin verificaciones no es
+  relajar un control, es borrarlo, y se ve igual que uno bien configurado.
+- **Quien ejecuta el procedimiento no lo define**: configurar es del director técnico,
+  Aseguramiento o admin (403 `SIN_PERMISO_CHECKLIST` al resto). Cada cambio va a `audit_log` con
+  el antes y el después completos.

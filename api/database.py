@@ -11544,6 +11544,34 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         """INSERT INTO app_settings (clave, valor) VALUES ('exigir_justificacion_yield','0')
            ON CONFLICT (clave) DO NOTHING""",
     ]),
+    (435, "checklist_items · el director técnico configura las verificaciones (Sebastián "
+          "15-ago-2026, clonando MyBatch). En MyBatch los ítems del despeje de línea y los "
+          "controles de atributos son pantallas de configuración del DT; en EOS eran constantes "
+          "del código, así que cambiar un ítem exigía un despliegue. Ahora se configuran, PERO "
+          "conservando lo que el código daba gratis: cada cambio queda en audit_log con el antes "
+          "y el después, y el texto de lo YA FIRMADO no se toca nunca (M105). "
+          "NACE VACÍA A PROPÓSITO: sin filas, los resolvedores usan las listas de fábrica y todo "
+          "funciona exactamente igual que hoy · la tabla es la personalización, no la fuente "
+          "(aditivo · M117). La identidad de un ítem es su CLAVE, no su posición: el orden de "
+          "visualización se cambia sin tocar el `item_idx` con el que se firmó.", [
+        """CREATE TABLE IF NOT EXISTS checklist_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL,
+            ambito TEXT NOT NULL,
+            clave TEXT NOT NULL,
+            texto TEXT NOT NULL,
+            unidad TEXT DEFAULT '',
+            orden INTEGER NOT NULL DEFAULT 0,
+            activo INTEGER NOT NULL DEFAULT 1,
+            creado_por TEXT DEFAULT '',
+            creado_at TEXT DEFAULT '',
+            actualizado_por TEXT DEFAULT '',
+            actualizado_at TEXT DEFAULT '',
+            UNIQUE(tipo, ambito, clave)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_checklist_items_ambito "
+        "ON checklist_items(tipo, ambito, activo, orden)",
+    ]),
 ]
 
 

@@ -115,6 +115,9 @@ code{background:var(--cx-border-soft);padding:1px 6px;border-radius:3px;font-fam
   <div class="tab" data-tip="Detección y resolución de códigos de documento repetidos o inconsistentes en el SGD (higiene del sistema documental)." data-tip-pos="bottom" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
   <div class="tab" data-tip="Firmas manuscritas del personal: la rúbrica que se estampa en los documentos al firmar con contraseña (Part 11 §11.50) y el registro de personas nuevas en la inducción (Aseguramiento hace el onboarding)." data-tip-pos="bottom" onclick="goTab('tab-firmas')">&#x270D;&#xFE0F; Firmas</div>
   <div class="tab" data-tip="Bitácora de calibración de equipos (INVIMA): cuándo se calibró cada balanza/equipo, cuándo vence la próxima, quién la hizo, con qué certificado y con qué orden de compra." data-tip-pos="bottom" onclick="goTab('tab-calib')">&#x1F527; Calibración</div>
+  <div class="tab" data-tip="Verificaciones GMP: los ítems del despeje de línea y los controles en proceso de cada fase. Lo que se guarde acá es lo que el piso verifica y lo que Calidad firma. Lo ya firmado nunca cambia de texto." data-tip-pos="bottom" onclick="goTab('tab-checklists')">&#9989; Verificaciones GMP</div>
+  <div class="tab" data-tip="Audit trail en lenguaje humano: quien cambio que, de que a que, con el registro crudo debajo como prueba (21 CFR Part 11). Filtrable por area del proceso." data-tip-pos="bottom" onclick="goTab('tab-audit')">&#128340; Audit trail</div>
+  <div class="tab" data-tip="Que falta para que el registro de lote viva en EOS y no en MyBatch: quien lo ve, que controles estan encendidos, cuantos productos tienen instructivo aprobado. Medido, no supuesto." data-tip-pos="bottom" onclick="goTab('tab-reemplazo')">&#127981; Reemplazo de MyBatch</div>
 </div>
 
 <div class="main">
@@ -1110,6 +1113,30 @@ code{background:var(--cx-border-soft);padding:1px 6px;border-radius:3px;font-fam
   <iframe id="calib-ifr" src="about:blank" title="Bitácora de calibración" style="width:100%;height:78vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"></iframe>
 </div>
 
+<div id="tab-reemplazo" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:13px;color:var(--cx-text-soft)">&#127981; El batch record de EOS nace oculto y con los controles apagados, a proposito. Aca esta medido que falta encender para reemplazar a MyBatch, con el enlace a donde se cambia cada cosa.</div>
+    <a href="/aseguramiento/reemplazo-mybatch" target="_blank" class="btn btn-ghost btn-sm">Abrir en pesta&ntilde;a nueva &#8599;</a>
+  </div>
+  <iframe id="reemplazo-ifr" src="about:blank" title="Reemplazo de MyBatch" style="width:100%;height:78vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"></iframe>
+</div>
+
+<div id="tab-audit" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:13px;color:var(--cx-text-soft)">&#128340; Audit trail &middot; cada cambio del sistema en palabras: quien lo hizo, que toco y de que a que. Debajo de cada renglon queda el registro crudo, que es la prueba.</div>
+    <a href="/aseguramiento/audit-trail" target="_blank" class="btn btn-ghost btn-sm">Abrir en pesta&ntilde;a nueva &#8599;</a>
+  </div>
+  <iframe id="audit-ifr" src="about:blank" title="Audit trail" style="width:100%;height:78vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"></iframe>
+</div>
+
+<div id="tab-checklists" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:13px;color:var(--cx-text-soft)">&#9989; Verificaciones GMP &middot; los ítems del despeje de línea y los controles en proceso de cada fase. Es lo que el piso verifica y lo que Calidad firma antes de liberar. Cambiarlo es del director técnico; lo ya firmado conserva su texto.</div>
+    <a href="/aseguramiento/checklists" target="_blank" class="btn btn-ghost btn-sm">Abrir en pestaña nueva &#8599;</a>
+  </div>
+  <iframe id="checklists-ifr" src="about:blank" title="Verificaciones GMP" style="width:100%;height:78vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"></iframe>
+</div>
+
 </div>
 <script>
 function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
@@ -1239,7 +1266,7 @@ async function withBusy(btn, fn){
   finally { btn.disabled = false; if(btn.textContent !== prev) btn.textContent = prev; }
 }
 
-var _tabIds = ['tab-dash','tab-indic','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf','tab-firmas','tab-calib'];
+var _tabIds = ['tab-dash','tab-indic','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf','tab-firmas','tab-calib','tab-checklists','tab-audit','tab-reemplazo'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -1259,6 +1286,9 @@ function goTab(id){
   else if(id==='tab-conf') loadConflictos();
   else if(id==='tab-firmas'){ var f=document.getElementById('firmas-ifr'); if(f && String(f.src||'').indexOf('firmas-usuarios')<0) f.src='/admin/firmas-usuarios'; }
   else if(id==='tab-calib'){ var g=document.getElementById('calib-ifr'); if(g && String(g.src||'').indexOf('calibracion')<0) g.src='/aseguramiento/calibracion'; }
+  else if(id==='tab-checklists'){ var k=document.getElementById('checklists-ifr'); if(k && String(k.src||'').indexOf('checklists')<0) k.src='/aseguramiento/checklists'; }
+  else if(id==='tab-audit'){ var a=document.getElementById('audit-ifr'); if(a && String(a.src||'').indexOf('audit-trail')<0) a.src='/aseguramiento/audit-trail'; }
+  else if(id==='tab-reemplazo'){ var m=document.getElementById('reemplazo-ifr'); if(m && String(m.src||'').indexOf('reemplazo')<0) m.src='/aseguramiento/reemplazo-mybatch'; }
 }
 
 // === MIS TAREAS · vista consolidada del usuario =======================

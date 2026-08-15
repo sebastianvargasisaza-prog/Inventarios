@@ -275,3 +275,84 @@ observaciones.)
 EOS ya tiene esos roles y la doble firma. Las vistas de planeador, jefe de producción,
 jefe de calidad y operario ya se contrastaron (tabla de arriba); falta el director
 técnico.
+
+---
+
+## Cierre del relevamiento · 15-ago-2026
+
+Los cinco perfiles de MyBatch (planeador, jefe de producción, jefe de calidad, operario y
+director técnico) quedaron recorridos. Lo que faltaba se construyó, y en tres de los
+cuatro puntos EOS no copió: mejoró.
+
+### 1. Maestro de lotes · lo único funcional que faltaba
+
+MyBatch lo tiene en Aseguramiento: por lote, cuántas unidades debían salir y cuántas se
+liberaron, cruzado con la presentación. El dato en EOS estaba **entero** pero repartido en
+tres tablas (`ebr_envasado_unidades`, el granel envasable del legajo, el kardex de PT) y
+sólo se veía abriendo legajo por legajo: la pregunta que hace un auditor no tenía pantalla.
+
+`/calidad/maestro-lotes` la arma con consultas agregadas, y agrega lo que MyBatch no tiene:
+
+- **de dónde salió** el lote (el calendario, con sus kilos y su fecha),
+- **para quién es** (los clientes B2B con sus unidades, su envase y la foto),
+- **qué debía salir**: el granel envasable repartido por VOLUMEN de la mezcla real, no por
+  unidades — una unidad de 30 mL se lleva el triple de granel que una de 10.
+- **con qué se envasó**: el material de envase del lote — lo que se pidió, lo que Compras
+  entregó, lo que la línea usó, lo que volvió a bodega y lo que se rompió — con la
+  diferencia sin explicar derivada del helper canónico, nunca recalculada aparte. Lo que
+  se pidió y no llegó se señala y enlaza a Compras: eso es lo que hay que reclamar.
+
+Sin granel medido **no se estima**: se declara. Una teórica inventada se lee igual que una
+medida, y sobre ésa se firma.
+
+### 2. Checklists configurables · igual que MyBatch, con lo que el código daba gratis
+
+El director técnico ya edita los ítems del despeje y los controles de cada fase desde
+`/aseguramiento/checklists`. Lo que se conservó y MyBatch no muestra:
+
+- cada cambio queda en `audit_log` **con el antes y el después completos**;
+- **el texto de lo ya firmado no cambia nunca** — la vista muestra el texto que se guardó
+  con cada registro, no el que hoy ocupe esa posición;
+- un ítem retirado **sigue apareciendo** en los lotes donde se registró, marcado;
+- una clave ya firmada **nunca se recicla**, así que reordenar la pantalla no le cambia el
+  significado a ningún registro;
+- la tabla **nace vacía**: sin configurar, todo funciona exactamente como antes.
+
+### 3. Audit trail legible · acá no se copia
+
+MyBatch imprime el JSON de Django. EOS ya guardaba antes/después, así que
+`/aseguramiento/audit-trail` lo dice en palabras — *"laura liberó el legajo del lote ·
+estado: completado → liberado"* — filtrable por área del proceso, con el registro crudo
+debajo de cada renglón como prueba. Lo que no se puede traducir se declara en vez de
+quedar a medias.
+
+De paso apareció que el reporte crudo anterior devolvía `total = len(items)` con
+`LIMIT 500`: con 3.000 cambios en el rango decía "total: 500", que es justo el número con
+el que alguien decide si ya revisó todo.
+
+### 4. Qué falta para reemplazar MyBatch de verdad
+
+El clon puede estar completo y no reemplazar nada: **el registro de lote de EOS nace
+oculto** (`brd_visible` default `'0'`) y **el modo de control nace apagado** (`ebr_mode`
+`'off'`), a propósito, hasta terminar la validación Part 11. Un sistema construido y
+apagado se ve, desde afuera, igual que uno que no existe.
+
+`/aseguramiento/reemplazo-mybatch` lo mide contra la base real y dice dónde se cambia cada
+cosa: quién ve el registro de lote, el modo, los cuatro controles que MyBatch aplica y EOS
+trae apagados, cuántos productos tienen instructivo aprobado (con la lista de los que no),
+si el DT ya revisó las verificaciones, y cuántos lotes recorrieron cada fase.
+
+Declara explícitamente lo que **no** mide: la validación del sistema por un tercero
+(GAMP 5), que INVIMA pide aparte y no se puede leer de la base.
+
+### Y un hallazgo que no venía de MyBatch
+
+Al enlazar la pantalla del director técnico apareció que **la matriz de permisos y las
+puertas de los módulos no decían lo mismo**: el menú le ofrecía Aseguramiento al DT y a
+Luz, el gate global los dejaba pasar, y la página los rechazaba con un set propio. El
+barrido -entrar por la ruta de cada módulo con cada persona que la matriz autoriza-
+encontró **seis casos**: `/calidad` rebotaba a Miguel, al director técnico, a Catalina y a
+Luz; `/compras` y `/tecnica` a Luz.
+
+Quedó alineado: **ver** un módulo sale de la matriz, **firmar** sigue con el guard propio
+de cada acción, que es la separación que `config.py` ya declaraba.

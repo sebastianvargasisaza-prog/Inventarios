@@ -1610,6 +1610,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:var(--cx-primary-text);margin:0;">&#128203; Órdenes de Producción <span style="font-weight:400;font-size:13px;color:var(--cx-text-faint)">· histórico</span></h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <a href="/planta/activar-legajos" style="background:var(--cx-primary);color:#fff;text-decoration:none;padding:7px 14px;font-size:0.85em;border-radius:6px;font-weight:700">&#127981; Activar legajos automáticos</a>
+          <a href="/calidad/maestro-lotes" title="Maestro de lotes: por cada lote, cuántas unidades debían salir de ese granel, cuántas se envasaron y cuántas se liberaron · con el desglose por presentación" style="background:var(--cx-card);color:var(--cx-primary-text);border:1px solid var(--cx-primary-light);text-decoration:none;padding:7px 14px;font-size:0.85em;border-radius:6px;font-weight:700">&#128202; Maestro de lotes</a>
           <button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button>
         </div>
       </div>

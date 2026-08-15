@@ -220,7 +220,16 @@ def tecnica_page():
     # Separar check de sesion vs check de rol para dar respuesta correcta
     if 'compras_user' not in session:
         return redirect('/login?next=/tecnica')
-    if not _check_access():
+    # VER la pantalla sale de la matriz de módulos; las mutaciones siguen con
+    # `_check_access` (TECNICA_USERS), que no se toca. Antes las dos cosas usaban el
+    # mismo set, más estricto que la matriz: a Luz el menú le ofrecía Técnica y al
+    # entrar le rebotaba (M32/M97).
+    try:
+        from config import puede_ver_modulo as _puede_mod
+        _ve = _puede_mod(session.get('compras_user', ''), 'tecnica')
+    except Exception:
+        _ve = _check_access()
+    if not _ve:
         return Response(sin_acceso_html('Tecnica'), mimetype='text/html')
     return Response(TECNICA_HTML, mimetype='text/html')
 

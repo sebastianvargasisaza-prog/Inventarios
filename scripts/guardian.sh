@@ -568,6 +568,26 @@ CORAZON=(
   # del lote: sin saber cual es cual, el numero no se puede revisar. El dato ya viajaba del
   # backend; faltaba pintarlo. Se verifican las DOS puntas.
   "tests/test_presentacion_identificada.py"
+  # Maestro de lotes (lo unico funcional que MyBatch tenia y EOS no armaba): por lote,
+  # cuantas unidades debian salir de ese granel, cuantas se envasaron y cuantas se
+  # liberaron. Un lote fisico es UN renglon aunque tenga tres legajos, la teorica se
+  # reparte por VOLUMEN, y sin granel medido se declara en vez de estimarse.
+  "tests/test_maestro_lotes.py"
+  # El director tecnico configura el despeje y los controles, como en MyBatch, pero el
+  # texto de lo YA FIRMADO nunca cambia y una clave firmada no se recicla. Sin configurar,
+  # todo sigue igual que antes: la tabla nace vacia a proposito.
+  "tests/test_checklists_configurables.py"
+  # La matriz de permisos y la puerta de cada modulo tienen que decir LO MISMO. Habia seis
+  # personas a las que el menu les ofrecia un modulo y la pagina les contestaba "sin
+  # acceso": dos gates del mismo modulo con criterios distintos.
+  "tests/test_matriz_permisos_coherente.py"
+  # El audit trail en lenguaje humano (MyBatch muestra el JSON crudo de Django). El crudo
+  # sigue viajando como prueba, lo que no se pudo traducir se declara, y el TOTAL se cuenta
+  # aparte del recorte -el reporte viejo decia "total: 500" con 3.000 cambios en el rango.
+  "tests/test_audit_trail_legible.py"
+  # Que falta para reemplazar MyBatch, medido contra la base: un batch record completo pero
+  # OCULTO y con los controles apagados se ve, desde afuera, igual que uno que no existe.
+  "tests/test_estado_reemplazo_mybatch.py"
 )
 
 echo ""

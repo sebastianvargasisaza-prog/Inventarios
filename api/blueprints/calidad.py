@@ -67,7 +67,18 @@ def calidad_page():
     if 'compras_user' not in session:
         return redirect('/login?next=/calidad')
     u = session.get('compras_user', '')
-    if u not in CALIDAD_USERS:
+    # VER la pantalla sale de la matriz de módulos (la única fuente · la usan el menú y el
+    # gate global); MUTAR sigue gateado aparte por `_require_calidad` (CALIDAD_USERS), que
+    # es justo la separación que config.py declara: cambiar quién VE una pantalla no puede
+    # cambiar quién FIRMA. Antes esta página usaba CALIDAD_USERS para las dos cosas, así
+    # que el menú le ofrecía Calidad a Miguel, al director técnico, a Catalina y a Luz -que
+    # la matriz sí incluye- y al entrar les rebotaba (M32/M97/M161).
+    try:
+        from config import puede_ver_modulo as _puede_mod
+        _permitido = _puede_mod(u, 'calidad')
+    except Exception:
+        _permitido = u in CALIDAD_USERS
+    if not _permitido:
         return Response(sin_acceso_html('Calidad BPM'), mimetype='text/html')
     # Tooltips premium "para qué sirve" (data-tip) · mismo sistema global que el resto de EOS
     html = CALIDAD_HTML
@@ -978,8 +989,17 @@ def calidad_bandeja():
                 "WHERE ebr_id IN (%s)" % _ph, _ids).fetchall():
                 _reg[(rr[0], rr[1])] = rr[2]
         items = []
+        # La conexión va SIEMPRE: sin ella este resolvedor responde la lista de fábrica,
+        # así que la cola de Calidad pediría controles distintos a los que el legajo
+        # muestra si el director técnico configuró la fase. Dos pantallas contando
+        # historias distintas del mismo hecho es lo que hace que se deje de creer en las
+        # dos (M161). El catálogo por fase se resuelve una vez, no una por legajo (M43).
+        _cat_fase = {}
         for r in rows:
-            for cod, nom, uni in _ipc_estandar_de_fase(r[3]):
+            _f = r[3] or 'fabricacion'
+            if _f not in _cat_fase:
+                _cat_fase[_f] = _ipc_estandar_de_fase(_f, c)
+            for cod, nom, uni in _cat_fase[_f]:
                 # 'registrado' = adjudicado por Calidad (conforme 0/1) o marcado
                 # 'No aplica' (2). Un valor anotado sin adjudicar sigue PENDIENTE:
                 # falta la firma de quien decide.
@@ -2700,6 +2720,7 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
   <div class="cx-mod-header__sub"><strong>Calidad</strong> &middot; trazabilidad hacia atrás &middot; INVIMA</div></div>
   <div class="cx-mod-header__nav">
     <a href="/calidad/expediente" class="cx-btn cx-btn-ghost cx-btn-sm">&#128193; Expediente</a>
+    <a href="/calidad/maestro-lotes" class="cx-btn cx-btn-ghost cx-btn-sm" title="Unidades por lote y presentacion: cuantas debian salir, cuantas se envasaron y cuantas se liberaron">&#128202; Maestro de lotes</a>
     <a href="/calidad" class="cx-btn cx-btn-ghost cx-btn-sm">&larr; Calidad</a>
     <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg></button>
   </div>
@@ -2878,6 +2899,7 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
   </div>
   <div class="cx-mod-header__nav">
     <a href="/calidad/genealogia" class="cx-btn cx-btn-ghost cx-btn-sm" title="Genealog&iacute;a: de qu&eacute; est&aacute; hecho un lote de producto terminado (MP, área, equipos, envasado)">&#129514; Genealog&iacute;a de PT</a>
+    <a href="/calidad/maestro-lotes" class="cx-btn cx-btn-ghost cx-btn-sm" title="Unidades por lote y presentacion: cuantas debian salir, cuantas se envasaron y cuantas se liberaron">&#128202; Maestro de lotes</a>
     <a href="/calidad" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver a Calidad">&larr; Calidad</a>
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Todos los m&oacute;dulos">M&oacute;dulos</a>
     <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg></button>
@@ -4976,3 +4998,587 @@ def calidad_equipos_importar_cronograma():
         'saltados_ya_existian': saltados,
         'errores': errores[:20],
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAESTRO DE LOTES · lote x presentacion, teoricas vs liberadas (15-ago-2026)
+#
+# Es la unica vista funcional que MyBatch tiene (Aseguramiento > "Maestro de lotes")
+# y EOS no armaba: el dato estaba entero -unidades por presentacion en
+# `ebr_envasado_unidades`, granel envasable en el propio legajo, liberacion en el
+# kardex de PT- pero repartido en tres tablas y solo visible ABRIENDO legajo por
+# legajo. Un auditor pregunta "de este lote, cuantas salieron y cuantas se liberaron"
+# y esa pregunta no tenia pantalla (M121 en su forma suave: la capacidad existe, pero
+# esta a un click que nadie da).
+#
+# Y aca EOS puede ser mejor que MyBatch sin inventar nada: el mismo cuadro trae de
+# donde SALIO el lote (el calendario), para QUIEN es (los clientes B2B con su envase y
+# su foto) y con que se envaso. MyBatch muestra lote x presentacion y nada mas.
+#
+# Rendimiento: TODO se arma con consultas agregadas sobre la ventana. Ni una consulta
+# por lote -llamar al repartidor de envases por fila es exactamente lo que satura los
+# tres workers (M43/M63)- y el TOTAL se cuenta APARTE del recorte, porque un total
+# calculado sobre una ventana recortada es un total falso (M155/M207).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Cuantos lotes fisicos entrega una pagina. El total NO sale de aca.
+_MAESTRO_LOTES_PAGINA = 60
+# Techo de legajos que se leen para armar esa pagina (hasta 3 fases por lote + margen).
+_MAESTRO_LOTES_LEGAJOS = 600
+
+_MAESTRO_FASE_ORDEN = {'fabricacion': 1, 'envasado': 2, 'acondicionamiento': 3}
+
+
+def _maestro_lote_fisico(lote_codigo, lote):
+    """El lote FISICO. La columna `lote` lleva sufijo de fase (-OF/-OA) porque es UNIQUE
+    (M10); lo que un auditor busca es el lote de verdad, que vive en `lote_codigo`."""
+    return (str(lote_codigo or '').strip() or str(lote or '').strip())
+
+
+def _maestro_teoricas_por_presentacion(ml_envasable, presentaciones):
+    """Cuantas unidades DEBIERON salir de este granel, presentacion por presentacion.
+
+    No se llama al repartidor de envases (pesado · una consulta por lote tumba la
+    pantalla · M43): se reparte el granel envasable en la MISMA proporcion de VOLUMEN
+    que lo realmente envasado. Eso contesta la pregunta de la conciliacion -"con este
+    granel y esta mezcla, cuantas debieron salir"- y es dimensionalmente correcto: una
+    unidad de 30 ml se lleva el triple de granel que una de 10 (M72).
+
+    Si no hay granel envasable medido, devuelve None y la pantalla lo DICE: una teorica
+    inventada se lee igual que una medida, y sobre esta se firma (M124).
+    """
+    try:
+        ml_tot = float(ml_envasable or 0)
+    except Exception:
+        ml_tot = 0.0
+    if ml_tot <= 0:
+        return None
+    volumen_ocupado = 0.0
+    for p in presentaciones:
+        volumen_ocupado += float(p.get('volumen_ml') or 0) * float(p.get('registradas') or 0)
+    if volumen_ocupado <= 0:
+        return None
+    out = {}
+    for p in presentaciones:
+        ml_u = float(p.get('volumen_ml') or 0)
+        if ml_u <= 0:
+            continue
+        porcion = (ml_u * float(p.get('registradas') or 0)) / volumen_ocupado
+        out[p.get('codigo') or ''] = int(round((ml_tot * porcion) / ml_u))
+    return out
+
+
+@bp.route('/api/calidad/maestro-lotes', methods=['GET'])
+def calidad_maestro_lotes():
+    """Maestro de lotes · un renglon por lote FISICO con su cuadro de unidades.
+
+    Lectura pura. La ve quien trabaja con lotes (Calidad, Aseguramiento, Planta y
+    admin): es la pantalla que se le muestra a una auditoria, y cerrarla a un solo rol
+    la vuelve inalcanzable justo para quien la necesita (M32/M121).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    q = (request.args.get('q') or '').strip()
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+
+    where, params = [], []
+    if q:
+        like = '%' + q.upper() + '%'
+        where.append("(UPPER(COALESCE(e.lote_codigo,'')) LIKE ? OR UPPER(e.lote) LIKE ? "
+                     "OR UPPER(COALESCE(m.producto_nombre,'')) LIKE ? "
+                     "OR UPPER(COALESCE(e.numero_op,'')) LIKE ?)")
+        params += [like, like, like, like]
+    if desde:
+        where.append("substr(COALESCE(e.iniciado_at_utc,''),1,10) >= ?")
+        params.append(desde)
+    if hasta:
+        where.append("substr(COALESCE(e.iniciado_at_utc,''),1,10) <= ?")
+        params.append(hasta)
+    w = (' WHERE ' + ' AND '.join(where)) if where else ''
+
+    # 1) TOTAL de lotes fisicos que cumplen el filtro. Se cuenta sobre TODO, nunca sobre
+    #    la ventana: un total calculado sobre un recorte es un total falso (M207).
+    total_lotes = 0
+    try:
+        total_lotes = int(conn.execute(
+            "SELECT COUNT(*) FROM (SELECT DISTINCT COALESCE(NULLIF(TRIM(e.lote_codigo),''), e.lote) AS lf "
+            "FROM ebr_ejecuciones e LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id" + w + ") t",
+            params).fetchone()[0] or 0)
+    except Exception as _e:
+        log.warning('maestro-lotes total fallo: %s', _e)
+
+    # 2) Los legajos de la ventana (fabricacion + envasado + acondicionamiento).
+    filas = conn.execute(
+        "SELECT e.id, e.lote, COALESCE(e.lote_codigo,''), COALESCE(e.fase,'fabricacion'), "
+        "       e.estado, COALESCE(m.producto_nombre,''), COALESCE(e.numero_op,''), "
+        "       COALESCE(e.iniciado_at_utc,''), COALESCE(e.liberado_at_utc,''), "
+        "       COALESCE(e.liberado_por,''), e.cantidad_objetivo_g, e.cantidad_real_g, "
+        "       e.yield_pct, e.ml_envasable, e.densidad_g_ml, e.unidades_teoricas, "
+        "       e.unidades_buenas_real, e.produccion_id, COALESCE(pp.cantidad_kg,0), "
+        "       COALESCE(pp.fecha_programada,''), COALESCE(e.yield_justificacion,'') "
+        "  FROM ebr_ejecuciones e "
+        "  LEFT JOIN mbr_templates m ON m.id = e.mbr_template_id "
+        "  LEFT JOIN produccion_programada pp ON pp.id = e.produccion_id" + w +
+        " ORDER BY e.iniciado_at_utc DESC, e.id DESC LIMIT %d" % _MAESTRO_LOTES_LEGAJOS,
+        params).fetchall()
+
+    lotes, orden = {}, []
+    for r in filas:
+        lf = _maestro_lote_fisico(r[2], r[1])
+        if not lf:
+            continue
+        if lf not in lotes:
+            lotes[lf] = {
+                'lote': lf, 'producto': r[5] or '', 'numero_op': r[6] or '',
+                'fecha': (r[19] or (r[7] or '')[:10]), 'kg': float(r[18] or 0),
+                'produccion_id': (int(r[17]) if r[17] else None),
+                'fases': {}, 'granel_g': None, 'ml_envasable': None,
+                'densidad_g_ml': None, 'yield_pct': None, 'yield_justificacion': '',
+                'unidades': {'teoricas': None, 'registradas': 0, 'liberadas': None,
+                             'diferencia': None, 'yield_uds_pct': None},
+                'presentaciones': [], 'clientes': [], 'unidades_clientes': 0,
+                'materiales': [], 'material_sin_entregar': 0.0,
+                'material_sin_explicar': 0.0,
+                'pt_vigente': 0.0, 'pt_cuarentena': 0.0,
+            }
+            orden.append(lf)
+        L = lotes[lf]
+        fase = r[3] or 'fabricacion'
+        L['fases'][fase] = {
+            'ebr_id': r[0], 'estado': r[4] or '', 'llave': r[1],
+            'liberado_at': r[8] or '', 'liberado_por': r[9] or '',
+            'objetivo_g': float(r[10] or 0),
+            'real_g': (float(r[11]) if r[11] is not None else None),
+            'yield_pct': (float(r[12]) if r[12] is not None else None),
+        }
+        if not L['producto'] and r[5]:
+            L['producto'] = r[5]
+        if not L['produccion_id'] and r[17]:
+            L['produccion_id'] = int(r[17])
+        if fase == 'fabricacion':
+            L['granel_g'] = (float(r[11]) if r[11] is not None else None)
+            L['yield_pct'] = (float(r[12]) if r[12] is not None else None)
+            L['yield_justificacion'] = r[20] or ''
+        if r[13] is not None and float(r[13] or 0) > 0:
+            L['ml_envasable'] = float(r[13])
+        if r[14] is not None and float(r[14] or 0) > 0:
+            L['densidad_g_ml'] = float(r[14])
+        if r[15] is not None and float(r[15] or 0) > 0:
+            L['unidades']['teoricas'] = int(float(r[15]))
+
+    # El recorte se mide DESPUES de recortar, o el numero declarado no es el que falta.
+    orden = orden[:_MAESTRO_LOTES_PAGINA]
+    vista = {k: lotes[k] for k in orden}
+    recortado = max(0, total_lotes - len(orden))
+    ids = [f['ebr_id'] for L in vista.values() for f in L['fases'].values()]
+
+    # 3) Unidades por presentacion · UNA consulta para toda la pagina.
+    if ids:
+        ph = ','.join('?' for _ in ids)
+        por_ebr = {}
+        try:
+            for r in conn.execute(
+                "SELECT ebr_id, COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), "
+                "       COALESCE(volumen_ml,0), COALESCE(unidades,0) "
+                "  FROM ebr_envasado_unidades WHERE ebr_id IN (%s)" % ph, ids).fetchall():
+                if float(r[4] or 0) <= 0:
+                    continue
+                por_ebr.setdefault(r[0], []).append({
+                    'codigo': r[1] or '', 'etiqueta': r[2] or '',
+                    'volumen_ml': float(r[3] or 0), 'registradas': int(float(r[4] or 0)),
+                    'teoricas': None, 'diferencia': None,
+                })
+        except Exception as _e:
+            log.warning('maestro-lotes presentaciones fallo: %s', _e)
+        for L in vista.values():
+            acc = {}
+            for f in L['fases'].values():
+                for p in por_ebr.get(f['ebr_id'], []):
+                    k = (p['codigo'], p['volumen_ml'])
+                    if k in acc:
+                        acc[k]['registradas'] += p['registradas']
+                    else:
+                        acc[k] = dict(p)
+            L['presentaciones'] = sorted(acc.values(),
+                                         key=lambda x: (x['volumen_ml'], x['etiqueta']))
+            L['unidades']['registradas'] = sum(p['registradas'] for p in L['presentaciones'])
+            teo = _maestro_teoricas_por_presentacion(L['ml_envasable'], L['presentaciones'])
+            if teo is not None:
+                for p in L['presentaciones']:
+                    p['teoricas'] = teo.get(p['codigo'])
+                    if p['teoricas'] is not None:
+                        p['diferencia'] = p['registradas'] - p['teoricas']
+                if L['unidades']['teoricas'] is None:
+                    L['unidades']['teoricas'] = sum(teo.values())
+
+    # 3b) El MATERIAL DE ENVASE del lote · la punta que conecta con Compras: lo que se
+    #     pidió, lo que Compras entregó, lo que la línea usó, lo que volvió a bodega y lo
+    #     que se rompió. La DIFERENCIA se deriva con el helper canónico de `brd` -no se
+    #     recalcula acá: dos copias de la misma resta divergen el día que alguien corrige
+    #     una (M3/M99)- y lo que Compras no entregó completo queda señalado aparte.
+    if ids:
+        try:
+            try:
+                from blueprints.brd import _conc_diferencia
+            except Exception:
+                from api.blueprints.brd import _conc_diferencia
+            ph = ','.join('?' for _ in ids)
+            por_ebr_mat = {}
+            for r in conn.execute(
+                "SELECT ebr_id, COALESCE(material_codigo,''), material_nombre, "
+                "       COALESCE(cant_requerida,0), COALESCE(cant_recibida,0), "
+                "       COALESCE(cant_utilizada,0), COALESCE(cant_devuelta,0), "
+                "       COALESCE(cant_averiada,0) "
+                "  FROM ebr_conciliacion_material WHERE ebr_id IN (%s)" % ph, ids).fetchall():
+                por_ebr_mat.setdefault(r[0], []).append({
+                    'codigo': r[1] or '', 'nombre': r[2] or '',
+                    'requerida': float(r[3] or 0), 'recibida': float(r[4] or 0),
+                    'utilizada': float(r[5] or 0), 'devuelta': float(r[6] or 0),
+                    'averiada': float(r[7] or 0),
+                    'diferencia': _conc_diferencia(r[3], r[4], r[6], r[5], r[7]),
+                    # Lo que se pidió y no llegó: es lo que hay que reclamarle a Compras.
+                    'sin_entregar': max(0.0, float(r[3] or 0) - float(r[4] or 0)),
+                })
+            for L in vista.values():
+                mats = []
+                for f in L['fases'].values():
+                    mats.extend(por_ebr_mat.get(f['ebr_id'], []))
+                L['materiales'] = mats
+                L['material_sin_entregar'] = sum(m['sin_entregar'] for m in mats)
+                L['material_sin_explicar'] = sum(
+                    m['diferencia'] for m in mats if m['diferencia'] > 0)
+        except Exception as _e:
+            log.warning('maestro-lotes material de envase fallo: %s', _e)
+
+    # 4) Producto terminado en el kardex · liberado (VIGENTE) vs esperando a Calidad.
+    if orden:
+        ph = ','.join('?' for _ in orden)
+        try:
+            for r in conn.execute(
+                "SELECT lote, UPPER(COALESCE(estado_lote,'')), SUM(COALESCE(cantidad,0)) "
+                "  FROM movimientos WHERE lote IN (%s) AND tipo='Entrada' "
+                "   AND COALESCE(material_id,'') LIKE 'PT\\_%%' ESCAPE '\\' "
+                " GROUP BY lote, UPPER(COALESCE(estado_lote,''))" % ph, orden).fetchall():
+                L = vista.get(r[0])
+                if not L:
+                    continue
+                if r[1] == 'VIGENTE':
+                    L['pt_vigente'] += float(r[2] or 0)
+                elif r[1] in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
+                    L['pt_cuarentena'] += float(r[2] or 0)
+        except Exception as _e:
+            log.warning('maestro-lotes PT fallo: %s', _e)
+
+    # 5) Para QUE CLIENTE es este lote (lo que MyBatch no tiene) · consultas agregadas.
+    pid_de_lote = {lf: L['produccion_id'] for lf, L in vista.items() if L.get('produccion_id')}
+    pids = sorted(set(pid_de_lote.values()))
+    if pids:
+        ph = ','.join('?' for _ in pids)
+        por_pid, codigos = {}, set()
+        try:
+            for r in conn.execute(
+                "SELECT lote_produccion_id, COALESCE(cliente_nombre,''), "
+                "       SUM(COALESCE(unidades_aporte,0)), MAX(COALESCE(envase_codigo,'')), "
+                "       MAX(COALESCE(ml_unidad,0)) FROM pedidos_b2b_lote "
+                " WHERE lote_produccion_id IN (%s) "
+                " GROUP BY lote_produccion_id, cliente_nombre" % ph, pids).fetchall():
+                if float(r[2] or 0) <= 0:
+                    continue
+                cod = (r[3] or '').strip()
+                if cod:
+                    codigos.add(cod.upper())
+                por_pid.setdefault(int(r[0]), []).append({
+                    'cliente': r[1] or '(sin nombre)', 'unidades': int(float(r[2] or 0)),
+                    'volumen_ml': float(r[4] or 0), 'envase_codigo': cod,
+                    'envase_foto': '', 'envase_desc': '',
+                })
+            if codigos:
+                fp = ','.join('?' for _ in codigos)
+                fotos = {}
+                for r in conn.execute(
+                    "SELECT UPPER(TRIM(codigo)), COALESCE(imagen_url,''), COALESCE(descripcion,'') "
+                    "  FROM maestro_mee WHERE UPPER(TRIM(codigo)) IN (%s)" % fp,
+                        sorted(codigos)).fetchall():
+                    fotos[r[0]] = (r[1], r[2])
+                for filas_c in por_pid.values():
+                    for cli in filas_c:
+                        f = fotos.get((cli['envase_codigo'] or '').upper())
+                        if f:
+                            cli['envase_foto'], cli['envase_desc'] = f[0], f[1]
+            for lf, L in vista.items():
+                L['clientes'] = por_pid.get(pid_de_lote.get(lf) or 0, [])
+                L['unidades_clientes'] = sum(c['unidades'] for c in L['clientes'])
+        except Exception as _e:
+            log.warning('maestro-lotes clientes fallo: %s', _e)
+
+    # 6) El estado del LOTE es el de su fase mas avanzada.
+    salida = []
+    for lf in orden:
+        L = vista[lf]
+        fase_final, orden_max = '', 0
+        for fase, f in L['fases'].items():
+            o = _MAESTRO_FASE_ORDEN.get(fase, 1)
+            if o >= orden_max:
+                orden_max, fase_final = o, fase
+        est = (L['fases'].get(fase_final, {}).get('estado') or '').lower()
+        L['fase_final'] = fase_final
+        L['estado'] = est
+        if est == 'liberado':
+            L['estado_liberacion'] = 'liberado'
+            L['unidades']['liberadas'] = L['unidades']['registradas'] or None
+        elif est == 'rechazado':
+            L['estado_liberacion'] = 'rechazado'
+            L['unidades']['liberadas'] = 0
+        elif est in ('completado', 'en_revision_qc'):
+            L['estado_liberacion'] = 'espera_calidad'
+        else:
+            L['estado_liberacion'] = 'en_proceso'
+        t, g = L['unidades']['teoricas'], L['unidades']['registradas']
+        if t:
+            L['unidades']['diferencia'] = g - t
+            L['unidades']['yield_uds_pct'] = round(100.0 * g / t, 1)
+        salida.append(L)
+
+    return jsonify({
+        'ok': True,
+        'lotes': salida,
+        'total': total_lotes,
+        'mostrados': len(salida),
+        'recortado': recortado,
+        # Se DECLARA el recorte y de donde sale la teorica: un numero cuyo origen no se
+        # puede leer no se puede auditar, y este cuadro se firma (M124/M155).
+        'teorica_origen': 'granel envasable repartido por el volumen de la mezcla real',
+        'pagina': _MAESTRO_LOTES_PAGINA,
+    })
+
+
+@bp.route('/calidad/maestro-lotes', methods=['GET'])
+def calidad_maestro_lotes_page():
+    """Pagina · Maestro de lotes (el cuadro de unidades que MyBatch tiene en Aseguramiento)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/calidad/maestro-lotes')
+    return Response(_MAESTRO_LOTES_HTML, mimetype='text/html')
+
+
+_MAESTRO_LOTES_HTML = r"""<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>Maestro de lotes &middot; Calidad &middot; EOS</title>
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
+<style>
+body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',system-ui,-apple-system,sans-serif;}
+*{box-sizing:border-box}
+.ml-wrap{width:96vw;max-width:1720px;margin:0 auto;padding:22px 18px 72px;}
+.ml-intro{color:var(--cx-text-mute);font-size:13.5px;line-height:1.55;max-width:900px;margin:0 0 16px;}
+.card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:18px;box-shadow:0 1px 3px rgba(15,23,42,.04),0 10px 30px rgba(15,23,42,.05);padding:20px 22px;margin-bottom:16px;}
+.searchbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+#q{flex:1;min-width:260px;font-size:15px;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:16px;}
+.kpi{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:14px;padding:14px 16px;position:relative;overflow:hidden;}
+.kpi:before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cx-hairline);}
+.kpi.ok:before{background:var(--cx-success-text, #15803d);} .kpi.esp:before{background:var(--cx-warn-text, #b45309);}
+.kpi.dif:before{background:var(--cx-danger-text, #b91c1c);} .kpi.pri:before{background:var(--cx-primary-text);}
+.kpi .n{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--cx-text);line-height:1.1;}
+.kpi .t{font-size:11.5px;color:var(--cx-text-mute);margin-top:3px;font-weight:600;}
+.lote{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:0;margin-bottom:14px;overflow:hidden;}
+.lote-head{display:flex;gap:16px;align-items:center;padding:16px 20px;cursor:pointer;flex-wrap:wrap;}
+.lote-head:hover{background:var(--cx-bg-alt);}
+.lote-id{min-width:210px;}
+.lote-id .l{font-size:15.5px;font-weight:800;color:var(--cx-text);font-family:ui-monospace,monospace;letter-spacing:-.01em;}
+.lote-id .p{font-size:12.5px;color:var(--cx-text-mute);margin-top:2px;}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:4px 11px;border-radius:999px;border:1px solid var(--cx-hairline);color:var(--cx-text-soft);white-space:nowrap;}
+.chip.liberado{color:var(--cx-success-text, #15803d);border-color:rgba(21,128,61,.35);background:rgba(21,128,61,.09);}
+.chip.espera_calidad{color:var(--cx-warn-text, #b45309);border-color:rgba(180,83,9,.35);background:rgba(180,83,9,.10);}
+.chip.rechazado{color:var(--cx-danger-text, #b91c1c);border-color:rgba(185,28,28,.35);background:rgba(185,28,28,.09);}
+.chip.en_proceso{color:var(--cx-info-text, #2563eb);border-color:rgba(37,99,235,.3);background:rgba(37,99,235,.08);}
+.uds{display:flex;gap:20px;flex-wrap:wrap;margin-left:auto;align-items:center;}
+.ud{text-align:right;min-width:74px;}
+.ud .n{font-size:17px;font-weight:800;color:var(--cx-text);line-height:1.15;}
+.ud .t{font-size:10.5px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
+.ud .n.pos{color:var(--cx-success-text, #15803d);} .ud .n.neg{color:var(--cx-danger-text, #b91c1c);}
+.ud .n.nd{color:var(--cx-text-faint);font-size:13px;font-weight:700;}
+.det{display:none;border-top:1px solid var(--cx-hairline);padding:18px 20px;background:var(--cx-bg-alt);}
+.det.open{display:block;}
+.det h3{font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--cx-text-mute);margin:0 0 10px;}
+.det-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:22px;}
+.det-full{grid-column:1/-1;min-width:0;}
+.det-grid > div{min-width:0;}
+.tscroll{overflow-x:auto;max-width:100%;}
+table.pres{width:100%;border-collapse:collapse;font-size:13px;}
+table.pres th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--cx-text-mute);border-bottom:1px solid var(--cx-hairline);padding:6px 8px;font-weight:700;}
+table.pres td{padding:7px 8px;border-bottom:1px solid var(--cx-hairline);color:var(--cx-text);}
+table.pres td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;}
+table.pres td.neg{color:var(--cx-danger-text, #b91c1c);} table.pres td.pos{color:var(--cx-success-text, #15803d);}
+.cli{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--cx-hairline);}
+.cli img{width:38px;height:38px;object-fit:contain;border-radius:8px;background:var(--cx-card);border:1px solid var(--cx-hairline);}
+.cli .nm{font-size:13px;font-weight:700;color:var(--cx-text);} .cli .sb{font-size:11.5px;color:var(--cx-text-mute);}
+.cli .u{margin-left:auto;font-size:15px;font-weight:800;color:var(--cx-text);font-variant-numeric:tabular-nums;}
+.origen{font-size:12.5px;color:var(--cx-text-mute);line-height:1.7;}
+.origen b{color:var(--cx-text);font-weight:700;}
+.acc{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+.empty{color:var(--cx-text-mute);font-size:14px;padding:42px 0;text-align:center;}
+.nota{font-size:11.5px;color:var(--cx-text-faint);margin-top:10px;line-height:1.5;}
+.fases{display:flex;gap:6px;flex-wrap:wrap;}
+</style></head><body>
+<header class="cx-mod-header cx-fade-in">
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary-text);"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/><path d="M8 4v16"/></svg></span>
+  <div>
+    <div class="cx-mod-header__title">Maestro de lotes</div>
+    <div class="cx-mod-header__sub"><strong>Calidad</strong> &middot; Espagiria &middot; unidades por lote y presentaci&oacute;n</div>
+  </div>
+  <div class="cx-mod-header__nav">
+    <a href="/calidad/expediente" class="cx-btn cx-btn-ghost cx-btn-sm" title="Todos los documentos de un lote">&#128194; Expediente</a>
+    <a href="/calidad/genealogia" class="cx-btn cx-btn-ghost cx-btn-sm" title="De qu&eacute; est&aacute; hecho un lote">&#129514; Genealog&iacute;a</a>
+    <a href="/calidad" class="cx-btn cx-btn-ghost cx-btn-sm">&larr; Calidad</a>
+    <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm">M&oacute;dulos</a>
+    <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg></button>
+  </div>
+</header>
+<script>function cxToggleTheme(){var h=document.documentElement;var n=h.getAttribute('data-theme')==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
+<div class="ml-wrap">
+<div class="card">
+<div class="ml-intro">Cada lote con su cuadro de unidades: cu&aacute;ntas <b>deb&iacute;an</b> salir de ese granel, cu&aacute;ntas se <b>envasaron</b> de verdad, la <b>diferencia</b> y si Calidad ya lo <b>liber&oacute;</b>. Abr&iacute; un lote y ves el desglose por presentaci&oacute;n, para qu&eacute; cliente es y de d&oacute;nde sali&oacute;.</div>
+<div class="searchbar">
+<input id="q" class="cx-input" placeholder="Lote, producto u orden&hellip;" autocomplete="off">
+<input id="desde" type="date" class="cx-input" style="max-width:170px" title="Desde">
+<input id="hasta" type="date" class="cx-input" style="max-width:170px" title="Hasta">
+<select id="festado" class="cx-input" style="max-width:210px" title="Filtra los lotes mostrados">
+  <option value="">Todos los estados</option>
+  <option value="espera_calidad">Esperando a Calidad</option>
+  <option value="liberado">Liberados</option>
+  <option value="en_proceso">En proceso</option>
+  <option value="rechazado">Rechazados</option>
+</select>
+<button class="cx-btn cx-btn-grad" onclick="mlCargar()">Buscar</button>
+<span id="msg" style="font-size:12.5px;font-weight:700"></span>
+</div>
+</div>
+<div id="kpis" class="kpis"></div>
+<div id="res"></div>
+<div id="nota" class="nota"></div>
+</div>
+<script>
+var ML_DATA = [];
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function num(n){if(n==null)return '';return Number(n).toLocaleString('es-CO');}
+function mlCargar(){
+  var q=document.getElementById('q').value.trim();
+  var d=document.getElementById('desde').value, h=document.getElementById('hasta').value;
+  document.getElementById('msg').textContent='Cargando...';
+  var u='/api/calidad/maestro-lotes?q='+encodeURIComponent(q)+'&desde='+encodeURIComponent(d)+'&hasta='+encodeURIComponent(h);
+  fetch(u,{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(j){
+    if(!j || !j.ok){document.getElementById('msg').textContent='No se pudo cargar';return;}
+    ML_DATA=j.lotes||[];
+    document.getElementById('msg').textContent='';
+    var nota='Mostrando '+j.mostrados+' de '+j.total+' lotes con legajo.';
+    if(j.recortado>0) nota+=' Quedan '+j.recortado+' fuera de esta página: acotá con el buscador o el rango de fechas.';
+    nota+=' La columna Debían sale del '+j.teorica_origen+'; cuando el granel envasable no está medido, se muestra en blanco en vez de estimarlo.';
+    document.getElementById('nota').textContent=nota;
+    mlPintar();
+  }).catch(function(e){document.getElementById('msg').textContent='Error: '+e;});
+}
+function mlPintar(){
+  var f=document.getElementById('festado').value;
+  var L=ML_DATA.filter(function(x){return !f || x.estado_liberacion===f;});
+  var kpi=[{k:'pri',n:L.length,t:'lotes'},
+           {k:'ok',n:L.filter(function(x){return x.estado_liberacion==='liberado';}).length,t:'liberados'},
+           {k:'esp',n:L.filter(function(x){return x.estado_liberacion==='espera_calidad';}).length,t:'esperando a Calidad'},
+           {k:'pri',n:num(L.reduce(function(a,x){return a+(x.unidades.registradas||0);},0)),t:'unidades envasadas'},
+           {k:'dif',n:L.filter(function(x){return x.unidades.diferencia!=null && Math.abs(x.unidades.diferencia)>0;}).length,t:'con diferencia'}];
+  document.getElementById('kpis').innerHTML=kpi.map(function(x){
+    return '<div class="kpi '+x.k+'"><div class="n">'+x.n+'</div><div class="t">'+x.t+'</div></div>';}).join('');
+  if(!L.length){document.getElementById('res').innerHTML='<div class="card"><div class="empty">No hay lotes que coincidan.</div></div>';return;}
+  document.getElementById('res').innerHTML=L.map(mlFila).join('');
+}
+function mlEstadoTxt(e){
+  return e==='liberado'?'Liberado':e==='espera_calidad'?'Espera a Calidad':e==='rechazado'?'Rechazado':'En proceso';}
+function mlFila(x,i){
+  var u=x.unidades||{};
+  var dif=u.diferencia;
+  var difCls=dif==null?'nd':(dif<0?'neg':(dif>0?'pos':''));
+  var difTxt=dif==null?'sin medir':(dif>0?'+'+num(dif):num(dif));
+  var h='<div class="lote"><div class="lote-head" onclick="mlToggle('+i+')">';
+  h+='<div class="lote-id"><div class="l">'+esc(x.lote)+'</div><div class="p">'+esc(x.producto||'(sin producto)')+(x.fecha?' &middot; '+esc(x.fecha):'')+'</div></div>';
+  h+='<span class="chip '+esc(x.estado_liberacion)+'">'+mlEstadoTxt(x.estado_liberacion)+'</span>';
+  if(x.clientes && x.clientes.length) h+='<span class="chip" title="Este lote lleva unidades de cliente">&#128100; '+x.clientes.length+' cliente'+(x.clientes.length>1?'s':'')+'</span>';
+  if(x.material_sin_entregar>0) h+='<span class="chip" style="color:var(--cx-warn-text, #b45309);border-color:rgba(180,83,9,.35);background:rgba(180,83,9,.10)" title="Material de envase que se pidio y no llego completo">&#128230; falta material</span>';
+  h+='<div class="uds">';
+  h+='<div class="ud"><div class="n'+(u.teoricas==null?' nd':'')+'">'+(u.teoricas==null?'sin medir':num(u.teoricas))+'</div><div class="t">Debían</div></div>';
+  h+='<div class="ud"><div class="n">'+num(u.registradas||0)+'</div><div class="t">Envasadas</div></div>';
+  h+='<div class="ud"><div class="n '+difCls+'">'+difTxt+'</div><div class="t">Diferencia</div></div>';
+  h+='<div class="ud"><div class="n'+(u.liberadas==null?' nd':'')+'">'+(u.liberadas==null?'-':num(u.liberadas))+'</div><div class="t">Liberadas</div></div>';
+  h+='</div></div>';
+  h+='<div class="det" id="det-'+i+'">'+mlDetalle(x)+'</div></div>';
+  return h;
+}
+function mlDetalle(x){
+  var h='<div class="det-grid">';
+  h+='<div><h3>Por presentación</h3>';
+  if(x.presentaciones && x.presentaciones.length){
+    h+='<div class="tscroll"><table class="pres"><thead><tr><th>Presentación</th><th style="text-align:right">ml</th><th style="text-align:right">Debían</th><th style="text-align:right">Envasadas</th><th style="text-align:right">Diferencia</th></tr></thead><tbody>';
+    x.presentaciones.forEach(function(p){
+      var d=p.diferencia;
+      h+='<tr><td>'+esc(p.etiqueta||p.codigo||'-')+'</td><td class="num">'+num(p.volumen_ml)+'</td>'
+        +'<td class="num">'+(p.teoricas==null?'-':num(p.teoricas))+'</td>'
+        +'<td class="num">'+num(p.registradas)+'</td>'
+        +'<td class="num '+(d==null?'':(d<0?'neg':(d>0?'pos':'')))+'">'+(d==null?'-':(d>0?'+'+num(d):num(d)))+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  } else { h+='<div class="origen">Todavía no se registraron unidades envasadas para este lote.</div>'; }
+  h+='</div>';
+  h+='<div><h3>Para quién es</h3>';
+  if(x.clientes && x.clientes.length){
+    x.clientes.forEach(function(c){
+      h+='<div class="cli">';
+      if(c.envase_foto) h+='<img src="'+esc(c.envase_foto)+'" alt="">';
+      h+='<div><div class="nm">'+esc(c.cliente)+'</div><div class="sb">'+(c.volumen_ml?num(c.volumen_ml)+' ml':'')+(c.envase_desc?' &middot; '+esc(c.envase_desc):'')+'</div></div>';
+      h+='<div class="u">'+num(c.unidades)+'</div></div>';
+    });
+    h+='<div class="origen" style="margin-top:8px">El resto del lote es de ÁNIMUS.</div>';
+  } else { h+='<div class="origen">Lote completo de ÁNIMUS: ningún pedido de cliente se sumó acá.</div>'; }
+  h+='</div>';
+  h+='<div class="det-full"><h3>Material de envase</h3>';
+  if(x.materiales && x.materiales.length){
+    h+='<div class="tscroll"><table class="pres"><thead><tr><th>Material</th><th style="text-align:right">Pedido</th><th style="text-align:right">Recibido</th><th style="text-align:right">Usado</th><th style="text-align:right">Devuelto</th><th style="text-align:right">Averiado</th><th style="text-align:right">Sin explicar</th></tr></thead><tbody>';
+    x.materiales.forEach(function(m){
+      h+='<tr><td>'+esc(m.nombre||m.codigo||'-')+'</td><td class="num">'+num(m.requerida)+'</td>'
+        +'<td class="num'+(m.sin_entregar>0?' neg':'')+'">'+num(m.recibida)+'</td>'
+        +'<td class="num">'+num(m.utilizada)+'</td><td class="num">'+num(m.devuelta)+'</td>'
+        +'<td class="num">'+num(m.averiada)+'</td>'
+        +'<td class="num'+(m.diferencia>0?' neg':'')+'">'+num(m.diferencia)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(x.material_sin_entregar>0) h+='<div class="origen" style="margin-top:8px">Se pidieron <b>'+num(x.material_sin_entregar)+'</b> unidades que no llegaron a la línea: eso se le reclama a Compras. <a href="/compras" style="color:var(--cx-primary-text);font-weight:700;text-decoration:none">Ir a Compras &rarr;</a></div>';
+    if(x.material_sin_explicar>0) h+='<div class="origen" style="margin-top:6px;color:var(--cx-danger-text, #b91c1c)"><b>'+num(x.material_sin_explicar)+'</b> unidades entraron a la línea y no se explican con lo usado, lo devuelto y lo averiado.</div>';
+  } else { h+='<div class="origen">Todavía no se concilió material de envase para este lote.</div>'; }
+  h+='</div>';
+  h+='<div><h3>De dónde salió</h3><div class="origen">';
+  if(x.kg) h+='Programado por <b>'+num(x.kg)+' kg</b> en el calendario.<br>';
+  if(x.granel_g!=null) h+='Granel fabricado: <b>'+num(Math.round(x.granel_g))+' g</b>'+(x.yield_pct!=null?' (rendimiento '+x.yield_pct+'%)':'')+'.<br>';
+  if(x.densidad_g_ml) h+='Densidad <b>'+x.densidad_g_ml+' g/mL</b> &rarr; envasable <b>'+num(Math.round(x.ml_envasable||0))+' mL</b>.<br>';
+  if(x.yield_justificacion) h+='Justificación del rendimiento: <b>'+esc(x.yield_justificacion)+'</b><br>';
+  if(x.pt_vigente) h+='Producto terminado liberado en bodega: <b>'+num(Math.round(x.pt_vigente))+'</b>.<br>';
+  if(x.pt_cuarentena) h+='En cuarentena esperando a Calidad: <b>'+num(Math.round(x.pt_cuarentena))+'</b>.<br>';
+  h+='<div class="fases" style="margin-top:8px">';
+  ['fabricacion','envasado','acondicionamiento'].forEach(function(f){
+    if(x.fases && x.fases[f]){var nf=mlFaseNom(f); h+='<span class="chip">'+nf.charAt(0).toUpperCase()+nf.slice(1)+': '+esc(x.fases[f].estado)+'</span>';}
+  });
+  h+='</div></div>';
+  h+='<div class="acc">';
+  ['fabricacion','envasado','acondicionamiento'].forEach(function(f){
+    if(x.fases && x.fases[f]) h+='<a class="cx-btn cx-btn-ghost cx-btn-sm" target="_blank" href="/api/brd/ebr/'+x.fases[f].ebr_id+'/vista-completa">Legajo de '+mlFaseNom(f)+'</a>';
+  });
+  h+='<a class="cx-btn cx-btn-ghost cx-btn-sm" href="/calidad/expediente?lote='+encodeURIComponent(x.lote)+'">Expediente</a>';
+  h+='<a class="cx-btn cx-btn-ghost cx-btn-sm" href="/calidad/genealogia?lote='+encodeURIComponent(x.lote)+'">Genealogía</a>';
+  h+='</div></div></div>';
+  return h;
+}
+function mlFaseNom(f){return f==='fabricacion'?'fabricación':(f==='envasado'?'envasado':'acondicionamiento');}
+function mlToggle(i){var d=document.getElementById('det-'+i);if(d)d.classList.toggle('open');}
+document.getElementById('q').addEventListener('keydown',function(e){if(e.key==='Enter')mlCargar();});
+document.getElementById('festado').addEventListener('change',mlPintar);
+mlCargar();
+</script>
+</body></html>"""

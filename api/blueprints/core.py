@@ -1753,8 +1753,16 @@ def compras():
     if 'compras_user' not in session:
         return redirect('/login?next=/compras')
     username = session.get('compras_user', '')
-    # Solo usuarios con acceso a compras
-    if username not in COMPRAS_ACCESS:
+    # Ver el módulo sale de la matriz (`MODULOS_ACCESO`, la única fuente · la usan el menú
+    # y el gate global de rutas). Las ACCIONES de compras siguen con sus propios guards.
+    # Antes se gateaba con COMPRAS_ACCESS, más estricto que la matriz: a Luz el menú le
+    # ofrecía Compras y al entrar le rebotaba (M32/M97).
+    try:
+        from config import puede_ver_modulo as _puede_mod
+        _ve_compras = _puede_mod(username, 'compras')
+    except Exception:
+        _ve_compras = username in COMPRAS_ACCESS
+    if not _ve_compras:
         sin_acceso = (
             '<!DOCTYPE html><html><head><meta charset=UTF-8>'
             '<title>Sin acceso</title>'
