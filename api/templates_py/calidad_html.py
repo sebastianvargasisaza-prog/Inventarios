@@ -1590,6 +1590,34 @@ async function loadBandeja(){
       });
     }
 
+    // 11. CONTROLES EN PROCESO PENDIENTES · la cola propia de Calidad.
+    // Sale de mirar MyBatch con el usuario de Laura: su tablero tiene esta cola
+    // cruzada -los controles de TODOS los lotes abiertos en una lista- y en EOS
+    // había que abrir legajo por legajo para saber qué faltaba registrar (M121).
+    if(s.controles_pendientes){
+      html += _bandejaCard({
+        titulo:'Controles en proceso pendientes', icon:'&#x1F9EA;',
+        total: s.controles_pendientes.total,
+        accent: s.controles_pendientes.total>0 ? 'amber' : 'green',
+        subtitulo: (s.controles_pendientes.lotes||0)+' lote(s) esperando el control de Calidad'
+          + (s.controles_pendientes.recortado ? (' &middot; se muestran los primeros 60 de '
+             +((s.controles_pendientes.total)||0)) : '')
+          // Si quedaron legajos sin mirar, el total tampoco es el total: se dice, en
+          // vez de dejar creer que la cuenta está completa (M155).
+          + (s.controles_pendientes.lotes_sin_mirar ? (' &middot; ⚠ '
+             +s.controles_pendientes.lotes_sin_mirar+' legajo(s) quedaron fuera del conteo') : ''),
+        items: s.controles_pendientes.items,
+        empty_msg:'Sin controles pendientes',
+        render_item: function(it){
+          return '<div style="padding:6px 8px;border-bottom:1px solid var(--cx-border-soft);font-size:0.82em">'
+            + '<b>'+_escBan(it.control||'')+'</b>'+(it.unidad?(' <span style="color:var(--cx-text-mute)">('+_escBan(it.unidad)+')</span>'):'')
+            + '<br><span style="color:var(--cx-text-mute)">'+_escBan(it.producto||'')+' · Lote <code>'+_escBan(it.lote||'')+'</code> · '+_escBan(it.fase||'')+'</span> '
+            + '<a href="'+_escBan(it.link||'#')+'" style="color:var(--cx-primary-text);font-weight:600">registrar &rarr;</a>'
+            + '</div>';
+        }
+      });
+    }
+
     if(sec) sec.innerHTML = html;
   }catch(e){
     console.error('loadBandeja error:', e);

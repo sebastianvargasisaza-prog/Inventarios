@@ -56,7 +56,7 @@ lotes en proceso · Acondicionamiento pendientes / programados · Lotes en cuare
 | 1 | Precauciones | texto + *agregar equipo* | ✅ `ebr_precauciones` |
 | 2 | Despeje de línea · **Dispensación** | 13 verificaciones con Cumple | ✅ `ebr_despeje_linea` + `ebr_despeje_items` |
 | 3 | Dispensado de materias primas | MP · **%** · **N° lote** · cant. a pesar · cant. pesada · **Ajustes** | ✅ `ebr_pesajes` (+ `ebr_ajustes_mp`) |
-| 4 | Despeje de línea · **Fabricación** | las mismas 13, en el otro momento | ⚠️ EOS registra el despeje por área; **no distingue las dos etapas** |
+| 4 | Despeje de línea · **Fabricación** | las mismas 13, en el otro momento | ✅ EOS ya guarda las dos etapas por separado (`ebr_despeje_items.etapa`) · verificado con datos: el mismo ítem convive en dispensación y en fabricación con su firma propia |
 | 5 | Fabricación/Mezcla | pasos con **Realizado por** + **Verificado por** + *Resultado* | ✅ `ebr_pasos_ejecutados` (doble firma) |
 | 6 | Controles en proceso | Olor · Color · Densidad 25°C · pH 25°C · Apariencia | ✅ IPC estándar + specs del MBR |
 | 7 | Observaciones generales | texto con autor y hora | ✅ `ebr_observaciones` |
@@ -142,9 +142,16 @@ rango, y ahí queda el rastro.
 |---|---|---|---|
 | 1 | `cant_averiada` + diferencia en la conciliación | envasado y acondicionamiento | ✅ **hecho** 15-ago (mig 433 · `tests/test_conciliacion_averiada.py`) |
 | 3 | Los 14 controles de atributos | acondicionamiento | ✅ **hecho** 15-ago · y de paso envasado pasó a pedir control de llenado en vez de densidad y pH (`tests/test_ipc_estandar_por_fase.py`) |
-| 2 | Las dos etapas del despeje (dispensación / fabricación) | fabricación | pendiente · MyBatch registra dos momentos distintos; EOS los junta |
+| 2 | Las dos etapas del despeje (dispensación / fabricación) | fabricación | ✅ **ya existía** · lo verifiqué con datos, no por lectura: columna, endpoint y pantalla dicen "13 ítems × 2 etapas" |
 | 4 | Justificación del rendimiento | fabricación (y cualquier fase) | ✅ **hecho** 15-ago (mig 434): queda en el legajo y en el PDF, no sólo en el audit · y el control salió del bloque `strict`, donde **no corría nunca** (`tests/test_yield_justificacion_queda.py`) · falta todavía el % **por presentación** |
 | 5 | Saldo del granel ("cantidad por envasar") | envasado | ✅ **hecho** 15-ago · resultó que EOS **ya lo calculaba** (con remanente, tolerancia y si la cuenta CUADRA, que MyBatch no tiene) y sólo lo exponía en `/vista-completa`, que el legajo no llama: el número existía y no lo veía nadie. Ahora se pinta (`tests/test_conciliacion_granel_visible.py`) |
+
+> **Corrección honesta del propio mapa (15-ago).** De los cinco huecos que listé al
+> relevar MyBatch, **tres ya existían en EOS** (el saldo del granel, el rendimiento y las
+> dos etapas del despeje). Los marqué como faltantes por buscarlos con el nombre que usa
+> MyBatch en vez de medir qué hace EOS. Lo que de verdad faltaba en esos tres no era la
+> función: era que **el número calculado llegara a una pantalla**. Regla para el resto de
+> la clonación: antes de anotar un hueco, medirlo contra el código.
 
 Ninguno de los cinco rompe nada hoy: son **campos y datos que se agregan**, no cambios
 en lo que ya está firmado (aditivo · M117).
@@ -192,11 +199,38 @@ los registros ya firmados de MyBatch.
 
 ---
 
-## 7 · Vistas por rol
+## 7 · Vistas por rol (relevadas una por una · 15-ago-2026)
 
-Sebastián entra como **Planeador**. Las vistas de director técnico, jefe de producción,
-Calidad y operarios **no se pudieron ver** (harían falta sus credenciales). Lo que sí
-quedó registrado, porque el propio documento lo firma, es **quién hace qué**:
+Sebastián abrió la sesión de cada persona y se recorrió su tablero. La conclusión de
+diseño: **el tablero no es el mismo con permisos distintos; es una cola de trabajo
+distinta por rol**, y el mismo objeto aparece en la etapa que a cada uno le toca actuar.
+
+| | Planeador (Sebastián) | Jefe de producción (Jose Alfredo) | Jefe de calidad (Laura) | Operario (Maierlin) |
+|---|---|---|---|---|
+| Tarjetas | 7 | 8 | 8 | **3** |
+| Menú extra | — | **Materiales** | **Materiales** + Productos | — |
+| Pendientes de fabricación / envasado / acondicionamiento | sí | sí | parcial | **no** |
+| Lo que está EN CURSO | sí | sí | sí | **sí (lo único)** |
+| Cuarentena | sí | sí | sí | no |
+| Colas propias | — | Controles de cambio **por revisar** (3) | Controles en proceso pendientes (6) · Artes por aprobar (1) · Controles de cambio **por aprobar** (9) | — |
+
+Tres cosas que vale la pena copiar:
+
+1. **El operario ve SÓLO lo ejecutable hoy** (en proceso / programado). No ve pendientes
+   ni aprobaciones: nada que no pueda tocar.
+2. **El mismo objeto, dos colas distintas**: el control de cambio le aparece al jefe de
+   producción como *por revisar* y a Calidad como *por aprobar*. No es un permiso, es la
+   etapa del flujo.
+3. **Calidad no trabaja sobre el legajo, trabaja sobre la cola**: sus controles
+   pendientes salen de todos los lotes abiertos en una sola lista.
+
+**Falta:** director técnico. (Analista de calidad: se asume igual que jefe de control de
+calidad hasta ver una diferencia.)
+
+---
+
+### Quién firma qué (leído de los propios documentos)
+
 
 | Acto | Quién lo firma en MyBatch |
 |---|---|
@@ -206,5 +240,6 @@ quedó registrado, porque el propio documento lo firma, es **quién hace qué**:
 | Controles en proceso y de atributos | Jefe de calidad |
 | Aprobar el acondicionamiento | Jefe de calidad |
 
-EOS ya tiene esos roles y la doble firma; falta contrastar la vista de cada uno cuando
-se pueda entrar con sus usuarios.
+EOS ya tiene esos roles y la doble firma. Las vistas de planeador, jefe de producción,
+jefe de calidad y operario ya se contrastaron (tabla de arriba); falta el director
+técnico.

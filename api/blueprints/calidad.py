@@ -945,8 +945,81 @@ def calidad_bandeja():
         log.info('bandeja ebr_por_liberar (tabla puede no existir): %s', e)
         out['secciones']['ebr_por_liberar'] = {'total': 0, 'items': []}
 
+    # ── 11. CONTROLES EN PROCESO PENDIENTES · la cola propia de Calidad ──
+    # Mirando MyBatch con el usuario de Laura (jefe de control de calidad, 15-ago-2026):
+    # su tablero NO es el del planeador. Tiene una cola cruzada -"Controles en Proceso
+    # de Fabricación Pendientes"- con los controles de TODOS los lotes abiertos en una
+    # sola lista, cada uno con su especificación al lado.
+    #
+    # En EOS los controles viven dentro del legajo, así que para saber qué le falta
+    # registrar había que abrir lote por lote: la información estaba, el TRABAJO de
+    # Calidad no tenía pantalla (M121). Esta sección es esa pantalla.
+    #
+    # Va en UNA consulta para toda la cola (no una por lote · M43), y el catálogo de
+    # controles depende de la FASE del legajo, igual que en el runner.
+    try:
+        from blueprints.brd import _ipc_estandar_de_fase
+        rows = c.execute("""
+            SELECT e.id, e.lote, COALESCE(mt.producto_nombre,''),
+                   COALESCE(e.fase,'fabricacion'), COALESCE(e.estado,''),
+                   COALESCE(e.iniciado_at_utc,'')
+            FROM ebr_ejecuciones e
+            LEFT JOIN mbr_templates mt ON mt.id = e.mbr_template_id
+            WHERE e.estado IN ('iniciado','en_proceso','completado','en_revision_qc')
+            ORDER BY COALESCE(e.iniciado_at_utc,'') ASC, e.id ASC
+            LIMIT 300
+        """).fetchall()
+        _ids = [r[0] for r in rows]
+        _reg = {}
+        if _ids:
+            _ph = ','.join('?' for _ in _ids)
+            for rr in c.execute(
+                "SELECT ebr_id, control_codigo, conforme FROM ipc_estandar_resultados "
+                "WHERE ebr_id IN (%s)" % _ph, _ids).fetchall():
+                _reg[(rr[0], rr[1])] = rr[2]
+        items = []
+        for r in rows:
+            for cod, nom, uni in _ipc_estandar_de_fase(r[3]):
+                # 'registrado' = adjudicado por Calidad (conforme 0/1) o marcado
+                # 'No aplica' (2). Un valor anotado sin adjudicar sigue PENDIENTE:
+                # falta la firma de quien decide.
+                if _reg.get((r[0], cod)) in (0, 1, 2):
+                    continue
+                items.append({
+                    'ebr_id': r[0], 'lote': r[1], 'producto': r[2], 'fase': r[3],
+                    'estado_lote': r[4], 'control_codigo': cod, 'control': nom,
+                    'unidad': uni, 'link': '/brd/timeline/%s' % r[0],
+                })
+        _lotes = len({i['ebr_id'] for i in items})
+        # El TOTAL tiene que contar todos los legajos abiertos, no los que entraron en
+        # la ventana: un total calculado sobre un recorte es un total falso, y este
+        # número alimenta el KPI de Calidad (M155). El techo de 300 legajos está muy
+        # por encima de lo real (hoy son decenas) y, si alguna vez se toca, se DICE.
+        try:
+            _abiertos = c.execute(
+                "SELECT COUNT(*) FROM ebr_ejecuciones WHERE estado IN "
+                "('iniciado','en_proceso','completado','en_revision_qc')").fetchone()[0]
+        except Exception:
+            _abiertos = len(rows)
+        out['secciones']['controles_pendientes'] = {
+            'total': len(items), 'lotes': _lotes, 'items': items[:60],
+            # Si la LISTA se recorta, se dice: "60" leído como el total manda a cerrar
+            # una cola que en realidad es más larga.
+            'recortado': max(0, len(items) - 60),
+            # Y si quedaron legajos sin mirar, el total tampoco es el total: se declara
+            # en vez de dejar creer que se contó todo (M100).
+            'lotes_abiertos': int(_abiertos or 0),
+            'lotes_sin_mirar': max(0, int(_abiertos or 0) - len(rows)),
+        }
+    except Exception as e:
+        log.info('bandeja controles_pendientes: %s', e)
+        out['secciones']['controles_pendientes'] = {'total': 0, 'lotes': 0, 'items': [],
+                                                    'recortado': 0, 'lotes_abiertos': 0,
+                                                    'lotes_sin_mirar': 0}
+
     # ── KPIs unificados ─────────────────────────────────────────────────
     out['kpis'] = {
+        'controles_pendientes': out['secciones']['controles_pendientes']['total'],
         'lotes_cuarentena': out['secciones']['lotes_cuarentena']['total'],
         'lotes_cuarentena_criticos': out['secciones']['lotes_cuarentena']['criticos'],
         'ncs_abiertas': out['secciones']['ncs_abiertas']['total'],
