@@ -113,8 +113,9 @@ def test_calidad_adjudica_la_medicion_de_OTRO(app, db_clean):
 
 
 def test_aseguramiento_tambien_adjudica(app, db_clean):
-    """El set que verifica es Calidad ∪ Aseguramiento ∪ Jefe de Producción ∪ Dirección
-    Técnica: si fuera sólo Laura, un día que ella no está el lote se traba.
+    """El set que verifica es Calidad ∪ Aseguramiento: si fuera sólo Laura, un día que ella no
+    está el lote se traba. Miguel es Jefe de Garantía de Calidad y `COC-PRO-010` §3.2 le da
+    verificar el cumplimiento, así que entra por derecho propio, no por comodidad.
 
     ⚠ Este test destapó un hueco de 3 capas: `_batch_role_info` le da a Miguel
     (Aseguramiento) y a Hernando (DT) `verifica`/`corrige`/`aprueba_dt` desde el 7-jul, pero
@@ -130,12 +131,56 @@ def test_aseguramiento_tambien_adjudica(app, db_clean):
 
 def test_el_director_tecnico_entra_al_batch_record(app, db_clean):
     """Hernando estaba fuera del gate de ejecución, así que su visto bueno (mig 286) no se
-    podía dar ni con el meaning arreglado."""
+    podía dar ni con el meaning arreglado (M121). Sigue adentro: puede abrir el legajo y anotar.
+    """
+    eid = _sembrar(app)
+    r = _post(_login(app, 'hernando'), eid, control_codigo='apariencia', valor_texto='homogenea')
+    assert r.status_code in (200, 201), r.data[:300]
+
+
+def test_el_director_tecnico_NO_adjudica_controles_de_proceso(app, db_clean):
+    """Corregido el 16-ago contra el sistema documental, a pedido de Sebastián: *"el director
+    técnico solo libera el producto terminado"* y *"todas las verificaciones las pueden hacer
+    analista y jefe de control de calidad"*.
+
+    Lo respaldan tres documentos de la empresa: `COC-PRO-010` §3.4 le da al Analista de Calidad
+    ejecutar las verificaciones; `PRD-INS-001-004` marca las tablas de verificación como de
+    diligenciamiento EXCLUSIVO de Control de Calidad; y en el acta del 27-jul el propio Hernando
+    dejó dicho que la liberación es su responsabilidad mientras el proceso se APRUEBA.
+
+    Así que el DT conserva su acto (`aprueba_dt`, probado aparte) y deja de dar la 2ª firma de
+    un control de proceso -- que era, además, la única forma de que una sola persona ajena a
+    Calidad cerrara el circuito.
+    """
     eid = _sembrar(app)
     _post(_login(app, 'mayerlin'), eid, control_codigo='apariencia', valor_texto='homogenea')
     r = _post(_login(app, 'hernando'), eid, control_codigo='apariencia',
               valor_texto='homogenea', conforme=True)
-    assert r.status_code in (200, 201), r.data[:300]
+    assert r.status_code == 403, r.data[:300]
+    assert r.get_json().get('codigo') == 'SOLO_CALIDAD_ADJUDICA'
+
+
+def test_el_jefe_de_produccion_tampoco_adjudica(app, db_clean):
+    """La otra mitad de la corrección, y la que de verdad sostiene la segregación: `PRD-PRO-001`
+    dice que el Jefe de Producción REALIZA el despeje y que Control de Calidad lo verifica
+    *"de forma independiente al Jefe de Producción"*.
+
+    Con el jefe dentro de `verifica` podía firmar como verificador lo que su propio turno
+    ejecutó, que es exactamente lo que la segunda firma existe para impedir.
+
+    Se mide en `_batch_role_info` -- la única fuente de la que salen los dos flags -- y no
+    entrando por el endpoint, porque `jose` no tiene clave sembrada en el entorno de pruebas y
+    un test que no puede loguear se salta en silencio (M152). El endpoint ya queda ejercido por
+    los dos tests de arriba, que recorren el mismo gate con el operario y con el DT.
+    """
+    with app.app_context():
+        from blueprints.brd import _batch_role_info
+        jefe = _batch_role_info('jose')
+        assert jefe['tipo'] == 'jefe_produccion', jefe
+        assert jefe['realiza'] is True, 'el jefe de producción tiene que poder EJECUTAR'
+        assert jefe['verifica'] is False, (
+            'el jefe de producción no puede dar la 2ª firma de lo que ejecuta su propia área')
+        assert jefe['puede_verificar'] is False, 'los dos flags salen del mismo lugar'
 
 
 def test_compras_sigue_afuera(app, db_clean):

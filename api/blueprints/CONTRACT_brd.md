@@ -721,3 +721,57 @@ Reglas duras, todas cubiertas por `tests/test_checklists_configurables.py` (en e
 - **Quien ejecuta el procedimiento no lo define**: configurar es del director técnico,
   Aseguramiento o admin (403 `SIN_PERMISO_CHECKLIST` al resto). Cada cambio va a `audit_log` con
   el antes y el después completos.
+
+---
+
+## INV-19 · Quién firma cada acto del batch record (16-ago-2026)
+
+Corregido contra el **sistema documental de la empresa** (Drive), a pedido de Sebastián:
+*"el director técnico solo libera el producto terminado"* · *"todas las verificaciones las pueden
+hacer analista y jefe de control de calidad"* · *"aquí solo debería ser jefe y calidad"*.
+
+| Acto | Quién | Fuente documental |
+|---|---|---|
+| Registrar / ejecutar el paso | Operario, Jefe de Producción | `COC-PRO-010` §3.5 y §3.3 |
+| **Verificar** (2ª firma: despeje, pesaje, control en proceso) | **Analista y Jefe de Control de Calidad** + Aseguramiento | `COC-PRO-010` §3.4 y §3.2 · `PRD-INS-001-004` ("diligenciamiento EXCLUSIVO de Control de Calidad") |
+| Aprobar el proceso (fabricación, envasado) | Producción **+** Calidad | `PRD-PRO-001-F01` ("RESPONSABLES DEL PROCESO") |
+| **Liberar el producto terminado** + visto bueno | **Director Técnico** | acta de revisión con Hernando Acevedo, 27-jul-2026 · `PRD-PRO-001-F01` ("VBO DIRECCIÓN TÉCNICA") |
+
+La frase que ordena todo la dijo el propio Director Técnico en esa acta: **"la liberación es una
+responsabilidad del director técnico, mientras que el envasado requiere aprobación en lugar de
+liberación"**. Fabricación y envasado se **aprueban**; el producto terminado se **libera**. Son dos
+actos regulatorios distintos y la pantalla usa cada palabra donde corresponde.
+
+**Reglas duras:**
+
+- **`_batch_role_info` es el ÚNICO resolvedor de rol del batch record** (M1/M3). Antes había un
+  segundo mapa escrito a mano en `ebr_vista_completa` y divergía en silencio: publicaba
+  `puede_verificar` mientras la pantalla de envasado lee `d.mi_rol.verifica` — una llave que ese
+  dict nunca tuvo, así que **el botón de verificar el material de envase (INV-14) no aparecía
+  nunca, para nadie**. Cualquier vista nueva pide el rol a ese helper; nunca arma el suyo.
+- **Quien REALIZA no da su propia 2ª firma.** El Jefe de Producción ejecuta el despeje y firma
+  como ejecutor; Control de Calidad lo verifica *"de forma independiente al Jefe de Producción"*
+  (`PRD-PRO-001` §4). Por eso está en `realiza` y NO en `verifica`.
+- **El Director Técnico conserva `aprueba_dt`.** Su firma no se quita: se mueve al lugar que el
+  formato le da. En *Cierre y Aprobaciones* su bloque aparece sólo en la fase de
+  **acondicionamiento** (producto terminado) — o si ya firmó, porque una firma registrada de un
+  documento regulado nunca se esconde.
+- **Lo que no se muestra se explica.** En fabricación y envasado la sección dice que esa etapa se
+  aprueba entre Producción y Calidad y que el visto bueno del DT va al liberar el producto
+  terminado: una tarjeta que desaparece sin decir por qué se lee como un faltante.
+- **A quién se le avisa = quién puede firmar.** `_qc_verificadores` (la campana de verificación) y
+  `verifica` salen del mismo conjunto: un aviso que lleva a algo que no se puede hacer enseña a
+  ignorar todos los demás.
+
+Fijado por `tests/test_quien_firma_el_cierre.py` (en el gate), con la prueba de dientes hecha en
+las dos direcciones.
+
+⚠ **ABIERTO, pendiente de decisión de Sebastián:** los instructivos cargados desde el batch record
+marcan `requiere_qc=1` en **todos** los pasos (`brd.py` ~1456 y ~1532), y eso **bloquea el registro
+del paso** (400) hasta que otra persona firme `supervisa`. El documento pide las verificaciones de
+CC **por etapa**, no por paso. No se cambió porque aflojaría un control regulado sin su visto
+bueno; `mbr_pasos.requiere_qc` ya es editable paso por paso desde el MBR.
+
+⚠ **Hueco preexistente detectado de paso:** `/api/sign` con `meaning='supervisa'` **no gatea rol** —
+cualquiera con login puede dar esa 2ª firma (el único control es que no sea el mismo operario que
+ejecutó). No se tocó en esta tanda para no mezclar dos cambios de permisos en el mismo gate.

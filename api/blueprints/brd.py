@@ -396,10 +396,20 @@ def _batch_role_info(usuario):
     else:
         tipo, rol = "consulta", "Consulta"
     realiza = tipo in ("operario", "jefe_produccion", "admin")
-    # Sebastián 7-jul: Aseguramiento (Miguel) también VERIFICA el despeje/pesaje, igual que Control de Calidad
-    # (Yuliel) y Director Técnico (Hernando) · mismos permisos de VERIFICACIÓN, sin tocar el acceso a los módulos
-    # de cada uno (calidad/aseguramiento/técnica siguen separados · esto solo cambia quién puede firmar la 2ª).
-    verifica = tipo in ("calidad", "aseguramiento", "jefe_produccion", "director_tecnico", "admin")
+    # Quién VERIFICA · corregido 16-ago-2026 contra el sistema documental de la empresa (Drive), a pedido de
+    # Sebastián: *"todas las verificaciones las pueden hacer analista y jefe de control de calidad"*.
+    #   · COC-PRO-010 §3.4 (procedimiento del batch digital): "Analista de Calidad: EJECUTAR verificaciones,
+    #     revisiones y aprobaciones conforme a su perfil autorizado".
+    #   · PRD-INS-001-004 (instructivos operativos): las tablas de verificación son "de diligenciamiento
+    #     EXCLUSIVO de Control de Calidad", firmadas por el Analista CC.
+    #   · PRD-PRO-001 (despejes): el Jefe de Producción REALIZA el despeje y Control de Calidad lo verifica
+    #     "de forma INDEPENDIENTE al Jefe de Producción" -- por eso el jefe queda en `realiza` y NO en
+    #     `verifica`: quien ejecuta no puede dar su propia 2ª firma (segregación de funciones).
+    #   · El Director Técnico sale de acá porque su acto es la LIBERACIÓN del producto terminado (acta de
+    #     revisión con Hernando, 27-jul-2026), no verificar pasos de proceso · sigue con `aprueba_dt`.
+    # Aseguramiento (Jefe de Garantía de Calidad) se conserva: COC-PRO-010 §3.2 le da verificar el
+    # cumplimiento y revisar la trazabilidad de los registros electrónicos.
+    verifica = tipo in ("calidad", "aseguramiento", "admin")
     return {
         "usuario": u, "tipo": tipo, "rol": rol,
         "realiza": realiza,
@@ -414,14 +424,18 @@ def _batch_role_info(usuario):
 
 
 def _qc_verificadores():
-    """Usuarios que VERIFICAN el despeje/pesaje (Control de Calidad + Aseguramiento + Director Técnico), sin los
-    admins-dueños (sebastián/alejandro) para no llenarles la campana. Sebastián 7-jul: se les alerta cuando
-    empieza fabricación y en cada ítem marcado, para que estén AL LADO supervisando (no se bloquea al operario)."""
+    """Usuarios que VERIFICAN el despeje/pesaje (Control de Calidad + Aseguramiento), sin los admins-dueños
+    (sebastián/alejandro) para no llenarles la campana. Sebastián 7-jul: se les alerta cuando empieza
+    fabricación y en cada ítem marcado, para que estén AL LADO supervisando (no se bloquea al operario).
+
+    16-ago: se saca al Director Técnico, en el mismo movimiento que `_batch_role_info` -- él ya no firma
+    verificaciones de proceso, así que avisarle de cada ítem sería una campana que lleva a algo que no
+    puede hacer (M202) · su acto, la liberación del producto terminado, tiene su propio aviso."""
     try:
-        from config import ASEGURAMIENTO_USERS, TECNICA_USERS
+        from config import ASEGURAMIENTO_USERS
     except Exception:
-        ASEGURAMIENTO_USERS, TECNICA_USERS = set(), set()
-    dest = (set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS) | set(TECNICA_USERS)) - set(ADMIN_USERS)
+        ASEGURAMIENTO_USERS = set()
+    dest = (set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS)) - set(ADMIN_USERS)
     return sorted(d for d in dest if d)
 
 
@@ -3187,10 +3201,16 @@ async function load(){
           '<a class="b-desc" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">📄 Descargar</a>'+
         '</div>'+
       '</div></div>';
-    // Nodo 2: Instrucciones de Fabricación
+    // Nodo 2: las instrucciones de LA FASE de este lote.
+    // El rótulo decía "Fabricación" siempre: en un lote de envasado quedaba anunciando una
+    // fase que no es la suya, justo encima de los pasos correctos (M205/M214 · se arregló
+    // el título y los pasos, y este rótulo quedó atrás porque no se MIRÓ la pantalla).
+    var _titFase = (_fase==='envasado') ? 'Instrucciones de Envasado'
+                 : (_fase==='acondicionamiento') ? 'Instrucciones de Acondicionamiento'
+                 : 'Instrucciones de Fabricación';
     var instrCard=
       '<div class="node"><div class="ico">📖</div><div class="card">'+
-        '<span class="tag fab">Instrucciones de Fabricación</span>'+
+        '<span class="tag fab">'+_titFase+'</span>'+
         '<ul class="stages">'+etapasHtml+'</ul>'+
         '<div class="btns"><a class="b-ver" href="/planta/orden/'+EBR_ID+'">Ver</a></div>'+
       '</div></div>';
@@ -3804,23 +3824,23 @@ def ebr_vista_completa(ebr_id):
     # (envase × unidades × área), leído de la tabla `envasado` por el lote físico.
     out['fase'] = out['header'].get('fase', 'fabricacion')
     # Rol del usuario + permisos (segregación de funciones GMP · la UI se adapta · 9-jun).
-    # El backend YA bloquea (403); esto es para que la UI muestre el rol y oculte lo que
-    # no le toca. Operario ejecuta · Calidad verifica/libera/corrige · Admin/Dir.Téc todo.
-    _u = session.get("compras_user", "")
-    _es_admin = _u in ADMIN_USERS
-    _es_calidad = _u in CALIDAD_USERS
-    _es_planta = _u in PLANTA_USERS
-    out['mi_rol'] = {
-        'usuario': _u,
-        'rol': ('Dirección Técnica / Admin' if _es_admin
-                else 'Calidad / Aseguramiento' if _es_calidad
-                else 'Operario' if _es_planta else 'Usuario'),
-        'puede_ejecutar': (_es_planta or _es_calidad or _es_admin),
-        'puede_corregir': (_es_calidad or _es_admin),
-        'puede_verificar': (_es_calidad or _es_admin),
-        'puede_liberar': (_es_calidad or _es_admin),
-        'puede_aprobar': (_es_calidad or _es_admin),
-    }
+    # El backend YA bloquea (403); esto es para que la UI muestre el rol y oculte lo que no le
+    # toca.
+    #
+    # ⚠ 16-ago · esto era un SEGUNDO mapa de roles escrito a mano, y divergía del canónico
+    # `_batch_role_info` de dos formas que nadie veía:
+    #   · no conocía a ASEGURAMIENTO, así que a Miguel -que SÍ pasa el gate real- la pantalla
+    #     le escondía lo que tiene permitido hacer (M121 al revés: la capacidad existe y la
+    #     vista la tapa);
+    #   · y sobre todo emitía `puede_verificar` mientras la pantalla de envasado lee
+    #     `d.mi_rol.verifica` (línea ~11364) -- una llave que este dict NUNCA tuvo, así que
+    #     `PUEDE_VERIF` daba false para TODO el mundo y el botón de verificar el material de
+    #     envase no aparecía nunca, sin un solo error a la vista (M94).
+    #
+    # Ahora sale del resolvedor único (M1/M3) y se le agrega el alias `puede_corregir` que este
+    # camino ya publicaba, para no romper a quien lo lea.
+    out['mi_rol'] = _batch_role_info(session.get("compras_user", ""))
+    out['mi_rol']['puede_corregir'] = out['mi_rol'].get('corrige', False)
     if out['fase'] == 'envasado':
         out['envasado_presentaciones'] = []
         try:
@@ -4008,7 +4028,15 @@ def ebr_vista_completa(ebr_id):
                 "FROM usuarios_identidad WHERE username=? AND COALESCE(activo,1)=1",
                 (op,)).fetchone()
             if ir:
-                _partes = [p for p in (ir[0], ir[1]) if p and p != 'Por definir']
+                # El nombre sale del resolvedor único: `usuarios_identidad` lo tiene vacío
+                # para todos, y las personas están en `empleados` / `operarios_planta`.
+                try:
+                    from blueprints.identidad import nombre_de as _nombre_de
+                    _nom_op = _nombre_de(conn, op)
+                except Exception:
+                    _nom_op = ''
+                _partes = [p for p in (_nom_op or ir[0], ir[1])
+                           if p and p != 'Por definir']
                 if _partes:
                     out['header']['operario'] = ', '.join(_partes) + f' ({op})'
         # Supervisado por = Jefe de Producción (fases productivas).
@@ -4024,15 +4052,42 @@ def ebr_vista_completa(ebr_id):
             "WHERE LOWER(cargo) LIKE '%jefe%produc%' AND COALESCE(activo,1)=1 "
             "ORDER BY CASE WHEN COALESCE(nombre_completo,'')<>'' THEN 0 ELSE 1 END, username "
             "LIMIT 1").fetchone()
-        if jp and (jp[0] or jp[1]):
+        # Sebastián 16-ago: *"tú tienes el nombre de cada jefe, ellos se loguean"*. El nombre
+        # se resuelve con el resolvedor único (`identidad.nombre_de`), que además busca en
+        # `empleados` y `operarios_planta` -- ahí están los nombres reales, y `usuarios_identidad`
+        # los tiene vacíos. Se cruza por PERSONA (el username del jefe), nunca por cargo:
+        # buscar "el jefe de producción" devuelve a Luis Enrique, dado de baja (mig 375), y un
+        # legajo firmado por quien ya no trabaja acá es peor que uno sin nombre.
+        # ⚠ Si hay más de un jefe de producción activo, gana EL QUE TIENE NOMBRE: ordenar por
+        # username a secas devuelve al primero alfabético, que puede ser justo el que no lo
+        # tiene cargado -- y ahí el legajo vuelve a imprimir el cargo pelado (es el fix del
+        # 26-jul, que se perdió al reescribir esto y lo cazó su propio test · M97).
+        jefes = conn.execute(
+            "SELECT username, COALESCE(cargo,'') FROM usuarios_identidad "
+            "WHERE LOWER(cargo) LIKE '%jefe%produc%' AND COALESCE(activo,1)=1 "
+            "ORDER BY username").fetchall()
+        jpu = None
+        _nom = ''
+        if jefes:
+            try:
+                from blueprints.identidad import nombre_de as _nombre_de
+            except Exception:
+                _nombre_de = lambda _c, _u: ''
+            for _j in jefes:
+                _n = _nombre_de(conn, _j[0])
+                if _n:
+                    jpu, _nom = _j, _n
+                    break
+            if jpu is None:
+                jpu = jefes[0]
+        if jpu:
+            _u, _cargo = jpu[0], (jpu[1] or 'Jefe de Producción')
+            # Sin nombre cargado se DICE: poner el cargo solo se lee como si eso fuera la
+            # firma, y en un registro regulado la pregunta es quién supervisó (M100/M124).
+            sup = ('%s, %s' % (_nom, _cargo)) if _nom else ('%s · falta cargar el nombre '
+                                                            'de %s' % (_cargo, _u))
+        elif jp and (jp[0] or jp[1]):
             sup = ((jp[0] + ', ') if jp[0] else '') + (jp[1] or 'Jefe de Producción')
-        else:
-            jo = conn.execute(
-                "SELECT nombre, COALESCE(apellido,'') FROM operarios_planta "
-                "WHERE COALESCE(es_jefe_produccion,0)=1 "
-                "ORDER BY CASE WHEN COALESCE(nombre,'')<>'' THEN 0 ELSE 1 END, id LIMIT 1").fetchone()
-            if jo:
-                sup = (str(jo[0] or '') + ' ' + str(jo[1] or '')).strip() + ', Jefe de Producción'
         out['header']['supervisado_por'] = sup
     except Exception:
         pass
@@ -5928,7 +5983,17 @@ def brd_presentacion_delete(ebr_id, row_id):
 
 def _presentaciones_manuales(conn, ebr_id):
     """Presentaciones agregadas/editadas a mano (ebr_presentaciones_manual). Tienen `id`
-    y `fuente='manual'` → la UI permite editarlas/borrarlas. Estado 'Programado (manual)'."""
+    y `fuente='manual'` → la UI permite editarlas/borrarlas. Estado 'Programado (manual)'.
+
+    El RENDIMIENTO va en vivo (Sebastián 16-ago: *"es el número que dice si el envasado va
+    bien"*): antes la columna quedaba vacía hasta el cierre, o sea que el dato aparecía
+    cuando ya no servía para decidir nada. Se calcula contra el granel que entró a la orden:
+    unidades registradas ÷ (granel ÷ volumen del frasco).
+
+    ⚠ Sólo con UNA presentación. Con varias, el granel se reparte entre ellas y atribuirlo
+    entero a cada una daría rendimientos inventados -- la misma regla que ya usa el teórico
+    del legajo: si no se puede repartir bien, no se reparte (M8/M124).
+    """
     try:
         cur = conn.cursor()
         rows = cur.execute(
@@ -5936,16 +6001,38 @@ def _presentaciones_manuales(conn, ebr_id):
             "FROM ebr_presentaciones_manual WHERE ebr_id=? ORDER BY id", (ebr_id,)).fetchall()
     except Exception:
         return []
+
+    granel_ml = None
+    if len(rows) == 1:
+        try:
+            g = cur.execute(
+                "SELECT ml_envasable, cantidad_objetivo_g, densidad_g_ml "
+                "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+            if g:
+                granel_ml = g["ml_envasable"]
+                if not granel_ml and g["cantidad_objetivo_g"] and g["densidad_g_ml"]:
+                    granel_ml = float(g["cantidad_objetivo_g"]) / float(g["densidad_g_ml"])
+        except Exception as e:
+            log.warning("rendimiento en vivo · no se pudo leer el granel de %s: %s", ebr_id, e)
+
     out = []
     for r in rows:
         uds = r["unidades"]; ml = r["volumen_ml"]
+        teoricas = rend = None
+        if granel_ml and ml and float(ml) > 0:
+            teoricas = int(float(granel_ml) // float(ml))
+            if teoricas and uds:
+                rend = round(float(uds) / teoricas * 100, 2)
         out.append({
             "id": r["id"], "fuente": "manual",
             "presentacion": r["presentacion"] or "·", "cliente": r["cliente"] or "Animus DTC",
             "lote": r["lote"] or "", "unidades": uds, "area": r["area"] or "",
             "envase_codigo": r["envase_codigo"] or "", "volumen_ml": ml,
             "cantidad_ml": (uds * ml) if (uds and ml) else None,
-            "unidades_final": None, "rend_pct": None, "estado": "Programado (manual)",
+            # `unidades_final` es lo que se confirma AL CERRAR: mientras el lote va en curso
+            # se muestran las teóricas, que es contra lo que se compara el rendimiento.
+            "unidades_final": teoricas, "rend_pct": rend,
+            "estado": "Programado (manual)",
         })
     return out
 
@@ -6348,9 +6435,9 @@ def reportar_ipc_estandar(ebr_id):
     if _adjudica and not _es_demo_ipc:
         if not _batch_role_info(user).get("verifica"):
             return jsonify({
-                "error": ("Declarar si un control CUMPLE es atribución de Calidad / "
-                          "Aseguramiento / Jefe de Producción / Dirección Técnica. "
-                          "Registrá el valor medido y Calidad lo adjudica."),
+                "error": ("Declarar si un control CUMPLE es atribución del Analista o del Jefe "
+                          "de Control de Calidad (y de Aseguramiento). Registrá el valor medido "
+                          "y Calidad lo adjudica."),
                 "codigo": "SOLO_CALIDAD_ADJUDICA",
             }), 403
         _midio = (_prev[0].strip() if _prev else '')
@@ -8062,6 +8149,55 @@ def brd_devolucion_mp(ebr_id):
     return jsonify({"ok": True, "mov_id": mov_id, "stock_antes_g": stock_antes,
                     "stock_despues_g": round(stock_antes + cant, 2),
                     "discrepancia_g": discrepancia}), 201
+
+
+@bp.route("/api/brd/lote-sugerido", methods=["GET"])
+def brd_lote_sugerido():
+    """El número de lote que TOCA hoy, con la numeración de la planta (año + día juliano).
+
+    Se SUGIERE, no se impone: la pantalla lo pre-llena y la persona puede cambiarlo. El
+    número de lote es la llave de la trazabilidad y quien lo decide es quien fabrica -- lo
+    que estaba mal es que EOS propusiera un formato que no existe en el rótulo (`260815-42`),
+    obligando a corregirlo a mano cada vez o, peor, dejando el legajo con un lote que no
+    coincide con el del producto.
+
+    ?fecha=YYYY-MM-DD para el lote de otro día (una producción que se registra al día
+    siguiente lleva el juliano del día en que se fabricó, no el de hoy).
+    """
+    if 'compras_user' not in session:
+        return jsonify({"error": "No autorizado"}), 401
+    conn = get_db()
+    fecha = None
+    _f = (request.args.get('fecha') or '').strip()
+    if _f:
+        try:
+            from datetime import datetime as _dtl
+            fecha = _dtl.strptime(_f[:10], '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({"error": "fecha inválida · usá YYYY-MM-DD"}), 400
+    try:
+        from audit_helpers import lote_juliano
+        sugerido = lote_juliano(conn.cursor(), fecha)
+    except Exception as e:
+        log.warning('lote sugerido: %s', e)
+        return jsonify({"error": "no se pudo calcular el lote"}), 500
+    if not sugerido:
+        # Se DICE por qué no hay número, en vez de devolver uno inventado.
+        return jsonify({
+            "sugerido": None,
+            "motivo": "ese día ya tiene 9 lotes y la numeración admite un dígito · "
+                      "escribí el número a mano",
+        }), 200
+    from datetime import datetime as _dt2, timedelta as _td2
+    _f2 = fecha or (_dt2.utcnow() - _td2(hours=5)).date()
+    return jsonify({
+        "sugerido": sugerido,
+        "fecha": _f2.isoformat(),
+        "dia_juliano": _f2.timetuple().tm_yday,
+        "consecutivo": int(sugerido[-1]),
+        "explicacion": "año %02d · día %d del año · lote %s del día"
+                       % (_f2.year % 100, _f2.timetuple().tm_yday, sugerido[-1]),
+    })
 
 
 @bp.route("/api/brd/ordenes", methods=["GET", "POST"])
@@ -11169,7 +11305,9 @@ async function load(){
         fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
         fld('Elaborado por',esc(h.operario||'·'))+
         fld('Observaciones',esc(h.observaciones||'Ninguna'))+
-        fld('Cantidad por Envasar',mlB!=null?mlf(mlB):'·')+
+        // "Cantidad por Envasar" repetía los mismos mililitros que ya dice "Tamaño Bulk"
+        // (Sebastián 16-ago, mirando la pantalla: *"deja uno"*). El tamaño se queda, porque
+        // trae las dos unidades -- los gramos que entraron y los mL que se envasan.
         fld('Densidad Bulk',densi?(densi.toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'·')+
         fld('Supervisado por',esc(h.supervisado_por||'·'))+
       '</div>'+
@@ -11213,7 +11351,7 @@ async function load(){
     var presCard='<div class="card"><div class="sechead" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div class="sectit">Lotes de Producto por Presentación</div>'+
       (puedeEdPres?'<button class="bt bt-pdf" onclick="presModal(-1)" title="Agregar una presentación a mano (por si no cargó del plan)">+ Presentación</button>':'')+'</div>'+
       '<div class="tw"><table class="t"><thead><tr>'+
-        '<th>Presentación'+ar()+'</th><th>N° de lote'+ar()+'</th><th>Unid.'+ar()+'</th><th>Área/Línea'+ar()+'</th><th>Cantidad'+ar()+'</th><th>Unid. final'+ar()+'</th><th>%Rend.'+ar()+'</th><th>Estado'+ar()+'</th><th>Acciones</th>'+
+        '<th>Presentación'+ar()+'</th><th>N° de lote'+ar()+'</th><th>Unid.'+ar()+'</th><th>Área/Línea'+ar()+'</th><th>Cantidad'+ar()+'</th><th>Te&oacute;ricas'+ar()+'</th><th>%Rend.'+ar()+'</th><th>Estado'+ar()+'</th><th>Acciones</th>'+
       '</tr></thead><tbody>'+presRows+'</tbody>'+
       (pres.length?('<tfoot><tr><td><b>Total</b></td><td></td><td>'+totUds.toLocaleString('es-CO')+'</td><td></td><td>'+(totCant>0?mlf(totCant):'')+'</td><td></td><td></td><td></td><td></td></tr></tfoot>'):'')+
       '</table></div>'+
@@ -11403,19 +11541,110 @@ async function terminarLote(){
     alert('✅ Lote terminado. Ahora Calidad/Aseguramiento puede liberarlo.'); location.reload();
   }catch(e){alert('Error: '+(e.message||e));}
 }
-async function liberarLote(){
-  // Calidad/Aseguramiento · libera el lote con e-firma (cierra el batch record · Part 11).
-  if(!confirm('¿LIBERAR el lote? Cierra el batch record con tu firma electrónica (Calidad / Aseguramiento · queda auditado · 21 CFR Part 11).'))return;
-  try{
-    var rf=await fetch('/api/brd/ebr/'+EBR_ID+'/firmar-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({meaning:'libera'})});
-    var df=await rf.json();
-    if(!rf.ok||!df.ok){alert('No se pudo firmar la liberación: '+((df&&df.error)||rf.status));return;}
-    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/liberar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({signature_id:df.signature_id})});
-    var d=await r.json();
-    if(!r.ok){alert('No se pudo liberar: '+((d&&d.error)||r.status));return;}
-    alert('✅ Lote LIBERADO. Batch record cerrado.'); location.reload();
-  }catch(e){alert('Error: '+(e.message||e));}
+async function liberarLote(){ _libAbrir(); }
+
+// Modal de liberacion · propio de EOS, no el cuadro gris del navegador.
+// Trae el motivo del rechazo y el campo para resolverlo SIN salir: el control sigue siendo
+// obligatorio, pero ahora se puede cumplir donde aparece (Sebastian 16-ago-2026).
+function _libAbrir(motivo, yieldPct){
+  var ov=document.getElementById('libov');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='libov';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,12,35,.55);display:flex;'+
+      'align-items:center;justify-content:center;z-index:9999;padding:20px';
+    ov.innerHTML='<div style="background:var(--cx-card,#fff);color:var(--cx-text,#0f172a);'+
+      'border-radius:16px;max-width:640px;width:100%;box-shadow:0 24px 60px rgba(15,12,35,.35);'+
+      'overflow:hidden">'+
+      '<div style="padding:24px 26px 6px"><div style="font-size:20px;font-weight:800;'+
+      'letter-spacing:-.01em">Liberar el lote</div>'+
+      '<div id="libsub" style="margin-top:6px;font-size:14px;line-height:1.55;'+
+      'color:var(--cx-text-soft,#475569)">Cierra el batch record con tu firma electr&oacute;nica. '+
+      'Queda auditado (Calidad / Aseguramiento &middot; 21 CFR Part 11).</div>'+
+      '<div id="libwarn" style="display:none;margin-top:14px;padding:14px 16px;border-radius:10px;'+
+      'background:var(--cx-warn-pale,#fef3c7);border:1px solid var(--cx-warn,#f59e0b)">'+
+      '<div id="libwarntxt" style="font-size:13.5px;line-height:1.55;color:var(--cx-warn-text,#92400e)"></div>'+
+      '<label style="display:block;margin-top:12px;font-size:12px;font-weight:700;'+
+      'text-transform:uppercase;letter-spacing:.06em;color:var(--cx-text-soft,#475569)">'+
+      'Por qu&eacute; dio ese rendimiento</label>'+
+      '<textarea id="libjust" rows="3" placeholder="Ej: se perdi&oacute; producto al trasvasar el '+
+      'recipiente 2 · o la balanza estaba destarada" style="width:100%;margin-top:6px;'+
+      'padding:10px 12px;border:1px solid var(--cx-border,#cbd5e1);border-radius:9px;'+
+      'font:inherit;font-size:14px;background:var(--cx-card,#fff);color:var(--cx-text,#0f172a);'+
+      'resize:vertical"></textarea>'+
+      '<div style="margin-top:6px;font-size:12px;color:var(--cx-text-faint,#94a3b8)">'+
+      'Queda en el legajo y en el PDF: es la explicaci&oacute;n que va a leer quien audite.</div>'+
+      '</div></div>'+
+      '<div style="display:flex;gap:10px;justify-content:flex-end;padding:18px 26px 22px">'+
+      '<button onclick="_libCerrar()" style="padding:10px 18px;border-radius:9px;'+
+      'border:1px solid var(--cx-border,#cbd5e1);background:var(--cx-card,#fff);'+
+      'color:var(--cx-text,#0f172a);font:inherit;font-weight:600;cursor:pointer">Cancelar</button>'+
+      '<button id="libok" onclick="_libConfirmar()" style="padding:10px 20px;border-radius:9px;'+
+      'border:none;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;font:inherit;'+
+      'font-weight:700;cursor:pointer">Liberar el lote</button></div></div>';
+    document.body.appendChild(ov);
+  }
+  ov.style.display='flex';
+  var w=document.getElementById('libwarn');
+  if(motivo){
+    w.style.display='block';
+    document.getElementById('libwarntxt').innerHTML=motivo;
+    setTimeout(function(){var t=document.getElementById('libjust'); if(t)t.focus();},60);
+  }else{
+    w.style.display='none';
+  }
 }
+function _libCerrar(){var o=document.getElementById('libov'); if(o)o.style.display='none';}
+
+async function _libConfirmar(){
+  var btn=document.getElementById('libok');
+  var just=(document.getElementById('libjust')||{}).value||'';
+  var warn=document.getElementById('libwarn');
+  if(warn&&warn.style.display==='block'&&just.trim().length<10){
+    document.getElementById('libwarntxt').innerHTML=
+      'Escrib&iacute; por qu&eacute; dio ese rendimiento (al menos 10 caracteres): es lo que va a leer quien audite.';
+    return;
+  }
+  if(btn){btn.disabled=true; btn.textContent='Liberando...';}
+  try{
+    var rf=await fetch('/api/brd/ebr/'+EBR_ID+'/firmar-rapido',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify({meaning:'libera'})});
+    var df=await rf.json();
+    if(!rf.ok||!df.ok){
+      document.getElementById('libsub').innerHTML='No se pudo firmar la liberaci&oacute;n: '+
+        _escLib((df&&df.error)||rf.status);
+      if(btn){btn.disabled=false; btn.textContent='Liberar el lote';}
+      return;
+    }
+    var cuerpo={};
+    if(just.trim()){cuerpo.yield_justificacion=just.trim();}
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/liberar',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify(cuerpo)});
+    var d=await r.json();
+    if(!r.ok){
+      if(btn){btn.disabled=false; btn.textContent='Liberar el lote';}
+      // El rendimiento fuera de rango no es un error del usuario: es un dato que falta.
+      // Se pide en el mismo modal en vez de mandarlo a buscar donde se justifica.
+      if(d&&d.codigo==='YIELD_FUERA_RANGO'){
+        _libAbrir('El lote rindi&oacute; <b>'+_escLib(d.yield_pct)+'%</b> y lo normal es entre 80% '+
+          'y 115%. Puede ser p&eacute;rdida de producto, un error de tara o unidades de otra orden. '+
+          'GMP pide explicarlo antes de liberar.', d.yield_pct);
+        return;
+      }
+      document.getElementById('libsub').innerHTML='No se pudo liberar: '+
+        _escLib((d&&d.error)||r.status);
+      return;
+    }
+    _libCerrar();
+    location.reload();
+  }catch(e){
+    if(btn){btn.disabled=false; btn.textContent='Liberar el lote';}
+    document.getElementById('libsub').innerHTML='Error: '+_escLib(e.message||e);
+  }
+}
+function _escLib(s){var d=document.createElement('div');d.textContent=(s==null?'':String(s));return d.innerHTML;}
+
 var _envOpc=null;
 async function cargarEnvaseOpc(){
   if(_envOpc)return _envOpc;
@@ -11845,18 +12074,110 @@ async function terminarLote(){
     alert('✅ Acondicionamiento terminado. Ahora Calidad/Aseguramiento puede liberarlo.'); location.reload();
   }catch(e){alert('Error: '+(e.message||e));}
 }
-async function liberarLote(){
-  if(!confirm('¿LIBERAR el lote? Cierra el batch record con tu firma electrónica (Calidad / Aseguramiento · queda auditado · 21 CFR Part 11).'))return;
-  try{
-    var rf=await fetch('/api/brd/ebr/'+EBR_ID+'/firmar-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({meaning:'libera'})});
-    var df=await rf.json();
-    if(!rf.ok||!df.ok){alert('No se pudo firmar la liberación: '+((df&&df.error)||rf.status));return;}
-    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/liberar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({signature_id:df.signature_id})});
-    var d=await r.json();
-    if(!r.ok){alert('No se pudo liberar: '+((d&&d.error)||r.status));return;}
-    alert('✅ Lote LIBERADO. Batch record cerrado.'); location.reload();
-  }catch(e){alert('Error: '+(e.message||e));}
+async function liberarLote(){ _libAbrir(); }
+
+// Modal de liberacion · propio de EOS, no el cuadro gris del navegador.
+// Trae el motivo del rechazo y el campo para resolverlo SIN salir: el control sigue siendo
+// obligatorio, pero ahora se puede cumplir donde aparece (Sebastian 16-ago-2026).
+function _libAbrir(motivo, yieldPct){
+  var ov=document.getElementById('libov');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='libov';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,12,35,.55);display:flex;'+
+      'align-items:center;justify-content:center;z-index:9999;padding:20px';
+    ov.innerHTML='<div style="background:var(--cx-card,#fff);color:var(--cx-text,#0f172a);'+
+      'border-radius:16px;max-width:640px;width:100%;box-shadow:0 24px 60px rgba(15,12,35,.35);'+
+      'overflow:hidden">'+
+      '<div style="padding:24px 26px 6px"><div style="font-size:20px;font-weight:800;'+
+      'letter-spacing:-.01em">Liberar el lote</div>'+
+      '<div id="libsub" style="margin-top:6px;font-size:14px;line-height:1.55;'+
+      'color:var(--cx-text-soft,#475569)">Cierra el batch record con tu firma electr&oacute;nica. '+
+      'Queda auditado (Calidad / Aseguramiento &middot; 21 CFR Part 11).</div>'+
+      '<div id="libwarn" style="display:none;margin-top:14px;padding:14px 16px;border-radius:10px;'+
+      'background:var(--cx-warn-pale,#fef3c7);border:1px solid var(--cx-warn,#f59e0b)">'+
+      '<div id="libwarntxt" style="font-size:13.5px;line-height:1.55;color:var(--cx-warn-text,#92400e)"></div>'+
+      '<label style="display:block;margin-top:12px;font-size:12px;font-weight:700;'+
+      'text-transform:uppercase;letter-spacing:.06em;color:var(--cx-text-soft,#475569)">'+
+      'Por qu&eacute; dio ese rendimiento</label>'+
+      '<textarea id="libjust" rows="3" placeholder="Ej: se perdi&oacute; producto al trasvasar el '+
+      'recipiente 2 · o la balanza estaba destarada" style="width:100%;margin-top:6px;'+
+      'padding:10px 12px;border:1px solid var(--cx-border,#cbd5e1);border-radius:9px;'+
+      'font:inherit;font-size:14px;background:var(--cx-card,#fff);color:var(--cx-text,#0f172a);'+
+      'resize:vertical"></textarea>'+
+      '<div style="margin-top:6px;font-size:12px;color:var(--cx-text-faint,#94a3b8)">'+
+      'Queda en el legajo y en el PDF: es la explicaci&oacute;n que va a leer quien audite.</div>'+
+      '</div></div>'+
+      '<div style="display:flex;gap:10px;justify-content:flex-end;padding:18px 26px 22px">'+
+      '<button onclick="_libCerrar()" style="padding:10px 18px;border-radius:9px;'+
+      'border:1px solid var(--cx-border,#cbd5e1);background:var(--cx-card,#fff);'+
+      'color:var(--cx-text,#0f172a);font:inherit;font-weight:600;cursor:pointer">Cancelar</button>'+
+      '<button id="libok" onclick="_libConfirmar()" style="padding:10px 20px;border-radius:9px;'+
+      'border:none;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;font:inherit;'+
+      'font-weight:700;cursor:pointer">Liberar el lote</button></div></div>';
+    document.body.appendChild(ov);
+  }
+  ov.style.display='flex';
+  var w=document.getElementById('libwarn');
+  if(motivo){
+    w.style.display='block';
+    document.getElementById('libwarntxt').innerHTML=motivo;
+    setTimeout(function(){var t=document.getElementById('libjust'); if(t)t.focus();},60);
+  }else{
+    w.style.display='none';
+  }
 }
+function _libCerrar(){var o=document.getElementById('libov'); if(o)o.style.display='none';}
+
+async function _libConfirmar(){
+  var btn=document.getElementById('libok');
+  var just=(document.getElementById('libjust')||{}).value||'';
+  var warn=document.getElementById('libwarn');
+  if(warn&&warn.style.display==='block'&&just.trim().length<10){
+    document.getElementById('libwarntxt').innerHTML=
+      'Escrib&iacute; por qu&eacute; dio ese rendimiento (al menos 10 caracteres): es lo que va a leer quien audite.';
+    return;
+  }
+  if(btn){btn.disabled=true; btn.textContent='Liberando...';}
+  try{
+    var rf=await fetch('/api/brd/ebr/'+EBR_ID+'/firmar-rapido',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify({meaning:'libera'})});
+    var df=await rf.json();
+    if(!rf.ok||!df.ok){
+      document.getElementById('libsub').innerHTML='No se pudo firmar la liberaci&oacute;n: '+
+        _escLib((df&&df.error)||rf.status);
+      if(btn){btn.disabled=false; btn.textContent='Liberar el lote';}
+      return;
+    }
+    var cuerpo={};
+    if(just.trim()){cuerpo.yield_justificacion=just.trim();}
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/liberar',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify(cuerpo)});
+    var d=await r.json();
+    if(!r.ok){
+      if(btn){btn.disabled=false; btn.textContent='Liberar el lote';}
+      // El rendimiento fuera de rango no es un error del usuario: es un dato que falta.
+      // Se pide en el mismo modal en vez de mandarlo a buscar donde se justifica.
+      if(d&&d.codigo==='YIELD_FUERA_RANGO'){
+        _libAbrir('El lote rindi&oacute; <b>'+_escLib(d.yield_pct)+'%</b> y lo normal es entre 80% '+
+          'y 115%. Puede ser p&eacute;rdida de producto, un error de tara o unidades de otra orden. '+
+          'GMP pide explicarlo antes de liberar.', d.yield_pct);
+        return;
+      }
+      document.getElementById('libsub').innerHTML='No se pudo liberar: '+
+        _escLib((d&&d.error)||r.status);
+      return;
+    }
+    _libCerrar();
+    location.reload();
+  }catch(e){
+    if(btn){btn.disabled=false; btn.textContent='Liberar el lote';}
+    document.getElementById('libsub').innerHTML='Error: '+_escLib(e.message||e);
+  }
+}
+function _escLib(s){var d=document.createElement('div');d.textContent=(s==null?'':String(s));return d.innerHTML;}
+
 load();
 </script>
 </body></html>"""

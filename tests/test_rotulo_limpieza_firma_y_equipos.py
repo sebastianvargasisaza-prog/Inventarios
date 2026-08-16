@@ -91,7 +91,12 @@ def test_una_limpieza_reciente_si_sale_firmada(app, db_clean):
     c = _login(app)
     html = c.get("/planta/rotulo-limpieza/%d/pdf" % aid).data.decode("utf-8")
     assert "Firma electr" in html, "una limpieza de hoy tiene que salir firmada"
-    assert "mayerlin" in html.lower(), "no muestra a quien la ejecutó"
+    # Desde el 16-ago el rótulo imprime el NOMBRE de la persona ("Maierlin Rivera Mejía")
+    # en vez del username, que es lo que un registro regulado necesita: quién ejecutó, no
+    # con qué usuario entró. El guard fija la GARANTÍA -- que se vea quién -- y acepta el
+    # username sólo como respaldo, para el caso en que ese nombre no esté cargado (M97).
+    assert ("maierlin" in html.lower() or "mayerlin" in html.lower()), (
+        "no muestra a quien la ejecutó")
 
 
 def test_el_limite_de_vigencia_se_respeta(app, db_clean):
@@ -187,7 +192,11 @@ def test_quien_limpia_se_imprime_sin_firmar_por_el(app, db_clean):
         pytest.skip("el área sembrada no tiene equipos")
     html = c.get("/planta/rotulos-limpieza?equipos=%s&operario=mayerlin"
                  % eqs[0]["codigo"]).data.decode("utf-8")
-    assert "mayerlin" in html.lower(), "no imprimió el nombre del operario asignado"
+    # Desde el 16-ago se imprime el NOMBRE de quien limpia, no el username: el rótulo lo va
+    # a leer una persona y firmarlo otra. Se acepta el username como respaldo por si ese
+    # nombre todavía no está cargado (M97: se fija la garantía, no la implementación).
+    assert ("maierlin" in html.lower() or "mayerlin" in html.lower()), (
+        "no imprimió el nombre del operario asignado")
     assert "Firma electr" not in html, (
         "certificó la firma de alguien que no registró la limpieza")
     assert "Firma y fecha" in html, "no dejó la línea para firmar"

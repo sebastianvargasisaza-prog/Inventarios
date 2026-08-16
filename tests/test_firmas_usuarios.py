@@ -87,17 +87,32 @@ def test_firma_estampa_y_resolver(app):
 
 
 def test_luis_desactivado(app):
-    """Offboarding luis (mig 375): login bloqueado (activo=0) + fuera de la lista de firmas."""
+    """Offboarding luis (mig 375): login bloqueado (activo=0) + fuera de la lista de firmas.
+
+    ⚠ El test SIEMBRA su propio universo: `db_clean` vacía `users_passwords` entre tests, así que
+    mirar las filas que dejó la migración pasa en una base virgen y falla en cuanto cualquier otro
+    test corrió antes (M102/M103) -- que es exactamente por qué este archivo llevaba tiempo rojo
+    fuera del gate. Se prueba el MECANISMO (una fila con activo=0 cierra la puerta de verdad,
+    aunque exista PASS_LUIS en el entorno), y que la migración la escriba se verifica aparte,
+    leyendo el SQL, que no depende del estado de la base.
+    """
     with app.app_context():
-        from database import get_db
+        from database import get_db, MIGRATIONS
         from blueprints.core import _resolve_password_hash
         db = get_db()
-        up = db.execute("SELECT COALESCE(activo,1) FROM users_passwords WHERE username='luis'").fetchone()
-        assert up is not None and int(up[0]) == 0, 'luis debe quedar activo=0 en users_passwords'
-        ident = db.execute("SELECT COALESCE(activo,1) FROM usuarios_identidad WHERE username='luis'").fetchone()
-        assert ident is not None and int(ident[0]) == 0, 'luis debe quedar activo=0 en la identidad'
-        # el login queda bloqueado aunque exista PASS_LUIS en config (activo=0 gana)
+        db.execute("DELETE FROM users_passwords WHERE username='luis'")
+        db.execute("INSERT INTO users_passwords (username, password_hash, activo, changed_by) "
+                   "VALUES ('luis', '!DESACTIVADO', 0, 'test')")
+        db.execute("UPDATE usuarios_identidad SET activo=0 WHERE username='luis'")
+        db.commit()
         assert _resolve_password_hash('luis') == '', 'luis no debe poder autenticar'
+
+        # y la migración es la que lo deja así en producción
+        sql = " ".join(str(s) for v, _d, stmts in MIGRATIONS if v == 375 for s in stmts)
+        assert sql, 'la migración 375 (offboarding) desapareció'
+        assert "users_passwords" in sql and "activo=0" in sql.replace(" = ", "=")
+        assert "usuarios_identidad" in sql, 'también sale de la lista de firmas del personal'
+        assert "DELETE" not in sql.upper(), 'nunca se borra: GMP conserva el histórico'
 
 
 def test_helper_firma_img(app):

@@ -60,8 +60,17 @@ def test_rotulo_recepcion_mee_premium(admin_client):
 
 
 def test_rotulo_limpieza_render_logo_sin_animus(admin_client):
-    """El rótulo de limpieza F02 renderiza, trae el logo Espagiria y NO dice ÁNIMUS Lab (Planta = Espagiria)."""
-    r = admin_client.get("/planta/rotulos-limpieza")
+    """El rótulo de limpieza F02 renderiza, trae el logo Espagiria y NO dice ÁNIMUS Lab (Planta = Espagiria).
+
+    Se pide `?todos=1` porque desde el 16-ago la URL pelada abre el SELECTOR de sala (Sebastián:
+    *"no van a usar todos los equipos"* · un rótulo de una máquina que nadie va a tocar termina
+    pegado donde no corresponde). El imprimible sigue existiendo detrás de ese parámetro, que es
+    justamente la URL que quedó viva por estar enlazada desde el dashboard.
+
+    O sea: la garantía -- que lo que sale por la impresora lleve la marca correcta -- no cambió;
+    lo que cambió es qué muestra la ruta sin parámetros (M97/M213).
+    """
+    r = admin_client.get("/planta/rotulos-limpieza?todos=1")
     assert r.status_code == 200, r.status_code
     body = r.data.decode("utf-8", "replace")
     assert "espagiria" in body.lower()  # logo src o marca
@@ -70,10 +79,15 @@ def test_rotulo_limpieza_render_logo_sin_animus(admin_client):
 
 
 def test_calidad_modulo_tiene_modal_ccreview_premium(admin_client):
-    """El módulo Calidad (Laura) ahora trae el modal premium de Revisión CC (COC-PRO-001) para liberar MP."""
+    """El módulo Calidad (Laura) ahora trae el modal premium de Revisión CC (COC-PRO-001) para liberar MP.
+
+    Se mira el HTML MÁS su bundle: el JS de esta pantalla pasó a `/calidad-app.js` el 16-ago, así
+    que buscarlo sólo en el HTML mediría dónde vive el código y no si la pantalla lo tiene.
+    """
+    from .conftest import pantalla_servida
     r = admin_client.get("/calidad")
     assert r.status_code == 200, r.status_code
-    body = r.data.decode("utf-8", "replace")
+    body = pantalla_servida(admin_client, "/calidad")
     assert "ccr-modal" in body
     assert "abrirCCReview" in body
     assert "Revisar CC" in body

@@ -44,6 +44,94 @@ _EDITABLE_FIELDS = {"cedula", "nombre_completo", "cargo", "area", "email",
                     "manager_username", "activo"}
 
 
+def nombre_de(conn, username):
+    """El NOMBRE de la persona detrás de un username, o '' si no está cargado.
+
+    Sebastián 16-ago-2026, viendo el legajo de envasado: *"sale el cargo sin la persona ·
+    tú tienes el nombre de cada jefe, ellos se loguean"*. Y tenía razón a medias: los
+    nombres están, pero repartidos en TRES tablas y ninguna es la que el legajo mira.
+
+      · `usuarios_identidad` tiene a los 18 que entran a la app, con su CARGO, y el
+        `nombre_completo` vacío en todos;
+      · `empleados` tiene 19 personas con nombre y apellido reales;
+      · `operarios_planta` tiene a los del piso.
+
+    Por eso el batch record imprimía *"Supervisado por: Jefe de Producción"* -- el cargo
+    solo, que como firma en un registro regulado no sirve: no dice QUIÉN supervisó.
+
+    ⚠ Y el cruce se hace por PERSONA, nunca por CARGO. Buscar "quién es el jefe de
+    producción" en `empleados` devuelve a Luis Enrique Dorronsoro, que fue dado de BAJA
+    (mig 375): el legajo terminaría firmado por alguien que ya no trabaja acá, que es peor
+    que no poner nombre (M19: el estado se deriva de un hecho, y su baja es un hecho).
+    Los inactivos quedan afuera en las tres fuentes.
+
+    Devuelve '' cuando no hay nombre cargado -- y quien llama DECLARA que falta en vez de
+    poner la etiqueta del cargo como si fuera la firma (M100/M124).
+    """
+    u = (username or "").strip()
+    if not u:
+        return ""
+    try:
+        r = conn.execute(
+            "SELECT COALESCE(nombre_completo,'') FROM usuarios_identidad "
+            "WHERE LOWER(username)=LOWER(?) AND COALESCE(activo,1)=1", (u,)).fetchone()
+        if r and (r[0] or "").strip() and (r[0] or "").strip() != "Por definir":
+            return r[0].strip()
+    except Exception as e:
+        log.warning("nombre_de: usuarios_identidad no disponible (%s): %s", u, e)
+
+    # Las otras dos guardan el nombre partido y sin username: se empareja por el nombre de
+    # pila, que es de donde salen los usuarios de esta casa (mayerlin -> Maierlin Rivera).
+    import unicodedata
+
+    def _norm(s):
+        s = unicodedata.normalize("NFKD", str(s or ""))
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        return s.strip().lower()
+
+    objetivo = _norm(u)
+    candidatos = []
+    for tabla in ("empleados", "operarios_planta"):
+        # ⚠ `empleados` NO tiene columna `activo` y `operarios_planta` sí: filtrar a ciegas
+        # hace que la consulta falle y se descarte la tabla ENTERA -- con eso se perdían los
+        # 19 nombres reales y el resolvedor "no encontraba" a gente que sí estaba cargada.
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(%s)" % tabla)}
+        except Exception:
+            cols = set()
+        if not cols:
+            continue
+        donde = " WHERE COALESCE(activo,1)=1" if "activo" in cols else ""
+        try:
+            filas = conn.execute(
+                "SELECT COALESCE(nombre,''), COALESCE(apellido,'') FROM %s%s"
+                % (tabla, donde)).fetchall()
+        except Exception as e:
+            log.warning("nombre_de: no se pudo leer %s: %s", tabla, e)
+            continue
+        for f in filas:
+            nom, ape = (f[0] or "").strip(), (f[1] or "").strip()
+            if not nom:
+                continue
+            partes = [_norm(p) for p in nom.split()]
+            if objetivo in partes or (len(objetivo) >= 4 and objetivo in _norm(nom + ape)):
+                completo = (nom + " " + ape).strip()
+                if completo not in candidatos:
+                    candidatos.append(completo)
+
+    # ⚠ Un solo candidato se usa; VARIOS no se eligen. En esta casa hay tres personas cuyo
+    # nombre de pila es Sebastián (el CEO y dos operarios) y dos Camilo: adivinar puso
+    # "Sebastian Murillo" -- el operario de envasado -- como responsable de un lote que
+    # ejecutó otra persona. Poner el nombre de alguien que no actuó es peor que no poner
+    # ninguno: es una firma falsa en un registro regulado (M193/M177).
+    if len(candidatos) == 1:
+        return candidatos[0]
+    if len(candidatos) > 1:
+        log.info("nombre_de: %r coincide con %d personas (%s) · no se elige",
+                 u, len(candidatos), ", ".join(candidatos[:3]))
+    return ""
+
+
 def _row_to_dict(row):
     return {
         "id": row["id"],

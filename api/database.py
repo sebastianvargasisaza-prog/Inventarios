@@ -11584,6 +11584,47 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE pedidos_b2b ADD COLUMN etiqueta_codigo TEXT DEFAULT ''",
         "ALTER TABLE pedidos_b2b ADD COLUMN caja_codigo TEXT DEFAULT ''",
     ]),
+    (437, "usuarios_identidad · el NOMBRE de cada persona detrás del username (Sebastián "
+          "16-ago-2026, mirando el legajo de envasado: *«sale el cargo sin la persona · tú "
+          "tienes el nombre de cada jefe, ellos se loguean»*). Los 18 usuarios tenían su "
+          "CARGO y el `nombre_completo` vacío, así que el batch record imprimía «Supervisado "
+          "por: Jefe de Producción» — el cargo solo, que como firma en un registro regulado "
+          "no dice QUIÉN supervisó (Part 11 §11.100(b)). Los nombres salen de la nómina "
+          "vigente que entregó Sebastián y de `empleados`, cruzados por nombre Y cargo: dos "
+          "hechos independientes que al coincidir dejan de ser una adivinanza. "
+          "⚠ `sebastian` NO se cruza con Johan Sebastián Murillo (operario de envasado) "
+          "aunque compartan nombre de pila — el cargo lo desmiente, y poner el nombre de "
+          "quien no ejecutó el acto es una firma falsa (M193/M177). Sólo se rellena lo que "
+          "está VACÍO: nunca pisa un nombre que alguien haya cargado a mano.", [
+        "UPDATE usuarios_identidad SET nombre_completo='José Alfredo Rodríguez Montoya' "
+        "WHERE LOWER(username)='jose' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Hernando Acevedo Díaz' "
+        "WHERE LOWER(username)='hernando' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Laura Isabel González Largo' "
+        "WHERE LOWER(username)='laura' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='María Yuliel Rivera Vargas' "
+        "WHERE LOWER(username)='yuliel' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Miguel Valencia Medina' "
+        "WHERE LOWER(username)='miguel' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Maierlin Rivera Mejía' "
+        "WHERE LOWER(username)='mayerlin' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Johan Sebastián Murillo Solís' "
+        "WHERE LOWER(username)='smurillo' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Catalina Erazo Aristizabal' "
+        "WHERE LOWER(username)='catalina' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Luz Adriana Torres García' "
+        "WHERE LOWER(username)='luz' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Yeison Camilo García Mosquera' "
+        "WHERE LOWER(username)='camilo' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Sebastián Vargas Isaza' "
+        "WHERE LOWER(username)='sebastian' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Daniela Murillo Solís' "
+        "WHERE LOWER(username)='daniela' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Jefferson Muñoz Cachimbo' "
+        "WHERE LOWER(username)='jefferson' AND COALESCE(nombre_completo,'')=''",
+        "UPDATE usuarios_identidad SET nombre_completo='Valentina Muñoz Cachimbo' "
+        "WHERE LOWER(username)='valentina' AND COALESCE(nombre_completo,'')=''",
+    ]),
 ]
 
 

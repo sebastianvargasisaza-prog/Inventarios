@@ -633,6 +633,30 @@ CORAZON=(
   # El legajo nace con los kg que el usuario fijo, no con un default generico del MBR: el
   # test existia desde el 30-jun y no corria en ningun gate (M95).
   "tests/test_ebr_objetivo_m67.py"
+  # El legajo dice QUIEN, no el cargo (16-ago) · y nunca el nombre de OTRA persona: emparejar
+  # por nombre de pila resolvia "sebastian" al operario de envasado, o sea una firma falsa.
+  "tests/test_legajo_dice_quien_fue.py"
+  # El numero de lote como lo numera la planta: anio + dia juliano + consecutivo (16-ago).
+  # Verificado contra los batch records firmados: el 11-jun-2026 da 261621, que es el lote
+  # real de ANIMUSLASH. Si el sistema numera distinto, el legajo no coincide con el rotulo.
+  "tests/test_lote_juliano.py"
+  # Liberar un lote: el aviso explica y deja escribir la justificacion AHI (16-ago).
+  # Antes salia el cuadro gris del navegador, que frena y no ofrece la salida.
+  "tests/test_liberar_pide_la_justificacion.py"
+  # Quien firma el cierre del batch record (16-ago), corregido contra el sistema documental de
+  # la empresa: las verificaciones son de Control de Calidad (analista y jefe), el Jefe de
+  # Produccion REALIZA y por eso no da su propia 2a firma, y el visto bueno del Director
+  # Tecnico va con el PRODUCTO TERMINADO, no en fabricacion ni en envasado.
+  "tests/test_quien_firma_el_cierre.py"
+  # Quien recibe la materia prima NO la libera (Res. 2214/2021 art. 10) + los topes de compra
+  # de Catalina. Llevaba tiempo rojo fuera del gate con la expectativa de junio.
+  "tests/test_catalina_sin_tope.py"
+  # La pantalla de Calidad carga sus helpers de CSRF y su paginacion, y NINGUN POST que muta
+  # sale sin token. Se mira el HTML + su bundle: el JS dejo de viajar inline el 16-ago.
+  "tests/test_calidad_ux.py"
+  # Las rubricas manuscritas que se estampan en los documentos regulados (Part 11 §11.50) y el
+  # offboarding: una fila con activo=0 cierra la puerta aunque quede la clave en el entorno.
+  "tests/test_firmas_usuarios.py"
 )
 
 echo ""

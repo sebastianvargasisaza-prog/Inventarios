@@ -354,7 +354,7 @@ async function showMbrDetail(id){
         + '<br>' + escapeHtml(p.descripcion)
         + (p.equipo_requerido ? '<br><span class="muted">Equipo: ' + escapeHtml(p.equipo_requerido) + '</span>' : '')
         + (p.requiere_e_sign ? ' <span class="estado estado-en_revision">e-sign</span>' : '')
-        + (p.requiere_qc ? ' <span class="estado estado-en_revision">QC</span>' : '')
+        + (p.requiere_qc ? ' <span class="estado estado-en_revision" title="Adem&aacute;s del operario que lo ejecuta, este paso lo verifica y firma alguien de Calidad (no puede ser la misma persona)">verifica Calidad</span>' : '')
         + '</div>';
     });
     html += '</div>';
@@ -444,7 +444,7 @@ async function showEbrDetail(id){
       }
       html += '<div class="paso-card ' + p.estado + '"><strong>Paso ' + p.orden + '</strong> · <span class="estado estado-' + p.estado + '">' + p.estado + '</span>'
         + (p.requiere_e_sign ? ' <span class="estado estado-en_revision">e-sign</span>' : '')
-        + (p.requiere_qc ? ' <span class="estado estado-en_revision">QC</span>' : '')
+        + (p.requiere_qc ? ' <span class="estado estado-en_revision" title="Adem&aacute;s del operario que lo ejecuta, este paso lo verifica y firma alguien de Calidad (no puede ser la misma persona)">verifica Calidad</span>' : '')
         + '<br>' + escapeHtml(p.descripcion)
         + (p.operario_username ? '<br><span class="muted">Operario: ' + escapeHtml(p.operario_username) + (p.completado_at_utc ? ' · ' + fmtDate(p.completado_at_utc) : '') + '</span>' : '')
         + (p.observaciones ? '<br><em class="muted">"' + escapeHtml(p.observaciones) + '"</em>' : '')

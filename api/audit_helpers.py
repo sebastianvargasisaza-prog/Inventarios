@@ -394,3 +394,59 @@ def lote_interno_mee(c):
         # le puede pasar a la trazabilidad.
         log.warning('correlativo de lote interno MEE: %s', e)
     return base + '%03d' % (mx + 1)
+
+
+def lote_juliano(c, fecha=None):
+    """El número de lote como lo numera la planta: año + día juliano + consecutivo.
+
+    Sebastián 16-ago-2026: *"los números de lote ellos los calculan con una tabla especial"*.
+    La tabla es el CALENDARIO JULIANO -- el día del año, 001 a 365 -- y la regla salió de sus
+    propios batch records firmados: de los 28, veinticinco encajan exactos y las órdenes
+    consecutivas caen en días crecientes. La prueba está en el día 183 (2 de julio), que tiene
+    DOS lotes (`261831` y `261832`): ahí se ve que el último dígito es el consecutivo del día.
+
+        261621  =  26      162           1
+                   año     11 de junio   primer lote de ese día
+
+    Hasta ahora EOS numeraba distinto en cada camino (`DEMO-<hora>`, `ESP260815xxx`,
+    `260815-42`), así que el número del sistema no era el que iba en el rótulo ni en el batch
+    record -- y el lote es la llave de toda la trazabilidad: kardex, genealogía, expediente.
+
+    El consecutivo se calcula mirando los lotes que YA existen de ese día, en las dos tablas
+    donde vive un lote (el legajo y el kardex): si sólo mirara una, dos lotes del mismo día
+    podrían salir con el mismo número, que es lo peor que le puede pasar a un registro
+    regulado (dos materiales distintos bajo la misma llave).
+
+    ⚠ El formato admite 9 lotes por día. Al décimo NO se inventa un dígito de más en
+    silencio -- se devuelve `None` y quien llama lo declara: un lote con formato distinto
+    al del rótulo es peor que pedirle el número a una persona (M100/M124).
+
+    Devuelve el número (str) o None si ese día ya no admite más.
+    """
+    from datetime import datetime, timedelta
+    if fecha is None:
+        # Ancla Colombia, nunca UTC crudo: de noche el servidor ya está en el día siguiente
+        # y el lote saldría con el juliano de mañana (M24).
+        fecha = (datetime.utcnow() - timedelta(hours=5)).date()
+    prefijo = '%02d%03d' % (fecha.year % 100, fecha.timetuple().tm_yday)
+
+    usados = set()
+    for sql, col in (
+            ("SELECT lote_codigo FROM ebr_ejecuciones WHERE lote_codigo LIKE ?", 'lote_codigo'),
+            ("SELECT lote FROM ebr_ejecuciones WHERE lote LIKE ?", 'lote'),
+            ("SELECT DISTINCT lote FROM movimientos WHERE lote LIKE ?", 'lote')):
+        try:
+            for r in c.execute(sql, (prefijo + '%',)).fetchall():
+                v = str((r[0] if not hasattr(r, 'keys') else r[col]) or '').strip()
+                if len(v) >= len(prefijo) + 1 and v[len(prefijo)].isdigit():
+                    usados.add(int(v[len(prefijo)]))
+        except Exception as e:
+            # Se avisa y se sigue: perder una fuente puede repetir un consecutivo, así que
+            # no puede quedar mudo (M4).
+            log.warning('lote_juliano: no se pudo leer %s: %s', sql.split()[3], e)
+
+    for n in range(1, 10):
+        if n not in usados:
+            return prefijo + str(n)
+    log.warning('lote_juliano: el día %s ya tiene 9 lotes · el formato no admite más', prefijo)
+    return None

@@ -8694,10 +8694,17 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</ul>';
   } else {h+='<div style="color:var(--cx-text-faint);font-size:12px;">Sin registros físicos adjuntos. Acá van las FOTOS de los rótulos diligenciados a mano (pesaje, limpieza) - la evidencia física del lote.</div>';}
   if(editable){h+='<button onclick="ebrAgregarRegistroFisico('+d.id+')" style="margin-top:4px;background:var(--cx-info);color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;cursor:pointer;">&#128247; Adjuntar foto / PDF</button>';}
-  // Cierre y Aprobaciones finales (Producción + Calidad · MyBatch pie del instructivo)
+  // Cierre y Aprobaciones finales · PRD-PRO-001-F01 (lista de chequeo del batch record): los RESPONSABLES
+  // DEL PROCESO son el Jefe de Producción y el Jefe de Control de Calidad, y el VBO de Dirección Técnica va
+  // al CIERRE del expediente. Por eso el bloque del Director Técnico aparece SOLO en acondicionamiento
+  // (producto terminado): en el acta con Hernando (27-jul) él mismo lo dijo -- "la LIBERACIÓN es
+  // responsabilidad del director técnico, mientras que el envasado requiere APROBACIÓN en lugar de
+  // liberación". Sebastián, mirando esta sección: "aquí solo debería ser jefe y calidad".
   h+='</div>'+_secOpen('&#9989; Cierre y Aprobaciones');
   var _est=(d.estado||'');
   var _esDemoL=/^DEMO-/i.test(String(d.lote_codigo||d.lote||''));   // DEMO: liberar/visto bueno de un click sin e-firma
+  var _esPT=(fa==='acondicionamiento');                             // producto terminado: acá SÍ firma el DT
+  var _dtYaFirmo=((d.aprobado_dt_por||'').trim()!=='');             // si ya firmó, se muestra pase lo que pase
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">';
   h+='<div style="border:1px solid var(--cx-border);border-radius:10px;padding:12px">';
   h+='<div style="font-size:10px;color:var(--cx-text-faint);font-weight:700;text-transform:uppercase;letter-spacing:.3px">Aprobado por &middot; Producción</div>';
@@ -8712,7 +8719,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   }
   h+='</div>';
   h+='<div style="border:1px solid var(--cx-border);border-radius:10px;padding:12px">';
-  h+='<div style="font-size:10px;color:var(--cx-text-faint);font-weight:700;text-transform:uppercase;letter-spacing:.3px">Aprobado por &middot; Calidad (liberación)</div>';
+  h+='<div style="font-size:10px;color:var(--cx-text-faint);font-weight:700;text-transform:uppercase;letter-spacing:.3px">'+(_esPT?'Aprobado por &middot; Calidad (liberación)':'Aprobado por &middot; Calidad')+'</div>';
   if(_est==='liberado'){
     h+='<div style="font-size:13px;font-weight:700;color:var(--cx-success-text);margin-top:4px">&#128275; Liberado por '+_escHTML(d.liberado_por||'')+'</div><div style="font-size:11px;color:var(--cx-text-mute)">'+(d.liberado_at_utc?String(d.liberado_at_utc).replace('T',' ').slice(0,16):'')+'</div>';
     if(fa==='fabricacion'){
@@ -8726,16 +8733,26 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='<div style="font-size:11px;color:var(--cx-border);margin-top:4px">- (primero Producción termina)</div>';
   }
   h+='</div>';
+  if(_esPT||_dtYaFirmo){
   h+='<div style="border:1px solid var(--cx-border);border-radius:10px;padding:12px">';
   h+='<div style="font-size:10px;color:var(--cx-text-faint);font-weight:700;text-transform:uppercase;letter-spacing:.3px">Visto bueno &middot; Director Técnico</div>';
-  if((d.aprobado_dt_por||'').trim()){
+  if(_dtYaFirmo){
     h+='<div style="font-size:13px;font-weight:700;color:var(--cx-success-text);margin-top:4px">&#9989; '+_escHTML(d.aprobado_dt_por)+'</div><div style="font-size:11px;color:var(--cx-text-mute)">'+(d.aprobado_dt_at?String(d.aprobado_dt_at).replace('T',' ').slice(0,16):'')+'</div>';
   } else if((_est==='liberado'||_est==='completado'||_est==='en_revision_qc')&&miRol.aprueba_dt){
     h+='<div style="font-size:11px;color:var(--cx-text-mute);margin:5px 0 7px">'+(_esDemoL?'Demo &middot; da el visto bueno de un click (sin contrase&ntilde;a).':'Visto bueno final del responsable t&eacute;cnico (INVIMA) con tu e-firma.')+'</div><button onclick="ebrAprobarDt('+d.id+')" style="background:var(--cx-primary);color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#9989; Dar visto bueno</button>';
   } else {
     h+='<div style="font-size:11px;color:var(--cx-border);margin-top:4px">- (lo firma el Director Técnico)</div>';
   }
-  h+='</div></div>';
+  h+='</div>';
+  } else {
+    // Fabricación y envasado se APRUEBAN (Producción + Calidad) · el visto bueno del Director Técnico va
+    // al cierre del expediente, con el producto terminado. Se dice, para que no se lea como un faltante.
+    h+='<div style="border:1px dashed var(--cx-border);border-radius:10px;padding:12px;display:flex;flex-direction:column;justify-content:center">';
+    h+='<div style="font-size:10px;color:var(--cx-text-faint);font-weight:700;text-transform:uppercase;letter-spacing:.3px">Dirección Técnica</div>';
+    h+='<div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px">Esta etapa se <b>aprueba</b> entre Producción y Calidad. El visto bueno del Director Técnico se da al <b>liberar el producto terminado</b>, en el legajo de acondicionamiento.</div>';
+    h+='</div>';
+  }
+  h+='</div>';
   // Correcciones del registro (Part 11 · enmiendas trazadas)
   h+='</div>'+_secOpen('✏️ Correcciones del Registro');
   var _corr=d.correcciones||[];
