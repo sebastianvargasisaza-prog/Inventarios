@@ -14,7 +14,7 @@ Tres problemas, medidos contra el código:
 
 Decisión de Sebastián: una sola nevera por ahora, sin posiciones adentro.
 """
-from .conftest import TEST_PASSWORD, csrf_headers
+from .conftest import TEST_PASSWORD, csrf_headers, pantalla_servida
 
 
 def _login(app, user="laura"):
@@ -168,7 +168,7 @@ def test_la_ubicacion_se_ve_en_la_vista_de_inventario(app, db_clean):
 
 def test_la_pantalla_pide_la_ubicacion_estructurada(app, db_clean):
     cli = _login(app)
-    html = cli.get('/calidad').data.decode('utf-8', 'replace')
+    html = pantalla_servida(cli, '/calidad')
     for marca in ('f01_ubic_tipo', 'f01_ubic_estanteria', 'f01_ubic_posicion',
                   'Nevera (refrigerado)', '_rcCargarEstanterias'):
         assert marca in html, 'falta %s en el formulario' % marca

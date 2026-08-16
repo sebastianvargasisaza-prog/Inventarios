@@ -618,6 +618,21 @@ CORAZON=(
   # a UNO por pago (22 de sus 55 consultas). El tope de 60 es POR CREADOR: con un limite
   # global las alertas de doble pago se apagarian para los creadores con mas movimiento.
   "tests/test_precarga_alertas_creadores.py"
+  # VELOCIDAD (15-ago) · /compras servia 685 KB por carga y 551 KB eran JS incrustado (no
+  # cacheable). Ahora va como archivo aparte: el guard exige que la pantalla siga completa
+  # (ningun boton llamando a una funcion que ya no existe) y que los datos por usuario NO
+  # viajen dentro del archivo cacheado.
+  "tests/test_compras_bundle.py"
+  # REVISION DE PLANTA (16-ago) · el widget del chat y el de la campana definian las MISMAS
+  # funciones y se cargan juntos en ocho pantallas: ganaba la ultima y el contador de
+  # mensajes sin leer no se pintaba nunca. El guard mira lo que el navegador CARGA.
+  "tests/test_widgets_no_se_pisan.py"
+  # Las pantallas de Planta no se contradicen sobre el mismo lote (cada test cubre su pieza;
+  # esto cubre la costura entre pantallas).
+  "tests/test_planta_no_se_contradice.py"
+  # El legajo nace con los kg que el usuario fijo, no con un default generico del MBR: el
+  # test existia desde el 30-jun y no corria en ningun gate (M95).
+  "tests/test_ebr_objetivo_m67.py"
 )
 
 echo ""

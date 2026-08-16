@@ -3111,3 +3111,39 @@ assert '</body>' in CALIDAD_HTML, 'CALIDAD_HTML sin </body>: la revisión por ca
 CALIDAD_HTML = CALIDAD_HTML.replace(
     '</body>', _CJS_MODAL + '\n<script>\n' + _CJS_JS + '\n</script>\n</body>')
 assert 'cjsEscanear' in CALIDAD_HTML, 'el JS de revisión por caja no se inyectó'
+
+# ── El JS grande se sirve como ARCHIVO EXTERNO cacheable ────────────────────────────────
+# PERF 15-ago-2026 (Sebastián: *"están lentos en cada cosa, cargando y mostrando"*). Medido:
+# esta pantalla bajaba 139 KB de JavaScript incrustado en CADA carga -- el navegador no lo
+# puede guardar en caché ni reusar compilado. Ahora va como archivo con ?v=HASH: cambia el
+# JS, cambia la URL, y el navegador baja lo nuevo sin quedarse con una copia vieja.
+#
+# El bloque no lleva NINGÚN dato por usuario (verificado antes de moverlo), así que el
+# archivo es el mismo para todos y se puede cachear sin riesgo de servirle a alguien los
+# permisos de otro.
+#
+# El CÓDIGO FUENTE no cambia: el JS sigue escrito acá. Fallback BLINDADO: si el bloque no
+# aparece o no mide lo esperado, se deja inline y la pantalla funciona igual que antes.
+CALIDAD_APP_JS = ""
+CALIDAD_APP_JS_HASH = ""
+try:
+    import hashlib as _hl_calida
+    _mk_calida = "function esc(s){const d=document.createElement('div');"
+    _i_calida = CALIDAD_HTML.find(_mk_calida)
+    if _i_calida > 0:
+        _open_calida = CALIDAD_HTML.rfind("<script>", 0, _i_calida)
+        _close_calida = CALIDAD_HTML.find("</script>", _i_calida)
+        if _open_calida > 0 and _close_calida > _open_calida:
+            _js_calida = CALIDAD_HTML[_open_calida + len("<script>"):_close_calida]
+            if len(_js_calida) > 90000:      # sanity: el bloque grande, no un script chico
+                CALIDAD_APP_JS = _js_calida
+                CALIDAD_APP_JS_HASH = _hl_calida.md5(
+                    _js_calida.encode("utf-8")).hexdigest()[:10]
+                CALIDAD_HTML = (
+                    CALIDAD_HTML[:_open_calida]
+                    + '<script src="/calidad-app.js?v=' + CALIDAD_APP_JS_HASH + '"></script>'
+                    + CALIDAD_HTML[_close_calida + len("</script>"):]
+                )
+except Exception:
+    CALIDAD_APP_JS = ""
+    CALIDAD_APP_JS_HASH = ""

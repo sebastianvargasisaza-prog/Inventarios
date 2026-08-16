@@ -22590,13 +22590,13 @@ function empqTarjeta(g){
       }
 
       // KPIs pills
-      function pill(label, val, color){
+      function pillKpi(label, val, color){
         return '<span style="background:'+(color||'rgba(255,255,255,.18)')+';padding:5px 12px;border-radius:14px;font-size:11px"><b>'+val+'</b> '+label+'</span>';
       }
-      kpis.innerHTML = pill('producciones', k.total_producciones_semana||0)
-        + pill('kg', (k.total_kg_semana||0).toLocaleString())
-        + pill('limpiezas', k.total_limpiezas||0)
-        + (k.sin_asignar_ia ? pill('sin asignar IA', k.sin_asignar_ia, 'rgba(220,38,38,.7)') : '');
+      kpis.innerHTML = pillKpi('producciones', k.total_producciones_semana||0)
+        + pillKpi('kg', (k.total_kg_semana||0).toLocaleString())
+        + pillKpi('limpiezas', k.total_limpiezas||0)
+        + (k.sin_asignar_ia ? pillKpi('sin asignar IA', k.sin_asignar_ia, 'rgba(220,38,38,.7)') : '');
 
       // 5 cards L-V
       var dias = d.dias || [];

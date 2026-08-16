@@ -20,7 +20,7 @@ import sqlite3
 
 import pytest
 
-from .conftest import TEST_PASSWORD, csrf_headers
+from .conftest import TEST_PASSWORD, csrf_headers, pantalla_servida
 
 # Los interruptores que este archivo mueve viven en `app_settings`, que es COMPARTIDA por
 # toda la suite. Dejar `ebr_mode` en 'strict' enciende los gates de liberación para todos
@@ -158,7 +158,7 @@ def test_la_pantalla_existe_y_se_alcanza(app, db_clean):
     html = pg.data.decode("utf-8")
     assert "/api/aseguramiento/estado-reemplazo-mybatch" in html, "la pantalla no carga nada"
     assert "function rmCargar(" in html, "falta la función que la pinta"
-    aseg = c.get("/aseguramiento").data.decode("utf-8")
+    aseg = pantalla_servida(c, "/aseguramiento")
     assert "/aseguramiento/reemplazo-mybatch" in aseg, "no se llega desde Aseguramiento"
     assert "goTab('tab-reemplazo')" in aseg, "falta la pestaña"
     assert "'tab-reemplazo'" in aseg.split("_tabIds")[1][:400], (

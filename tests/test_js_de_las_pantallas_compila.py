@@ -41,6 +41,13 @@ OBLIGATORIOS = (
     ('templates_py.dashboard_html', 'DASHBOARD_HTML'),
     ('templates_py.calidad_html', 'CALIDAD_HTML'),
     ('templates_py.recepcion_html', 'RECEPCION_HTML'),
+    # 15-ago · cuatro pantallas más sirven su JS como archivo aparte (era medio mega que se
+    # rebajaba en cada carga). Van acá o el guard dejaría de mirar justo los bloques grandes,
+    # que es como se coló el bundle de un millón de caracteres sin revisar.
+    ('templates_py.compras_html', 'COMPRAS_APP_JS'),
+    ('templates_py.calidad_html', 'CALIDAD_APP_JS'),
+    ('templates_py.aseguramiento_html', 'ASEGURAMIENTO_APP_JS'),
+    ('templates_py.marketing_html', 'MARKETING_APP_JS'),
 )
 
 
@@ -64,7 +71,11 @@ def _pedazos(nombre, valor):
     return [('%s[script %d]' % (nombre, i), b) for i, b in enumerate(bloques)]
 
 
-def test_todo_el_JS_de_las_pantallas_compila():
+def test_todo_el_JS_de_las_pantallas_compila(app):
+    """Depende de `app` A PROPÓSITO: importar un template arrastra `config`, y si eso pasa
+    ANTES de que la fixture siembre las PASS_<USER>, config queda cacheado sin claves y el
+    LOGIN de los archivos que corran después empieza a fallar -- con rojos que no hablan de
+    ellos (M165/M184). Se notó al sumar acá los bundles de marketing y aseguramiento."""
     errores, revisados = [], []
     for modulo, const in OBLIGATORIOS:
         try:
@@ -95,7 +106,7 @@ def test_todo_el_JS_de_las_pantallas_compila():
     assert len(revisados) >= 8, 'se revisaron muy pocos pedazos: %s' % revisados
 
 
-def test_ningun_salto_de_linea_REAL_dentro_de_un_string_de_JS():
+def test_ningun_salto_de_linea_REAL_dentro_de_un_string_de_JS(app):
     """El error concreto que me pasó cuatro veces: un `\\n` o `\\uXXXX` escrito con UNA barra
     dentro de un string REGULAR de Python lo interpreta Python, y al JavaScript le llega un salto
     de línea de verdad que parte la cadena a la mitad.

@@ -366,7 +366,10 @@ def test_el_modal_de_solicitar_pago_deja_subir_la_factura():
     if api not in _sys.path:
         _sys.path.insert(0, api)
     from templates_py.espagiria_html import HTML as _ESP
-    from templates_py.compras_html import COMPRAS_HTML as _CMP
+    # Compras sirve su JS aparte desde el 15-ago: la pantalla es el HTML mas su bundle, y lo
+    # que este guard fija es que el campo EXISTA, no en que archivo (M166).
+    from .conftest import contenido_pantalla
+    _CMP = contenido_pantalla('compras_html', 'COMPRAS_HTML')
     for arch, pfx, html in (('espagiria', 'ep', _ESP), ('compras', 'cp', _CMP)):
         assert 'id="%s-foto"' % pfx in html, '%s no deja subir la factura' % arch
         assert 'carpeta=cotizaciones' in html, '%s no manda la foto a su carpeta' % arch

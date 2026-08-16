@@ -7906,7 +7906,7 @@ def registrar_recepcion():
                     titulo=f'🔒 MP nueva en cuarentena · {codigo}',
                     body=(f'{nombre} · lote {lote} · {cantidad_recibida:.0f}g · '
                           f'{proveedor or "sin proveedor"}'),
-                    link='/dashboard#cuarentena',
+                    link='/inventarios#cuarentena',
                     remitente=u,
                     importante=True,
                 )

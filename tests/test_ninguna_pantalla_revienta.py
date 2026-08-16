@@ -27,12 +27,18 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(RAIZ, 'api'))
 
 # Motivo por ruta · un 500 DELIBERADO es un contrato, y se declara.
-ESPERAN_500 = {
-    # Google Calendar se retiró (7-jul). El endpoint contesta con error A PROPÓSITO: devolver
-    # vacío-sin-error haría que el sincronizador leyera "no hay eventos" y BORRARA producción
-    # (M79 · casi se pierde el plan entero).
-    '/api/programacion/debug-calendar': 'Google Calendar deshabilitado a propósito',
-}
+#
+# 16-ago: quedó VACÍA. `/api/programacion/debug-calendar` daba 500 permanente desde que se
+# retiró Google Calendar, y eso no es un fallo: es una integración que ya no existe. Ahora
+# contesta 200 diciéndolo, igual que su hermano `debug-calendario` -- dos endpoints que
+# responden distinto a la MISMA causa se contradicen (M161/M211).
+#
+# ⚠ Lo que NO cambió, y es lo que importa: `_fetch_calendar_events` sigue devolviendo
+# `error` a propósito. Los consumidores DESTRUCTIVOS (el espejo con force_mirror) hacen
+# early-return con ese error; si la fuente devolviera vacío-sin-error, el sincronizador
+# leería "no hay eventos" y BORRARÍA producción (M79 · casi se pierde el plan entero).
+# El diagnóstico dejó de propagar el 500; la fuente sigue declarando el error.
+ESPERAN_500 = {}
 
 # Prefijos que no son pantallas de la app
 SALTAR = ('/static', '/diag')

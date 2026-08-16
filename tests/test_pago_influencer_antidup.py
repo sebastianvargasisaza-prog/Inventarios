@@ -17,7 +17,7 @@ pagar dos veces el mismo contenido. Por eso:
 """
 import json
 
-from .conftest import TEST_PASSWORD, csrf_headers
+from .conftest import TEST_PASSWORD, csrf_headers, pantalla_servida
 
 
 def _login(app, user="sebastian"):
@@ -236,7 +236,7 @@ def test_la_pantalla_pinta_las_alertas(app, db_clean):
     """Calcularlas y no mostrarlas seria repetir el error que ya tenia este modulo: el dato
     capturado que nadie ve. Si alguien quita el render, esto lo caza."""
     c = _login(app)
-    html = c.get('/marketing').data.decode('utf-8', 'replace')
+    html = pantalla_servida(c, '/marketing')
     assert '_pagoAlertas' in html, 'desapareció el render de alertas'
     assert '+_pagoAlertas(p)' in html, 'las alertas no se pintan en la tarjeta del pago'
     assert 'pago_previo' in html or 'prev.valor' in html, (
@@ -342,7 +342,7 @@ def test_marketing_ya_no_deja_pagar(app, db_clean):
     """Marketing es el módulo de Jefferson y él no autoriza pagos: el backend lo rechazaría, así
     que un botón ahí sería un botón que falla. Él pide y ve el estado; el CEO paga."""
     c = _login(app)
-    html = c.get('/marketing').data.decode('utf-8', 'replace')
+    html = pantalla_servida(c, '/marketing')
     assert 'onclick="pagarDesdeMarketing' not in html, (
         'quedó un botón de pagar en el módulo de Jefferson')
 

@@ -128,7 +128,10 @@ def test_recepcion_resuelve_los_lotes_y_declara_los_que_faltan(app, db_clean):
 def test_las_dos_pantallas_tienen_por_donde_pedirlo(app):
     """Una capacidad que nadie puede alcanzar no existe (M121): botón en Calidad y bloque en
     Recepción, cada uno con su función definida."""
-    from templates_py.calidad_html import CALIDAD_HTML as CAL
+    # Calidad sirve su JS aparte desde el 15-ago: el botón vive en el HTML y la FUNCIÓN en el
+    # bundle, así que la pantalla es la suma de los dos (M166).
+    from .conftest import contenido_pantalla
+    CAL = contenido_pantalla('calidad_html', 'CALIDAD_HTML')
     from templates_py.recepcion_html import RECEPCION_HTML as REC
     assert 'rotImprimir()' in CAL and 'function rotImprimir(' in CAL
     assert 'class="rot-chk"' in CAL, 'no hay casilla por fila'

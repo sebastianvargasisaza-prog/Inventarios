@@ -8827,7 +8827,7 @@ def planta_andon():
                     tipo=f'andon_{tipo}',
                     titulo=f'{emoji} ANDON · {tipo} · {user}',
                     body=desc[:140],
-                    link='/dashboard#programacion',
+                    link='/inventarios#programacion',
                     remitente=user, importante=es_urgente,
                 )
             except Exception:

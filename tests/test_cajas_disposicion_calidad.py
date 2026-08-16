@@ -11,7 +11,7 @@ Dos cosas que este archivo fija:
   · liberar o rechazar el movimiento COMPLETO no alcanza: de 24 cajas pueden pasar 22 y venir
     2 golpeadas, y había que elegir entre aprobar las malas o rechazar las buenas.
 """
-from .conftest import TEST_PASSWORD, csrf_headers
+from .conftest import TEST_PASSWORD, csrf_headers, pantalla_servida
 
 COD = 'ZZ-MEE-CAJAS'
 LOTE = 'CN-CAJA-1'
@@ -239,7 +239,7 @@ def test_calidad_ve_el_escaneo_y_el_boton_de_cajas(app, db_clean):
 def test_ningun_boton_de_calidad_quedo_sin_funcion(app, db_clean):
     """M112: un botón que llama a lo que no existe no falla, no hace nada, y se despliega."""
     import re
-    body = _login(app, 'laura').get('/calidad').data.decode('utf-8', 'replace')
+    body = pantalla_servida(_login(app, 'laura'), '/calidad')
     llamadas = set(re.findall(r'onclick="([A-Za-z_$][\w$]*)\(', body))
     definidas = set(re.findall(r'function\s+([A-Za-z_$][\w$]*)\s*\(', body))
     huerfanas = llamadas - definidas - {'alert', 'confirm', 'print'}
@@ -249,7 +249,7 @@ def test_ningun_boton_de_calidad_quedo_sin_funcion(app, db_clean):
 def test_el_panel_de_cajas_no_pisa_funciones_de_calidad(app, db_clean):
     """Comparten documento: una función repetida pisa la de la página sin un solo error (M59)."""
     import re
-    body = _login(app, 'laura').get('/calidad').data.decode('utf-8', 'replace')
+    body = pantalla_servida(_login(app, 'laura'), '/calidad')
     nombres = re.findall(r'function\s+([A-Za-z_$][\w$]*)\s*\(', body)
     dupes = sorted({n for n in nombres if nombres.count(n) > 1})
     assert not dupes, 'funciones declaradas dos veces en /calidad: %s' % dupes

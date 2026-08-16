@@ -110,7 +110,10 @@ def test_la_pantalla_ya_no_pega_gramos_a_todo(app, db_clean):
     """El guard de la causa: si alguien vuelve a concatenar ' g' a la cantidad de la bandeja,
     los servicios y los envases vuelven a mostrarse en gramos."""
     cli = _login(app)
-    html = cli.get('/compras').data.decode('utf-8', 'replace')
+    # El JS de Compras se sirve aparte desde el 15-ago: "la pantalla" es el HTML mas sus
+    # bundles, o el guard daria rojo por donde quedo escrito el codigo (M166).
+    from .conftest import pantalla_servida
+    html = pantalla_servida(cli, '/compras')
     assert "_cantUnidad(" in html, 'no está el formateador que respeta la unidad'
     assert "cantidad_total_g||0).toLocaleString('es-CO')+' g'" not in html, (
         "volvió el ' g' pegado a la cantidad de la bandeja")
@@ -119,7 +122,8 @@ def test_la_pantalla_ya_no_pega_gramos_a_todo(app, db_clean):
 def test_sin_unidad_no_se_inventa_ninguna(app, db_clean):
     """Mostrar el número solo es honesto; mostrar '1 g' de un servicio, no."""
     cli = _login(app)
-    html = cli.get('/compras').data.decode('utf-8', 'replace')
+    from .conftest import pantalla_servida
+    html = pantalla_servida(cli, '/compras')
     i = html.index('function _cantUnidad')
     cuerpo = html[i:i + 420]
     assert "if(!u) return n;" in cuerpo, (

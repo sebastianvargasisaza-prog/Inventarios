@@ -5019,7 +5019,7 @@ def job_auto_normalizar_formulas(app):
                         push_notif(destinatario=u, tipo='normalizar_formulas_ok',
                                    titulo='🔧 Fórmulas normalizadas + MPs creados/renombrados',
                                    cuerpo=cuerpo,
-                                   link='/dashboard#inventario',
+                                   link='/inventarios#stock',
                                    remitente='cron-normalizar-formulas',
                                    importante=bool(mps_creados or mps_renombrados))
                     except Exception:
@@ -5651,7 +5651,7 @@ def job_resumen_ejecutivo_noche(app):
                         tipo='resumen_ejecutivo_noche',
                         titulo=f'📊 Resumen planta · {hoy}',
                         body=cuerpo,
-                        link='/dashboard#programacion',
+                        link='/inventarios#programacion',
                         remitente='sistema',
                         importante=importante,
                     )

@@ -15,7 +15,7 @@ Lo que estos tests fijan:
 """
 from datetime import date, timedelta
 
-from .conftest import TEST_PASSWORD, csrf_headers
+from .conftest import TEST_PASSWORD, csrf_headers, pantalla_servida
 
 
 def _login(app, user="sebastian"):
@@ -173,7 +173,7 @@ def test_el_motivo_del_rechazo_le_llega_a_quien_pidio_el_pago(app, db_clean):
     assert fila, 'el pago rechazado desapareció de la lista de Marketing'
     assert fila[0].get('motivo_rechazo') == 'falta el link del post'
 
-    html = c.get('/marketing').data.decode('utf-8', 'replace')
+    html = pantalla_servida(c, '/marketing')
     assert 'motivo_rechazo' in html, 'la pantalla no muestra el motivo del rechazo'
 
 

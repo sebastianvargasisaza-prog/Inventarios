@@ -597,6 +597,62 @@ def planta_app_js():
     return resp
 
 
+def _servir_bundle(modulo, atributo, nombre):
+    """Sirve un bundle de pantalla como archivo cacheable.
+
+    Mismo criterio para todos (M3, un solo lugar): es código de la app -- los datos vienen de
+    APIs con login -- así que es público y se cachea para siempre, porque la URL lleva ?v=HASH
+    y cambia sola cuando cambia el JS. Si la extracción no corrió, la pantalla sigue con su JS
+    inline y esta ruta no se usa.
+    """
+    try:
+        mod = __import__('templates_py.' + modulo, fromlist=[atributo])
+        js = getattr(mod, atributo, '') or ''
+    except Exception:
+        js = ''
+    if not js:
+        return Response('/* %s no disponible (fallback inline activo) */' % nombre,
+                        mimetype='application/javascript; charset=utf-8'), 404
+    resp = Response(js, mimetype='application/javascript; charset=utf-8')
+    resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return resp
+
+
+@bp.route('/calidad-app.js')
+def calidad_app_js():
+    return _servir_bundle('calidad_html', 'CALIDAD_APP_JS', 'calidad-app.js')
+
+
+@bp.route('/aseguramiento-app.js')
+def aseguramiento_app_js():
+    return _servir_bundle('aseguramiento_html', 'ASEGURAMIENTO_APP_JS',
+                          'aseguramiento-app.js')
+
+
+@bp.route('/marketing-app.js')
+def marketing_app_js():
+    return _servir_bundle('marketing_html', 'MARKETING_APP_JS', 'marketing-app.js')
+
+
+@bp.route('/compras-app.js')
+def compras_app_js():
+    # PERF 15-ago-2026 · el JS grande de Compras como ARCHIVO EXTERNO cacheable. Medido: la
+    # página servía 685 KB por carga y 551 KB eran JavaScript incrustado, que el navegador
+    # no puede guardar en caché ni reusar compilado -- se rebajaba entero cada vez, y es el
+    # módulo que Catalina usa todo el día. Mismo criterio que /planta-app.js: es código de
+    # la app (los datos vienen de APIs con login) → público + immutable, y la URL lleva
+    # ?v=HASH, así que al cambiar el JS cambia la URL y el navegador baja lo nuevo.
+    # Los datos por usuario NO están acá (van en un <script> inline previo · si viajaran en
+    # este archivo, la caché le serviría a un usuario los permisos de otro).
+    from templates_py.compras_html import COMPRAS_APP_JS
+    if not COMPRAS_APP_JS:
+        return Response('/* compras-app.js no disponible (fallback inline activo) */',
+                        mimetype='application/javascript; charset=utf-8'), 404
+    resp = Response(COMPRAS_APP_JS, mimetype='application/javascript; charset=utf-8')
+    resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return resp
+
+
 @bp.route('/planta-core.js')
 def planta_core_js():
     # PERF 26-jun (Increment 2) · 1er bloque JS grande del dashboard como archivo externo cacheable.

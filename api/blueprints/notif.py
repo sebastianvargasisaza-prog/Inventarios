@@ -222,13 +222,13 @@ def notif_widget_js():
     try {
       await fetch('/api/notif/marcar-todas', {method:'POST'});
       cargarLista();
-      checkUnread();
+      nwCheckUnread();
     } catch(e){}
   };
 
-  function _esc(s){ return (s==null?'':String(s)).replace(/[<>&"']/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function _nwEsc(s){ return (s==null?'':String(s)).replace(/[<>&"']/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]; }); }
 
-  function _tiempoRel(iso){
+  function _nwTiempoRel(iso){
     if(!iso) return '';
     var d = new Date(iso.replace(' ','T')+'Z');
     var diff = (Date.now() - d.getTime()) / 1000;
@@ -261,13 +261,13 @@ def notif_widget_js():
         var html = '';
         var icon = _icono(n.tipo);
         var clase = n.leido ? 'nw-item' : 'nw-item unread';
-        var elem = n.link ? 'a href="'+_esc(n.link)+'"' : 'div';
-        html += '<'+elem+' class="'+clase+'" data-id="'+n.id+'" onclick="window.__notifClick('+n.id+',\''+_esc(n.link||'').replace(/'/g, "\\'")+'\')">';
-        html += '<div class="t">'+icon+' '+_esc(n.titulo);
+        var elem = n.link ? 'a href="'+_nwEsc(n.link)+'"' : 'div';
+        html += '<'+elem+' class="'+clase+'" data-id="'+n.id+'" onclick="window.__notifClick('+n.id+',\''+_nwEsc(n.link||'').replace(/'/g, "\\'")+'\')">';
+        html += '<div class="t">'+icon+' '+_nwEsc(n.titulo);
         if (n.importante && !n.leido) html += ' <span style="background:var(--cx-danger, #dc2626);color:#fff;padding:1px 5px;border-radius:4px;font-size:9px">!</span>';
         html += '</div>';
-        if (n.body) html += '<div class="b">'+_esc(n.body)+'</div>';
-        html += '<div class="m">'+(n.remitente?_esc(n.remitente)+' · ':'')+_tiempoRel(n.creado_en)+'</div>';
+        if (n.body) html += '<div class="b">'+_nwEsc(n.body)+'</div>';
+        html += '<div class="m">'+(n.remitente?_nwEsc(n.remitente)+' · ':'')+_nwTiempoRel(n.creado_en)+'</div>';
         html += '</'+(n.link?'a':'div')+'>';
         return html;
       }).join('');
@@ -285,7 +285,7 @@ def notif_widget_js():
 
   // Polling de unread count cada 25s
   var lastCount = 0;
-  function checkUnread(){
+  function nwCheckUnread(){
     fetch('/api/notif/unread-count').then(function(r){return r.json();}).then(function(d){
       var n = d.count || 0;
       var b = document.getElementById('nw-badge');
@@ -316,8 +316,8 @@ def notif_widget_js():
       lastCount = n;
     }).catch(function(){});
   }
-  checkUnread();
-  setInterval(checkUnread, 25000);
+  nwCheckUnread();
+  setInterval(nwCheckUnread, 25000);
 })();
 """
     resp = Response(js, mimetype="application/javascript")

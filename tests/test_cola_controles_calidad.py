@@ -16,7 +16,7 @@ adjudicado salga de la cola, y que se arme con UNA consulta y no una por lote (M
 import os
 import sqlite3
 
-from .conftest import TEST_PASSWORD, csrf_headers
+from .conftest import TEST_PASSWORD, csrf_headers, pantalla_servida
 
 
 def _login(app, user="sebastian"):
@@ -134,7 +134,9 @@ def test_si_la_cola_se_recorta_lo_dice(app, db_clean):
 def test_la_pantalla_de_calidad_pinta_la_cola(app, db_clean):
     """Un dato que el backend manda y la pantalla no pinta no existe (M115)."""
     c = _login(app)
-    html = c.get("/calidad").data.decode("utf-8")
+    # Calidad sirve su JS como archivo aparte desde el 15-ago: la pantalla es el HTML mas
+    # su bundle, o el guard daria rojo por donde quedo escrito el codigo (M166).
+    html = pantalla_servida(c, "/calidad")
     # Se exige la CONDICIÓN que dibuja la tarjeta, no sólo que el texto aparezca:
     # con `if(false)` los títulos siguen en el archivo y el guard pasaría verde con
     # la cola apagada (mediría otra cosa · M152).

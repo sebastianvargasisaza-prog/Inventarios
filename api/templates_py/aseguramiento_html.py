@@ -3628,3 +3628,40 @@ window.addEventListener('DOMContentLoaded', function(){ loadDashboard(); });
 </script>
 </body>
 </html>'''
+
+
+# ── El JS grande se sirve como ARCHIVO EXTERNO cacheable ────────────────────────────────
+# PERF 15-ago-2026 (Sebastián: *"están lentos en cada cosa, cargando y mostrando"*). Medido:
+# esta pantalla bajaba 151 KB de JavaScript incrustado en CADA carga -- el navegador no lo
+# puede guardar en caché ni reusar compilado. Ahora va como archivo con ?v=HASH: cambia el
+# JS, cambia la URL, y el navegador baja lo nuevo sin quedarse con una copia vieja.
+#
+# El bloque no lleva NINGÚN dato por usuario (verificado antes de moverlo), así que el
+# archivo es el mismo para todos y se puede cachear sin riesgo de servirle a alguien los
+# permisos de otro.
+#
+# El CÓDIGO FUENTE no cambia: el JS sigue escrito acá. Fallback BLINDADO: si el bloque no
+# aparece o no mide lo esperado, se deja inline y la pantalla funciona igual que antes.
+ASEGURAMIENTO_APP_JS = ""
+ASEGURAMIENTO_APP_JS_HASH = ""
+try:
+    import hashlib as _hl_asegur
+    _mk_asegur = "function _esc(s){return String(s||'').replace("
+    _i_asegur = ASEGURAMIENTO_HTML.find(_mk_asegur)
+    if _i_asegur > 0:
+        _open_asegur = ASEGURAMIENTO_HTML.rfind("<script>", 0, _i_asegur)
+        _close_asegur = ASEGURAMIENTO_HTML.find("</script>", _i_asegur)
+        if _open_asegur > 0 and _close_asegur > _open_asegur:
+            _js_asegur = ASEGURAMIENTO_HTML[_open_asegur + len("<script>"):_close_asegur]
+            if len(_js_asegur) > 90000:      # sanity: el bloque grande, no un script chico
+                ASEGURAMIENTO_APP_JS = _js_asegur
+                ASEGURAMIENTO_APP_JS_HASH = _hl_asegur.md5(
+                    _js_asegur.encode("utf-8")).hexdigest()[:10]
+                ASEGURAMIENTO_HTML = (
+                    ASEGURAMIENTO_HTML[:_open_asegur]
+                    + '<script src="/aseguramiento-app.js?v=' + ASEGURAMIENTO_APP_JS_HASH + '"></script>'
+                    + ASEGURAMIENTO_HTML[_close_asegur + len("</script>"):]
+                )
+except Exception:
+    ASEGURAMIENTO_APP_JS = ""
+    ASEGURAMIENTO_APP_JS_HASH = ""

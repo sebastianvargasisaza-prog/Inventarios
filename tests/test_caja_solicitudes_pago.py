@@ -416,7 +416,11 @@ def _mod_html(modulo, atributo):
 
 
 def _html_compras():
-    return _mod_html('compras_html', 'COMPRAS_HTML')
+    # Desde el 15-ago el JS grande de Compras se sirve como archivo cacheable, asi que
+    # "la pantalla" es el HTML MAS ese bundle: buscar solo en el HTML daria rojo por donde
+    # quedo escrito el codigo, no por lo que la pantalla hace (M166).
+    from .conftest import contenido_pantalla
+    return contenido_pantalla('compras_html', 'COMPRAS_HTML')
 
 
 def test_compras_tiene_la_subpestana_completa():

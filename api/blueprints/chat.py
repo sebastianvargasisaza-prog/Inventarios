@@ -254,9 +254,9 @@ def chat_widget_js():
     if (!lista.length){ body.innerHTML = '<div class="cw-empty">Sin coincidencias.</div>'; return; }
     body.innerHTML = lista.map(function(u){
       var sel = SELECTED_USERS.has(u.username);
-      return '<div class="cw-user '+(u.estado==='conectado'?'online':'')+(sel?' selected':'')+'" data-u="'+_esc(u.username)+'">'+
+      return '<div class="cw-user '+(u.estado==='conectado'?'online':'')+(sel?' selected':'')+'" data-u="'+_cwEsc(u.username)+'">'+
         '<span class="dot"></span>'+
-        '<span class="nm">'+_esc(u.display_name||u.username)+'</span>'+
+        '<span class="nm">'+_cwEsc(u.display_name||u.username)+'</span>'+
         '<span class="est">'+u.estado+'</span>'+
         (sel?'<span style="color:var(--cx-primary-text, #7c3aed);font-weight:700">✓</span>':'')+
       '</div>';
@@ -349,9 +349,9 @@ def chat_widget_js():
     }catch(e){ alert('Error de red'); }
   };
 
-  function _esc(s){ return (s==null?'':String(s)).replace(/[<>&"']/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function _cwEsc(s){ return (s==null?'':String(s)).replace(/[<>&"']/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]; }); }
 
-  function _tiempoRel(iso){
+  function _cwTiempoRel(iso){
     if(!iso) return '';
     var d = new Date(iso.replace(' ','T')+'Z');
     var diff = (Date.now() - d.getTime()) / 1000;
@@ -378,11 +378,11 @@ def chat_widget_js():
         // El backend ya manda nombre_display con fallback al otro miembro.
         var nm = t.nombre_display || t.nombre || (t.otros_miembros||[])[0] || 'Sin nombre';
         var pv = t.ultimo_mensaje_preview || '';
-        var ts = _tiempoRel(t.ultimo_mensaje_en || t.creado_en);
+        var ts = _cwTiempoRel(t.ultimo_mensaje_en || t.creado_en);
         return '<div class="cw-thread'+(unread>0?' unread':'')+'" data-id="'+t.id+'">'+
           '<div style="flex:1;min-width:0">'+
-            '<div class="nm">'+_esc(nm)+(unread>0?'<span class="uc">'+unread+'</span>':'')+'</div>'+
-            (pv?'<div class="pv">'+_esc(pv.substring(0,80))+'</div>':'')+
+            '<div class="nm">'+_cwEsc(nm)+(unread>0?'<span class="uc">'+unread+'</span>':'')+'</div>'+
+            (pv?'<div class="pv">'+_cwEsc(pv.substring(0,80))+'</div>':'')+
           '</div>'+
           '<div class="ts">'+ts+'</div>'+
         '</div>';
@@ -415,15 +415,15 @@ def chat_widget_js():
         msgsBox.innerHTML = msgs.map(function(m){
           var own = (m.sender||'').toLowerCase() === (ME||'').toLowerCase();
           return '<div class="cw-m '+(own?'own':'other')+'">'+
-            (own?'':'<div class="who">'+_esc(m.sender)+'</div>')+
-            _esc(m.contenido||'')+
+            (own?'':'<div class="who">'+_cwEsc(m.sender)+'</div>')+
+            _cwEsc(m.contenido||'')+
           '</div>';
         }).join('');
         msgsBox.scrollTop = msgsBox.scrollHeight;
       }
       // Marcar leído
       fetch('/api/chat/threads/'+thread_id+'/leer', {method:'POST'}).catch(function(){});
-      checkUnread();
+      cwCheckUnread();
     } catch(e) {
       msgsBox.innerHTML = '<div class="cw-empty">Error.</div>';
     }
@@ -449,7 +449,7 @@ def chat_widget_js():
 
   // Polling unread + refresh cuando panel abierto
   var lastTotal = 0;
-  function checkUnread(){
+  function cwCheckUnread(){
     fetch('/api/chat/unread-summary').then(function(r){return r.json();}).then(function(d){
       var total = d.total || 0;
       var b = document.getElementById('cw-badge');
@@ -459,7 +459,7 @@ def chat_widget_js():
       }
       if (total > lastTotal && lastTotal > 0) {
         var nuevo = total - lastTotal;
-        showToast('\u{1F4AC} ' + nuevo + ' mensaje' + (nuevo>1?'s':'') + ' nuevo' + (nuevo>1?'s':''),
+        cwToast('\u{1F4AC} ' + nuevo + ' mensaje' + (nuevo>1?'s':'') + ' nuevo' + (nuevo>1?'s':''),
                   'Click para abrir el chat');
         try {
           var ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -486,7 +486,7 @@ def chat_widget_js():
           box.innerHTML = msgs.map(function(m){
             var own = (m.sender||'').toLowerCase() === (ME||'').toLowerCase();
             return '<div class="cw-m '+(own?'own':'other')+'">'+
-              (own?'':'<div class="who">'+_esc(m.sender)+'</div>')+_esc(m.contenido||'')+'</div>';
+              (own?'':'<div class="who">'+_cwEsc(m.sender)+'</div>')+_cwEsc(m.contenido||'')+'</div>';
           }).join('');
           if (atBottom) box.scrollTop = box.scrollHeight;
         }).catch(function(){});
@@ -494,7 +494,7 @@ def chat_widget_js():
     }).catch(function(){});
   }
 
-  function showToast(titulo, sub){
+  function cwToast(titulo, sub){
     var prev = document.getElementById('cw-toast');
     if (prev) prev.remove();
     var t = document.createElement('div');
@@ -508,8 +508,8 @@ def chat_widget_js():
     setTimeout(function(){ if (t.parentNode) t.remove(); }, 6000);
   }
 
-  checkUnread();
-  setInterval(checkUnread, 12000);
+  cwCheckUnread();
+  setInterval(cwCheckUnread, 12000);
 })();
 """
     resp = Response(js, mimetype="application/javascript")

@@ -19,7 +19,7 @@ import json
 import os
 import sqlite3
 
-from .conftest import TEST_PASSWORD, csrf_headers
+from .conftest import TEST_PASSWORD, csrf_headers, pantalla_servida
 
 
 def _login(app, user):
@@ -170,7 +170,7 @@ def test_la_pantalla_existe_y_se_alcanza(app, db_clean):
                        ("el filtro por área", "function atDom("),
                        ("el registro crudo", "Ver el registro crudo")):
         assert pieza in html, "la pantalla no tiene %s (%s)" % (que, pieza)
-    aseg = c.get("/aseguramiento").data.decode("utf-8")
+    aseg = pantalla_servida(c, "/aseguramiento")
     assert "/aseguramiento/audit-trail" in aseg, "no se llega desde Aseguramiento"
     assert "goTab('tab-audit')" in aseg, "falta la pestaña"
     assert "'tab-audit'" in aseg.split("_tabIds")[1][:400], (

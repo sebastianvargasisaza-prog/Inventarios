@@ -25,8 +25,10 @@ def pagina(app):
     ANTES de que la fixture `app` siembre las PASS_<USER>, config queda cacheado sin claves
     y el login de los tests que vengan después empieza a fallar (M102: un test tiene que
     controlar su universo, y sobre todo no ensuciar el de los demás)."""
-    from templates_py.marketing_html import MARKETING_HTML
-    return MARKETING_HTML
+    # Marketing sirve su JS como archivo aparte desde el 15-ago: la pantalla es el HTML mas
+    # su bundle (M166 · lo que se fija es que el modal y su función existan, no dónde).
+    from .conftest import contenido_pantalla
+    return contenido_pantalla('marketing_html', 'MARKETING_HTML')
 
 
 def _partes(html):

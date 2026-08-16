@@ -2799,3 +2799,40 @@ loadInfluencers();   // el modulo abre directo en lo unico que se usa: pagos
 <!-- Widget "Mi contraseña" removido 24-may-2026 · vive en /modulos y /hub -->
 </body>
 </html>"""
+
+
+# ── El JS grande se sirve como ARCHIVO EXTERNO cacheable ────────────────────────────────
+# PERF 15-ago-2026 (Sebastián: *"están lentos en cada cosa, cargando y mostrando"*). Medido:
+# esta pantalla bajaba 115 KB de JavaScript incrustado en CADA carga -- el navegador no lo
+# puede guardar en caché ni reusar compilado. Ahora va como archivo con ?v=HASH: cambia el
+# JS, cambia la URL, y el navegador baja lo nuevo sin quedarse con una copia vieja.
+#
+# El bloque no lleva NINGÚN dato por usuario (verificado antes de moverlo), así que el
+# archivo es el mismo para todos y se puede cachear sin riesgo de servirle a alguien los
+# permisos de otro.
+#
+# El CÓDIGO FUENTE no cambia: el JS sigue escrito acá. Fallback BLINDADO: si el bloque no
+# aparece o no mide lo esperado, se deja inline y la pantalla funciona igual que antes.
+MARKETING_APP_JS = ""
+MARKETING_APP_JS_HASH = ""
+try:
+    import hashlib as _hl_market
+    _mk_market = "const fmt = n => Number(n||0).toLocaleString('es-CO');"
+    _i_market = MARKETING_HTML.find(_mk_market)
+    if _i_market > 0:
+        _open_market = MARKETING_HTML.rfind("<script>", 0, _i_market)
+        _close_market = MARKETING_HTML.find("</script>", _i_market)
+        if _open_market > 0 and _close_market > _open_market:
+            _js_market = MARKETING_HTML[_open_market + len("<script>"):_close_market]
+            if len(_js_market) > 90000:      # sanity: el bloque grande, no un script chico
+                MARKETING_APP_JS = _js_market
+                MARKETING_APP_JS_HASH = _hl_market.md5(
+                    _js_market.encode("utf-8")).hexdigest()[:10]
+                MARKETING_HTML = (
+                    MARKETING_HTML[:_open_market]
+                    + '<script src="/marketing-app.js?v=' + MARKETING_APP_JS_HASH + '"></script>'
+                    + MARKETING_HTML[_close_market + len("</script>"):]
+                )
+except Exception:
+    MARKETING_APP_JS = ""
+    MARKETING_APP_JS_HASH = ""

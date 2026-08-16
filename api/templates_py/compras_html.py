@@ -249,8 +249,11 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--c
      16-jul (estaba muerto · sin caller). Se conserva SOLO el helper _esc (lo usan
      las funciones de render de más abajo · quitarlo rompería el escapado). -->
 <script>
-// helper esc global · usado por renderKpisGrandes/renderDashHome2/etc.
-function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+// El helper `_esc` NO se declara acá: lo define el bloque grande de la pantalla (que hoy se
+// sirve como /compras-app.js) y, al cargar después, su definición era la que ganaba igual --
+// ésta quedaba pisada sin que nada lo dijera (M120). Dos copias del mismo ayudante divergen
+// el día que alguien corrige una sola, así que queda UNA: la del bloque grande, que además
+// escapa también las comillas.
 </script>
 
 <!-- Compras PRO · Sebastián 21-may-2026 · reagrupación 11 sub-tabs → 5 grupos.
@@ -1448,6 +1451,15 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 <button class="fab" id="fab-btn" onclick="openNuevaOC('')" title="Nueva OC">+</button>
 
 <script>
+/* Los cuatro datos que dependen de QUIEN mira quedan acá, en un bloque diminuto, para
+   que el resto del JS de Compras (551 KB) sea igual para todos y se pueda cachear.
+   Mismo criterio que el dashboard de Planta con /planta-core.js. */
+window._CP_USER = "{usuario}";
+window._CP_ES_C = {es_contadora};
+window._CP_ES_ADMIN = {es_admin};
+window._CP_ES_AUTORIZA = {es_autorizador};
+</script>
+<script>
 // ── CSRF defense-in-depth · Sebastian 3-may-2026 ──────────────────
 // FIX 31-may-2026 · el token vive en la sesión del servidor (no en una cookie
 // legible por JS) y se obtiene de /api/csrf-token. Antes _csrf() leía la cookie
@@ -1557,11 +1569,11 @@ document.addEventListener('change', function(ev){
 // ─── Estado global ────────────────────────────────────────────────
 var OCS = [];
 var PROVS = [];
-var ES_C = {es_contadora};
-var ES_ADMIN = {es_admin};
+var ES_C = window._CP_ES_C;
+var ES_ADMIN = window._CP_ES_ADMIN;
 // es_autorizador: puede AUTORIZAR OCs (admin o Catalina · OC_AUTORIZA_USERS). Reemplaza el
 // gate viejo !ES_C que ocultaba el botón a Catalina (es contadora pero SÍ autoriza).
-var ES_AUTORIZA = {es_autorizador};
+var ES_AUTORIZA = window._CP_ES_AUTORIZA;
 // Sebastián 21-may-2026 · mostrar [data-admin-only] solo a admins (Influencers)
 if(ES_ADMIN){
   document.addEventListener('DOMContentLoaded',function(){
@@ -3726,7 +3738,7 @@ async function submitOC(){
     }
     var r=await fetch(url,{method:method,headers:{'Content-Type':'application/json'},
       body:JSON.stringify({proveedor:prov,categoria:cat,observaciones:obs,
-        fecha_entrega_est:fent,items:items,creado_por:'{usuario}',
+        fecha_entrega_est:fent,items:items,creado_por:window._CP_USER,
         con_iva:conIva,valor_sin_iva:sub})});
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
@@ -4364,7 +4376,7 @@ async function crearOCMP(){
   }
   if(!items.length){ alert('Agrega al menos un item con descripcion'); return; }
   try{
-    var body={proveedor:prov,categoria:'MP',observaciones:obs,items:items,creado_por:'{usuario}'};
+    var body={proveedor:prov,categoria:'MP',observaciones:obs,items:items,creado_por:window._CP_USER};
     if(fent) body.fecha_entrega_est=fent;
     var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', body));
     var d=await r.json();
@@ -4464,7 +4476,7 @@ async function crearOCSugerida(){
   for(var pi=0;pi<provList.length;pi++){
     var prov=provList[pi]; var items=grupos[prov];
     try{
-      var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', {proveedor:prov,categoria:'MP',creado_por:'{usuario}',
+      var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', {proveedor:prov,categoria:'MP',creado_por:window._CP_USER,
           observaciones:'OC sugerida - MPs bajo stock ('+new Date().toLocaleDateString('es-CO')+')',
           items:items}));
       var res=null; try{res=await r.json();}catch(_){res=null;}
@@ -4490,7 +4502,7 @@ async function crearOCFila(i){
   var actEl=document.getElementById('sugact'+i);
   if(actEl) actEl.innerHTML='<span style="font-size:11px;color:var(--cx-text-mute);">Enviando...</span>';
   try{
-    var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', {proveedor:prov,categoria:'MP',creado_por:'{usuario}',
+    var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', {proveedor:prov,categoria:'MP',creado_por:window._CP_USER,
         observaciones:'OC sugerida - '+a.nombre+' ('+new Date().toLocaleDateString('es-CO')+')',
         items:[{codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p}]}));
     var res=null; try{res=await r.json();}catch(_){res=null;}
@@ -9754,3 +9766,42 @@ COMPRAS_HTML = COMPRAS_HTML.replace('<!--CAJA_MODAL_CP-->',
 _j = COMPRAS_HTML.count('//__CAJA_JS_CP__')
 assert _j == 1, 'el marcador del JS de caja aparece %d veces (esperaba 1)' % _j
 COMPRAS_HTML = COMPRAS_HTML.replace('//__CAJA_JS_CP__', js_caja('cp'), 1)
+
+
+# ── El JS grande se sirve como ARCHIVO EXTERNO cacheable ────────────────────────────────
+# PERF 15-ago-2026 (Sebastián: *"están lentos en cada cosa, cargando y mostrando"*). Medido:
+# `/compras` servía 685 KB por carga y 551 KB eran JavaScript incrustado -- que el navegador
+# no puede guardar en caché ni reusar compilado, así que se rebajaba entero en CADA carga.
+# Acá se extrae EN MEMORIA al importar el módulo y la página lo referencia con
+# <script src="/compras-app.js?v=HASH">: al cambiar el JS cambia el hash y la URL, así que el
+# navegador baja la versión nueva sola (no hay caché vieja pegada).
+#
+# El CÓDIGO FUENTE no cambia: el JS sigue escrito acá, que es la única fuente de verdad y lo
+# que el reviewer node-chequea. Los datos por usuario NO están en este bloque (van en el
+# <script> inline previo), así que el archivo es igual para todos.
+#
+# Fallback BLINDADO: si el bloque no se encuentra o no mide lo esperado, se deja el JS inline
+# y la página sigue funcionando igual que antes (mismo criterio que /planta-app.js).
+COMPRAS_APP_JS = ""
+COMPRAS_APP_JS_HASH = ""
+try:
+    import hashlib as _hl_cp
+    _mk_cp = "window._csrfTok = window._csrfTok || ''"
+    _i_cp = COMPRAS_HTML.find(_mk_cp)
+    if _i_cp > 0:
+        _open_cp = COMPRAS_HTML.rfind("<script>", 0, _i_cp)
+        _close_cp = COMPRAS_HTML.find("</script>", _i_cp)
+        if _open_cp > 0 and _close_cp > _open_cp:
+            _js_cp = COMPRAS_HTML[_open_cp + len("<script>"):_close_cp]
+            # sanity: tiene que ser el bloque gigante, no un script chico de arriba
+            if len(_js_cp) > 300000:
+                COMPRAS_APP_JS = _js_cp
+                COMPRAS_APP_JS_HASH = _hl_cp.md5(_js_cp.encode("utf-8")).hexdigest()[:10]
+                COMPRAS_HTML = (
+                    COMPRAS_HTML[:_open_cp]
+                    + '<script src="/compras-app.js?v=' + COMPRAS_APP_JS_HASH + '"></script>'
+                    + COMPRAS_HTML[_close_cp + len("</script>"):]
+                )
+except Exception:
+    COMPRAS_APP_JS = ""
+    COMPRAS_APP_JS_HASH = ""

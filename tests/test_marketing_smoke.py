@@ -395,13 +395,17 @@ def test_marketing_html_js_parses():
     if not shutil.which("node"):
         pytest.skip("node no disponible — skip JS parse check")
 
-    from api.templates_py.marketing_html import MARKETING_HTML
+    from api.templates_py.marketing_html import MARKETING_HTML, MARKETING_APP_JS
 
     # Extraer todos los <script>...</script> sin atributo src
     scripts = re.findall(
         r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>",
         MARKETING_HTML, re.DOTALL,
     )
+    # Desde el 15-ago el bloque grande se sirve como archivo aparte: si no se agrega acá, este
+    # guard deja de revisar justo el JS más grande y pasa verde sin haberlo mirado (M173).
+    if MARKETING_APP_JS:
+        scripts.append(MARKETING_APP_JS)
     assert scripts, "no <script> blocks found in MARKETING_HTML"
 
     full_js = "\n;\n".join(scripts)

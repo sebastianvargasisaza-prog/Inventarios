@@ -12869,8 +12869,24 @@ def debug_calendar_eventos():
         return jsonify({'error': f'Calendar fetch fallo: {e}'}), 500
 
     if cal.get('error'):
+        # Google Calendar se RETIRÓ en julio: que no responda no es una falla, es que esa
+        # integración ya no existe. Devolver 500 permanente ensucia el log y se lee como
+        # "algo se rompió" -- el hermano `debug-calendario` ya contestaba 200 diciendo el
+        # motivo, y dos endpoints que responden distinto a la MISMA causa se contradicen
+        # (M161/M211: distinguir "no se pudo leer" de "esto ya no está").
+        _msg = str(cal.get('error') or '')
+        if 'deshabilitado' in _msg.lower():
+            return jsonify({
+                'eventos': [], 'total_eventos': 0,
+                'total_aparecen': 0, 'total_ignorados': 0,
+                'skus_no_mapeados': [], 'productos_sin_formula': [],
+                'note': 'Google Calendar se retiró de EOS en julio de 2026 · el plan vive '
+                        'en el calendario propio (produccion_programada), así que este '
+                        'diagnóstico ya no aplica.',
+                'fuente_retirada': True,
+            }), 200
         return jsonify({
-            'error': f'Calendar API: {cal["error"]}',
+            'error': f'Calendar API: {_msg}',
             'source': cal.get('source'),
             'hint': 'Configura GCAL_ICAL_URL en Render',
         }), 500

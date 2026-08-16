@@ -218,9 +218,12 @@ def test_las_TRES_pantallas_usan_el_MISMO_pintor(app, db_clean):
     agregue un medio de pago dos quedarían mostrando el anterior (M45)."""
     import sys
     sys.path.insert(0, os.path.join(RAIZ, 'api'))
-    from templates_py.compras_html import COMPRAS_HTML
+    from .conftest import contenido_pantalla
     from templates_py.espagiria_html import HTML as ESP_HTML
     from templates_py.animus_html import ANIMUS_HTML
+    # El JS de Compras se sirve como archivo aparte desde el 15-ago: la pantalla es el HTML
+    # MAS su bundle (M166 · lo que se fija es que la funcion exista, no donde este escrita).
+    COMPRAS_HTML = contenido_pantalla('compras_html', 'COMPRAS_HTML')
     for nombre, h in (('compras', COMPRAS_HTML), ('espagiria', ESP_HTML), ('animus', ANIMUS_HTML)):
         assert h.count('function cajaComoPagar(') == 1, \
             '%s no tiene el pintor compartido (o lo tiene duplicado)' % nombre
@@ -253,8 +256,9 @@ def test_no_quedaron_DOS_definiciones_de_la_misma_funcion(app, db_clean):
     Es lo que pasó al reemplazar el `epAbrir` viejo por el compartido."""
     import sys
     sys.path.insert(0, os.path.join(RAIZ, 'api'))
-    from templates_py.compras_html import COMPRAS_HTML
+    from .conftest import contenido_pantalla
     from templates_py.espagiria_html import HTML as ESP_HTML
+    COMPRAS_HTML = contenido_pantalla('compras_html', 'COMPRAS_HTML')
     for nombre, h, pref in (('compras', COMPRAS_HTML, 'cp'), ('espagiria', ESP_HTML, 'ep')):
         for fn in ('Abrir', 'Cerrar', 'Cuerpo', 'Medio', 'BenTipo', 'CargarBenef'):
             n = len(re.findall(r'function %s%s\s*\(' % (pref, fn), h))
@@ -276,6 +280,10 @@ def test_el_JS_de_las_tres_pantallas_es_VALIDO(app, db_clean):
     from templates_py.espagiria_html import HTML as ESP_HTML
     from templates_py.animus_html import ANIMUS_HTML
     tmp = tempfile.mkdtemp()
+    # El bloque grande de Compras ya no esta inline: si no se agrega aca, este guard deja de
+    # revisar justo el archivo mas grande y pasa verde sin haberlo mirado (M143/M173).
+    from templates_py.compras_html import COMPRAS_APP_JS as _CP_BUNDLE
+    bloques_extra = [('compras-bundle', _CP_BUNDLE)] if _CP_BUNDLE else []
     for nombre, h in (('compras', COMPRAS_HTML), ('espagiria', ESP_HTML), ('animus', ANIMUS_HTML)):
         for idx, blk in enumerate(re.findall(r'<script[^>]*>(.*?)</script>', h, re.S)):
             if not blk.strip() or 'src=' in blk[:80]:
@@ -284,6 +292,11 @@ def test_el_JS_de_las_tres_pantallas_es_VALIDO(app, db_clean):
             io.open(f, 'w', encoding='utf-8').write(blk)
             r = subprocess.run(['node', '--check', f], capture_output=True, text=True)
             assert r.returncode == 0, 'JS roto en %s bloque %d: %s' % (nombre, idx, r.stderr[:500])
+    for nombre, blk in bloques_extra:
+        f = os.path.join(tmp, '%s.js' % nombre)
+        io.open(f, 'w', encoding='utf-8').write(blk)
+        r = subprocess.run(['node', '--check', f], capture_output=True, text=True)
+        assert r.returncode == 0, 'JS roto en %s: %s' % (nombre, r.stderr[:500])
 
 
 def test_la_migracion_es_ADITIVA(app, db_clean):

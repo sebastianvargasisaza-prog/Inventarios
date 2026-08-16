@@ -19,7 +19,7 @@ no hizo mal (M33: un KPI sin denominador va en gris, no en rojo).
 import os
 import sqlite3
 
-from .conftest import TEST_PASSWORD, csrf_headers
+from .conftest import TEST_PASSWORD, csrf_headers, pantalla_servida
 
 PROV_BUENO = 'ZZ PROV IMPECABLE'
 PROV_MALO = 'ZZ PROV PROBLEMA'
@@ -201,7 +201,7 @@ def test_la_pantalla_de_aseguramiento_muestra_el_desempeno(app, db_clean):
     c = _login(app)
     r = c.get('/aseguramiento')
     assert r.status_code == 200, r.status_code
-    html = r.data.decode('utf-8', 'replace')
+    html = pantalla_servida(c, '/aseguramiento')
     assert 'gob-des-list' in html, 'desapareció el panel de desempeño'
     assert 'gobLoadDesempeno' in html, 'el panel quedó sin su carga'
     assert 'gobLoadDesempeno();' in html, 'no se carga junto con la calificación · abriría vacío'

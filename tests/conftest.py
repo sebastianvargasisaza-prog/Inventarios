@@ -526,3 +526,48 @@ def db_clean(app):
 def csrf_headers():
     """Headers que pasan el Origin/Referer check para tests POST."""
     return {"Origin": "http://localhost"}
+
+
+def contenido_pantalla(modulo, atributo):
+    """Todo lo que una pantalla EJECUTA: su HTML mas el JS que se sirve aparte.
+
+    Varias pantallas grandes ya no llevan su JavaScript incrustado: se sirve como archivo
+    cacheable (/planta-app.js, /planta-core.js, /compras-app.js...) porque incrustado se
+    rebaja y se recompila en cada carga. Un test que busque una funcion SOLO en la constante
+    del HTML concluye que no existe -- y eso es un rojo falso que no habla del codigo, sino
+    de donde quedo escrito (M166: en este dashboard el boton se busca en el HTML y la
+    FUNCION en el bundle).
+
+    Lo que un test debe fijar es la GARANTIA (que la pantalla tenga ese boton, esa funcion,
+    ese campo), nunca la implementacion (que este inline). Por eso se concatena el HTML con
+    todos los bundles que el mismo modulo extrajo.
+    """
+    import os as _os
+    import sys as _sys
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    api = _os.path.join(raiz, "api")
+    if api not in _sys.path:
+        _sys.path.insert(0, api)
+    mod = __import__("templates_py." + modulo, fromlist=[atributo])
+    partes = [getattr(mod, atributo)]
+    for nombre in dir(mod):
+        if nombre.endswith("_APP_JS") or nombre.endswith("_CORE_JS"):
+            valor = getattr(mod, nombre, "")
+            if isinstance(valor, str) and valor:
+                partes.append(valor)
+    return "\n".join(partes)
+
+
+def pantalla_servida(cli, ruta):
+    """Lo mismo, pero pidiendo la pagina por HTTP: el HTML mas cada <script src> propio."""
+    import re as _re
+    resp = cli.get(ruta)
+    html = resp.data.decode("utf-8", "replace")
+    partes = [html]
+    for src in _re.findall(r'<script[^>]*\bsrc="([^"]+)"', html):
+        if src.startswith("http") or src.startswith("//") or src.startswith("/static/"):
+            continue
+        r = cli.get(src)
+        if r.status_code == 200:
+            partes.append(r.data.decode("utf-8", "replace"))
+    return "\n".join(partes)

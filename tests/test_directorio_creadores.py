@@ -15,7 +15,7 @@ Lo que estos tests fijan, que es donde un directorio se vuelve mentiroso:
 """
 from datetime import date, timedelta
 
-from .conftest import TEST_PASSWORD, csrf_headers
+from .conftest import TEST_PASSWORD, csrf_headers, pantalla_servida
 
 
 def _login(app, user="sebastian"):
@@ -267,6 +267,6 @@ def test_la_atribucion_usa_el_mismo_motor_que_el_directorio(app, db_clean):
 
 def test_la_pantalla_de_marketing_trae_el_directorio(app, db_clean):
     cli = _login(app)
-    html = cli.get('/marketing').data.decode('utf-8', 'replace')
+    html = pantalla_servida(cli, '/marketing')
     assert 'loadDirectorio' in html, 'el directorio no está montado en la pantalla'
     assert '/api/marketing/directorio-creadores' in html

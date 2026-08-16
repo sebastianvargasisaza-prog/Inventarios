@@ -85,18 +85,52 @@ def test_la_bandeja_vieja_redirige_en_vez_de_dar_404(app, db_clean):
 
 
 def test_ningun_aviso_apunta_a_una_pantalla_que_no_existe(app, db_clean):
-    """El de PQR iba a `/admin?tab=portal_pqr` y el del cron a `/admin/portal/pqr`."""
+    """El de PQR iba a `/admin?tab=portal_pqr` y el del cron a `/admin/portal/pqr`.
+
+    ⚠ Ampliado el 15-ago. La versión anterior miraba DOS archivos y sólo los enlaces que
+    empiezan con `/admin`: ese filtro decidía lo que no iba a encontrar (M174), y dejó pasar
+    CUATRO avisos de Planta que llevaban a `/dashboard#...` -- una ruta que no existe, porque
+    el dashboard de Planta es `/inventarios`. El operario recibía el aviso de lotes en
+    cuarentena, hacía clic y no llegaba a ninguna parte; así se aprende que la campana no
+    sirve, y ahí se pierden los avisos que sí importan (M202).
+
+    También se verifica el ANCLA: el dashboard sólo abre pestaña con los nombres que su
+    propio JS acepta, así que `/inventarios#inventario` llega a la página y no abre nada --
+    desde la silla del usuario, lo mismo que un enlace roto.
+    """
     raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    rutas = set()
+    rutas, patrones = set(), []
     for regla in app.url_map.iter_rules():
-        rutas.add(str(regla.rule))
+        r = str(regla.rule)
+        if '<' in r:
+            patrones.append(re.compile('^' + re.sub(r'<[^>]+>', '[^/]+', r) + '$'))
+        else:
+            rutas.add(r)
+
+    # la lista blanca de pestañas la declara el propio dashboard: se lee de ahí, no se copia
+    tabs = set()
+    try:
+        from templates_py.dashboard_html import DASHBOARD_HTML as _DH
+        m = re.search(r"var valid = \[([^\]]+)\]", _DH)
+        if m:
+            tabs = set(re.findall(r"'([\w-]+)'", m.group(1)))
+    except Exception:
+        tabs = set()
+
+    bp = os.path.join(raiz, 'api', 'blueprints')
     malos = []
-    for arch in ('api/blueprints/portal.py', 'api/blueprints/auto_plan_jobs.py'):
-        with open(os.path.join(raiz, arch), encoding='utf-8') as fh:
-            for enlace in set(re.findall(r"link='(/admin[^']*)'", fh.read())):
-                base = enlace.split('?')[0]
-                if base not in rutas:
-                    malos.append('%s -> %s' % (arch, enlace))
+    for arch in sorted(os.listdir(bp)):
+        if not arch.endswith('.py'):
+            continue
+        with open(os.path.join(bp, arch), encoding='utf-8') as fh:
+            texto = fh.read()
+        for enlace in sorted(set(re.findall(r"""link\s*=\s*["'](/[^"']*)["']""", texto))):
+            base = enlace.split('?')[0].split('#')[0].rstrip('/') or '/'
+            ancla = enlace.split('#')[1] if '#' in enlace else ''
+            if base not in rutas and not any(p.match(base) for p in patrones):
+                malos.append('%s -> %s (la ruta no existe)' % (arch, enlace))
+            elif ancla and base == '/inventarios' and tabs and ancla not in tabs:
+                malos.append('%s -> %s (la pestaña "%s" no existe)' % (arch, enlace, ancla))
     assert not malos, 'avisos que llevan a una pantalla inexistente: %s' % malos
 
 

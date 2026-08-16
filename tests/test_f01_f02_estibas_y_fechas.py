@@ -23,8 +23,11 @@ sys.path.insert(0, os.path.join(RAIZ, "scripts"))
 
 
 def _html():
-    from templates_py.calidad_html import CALIDAD_HTML
-    return CALIDAD_HTML
+    # Calidad sirve su JS como archivo aparte desde el 15-ago (eran 139 KB que se rebajaban
+    # en cada carga): "la pantalla" es el HTML MAS ese bundle. Buscar sólo en el HTML daría
+    # rojo por dónde quedó escrito el código, no por lo que la pantalla hace (M166).
+    from .conftest import contenido_pantalla
+    return contenido_pantalla('calidad_html', 'CALIDAD_HTML')
 
 
 def test_ESTIBAS_es_una_opcion_de_ubicacion(app):

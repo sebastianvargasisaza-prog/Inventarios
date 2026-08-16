@@ -87,6 +87,8 @@ MFA_EXEMPT_PATHS = {
     '/login/mfa', '/login/mfa-backup',
     '/seguridad', '/seguridad/mfa',  # paginas HTML de setup
     '/planta-app.js', '/planta-core.js',  # JS estático del dashboard (sin datos · cacheable · igual que /static)
+    '/compras-app.js',                    # ídem para Compras (los datos por usuario van inline, no acá)
+    '/calidad-app.js', '/aseguramiento-app.js', '/marketing-app.js',  # ídem · sin datos adentro
 }
 MFA_EXEMPT_PREFIXES = ('/static/', '/favicon')
 
