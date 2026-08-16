@@ -11185,8 +11185,22 @@ function ordenesRenderLista(items, res, fase){
   h+=ordenKpi((fase==='acondicionamiento'?'Unidades acondicionadas':'Unidades envasadas'),
               (res.unidades_total||0).toLocaleString('es-CO'), '--cx-success');
   h+='</div>';
+  // Los legajos DEMO no entran a los indicadores -no son produccion- pero se DICEN: un
+  // total que deja cosas afuera sin nombrarlas se lee como un faltante (M148).
+  if(res.demos>0){
+    h+='<div style="font-size:12px;color:var(--cx-text-mute);margin:-6px 0 14px">'
+      +'Los n&uacute;meros de arriba cuentan solo producci&oacute;n real. Hay '
+      +res.demos+' legajo(s) de <b>demostraci&oacute;n</b> en la lista, marcados, que no '
+      +'suman a los indicadores.</div>';
+  }
   items.forEach(function(o){
     var c=ordenChipEstado(o.estado, fase);
+    // La fila del demo se marca: sin eso se lee como una orden real parada hace semanas.
+    var demoChip = o.es_demo
+      ? '<span style="display:inline-block;font-size:10px;font-weight:800;padding:2px 7px;'
+        +'border-radius:6px;background:var(--cx-warn-pale, rgba(180,83,9,.12));'
+        +'color:var(--cx-warn-text, #b45309);margin-left:6px">DEMO</span>'
+      : '';
     // La EDAD es el dato que hace visible una orden parada. Antes había que deducirla de la fecha.
     // text-mute, no text-faint: faint es decorativo y sobre la tarjeta oscura daba 3,07:1
     var dias=o.dias, dtxt='', dcol='var(--cx-text-mute)';
@@ -11203,7 +11217,7 @@ function ordenesRenderLista(items, res, fase){
       +'color:var(--cx-text-mute)">'+_escHTML(o.numero_op||('EBR-'+o.ebr_id))+'</span>'
       +'<span style="font-size:15px;font-weight:700;color:var(--cx-text)">'+_escHTML(o.producto||'')+'</span>'
       +'<span style="background:'+c.b+';color:'+c.f+';font-size:10px;font-weight:800;letter-spacing:.05em;'
-      +'padding:3px 9px;border-radius:999px">'+c.t+'</span>'
+      +'padding:3px 9px;border-radius:999px">'+c.t+'</span>'+demoChip
       +'<span style="margin-left:auto;font-size:12px;font-weight:600;color:'+dcol+'">'+dtxt+'</span></div>';
     // línea 2: lote + granel + avance de pasos
     h+='<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:7px;font-size:12px;'

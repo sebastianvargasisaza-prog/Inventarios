@@ -3118,7 +3118,14 @@ async function load(){
     var d=await r.json();
     if(!r.ok){ document.getElementById('t2').textContent='Error: '+esc(d.error||r.status); return; }
     var h=d.header||{};
-    document.getElementById('t1').textContent='Batch Record Bulk Lote N°: '+(h.lote_codigo||'·');
+    // El titulo dice DE QUE es el legajo. "Bulk" es el granel: en un lote de envasado o
+    // de acondicionamiento decia lo que no era, y esta es la pantalla a la que llega
+    // Calidad desde su cola de controles.
+    var _tf=(h.fase||'fabricacion');
+    var _tit=(_tf==='envasado')?'Batch Record de Envasado · Lote N°: '
+            :(_tf==='acondicionamiento')?'Batch Record de Acondicionamiento · Lote N°: '
+            :'Batch Record Bulk Lote N°: ';
+    document.getElementById('t1').textContent=_tit+(h.lote_codigo||'·');
     document.getElementById('t2').textContent=h.producto||h.titulo||'·';
     // Estado de cada etapa (honesto · desde la data real)
     var prec=d.precauciones||[], chk=d.despeje_checklist||[], sheet=d.pesaje_sheet||[], pasos=d.pasos||[];
@@ -3132,13 +3139,34 @@ async function load(){
     var sheetPart=sheet.some(function(x){return x.pesado;});
     var pasosDone=completado||(pasos.length>0 && pasos.every(function(p){return p.completado_flag;}));
     var pasosPart=pasos.some(function(p){return p.completado_flag;});
-    // Etapas estilo MyBatch (Instrucciones de Fabricación)
-    var etapas=[
-      {n:'1. Precauciones', done:precDone, part:false},
-      {n:'2. Despeje de Línea - Dispensación', done:chkDone, part:chkPart},
-      {n:'3. Pesaje de Materias Primas', done:sheetDone, part:sheetPart},
-      {n:'4. Fabricación / Mezclado', done:pasosDone, part:pasosPart}
-    ];
+    // Etapas segun la FASE del legajo. Antes estaban cableadas a fabricacion, asi que
+    // un lote de envasado mostraba "Pesaje de Materias Primas" y "Mezclado" -- controles
+    // que en esa fase no existen (M205: una lista que no es de la fase se contesta por
+    // inercia). Y esta pantalla es a donde llega Calidad desde su cola de controles.
+    var _fase=(h.fase||'fabricacion');
+    var etapas;
+    if(_fase==='envasado'){
+      etapas=[
+        {n:'1. Precauciones', done:precDone, part:false},
+        {n:'2. Despeje de Línea - Envasado', done:chkDone, part:chkPart},
+        {n:'3. Alistamiento de envase y tapa', done:sheetDone, part:sheetPart},
+        {n:'4. Llenado, control de peso y sellado', done:pasosDone, part:pasosPart}
+      ];
+    } else if(_fase==='acondicionamiento'){
+      etapas=[
+        {n:'1. Precauciones', done:precDone, part:false},
+        {n:'2. Despeje de Línea - Acondicionamiento', done:chkDone, part:chkPart},
+        {n:'3. Alistamiento de etiquetas y empaque', done:sheetDone, part:sheetPart},
+        {n:'4. Etiquetado, empaque y cierre', done:pasosDone, part:pasosPart}
+      ];
+    } else {
+      etapas=[
+        {n:'1. Precauciones', done:precDone, part:false},
+        {n:'2. Despeje de Línea - Dispensación', done:chkDone, part:chkPart},
+        {n:'3. Pesaje de Materias Primas', done:sheetDone, part:sheetPart},
+        {n:'4. Fabricación / Mezclado', done:pasosDone, part:pasosPart}
+      ];
+    }
     var etapasHtml=etapas.map(function(e){
       return '<li><span>'+esc(e.n)+'</span>'+stBadge(e.done,e.part)+'</li>';
     }).join('');
@@ -3147,7 +3175,7 @@ async function load(){
       '<div class="node"><div class="ico">📋</div><div class="card">'+
         '<span class="tag">Orden de Producción</span>'+
         '<div class="grid">'+
-          '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'·')+'</div></div>'+
+          '<div><div class="lbl">'+(_fase==='fabricacion'?'N° de Lote Bulk':'N° de Lote')+'</div><div class="val mono">'+esc(h.lote_codigo||'·')+'</div></div>'+
           '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+(h.lote_size_g!=null?Number(h.lote_size_g).toLocaleString('es-CO')+' g':'·')+'</div></div>'+
           '<div><div class="lbl">Fecha / Hora</div><div class="val">'+dt(h.iniciado_at_utc)+'</div></div>'+
           '<div><div class="lbl">Estado Actual</div><div class="val">'+esc(h.estado||'·')+'</div></div>'+
@@ -10124,17 +10152,35 @@ def ordenes_unificadas():
     # orden: en-curso PRIMERO, luego por fecha desc (sort estable)
     items.sort(key=lambda x: (x.get("fecha") or ""), reverse=True)
     items.sort(key=lambda x: 0 if (x.get("estado") or "").lower().startswith("en proceso") else 1)
-    _abiertas = [i for i in items if not (i.get("estado") or "").lower().startswith(
+    # Los legajos DEMO no son producción: se marcan y NO entran a los indicadores. Con un
+    # demo abierto hace 26 días, Envasado mostraba "1 orden abierta · 1 atrasada" cuando no
+    # había ni una orden real, y ese número no se apaga nunca -- un indicador que grita por
+    # algo que nadie va a cerrar enseña a ignorar el tablero (M129/M154).
+    #
+    # Se DECLARAN, no se esconden: el demo sigue en la lista con su marca, porque una fila
+    # que desaparece sin explicación manda a buscarla (M124).
+    for _i in items:
+        # ⚠ En esta respuesta el lote viaja como `lote_bulk`, no como `lote`: mirar la
+        # llave equivocada devuelve None y TODO queda marcado como no-demo, sin un solo
+        # error a la vista (M94 · me pasó al escribir esto).
+        _lt = str(_i.get("lote_bulk") or _i.get("lote") or "").upper()
+        _i["es_demo"] = _lt.startswith("DEMO-")
+    _reales = [i for i in items if not i["es_demo"]]
+    _abiertas = [i for i in _reales if not (i.get("estado") or "").lower().startswith(
         ("complet", "liberad", "cerrad", "rechaz"))]
     resumen = {
-        "total": len(items),
-        "legajos": sum(1 for i in items if i["origen"] == "legajo"),
-        "simples": sum(1 for i in items if i["origen"] in ("simple", "en_proceso")),
-        "en_proceso": sum(1 for i in items if i.get("produccion_id")),
+        "total": len(_reales),
+        "legajos": sum(1 for i in _reales if i["origen"] == "legajo"),
+        "simples": sum(1 for i in _reales if i["origen"] in ("simple", "en_proceso")),
+        "en_proceso": sum(1 for i in _reales if i.get("produccion_id")),
         "abiertas": len(_abiertas),
         # Lo que de verdad pide una acción: órdenes abiertas que llevan 3 días o más sin cerrar.
         "atrasadas": sum(1 for i in _abiertas if (i.get("dias") or 0) >= 3),
-        "unidades_total": sum(int(i.get("unidades_total") or 0) for i in items),
+        "unidades_total": sum(int(i.get("unidades_total") or 0) for i in _reales),
+        # Lo que se dejó afuera, dicho: un total que excluye cosas sin nombrarlas se lee
+        # como un faltante (M148).
+        "demos": sum(1 for i in items if i["es_demo"]),
+        "total_con_demos": len(items),
     }
     return jsonify({"ok": True, "fase": fase, "resumen": resumen, "ordenes": items})
 

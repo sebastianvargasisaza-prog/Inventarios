@@ -603,6 +603,21 @@ CORAZON=(
   # una demo de junio, asi que todas las salas salian prefirmadas por quien no ejecuto esa
   # limpieza. Y ahora pregunta QUE EQUIPOS se van a usar antes de imprimir.
   "tests/test_rotulo_limpieza_firma_y_equipos.py"
+  # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
+  # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
+  # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.
+  "tests/test_legajo_habla_de_su_fase.py"
+  # Los legajos DEMO contaban como produccion: Envasado mostraba "1 orden abierta, 1
+  # atrasada hace 26 dias" y era un demo que nadie va a cerrar nunca.
+  "tests/test_demos_no_cuentan_como_produccion.py"
+  # VELOCIDAD (15-ago) · 18 pantallas se refrescaban solas cada 20-300s sin mirar si la
+  # pestana estaba visible: varias pestanas abiertas multiplicaban el trafico contra los
+  # TRES workers. El guard ejercita el comportamiento en un navegador simulado.
+  "tests/test_pollers_no_gastan_worker_oculto.py"
+  # VELOCIDAD (15-ago) · la cola de decisiones leia el historial y el estado del creador de
+  # a UNO por pago (22 de sus 55 consultas). El tope de 60 es POR CREADOR: con un limite
+  # global las alertas de doble pago se apagarian para los creadores con mas movimiento.
+  "tests/test_precarga_alertas_creadores.py"
 )
 
 echo ""

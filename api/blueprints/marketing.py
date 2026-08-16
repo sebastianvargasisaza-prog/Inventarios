@@ -647,6 +647,115 @@ def _norm_tema(t):
     return re.sub(r'[^a-z0-9]+', ' ', t).strip()
 
 
+def precargar_alertas_influencers(c, filas):
+    """Deja listos los memos de `alertas_pago_influencer` para TODA una lista de pagos.
+
+    PERF 15-ago (sonda local · regla 0.5). El memo por request que ya existía evita releer
+    el historial del MISMO creador dos veces, pero no evita el N+1 entre creadores
+    DISTINTOS: la cola de decisiones del Centro de Mando trae los pagos pendientes de once
+    creadores y hacía **once** lecturas del historial + **once** del estado. Medido en
+    `/api/centro/decisiones`: 22 de 55 consultas eran esto. Acá se resuelven en una sola
+    (y el estado, en NINGUNA: ver abajo).
+
+    ⚠ El `LIMIT 60` del historial es POR CREADOR. Traerlo con un `IN (...)` y un límite
+    global cambiaría la respuesta: un creador con mucho historial se llevaría el cupo y los
+    demás quedarían sin antecedentes -- o sea que las alertas de doble pago dejarían de
+    dispararse, en silencio y justo para los creadores con más movimiento (M133: un recorte
+    que cambia el resultado no es un atajo). Se trae el historial de esos creadores y el
+    recorte a 60 se hace por grupo, conservando el mismo orden.
+
+    `filas` son las filas que el caller ya leyó; si traen el estado del creador (los
+    callers lo tienen por su LEFT JOIN a `marketing_influencers`), se siembra desde ahí y
+    esa consulta desaparece del todo.
+
+    Es best-effort: si algo falla, no se siembra nada y cada llamada consulta como siempre.
+    """
+    try:
+        from flask import g as _g
+    except Exception:
+        return
+    # ⚠ Los callers pasan `sqlite3.Row`, que NO tiene `.get()`: un `hasattr(f,'get')`
+    # daría False para toda fila y el precargador se saltearía entero sin un solo error,
+    # dejando el N+1 igual que antes y con cara de arreglado (M94). Se lee por clave.
+    def _col(f, clave):
+        try:
+            return f[clave]
+        except Exception:
+            return None
+
+    def _tiene(f, clave):
+        try:
+            return clave in f.keys()
+        except Exception:
+            return False
+
+    ids = []
+    for f in (filas or []):
+        _i = _col(f, 'influencer_id')
+        if _i and _i not in ids:
+            ids.append(_i)
+    if not ids:
+        return
+
+    # Estado: sale de la fila que el caller YA tiene · cero consultas.
+    try:
+        _me = getattr(_g, '_alertas_estado_memo', None)
+        if _me is None:
+            _me = {}
+            _g._alertas_estado_memo = _me
+        for f in (filas or []):
+            _i = _col(f, 'influencer_id')
+            if not _i or _i in _me:
+                continue
+            if _tiene(f, 'inf_estado'):
+                # el consumidor lee est[0]: se conserva la forma de fila del SELECT
+                _me[_i] = (str(_col(f, 'inf_estado') or ''),)
+        # El caller que no trae el estado en su consulta (la lista de pagos de Marketing no
+        # hace ese JOIN) lo resuelve igual en UNA sola lectura, no en una por creador.
+        _faltan_est = [i for i in ids if i not in _me]
+        if _faltan_est:
+            _marcas = ','.join('?' for _ in _faltan_est)
+            _filas_est = c.execute(
+                "SELECT id, COALESCE(estado,'') FROM marketing_influencers WHERE id IN (%s)"
+                % _marcas, tuple(_faltan_est)).fetchall()
+            _por_id = {r[0]: (str(r[1] or ''),) for r in _filas_est}
+            for i in _faltan_est:
+                # Un creador que no está en el maestro devolvía None (fetchone sin fila) y
+                # el consumidor lo trata como "sin estado": se conserva esa distinción, o
+                # una tupla vacía se leería como estado en blanco y cambiaría la alerta.
+                _me[i] = _por_id.get(i)
+    except Exception as e:
+        log.warning('precargar_alertas_influencers: estado no precargado: %s', e)
+
+    # Historial: UNA consulta para todos, recortada a 60 POR creador.
+    try:
+        _mp = getattr(_g, '_alertas_prev_memo', None)
+        if _mp is None:
+            _mp = {}
+            _g._alertas_prev_memo = _mp
+        faltan = [i for i in ids if i not in _mp]
+        if not faltan:
+            return
+        marcas = ','.join('?' for _ in faltan)
+        filas_prev = c.execute(
+            "SELECT influencer_id, id, valor, fecha, COALESCE(estado,''), "
+            "       COALESCE(concepto,''), COALESCE(fecha_publicacion,''), "
+            "       COALESCE(entregable,''), COALESCE(numero_oc,'') "
+            "FROM pagos_influencers "
+            "WHERE influencer_id IN (%s) AND COALESCE(estado,'') <> 'Anulada' "
+            "ORDER BY influencer_id, fecha DESC, id DESC" % marcas,
+            tuple(faltan)).fetchall()
+        agrupado = {}
+        for r in filas_prev:
+            grupo = agrupado.setdefault(r[0], [])
+            if len(grupo) < 60:          # el mismo tope por creador que la consulta suelta
+                grupo.append(tuple(r[1:]))
+        for i in faltan:
+            _mp[i] = agrupado.get(i, [])
+    except Exception as e:
+        log.warning('precargar_alertas_influencers: historial no precargado: %s', e)
+
+
 def alertas_pago_influencer(c, *, influencer_id, nombre, valor, fecha_publicacion,
                             entregable, excluir_pago_id=None):
     """Devuelve las razones por las que ESTE pago podría ser un doble-pago.
@@ -5159,6 +5268,10 @@ def mkt_pagos_influencers_list():
         # decidir nada, y calcularla para los 1000 del historico seria trabajo tirado.
         # Cada pendiente trae `alertas` con el pago anterior concreto contra el que choco.
         try:
+            # El historial de todos los creadores pendientes, de una vez: sin esto son dos
+            # lecturas por pago pendiente (PERF 15-ago · sonda local).
+            precargar_alertas_influencers(
+                c, [p for p in pagos if str(p.get('estado') or '') == 'Pendiente'])
             for _p in pagos:
                 if str(_p.get('estado') or '') != 'Pendiente':
                     continue

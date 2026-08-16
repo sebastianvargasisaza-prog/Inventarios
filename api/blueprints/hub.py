@@ -194,8 +194,10 @@ def _pagos_influencer_pendientes(c, *, con_banco=False, limite=200):
     """
     try:
         from blueprints.marketing import alertas_pago_influencer as _alertas_pi
+        from blueprints.marketing import precargar_alertas_influencers as _precargar_pi
     except Exception:
         _alertas_pi = None
+        _precargar_pi = None
 
     filas = c.execute(
         "SELECT pi.id, pi.influencer_id, pi.influencer_nombre, COALESCE(pi.valor,0) valor, "
@@ -215,6 +217,15 @@ def _pagos_influencer_pendientes(c, *, con_banco=False, limite=200):
         "        WHERE estado='Pagada' AND COALESCE(numero_oc,'')!='' ) "
         "ORDER BY COALESCE(NULLIF(pi.vence_pago_at,''), pi.fecha) ASC LIMIT ?",
         (int(limite),)).fetchall()
+
+    # El historial y el estado de TODOS los creadores de la cola, de una vez: si no, cada
+    # fila los pide por su cuenta (medido: 22 de las 55 consultas de este endpoint · M43,
+    # cada consulta es un viaje a la base).
+    if _precargar_pi:
+        try:
+            _precargar_pi(c, filas)
+        except Exception as e:
+            log.warning('centro · precarga de alertas no aplicada: %s', e)
 
     salida = []
     for r in filas:
