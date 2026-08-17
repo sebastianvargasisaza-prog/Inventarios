@@ -1036,3 +1036,21 @@ materiales con lo que se necesita y lo que hay (`falta MP00123 (necesita 900 g, 
 El detalle completo sigue en `faltantes`, con los lotes retenidos y por qué no cuentan (M124): un
 total que excluye sin nombrar lo excluido se lee como "no hay", cuando lo que pasa es que el
 material está en cuarentena o vencido.
+
+## 🚪 El registro de acondicionamiento descuenta por la PUERTA COMPARTIDA (17-ago)
+
+`POST /api/acondicionamiento` **ya no descuenta por su cuenta**. Delega en
+`brd.descontar_mee_del_lote`, la misma puerta que usa el cierre del legajo
+(`/api/brd/ebr/<id>/cerrar-acondicionamiento`), y por eso reclama el libro mayor
+`produccion_checklist.consumido_at` con CAS antes de mover nada. El contrato completo, con el
+borde del orden inverso y la semántica de `sin_libro_mayor`, vive en **INV-24 de
+`CONTRACT_brd.md`** — se documenta allá porque la regla es del batch record, no del kardex.
+
+Antes descontaba directo (Salida cruda + `UPDATE stock_actual`), sin libro mayor, sin CAS y sin
+`audit_log`: registrar el acondicionamiento acá **y** cerrar el legajo sacaba el mismo envase dos
+veces. Reproducido por los dos endpoints: 2 salidas y 200 unidades donde había 100.
+
+La respuesta ahora devuelve `descuentos`, `saltados` y `sin_libro_mayor`, y el descuento deja
+`audit_log` (`ACONDICIONAMIENTO_DESCONTAR_MEE`). Tests:
+`tests/test_acondicionamiento_doble_descuento.py` y `tests/test_demo_camina_envasado_y_acond.py`
+(los dos en el gate).

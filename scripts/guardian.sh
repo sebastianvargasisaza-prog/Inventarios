@@ -737,6 +737,11 @@ CORAZON=(
   "tests/test_acondicionamiento_doble_descuento.py"
   # Estaba FUERA de todo gate y llevaba tiempo en rojo (el demo pasó a armar las tres fases).
   "tests/test_acondicionamiento_cierre.py"
+  # El demo se camina hasta envasado y acondicionamiento POR LOS ENDPOINTS REALES, y ahi se
+  # ve si las pantallas se llenan. Fue lo que destapo que el Material de Empaque del legajo
+  # de acondicionamiento nunca mostro nada (json.loads con el nombre equivocado, tapado por
+  # un except mudo): no lo veia nadie porque la fase no se habia caminado todavia.
+  "tests/test_demo_camina_envasado_y_acond.py"
 )
 
 echo ""

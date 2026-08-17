@@ -4068,8 +4068,17 @@ def ebr_vista_completa(ebr_id):
                         'estado': rd.get('estado') or 'En proceso',
                     })
                     try:
-                        _mlist = json.loads(rd.get('mee_consumido') or '[]')
-                    except Exception:
+                        # ⚠ 17-ago · acá decía `json.loads` y el módulo importa `json as _json`,
+                        # así que lanzaba NameError SIEMPRE. El `except` de abajo lo convertía en
+                        # lista vacía, o sea que la sección **Material de Empaque del legajo de
+                        # acondicionamiento nunca mostró nada, para ningún lote** -- y nadie lo
+                        # notó porque la fase no se había caminado todavía (M94/M4: un except
+                        # mudo convierte un bug en "no hay datos", que es indistinguible de la
+                        # realidad). Las otras tres llamadas del archivo sí usan `_json`.
+                        _mlist = _json.loads(rd.get('mee_consumido') or '[]')
+                    except Exception as _emee:
+                        __import__('logging').getLogger('brd').warning(
+                            'acond material de empaque ilegible en el lote %s: %s', _loa, _emee)
                         _mlist = []
                     for _m in (_mlist or []):
                         _c = str(_m.get('codigo', _m.get('codigo_mee', '')) or '').strip()
@@ -9177,8 +9186,15 @@ def crear_planta_demo():
     try:
         for c_, n_ in (("MP-DEMO1", "Demo Base"), ("MP-DEMO2", "Demo Activo")):
             cur.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES (?,?,1)", (c_, n_))
-        cur.execute("INSERT OR IGNORE INTO maestro_mee (codigo, descripcion, stock_actual, estado) "
-                    "VALUES ('ENV-DEMO','Frasco demo 30ml',1000,'Activo')")
+        # Las CUATRO piezas del empaque, no sólo el frasco. Sin la tapa, la caja y la etiqueta,
+        # el legajo de envasado abre con "Materiales de Envase" VACÍO y el de acondicionamiento
+        # con "Materiales de Empaque" vacío -- que es justo lo que se quiere mirar en el demo.
+        for _c_mee, _d_mee in (("ENV-DEMO", "Frasco demo 30ml"),
+                               ("TAPA-DEMO", "Tapa demo"),
+                               ("CAJA-DEMO", "Estuche demo"),
+                               ("ETIQ-DEMO", "Etiqueta demo")):
+            cur.execute("INSERT OR IGNORE INTO maestro_mee (codigo, descripcion, stock_actual, estado) "
+                        "VALUES (?,?,1000,'Activo')", (_c_mee, _d_mee))
         if not cur.execute("SELECT 1 FROM formula_headers WHERE producto_nombre=?", (PROD,)).fetchone():
             cur.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES (?, 1, 1)", (PROD,))
         if not cur.execute("SELECT 1 FROM formula_items WHERE producto_nombre=?", (PROD,)).fetchone():
@@ -9187,7 +9203,15 @@ def crear_planta_demo():
                             "cantidad_g_por_lote) VALUES (?,?,?,?,?)", (PROD, c_, n_, pct, pct * 10))
         if not cur.execute("SELECT 1 FROM producto_presentaciones WHERE producto_nombre=?", (PROD,)).fetchone():
             cur.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, "
-                        "volumen_ml, envase_codigo, activo) VALUES (?, 'DEMO30', '30ml', 30, 'ENV-DEMO', 1)", (PROD,))
+                        "volumen_ml, envase_codigo, tapa_codigo, caja_codigo, activo) "
+                        "VALUES (?, 'DEMO30', '30ml', 30, 'ENV-DEMO', 'TAPA-DEMO', 'CAJA-DEMO', 1)", (PROD,))
+        else:
+            # Un demo sembrado ANTES de que existieran las partes se queda sin tapa ni caja para
+            # siempre: se completan sin pisar nada que ya tenga valor.
+            cur.execute("UPDATE producto_presentaciones "
+                        "   SET tapa_codigo=COALESCE(NULLIF(tapa_codigo,''),'TAPA-DEMO'), "
+                        "       caja_codigo=COALESCE(NULLIF(caja_codigo,''),'CAJA-DEMO') "
+                        " WHERE producto_nombre=?", (PROD,))
         mbr = cur.execute("SELECT id FROM mbr_templates WHERE producto_nombre=? AND estado='aprobado'",
                           (PROD,)).fetchone()
         if not mbr:
@@ -9316,6 +9340,16 @@ def crear_planta_demo():
         return jsonify({"ok": True, "producto": PROD, "lote": LOTE,
                         "fabricacion_ebr": op.get('id'), "envasado_ebr": of.get('id'),
                         "acondicionamiento_ebr": oa.get('id'),
+                        # Con qué caminar las dos fases siguientes POR LOS ENDPOINTS REALES
+                        # (`/api/envasado` y `/api/acondicionamiento`), que es lo que hace la
+                        # planta: el demo no siembra filas a mano en las tablas de esas fases,
+                        # porque entonces mostraría una pantalla que nadie llenó así (M153).
+                        "caminar": {
+                            "presentacion": "DEMO30", "envase_codigo": "ENV-DEMO",
+                            "tapa_codigo": "TAPA-DEMO", "caja_codigo": "CAJA-DEMO",
+                            "etiqueta_codigo": "ETIQ-DEMO",
+                            "batch_g": 900, "unidades": 30,
+                        },
                         "reusado": bool(op.get('reusado') and of.get('reusado')
                                         and oa.get('reusado')),
                         # se DICE si habia que revivir un legajo muerto, en vez de que el
@@ -9343,28 +9377,125 @@ def planta_demo_pagina():
 
 
 _PLANTA_DEMO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Demo de planta · EOS</title><style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--cx-primary-pale, #f5f3ff);color:#1e1b4b;padding:32px;max-width:640px;margin:0 auto}
-h1{font-size:22px;color:var(--cx-primary-text, #5b21b6)}.card{background:var(--cx-card, #fff);border:1px solid #e9d5ff;border-radius:14px;padding:20px;margin-top:16px}
-button{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:700;cursor:pointer}
-.ok{background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:14px;margin-top:14px;font-size:13px;display:none}
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Demo de planta &middot; EOS</title><style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--cx-primary-pale, #f5f3ff);color:var(--cx-text, #1e1b4b);padding:32px;max-width:720px;margin:0 auto}
+h1{font-size:22px;color:var(--cx-primary-text, #5b21b6);margin-bottom:4px}
+.sub{color:var(--cx-text-mute, #64748b);font-size:13.5px;margin:0 0 4px}
+.card{background:var(--cx-card, #fff);border:1px solid var(--cx-border-soft, #e9d5ff);border-radius:14px;padding:20px;margin-top:16px}
+.card h2{font-size:15px;margin:0 0 6px;color:var(--cx-text, #1e1b4b)}
+.paso{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--cx-primary-text, #6d28d9);margin-bottom:8px}
+button{background:var(--cx-primary-grad, linear-gradient(135deg,#a78bfa,#6d28d9));color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:700;cursor:pointer}
+button[disabled]{opacity:.45;cursor:not-allowed}
+.ok{background:var(--cx-success-pale, #ecfdf5);border:1px solid var(--cx-success-light, #6ee7b7);border-radius:10px;padding:14px;margin-top:14px;font-size:13px;display:none;line-height:1.55}
+.bad{background:var(--cx-danger-pale, #fee2e2);border-color:var(--cx-danger-light, #fca5a5)}
+.datos{font-size:12.5px;color:var(--cx-text-mute, #64748b);margin-top:10px;line-height:1.6}
+code{background:var(--cx-bg-alt, #f1f5f9);border-radius:4px;padding:1px 5px;font-size:12px}
 a{color:var(--cx-primary-text, #6d28d9);font-weight:700}</style></head><body>
-<h1>🎬 Demo de planta</h1>
+<h1>&#127916; Demo de planta</h1>
+<p class="sub">Un lote <b>DEMO</b> que recorre las tres fases. Se camina por los <b>mismos endpoints
+que usa la planta</b>, as&iacute; que lo que ves es lo que ver&iacute;a un operario.</p>
+
 <div class="card">
-<p>Crea un lote <b>DEMO</b> (producto "DEMO PLANTA (BORRAR)" · lote DEMO-PLANTA-1) con su legajo de
-<b>fabricación</b> (4 pasos) y de <b>envasado</b> (presentación 30ml), para recorrer el flujo paso a paso.</p>
-<p style="color:var(--cx-text-mute, #64748b);font-size:13px">Cuando termines de verlo, borralo con el botón 🗑️ en la lista de órdenes (Fabricación / Envasado).</p>
-<button onclick="crear()">Crear demo de planta</button>
-<div class="ok" id="ok"></div></div>
+  <div class="paso">Paso 1 &middot; el lote</div>
+  <h2>Crear el lote y sus tres legajos</h2>
+  <p class="sub">Producto "DEMO PLANTA (BORRAR)" &middot; lote DEMO-PLANTA-1, con materia prima en
+  bodega, las cuatro piezas del empaque y un instructivo con pasos por fase.</p>
+  <button id="b1" onclick="crear()">Crear el lote demo</button>
+  <div class="ok" id="ok1"></div>
+</div>
+
+<div class="card">
+  <div class="paso">Paso 2 &middot; envasado</div>
+  <h2>Caminar el envasado</h2>
+  <p class="sub">Registra el envasado real del lote. Con esto el legajo de envasado deja de abrir
+  vac&iacute;o: aparecen las <b>unidades por presentaci&oacute;n</b> y los <b>materiales de envase</b>.</p>
+  <button id="b2" onclick="caminarEnvasado()" disabled>Caminar envasado</button>
+  <div class="ok" id="ok2"></div>
+</div>
+
+<div class="card">
+  <div class="paso">Paso 3 &middot; acondicionamiento</div>
+  <h2>Caminar el acondicionamiento</h2>
+  <p class="sub">Registra el acondicionamiento y consume la etiqueta y el estuche. Con esto el
+  legajo de acondicionamiento muestra sus <b>unidades</b> y su <b>material de empaque</b>.</p>
+  <button id="b3" onclick="caminarAcond()" disabled>Caminar acondicionamiento</button>
+  <div class="ok" id="ok3"></div>
+</div>
+
+<p class="datos">Cuando termines de verlo, borralo con el bot&oacute;n de la papelera en la lista de
+&oacute;rdenes. Todo lo que siembra el demo lleva <code>DEMO</code> en el producto, el lote y los
+c&oacute;digos, para que no se confunda con nada real.</p>
+
 <script>
-async function crear(){
-  var t=''; try{ t=(await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }catch(e){}
-  var r=await fetch('/api/admin/planta-demo/crear',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},credentials:'same-origin',body:'{}'});
-  var d=await r.json(); var ok=document.getElementById('ok');
-  if(!r.ok){ ok.style.display='block'; ok.style.background='#fee2e2'; ok.textContent=d.error||'Error'; return; }
-  ok.style.display='block';
-  ok.innerHTML='\\u2705 Demo '+(d.reusado?'ya exist\\u00eda':'creado')+' \\u00b7 producto <b>'+d.producto+'</b> \\u00b7 lote <b>'+d.lote+'</b>.<br>And\\u00e1 a la pesta\\u00f1a <b>Fabricaci\\u00f3n</b> y abr\\u00ed el legajo del lote DEMO-PLANTA-1 (record\\u00e9 los 4 pasos), y a <b>Envasado</b> para ver su presentaci\\u00f3n. <a href="/planta" target="_blank">Abrir planta \\u2192</a>';
+var DEMO=null, ENVID=0, BUSY=false;
+function pinta(id, html, malo){
+  var e=document.getElementById(id);
+  e.style.display='block';
+  if(malo){ e.className='ok bad'; } else { e.className='ok'; }
+  e.innerHTML=html;
 }
+async function tok(){
+  try{ return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }
+  catch(e){ return ''; }
+}
+async function pide(url, body){
+  var t=await tok();
+  var r=await fetch(url,{method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body||{})});
+  var d={}; try{ d=await r.json(); }catch(e){}
+  return {ok:r.ok, d:d, status:r.status};
+}
+function conBoton(id, fn){
+  // Un demo se aprieta dos veces por costumbre: sin esto, el segundo click registra
+  // OTRO envasado del mismo lote (M63 - toda accion que INSERTA necesita su guard).
+  return async function(){
+    if(BUSY) return; BUSY=true;
+    var b=document.getElementById(id); if(b) b.disabled=true;
+    try{ await fn(); } finally { BUSY=false; if(b) b.disabled=false; }
+  };
+}
+var crear = conBoton('b1', async function(){
+  var r=await pide('/api/admin/planta-demo/crear', {});
+  if(!r.ok){ pinta('ok1', r.d.error||('Error '+r.status), true); return; }
+  DEMO=r.d;
+  var c=DEMO.caminar||{};
+  pinta('ok1', '&#10004; Demo '+(DEMO.reusado?'ya exist&iacute;a':'creado')+
+    ' &middot; producto <b>'+DEMO.producto+'</b> &middot; lote <b>'+DEMO.lote+'</b>.'+
+    '<br>Legajos: <a href="/planta/orden/'+DEMO.fabricacion_ebr+'" target="_blank">fabricaci&oacute;n</a>'+
+    ' &middot; <a href="/planta/legajo-envasado/'+DEMO.envasado_ebr+'" target="_blank">envasado</a>'+
+    ' &middot; <a href="/planta/legajo-acondicionamiento/'+DEMO.acondicionamiento_ebr+'" target="_blank">acondicionamiento</a>'+
+    '<div class="datos">Va a envasar <b>'+(c.unidades||0)+' unidades</b> de '+(c.presentacion||'')+
+    ' con <code>'+(c.envase_codigo||'')+'</code> y <code>'+(c.tapa_codigo||'')+'</code>.</div>');
+  document.getElementById('b2').disabled=false;
+});
+var caminarEnvasado = conBoton('b2', async function(){
+  if(!DEMO){ pinta('ok2','Primero cre&aacute; el lote (paso 1).', true); return; }
+  var c=DEMO.caminar||{};
+  var r=await pide('/api/envasado', {lote:DEMO.lote, producto:DEMO.producto,
+    presentacion:c.presentacion, batch_g:c.batch_g, unidades:c.unidades,
+    envase_codigo:c.envase_codigo, tapa_codigo:c.tapa_codigo,
+    observaciones:'Envasado del demo de planta'});
+  if(!r.ok){ pinta('ok2', r.d.error||('Error '+r.status), true); return; }
+  ENVID=r.d.id||0;
+  pinta('ok2','&#10004; Envasado registrado &middot; '+(c.unidades||0)+' unidades de '+c.presentacion+
+    '.<br><a href="/planta/legajo-envasado/'+DEMO.envasado_ebr+'" target="_blank">Abrir el legajo de envasado &rarr;</a>'+
+    ' &mdash; ahora tiene unidades por presentaci&oacute;n y materiales de envase.');
+  document.getElementById('b3').disabled=false;
+});
+var caminarAcond = conBoton('b3', async function(){
+  if(!DEMO){ pinta('ok3','Primero cre&aacute; el lote (paso 1).', true); return; }
+  var c=DEMO.caminar||{};
+  var r=await pide('/api/acondicionamiento', {envasado_id:ENVID, lote:DEMO.lote,
+    producto:DEMO.producto, presentacion:c.presentacion, batch_g:c.batch_g,
+    unidades:c.unidades, observaciones:'Acondicionamiento del demo de planta',
+    mee_consumido:[{codigo:c.etiqueta_codigo, cantidad:c.unidades},
+                   {codigo:c.caja_codigo, cantidad:c.unidades}]});
+  if(!r.ok){ pinta('ok3', r.d.error||('Error '+r.status), true); return; }
+  var n=(r.d.descuentos||[]).length, salt=(r.d.saltados||[]).length;
+  pinta('ok3','&#10004; Acondicionamiento registrado &middot; '+n+' material(es) descontado(s)'+
+    (salt?(' &middot; '+salt+' saltado(s) porque ya los consumi&oacute; el legajo'):'')+
+    '.<br><a href="/planta/legajo-acondicionamiento/'+DEMO.acondicionamiento_ebr+'" target="_blank">Abrir el legajo de acondicionamiento &rarr;</a>');
+});
 </script></body></html>"""
 
 
