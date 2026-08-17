@@ -766,12 +766,30 @@ actos regulatorios distintos y la pantalla usa cada palabra donde corresponde.
 Fijado por `tests/test_quien_firma_el_cierre.py` (en el gate), con la prueba de dientes hecha en
 las dos direcciones.
 
-⚠ **ABIERTO, pendiente de decisión de Sebastián:** los instructivos cargados desde el batch record
-marcan `requiere_qc=1` en **todos** los pasos (`brd.py` ~1456 y ~1532), y eso **bloquea el registro
-del paso** (400) hasta que otra persona firme `supervisa`. El documento pide las verificaciones de
-CC **por etapa**, no por paso. No se cambió porque aflojaría un control regulado sin su visto
-bueno; `mbr_pasos.requiere_qc` ya es editable paso por paso desde el MBR.
+**RESUELTO (Sebastián, 16-ago: *"entonces por etapa"*):** los instructivos marcaban
+`requiere_qc=1` en **todos** sus pasos, y ese flag **bloquea el registro del paso** (400) hasta
+que otra persona firme `supervisa` — con ~20 pasos por lote, 20 firmas de Calidad por lote. El
+procedimiento no pide eso: pide las verificaciones **por etapa**. Ahora el default es
+`_REQUIERE_QC_INSTRUCTIVO = 0` (una constante con el porqué al lado) y la **mig 438** bajó los que
+ya estaban cargados, con dos guards duros: **no toca MBR aprobados** (inmutables · mig 109, y son
+documentos firmados: ahí hay que re-versionar) y **no toca ningún paso ya ejecutado con la firma
+dada** (bajarle la exigencia a un registro firmado sería reescribir su historia). Sigue siendo
+editable paso por paso desde el MBR, así que volver a exigirlo en un paso crítico es un clic.
 
-⚠ **Hueco preexistente detectado de paso:** `/api/sign` con `meaning='supervisa'` **no gatea rol** —
+**Lo que se firma por etapa, y sigue intacto — son cinco actos, no veinte:** el despeje (con la
+verificación independiente de CC), los controles en proceso (sólo Calidad adjudica · INV-18), los
+pesajes, el material de envase (INV-14) y la liberación.
+
+**El camino de la FIRMA tiene que decir lo mismo que el de la ACCIÓN.** `firmar-rapido` no aceptaba
+el meaning `aprueba_dt` (el mismo defecto que M116 encontró en `/api/sign`, en el otro endpoint) y
+su gate era `ADMIN ∪ CALIDAD` mientras el mensaje prometía *"Calidad / Dirección Técnica"*: el
+Director Técnico **no podía firmar ni la liberación** que `/liberar` sí le permite, y Aseguramiento
+tampoco. Los dos gates salen ahora de `_batch_role_info`.
+
+**Y el legajo de acondicionamiento ofrece el visto bueno del DT**, que es la pantalla del producto
+terminado: el endpoint existía desde junio y esa pantalla no lo tenía (la única vía era el modal
+del dashboard), porque `/vista-completa` ni siquiera mandaba `aprobado_dt_por`.
+
+⚠ **Hueco preexistente, todavía abierto:** `/api/sign` con `meaning='supervisa'` **no gatea rol** —
 cualquiera con login puede dar esa 2ª firma (el único control es que no sea el mismo operario que
-ejecutó). No se tocó en esta tanda para no mezclar dos cambios de permisos en el mismo gate.
+ejecutó). Con la verificación ahora por etapa pesa menos, pero sigue ahí.

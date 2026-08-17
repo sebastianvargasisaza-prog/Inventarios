@@ -9198,24 +9198,149 @@ async function ebrGenerarMBR(){
   }catch(e){alert('Error de red');}
 }
 async function ebrNuevoLegajo(){
-  var prod=prompt('Producto (debe tener un MBR aprobado):');
-  if(!prod){return;} prod=prod.trim();
-  var fase=(prompt('Fase del legajo:\\n- fabricacion\\n- envasado\\n- acondicionamiento','fabricacion')||'').trim().toLowerCase();
-  if(['fabricacion','envasado','acondicionamiento'].indexOf(fase)<0){alert('Fase inválida');return;}
-  var lote=prompt('Lote físico/comercial del lote:');
-  if(!lote){return;} lote=lote.trim();
+  // Modal propio de EOS · antes eran tres prompt() encadenados del navegador (producto, fase y
+  // lote tecleado a mano), y el numero de lote se escribia de memoria aunque el sistema ya
+  // sabia cual toca.
+  var ov=document.getElementById('nlg-ov');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='nlg-ov';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,12,35,.55);display:flex;'+
+      'align-items:center;justify-content:center;z-index:9999;padding:20px';
+    ov.innerHTML='<div style="background:var(--cx-card,#fff);color:var(--cx-text,#0f172a);'+
+      'border-radius:16px;max-width:560px;width:100%;box-shadow:0 24px 60px rgba(15,12,35,.35)">'+
+      '<div style="padding:24px 26px 4px">'+
+      '<div style="font-size:20px;font-weight:800;letter-spacing:-.01em">Nuevo legajo</div>'+
+      '<div style="margin-top:6px;font-size:13.5px;line-height:1.55;color:var(--cx-text-soft,#475569)">'+
+      'El registro de un lote: se abre con el producto, la etapa y el n&uacute;mero de lote.</div>'+
+      '</div>'+
+      '<div style="padding:14px 26px 4px;display:grid;gap:14px">'+
+        '<div><label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;'+
+        'letter-spacing:.06em;color:var(--cx-text-soft,#475569);margin-bottom:5px">Producto</label>'+
+        '<select id="nlg-prod" style="width:100%;padding:9px 11px;border:1px solid var(--cx-border,#e4e4e7);'+
+        'border-radius:9px;font-size:14px;background:var(--cx-card,#fff);color:var(--cx-text,#0f172a)">'+
+        '<option value="">Cargando productos...</option></select>'+
+        '<div id="nlg-prodmsg" style="margin-top:5px;font-size:11.5px;color:var(--cx-text-faint,#a1a1aa)">'+
+        'Solo los productos con instructivo aprobado: sin eso no hay registro que ejecutar.</div></div>'+
+
+        '<div><label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;'+
+        'letter-spacing:.06em;color:var(--cx-text-soft,#475569);margin-bottom:5px">Etapa</label>'+
+        '<select id="nlg-fase" onchange="_nlgFase()" style="width:100%;padding:9px 11px;border:1px solid var(--cx-border,#e4e4e7);'+
+        'border-radius:9px;font-size:14px;background:var(--cx-card,#fff);color:var(--cx-text,#0f172a)">'+
+        '<option value="fabricacion">Fabricaci&oacute;n</option>'+
+        '<option value="envasado">Envasado</option>'+
+        '<option value="acondicionamiento">Acondicionamiento</option></select></div>'+
+
+        '<div><label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;'+
+        'letter-spacing:.06em;color:var(--cx-text-soft,#475569);margin-bottom:5px">N&uacute;mero de lote</label>'+
+        '<input id="nlg-lote" placeholder="Calculando..." style="width:100%;padding:9px 11px;'+
+        'border:1px solid var(--cx-border,#e4e4e7);border-radius:9px;font-size:15px;font-weight:700;'+
+        'letter-spacing:.04em;background:var(--cx-card,#fff);color:var(--cx-text,#0f172a)">'+
+        '<div id="nlg-loteexp" style="margin-top:5px;font-size:11.5px;color:var(--cx-text-faint,#a1a1aa)"></div></div>'+
+      '</div>'+
+      '<div id="nlg-msg" style="margin:2px 26px 0;font-size:12.5px;color:var(--cx-danger-text,#b91c1c)"></div>'+
+      '<div style="padding:18px 26px 22px;display:flex;gap:10px;justify-content:flex-end">'+
+        '<button onclick="_nlgCerrar()" style="background:transparent;color:var(--cx-text-soft,#475569);'+
+        'border:1px solid var(--cx-border,#e4e4e7);border-radius:9px;padding:9px 16px;font-size:13px;'+
+        'font-weight:700;cursor:pointer">Cancelar</button>'+
+        '<button id="nlg-ok" onclick="_nlgCrear()" style="background:var(--cx-primary,#6d28d9);color:#fff;'+
+        'border:none;border-radius:9px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">'+
+        'Abrir legajo</button>'+
+      '</div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(ev){ if(ev.target===ov){_nlgCerrar();} });
+  }
+  ov.style.display='flex';
+  document.getElementById('nlg-msg').textContent='';
+  _nlgProductos();
+  _nlgLote();
+}
+
+function _nlgCerrar(){ var o=document.getElementById('nlg-ov'); if(o){o.style.display='none';} }
+
+async function _nlgProductos(){
+  // Se ofrecen SOLO los que tienen instructivo aprobado · antes se tecleaba el nombre y el
+  // "no hay MBR aprobado" aparecia al final, despues de escribir las tres respuestas.
+  var sel=document.getElementById('nlg-prod');
+  try{
+    var r=await fetch('/api/brd/mbr?estado=aprobado',{credentials:'same-origin'});
+    var d=await r.json(); var arr=(d&&d.items)||[];
+    var vistos={}, ops=[];
+    for(var i=0;i<arr.length;i++){
+      var p=arr[i].producto_nombre||arr[i].producto||'';
+      if(p && !vistos[p]){ vistos[p]=1; ops.push(p); }
+    }
+    ops.sort();
+    if(!ops.length){
+      sel.innerHTML='<option value="">(ning&uacute;n producto tiene instructivo aprobado)</option>';
+      document.getElementById('nlg-prodmsg').innerHTML=
+        'Ning&uacute;n producto tiene instructivo aprobado todav&iacute;a. Se aprueba en el m&oacute;dulo MBR.';
+      return;
+    }
+    var h='';
+    for(var k=0;k<ops.length;k++){ h+='<option value="'+_escHTML(ops[k])+'">'+_escHTML(ops[k])+'</option>'; }
+    sel.innerHTML=h;
+  }catch(e){
+    sel.innerHTML='<option value="">(no se pudo leer la lista)</option>';
+    document.getElementById('nlg-prodmsg').textContent='No se pudo leer la lista de productos · escrib\u00ed el lote y reintent\u00e1.';
+  }
+}
+
+async function _nlgLote(){
+  // El numero que TOCA hoy, propuesto y editable. Si no se puede calcular, el campo queda
+  // vacio y se DICE por que: nunca un numero inventado, y nunca un error que frene.
+  var inp=document.getElementById('nlg-lote'); var exp=document.getElementById('nlg-loteexp');
+  try{
+    var r=await fetch('/api/brd/lote-sugerido',{credentials:'same-origin'});
+    var d=await r.json();
+    if(d && d.sugerido){
+      inp.value=d.sugerido; inp.placeholder='';
+      exp.textContent='Propuesto por la numeraci\u00f3n de la planta ('+(d.explicacion||'')+') \u00b7 pod\u00e9s cambiarlo.';
+    } else {
+      inp.value=''; inp.placeholder='Escrib\u00ed el n\u00famero de lote';
+      exp.textContent=(d && d.motivo) ? d.motivo : 'No se pudo proponer un n\u00famero \u00b7 escribilo a mano.';
+    }
+  }catch(e){
+    inp.value=''; inp.placeholder='Escrib\u00ed el n\u00famero de lote';
+    exp.textContent='No se pudo proponer un n\u00famero \u00b7 escribilo a mano.';
+  }
+}
+
+function _nlgFase(){
+  var f=(document.getElementById('nlg-fase')||{}).value||'';
+  var exp=document.getElementById('nlg-loteexp');
+  if(exp && f!=='fabricacion'){
+    exp.textContent='El legajo de '+f+' se guarda con el sufijo de su etapa; el lote f\u00edsico es el que escrib\u00eds ac\u00e1.';
+  } else { _nlgLote(); }
+}
+
+async function _nlgCrear(){
+  var btn=document.getElementById('nlg-ok'); var msg=document.getElementById('nlg-msg');
+  var prod=((document.getElementById('nlg-prod')||{}).value||'').trim();
+  var fase=((document.getElementById('nlg-fase')||{}).value||'').trim();
+  var lote=((document.getElementById('nlg-lote')||{}).value||'').trim();
+  msg.textContent='';
+  if(!prod){ msg.textContent='Eleg\u00ed el producto.'; return; }
+  if(!lote){ msg.textContent='Falta el n\u00famero de lote.'; return; }
+  if(window._nlgBusy){ return; } window._nlgBusy=true;   // un doble clic no abre dos legajos
+  if(btn){ btn.disabled=true; btn.textContent='Abriendo...'; }
   try{
     var rm=await fetch('/api/brd/mbr?producto='+encodeURIComponent(prod)+'&estado=aprobado',{credentials:'same-origin'});
-    var md=await rm.json();var arr=(md&&md.items)||[];
-    if(!arr.length){alert('No hay MBR aprobado para "'+prod+'". Generá y aprobá el MBR primero (/brd).');return;}
-    var mbrId=arr[0].id;
+    var md=await rm.json(); var arr=(md&&md.items)||[];
+    if(!arr.length){ msg.textContent='"'+prod+'" no tiene instructivo aprobado.'; return; }
     var loteEbr=lote+(fase==='envasado'?'-OF':(fase==='acondicionamiento'?'-OA':''));
-    var r=await fetch('/api/brd/ebr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mbr_template_id:mbrId,lote:loteEbr,fase:fase})});
+    var r=await fetch('/api/brd/ebr',{method:'POST',headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',body:JSON.stringify({mbr_template_id:arr[0].id,lote:loteEbr,fase:fase})});
     var d=await r.json();
-    if(!r.ok){alert(d.error||'No se pudo crear el legajo');return;}
-    cargarEBRs();abrirEBR(d.id);
-  }catch(e){alert('Error de red');}
+    if(!r.ok){ msg.textContent=(d&&d.error)||'No se pudo abrir el legajo'; return; }
+    _nlgCerrar(); cargarEBRs(); abrirEBR(d.id);
+  }catch(e){
+    msg.textContent='Error de red \u00b7 reintent\u00e1.';
+  } finally {
+    window._nlgBusy=false;
+    if(btn){ btn.disabled=false; btn.textContent='Abrir legajo'; }
+  }
 }
+
 async function ebrReportarIpc(ebrId, specId, esNumerico){
   var body={ipc_spec_id:specId};
   var aplica=confirm('¿Este control APLICA al producto?\\n\\nAceptar = Sí (registrar medición)\\nCancelar = NO APLICA');

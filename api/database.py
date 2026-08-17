@@ -11625,6 +11625,52 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "UPDATE usuarios_identidad SET nombre_completo='Valentina Muñoz Cachimbo' "
         "WHERE LOWER(username)='valentina' AND COALESCE(nombre_completo,'')=''",
     ]),
+    (438, "mbr_pasos · la verificación de Calidad va POR ETAPA, no por renglón (Sebastián "
+          "16-ago-2026, con el procedimiento enfrente: *«entonces por etapa»*). Los "
+          "instructivos se cargaban marcando `requiere_qc=1` en TODOS sus pasos, y ese flag "
+          "BLOQUEA el registro del paso (400) hasta que otra persona firme `supervisa`: con "
+          "~20 pasos por lote eran 20 firmas de Calidad por lote, y ninguna la pide el "
+          "sistema documental. `PRD-INS-001-004` pone las verificaciones de CC como tablas "
+          "propias de cada ETAPA y `PRD-PRO-001` la pone sobre el despeje — no por renglón. "
+          "Lo que se firma se sigue firmando, y son cinco actos: despeje (con verificación "
+          "independiente de CC), controles en proceso (sólo Calidad adjudica), pesajes, "
+          "material de envase (INV-14) y liberación. "
+          "⚠ NO toca los MBR APROBADOS: son inmutables (mig 109) y además son documentos "
+          "firmados — ahí el cambio exige re-versionar, que es un acto de QA. "
+          "⚠ NO toca ningún paso que YA se haya ejecutado con la firma dada: bajarle la "
+          "exigencia a un registro donde alguien ya firmó sería reescribir su historia. "
+          "Reversible: `requiere_qc` sigue siendo editable paso por paso desde el MBR, así "
+          "que volver a exigirlo en un paso crítico es un clic.", [
+        "UPDATE mbr_pasos SET requiere_qc=0 "
+        "WHERE COALESCE(requiere_qc,0)=1 "
+        "  AND mbr_template_id IN (SELECT id FROM mbr_templates "
+        "                          WHERE COALESCE(estado,'') <> 'aprobado') "
+        "  AND id NOT IN (SELECT COALESCE(mbr_paso_id,0) FROM ebr_pasos_ejecutados "
+        "                 WHERE COALESCE(qc_username,'') <> '')",
+    ]),
+    (439, "usuarios_identidad · el nombre de MILTON, que faltó en la mig 437 (Sebastián "
+          "16-ago-2026: *«milton es operario como mayerlin, sebastian y jeison camilo»*). Es "
+          "operario de producción y FIRMA pasos del batch record, así que su registro salía "
+          "con el username en vez de la persona (Part 11 §11.100(b)). El nombre sale de la "
+          "nómina vigente de Espagiria -- MILTON FABIAN SIERRA, operario de producción, "
+          "ingresó el 28-abr-2026 -- y el CARGO coincide con su rol en EOS: dos hechos "
+          "independientes que al coincidir dejan de ser una adivinanza. "
+          "⚠ NO se cargan `alejandro`, `mayra` ni `gloria`. En la nómina hay un ALEJANDRO "
+          "SANTACRUZ *operario de producción*, pero el `alejandro` de EOS es admin/gerencia: "
+          "el cargo lo DESMIENTE, y poner el nombre de quien no ejecutó el acto es una firma "
+          "falsa (M193/M177 · el mismo cuidado que con Johan Sebastián Murillo en la 437). "
+          "Mayra y Gloria no están en la nómina de Espagiria (son ÁNIMUS/HHA). "
+          "Sólo rellena lo VACÍO: nunca pisa un nombre cargado a mano. "
+          "⚠ Milton NO tenía FILA en `usuarios_identidad` -- entró a la planta después de que se "
+          "sembró la tabla --, así que un UPDATE solo habría sido un no-op SILENCIOSO: se ve "
+          "igual que aplicado y el legajo habría seguido imprimiendo el username. Por eso va "
+          "INSERT primero (idempotente) y después el relleno.", [
+        "INSERT OR IGNORE INTO usuarios_identidad (username, nombre_completo, cargo, activo) "
+        "VALUES ('milton', 'Milton Fabián Sierra', 'Operario Planta', 1)",
+        "UPDATE usuarios_identidad SET nombre_completo='Milton Fabián Sierra', "
+        "       cargo=CASE WHEN COALESCE(cargo,'')='' THEN 'Operario Planta' ELSE cargo END "
+        "WHERE LOWER(username)='milton' AND COALESCE(nombre_completo,'')=''",
+    ]),
 ]
 
 

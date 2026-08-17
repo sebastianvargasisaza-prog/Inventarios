@@ -290,6 +290,28 @@ def despeje_checklist(conn, ebr_id, etapa='dispensacion'):
 # Controles en Proceso ESTÁNDAR · Sebastián 6-jun-2026. Se muestran SIEMPRE en
 # la sección 6 (aunque el MBR del producto no defina IPCs), y cada uno se puede
 # registrar con valor o marcar "No aplica". (codigo, nombre, unidad).
+# Un paso del INSTRUCTIVO no lleva 2ª firma · Sebastián 16-ago-2026: **"entonces por etapa"**.
+#
+# Los instructivos se cargaban marcando `requiere_qc=1` en TODOS sus pasos, y ese flag no es
+# decorativo: el registro del paso devuelve 400 hasta que otra persona firme `supervisa`. Con
+# ~20 pasos por lote eso son 20 firmas de Calidad por lote, y el sistema documental de la
+# empresa no pide eso -- pide las verificaciones POR ETAPA:
+#
+#   · `PRD-INS-001-004` marca las verificaciones de CC como tablas propias de cada etapa
+#     ("diligenciamiento EXCLUSIVO de Control de Calidad"), no como una firma por renglón.
+#   · `PRD-PRO-001` pone la verificación de CC sobre el DESPEJE, una por área.
+#   · `COC-PRO-010` §3.4 le da al analista "ejecutar verificaciones", que en el batch digital
+#     son los controles en proceso y las aprobaciones de etapa.
+#
+# Lo que se firma sigue firmándose, y son cinco actos, no veinte: el **despeje** (con su
+# verificación independiente de CC), los **controles en proceso** (que sólo Calidad adjudica),
+# los **pesajes**, el **material de envase** (INV-14) y la **liberación**. Un control que se
+# pide igual en cada renglón se contesta por inercia y tapa al que sí importa (M205).
+#
+# Sigue siendo configurable paso por paso desde el MBR (`PATCH .../pasos/<id>`), así que marcar
+# un paso crítico es un clic -- lo que cambia es el DEFAULT, no la capacidad.
+_REQUIERE_QC_INSTRUCTIVO = 0
+
 IPC_ESTANDAR = [
     ("densidad",   "Densidad a 25°C", "g/mL"),
     ("ph",         "pH a 25°C",       ""),
@@ -1468,8 +1490,9 @@ def cargar_instructivo_mbr():
     for i, txt in enumerate(pasos, start=1):
         cur.execute(
             "INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, tipo_paso, requiere_qc) "
-            "VALUES (?, ?, ?, ?, ?, 1)",
-            (target_id, _base + i, _ETIQUETA_FASE[fase_in], txt[:1500], _TIPO_POR_FASE[fase_in]))
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (target_id, _base + i, _ETIQUETA_FASE[fase_in], txt[:1500], _TIPO_POR_FASE[fase_in],
+             _REQUIERE_QC_INSTRUCTIVO))
     audit_log(cur, usuario=user, accion="CARGAR_INSTRUCTIVO_MBR", tabla="mbr_templates",
               registro_id=target_id,
               despues={"producto": producto, "fase": fase_in, "pasos": len(pasos),
@@ -1544,7 +1567,8 @@ def cargar_todos_instructivos():
                 target_id = cur.lastrowid; nueva = True
             for i, txt in enumerate(pasos_l, start=1):
                 cur.execute("INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, tipo_paso, requiere_qc) "
-                            "VALUES (?, ?, 'fabricacion', ?, 'mezclado', 1)", (target_id, i, txt[:1500]))
+                            "VALUES (?, ?, 'fabricacion', ?, 'mezclado', ?)",
+                            (target_id, i, txt[:1500], _REQUIERE_QC_INSTRUCTIVO))
             cargados += 1
             if nueva:
                 nuevas += 1
@@ -3841,6 +3865,23 @@ def ebr_vista_completa(ebr_id):
     # camino ya publicaba, para no romper a quien lo lea.
     out['mi_rol'] = _batch_role_info(session.get("compras_user", ""))
     out['mi_rol']['puede_corregir'] = out['mi_rol'].get('corrige', False)
+    # El visto bueno del Director Técnico (mig 286) · esta vista alimenta las pantallas PROPIAS
+    # del legajo, y la de ACONDICIONAMIENTO es la del producto terminado, o sea exactamente
+    # donde el DT firma (`PRD-PRO-001-F01` · acta del 27-jul). El dato no viajaba, así que en
+    # esa pantalla no había por dónde darlo: la firma existía y era inalcanzable (M121).
+    try:
+        _dt = conn.execute(
+            "SELECT COALESCE(aprobado_dt_por,''), COALESCE(aprobado_dt_at_utc,'') "
+            "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        out['aprobado_dt_por'] = (_dt[0] if _dt else '')
+        out['aprobado_dt_at'] = (_dt[1] if _dt else '')
+    except Exception as _e:
+        # se declara el fallo en vez de mandar '' -- un vacío mudo se lee como "nadie firmó",
+        # que es lo contrario de "no se pudo leer" (M100/M154)
+        log.warning("visto bueno del DT no legible para ebr=%s: %s", ebr_id, _e)
+        out['aprobado_dt_por'] = ''
+        out['aprobado_dt_at'] = ''
+        out['aprobado_dt_error'] = True
     if out['fase'] == 'envasado':
         out['envasado_presentaciones'] = []
         try:
@@ -4989,11 +5030,32 @@ def firmar_ebr_rapido(ebr_id):
         return err
     body = request.get_json(silent=True) or {}
     meaning = (body.get("meaning") or "").strip()
-    if meaning not in ("libera", "ejecuta", "verifica", "aprueba"):
+    # `aprueba_dt` faltaba acá, y es el visto bueno del Director Técnico sobre el producto
+    # terminado: sin él, la pantalla del legajo no tenía forma de pedir esa firma (M116 otra vez
+    # -- el mismo meaning que en julio faltaba en la whitelist de `/api/sign`).
+    if meaning not in ("libera", "ejecuta", "verifica", "aprueba", "aprueba_dt"):
         return jsonify({"ok": False, "error": "meaning inválido"}), 400
     user = session.get("compras_user", "")
-    if meaning in ("libera", "verifica", "aprueba") and user not in ADMIN_USERS and user not in CALIDAD_USERS:
-        return jsonify({"ok": False, "error": "Solo Calidad / Dirección Técnica puede firmar esta acción"}), 403
+    # Quién puede firmar CADA acto sale del resolvedor único, no de una lista a mano (M1).
+    # La lista de antes era `ADMIN ∪ CALIDAD` y el mensaje prometía "Calidad / Dirección
+    # Técnica" -- o sea que **el Director Técnico no podía firmar la liberación** que el propio
+    # endpoint `/liberar` sí le permite, y Aseguramiento tampoco: el gate de la FIRMA y el de la
+    # ACCIÓN decían cosas distintas, así que la pantalla se trababa sin explicar por qué (M32).
+    _rol = _batch_role_info(user)
+    _QUIEN_FIRMA = {
+        "libera": "puede_liberar",
+        "verifica": "verifica",
+        "aprueba": "puede_aprobar",
+        "aprueba_dt": "aprueba_dt",
+    }
+    _flag = _QUIEN_FIRMA.get(meaning)
+    if _flag and not _rol.get(_flag):
+        return jsonify({
+            "ok": False,
+            "error": ("Tu rol (%s) no puede firmar esta acción." % (_rol.get("rol") or "sin rol")
+                      if meaning != "aprueba_dt" else
+                      "El visto bueno final lo da la Dirección Técnica."),
+        }), 403
     conn = get_db(); cur = conn.cursor()
     if not cur.execute("SELECT id FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone():
         return jsonify({"ok": False, "error": "EBR no encontrado"}), 404
@@ -11993,11 +12055,13 @@ async function load(){
         fld('Área / Línea',esc(h.area_linea||'·'))+
         fld('Supervisado por',esc(h.supervisado_por||'·'))+
         fld('Liberado por',esc(h.liberado_por_full||'·'))+
+        fld('Visto bueno · Dirección Técnica', (d.aprobado_dt_por?('<b>'+esc(d.aprobado_dt_por)+'</b>'+(d.aprobado_dt_at?('<div style="font-size:11px;color:#71717a">'+esc(String(d.aprobado_dt_at).replace('T',' ').slice(0,16))+'</div>'):'')):'<span style="color:#a1a1aa">pendiente · lo firma el Director Técnico al liberar el producto terminado</span>'))+
       '</div>'+
       '<div class="btnrow">'+
         '<a class="bt bt-add" href="/planta/instrucciones-acondicionamiento/'+EBR_ID+'">&#9654; Instrucciones de Acondicionamiento</a>'+
         ((d.mi_rol&&d.mi_rol.puede_ejecutar&&(estado==='iniciado'||estado==='en_proceso'))?'<button class="bt bt-pdf" onclick="terminarLote()" title="Operario: termina el acondicionamiento (todos los pasos completos)">&#10003; Terminar</button>':'')+
         ((d.mi_rol&&d.mi_rol.puede_liberar&&(estado==='completado'||estado==='en_revision_qc'))?'<button class="bt bt-add" onclick="liberarLote()" style="background:var(--cx-success,#15803d)" title="Calidad/Aseguramiento: libera el lote con e-firma (cierra el batch record)">&#128275; Liberar lote</button>':'')+
+        ((d.mi_rol&&d.mi_rol.aprueba_dt&&!d.aprobado_dt_por&&(estado==='liberado'||estado==='completado'||estado==='en_revision_qc'))?'<button class="bt bt-add" id="vb-btn" onclick="aprobarDtAcond()" style="background:var(--cx-primary,#6d28d9)" title="Visto bueno final de Direccion Tecnica sobre el producto terminado (PRD-PRO-001-F01)">&#9989; Dar visto bueno</button>':'')+
         '<a class="bt bt-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
         ((d.mi_rol&&d.mi_rol.puede_aprobar)?'<button class="bt bt-pdf" onclick="regenerarMBR()" title="Crea una nueva versión del MBR con los pasos de acondicionamiento actualizados (GMP · obsoleta el anterior · solo Calidad/Dirección Técnica)">&#8635; Regenerar MBR</button>':'')+
         '<a class="bt bt-back" href="/inventarios#acondicionamiento">&#9198; Atrás</a>'+
@@ -12046,6 +12110,34 @@ async function load(){
     document.getElementById('cuerpo').innerHTML = presCard + matCard;
   }catch(e){document.getElementById('cab').innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">Error de red: '+esc(e.message)+'</span>';}
 }
+async function aprobarDtAcond(){
+  // El acto del Director Tecnico sobre el PRODUCTO TERMINADO (PRD-PRO-001-F01 · acta con
+  // Hernando del 27-jul). El endpoint existia desde junio (mig 286) y esta pantalla no lo
+  // ofrecia: la unica forma de darlo era el modal del dashboard, asi que en el legajo del
+  // producto terminado la firma era inalcanzable (M121).
+  //
+  // Firma con el MISMO contrato que usa liberar en esta pantalla (firmar-rapido y despues
+  // la accion), no con helpers de otra: un bloque compartido tiene que traer su propia
+  // dependencia, y llamar a una que no existe deja el boton mudo (M166).
+  if(window._vbBusy) return; window._vbBusy=true;
+  var b=document.getElementById('vb-btn');
+  try{
+    if(!confirm('Dar el visto bueno de Direccion Tecnica a este lote? Queda firmado con tu identidad (Part 11).')){return;}
+    if(b){b.disabled=true;}
+    var rf=await fetch('/api/brd/ebr/'+EBR_ID+'/firmar-rapido',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify({meaning:'aprueba_dt'})});
+    var df=await rf.json();
+    if(!rf.ok||!df.ok){ alert('No se pudo firmar: '+((df&&df.error)||rf.status)); return; }
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/aprobar-dt',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify({signature_id:df.signature_id})});
+    var d=await r.json();
+    if(!r.ok||d.error){ alert('Error: '+(d.error||r.status)); return; }
+    location.reload();
+  } finally { window._vbBusy=false; if(b){b.disabled=false;} }
+}
+
 async function regenerarMBR(){
   var prod=(window._prod||'');
   if(!prod){alert('No identifiqué el producto.');return;}

@@ -657,6 +657,14 @@ CORAZON=(
   # Las rubricas manuscritas que se estampan en los documentos regulados (Part 11 §11.50) y el
   # offboarding: una fila con activo=0 cierra la puerta aunque quede la clave en el entorno.
   "tests/test_firmas_usuarios.py"
+  # El visto bueno del Director Tecnico vive en la pantalla del PRODUCTO TERMINADO, el camino de
+  # la firma dice lo mismo que el de la accion, y la verificacion de Calidad va POR ETAPA y no
+  # renglon por renglon (Sebastian 16-ago: "entonces por etapa").
+  "tests/test_visto_bueno_dt_acondicionamiento.py"
+  # Abrir un legajo: el numero de lote se PROPONE con la numeracion de la planta y se puede
+  # cambiar; si no se puede calcular queda vacio con el motivo, nunca un numero inventado.
+  # Y los tres prompt() del navegador se fueron (Sebastian 16-ago).
+  "tests/test_nuevo_legajo_lote_propuesto.py"
 )
 
 echo ""

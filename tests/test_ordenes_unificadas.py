@@ -585,8 +585,21 @@ def test_vista_completa_supervisado_y_elaborado(app, db_clean):
     c.commit(); c.close()
     cl = _login(app)
     h = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()['header']
-    assert 'Jefe de Producción' in (h.get('supervisado_por') or ''), h.get('supervisado_por')
-    assert 'Jose Alfredo' in (h.get('supervisado_por') or '')
+    sup = h.get('supervisado_por') or ''
+    assert 'Jefe de Producción' in sup, sup
+    # Lo que este test protege es que aparezca la PERSONA y no el cargo pelado: un legajo que
+    # dice "Supervisado por: Jefe de Producción" no contesta quién supervisó (Part 11 §11.100(b)).
+    #
+    # Antes exigía el nombre del jefe que el propio test siembra ('jprodtest'), y eso dejó de
+    # cumplirse cuando la mig 437 le cargó su nombre real a `jose`: el resolvedor ordena por
+    # username y se queda con el PRIMERO que tiene nombre resoluble, así que gana José Alfredo
+    # Rodríguez Montoya -- el jefe de verdad. El código hace lo correcto; lo que envejeció es la
+    # expectativa de que el jefe ficticio del test fuera el único (M97/M102).
+    assert ',' in sup, 'no trae nombre de persona, sólo el cargo: %r' % sup
+    assert 'falta cargar el nombre' not in sup, (
+        'el jefe que ganó no tiene nombre cargado · %r' % sup)
+    nombre = sup.split(',')[0].strip()
+    assert len(nombre.split()) >= 2, 'no parece un nombre de persona: %r' % nombre
     assert 'Maierlin' in (h.get('operario') or '') and 'opertest' in (h.get('operario') or '')
     assert h.get('numero_op') == 'OP-2026-7777'
 
