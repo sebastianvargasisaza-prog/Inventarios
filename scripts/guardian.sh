@@ -731,6 +731,12 @@ CORAZON=(
   # la nota anterior afirmaba que el corazon "no paralela bien" y esa frase, sin nada que la
   # midiera, es lo que haria que alguien lo devuelva a la serie.
   "tests/test_gate_paralelo.py"
+  # Acondicionamiento: el legajo y la pantalla vieja descontaban el MISMO envase por separado.
+  # Reproducido por los dos endpoints (2 salidas donde habia 100 uds). Un doble descuento no da
+  # sintoma -- el kardex simplemente dice menos de lo que hay -- asi que solo lo caza esto.
+  "tests/test_acondicionamiento_doble_descuento.py"
+  # Estaba FUERA de todo gate y llevaba tiempo en rojo (el demo pasó a armar las tres fases).
+  "tests/test_acondicionamiento_cierre.py"
 )
 
 echo ""

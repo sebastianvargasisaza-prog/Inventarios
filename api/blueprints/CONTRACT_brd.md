@@ -685,6 +685,43 @@ Tests: `tests/test_serigrafiado_se_consume.py` (en el gate · 7 casos, incluidos
 deben redirigir).
 
 
+## 🚪 INV-24 · UNA sola puerta para sacar material del lote del kardex (17-ago)
+
+`descontar_mee_del_lote(cur, produccion_id, lote, items, usuario, origen)` (en `brd.py`) es la
+puerta por la que sale del kardex el material de **ACONDICIONAMIENTO**. Devuelve
+`(descuentos, saltados, sin_libro_mayor)`. Lo usan el cierre del legajo
+(`POST /api/brd/ebr/<id>/cerrar-acondicionamiento`) y el registro de la pantalla vieja
+(`POST /api/acondicionamiento`).
+
+⚠ **`cerrar-envasado` NO usa este helper y eso es deliberado, no un olvido**: además de coordinar
+el mismo libro mayor tiene que resolver las PARTES de la presentación (frasco + tapa + caja) y la
+redirección base→serigrafiado de INV-22, que no aplican a acondicionamiento. Quedan **dos**
+implementaciones de la coordinación, no tres: si mañana se unifican, el helper tiene que aceptar
+esas dos responsabilidades sin volverse un `if` gigante. Mientras tanto, **cualquier cambio a la
+regla del libro mayor se hace en los DOS** (M45) — y la diferencia de detalle que hay hoy
+(`consumido_at` con `datetime('now','-5 hours')` en envasado y `'utc'` acá) no afecta la
+coordinación porque el campo se usa como MARCA, nunca se compara entre sí.
+
+**El libro mayor es `produccion_checklist.consumido_at`** — dice *"este envase, para esta
+producción, YA salió del kardex"* — y quien descuenta lo **reclama con CAS** antes de mover nada.
+
+⚠ **Por qué existe.** `POST /api/acondicionamiento` descontaba DIRECTO: Salida cruda +
+`UPDATE stock_actual`, sin mirar el libro mayor, sin CAS y sin `audit_log`. El cierre del legajo
+sí lo reclamaba. Así que registrar el acondicionamiento en esa pantalla **y** cerrar el legajo
+sacaba el mismo envase **DOS VECES**, y el segundo descuento era invisible para el libro mayor que
+existe justamente para impedirlo. Y esa pantalla **no es código muerto**: el dashboard le hace
+POST desde tres lugares. Es M162 en su tercer camino, y **la salida nunca es un candado más: es
+que todos pasen por el que ya existe** (M3 · un helper, no una tercera copia del idiom · M45).
+
+Reproducido por los DOS endpoints antes de tocar nada — 2 salidas y 200 unidades donde había 100 —
+en `tests/test_acondicionamiento_doble_descuento.py` (en el gate), que además prueba el orden
+inverso: **coordinar no puede volverse "no descontar nunca"**, así que si la pantalla vieja llega
+primero, ESA descuenta y el cierre posterior salta y lo declara.
+
+**`sin_libro_mayor` es más estricto que "no vino produccion_id":** si esa producción no tiene
+NINGÚN envase en el checklist tampoco hay nada que reclamar, así que se declara igual. Decir
+"coordinado" ahí sería la mentira que ese campo existe para evitar (M124).
+
 ## 📦 INV-21 · Los DOS cierres mueven KARDEX y CACHE juntos, y validan el código (5-ago)
 
 `cerrar-envasado` y `cerrar-acondicionamiento` insertaban la Salida con un `INSERT INTO

@@ -8998,6 +8998,96 @@ def cerrar_envasado_ebr(ebr_id):
 # cantidad); al CERRAR se descuentan vía movimientos_mee (canónico M26 · NUNCA el cache stock_actual) UNA
 # sola vez (CAS · M27). Reemplaza el descuento de la ruta legacy /api/acondicionamiento (que tocaba el cache
 # sin CAS → drift + doble descuento). Reusa la marca envases_descontados_at como "materiales descontados".
+def descontar_mee_del_lote(cur, *, produccion_id, lote, items, usuario, origen):
+    """UNA sola puerta para sacar del kardex el material de envase/acondicionamiento de un lote.
+
+    Devuelve `(descuentos, saltados, sin_libro_mayor)`.
+
+    El libro mayor es `produccion_checklist.consumido_at`: dice *"este envase, para esta
+    producción, YA salió del kardex"*. Quien descuenta lo RECLAMA con CAS antes de mover nada, así
+    que dos caminos distintos sobre el mismo lote no pueden sacar el material dos veces.
+
+    ⚠ Existe porque el patrón ya se pagó dos veces (M162): primero entre el cierre de envasado y
+    el del Kanban, y después entre el cierre del legajo de acondicionamiento y el registro de la
+    pantalla vieja (`POST /api/acondicionamiento`), que descontaba directo sin mirar el libro
+    mayor. **La salida nunca es un candado más: es que todos pasen por el que ya existe** (M3), y
+    por eso esto es un helper y no una tercera copia del idiom (M45).
+
+    Reglas que NO se pueden aflojar:
+      · El KARDEX registra lo consumido y el cache se mueve con el mismo delta; la Salida **no**
+        se clampea contra `maestro_mee.stock_actual`, porque el stock canónico es la suma del
+        kardex y clampear ahí registra Salidas en CERO sin un solo error a la vista (M26/M153).
+      · Un código que no está en el maestro **no se descuenta y se DECLARA**: los teclea el
+        operario, así que uno mal escrito entraría como stock fantasma (M100).
+      · Sin `produccion_id` no hay libro mayor que reclamar: se descuenta igual y se declara
+        `sin_libro_mayor`. Que un envase no salga del kardex es peor que arriesgar el doble, pero
+        un descuento sin coordinar no se puede presentar como coordinado (M124).
+    """
+    descuentos, saltados = [], []
+    _pid = int(produccion_id or 0)
+    _ya_consumido, _reclamables = set(), {}
+    sin_libro = not _pid
+    if _pid:
+        try:
+            _filas = cur.execute(
+                    "SELECT id, UPPER(TRIM(COALESCE(mee_codigo_asignado,''))), "
+                    "       COALESCE(consumido_at,'') "
+                    "  FROM produccion_checklist "
+                    " WHERE produccion_id=? AND COALESCE(mee_codigo_asignado,'')<>''",
+                    (_pid,)).fetchall()
+            # Tener `produccion_id` no alcanza: si esa producción no tiene NINGÚN envase en el
+            # checklist, no hay nada que reclamar y el descuento sigue siendo sin coordinar.
+            # Declarar "coordinado" ahí sería la mentira que este campo existe para evitar.
+            sin_libro = not _filas
+            for _cid, _ccod, _cons in _filas:
+                if not _ccod:
+                    continue
+                if str(_cons or '').strip():
+                    _ya_consumido.add(_ccod)
+                else:
+                    _reclamables.setdefault(_ccod, []).append(_cid)
+        except Exception as _e_lib:
+            log.warning("descontar_mee_del_lote: no pude leer el checklist de la producción "
+                        "%s: %s", _pid, _e_lib)
+            sin_libro = True
+            _ya_consumido, _reclamables = set(), {}
+
+    for cod, cant in items:
+        _obs = "%s lote %s" % (origen, lote or "")
+        if not cur.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
+                           (cod,)).fetchone():
+            log.warning("descontar_mee_del_lote: %s no existe en maestro_mee", cod)
+            saltados.append({"mee_codigo": cod, "motivo": "no existe en el maestro de envases"})
+            continue
+        _k = cod.strip().upper()
+        if _k in _ya_consumido:
+            saltados.append({"mee_codigo": cod,
+                             "motivo": "ya consumido en el checklist de esta producción"})
+            continue
+        _ids = _reclamables.get(_k) or []
+        if _ids:
+            # RECLAMO con CAS: si el otro camino lo marcó entre la lectura y ahora, `rowcount`
+            # es 0 y acá NO se descuenta (M27/M73).
+            cur.execute(
+                "UPDATE produccion_checklist SET consumido_at=datetime('now','utc') "
+                " WHERE id=? AND COALESCE(consumido_at,'')=''", (_ids[0],))
+            if cur.rowcount == 0:
+                saltados.append({"mee_codigo": cod, "motivo": "otro cierre lo reclamó primero"})
+                continue
+            _ya_consumido.add(_k)
+        cur.execute(
+            "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, "
+            " responsable, fecha, batch_ref) "
+            "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'), ?)",
+            (cod, cant, _obs, usuario, lote or ''))
+        cur.execute(
+            "UPDATE maestro_mee SET stock_actual = CASE WHEN COALESCE(stock_actual,0) - ? < 0 "
+            "  THEN 0 ELSE COALESCE(stock_actual,0) - ? END WHERE codigo=?",
+            (cant, cant, cod))
+        descuentos.append({"mee_codigo": cod, "cantidad": cant})
+    return descuentos, saltados, bool(sin_libro)
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/cerrar-acondicionamiento", methods=["POST"])
 def cerrar_acondicionamiento_ebr(ebr_id):
     """Cierra el acondicionamiento: descuenta los materiales listados × cantidad (movimientos_mee) UNA vez
@@ -9039,88 +9129,13 @@ def cerrar_acondicionamiento_ebr(ebr_id):
         conn.rollback()
         return jsonify({"error": "El acondicionamiento ya se cerró/descontó o no está en proceso · refrescá",
                         "codigo": "YA_CERRADO"}), 409
-    descuentos = []
-    saltados = []
-
-    # ── EL MISMO LIBRO MAYOR QUE EL CIERRE DE ENVASADO (M162 · tercer camino) ──────────────
-    # `produccion_checklist.consumido_at` dice "este envase, para esta producción, YA salió del
-    # kardex". El cierre de envasado lo lee y lo reclama; este no lo tocaba en ninguna línea, y
-    # como acá los códigos los TECLEA el operario, escribir el frasco o la caja que envasado ya
-    # consumió los descontaba DOS VECES. Un doble descuento no da síntoma: el kardex
-    # simplemente dice menos de lo que hay.
-    #
-    # No se agrega un cuarto candado: este camino pasa a usar el que ya existe.
-    _prod_id_ac = int(erow[2] or 0)
-    _ya_consumido = set()
-    _reclamables = {}
-    _sin_libro = not _prod_id_ac
-    if _prod_id_ac:
-        try:
-            for _cid, _ccod, _cons in cur.execute(
-                    "SELECT id, UPPER(TRIM(COALESCE(mee_codigo_asignado,''))), "
-                    "       COALESCE(consumido_at,'') "
-                    "  FROM produccion_checklist "
-                    " WHERE produccion_id=? AND COALESCE(mee_codigo_asignado,'')<>''",
-                    (_prod_id_ac,)).fetchall():
-                if not _ccod:
-                    continue
-                if str(_cons or '').strip():
-                    _ya_consumido.add(_ccod)
-                else:
-                    _reclamables.setdefault(_ccod, []).append(_cid)
-        except Exception as _e_lib:
-            # Sin libro mayor no se puede coordinar: se DECLARA y se sigue descontando (que un
-            # envase no salga del kardex es peor que arriesgar el doble), pero la respuesta lo
-            # dice para que el descuadre no aparezca sin explicación (M100/M124).
-            log.warning("cerrar-acondicionamiento: no pude leer el checklist de la producción "
-                        "%s: %s", _prod_id_ac, _e_lib)
-            _sin_libro = True
-            _ya_consumido = set(); _reclamables = {}
-
-    # Mismo tratamiento que el cierre de envasado (M45: el `INSERT` a mano vivía en los DOS).
-    # El KARDEX registra lo consumido y el cache se mueve con el mismo delta; NO se clampea la
-    # Salida contra el cache, porque el stock canónico es la suma del kardex (M26/M153).
-    # La validación del código sí se conserva, y acá pesa más que en ningún lado: los códigos los
-    # TECLEA el operario en el body, así que uno mal escrito entraba como stock fantasma (M100).
+    # UNA sola puerta al kardex (M3): el mismo helper que usa el registro de acondicionamiento
+    # de la pantalla vieja, así los dos caminos reclaman el MISMO libro mayor y el material no
+    # puede salir dos veces (M162).
     try:
-        for cod, cant in items:
-            _obs = "Acondicionamiento EBR-" + str(ebr_id) + " lote " + lote
-            if not cur.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
-                               (cod,)).fetchone():
-                # No frena el cierre entero por un código mal cargado, pero lo DECLARA: un
-                # rechazo silencioso deja el material sin descontar y a nadie enterado (M4).
-                log.warning("cerrar-acondicionamiento: %s no existe en maestro_mee", cod)
-                saltados.append({"mee_codigo": cod, "motivo": "no existe en el maestro de envases"})
-                continue
-            _k_ac = cod.strip().upper()
-            if _k_ac in _ya_consumido:
-                # Ya salió del kardex por el otro cierre · descontarlo otra vez inventa un
-                # consumo que no ocurrió.
-                saltados.append({"mee_codigo": cod,
-                                 "motivo": "ya consumido en el checklist de esta producción"})
-                continue
-            _ids_ac = _reclamables.get(_k_ac) or []
-            if _ids_ac:
-                # RECLAMO con CAS: si el otro cierre lo marcó entre la lectura y ahora,
-                # `rowcount` es 0 y este cierre NO lo descuenta (M27/M73).
-                cur.execute(
-                    "UPDATE produccion_checklist SET consumido_at=datetime('now','utc') "
-                    " WHERE id=? AND COALESCE(consumido_at,'')=''", (_ids_ac[0],))
-                if cur.rowcount == 0:
-                    saltados.append({"mee_codigo": cod,
-                                     "motivo": "otro cierre lo reclamó primero"})
-                    continue
-                _ya_consumido.add(_k_ac)
-            cur.execute(
-                "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, "
-                " responsable, fecha, batch_ref) "
-                "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'), ?)",
-                (cod, cant, _obs, user, lote or ''))
-            cur.execute(
-                "UPDATE maestro_mee SET stock_actual = CASE WHEN COALESCE(stock_actual,0) - ? < 0 "
-                "  THEN 0 ELSE COALESCE(stock_actual,0) - ? END WHERE codigo=?",
-                (cant, cant, cod))
-            descuentos.append({"mee_codigo": cod, "cantidad": cant})
+        descuentos, saltados, _sin_libro = descontar_mee_del_lote(
+            cur, produccion_id=int(erow[2] or 0), lote=lote, items=items, usuario=user,
+            origen="Acondicionamiento EBR-" + str(ebr_id))
     except Exception as _e:
         conn.rollback()
         log.warning("cerrar-acondicionamiento descuento MEE fallo (rollback): %s", _e)

@@ -178,19 +178,84 @@ def test_el_codigo_rechazado_se_DECLARA(app, admin_client, db_clean):
 
 
 def test_los_DOS_cierres_mueven_el_cache(app, db_clean):
-    """M45: el `INSERT` sin tocar el cache vivía en envasado Y en acondicionamiento. El guard
-    cubre los dos, y fue el que encontró el hermano que se me había pasado."""
+    """M45: el `INSERT` sin tocar el cache vivía en envasado Y en acondicionamiento.
+
+    ⚠ 17-ago: acondicionamiento dejó de tener el SQL adentro -- lo delega en
+    `descontar_mee_del_lote`, la puerta que comparte con la pantalla vieja para que el envase no
+    salga dos veces (INV-24). Este guard buscaba el texto DENTRO de la función y quedó rojo con
+    el código sano: fijaba la IMPLEMENTACIÓN (que el SQL estuviera inline) en vez de la GARANTÍA
+    (que quien descuenta valide el código, registre la Salida y mueva el cache con el mismo
+    delta). Ahora acepta las dos formas -- inline o delegando -- y en el que delega exige que el
+    helper cumpla las tres cosas.
+    """
     src = _sin_comentarios(open(os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), 'api/blueprints/brd.py'), encoding='utf-8').read())
     for fn, quien in (('def cerrar_envasado_ebr', 'envasado'),
-                      ('def cerrar_acondicionamiento_ebr', 'acondicionamiento')):
+                      ('def cerrar_acondicionamiento_ebr', 'acondicionamiento'),
+                      ('def descontar_mee_del_lote', 'la puerta compartida')):
         i = src.find(fn)
         assert i > 0, fn
         bloque = src[i:i + 16000]
         j = bloque.find("INSERT INTO movimientos_mee")
-        assert j > 0, 'el cierre de %s ya no registra la Salida' % quien
+        if j < 0:
+            # No lo hace acá: entonces tiene que DELEGAR en la puerta compartida, nunca
+            # simplemente haber dejado de descontar.
+            assert 'descontar_mee_del_lote(' in bloque, (
+                'el cierre de %s ya no registra la Salida ni delega en la puerta compartida'
+                % quien)
+            continue
         # el UPDATE del cache va junto al INSERT, no en otra parte del archivo
         assert 'UPDATE maestro_mee SET stock_actual' in bloque[j:j + 1500], \
             'el cierre de %s registra la Salida y NO mueve el cache' % quien
         assert 'SELECT 1 FROM maestro_mee' in bloque[max(0, j - 1500):j], \
             'el cierre de %s no valida que el código exista' % quien
+
+
+def test_el_cierre_de_acondicionamiento_mueve_kardex_y_cache_DE_VERDAD(app, db_clean):
+    """La misma garantía, medida EJECUTANDO el cierre en vez de leyendo el fuente (M170).
+
+    Un guard de texto dice dónde está escrito el SQL; éste dice qué le pasó al inventario.
+    """
+    import sqlite3
+    from .conftest import TEST_PASSWORD, csrf_headers
+    cod = 'ZZ-OA-CACHE'
+
+    def _sql(q, p=()):
+        cn = sqlite3.connect(os.environ['DB_PATH'], timeout=10.0)
+        try:
+            cur = cn.execute(q, p); cn.commit(); return cur
+        finally:
+            cn.close()
+
+    def _uno(q, p=()):
+        cn = sqlite3.connect(os.environ['DB_PATH'], timeout=10.0)
+        try:
+            return cn.execute(q, p).fetchone()
+        finally:
+            cn.close()
+
+    _sql("DELETE FROM movimientos_mee WHERE mee_codigo=?", (cod,))
+    _sql("DELETE FROM maestro_mee WHERE codigo=?", (cod,))
+    _sql("INSERT INTO maestro_mee (codigo, descripcion, stock_actual, estado) "
+         "VALUES (?, 'Estuche', 900, 'Activo')", (cod,))
+    mbr = _sql("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+               "VALUES ('ZZ-OA-CACHE-PROD', 1, 'aprobado', 1000, 'sebastian')").lastrowid
+    ebr = _sql("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, lote, lote_codigo, estado, "
+               " fase, iniciado_por, iniciado_at_utc, cantidad_objetivo_g) "
+               "VALUES (?, 1, 'ZZOACACHE-OA', 'ZZOACACHE', 'iniciado', 'acondicionamiento', "
+               " 'sebastian', datetime('now','utc'), 1000)", (mbr,)).lastrowid
+
+    cli = app.test_client()
+    r = cli.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD},
+                 headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+    h = {'Content-Type': 'application/json'}; h.update(csrf_headers())
+    r = cli.post('/api/brd/ebr/%d/cerrar-acondicionamiento' % ebr,
+                 json={'materiales': [{'codigo': cod, 'cantidad': 40}]}, headers=h)
+    assert r.status_code == 200, r.data[:300]
+
+    n, total = _uno("SELECT COUNT(*), COALESCE(SUM(cantidad),0) FROM movimientos_mee "
+                    " WHERE mee_codigo=? AND tipo='Salida'", (cod,))
+    assert (n, total) == (1, 40), ('el kardex no registró la Salida', n, total)
+    assert _uno("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,))[0] == 860, \
+        'el cache no se movió con el MISMO delta que el kardex'

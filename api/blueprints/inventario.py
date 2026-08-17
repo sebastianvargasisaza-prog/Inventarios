@@ -17893,22 +17893,34 @@ def acondicionamiento_list():
              d.get('observaciones', ''), d.get('sku', '').strip(),
              float(d.get('precio_base', 0) or 0)))
         new_id = c.lastrowid
-        # Auto-descontar MEE del maestro_mee
+        # ── DESCUENTO POR LA MISMA PUERTA QUE EL LEGAJO (17-ago · M162, tercer camino) ────────
+        # Acá se descontaba DIRECTO: Salida cruda + `UPDATE stock_actual`, sin mirar el libro
+        # mayor (`produccion_checklist.consumido_at`), sin CAS y sin dejar rastro. El cierre del
+        # legajo OA (`/api/brd/ebr/<id>/cerrar-acondicionamiento`) sí lo reclama -- así que
+        # registrar el acondicionamiento acá Y cerrar el legajo sacaba el mismo envase DOS
+        # VECES, y el segundo descuento era invisible para el libro mayor que existe justo para
+        # impedirlo. Reproducido por los dos endpoints antes de tocar nada: 2 salidas, 200 uds
+        # donde había 100 (`tests/test_acondicionamiento_doble_descuento.py`).
+        #
+        # Y esta pantalla NO es código muerto: el dashboard le hace POST desde tres lugares.
+        #
+        # No se agrega un cuarto candado: este camino pasa a usar el que ya existe (M3).
         lote_ref = d.get('lote', '')
+        _items_oa = []
         for item in mee_items:
             cod = str(item.get('codigo', item.get('codigo_mee', ''))).strip()
-            cant = float(item.get('cantidad', 0) or 0)
-            if not cod or cant <= 0: continue
-            c.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,))
-            row = c.fetchone()
-            if not row: continue
-            nuevo = max(0, row[0] - cant)
-            c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo, cod))
-            c.execute("""INSERT INTO movimientos_mee
-                         (mee_codigo, tipo, cantidad, lote_ref, batch_ref, responsable, observaciones)
-                         VALUES (?,?,?,?,?,?,?)""",
-                      (cod, 'Salida', cant, lote_ref, lote_ref, u,
-                       f'Consumo acondicionamiento {lote_ref}'))
+            try:
+                cant = float(item.get('cantidad', 0) or 0)
+            except (TypeError, ValueError):
+                cant = 0
+            if cod and cant > 0:
+                _items_oa.append((cod, cant))
+        _desc_oa, _salt_oa, _sinlib_oa = [], [], False
+        if _items_oa:
+            from blueprints.brd import descontar_mee_del_lote
+            _desc_oa, _salt_oa, _sinlib_oa = descontar_mee_del_lote(
+                c, produccion_id=int(d.get('produccion_id') or 0), lote=lote_ref,
+                items=_items_oa, usuario=u, origen='Acondicionamiento')
         # Reemplazo MyBatch · 10-jun-2026 · LEGAJO OA AUTOMÁTICO de acondicionamiento:
         # al acondicionar nace el EBR de fase ACONDICIONAMIENTO (la "Orden de
         # Acondicionamiento") si el producto tiene MBR aprobado con pasos de OA.
@@ -17939,8 +17951,23 @@ def acondicionamiento_list():
             except Exception as _eo:
                 __import__('logging').getLogger('inventario').warning(
                     'crear EBR OA (acondicionamiento) auto fallo (no bloquea): %s', _eo)
+        # El descuento de un envase es una mutación de inventario: va con rastro de quién y
+        # cuándo, igual que el cierre del legajo (M175 · este camino no dejaba ninguno).
+        try:
+            from audit_helpers import audit_log as _al_ac
+            _al_ac(c, usuario=u or 'sistema', accion='ACONDICIONAMIENTO_DESCONTAR_MEE',
+                   tabla='acondicionamiento', registro_id=str(new_id),
+                   despues={'lote': lote_ref, 'descuentos': _desc_oa, 'saltados': _salt_oa,
+                            'sin_libro_mayor': bool(_sinlib_oa)})
+        except Exception:
+            pass
         conn.commit()
-        return jsonify({'ok': True, 'id': new_id}), 201
+        # Lo que NO se descontó se DECLARA: si el material ya lo consumió el legajo, la pantalla
+        # tiene que poder decir por qué el kardex no se movió, en vez de dejar un hueco que
+        # después nadie sabe explicar (M124).
+        return jsonify({'ok': True, 'id': new_id, 'descuentos': _desc_oa,
+                        'n_descuentos': len(_desc_oa), 'saltados': _salt_oa,
+                        'sin_libro_mayor': bool(_sinlib_oa)}), 201
     # Sprint Acondicionamiento PRO · 21-may-2026 · paginación + filtros
     try:
         limit = max(1, min(int(request.args.get('limit', 100)), 500))

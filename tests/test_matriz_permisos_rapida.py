@@ -97,11 +97,32 @@ def test_la_pantalla_ABRE_en_un_tiempo_razonable(app, admin_client):
     import permisos_matriz
     with app.app_context():
         permisos_matriz.construir()             # simula el proceso ya tibio
+    # ⚠ 17-ago · el techo en MILISEGUNDOS se cambió por un RATIO contra una petición trivial
+    # medida en la misma corrida. Un límite absoluto mide la máquina tanto como el código, y
+    # desde que el gate corre con 8 workers en paralelo eso dejó de ser una molestia y pasó a
+    # ser un rojo recurrente: este mismo assert tumbó un push midiendo una máquina que estaba
+    # corriendo otra suite encima (M176/M133 · la lección ya estaba escrita acá abajo y el techo
+    # absoluto había quedado igual).
+    #
+    # Medido hoy, y por eso el umbral no es inventado:
+    #     en reposo          /api/health  25,7 ms · matriz  27,4 ms → ratio 1,1
+    #     con 8 workers      /api/health  98,5 ms · matriz 125,7 ms → ratio 1,3
+    # Los absolutos se inflan ~4x; el ratio casi no se mueve. El bug original (26.000 ms sobre
+    # una petición de ~26 ms) daba un ratio de ~1.000, así que 15x lo caza con muchísimo aire.
+    _ref = []
+    for _ in range(3):
+        _t = time.time()
+        _rr = admin_client.get('/api/health')
+        _ref.append((time.time() - _t) * 1000)
+        assert _rr.status_code == 200, 'la referencia no respondió'
+    ref_ms = min(_ref)
     t0 = time.time()
     r = admin_client.get('/api/admin/matriz-permisos')
     ms = (time.time() - t0) * 1000
     assert r.status_code == 200, r.data[:200]
-    assert ms < 3000, 'la matriz tardó %.0f ms con el proceso tibio (antes eran 26.000)' % ms
+    assert ms < ref_ms * 15, (
+        'la matriz tardó %.0f ms contra %.0f ms de una petición trivial medida en la MISMA '
+        'máquina (ratio %.1f · antes eran 26.000 ms)' % (ms, ref_ms, ms / max(ref_ms, 0.001)))
     # ⚠ El camino FRÍO no se mide con el reloj. Si alguien vuelve a `ast.get_source_segment`, el
     # cache tapa el problema en la 2ª carga y sólo se dispara la 1ª -- la de después de cada
     # despliegue -- así que hay que vigilarlo; pero un techo en milisegundos depende de cuánto más

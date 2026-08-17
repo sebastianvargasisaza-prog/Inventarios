@@ -145,12 +145,16 @@ def test_crear_planta_demo(app, db_clean):
     r = c.post("/api/admin/planta-demo/crear", json={}, headers=_h())
     assert r.status_code == 200, r.data
     d = r.get_json()
-    assert d["fabricacion_ebr"] and d["envasado_ebr"], d
-    assert _q1("SELECT COUNT(*) FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)='DEMO-PLANTA-1'")[0] == 2
+    # ⚠ 17-ago: el demo arma las TRES fases (fabricación, envasado y acondicionamiento) desde
+    # que se hizo que se camine solo. Este assert seguía esperando 2 y llevaba tiempo en rojo
+    # sin que nadie lo viera, porque el archivo no estaba en ningún gate (M95). No es una
+    # regresión: es la expectativa de antes de que existiera el legajo OA del demo (M97).
+    assert d["fabricacion_ebr"] and d["envasado_ebr"] and d["acondicionamiento_ebr"], d
+    assert _q1("SELECT COUNT(*) FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)='DEMO-PLANTA-1'")[0] == 3
     # idempotente: 2do click reusa (no duplica)
     r2 = c.post("/api/admin/planta-demo/crear", json={}, headers=_h())
     assert r2.status_code == 200 and r2.get_json().get("reusado") is True, r2.data
-    assert _q1("SELECT COUNT(*) FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)='DEMO-PLANTA-1'")[0] == 2
+    assert _q1("SELECT COUNT(*) FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)='DEMO-PLANTA-1'")[0] == 3
 
 
 def test_lote_fases_endpoint(app, db_clean):
