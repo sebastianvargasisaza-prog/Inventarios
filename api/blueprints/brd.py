@@ -2965,6 +2965,7 @@ def limpiar_demos():
     c = conn.cursor()
     n_prod = 0
     n_leg = 0
+    n_mp = 0
     try:
         _ids = [r[0] for r in c.execute(
             "SELECT id FROM produccion_programada WHERE UPPER(COALESCE(observaciones,'')) LIKE '%DEMO_LEGAJO%'"
@@ -2995,11 +2996,31 @@ def limpiar_demos():
                 c.execute('ROLLBACK TO SAVEPOINT _lim_demo2')
             except Exception:
                 pass
+        # La materia prima que el demo sembró en bodega se retira con él · si no, queda stock
+        # fantasma en el kardex de un material que sólo existe para la demostración, y el
+        # inventario dice que hay 50 kg de algo que nadie compró (M172).
+        #
+        # ⚠ Se retira SOLO el lote del demo (`DEMO-MP-1`), nunca por material: si alguien llegara
+        # a cargar un lote real bajo esos códigos, borrarlo sería tocar inventario de verdad.
+        try:
+            c.execute('SAVEPOINT _lim_demo3')
+            n_mp = c.execute("DELETE FROM movimientos WHERE lote=? AND material_id IN "
+                             "('MP-DEMO1','MP-DEMO2')", (_DEMO_MP_LOTE,)).rowcount or 0
+            c.execute('RELEASE SAVEPOINT _lim_demo3')
+        except Exception as _e:
+            # se DICE que quedó, en vez de callar: un demo a medio borrar se ve igual que uno
+            # limpio, y el stock fantasma aparece semanas después sin explicación (M4/M100)
+            log.warning("limpiar_demos · no se pudo retirar la MP del demo: %s", _e)
+            try:
+                c.execute('ROLLBACK TO SAVEPOINT _lim_demo3')
+            except Exception:
+                pass
     except Exception as e:
         conn.rollback()
         return jsonify({"error": str(e)[:180]}), 500
     conn.commit()
-    return jsonify({"ok": True, "producciones_borradas": n_prod, "legajos_descartados": n_leg})
+    return jsonify({"ok": True, "producciones_borradas": n_prod, "legajos_descartados": n_leg,
+                    "movimientos_mp_demo_retirados": n_mp})
 
 
 @bp.route("/api/brd/demo-legajo", methods=["POST"])
@@ -9036,6 +9057,9 @@ def cerrar_acondicionamiento_ebr(ebr_id):
 # ── DEMO de planta (27-jun · Sebastián) · seeder one-click para ver el flujo fabricación→envasado ─────────
 _DEMO_PLANTA_PROD = "DEMO PLANTA (BORRAR)"
 _DEMO_PLANTA_LOTE = "DEMO-PLANTA-1"
+# Lote de la materia prima que el demo siembra en bodega · prefijo DEMO- para poder retirarlo
+# entero y para que se distinga a simple vista de un lote real en el kardex.
+_DEMO_MP_LOTE = "DEMO-MP-1"
 
 
 @bp.route("/api/admin/planta-demo/crear", methods=["POST"])
@@ -9077,6 +9101,28 @@ def crear_planta_demo():
                 cur.execute("INSERT INTO mbr_pasos (mbr_template_id, orden, descripcion) VALUES (?,?,?)",
                             (mbr_id, o, dsc))
             cur.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr_id,))
+        # Materia prima EN BODEGA para el demo · Sebastián, caminándolo: *"ahora dice stock
+        # insuficiente para el demo"*. El demo creaba las MP en el maestro y NINGUNA entrada al
+        # kardex, así que nacía con stock CERO y se trababa al arrancar la producción: un demo
+        # que no se puede caminar no sirve para nada (M121, otra vez).
+        #
+        # Es seguro sembrar acá porque `MP-DEMO1`/`MP-DEMO2` son códigos PROPIOS del demo -- no
+        # existen en la realidad --, así que esto no infla el inventario de ninguna materia prima
+        # de verdad. El lote lleva el prefijo DEMO- para poder retirarlo entero después.
+        for _c in ("MP-DEMO1", "MP-DEMO2"):
+            _hay = cur.execute(
+                "SELECT COUNT(*) FROM movimientos WHERE material_id=? AND lote=?",
+                (_c, _DEMO_MP_LOTE)).fetchone()[0]
+            if not _hay:
+                cur.execute(
+                    "INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, "
+                    "                         fecha, fecha_vencimiento, estado_lote, operador, "
+                    "                         observaciones) "
+                    "VALUES (?, 'Materia prima de demostración', 'Entrada', 50000, ?, "
+                    "        date('now','-5 hours'), date('now','-5 hours','+2 years'), "
+                    "        'VIGENTE', ?, 'Stock sembrado por el demo de planta')",
+                    (_c, _DEMO_MP_LOTE, user))
+
         def _legajo(_fase):
             # Idempotente: si el legajo del lote demo ya existe, reusarlo (crear_ebr_desde_mbr solo reusa por
             # produccion_id, que acá es None → sin esto daría LOTE_DUPLICADO al re-crear el demo).

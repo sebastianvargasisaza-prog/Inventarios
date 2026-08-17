@@ -1425,3 +1425,48 @@ ejecutó el acto. El operario de FABRICACIÓN no viaja a este rótulo.
 ⚠ El rol `limpieza` se valida en **DOS** whitelists (`POST` y `PATCH` de
 `/api/planta/operarios`): agregarlo en una sola lo convierte en `todero` en silencio
 (M116/M45). Hay un guard que recorre todas.
+
+---
+
+## El ciclo de la SALA · sucia → limpiando → libre (16-ago-2026)
+
+Sebastián, trabado al arrancar el demo: *"no me deja, porque dice que las áreas de fabricación
+están sucias · creo que eso no está siendo útil el plano y limitar eso, ¿será que lo eliminamos?"*.
+
+**No se eliminó, y por una razón concreta:** el despeje de línea está en `PRD-PRO-001` (lo ejecuta
+y firma el Jefe de Producción, y Control de Calidad lo verifica de forma independiente), y el
+rótulo F02 se apoya en el mismo `areas_planta.estado`. Lo que estaba mal no era el control sino
+que **no había por dónde cerrarlo**.
+
+El ciclo, y quién mueve cada paso:
+
+| De → a | Quién lo mueve |
+|---|---|
+| libre → **ocupada** | `prog_iniciar_produccion` |
+| ocupada → **sucia** | `prog_terminar_produccion` |
+| sucia → **limpiando** | `planta_rotulo_limpieza_realizar` (el operario registra la limpieza) |
+| limpiando → **libre** | `liberar_sala_con_despeje` — **ruta ÚNICA** (M3), la llaman el rótulo verificado por Calidad y la pantalla `/planta/despeje-linea` |
+
+**Reglas:**
+
+- **`liberar_sala_con_despeje` es el único punto que pone una sala en LIBRE.** Ningún endpoint
+  escribe ese estado por su cuenta: si hace falta liberar desde otro flujo, se llama al helper.
+- **Sólo se libera desde SUCIA o LIMPIANDO.** El UPDATE iba `WHERE id=? AND activo=1` a secas, así
+  que verificar una limpieza sobre una sala **OCUPADA** la ponía libre y borraba que había un lote
+  adentro — el plano diría que se puede arrancar otra producción encima. Una sala con producción en
+  curso no está despejada, por definición.
+- **La respuesta DICE si el área quedó libre** (`area_liberada`). Antes el mensaje afirmaba
+  *"liberada"* pasara lo que pasara. Y el dato se **relee de la tabla**, nunca del `rowcount` del
+  UPDATE: acá el rowcount da 0 con la fila actualizada, así que la respuesta diría lo contrario de
+  lo que pasó (M161).
+- **La pantalla del despeje está ENLAZADA** desde Rótulos de Limpieza. Existía desde mayo, marcada
+  como *"accesible directo, oculto"*, y **ningún enlace en todo el código**: la única forma de
+  llegar era escribir la URL de memoria (M121).
+- **El aviso `DESPEJE_REQUERIDO` manda a una ruta que existe.** Decía *"usar
+  /api/planta/despeje-linea"* y esa ruta nunca existió — la real no lleva `/api`. Ahora incluye la
+  `url` y hay un guard que la valida contra el `url_map` real (M202).
+
+⚠ **Al diagnosticar esto casi meto un UPDATE duplicado** "porque el endpoint no liberaba": lo había
+buscado DENTRO de la función y la liberación ocurre en el helper que llama una línea más arriba
+(M94). Lo cazó el test del borde — el de la sala ocupada —, que es justo el que parece que no
+aporta. Fijado en `tests/test_la_limpieza_libera_el_area.py` (en el gate).

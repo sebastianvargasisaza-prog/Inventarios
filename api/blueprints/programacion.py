@@ -7993,9 +7993,15 @@ def planta_actualizar_estado_area(area_id):
     # · admin puede forzar con flag forzar_sin_despeje=true (queda en audit)
     if estado_anterior == 'sucia' and nuevo == 'libre':
         if not data.get('forzar_sin_despeje'):
+            # ⚠ Este mensaje mandaba a `/api/planta/despeje-linea`, una ruta que NUNCA existió:
+            # la pantalla real es `/planta/despeje-linea` (sin el /api). Un aviso que lleva a
+            # ninguna parte deja el área trabada y a la persona sin saber qué hacer (M202).
             return jsonify({
-                'error': 'Transición sucia→libre requiere despeje firmado · usar /api/planta/despeje-linea',
+                'error': ('Para pasar el área de SUCIA a LIBRE hay que hacer el despeje de '
+                          'línea y firmarlo (BPM · PRD-PRO-001). Se hace en la pantalla de '
+                          'despeje.'),
                 'codigo': 'DESPEJE_REQUERIDO',
+                'url': '/planta/despeje-linea?area=%s' % area_id,
                 'hint': 'Si excepción autorizada admin, enviar forzar_sin_despeje=true',
             }), 409
         if user not in ADMIN_USERS:
@@ -8417,13 +8423,29 @@ def planta_rotulo_limpieza_verificar(area_id):
            WHERE id=?""",
         (user, ahora, int(signature_id), checklist_id, ahora, rid),
     )
+    # ¿El área quedó libre? Se RELEE de la tabla · la liberación la hace el helper canónico
+    # `liberar_sala_con_despeje` (M3, ruta única), no este endpoint.
+    #
+    # ⚠ Casi meto acá un UPDATE propio "porque el endpoint no liberaba": lo había buscado
+    # DENTRO de la función y la liberación ocurre en el helper que llama, una línea más arriba
+    # (M94 · leer el código sin seguir la llamada). Lo cazó el test del borde -- el de la sala
+    # ocupada --, que es justo el que parece que no aporta.
+    #
+    # Y leer el estado en vez de confiar en el `rowcount` no es cosmético: acá el rowcount da 0
+    # con la fila actualizada, así que la respuesta habría dicho "no se liberó" con la sala ya
+    # libre, y un mensaje que contradice lo que pasó es peor que no decir nada (M161).
+    _st = c.execute("SELECT LOWER(COALESCE(estado,'')) FROM areas_planta WHERE id=?",
+                    (area_id,)).fetchone()
+    _quedo_libre = bool(_st and _st[0] == 'libre')
     try:
         c.execute(
             """INSERT INTO area_eventos
                  (area_id, tipo, estado_anterior, estado_nuevo, usuario, nota)
                VALUES (?,?,?,?,?,?)""",
-            (area_id, 'limpieza_verificada', estado_prev, 'libre', user,
-             f'Limpieza verificada por Calidad · rótulo #{rid} · despeje #{checklist_id}'),
+            (area_id, 'limpieza_verificada', estado_prev,
+             'libre' if _quedo_libre else (estado_prev or ''), user,
+             f'Limpieza verificada por Calidad · rótulo #{rid} · despeje #{checklist_id}'
+             + ('' if _quedo_libre else ' · el área NO quedó libre (estaba ocupada)')),
         )
     except Exception:
         pass
@@ -8439,7 +8461,13 @@ def planta_rotulo_limpieza_verificar(area_id):
     conn.commit()
     return jsonify({'ok': True, 'rotulo_id': rid, 'estado': 'Limpio',
                     'checklist_id': checklist_id,
-                    'mensaje': f'Limpieza verificada · {area_codigo} liberada (Limpio)'})
+                    # Se DICE si el área quedó libre de verdad: el mensaje afirmaba "liberada"
+                    # pase lo que pase, y durante meses no liberaba nada (M100/M154).
+                    'area_liberada': _quedo_libre,
+                    'mensaje': (f'Limpieza verificada · {area_codigo} queda LIBRE'
+                                if _quedo_libre else
+                                f'Limpieza verificada · {area_codigo} sigue ocupada por una '
+                                f'producción en curso, así que no se liberó')})
 
 
 def _persona_corta(c, username):

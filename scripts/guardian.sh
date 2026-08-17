@@ -665,6 +665,9 @@ CORAZON=(
   # cambiar; si no se puede calcular queda vacio con el motivo, nunca un numero inventado.
   # Y los tres prompt() del navegador se fueron (Sebastian 16-ago).
   "tests/test_nuevo_legajo_lote_propuesto.py"
+  # El ciclo de la sala CIERRA: limpiar y verificar la devuelve a LIBRE, una sala con lote
+  # adentro NO se libera, hay por donde llegar al despeje, y el demo nace con materia prima.
+  "tests/test_la_limpieza_libera_el_area.py"
 )
 
 echo ""

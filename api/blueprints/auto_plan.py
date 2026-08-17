@@ -9299,8 +9299,15 @@ def liberar_sala_con_despeje(c, area_id, user, obs='', *,
         (area_id, area_codigo, user, obs),
     )
     checklist_id = c.lastrowid
+    # ⚠ Sólo se libera desde SUCIA o LIMPIANDO. Antes el UPDATE iba `WHERE id=? AND activo=1`
+    # a secas, así que verificar una limpieza sobre una sala **OCUPADA** la ponía LIBRE y
+    # borraba que había un lote adentro -- el plano diría que se puede arrancar otra producción
+    # encima. El despeje certifica que el área quedó despejada; una sala con producción en curso
+    # no está despejada, por definición (PRD-PRO-001), así que ahí el estado no se toca y el
+    # caller lo informa (16-ago · lo encontró el test del borde).
     c.execute(
-        "UPDATE areas_planta SET estado='libre' WHERE id=? AND activo=1",
+        "UPDATE areas_planta SET estado='libre' "
+        "WHERE id=? AND activo=1 AND LOWER(COALESCE(estado,'')) IN ('sucia','limpiando','')",
         (area_id,),
     )
     try:

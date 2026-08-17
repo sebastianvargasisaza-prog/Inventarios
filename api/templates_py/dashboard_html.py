@@ -1098,6 +1098,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="window.open('/planta/rotulos-limpieza?todos=1','_blank')" style="padding:6px 14px;background:var(--cx-info);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Saca TODOS los rótulos F02 en una hoja (uno por página) para imprimir y entregar de una">&#128424;&#65039; Imprimir TODOS</button>
+        <button onclick="window.open('/planta/despeje-linea','_blank')" style="padding:6px 14px;background:var(--cx-success);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Despeje de línea (PRD-PRO-001): es lo que devuelve una sala SUCIA a LIBRE para poder producir">&#9989; Despeje de línea</button>
         <button onclick="cargarRotulosLimp()" style="padding:6px 12px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
       </div>
     </div>
