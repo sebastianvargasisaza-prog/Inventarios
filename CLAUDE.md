@@ -36,10 +36,18 @@ pytest tests/test_golden_paths.py::<test_name> -xvs       # single test, full ou
 pytest -k "compras"                                       # by keyword
 
 # Anti-regression gates (install once with `bash scripts/install_hooks.sh`)
-bash scripts/guardian.sh --quick   # pre-push: golden paths only (~3s)
-bash scripts/guardian.sh --full    # + smoke + 3fuentes + producciones (~30s)
+bash scripts/guardian.sh            # pre-push: golden + corazón (2359 tests · ~7 min)
+bash scripts/guardian.sh --rapido   # golden + sólo lo que toca el diff (~1 min)
+bash scripts/guardian.sh --full     # golden + los 20 archivos del barrido 26-jul
+bash scripts/guardian.sh --pg       # lo mismo contra PostgreSQL real (serie · ~15 min)
 python scripts/reviewer.py         # pre-commit: contract/style/danger checks
 python scripts/reviewer.py --strict   # warnings become errors
+
+# ⚠ `--full` NO es un superconjunto del gate por defecto: es OTRA lista de 20 archivos (el
+#   por defecto corre golden + el corazón entero). Un test que viva sólo en `--full` se mira
+#   cuando alguien lo corre a mano — así dos quedaron en rojo 13 días sin que nadie lo viera.
+# ⚠ El gate reparte por ARCHIVO (`--dist loadfile`), nunca por test: medido 411s contra 508s.
+#   En `--pg` va en SERIE (los workers comparten una sola base). Lo fija test_gate_paralelo.py.
 
 # Smoke test against deployed app
 python scripts/smoke_test.py https://app.eossuite.com

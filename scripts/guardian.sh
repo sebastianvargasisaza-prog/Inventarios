@@ -23,9 +23,33 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 MODE="${1:-quick}"
-# Vacio salvo en --rapido: el corazon completo no paralela bien (medido) y el modo --pg
-# comparte una sola base de PostgreSQL, asi que ahi el paralelo se pisaria.
+# ── PARALELO · 17-ago-2026 · el corazon SI paralela, pero por ARCHIVO ────────────────────
+# Sebastian: *"si quiero que resolvamos lo del tiempo para que avancemos mas rapido"*.
+#
+# La nota que estaba aca decia "el corazon completo no paralela bien (medido)" y quedo VIEJA:
+# lo que no paralela bien es repartir por TEST. Medido hoy sobre los mismos 2359 tests, los
+# tres verdes y con el mismo conteo:
+#
+#   serie (lo que corria el hook)          924 s   15m24
+#   -n 8  --dist loadfile  (por ARCHIVO)   411 s    6m51   <- 2,25x
+#   -n 12 --dist load      (por TEST)      508 s    8m28   <- PEOR, y con mas workers
+#
+# Por que por archivo le gana a por test: casi todos los archivos del corazon siembran en un
+# test y leen en otro, asi que repartir sus tests obliga a cada worker a re-sembrar lo mismo.
+# `loadfile` manda el archivo ENTERO a un worker, conserva el orden de adentro, y cada worker
+# levanta su propia base (`test_workspace` es un mkdtemp por sesion y con xdist cada worker es
+# un proceso) -- o sea MAS aislamiento del que hay corriendo todo junto, no menos.
+#
+# Piezas medidas por separado, por si alguien quiere seguir apretando: el golden ya NO es el
+# cuello (245 tests en 44 s repartidos por test); el corazon solo son 453 s. Y separarlos en dos
+# invocaciones da peor (45 + 453 = 498 s) que la corrida unica, asi que se dejan juntos.
+#
+# ⚠ El modo --pg NO paralela: ahi los workers comparten UNA sola base de PostgreSQL y se
+#   pisarian entre ellos. Ahi el aislamiento no sale gratis como en SQLite.
 PARALELO=""
+# 8 de 18 nucleos: deja la maquina usable mientras corre, y subir de ahi choca contra el
+# archivo mas lento (con `loadfile` el piso lo pone el archivo mas grande, no la CPU).
+PARALELO_CORAZON="-n 8 --dist loadfile"
 
 # ── SET DEL CORAZÓN (25-jul-2026) ─────────────────────────────────────────────
 # Lo que NO puede romperse en silencio: el descuento de MP, el motor de demanda,
@@ -703,6 +727,10 @@ CORAZON=(
   # queda muerta y el listado manda al lote ajeno). Abre las 19 paginas con las 11 personas
   # del piso -- jose y milton incluidos, que hasta hoy el harness no podia loguear.
   "tests/test_preflight_brd_visible.py"
+  # El gate corre en paralelo repartiendo por ARCHIVO (924s -> 411s). El guard existe porque
+  # la nota anterior afirmaba que el corazon "no paralela bien" y esa frase, sin nada que la
+  # midiera, es lo que haria que alguien lo devuelva a la serie.
+  "tests/test_gate_paralelo.py"
 )
 
 echo ""
@@ -931,6 +959,8 @@ elif [ "$MODE" = "--full" ] || [ "$MODE" = "full" ]; then
     "tests/test_sugerencia_solo_animus.py"
     "tests/test_trail_explosion.py"
   )
+  # Son 20 archivos independientes: reparten perfecto por archivo.
+  PARALELO="$PARALELO_CORAZON"
 else
   # Quick mode (default · el que corre el hook pre-push).
   #
@@ -941,6 +971,8 @@ else
   # Regla: si escribís un test que protege el descuento, la demanda, las fórmulas o el
   # inventario, AGREGALO ACÁ o su rojo será invisible.
   TESTS=("tests/test_golden_paths.py" "${CORAZON[@]}")
+  # 17-ago: 924 s -> 411 s repartiendo por ARCHIVO (ver la nota de PARALELO arriba).
+  PARALELO="$PARALELO_CORAZON"
 fi
 
 # Ejecutar · pipefail para que el exit code de pytest llegue al if
