@@ -7928,12 +7928,33 @@ def envases_plan_ebr(ebr_id):
     conn = get_db()
     erow = conn.execute(
         "SELECT COALESCE(m.producto_nombre,''), COALESCE(e.lote_codigo, e.lote), "
-        "COALESCE(e.fase,'fabricacion'), COALESCE(e.envases_descontados_at,'') "
+        "COALESCE(e.fase,'fabricacion'), COALESCE(e.envases_descontados_at,''), "
+        "COALESCE(e.produccion_id, 0) "
         "FROM ebr_ejecuciones e LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id WHERE e.id=?",
         (ebr_id,)).fetchone()
     if not erow:
         return jsonify({"error": "EBR no encontrado"}), 404
     producto = erow[0] or ""
+    # EL ENVASE QUE ELIGIÓ COMPRAS, no el del catálogo · Sebastián 16-ago: *"la lógica dice:
+    # Catalina en compras selecciona, si algo cambia se autocarga en calendario para que lo jale
+    # a envasado, así lo construimos"*.
+    #
+    # Esta pantalla leía `producto_presentaciones` directo, o sea el frasco HABITUAL del
+    # producto, e ignoraba el `envase_codigo_override` que se fija por LOTE cuando no alcanza el
+    # habitual o se decide otro. La compra y el descuento sí lo honran desde el 7-jul (M73), así
+    # que el legajo mostraba un frasco y la planta descontaba otro -- y el operario alista lo que
+    # ve en la pantalla. Si un lado de la cadena honra un override, el otro también (M55/M73).
+    _override_lote = ""
+    try:
+        if erow[4]:
+            _o = conn.execute(
+                "SELECT COALESCE(envase_codigo_override,'') FROM produccion_programada WHERE id=?",
+                (erow[4],)).fetchone()
+            _override_lote = (_o[0] or "").strip() if _o else ""
+    except Exception as _eo:
+        # se sigue con el envase del catálogo, pero queda dicho: un override que no se pudo leer
+        # es distinto de no tener override (M100)
+        log.warning("envases-plan: override del lote %s no legible: %s", erow[4], _eo)
     reg = {}
     try:
         for r in conn.execute(
@@ -7982,15 +8003,22 @@ def envases_plan_ebr(ebr_id):
             "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
             "ORDER BY volumen_ml", (producto,)).fetchall():
             pc = p[0]
-            _env = (p[3] or "").strip().upper()
+            # el override manda sobre el frasco del catálogo · se marca para que la pantalla
+            # pueda decir que ESTE lote lleva otro envase (si no, se ve como si siempre
+            # hubiera sido ése y nadie se entera de la decisión de Compras)
+            _env_cod = (_override_lote or p[3] or "")
+            _es_override = bool(_override_lote and _override_lote.upper() != (p[3] or "").upper())
+            _env = _env_cod.strip().upper()
             # las partes que se van a descontar de verdad: las del frasco, sin repetir tapa/caja
             _ya = {x for x in ((p[4] or "").strip().upper(), (p[5] or "").strip().upper()) if x}
             _pt = [dict(x, foto=_fotos.get(x["codigo"], ""))
                    for x in _partes.get(_env, []) if x["codigo"] not in _ya]
             items.append({
                 "presentacion_codigo": pc, "etiqueta": p[1], "volumen_ml": p[2],
-                "envase_codigo": p[3], "tapa_codigo": p[4], "caja_codigo": p[5],
-                "envase": _mee(p[3]), "tapa": _mee(p[4]), "caja": _mee(p[5]),
+                "envase_codigo": _env_cod, "tapa_codigo": p[4], "caja_codigo": p[5],
+                "envase": _mee(_env_cod), "tapa": _mee(p[4]), "caja": _mee(p[5]),
+                "envase_override": _es_override,
+                "envase_catalogo": (p[3] or "") if _es_override else "",
                 "partes": _pt,
                 "unidades": reg.get(pc, {}).get("unidades", 0),
                 "registrado_por": reg.get(pc, {}).get("registrado_por", ""),
@@ -9136,10 +9164,38 @@ def crear_planta_demo():
             cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
                         "VALUES (?, 1, 'draft', 1000, ?)", (PROD, user))
             mbr_id = cur.lastrowid
-            for o, dsc in ((1, "Dispensar materias primas"), (2, "Mezclar 20 min a 40°C"),
-                           (3, "Control de pH y viscosidad"), (4, "Enfriar y envasar")):
-                cur.execute("INSERT INTO mbr_pasos (mbr_template_id, orden, descripcion) VALUES (?,?,?)",
-                            (mbr_id, o, dsc))
+            # Pasos POR FASE · Sebastián, mirando el legajo de envasado del demo: *"Este MBR no
+            # tiene pasos"* y arriba **0/5 pasos**. Los cuatro pasos se creaban SIN `fase`, así
+            # que el legajo de envasado no encontraba ninguno y no había flujo que caminar --
+            # que era justamente el punto del demo (M205: los pasos se declaran por fase).
+            #
+            # Llevan `tiempo_estimado_min` para que el plano pueda comparar real contra estimado
+            # mientras se camina el demo, que es lo que Sebastián quiere mirar con Alejandro.
+            _pasos_demo = (
+                ("Fabricación", "mezclado", (
+                    ("Dispensar materias primas", 20),
+                    ("Mezclar 20 min a 40°C", 20),
+                    ("Control de pH y viscosidad", 10),
+                    ("Enfriar hasta 25°C", 15))),
+                ("Envasado", "envasado", (
+                    ("Despeje de línea de envasado", 10),
+                    ("Purgar y ajustar el llenado", 15),
+                    ("Envasar y sellar", 45),
+                    ("Control de llenado por muestreo", 10))),
+                ("Acondicionamiento", "acondicionamiento", (
+                    ("Etiquetar las unidades", 25),
+                    ("Estuchar y codificar", 20),
+                    ("Inspección final del producto terminado", 15))),
+            )
+            _o = 0
+            for _fase_p, _tipo_p, _lista in _pasos_demo:
+                for _dsc, _min in _lista:
+                    _o += 1
+                    cur.execute(
+                        "INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, "
+                        "                       tipo_paso, tiempo_estimado_min) "
+                        "VALUES (?,?,?,?,?,?)",
+                        (mbr_id, _o, _fase_p, _dsc, _tipo_p, _min))
             cur.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr_id,))
         # Materia prima EN BODEGA para el demo · Sebastián, caminándolo: *"ahora dice stock
         # insuficiente para el demo"*. El demo creaba las MP en el maestro y NINGUNA entrada al
@@ -9196,22 +9252,47 @@ def crear_planta_demo():
         def _legajo(_fase):
             # Idempotente: si el legajo del lote demo ya existe, reusarlo (crear_ebr_desde_mbr solo reusa por
             # produccion_id, que acá es None → sin esto daría LOTE_DUPLICADO al re-crear el demo).
-            _ex = cur.execute("SELECT id FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)=? "
+            _ex = cur.execute("SELECT id, COALESCE(estado,'') FROM ebr_ejecuciones "
+                              "WHERE COALESCE(lote_codigo,lote)=? "
                               "AND COALESCE(fase,'fabricacion')=?", (LOTE, _fase)).fetchone()
             if _ex:
-                return {'ok': True, 'id': _ex[0], 'reusado': True}
+                # El legajo se REACTIVA si quedó descartado o cerrado · Sebastián abrió el demo
+                # y arriba decía `descartado`: un legajo muerto no se puede caminar, así que
+                # "crear el demo" tiene que devolverlo utilizable o el botón no sirve para nada.
+                # Sólo aplica a lotes DEMO- (un legajo real descartado NO se revive así).
+                if str(_ex[1]).lower() in ("descartado", "rechazado", "liberado", "completado"):
+                    cur.execute("UPDATE ebr_ejecuciones SET estado='iniciado', "
+                                "    liberado_at_utc=NULL, liberado_por=NULL, "
+                                "    completado_at_utc=NULL, aprobado_dt_por=NULL, "
+                                "    aprobado_dt_at_utc=NULL "
+                                "WHERE id=? AND COALESCE(lote_codigo,lote) LIKE 'DEMO-%'",
+                                (_ex[0],))
+                return {'ok': True, 'id': _ex[0], 'reusado': True,
+                        'reactivado': str(_ex[1]).lower() in ("descartado", "rechazado",
+                                                              "liberado", "completado")}
             return crear_ebr_desde_mbr(cur, producto_nombre=PROD, lote=LOTE, usuario=user, fase=_fase)
         op = _legajo('fabricacion')
         of = _legajo('envasado')
-        if not op.get('ok') or not of.get('ok'):
+        # y el de ACONDICIONAMIENTO, que faltaba: sin él no se puede caminar hasta el final ni
+        # ver el visto bueno del Director Técnico, que es justo donde vive ahora
+        oa = _legajo('acondicionamiento')
+        if not op.get('ok') or not of.get('ok') or not oa.get('ok'):
             conn.rollback()
-            return jsonify({"error": "no se pudieron crear los legajos", "op": op, "of": of}), 500
+            return jsonify({"error": "no se pudieron crear los legajos",
+                            "op": op, "of": of, "oa": oa}), 500
         audit_log(cur, usuario=user, accion="CREAR_PLANTA_DEMO", tabla="ebr_ejecuciones",
                   registro_id=op.get('id'), despues={"producto": PROD, "lote": LOTE})
         conn.commit()
         return jsonify({"ok": True, "producto": PROD, "lote": LOTE,
                         "fabricacion_ebr": op.get('id'), "envasado_ebr": of.get('id'),
-                        "reusado": bool(op.get('reusado') and of.get('reusado'))})
+                        "acondicionamiento_ebr": oa.get('id'),
+                        "reusado": bool(op.get('reusado') and of.get('reusado')
+                                        and oa.get('reusado')),
+                        # se DICE si habia que revivir un legajo muerto, en vez de que el
+                        # boton conteste "ok" y el usuario descubra el `descartado` adentro
+                        "reactivados": [k for k, v in (('fabricacion', op), ('envasado', of),
+                                                       ('acondicionamiento', oa))
+                                        if v.get('reactivado')]})
     except Exception as e:
         conn.rollback()
         log.warning("crear_planta_demo fallo: %s", e)

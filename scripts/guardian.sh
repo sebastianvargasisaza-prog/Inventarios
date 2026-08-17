@@ -674,6 +674,9 @@ CORAZON=(
   # El legajo DEMO se camina de punta a punta por UNA persona, sin pedir firmas ni
   # autorizaciones ajenas -- y un lote REAL las sigue pidiendo todas.
   "tests/test_demo_se_camina_solo.py"
+  # El legajo de envasado muestra el envase que ELIGIO Compras para ese lote (con su foto), no
+  # el habitual del catalogo: la compra y el descuento ya lo honraban y la pantalla no.
+  "tests/test_envase_que_eligio_compras.py"
 )
 
 echo ""
