@@ -677,6 +677,12 @@ CORAZON=(
   # El legajo de envasado muestra el envase que ELIGIO Compras para ese lote (con su foto), no
   # el habitual del catalogo: la compra y el descuento ya lo honraban y la pantalla no.
   "tests/test_envase_que_eligio_compras.py"
+  # Las herramientas del Director Tecnico viven en SU modulo, y ningun enlace lleva a una ruta
+  # que no existe (se valida contra el url_map real).
+  "tests/test_config_direccion_tecnica.py"
+  # "Productos con instructivo aprobado" cuenta los que PUEDEN abrir legajo: antes sumaba los
+  # instructivos de productos DESCONTINUADOS y el punto salia verde con productos faltando.
+  "tests/test_cuantos_pueden_abrir_legajo.py"
 )
 
 echo ""

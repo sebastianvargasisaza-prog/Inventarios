@@ -5475,9 +5475,22 @@ def estado_reemplazo_mybatch():
     })
 
     # 3) Instructivos aprobados: sin MBR aprobado, un producto no puede abrir legajo.
+    #
+    # ⚠ Se cuenta la INTERSECCIÓN (productos ACTIVOS que tienen su instructivo), no el total de
+    # MBR aprobados. Sebastián lo vio en la pantalla: decía **"31 de 29 productos activos"** y el
+    # punto salía en VERDE porque 31 ≥ 29 -- mientras la misma tarjeta listaba dos productos
+    # activos SIN instructivo (HYDRABALANCE y Suero Vitamina C+), que por lo tanto no pueden
+    # abrir legajo.
+    #
+    # El 31 incluía instructivos de productos DESCONTINUADOS: dos universos distintos comparados
+    # entre sí, así que el número decía "listo" con dos productos que no se pueden fabricar con
+    # registro digital. El total que se MUESTRA tiene que ser el que DECIDE (M5/M155).
     aprobados = _rmb_conteo(
-        conn, "SELECT COUNT(DISTINCT UPPER(TRIM(producto_nombre))) FROM mbr_templates "
-              "WHERE estado='aprobado'")
+        conn, "SELECT COUNT(DISTINCT UPPER(TRIM(f.producto_nombre))) FROM formula_headers f "
+              " WHERE COALESCE(f.activo,1)=1 "
+              "   AND UPPER(TRIM(f.producto_nombre)) IN "
+              "       (SELECT UPPER(TRIM(producto_nombre)) FROM mbr_templates "
+              "         WHERE estado='aprobado')")
     activos = _rmb_conteo(
         conn, "SELECT COUNT(DISTINCT UPPER(TRIM(producto_nombre))) FROM formula_headers "
               "WHERE COALESCE(activo,1)=1")

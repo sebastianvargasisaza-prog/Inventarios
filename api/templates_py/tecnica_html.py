@@ -111,6 +111,71 @@ textarea{resize:vertical;min-height:60px;}
     <div class="kpi"><div class="kpi-label">Docs a Revisar</div><div class="kpi-val warn" id="kv-rev">-</div><div class="kpi-sub">Proximos 30 dias</div></div>
   </div>
   <div class="card">
+    <div class="card-title">&#128295; Configuraci&oacute;n &middot; Direcci&oacute;n T&eacute;cnica</div>
+    <p style="margin:-6px 0 14px;font-size:13px;color:var(--cx-text-mute);line-height:1.55">
+      Lo que en MyBatch cuelga de la configuraci&oacute;n del director t&eacute;cnico. Cada
+      cambio queda con qui&eacute;n y cu&aacute;ndo (21 CFR Part 11).</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:12px">
+
+      <a href="/aseguramiento/checklists" style="text-decoration:none;color:inherit">
+        <div style="border:1px solid var(--cx-border);border-radius:11px;padding:14px;height:100%;
+                    transition:transform .12s ease,box-shadow .12s ease"
+             onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 24px rgba(15,12,35,.12)'"
+             onmouseout="this.style.transform='';this.style.boxShadow=''">
+          <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">&#9989; Verificaciones</div>
+          <div style="font-size:12.5px;color:var(--cx-text-mute);margin-top:5px;line-height:1.5">
+            Los &iacute;tems del despeje de l&iacute;nea y los controles de atributos.
+            Revisarlos y guardarlos deja constancia de que el DT los aprob&oacute;.</div>
+        </div></a>
+
+      <a href="/aseguramiento/reemplazo-mybatch" style="text-decoration:none;color:inherit">
+        <div style="border:1px solid var(--cx-border);border-radius:11px;padding:14px;height:100%;
+                    transition:transform .12s ease,box-shadow .12s ease"
+             onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 24px rgba(15,12,35,.12)'"
+             onmouseout="this.style.transform='';this.style.boxShadow=''">
+          <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">&#128202; Reemplazo de MyBatch</div>
+          <div style="font-size:12.5px;color:var(--cx-text-mute);margin-top:5px;line-height:1.5">
+            Qu&eacute; falta para apagar MyBatch, medido contra la base: qui&eacute;n ve el
+            registro de lote, en qu&eacute; modo est&aacute;n los controles y qu&eacute;
+            productos no tienen instructivo.</div>
+        </div></a>
+
+      <a href="/aseguramiento/audit-trail" style="text-decoration:none;color:inherit">
+        <div style="border:1px solid var(--cx-border);border-radius:11px;padding:14px;height:100%;
+                    transition:transform .12s ease,box-shadow .12s ease"
+             onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 24px rgba(15,12,35,.12)'"
+             onmouseout="this.style.transform='';this.style.boxShadow=''">
+          <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">&#128269; Audit trail</div>
+          <div style="font-size:12.5px;color:var(--cx-text-mute);margin-top:5px;line-height:1.5">
+            Qui&eacute;n cambi&oacute; qu&eacute;, de qu&eacute; a qu&eacute; y cu&aacute;ndo,
+            por dominio. Es lo que se le muestra a INVIMA.</div>
+        </div></a>
+
+      <a href="/planta/plano" target="_blank" style="text-decoration:none;color:inherit">
+        <div style="border:1px solid var(--cx-border);border-radius:11px;padding:14px;height:100%;
+                    transition:transform .12s ease,box-shadow .12s ease"
+             onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 24px rgba(15,12,35,.12)'"
+             onmouseout="this.style.transform='';this.style.boxShadow=''">
+          <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">&#127981; &Aacute;reas productivas</div>
+          <div style="font-size:12.5px;color:var(--cx-text-mute);margin-top:5px;line-height:1.5">
+            El plano en vivo: qu&eacute; sala est&aacute; ocupada, cu&aacute;l qued&oacute;
+            sucia y qu&eacute; se est&aacute; produciendo en cada una.</div>
+        </div></a>
+
+      <a href="/aseguramiento/calibracion" style="text-decoration:none;color:inherit">
+        <div style="border:1px solid var(--cx-border);border-radius:11px;padding:14px;height:100%;
+                    transition:transform .12s ease,box-shadow .12s ease"
+             onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 24px rgba(15,12,35,.12)'"
+             onmouseout="this.style.transform='';this.style.boxShadow=''">
+          <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">&#128295; Equipos y calibraci&oacute;n</div>
+          <div style="font-size:12.5px;color:var(--cx-text-mute);margin-top:5px;line-height:1.5">
+            Los equipos productivos, su calificaci&oacute;n y la bit&aacute;cora de
+            calibraci&oacute;n.</div>
+        </div></a>
+
+    </div>
+  </div>
+  <div class="card">
     <div class="card-title">Proximos Vencimientos INVIMA</div>
     <table><thead><tr><th>Producto</th><th>N. Registro</th><th>Vencimiento</th><th>Estado</th></tr></thead>
       <tbody id="tb-proximos"><tr><td colspan="4" class="empty">Cargando...</td></tr></tbody>
