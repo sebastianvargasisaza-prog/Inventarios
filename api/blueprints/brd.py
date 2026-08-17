@@ -8741,12 +8741,40 @@ def cerrar_envasado_ebr(ebr_id):
     lote = erow[1] or ""
     _prod_id = int(erow[3] or 0)
     uds = {}
+    _uds_ya_descontadas = False
     for r in cur.execute(
         "SELECT COALESCE(presentacion_codigo,''), COALESCE(unidades,0) FROM ebr_envasado_unidades "
         "WHERE ebr_id=?", (ebr_id,)).fetchall():
         if (r[1] or 0) > 0:
             uds[r[0]] = r[1]
     if not uds:
+        # ── LAS UNIDADES SE REGISTRAN POR DOS CAMINOS, Y ESTE LEÍA UNO SOLO (17-ago) ────────
+        # `POST /api/envasado` -- la pantalla que usa la planta -- escribe en `envasado`; el
+        # formulario del propio legajo escribe en `ebr_envasado_unidades`. El cierre miraba sólo
+        # el segundo, así que quien envasaba por la pantalla veía **sus unidades listadas en el
+        # legajo** ("DEMO30 · 30 unidades · Completado") y el botón le contestaba *"registrá las
+        # unidades envasadas antes de cerrar"*: la pantalla y el botón diciendo cosas opuestas
+        # sobre el mismo hecho, sin forma de entender por qué (M37/M83 · el dato se escribe en un
+        # sitio y se lee en otro · M161 · dos partes de la misma pantalla contradiciéndose).
+        #
+        # Se lee la MISMA fuente que el legajo MUESTRA primero.
+        for r in cur.execute(
+            "SELECT COALESCE(NULLIF(TRIM(presentacion),''), COALESCE(envase_codigo,'')), "
+            "       COALESCE(unidades,0) "
+            "  FROM envasado WHERE UPPER(TRIM(lote))=UPPER(TRIM(?))", (lote,)).fetchall():
+            if (r[1] or 0) > 0 and (r[0] or ''):
+                uds[r[0]] = uds.get(r[0], 0) + r[1]
+        # ⚠ Y si las unidades salieron de ahí, los materiales YA SE DESCONTARON: ese mismo
+        #   registro (`POST /api/envasado`) saca el frasco, la tapa y la caja del kardex al
+        #   guardarse. Volver a descontarlos acá los sacaría DOS VECES -- medido caminando el
+        #   lote completo: 60 unidades de frasco y de tapa donde se envasaron 30.
+        #   El cierre sigue haciendo todo lo demás (marca completado, encadena el
+        #   acondicionamiento) y DECLARA por qué no movió el kardex (M124).
+        _uds_ya_descontadas = bool(uds)
+    if not uds:
+        # ⚠ NO se cae a las presentaciones PLANEADAS, que es la tercera fuente que la pantalla
+        #   usa cuando todavía no hay nada envasado: lo planeado no es lo producido, y cerrar
+        #   contra un plan descontaría envases por unidades que nadie llenó.
         return jsonify({"error": "registrá las unidades envasadas (al menos una presentación) antes de cerrar"}), 400
     # CAS idempotente: reclamar el descuento · solo 1 vez y solo si está en proceso (race multi-worker · M27)
     cur.execute(
@@ -8758,6 +8786,36 @@ def cerrar_envasado_ebr(ebr_id):
         conn.rollback()
         return jsonify({"error": "El envasado ya se cerró/descontó o no está en proceso · refrescá",
                         "codigo": "YA_CERRADO"}), 409
+    if _uds_ya_descontadas:
+        # Las unidades salieron del REGISTRO de envasado, que ya sacó sus materiales del kardex.
+        # El cierre marca completado y encadena el acondicionamiento, pero NO vuelve a descontar.
+        conn.commit()
+        audit_log(None, usuario=user, accion="CERRAR_ENVASADO_SIN_DESCONTAR",
+                  tabla="ebr_ejecuciones", registro_id=ebr_id,
+                  despues={"lote": lote, "motivo": "los materiales ya los descontó el registro "
+                                                   "de envasado de este lote"})
+        _acond = None
+        try:
+            if producto and lote:
+                _r = crear_ebr_desde_mbr(conn.cursor(), producto_nombre=producto, lote=lote,
+                                         usuario=user, fase='acondicionamiento')
+                conn.commit()
+                if _r.get('ok'):
+                    _acond = _r.get('id')
+                else:
+                    _y = conn.execute(
+                        "SELECT id FROM ebr_ejecuciones "
+                        " WHERE COALESCE(NULLIF(lote_codigo,''), lote)=? "
+                        "   AND COALESCE(fase,'')='acondicionamiento' "
+                        " ORDER BY id DESC LIMIT 1", (lote,)).fetchone()
+                    _acond = _y[0] if _y else None
+        except Exception as _e_ch:
+            log.warning("cerrar-envasado (sin descontar): no se habilitó acondicionamiento: %s", _e_ch)
+        return jsonify({"ok": True, "estado": "completado", "descuentos": [], "n_descuentos": 0,
+                        "acond_ebr_id": _acond,
+                        "materiales_ya_descontados": True,
+                        "motivo": "los materiales de este lote ya salieron del kardex al "
+                                  "registrar el envasado"})
     # El ENVASE puede variar por lote (Sebastián 20-jul): honrar el override del lote
     # (produccion_programada.envase_codigo_override) y el envase custom por cliente B2B
     # (pedidos_b2b_lote.envase_codigo) · igual que _descontar_mee_envasado (M55/M73). Tapa/caja
@@ -8992,6 +9050,24 @@ def cerrar_envasado_ebr(ebr_id):
             conn.commit()
             if _res_oa.get('ok'):
                 _acond_habilitado = _res_oa.get('id')
+            else:
+                # ⚠ 17-ago · el caso NORMAL caía acá y devolvía None. El legajo de
+                # acondicionamiento suele existir ANTES de cerrar el envasado (lo crea el demo,
+                # y el flujo real al aceptar la producción), y entonces `crear_ebr_desde_mbr`
+                # contesta LOTE_DUPLICADO -- que no es un error: es "ya está habilitado".
+                # Con `acond_ebr_id: None` el operario cierra el envasado y NO recibe el enlace
+                # al paso siguiente, que es exactamente lo que este hook vino a resolver
+                # (M121/M129: un registro que sale de una pantalla tiene que decir a dónde se fue).
+                _ya = conn.execute(
+                    "SELECT id FROM ebr_ejecuciones "
+                    " WHERE COALESCE(NULLIF(lote_codigo,''), lote)=? "
+                    "   AND COALESCE(fase,'')='acondicionamiento' "
+                    " ORDER BY id DESC LIMIT 1", (lote,)).fetchone()
+                if _ya:
+                    _acond_habilitado = _ya[0]
+                else:
+                    log.warning("cerrar-envasado: no se pudo habilitar el acondicionamiento del "
+                                "lote %s: %s", lote, _res_oa.get('error'))
                 if not _res_oa.get('reusado'):
                     audit_log(None, usuario=user, accion="AUTO_CREAR_EBR_ACONDICIONAMIENTO",
                               tabla="ebr_ejecuciones", registro_id=_res_oa.get('id'),

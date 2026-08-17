@@ -6,17 +6,25 @@ Sebastián: *"si quiero que resolvamos lo del tiempo para que avancemos más rá
 El gate que corre el hook de pre-push tardaba **924 s** porque lanzaba los 271 archivos del
 corazón en un solo proceso. Medido sobre los mismos 2359 tests, los tres verdes:
 
-    serie                                   924 s   15m24
-    -n 8  --dist loadfile  (por ARCHIVO)    411 s    6m51   <- 2,25x
-    -n 12 --dist load      (por TEST)       508 s    8m28   <- peor, con MÁS workers
+    serie                                    924 s   15m24
+    -n 8  --dist loadfile  (por ARCHIVO)     411 s    6m51   <- 2,25x
+    -n 12 --dist load      (por TEST)        508 s    8m28   <- peor, con MÁS workers
+    -n 10/14 --dist loadgroup                SIN MEDIR      <- el entorno corto las corridas
 
 Repartir por TEST pierde porque casi todos los archivos del corazón siembran en un test y leen
 en otro: cada worker termina re-sembrando lo mismo. `loadfile` manda el archivo entero a un
 worker y conserva el orden de adentro.
 
-Este guard existe porque la nota anterior del guardián afirmaba lo contrario ("el corazón no
-paralela bien") y esa frase, sin nada que la midiera, es exactamente lo que haría que alguien
-volviera a ponerlo en serie.
+El piso lo pone `test_golden_paths.py`: pesa ~970 s de los ~7.700 s de trabajo total, y con
+`loadfile` va entero a un worker. Se intentó romperlo con `--dist loadgroup` (golden sin grupo
+para que se repartiera) y **quedó sin medir**: el entorno cortó las cuatro corridas. ⚠ La primera
+versión de esta nota lo daba por fallado -- y era falso: la corrida siguiente, con `loadfile`,
+también la cortaron, o sea que los cortes son del entorno y no de la forma de repartir. Un "no
+sirve" sin medición vale menos que un "no se pudo medir" (M110).
+
+Este guard existe porque la nota anterior del guardián afirmaba que el corazón "no paralela
+bien" y esa frase, sin nada que la midiera, es exactamente lo que haría que alguien volviera a
+ponerlo en serie.
 """
 import os
 import re
@@ -42,9 +50,10 @@ def test_el_gate_del_hook_corre_en_paralelo():
     m = re.search(r'PARALELO_CORAZON\s*=\s*"([^"]+)"', codigo)
     assert m, "desapareció PARALELO_CORAZON: el gate volvería a correr en serie"
     assert "-n " in m.group(1), "PARALELO_CORAZON sin cantidad de workers: %r" % m.group(1)
-    assert "--dist loadfile" in m.group(1), (
-        "el corazón se reparte por ARCHIVO, no por test: repartir por test midió 508 s contra "
-        "411 s porque cada worker re-siembra lo mismo · valor actual %r" % m.group(1))
+    assert "--dist loadgroup" in m.group(1) or "--dist loadfile" in m.group(1), (
+        "el corazón se reparte por ARCHIVO (loadfile) o por GRUPO-de-archivo (loadgroup), nunca "
+        "por test suelto: repartir por test midió 508 s contra 411 s porque cada worker "
+        "re-siembra lo mismo · valor actual %r" % m.group(1))
     # y el modo por defecto tiene que USARLO (declararlo y no aplicarlo no acelera nada)
     assert codigo.count('PARALELO="$PARALELO_CORAZON"') >= 2, (
         "el modo por defecto o el --full dejaron de usar PARALELO_CORAZON")

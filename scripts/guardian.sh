@@ -47,8 +47,27 @@ MODE="${1:-quick}"
 # ⚠ El modo --pg NO paralela: ahi los workers comparten UNA sola base de PostgreSQL y se
 #   pisarian entre ellos. Ahi el aislamiento no sale gratis como en SQLite.
 PARALELO=""
-# 8 de 18 nucleos: deja la maquina usable mientras corre, y subir de ahi choca contra el
-# archivo mas lento (con `loadfile` el piso lo pone el archivo mas grande, no la CPU).
+# ── POR QUE 8 WORKERS Y `loadfile` · lo medido, incluido lo que NO funciono (17-ago) ──────
+# El trabajo total del gate son ~7.700 s repartidos en 276 archivos, y `test_golden_paths.py`
+# solo pesa ~970 s: el 12,5 % en UN archivo (le siguen matriz_permisos_rapida 439 s,
+# ninguna_pantalla_revienta 339 s, matriz_coherente 192 s). Con `loadfile` ese archivo entero
+# cae en un worker, asi que el piso lo pone el -- y por eso subir de 8 workers no baja nada.
+#
+# Se intento romper ese piso con `--dist loadgroup` (cada archivo con su grupo, golden SIN
+# grupo para que sus 245 tests se repartan). En teoria el piso pasaba a ser trabajo/workers.
+# QUEDO SIN MEDIR: cuatro corridas cortadas por tiempo del entorno.
+#
+# ⚠ Y la primera version de esta nota decia que `loadfile` "completo TODAS las veces" y que por
+#   eso `loadgroup` era el problema. ES FALSO: la corrida siguiente, con `loadfile`, tambien la
+#   cortaron. Los cortes son del ENTORNO (sesiones largas), no de la forma de repartir. Atribuir
+#   una causa a partir de una racha es exactamente el error que M110 castiga -- se deja anotado
+#   asi, sin veredicto, porque un "no sirve" sin medicion vale menos que un "no se pudo medir".
+#
+# Lo que SI esta medido y sostiene la configuracion de abajo: serie 924 s · `-n 8 --dist
+# loadfile` 411 s (verde dos veces) · `-n 12 --dist load` 508 s (peor, con mas workers).
+#
+# ⚠ El modo --pg NO paralela: ahi los workers comparten UNA sola base de PostgreSQL y se
+#   pisarian entre ellos. Ahi el aislamiento no sale gratis como en SQLite.
 PARALELO_CORAZON="-n 8 --dist loadfile"
 
 # ── SET DEL CORAZÓN (25-jul-2026) ─────────────────────────────────────────────
@@ -742,6 +761,11 @@ CORAZON=(
   # de acondicionamiento nunca mostro nada (json.loads con el nombre equivocado, tapado por
   # un except mudo): no lo veia nadie porque la fase no se habia caminado todavia.
   "tests/test_demo_camina_envasado_y_acond.py"
+  # UN lote atravesando las TRES fases en orden. Hay E2E de cada fase por separado, pero lo que
+  # vive ENTRE ellas no lo ejercia nadie -- y ahi estaban los tres bugs del 17-ago: el cierre no
+  # veia las unidades que registro la planta, el enlace al paso siguiente volvia vacio en el caso
+  # normal, y frasco y tapa salian del kardex DOS veces (60 donde se envasaron 30).
+  "tests/test_lote_completo_tres_fases.py"
 )
 
 echo ""

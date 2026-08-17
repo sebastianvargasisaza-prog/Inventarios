@@ -577,3 +577,14 @@ def pantalla_servida(cli, ruta):
         if r.status_code == 200:
             partes.append(r.data.decode("utf-8", "replace"))
     return "\n".join(partes)
+
+
+# ── REPARTO DEL GATE ENTRE WORKERS · lo que se probo y NO quedo (17-ago-2026) ────────────────
+# Aca vivio un hook que le ponia `xdist_group(<archivo>)` a cada test salvo a los de
+# `test_golden_paths.py`, para correr el gate con `--dist loadgroup`: los archivos del corazon
+# quedaban juntos (los necesitan: siembran en un test y leen en otro) y golden se repartia entre
+# todos, que en teoria quitaba el piso de ~970 s que ese unico archivo impone.
+#
+# Quedo SIN MEDIR: el entorno corto las cuatro corridas completas (y tambien corto una con
+# `loadfile`, asi que los cortes no son de la forma de repartir). Se retira el hook para no dejar
+# configuracion a medio probar; si alguien lo retoma, la medicion base esta en `guardian.sh`.
