@@ -1654,17 +1654,47 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mp
 PROVEEDORES_CHINA = {'lyphar', 'yitibio'}
 
 def _get_china_mps(conn):
-    """Retorna set de material_id cuyo proveedor es chino (Lyphar, Yitibio)."""
+    """Set de códigos de MP cuyo proveedor es chino (Lyphar, Yitibio · 60 días de lead time).
+
+    ⚠ Esta función devolvía SIEMPRE un set vacío: pedía `SELECT id` y `maestro_mps` no tiene
+    columna `id` -- su llave es `codigo_mp`. La consulta reventaba en cada llamada, el
+    `except: pass` lo tragaba, y con el set vacío **las dos alertas que dependen de él nunca se
+    dispararon**: la de "MP de China sin stock · comprar HOY o se detiene la línea" (que escala
+    a CRÍTICO justo porque con 60 días de lead time ya estás tarde) y la anticipada de cobertura
+    proyectada menor al lead time. Cero error a la vista: una alerta que no suena se ve igual
+    que una que no tiene motivo para sonar (M96/M12a · barrido del 17-ago ejecutando cada
+    consulta literal contra el esquema real).
+
+    ⚠ Y con arreglar la columna no alcanzaba: la comparación se hace contra
+    `formula_items.material_id`, que es el código de FÓRMULA, y ese puede ser un fantasma que
+    sólo llega al código de bodega por el puente. Se agregan los códigos de fórmula cuyo puente
+    activo apunta a una MP china, así que el chino se reconoce por los dos nombres (M1).
+    """
     china = set()
     try:
         for row in conn.execute(
-            "SELECT id, proveedor FROM maestro_mps WHERE proveedor IS NOT NULL"
+            "SELECT codigo_mp, proveedor FROM maestro_mps WHERE proveedor IS NOT NULL"
         ).fetchall():
             prov = str(row[1] or '').lower().strip()
             if any(c in prov for c in PROVEEDORES_CHINA):
                 china.add(str(row[0]).strip())
-    except Exception:
-        pass
+    except Exception as e:
+        # nunca mudo: un set vacío acá APAGA una alerta crítica sin dejar rastro (M4)
+        logging.getLogger('programacion').warning('MPs de China no resolvieron: %s', e)
+        return china
+
+    # los códigos de fórmula que llegan a esas MPs por el puente
+    if china:
+        try:
+            for row in conn.execute(
+                "SELECT formula_material_id, bodega_material_id FROM mp_formula_bridge "
+                "WHERE COALESCE(activo,1)=1"
+            ).fetchall():
+                if str(row[1] or '').strip() in china:
+                    china.add(str(row[0] or '').strip())
+        except Exception as e:
+            logging.getLogger('programacion').warning('puente de MPs chinas no resolvio: %s', e)
+    china.discard('')
     return china
 
 

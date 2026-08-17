@@ -5046,16 +5046,29 @@ def aseguramiento_calibracion_ocs():
     c = get_db().cursor()
     out = []
     try:
+        # ⚠ La columna es `fecha`, no `fecha_creacion`: la consulta reventaba SIEMPRE y el
+        # `except` devolvía la lista vacía, así que al registrar una calibración nunca aparecía
+        # su orden de compra y el ancla compra → registro → certificado no se podía hacer.
+        # Nadie lo reportó porque una lista vacía se lee como "no hay OCs de calibración"
+        # (M96/M12a · lo encontró el barrido del 17-ago por el aviso en el log).
+        #
+        # ⚠ Y el OR necesita paréntesis: sin ellos el filtro real era
+        # `(observaciones LIKE CALIBRAC) OR (proveedor LIKE BALANZA)` mezclado con cualquier
+        # otra condición que se agregue después -- acá todavía no hay más, pero un filtro sin
+        # agrupar es el que se rompe cuando alguien suma una condición.
         for r in c.execute(
-                "SELECT numero_oc, COALESCE(proveedor,''), COALESCE(fecha_creacion,''), "
+                "SELECT numero_oc, COALESCE(proveedor,''), COALESCE(fecha,''), "
                 "COALESCE(estado,'') FROM ordenes_compra "
-                "WHERE UPPER(COALESCE(observaciones,'')) LIKE '%CALIBRAC%' "
-                "OR UPPER(COALESCE(proveedor,'')) LIKE '%BALANZA%' "
+                "WHERE (UPPER(COALESCE(observaciones,'')) LIKE '%CALIBRAC%' "
+                "    OR UPPER(COALESCE(proveedor,'')) LIKE '%BALANZA%') "
                 "ORDER BY numero_oc DESC LIMIT 50").fetchall():
             out.append({'numero_oc': r[0], 'proveedor': r[1], 'fecha': (r[2] or '')[:10],
                         'estado': r[3]})
     except Exception as e:
+        # se DECLARA: una lista vacía por un error se ve igual que "no hay ninguna"
         log.warning('ocs de calibracion no resolvieron: %s', e)
+        return jsonify({'ok': True, 'items': [], 'error_lectura': True,
+                        'motivo': 'no se pudieron leer las OCs de calibración'})
     return jsonify({'ok': True, 'items': out})
 
 

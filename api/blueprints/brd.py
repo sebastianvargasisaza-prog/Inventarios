@@ -100,10 +100,15 @@ def _brd_visible(conn=None):
 
 _BRD_OCULTO_HTML = (
     "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>Módulo en validación</title>"
-    "<style>body{font-family:system-ui,sans-serif;background:var(--cx-text, #0f172a);color:var(--cx-border, #e2e8f0);display:flex;"
+    # ⚠ Los tokens estaban puestos por VALOR y no por SIGNIFICADO (M104): el fondo usaba
+    # `--cx-text` -- el color del TEXTO -- porque su valor en tema claro coincide con el gris
+    # oscuro que este candado quería. Hoy no se ve mal porque la página NO enlaza cortex.css y
+    # todo cae al respaldo; el día que alguien la enlace, el fondo y el texto se mueven en
+    # direcciones opuestas y queda ilegible. Cada uno apunta al token de su rol.
+    "<style>body{font-family:system-ui,sans-serif;background:var(--cx-bg, #0f172a);color:var(--cx-text, #e2e8f0);display:flex;"
     "align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}"
-    ".c{background:var(--cx-text, #1e293b);border:1px solid var(--cx-text-soft, #334155);border-radius:16px;padding:40px;max-width:520px;text-align:center}"
-    "h2{color:var(--cx-primary-light, #a78bfa);margin:0 0 12px}p{color:var(--cx-text-faint, #94a3b8);line-height:1.5;margin:0 0 18px}"
+    ".c{background:var(--cx-card, #1e293b);border:1px solid var(--cx-border, #334155);border-radius:16px;padding:40px;max-width:520px;text-align:center}"
+    "h2{color:var(--cx-primary-text, #a78bfa);margin:0 0 12px}p{color:var(--cx-text-soft, #94a3b8);line-height:1.5;margin:0 0 18px}"
     "a{display:inline-block;background:var(--cx-primary, #7c3aed);color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:700}</style>"
     "</head><body><div class='c'><div style='font-size:46px;margin-bottom:8px'>&#128272;</div>"
     "<h2>Batch Record · en validación</h2>"
@@ -6745,6 +6750,16 @@ def completar_cleaning(cl_id):
            WHERE id = ?""",
         (int(signature_id) if signature_id else None, cl_id),
     )
+    # La limpieza de un equipo es un registro GMP: es lo que sostiene que no hubo contaminación
+    # cruzada entre lotes. Esta era la ÚNICA acción de cierre del batch record que mutaba sin
+    # dejar rastro -- lo encontró el barrido del 17-ago recorriendo las funciones que liberan,
+    # completan o aprueban. Sin el audit no se puede contestar quién marcó esa limpieza, que es
+    # exactamente lo que pregunta una auditoría (M22 · el audit va ANTES del commit).
+    audit_log(cur, usuario=user, accion="COMPLETAR_LIMPIEZA_EQUIPO",
+              tabla="equipo_limpieza_log", registro_id=cl_id,
+              despues={"completado_por": user,
+                       "con_firma": bool(signature_id),
+                       "operario_asignado": (row["operario_username"] or "")})
     conn.commit()
     return jsonify({"ok": True})
 
@@ -10237,6 +10252,346 @@ def _estado_orden_norm(origen, estado):
     return estado or "Completado (registro simple)"
 
 
+_MAESTRO_LOTES_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maestro de lotes · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{margin:0;background:var(--cx-bg,#fafafa);color:var(--cx-text,#18181b);font-family:Inter,system-ui,-apple-system,sans-serif}
+.wrap{max-width:96vw;margin:0 auto;padding:26px 22px 60px}
+.back{display:inline-block;color:var(--cx-text-soft,#52525b);text-decoration:none;font-size:13px;margin-bottom:14px}
+.back:hover{color:var(--cx-primary-text,#6d28d9)}
+h1{font-size:25px;font-weight:800;margin:0 0 4px;letter-spacing:-.4px}
+.sub{color:var(--cx-text-soft,#52525b);font-size:13.5px;margin:0 0 22px;max-width:860px;line-height:1.5}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px;margin-bottom:20px}
+.kpi{background:var(--cx-card,#fff);border:1px solid var(--cx-border,#e4e4e7);border-radius:14px;padding:15px 17px}
+.kpi .n{font-size:24px;font-weight:800;letter-spacing:-.6px;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:11.5px;color:var(--cx-text-soft,#52525b);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-top:3px}
+.bar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.fb{background:var(--cx-card,#fff);border:1px solid var(--cx-border,#e4e4e7);color:var(--cx-text-soft,#52525b);
+    border-radius:9px;padding:8px 15px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s}
+.fb:hover{border-color:var(--cx-primary-light,#a78bfa)}
+.fb.on{background:var(--cx-primary-grad,linear-gradient(135deg,#7c3aed,#6d28d9));color:#fff;border-color:transparent}
+.bus{flex:1;min-width:230px;padding:9px 13px;border:1px solid var(--cx-border,#e4e4e7);border-radius:9px;
+     font-size:13.5px;background:var(--cx-card,#fff);color:var(--cx-text,#18181b)}
+.card{background:var(--cx-card,#fff);border:1px solid var(--cx-border,#e4e4e7);border-radius:15px;overflow:hidden}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{background:var(--cx-bg-alt,#fafafa);text-align:left;padding:12px 14px;font-size:11.5px;font-weight:800;
+   text-transform:uppercase;letter-spacing:.4px;color:var(--cx-text-soft,#52525b);border-bottom:1px solid var(--cx-border,#e4e4e7);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--cx-border,#f1f1f4);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;white-space:nowrap}
+.c-lib{background:var(--cx-success-pale,#dcfce7);color:var(--cx-success-text,#166534)}
+.c-cua{background:var(--cx-warn-pale,#fef3c7);color:var(--cx-warn-text,#92400e)}
+.c-rec{background:var(--cx-danger-pale,#fee2e2);color:var(--cx-danger-text,#b91c1c)}
+.c-pro{background:var(--cx-info-pale,#dbeafe);color:var(--cx-info-text,#1e40af)}
+.mot{font-size:11.5px;color:var(--cx-text-faint,#a1a1aa);margin-top:3px;max-width:340px;line-height:1.4}
+.avi{background:var(--cx-warn-pale,#fef3c7);border:1px solid var(--cx-warn,#f59e0b);color:var(--cx-warn-text,#92400e);
+     border-radius:11px;padding:11px 15px;font-size:13px;margin-bottom:16px}
+.vac{text-align:center;padding:44px 20px;color:var(--cx-text-faint,#a1a1aa);font-size:14px}
+</style></head><body>
+<div class="wrap">
+  <a class="back" href="/aseguramiento">&larr; Aseguramiento</a>
+  <h1>Maestro de lotes</h1>
+  <p class="sub">Una fila por <b>lote y presentaci&oacute;n</b>: el mismo lote aparece una vez por cada tama&ntilde;o, porque el granel se reparte y cada presentaci&oacute;n se libera por su cuenta. <b>Te&oacute;ricas</b> es lo que sali&oacute; de la l&iacute;nea; <b>liberadas</b> es lo que Calidad dej&oacute; entrar al stock de producto terminado.</p>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input class="bus" id="q" placeholder="Buscar lote, producto, presentaci&oacute;n o SKU..." oninput="rebota()">
+    <button class="fb on" id="f-" onclick="filtrar('')">Todos</button>
+    <button class="fb" id="f-liberados" onclick="filtrar('liberados')">Liberados</button>
+    <button class="fb" id="f-cuarentena" onclick="filtrar('cuarentena')">En cuarentena</button>
+    <button class="fb" id="f-rechazados" onclick="filtrar('rechazados')">Rechazados</button>
+  </div>
+  <div id="avi"></div>
+  <div class="card"><div class="tw"><table>
+    <thead><tr>
+      <th>N&deg; de lote</th><th>Producto</th><th>Presentaci&oacute;n</th><th>SKU</th>
+      <th class="num">Unid. te&oacute;ricas</th><th class="num">Unid. liberadas</th>
+      <th class="num">Diferencia</th><th>Estado</th>
+    </tr></thead>
+    <tbody id="filas"><tr><td colspan="8" class="vac">Cargando&hellip;</td></tr></tbody>
+  </table></div></div>
+</div>
+<script>
+var FILTRO='', TIMER=null;
+function esc(s){var d=document.createElement('div');d.textContent=(s==null?'':String(s));return d.innerHTML;}
+function nf(n){return (n==null?'0':Number(n).toLocaleString('es-CO'));}
+function rebota(){ if(TIMER) clearTimeout(TIMER); TIMER=setTimeout(cargar,260); }
+function filtrar(f){
+  FILTRO=f;
+  ['','liberados','cuarentena','rechazados'].forEach(function(x){
+    var b=document.getElementById('f-'+x); if(b) b.className='fb'+(x===f?' on':'');
+  });
+  cargar();
+}
+function chip(f){
+  var e=(f.estado||'').toLowerCase();
+  if(f.liberado) return '<span class="chip c-lib">Liberado</span>';
+  if(e.indexOf('rechaz')>=0) return '<span class="chip c-rec">Rechazado</span>';
+  if(e==='iniciado'||e==='en_proceso'||e.indexOf('proceso')>=0) return '<span class="chip c-pro">En proceso</span>';
+  return '<span class="chip c-cua">En cuarentena</span>';
+}
+async function cargar(){
+  var q=(document.getElementById('q').value||'').trim();
+  var u='/api/brd/maestro-lotes?estado='+encodeURIComponent(FILTRO)+'&q='+encodeURIComponent(q);
+  try{
+    var r=await fetch(u,{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok){document.getElementById('filas').innerHTML='<tr><td colspan="8" class="vac">Error: '+esc(d.error||r.status)+'</td></tr>';return;}
+    document.getElementById('kpis').innerHTML=
+      '<div class="kpi"><div class="n">'+nf(d.lotes)+'</div><div class="l">Lotes</div></div>'+
+      '<div class="kpi"><div class="n">'+nf(d.total)+'</div><div class="l">Lote &times; presentaci&oacute;n</div></div>'+
+      '<div class="kpi"><div class="n">'+nf(d.unidades_teoricas)+'</div><div class="l">Unid. te&oacute;ricas</div></div>'+
+      '<div class="kpi"><div class="n" style="color:var(--cx-success-text,#166534)">'+nf(d.unidades_liberadas)+'</div><div class="l">Unid. liberadas</div></div>';
+    document.getElementById('avi').innerHTML = d.aviso ? ('<div class="avi">'+esc(d.aviso)+'</div>') : '';
+    var it=d.items||[];
+    document.getElementById('filas').innerHTML = it.length ? it.map(function(f){
+      var dif=f.diferencia||0;
+      return '<tr>'+
+        '<td class="mono">'+esc(f.lote)+'</td>'+
+        '<td>'+esc(f.producto)+'</td>'+
+        '<td>'+esc(f.presentacion)+'</td>'+
+        '<td class="mono" style="font-weight:600">'+(f.sku?esc(f.sku):'<span style="color:var(--cx-text-faint,#a1a1aa)">&middot;</span>')+'</td>'+
+        '<td class="num">'+nf(f.unidades_teoricas)+'</td>'+
+        '<td class="num" style="font-weight:700'+(f.liberado?';color:var(--cx-success-text,#166534)':'')+'">'+nf(f.unidades_liberadas)+'</td>'+
+        '<td class="num"'+(dif>0?' style="color:var(--cx-warn-text,#92400e);font-weight:700"':'')+'>'+nf(dif)+'</td>'+
+        '<td>'+chip(f)+(f.motivo_no_liberado?('<div class="mot">'+esc(f.motivo_no_liberado)+'</div>'):'')+'</td>'+
+      '</tr>';
+    }).join('') : '<tr><td colspan="8" class="vac">No hay lotes que coincidan con este filtro.</td></tr>';
+  }catch(e){
+    document.getElementById('filas').innerHTML='<tr><td colspan="8" class="vac">Error de red al cargar.</td></tr>';
+  }
+}
+(function(){ try{ var t=localStorage.getItem('cx-theme'); if(t) document.documentElement.setAttribute('data-theme',t);}catch(e){} })();
+cargar();
+</script></body></html>"""
+
+
+@bp.route("/aseguramiento/maestro-lotes", methods=["GET"])
+def maestro_lotes_page():
+    """La pantalla del maestro de lotes · sin ella el endpoint no existe para nadie (M121)."""
+    if not session.get("compras_user"):
+        return Response('<script>location.href="/login?next=/aseguramiento/maestro-lotes"</script>',
+                        mimetype="text/html")
+    return Response(_MAESTRO_LOTES_HTML, mimetype="text/html")
+
+
+@bp.route("/api/brd/maestro-lotes", methods=["GET"])
+def maestro_lotes():
+    """Maestro de lotes · una fila por (LOTE, PRESENTACIÓN), con teóricas vs liberadas.
+
+    Es lo último que MyBatch tenía y EOS no armaba (Aseguramiento → *batch_list_master*): el
+    mismo lote aparece una vez por cada tamaño, porque un granel se reparte en presentaciones y
+    cada una se libera por su cuenta. El dato ya existía repartido en tres tablas y nadie lo
+    cruzaba, así que la pregunta *"de este lote, ¿cuánto salió y cuánto está liberado?"* sólo se
+    podía contestar abriendo legajo por legajo.
+
+    De dónde sale cada columna, para que el número se pueda auditar:
+      · teóricas  → `acondicionamiento.unidades_producidas`; si el lote todavía no llegó a
+                    acondicionar, `envasado.unidades` (se declara cuál se usó en `origen`).
+      · liberadas → `stock_pt.unidades_inicial` de ese lote: lo que de verdad entró al stock de
+                    producto terminado. NO se usa `unidades_disponible`, que baja con cada
+                    despacho -- eso contestaría "cuánto queda", no "cuánto se liberó" (M5).
+      · estado    → el del legajo (`ebr_ejecuciones`) cuando existe; si no, el de la tabla de
+                    acondicionamiento/envasado.
+
+    ⚠ Un lote sin fila en `stock_pt` NO es un lote con cero liberado: puede ser uno que todavía
+    está en cuarentena esperando a Calidad. Se distinguen (`liberado=false` + motivo), porque un
+    cero mudo se lee como "no salió nada" y significa otra cosa (M100/M154).
+    """
+    err = _require_login()
+    if err:
+        return err
+    q = (request.args.get("q") or "").strip().upper()
+    solo = (request.args.get("estado") or "").strip().lower()
+    try:
+        limite = max(1, min(int(request.args.get("limite") or 300), 2000))
+    except Exception:
+        limite = 300
+
+    conn = get_db()
+    filas, vistos = [], set()
+
+    def _push(lote, producto, pres, sku, uds, estado, origen, fecha):
+        lote = (lote or "").strip()
+        pres = (pres or "").strip() or "·"
+        if not lote:
+            return
+        llave = (lote.upper(), pres.upper(), (sku or "").strip().upper())
+        if llave in vistos:
+            return
+        vistos.add(llave)
+        filas.append({
+            "lote": lote, "producto": (producto or "").strip() or "·",
+            "presentacion": pres, "sku": (sku or "").strip(),
+            "unidades_teoricas": int(uds or 0), "unidades_liberadas": 0,
+            "estado": (estado or "").strip() or "·", "origen_teoricas": origen,
+            "fecha": (fecha or "")[:10], "liberado": False, "motivo_no_liberado": "",
+        })
+
+    # ── acondicionado: es la unidad final, así que manda ───────────────────────
+    try:
+        for r in conn.execute(
+                """SELECT COALESCE(lote,'') AS lote, COALESCE(producto,'') AS producto,
+                          COALESCE(presentacion,'') AS presentacion, COALESCE(sku,'') AS sku,
+                          SUM(COALESCE(unidades_producidas,0)) AS uds,
+                          MAX(COALESCE(estado,'')) AS estado, MAX(COALESCE(fecha,'')) AS fecha
+                     FROM acondicionamiento
+                    GROUP BY lote, producto, presentacion, sku
+                    ORDER BY MAX(COALESCE(fecha,'')) DESC, lote DESC""").fetchall():
+            d = dict(r)
+            _push(d["lote"], d["producto"], d["presentacion"], d["sku"], d["uds"],
+                  d["estado"], "acondicionamiento", d["fecha"])
+    except Exception as e:
+        log.warning("maestro de lotes · acondicionamiento no resolvio: %s", e)
+
+    # ── envasado: sólo lo que todavía NO llegó a acondicionar (no pisa lo de arriba) ──
+    try:
+        for r in conn.execute(
+                """SELECT COALESCE(lote,'') AS lote, COALESCE(producto,'') AS producto,
+                          COALESCE(presentacion,'') AS presentacion,
+                          SUM(COALESCE(unidades,0)) AS uds,
+                          MAX(COALESCE(estado,'')) AS estado, MAX(COALESCE(fecha,'')) AS fecha
+                     FROM envasado
+                    GROUP BY lote, producto, presentacion
+                    ORDER BY MAX(COALESCE(fecha,'')) DESC, lote DESC""").fetchall():
+            d = dict(r)
+            _push(d["lote"], d["producto"], d["presentacion"], "", d["uds"],
+                  d["estado"], "envasado", d["fecha"])
+    except Exception as e:
+        log.warning("maestro de lotes · envasado no resolvio: %s", e)
+
+    # ── lo LIBERADO: lo que entró al stock de producto terminado ───────────────
+    lib_por_sku, lib_por_lote = {}, {}
+    try:
+        for r in conn.execute(
+                """SELECT UPPER(TRIM(COALESCE(lote_produccion,''))) AS lote,
+                          UPPER(TRIM(COALESCE(sku,''))) AS sku,
+                          SUM(COALESCE(unidades_inicial,0)) AS uds
+                     FROM stock_pt
+                    WHERE COALESCE(lote_produccion,'') <> ''
+                    GROUP BY UPPER(TRIM(COALESCE(lote_produccion,''))),
+                             UPPER(TRIM(COALESCE(sku,'')))""").fetchall():
+            d = dict(r)
+            n = int(d["uds"] or 0)
+            if d["sku"]:
+                lib_por_sku[(d["lote"], d["sku"])] = lib_por_sku.get((d["lote"], d["sku"]), 0) + n
+            lib_por_lote[d["lote"]] = lib_por_lote.get(d["lote"], 0) + n
+    except Exception as e:
+        log.warning("maestro de lotes · stock_pt no resolvio: %s", e)
+
+    # ── el estado REAL lo manda el legajo cuando existe ────────────────────────
+    estado_legajo = {}
+    try:
+        for r in conn.execute(
+                """SELECT UPPER(TRIM(COALESCE(lote_codigo, lote, ''))) AS lote,
+                          COALESCE(estado,'') AS estado
+                     FROM ebr_ejecuciones
+                    ORDER BY id ASC""").fetchall():
+            d = dict(r)
+            if d["lote"]:
+                # el estado más avanzado del lote manda: liberado > completado > en curso
+                orden = {"iniciado": 1, "en_proceso": 2, "completado": 3,
+                         "en_revision_qc": 4, "liberado": 5, "rechazado": 6}
+                previo = estado_legajo.get(d["lote"], "")
+                if orden.get(d["estado"], 0) >= orden.get(previo, 0):
+                    estado_legajo[d["lote"]] = d["estado"]
+    except Exception as e:
+        log.warning("maestro de lotes · estado del legajo no resolvio: %s", e)
+
+    # cuántas presentaciones tiene cada lote · se cuenta UNA vez, no por fila (N+1 · M216)
+    filas_por_lote = {}
+    for f in filas:
+        filas_por_lote[f["lote"].upper()] = filas_por_lote.get(f["lote"].upper(), 0) + 1
+
+    for f in filas:
+        lk, sk = f["lote"].upper(), f["sku"].upper()
+        if sk and (lk, sk) in lib_por_sku:
+            f["unidades_liberadas"] = lib_por_sku[(lk, sk)]
+        elif filas_por_lote.get(lk, 0) == 1:
+            # el lote tiene UNA sola presentación: todo lo liberado es de ella
+            f["unidades_liberadas"] = lib_por_lote.get(lk, 0)
+        else:
+            # ⚠ con varias presentaciones y sin SKU no hay forma de saber cuánto se liberó de
+            #   CADA una · repartirlo a ojo le pondría a una presentación las unidades de otra,
+            #   así que se dice que no se pudo repartir en vez de inventar un número (M19/M124)
+            f["unidades_liberadas"] = 0
+            if lib_por_lote.get(lk, 0) > 0:
+                f["reparto_desconocido"] = True
+        f["liberado"] = f["unidades_liberadas"] > 0
+        f["estado"] = estado_legajo.get(lk, f["estado"])
+        f["diferencia"] = f["unidades_teoricas"] - f["unidades_liberadas"]
+
+    # ⚠ 2ª pasada · lo que NO se pudo repartir es el RESTO, no el total del lote: si una fila ya
+    #   se llevó 290 de las 440 liberadas, decir "liberó 440" manda a buscar un descuadre que no
+    #   existe. Se resta lo ya atribuido y sólo se declara lo que queda sin dueño (M148/M155).
+    atribuido = {}
+    for f in filas:
+        lk = f["lote"].upper()
+        atribuido[lk] = atribuido.get(lk, 0) + f["unidades_liberadas"]
+    for f in filas:
+        if f["liberado"]:
+            continue
+        lk = f["lote"].upper()
+        est = (f["estado"] or "").lower()
+        resto = max(0, lib_por_lote.get(lk, 0) - atribuido.get(lk, 0))
+        if f.get("reparto_desconocido") and resto > 0:
+            f["unidades_sin_repartir"] = resto
+            f["motivo_no_liberado"] = (
+                "el lote tiene %d unidades liberadas sin SKU: no se puede saber cuántas son de "
+                "esta presentación · cargá el SKU de la presentación para repartirlas" % resto)
+        else:
+            f.pop("reparto_desconocido", None)
+            f["motivo_no_liberado"] = (
+                "rechazado por Calidad" if "rechaz" in est else
+                "todavía en cuarentena · Calidad no lo ha liberado" if est in
+                ("completado", "en_revision_qc") else
+                "el lote sigue en proceso" if est in ("iniciado", "en_proceso") else
+                "sin registro en el stock de producto terminado")
+
+    if q:
+        filas = [f for f in filas
+                 if q in f["lote"].upper() or q in f["producto"].upper()
+                 or q in f["presentacion"].upper() or q in f["sku"].upper()]
+    if solo == "liberados":
+        filas = [f for f in filas if f["liberado"]]
+    elif solo == "cuarentena":
+        filas = [f for f in filas if not f["liberado"] and "rechaz" not in (f["estado"] or "").lower()]
+    elif solo == "rechazados":
+        filas = [f for f in filas if "rechaz" in (f["estado"] or "").lower()]
+
+    # ⚠ el total se cuenta ANTES de recortar · un total calculado sobre la ventana recortada es
+    #   un total falso, y es justo el número con el que alguien decide si ya revisó todo (M207)
+    total = len(filas)
+    lotes_distintos = len({f["lote"].upper() for f in filas})
+    t_teo = sum(f["unidades_teoricas"] for f in filas)
+    t_lib = sum(f["unidades_liberadas"] for f in filas)
+    # unidades que SÍ se liberaron pero que ninguna fila puede reclamar · se declaran, porque si
+    # no el total de liberadas se lee como si esas unidades no existieran (M148)
+    t_sin_repartir = sum(f.get("unidades_sin_repartir", 0) for f in filas)
+    recortadas = max(0, total - limite)
+    filas = filas[:limite]
+
+    avisos = []
+    if recortadas:
+        avisos.append("se muestran %d de %d filas" % (len(filas), total))
+    if t_sin_repartir:
+        avisos.append("%d unidades liberadas no se pudieron asignar a una presentación "
+                      "(les falta el SKU)" % t_sin_repartir)
+    return jsonify({
+        "ok": True, "items": filas, "total": total, "mostradas": len(filas),
+        "recortadas": recortadas, "lotes": lotes_distintos,
+        "unidades_teoricas": t_teo, "unidades_liberadas": t_lib,
+        "unidades_sin_repartir": t_sin_repartir,
+        "aviso": " · ".join(avisos),
+    })
+
+
 @bp.route("/api/brd/ordenes-unificadas", methods=["GET"])
 def ordenes_unificadas():
     """Lista unificada de Órdenes de Producción (legajos EBR + registros simples).
@@ -12224,6 +12579,27 @@ table.t tfoot td{font-weight:800;color:var(--cx-text,#18181b);border-top:2px sol
   <div class="card" id="cab"><div class="muted">Cargando…</div></div>
   <div id="cuerpo"></div>
 </div>
+<div id="arte-ov" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);align-items:center;justify-content:center;z-index:70;padding:20px">
+  <div style="background:var(--cx-card,#fff);border:1px solid var(--cx-border,#e4e4e7);border-radius:16px;padding:26px;max-width:520px;width:100%;box-shadow:0 24px 60px rgba(15,23,42,.28)">
+    <div style="font-size:17px;font-weight:800;color:var(--cx-text,#18181b);margin-bottom:4px">Registrar arte / codificaci&oacute;n</div>
+    <div style="font-size:12.5px;color:var(--cx-text-soft,#52525b);margin-bottom:18px">Queda pendiente de aprobaci&oacute;n &middot; Calidad la firma antes de etiquetar.</div>
+    <div style="display:grid;gap:12px">
+      <div><label style="font-size:12px;font-weight:700;color:var(--cx-text-soft,#52525b)">Arte / presentaci&oacute;n *</label>
+        <input id="arte-desc" placeholder="Etiqueta frasco 30 mL" style="width:100%;margin-top:5px;padding:10px;border:1px solid var(--cx-border,#e4e4e7);border-radius:9px;font-size:14px;background:var(--cx-bg-alt,#fafafa);color:var(--cx-text,#18181b)"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label style="font-size:12px;font-weight:700;color:var(--cx-text-soft,#52525b)">C&oacute;digo de lote impreso</label>
+          <input id="arte-lote" style="width:100%;margin-top:5px;padding:10px;border:1px solid var(--cx-border,#e4e4e7);border-radius:9px;font-size:14px;background:var(--cx-bg-alt,#fafafa);color:var(--cx-text,#18181b)"></div>
+        <div><label style="font-size:12px;font-weight:700;color:var(--cx-text-soft,#52525b)">C&oacute;digo de vencimiento</label>
+          <input id="arte-venc" style="width:100%;margin-top:5px;padding:10px;border:1px solid var(--cx-border,#e4e4e7);border-radius:9px;font-size:14px;background:var(--cx-bg-alt,#fafafa);color:var(--cx-text,#18181b)"></div>
+      </div>
+    </div>
+    <div id="arte-msg" style="color:var(--cx-danger-text,#b91c1c);font-size:12.5px;min-height:18px;margin-top:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+      <button class="bt bt-back" onclick="cerrarArte()">Cancelar</button>
+      <button class="bt bt-add" id="arte-ok" onclick="guardarArte()">Registrar</button>
+    </div>
+  </div>
+</div>
 <script>
 var EBR_ID=__EBR_ID__;
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
@@ -12306,8 +12682,116 @@ async function load(){
         '<th>N° lote acond.'+ar()+'</th><th>Material de empaque'+ar()+'</th><th>N° de lote material'+ar()+'</th><th>Cant. requerida'+ar()+'</th><th>Cant. devuelta'+ar()+'</th><th>Cant. utilizada'+ar()+'</th><th>Cant. averiada'+ar()+'</th><th>Diferencia'+ar()+'</th>'+
       '</tr></thead><tbody>'+matRows+'</tbody></table></div>'+
       '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
-    document.getElementById('cuerpo').innerHTML = presCard + matCard;
+    // ARTES Y CODIFICACION · en MyBatch la accion "Aprobar Etiqueta" vive en la orden de
+    // ACONDICIONAMIENTO, que es donde se etiqueta. En EOS el endpoint existe para las tres
+    // fases desde junio, pero el unico lugar desde donde se podia llegar era el modal del
+    // dashboard: en la pantalla del producto terminado la aprobacion era inalcanzable (M121,
+    // el mismo hueco que tenia el visto bueno del DT). Se pide aparte y no rompe la carga si
+    // falla: un error de esta lectura no puede dejar la orden sin verse (M94).
+    var artes=[];
+    try{
+      var ra=await fetch('/api/brd/ebr/'+EBR_ID+'/artes',{credentials:'same-origin',cache:'no-store'});
+      if(ra.ok){ var da=await ra.json(); artes=(da&&da.items)||[]; }
+    }catch(e2){ artes=null; }
+    var puedeAprobarArte=!!(d.mi_rol&&(d.mi_rol.verifica||d.mi_rol.puede_aprobar));
+    var editableArte=(estado==='iniciado'||estado==='en_proceso');
+    var arteCard='';
+    if(artes===null){
+      arteCard='<div class="card"><div class="sectit">Artes y Codificacion</div>'+
+        '<div class="muted">No se pudo leer las artes de este lote &middot; volve a cargar la pagina.</div></div>';
+    }else{
+      var arteRows=artes.length
+        ? artes.map(function(a){
+            var aprob=(a.aprobado_por||'').trim();
+            return '<tr>'+
+              '<td>'+esc(a.descripcion||'&middot;')+'</td>'+
+              '<td class="mono">'+esc(a.codigo_lote||'&middot;')+'</td>'+
+              '<td class="mono">'+esc(a.codigo_vencimiento||'&middot;')+'</td>'+
+              '<td>'+(aprob
+                  ? ('<b style="color:var(--cx-success-text,#166534)">&#10003; '+esc(aprob)+'</b>'+
+                     (a.aprobado_at_utc?('<div style="font-size:11px;color:var(--cx-text-faint,#a1a1aa)">'+esc(String(a.aprobado_at_utc).replace('T',' ').slice(0,16))+'</div>'):''))
+                  : '<span class="muted">pendiente</span>')+'</td>'+
+              '<td><div class="act">'+
+                ((!aprob&&puedeAprobarArte&&editableArte)
+                  ? '<button class="ab ab-ed2" onclick="aprobarArte('+a.id+')" title="Aprobar la etiqueta / codificacion de esta presentacion (queda firmada · Part 11)">&#10003;</button>'
+                  : '')+
+              '</div></td>'+
+            '</tr>';
+          }).join('')
+        : '<tr><td colspan="5" class="muted" style="text-align:center;background:var(--cx-card, #fff)">Sin artes registradas a&uacute;n &middot; se registra el arte de cada presentaci&oacute;n y Calidad la aprueba antes de etiquetar.</td></tr>';
+      arteCard='<div class="card"><div class="sectit">Artes y Codificacion</div>'+
+        '<div class="tw"><table class="t"><thead><tr>'+
+          '<th>Arte / presentaci&oacute;n'+ar()+'</th><th>C&oacute;digo de lote'+ar()+'</th><th>C&oacute;digo de vencimiento'+ar()+'</th><th>Aprobada por'+ar()+'</th><th>Acciones</th>'+
+        '</tr></thead><tbody>'+arteRows+'</tbody></table></div>'+
+        ((d.mi_rol&&d.mi_rol.puede_ejecutar&&editableArte)
+          ? '<div style="margin-top:12px"><button class="bt bt-add" onclick="registrarArte()">+ Registrar arte</button></div>'
+          : '')+
+        '<div class="regfoot">Mostrando '+artes.length+' de '+artes.length+' registro'+(artes.length===1?'':'s')+'</div></div>';
+    }
+    document.getElementById('cuerpo').innerHTML = presCard + matCard + arteCard;
   }catch(e){document.getElementById('cab').innerHTML='<span style="color:var(--cx-danger-text, #b91c1c)">Error de red: '+esc(e.message)+'</span>';}
+}
+
+function registrarArte(){
+  // Registrar el arte NO es aprobarlo: lo carga quien ejecuta y Calidad lo aprueba despues.
+  // Un formulario, no tres prompt() encadenados: encadenarlos obliga a empezar de cero si te
+  // equivocas en el segundo, y no deja ver lo que ya escribiste (M199).
+  var ov=document.getElementById('arte-ov');
+  if(ov){ ov.style.display='flex'; var f=document.getElementById('arte-desc'); if(f){f.value='';f.focus();}
+          var l=document.getElementById('arte-lote'); if(l){l.value='';}
+          var v=document.getElementById('arte-venc'); if(v){v.value='';}
+          var m=document.getElementById('arte-msg'); if(m){m.textContent='';} }
+}
+function cerrarArte(){var o=document.getElementById('arte-ov');if(o)o.style.display='none';}
+
+async function guardarArte(){
+  if(window._arteBusy) return;
+  var g=function(id){var el=document.getElementById(id);return el?(el.value||'').trim():'';};
+  var msg=document.getElementById('arte-msg');
+  var desc=g('arte-desc');
+  if(!desc){ if(msg){msg.textContent='Escribi que arte se registra.';} return; }
+  window._arteBusy=true;
+  var b=document.getElementById('arte-ok'); if(b){b.disabled=true;}
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/artes',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify({descripcion:desc,codigo_lote:g('arte-lote'),codigo_vencimiento:g('arte-venc')})});
+    var d=await r.json();
+    if(!r.ok||d.error){ if(msg){msg.textContent='No se pudo registrar: '+((d&&d.error)||r.status);} return; }
+    location.reload();
+  }catch(e){ if(msg){msg.textContent='Error de red.';} }
+  finally { window._arteBusy=false; if(b){b.disabled=false;} }
+}
+
+async function aprobarArte(arteId){
+  // ⚠ El arte NO se firma con `firmar-rapido`: ese endpoint firma SIEMPRE sobre
+  // `ebr_ejecuciones`, y el aprobador valida la firma contra `ebr_artes_codificacion` -- una
+  // firma rapida seria rechazada y el boton quedaria mudo (M219). El contrato correcto es la
+  // firma completa (challenge + sign) apuntando al registro del arte, que es el que ya usa el
+  // modal del dashboard: mismo contrato o ninguno (M166).
+  if(window._arteBusy) return; window._arteBusy=true;
+  try{
+    var pwd=prompt('Firma electronica (21 CFR Part 11) · tu contrasena para aprobar la etiqueta:');
+    if(!pwd) return;
+    var totp=prompt('Codigo MFA de 6 digitos (si no usas MFA, dejalo vacio y OK):')||'';
+    var rc=await fetch('/api/sign/challenge',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify({password:pwd,totp_token:totp})});
+    var dc=await rc.json();
+    if(!rc.ok){ alert(dc.error||'Credenciales invalidas'); return; }
+    var rs=await fetch('/api/sign',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify({record_table:'ebr_artes_codificacion',record_id:String(arteId),
+                           meaning:'aprueba',challenge_token:dc.token})});
+    var ds=await rs.json();
+    if(!rs.ok){ alert(ds.error||'Error al firmar'); return; }
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/artes/'+arteId+'/aprobar',{method:'POST',
+      headers:{'Content-Type':'application/json'},credentials:'same-origin',
+      body:JSON.stringify({signature_id:ds.signature_id})});
+    var d=await r.json();
+    if(!r.ok||d.error){ alert('Error: '+(d.error||r.status)); return; }
+    location.reload();
+  } finally { window._arteBusy=false; }
 }
 async function aprobarDtAcond(){
   // El acto del Director Tecnico sobre el PRODUCTO TERMINADO (PRD-PRO-001-F01 · acta con

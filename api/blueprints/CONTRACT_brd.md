@@ -793,3 +793,45 @@ del dashboard), porque `/vista-completa` ni siquiera mandaba `aprobado_dt_por`.
 ⚠ **Hueco preexistente, todavía abierto:** `/api/sign` con `meaning='supervisa'` **no gatea rol** —
 cualquiera con login puede dar esa 2ª firma (el único control es que no sea el mismo operario que
 ejecutó). Con la verificación ahora por etapa pesa menos, pero sigue ahí.
+
+---
+
+## INV-20 · La firma está atada a SU registro · y el maestro de lotes (17-ago-2026)
+
+**Una firma no es genérica: pertenece a la tabla y la fila que firma.** `firmar-rapido` emite
+SIEMPRE una firma sobre `ebr_ejecuciones` (record_id = el legajo). Sirve para los actos del
+legajo -liberar, aprobar la orden, el visto bueno del DT- y **no sirve para un sub-registro**:
+`aprobar_arte_codificacion` valida contra `record_table='ebr_artes_codificacion'`, así que una
+firma rápida se rechaza. Un botón que la use se ve perfecto y la aprobación lo niega, que es la
+peor forma de negar un permiso (M219, tercera aparición).
+
+- Acto del LEGAJO → `POST /api/brd/ebr/<id>/firmar-rapido` + la acción.
+- Acto de un SUB-REGISTRO (arte, paso, pesaje) → `POST /api/sign/challenge` + `POST /api/sign`
+  con `record_table` y `record_id` del sub-registro, y después la acción.
+
+**Antes de reusar un firmador, leé sobre qué tabla firma.** Guard:
+`tests/test_aprobar_etiqueta_acondicionamiento.py` (además exige que el bloque exista EN la
+pantalla de acondicionamiento, que es donde MyBatch pone *"Aprobar Etiqueta"* · antes sólo se
+llegaba por el modal del dashboard · M121).
+
+### Maestro de lotes · `GET /api/brd/maestro-lotes` + `/aseguramiento/maestro-lotes`
+
+Una fila por **(lote, presentación)**: el mismo lote aparece una vez por cada tamaño, porque el
+granel se reparte y cada presentación se libera por su cuenta. Reglas duras:
+
+| Columna | De dónde sale | Por qué NO de otro lado |
+|---|---|---|
+| teóricas | `acondicionamiento.unidades_producidas`; si el lote no llegó a acondicionar, `envasado.unidades` (se declara cuál en `origen_teoricas`) | — |
+| **liberadas** | `stock_pt.unidades_inicial` | `unidades_disponible` baja con cada despacho: contestaría *cuánto queda*, no *cuánto se liberó* (M5) |
+| estado | `ebr_ejecuciones` (el más avanzado del lote) si existe; si no, el de la tabla de fase | — |
+
+- **Un lote sin fila en producto terminado NO es un lote con cero liberado**: puede estar en
+  cuarentena. Se declara `liberado:false` + `motivo_no_liberado` (M100/M154).
+- **Con varias presentaciones y sin SKU no se reparte a ojo** — repartir le pondría a una
+  presentación las unidades de otra (M19). Se declara `unidades_sin_repartir`, y ese número es
+  el **resto** (lo liberado del lote menos lo ya atribuido), nunca el total del lote: decir el
+  total manda a buscar un descuadre que no existe (M148/M155).
+- **El total se cuenta ANTES de recortar** (M207) y el recorte se declara en `aviso`.
+- La pantalla está enlazada desde Dirección Técnica; sin enlace la capacidad no existe (M121).
+
+Guard: `tests/test_maestro_de_lotes.py` (los dos asserts clave probados con dientes).

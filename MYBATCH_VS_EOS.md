@@ -138,12 +138,22 @@ rango, y ahí queda el rastro.
 
 ## 5 · Lo que falta para el clon (lista corta y verificada)
 
-> **Al cierre del 15-ago quedan DOS cosas**, y ninguna es una función que falte en el
-> motor: (a) una **vista de maestro de lotes** cruzando lote × presentación con teóricas
-> vs liberadas, que MyBatch tiene en Aseguramiento y EOS no arma aunque tenga el dato; y
-> (b) una **decisión de Sebastián**: si los checklists (despeje y controles de atributos)
-> se quedan en código -versionados y revisados- o pasan a ser configurables por el
-> director técnico como en MyBatch.
+> **Al cierre del 17-ago queda UNA cosa, y es una decisión, no una función:** si los
+> checklists (despeje y controles de atributos) se quedan en código -versionados y
+> revisados- o pasan a ser configurables por el director técnico como en MyBatch.
+>
+> **Cerrado el 17-ago:** (a) el **maestro de lotes** (`/aseguramiento/maestro-lotes` ·
+> enlazado desde Dirección Técnica) cruza lote × presentación con teóricas vs liberadas;
+> (b) **"Aprobar Etiqueta"** ahora se puede dar **desde el legajo de acondicionamiento**,
+> que es donde MyBatch la tiene -- el endpoint existía desde junio y sólo se llegaba por
+> el modal del dashboard.
+>
+> **Cómo se verificó esta vez (y por qué la primera medición mintió).** Se ejerció cada
+> punto del mapa contra los endpoints reales, no se leyó. La primera pasada dio "FALTA" en
+> 17 de 26 puntos **y era la sonda, no EOS**: leía `controles` donde el endpoint manda
+> `items`, y un campo `etapa` donde el despeje manda dos listas (`dispensacion` /
+> `fabricacion`). Con las llaves correctas, **24 de 26 puntos ya estaban**. Distinguir
+> "está roto" de "no supe medirlo" es la mitad del trabajo (M170).
 
 
 | # | Hueco | Dónde | Estado |
@@ -153,6 +163,8 @@ rango, y ahí queda el rastro.
 | 2 | Las dos etapas del despeje (dispensación / fabricación) | fabricación | ✅ **ya existía** · lo verifiqué con datos, no por lectura: columna, endpoint y pantalla dicen "13 ítems × 2 etapas" |
 | 4 | Justificación del rendimiento | fabricación (y cualquier fase) | ✅ **hecho** 15-ago (mig 434): queda en el legajo y en el PDF, no sólo en el audit · y el control salió del bloque `strict`, donde **no corría nunca** (`tests/test_yield_justificacion_queda.py`) · falta todavía el % **por presentación** |
 | 5 | Saldo del granel ("cantidad por envasar") | envasado | ✅ **hecho** 15-ago · resultó que EOS **ya lo calculaba** (con remanente, tolerancia y si la cuenta CUADRA, que MyBatch no tiene) y sólo lo exponía en `/vista-completa`, que el legajo no llama: el número existía y no lo veía nadie. Ahora se pinta (`tests/test_conciliacion_granel_visible.py`) |
+| 6 | Maestro de lotes (lote x presentacion · teoricas vs liberadas) | Aseguramiento | OK **hecho** 17-ago · `/aseguramiento/maestro-lotes` + `GET /api/brd/maestro-lotes`, enlazado desde Direccion Tecnica. El dato ya existia repartido en `acondicionamiento`, `envasado` y `stock_pt` y nadie lo cruzaba. **liberadas** sale de `stock_pt.unidades_inicial` (lo que ENTRO al stock), nunca de `unidades_disponible`, que baja con cada despacho y contestaria otra pregunta (M5). Un lote sin fila en PT **declara por que** (cuarentena, rechazado, en proceso) en vez de mostrar un cero mudo, y con varias presentaciones sin SKU **dice que no se pudo repartir** en vez de inventar el reparto (`tests/test_maestro_de_lotes.py`) |
+| 7 | "Aprobar Etiqueta" desde la orden de acondicionamiento | acondicionamiento | OK **hecho** 17-ago · el endpoint existia desde junio para las tres fases, pero el unico camino era el modal del dashboard: en la pantalla del producto terminado la aprobacion era inalcanzable (M121). El guard fija ademas el CONTRATO: `firmar-rapido` firma siempre sobre `ebr_ejecuciones` y el aprobador valida contra `ebr_artes_codificacion`, asi que con la firma rapida el boton se ve bien y la aprobacion lo rechaza -- la peor forma de negar un permiso (M219) (`tests/test_aprobar_etiqueta_acondicionamiento.py`) |
 
 > **Corrección honesta del propio mapa (15-ago).** De los cinco huecos que listé al
 > relevar MyBatch, **tres ya existían en EOS** (el saldo del granel, el rendimiento y las

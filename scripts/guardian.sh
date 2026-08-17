@@ -683,6 +683,21 @@ CORAZON=(
   # "Productos con instructivo aprobado" cuenta los que PUEDEN abrir legajo: antes sumaba los
   # instructivos de productos DESCONTINUADOS y el punto salia verde con productos faltando.
   "tests/test_cuantos_pueden_abrir_legajo.py"
+  # Tres secciones de Calidad/Aseguramiento devolvian VACIO por una columna que no existe, y un
+  # vacio se lee igual que "no hay nada que hacer" (auditorias programadas, muestreo micro, las
+  # OCs con que se pago una calibracion) + la limpieza de equipo que se cerraba sin dejar rastro.
+  "tests/test_lo_que_calidad_no_veia.py"
+  # "Aprobar Etiqueta" vive en la orden de acondicionamiento (MyBatch) y en EOS solo se llegaba
+  # por el modal del dashboard. Y el guard fija el CONTRATO: la firma rapida va sobre
+  # ebr_ejecuciones y el aprobador la rechazaria, o sea boton visible y aprobacion imposible.
+  "tests/test_aprobar_etiqueta_acondicionamiento.py"
+  # Maestro de lotes (lote x presentacion, teoricas vs liberadas): lo ultimo que MyBatch tenia
+  # y EOS no armaba. Fija que 'liberadas' salga de lo que ENTRO al stock (no de lo que queda),
+  # que un cero declare su motivo, y que el total no se cuente sobre la ventana recortada.
+  "tests/test_maestro_de_lotes.py"
+  # La alerta de MP de China (60 dias de lead time, escala a CRITICO) NUNCA se disparo: el set
+  # salia vacio porque la consulta pedia `SELECT id` y maestro_mps se llavea por codigo_mp.
+  "tests/test_alerta_mp_china.py"
 )
 
 echo ""

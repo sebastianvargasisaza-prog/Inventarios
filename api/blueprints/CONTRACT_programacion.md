@@ -1515,3 +1515,26 @@ hora Colombia restaba 5 horas de más y el plano mostraba *"hace 0 min"* para un
 Lo mostró la previa con datos sembrados, no la lectura del código (M24).
 
 Fijado por `tests/test_plano_de_planta.py` (en el gate).
+
+
+---
+
+## La alerta de MP de China tiene que poder sonar (17-ago-2026)
+
+`_get_china_mps` alimenta DOS alertas de `_project_stock`: la de *"MP de China sin stock ·
+comprar HOY o se detiene la línea"* (escala a **crítico**, porque con 60 días de lead time ya
+estás tarde) y la anticipada cuando la cobertura proyectada cae por debajo del lead time.
+
+Devolvía **siempre un set vacío**: pedía `SELECT id` y `maestro_mps` no tiene esa columna (su
+llave es `codigo_mp`). Reventaba en cada llamada, un `except: pass` lo tragaba, y las dos
+alertas nunca se dispararon. **Una alerta que no suena se ve igual que una que no tiene motivo
+para sonar** — por eso nadie lo reportó.
+
+Invariantes:
+- La consulta se llavea por **`codigo_mp`**, nunca por `id`.
+- El set incluye también los **códigos de fórmula** que llegan a esas MPs por
+  `mp_formula_bridge` activo: la comparación se hace contra `formula_items.material_id`, que
+  puede ser un código fantasma (M1). Un puente inactivo NO cuenta.
+- El `except` **loguea**: un set vacío acá apaga una alerta crítica sin dejar rastro (M4).
+
+Guard: `tests/test_alerta_mp_china.py` (probado con dientes reintroduciendo `SELECT id`).

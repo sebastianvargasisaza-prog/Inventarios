@@ -818,9 +818,20 @@ def calidad_bandeja():
             'total': len(items), 'items': items,
         }
     except Exception as e:
-        # Tabla puede no existir si no se ha implementado el cronograma
-        log.info('bandeja muestreo_micro (tabla puede no existir): %s', e)
-        out['secciones']['muestreo_micro_semana'] = {'total': 0, 'items': []}
+        # La tabla `cronograma_muestreo_micro` NO EXISTE y nadie la crea: la sección nunca
+        # mostró nada y nunca lo iba a hacer. Devolver `total: 0` en silencio hace que Calidad
+        # lea "no hay muestreos pendientes esta semana" cuando lo que pasa es que el cronograma
+        # no está construido -- un vacío mudo se lee como tranquilidad (M100/M154).
+        #
+        # Se DECLARA. La sección queda a la vista con su motivo, para que la intención (el
+        # muestreo microbiológico ambiental es parte de BPM) no se pierda y se pueda construir
+        # cuando se decida, en vez de borrarla y que nadie recuerde que faltaba.
+        log.info('bandeja muestreo_micro (cronograma no implementado): %s', e)
+        out['secciones']['muestreo_micro_semana'] = {
+            'total': 0, 'items': [], 'no_configurado': True,
+            'motivo': ('El cronograma de muestreo microbiológico ambiental todavía no está '
+                       'construido en EOS · esto NO significa que no haya muestreos pendientes'),
+        }
 
     # ── 6. Registro sistema agua hoy (COC-PRO-008) ──────────────────────
     # Sebastián 1-may-2026: tabla real es calidad_sistema_agua. Antes apuntaba
@@ -884,12 +895,18 @@ def calidad_bandeja():
 
     # ── 8. Auditorías próximas 60d ─────────────────────────────────────
     try:
+        # ⚠ Columnas REALES de `auditorias` · pedía `fecha, area, responsable, descripcion` y la
+        # tabla tiene `fecha_planeada, ente_auditado, auditor, alcance`. La consulta reventaba
+        # SIEMPRE, el `except` lo tragaba y la sección salía vacía -- o sea que Calidad leía
+        # "no hay auditorías próximas" cuando nunca se habían consultado (M96/M12a). Lo encontró
+        # el barrido de las 411 rutas del 17-ago, por el aviso en el log.
         rows = c.execute("""
-            SELECT id, fecha, tipo, area, responsable, descripcion, estado
+            SELECT id, fecha_planeada, tipo, ente_auditado, auditor, alcance, estado
             FROM auditorias
-            WHERE date(fecha) BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+60 days')
+            WHERE date(fecha_planeada) BETWEEN date('now', '-5 hours')
+                                           AND date('now', '-5 hours', '+60 days')
               AND COALESCE(estado, 'programada') NOT IN ('completada', 'cancelada')
-            ORDER BY fecha ASC
+            ORDER BY fecha_planeada ASC
             LIMIT 20
         """).fetchall()
         items = [{
