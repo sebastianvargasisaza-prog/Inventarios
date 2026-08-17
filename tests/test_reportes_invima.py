@@ -201,10 +201,17 @@ def test_reportes_ui_pestana_y_handlers(app, db_clean):
     # del 14-jun el módulo /aseguramiento es de MIGUEL (Aseguramiento de la Calidad) y a laura
     # se le sirve la pantalla de "sin acceso" con 200. El código está bien; la expectativa era
     # de antes de la división.
+    # ⚠ 17-ago: el JavaScript de Aseguramiento (155 KB) salió del HTML a `/aseguramiento-app.js`
+    # para que el navegador lo cachee en vez de rebajarlo y recompilarlo en cada carga (M216).
+    # Este test buscaba las funciones SOLO en el HTML y quedó rojo con el código sano: fijaba la
+    # IMPLEMENTACIÓN (que estuvieran inline) en vez de la GARANTÍA (que la pantalla las tenga).
+    # `pantalla_servida` suma el HTML y cada bundle que la página CARGA, que es lo que el
+    # navegador ejecuta (M166). Los asserts no se aflojan: son los mismos.
     c = _login(app, "miguel")
     r = c.get("/aseguramiento")
     assert r.status_code == 200
-    body = r.get_data(as_text=True)
+    from .conftest import pantalla_servida
+    body = pantalla_servida(c, "/aseguramiento")
     # Pestaña + pane
     assert "tab-reportes" in body
     assert "Reportes INVIMA" in body

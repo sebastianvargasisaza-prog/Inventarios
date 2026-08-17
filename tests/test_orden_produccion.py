@@ -311,16 +311,26 @@ def test_la_migracion_395_es_aditiva(app, db_clean):
 
 def test_las_paginas_de_orden_cargan(app, db_clean):
     """El golden no abre pantallas: una página nueva que revienta al render se despliega
-    sin que nada la cace (así se fue a producción un `get_db()` sin importar · M78)."""
+    sin que nada la cace (así se fue a producción un `get_db()` sin importar · M78).
+
+    ⚠ Este test pasaba POR LA RAZÓN EQUIVOCADA hasta el 17-ago (M152): pedía
+    `/planta/orden/<id>` con el id de la ORDEN, pero esa URL la servía el legajo de un LOTE
+    (estaba declarada dos veces · M200), y como esa pantalla también interpola su id en el
+    HTML, el assert de "el id llegó" daba verde midiendo otra pantalla. Ahora se pide la URL
+    propia de la orden madre y se exige un marcador que SÓLO tiene ella -- si vuelven a
+    chocar las dos URLs, el test lo dice."""
     _limpiar(app)
     cli = _login(app)
     oid = _crear(cli).get_json()['id']
     r = cli.get('/planta/ordenes-batch')
     assert r.status_code == 200, r.data[:300]
     assert b'Ordenes de Produccion' in r.data
-    r2 = cli.get('/planta/orden/%d' % oid)
+    r2 = cli.get('/planta/orden-batch/%d' % oid)
     assert r2.status_code == 200, r2.data[:300]
     assert str(oid).encode() in r2.data, 'el id de la orden no llegó a la página'
+    assert b'Lotes de la orden' in r2.data, (
+        'la URL de la orden madre sirvió OTRA pantalla (el legajo del lote): volvieron a '
+        'chocar las dos rutas y una queda muerta')
 
 
 def test_cada_boton_de_la_pagina_tiene_su_funcion(app, db_clean):

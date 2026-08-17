@@ -1638,7 +1638,14 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <button class="ebr-fbtn" data-fase="envasado" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid var(--cx-primary-light);border-radius:6px;background:var(--cx-card);color:var(--cx-primary-text);cursor:pointer;">&#128230; Envasado</button>
           <button class="ebr-fbtn" data-fase="acondicionamiento" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid var(--cx-primary-light);border-radius:6px;background:var(--cx-card);color:var(--cx-primary-text);cursor:pointer;">&#128295; Acondicionamiento</button>
         </div>
-        <button onclick="ebrNuevoLegajo()" title="Crear legajo de fabricaci&#243;n, envasado o acondicionamiento para un lote" style="padding:5px 12px;border:none;border-radius:6px;background:var(--cx-success);color:#fff;cursor:pointer;font-size:12px;font-weight:700;">&#10133; Nuevo legajo</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <!-- La lista de Ordenes de Produccion estilo MyBatch (el formato que el piso conoce)
+               existia desde junio SIN UN SOLO ENLACE: solo se llegaba tecleando la URL, o sea
+               que no existia (M121). Es la puerta natural del registro de lote cuando
+               `brd_visible` se enciende. -->
+          <a href="/planta/ordenes-produccion" title="Todas las &#243;rdenes de producci&#243;n en un solo listado, como en MyBatch" style="padding:5px 12px;border:1px solid var(--cx-primary-light);border-radius:6px;background:var(--cx-card);color:var(--cx-primary-text);text-decoration:none;font-size:12px;font-weight:700;">&#128203; Ver todas las &#243;rdenes</a>
+          <button onclick="ebrNuevoLegajo()" title="Crear legajo de fabricaci&#243;n, envasado o acondicionamiento para un lote" style="padding:5px 12px;border:none;border-radius:6px;background:var(--cx-success);color:#fff;cursor:pointer;font-size:12px;font-weight:700;">&#10133; Nuevo legajo</button>
+        </div>
       </div>
       <p style="font-size:0.85em;color:#718096;margin:0 0 12px;">Reemplazo MyBatch &middot; cada legajo vigila su fase (despeje &rarr; pesaje &rarr; pasos &rarr; IPC) con doble firma GMP (21 CFR Part 11).</p>
       <div id="ebr-list" style="font-size:13px;color:var(--cx-text-faint);">Cargando&hellip;</div>

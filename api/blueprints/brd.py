@@ -12803,7 +12803,7 @@ async function cargar(){
     document.getElementById('filas').innerHTML = os.length ? os.map(function(o){
       var apr=o.aprobada_por?esc(o.aprobada_por):'<span class="muted">sin aprobar</span>';
       if(o.exige_calidad&&o.aprobada_por){apr+=o.aprobada_calidad_por?(' + '+esc(o.aprobada_calidad_por)):' <span style="color:var(--cx-warn-text,#b45309);font-weight:700">(falta Calidad)</span>';}
-      return '<tr style="cursor:pointer" onclick="location.href=&#39;/planta/orden/'+o.id+'&#39;">'+
+      return '<tr style="cursor:pointer" onclick="location.href=&#39;/planta/orden-batch/'+o.id+'&#39;">'+
         '<td class="mono">'+esc(o.numero)+'</td>'+
         '<td>'+esc(o.fase)+'</td>'+
         '<td>'+esc(o.producto_nombre)+'</td>'+
@@ -12849,7 +12849,7 @@ async function guardarNueva(){
     var r=await fetch('/api/brd/ordenes',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
     var d=await r.json();
     if(!r.ok||!d.ok){alert('No se pudo crear: '+((d&&d.error)||r.status));return;}
-    cerrarNueva(); location.href='/planta/orden/'+d.id;
+    cerrarNueva(); location.href='/planta/orden-batch/'+d.id;
   }catch(e){alert('Error: '+(e.message||e));}
   finally{window._noBusy=false; if(b)b.disabled=false;}
 }
@@ -12995,12 +12995,23 @@ def ordenes_batch_page():
     return Response(_ORDENES_BATCH_HTML, mimetype="text/html")
 
 
-@bp.route("/planta/orden/<int:orden_id>", methods=["GET"])
+@bp.route("/planta/orden-batch/<int:orden_id>", methods=["GET"])
 def orden_batch_detalle_page(orden_id):
-    """Detalle de una orden: encabezado, sus firmas y sus lotes."""
+    """Detalle de una ORDEN madre: encabezado, sus firmas y los lotes que agrupa.
+
+    ⚠ Esta pantalla vivía en `/planta/orden/<orden_id>`, la MISMA URL que el legajo de un lote
+    (`orden_detalle_page`, declarada antes en el archivo). Werkzeug se queda con la primera, así
+    que esta pantalla estaba MUERTA -- y peor: el listado "Todas las órdenes" mandaba el id de
+    la ORDEN a una pantalla que lo lee como id de LEGAJO, o sea que abría el lote ajeno cuyo id
+    coincidía, con cara de correcto (M200/M161). Son dos unidades de trabajo distintas (la orden
+    agrupa N lotes · M117) y cada una necesita su propia URL.
+
+    No lleva redirect desde la URL vieja: esta pantalla NUNCA se sirvió ahí, así que no hay
+    marcador que rescatar; la URL vieja sigue siendo del legajo, que es quien la venía usando.
+    """
     if not session.get("compras_user"):
         return Response(
-            '<script>location.href="/login?next=/planta/orden/%d"</script>' % orden_id,
+            '<script>location.href="/login?next=/planta/orden-batch/%d"</script>' % orden_id,
             mimetype="text/html")
     return Response(_ORDEN_DETALLE_BATCH_HTML.replace("__ORDEN_ID__", str(orden_id)),
                     mimetype="text/html")

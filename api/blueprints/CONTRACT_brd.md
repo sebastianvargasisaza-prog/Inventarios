@@ -494,8 +494,29 @@ imprime y se le entrega al operario.
   nuevo **hereda** la aprobación de la orden. ⚠ El contrato de ese helper devuelve `{'ok','id'}`
   — la llave es `id`, **no** `ebr_id`: indexarlo mal crearía el legajo y devolvería error (M94).
 
-Pantallas: `/planta/ordenes-batch` (listado + crear) y `/planta/orden/<id>` (encabezado, las dos
-firmas, lotes y "Adicionar lote"). Tests: `tests/test_orden_produccion.py` (en el gate).
+Pantallas: `/planta/ordenes-batch` (listado + crear) y **`/planta/orden-batch/<orden_id>`**
+(encabezado, las dos firmas, lotes y "Adicionar lote"). Tests: `tests/test_orden_produccion.py`
+(en el gate).
+
+⚠ **La orden madre y el legajo de un lote son DOS unidades de trabajo y cada una tiene su URL.**
+Hasta el 17-ago-2026 el detalle de la orden vivía en `/planta/orden/<orden_id>`, la misma URL que
+el legajo de un lote (`orden_detalle_page`, declarada antes en el archivo). Werkzeug se queda con
+la primera, así que **la pantalla de la orden madre estaba muerta** -- y el listado "Todas las
+órdenes" mandaba el id de la ORDEN a una pantalla que lo lee como id de LEGAJO: abría el lote
+ajeno cuyo id coincidía, con cara de correcto (M200/M161). El test que la cubría pasaba por la
+razón equivocada (verificaba que el id apareciera en el HTML, y la otra pantalla también lo
+interpola · M152). No lleva redirect desde la URL vieja: esa pantalla nunca se sirvió ahí, y la
+URL sigue siendo del legajo, que es quien la venía usando. `test_preflight_brd_visible.py` falla
+si dos pantallas del batch record vuelven a compartir URL.
+
+**Toda pantalla del batch record tiene que tener por dónde llegar** (M121). Encender
+`brd_visible` sin eso revela pantallas que nadie puede abrir: pasó con `/planta/ordenes-produccion`
+(el listado estilo MyBatch, sin un solo enlace desde junio · hoy sale del bloque de legajos del
+dashboard) y con `/planta/bandeja-dt` (lo que espera la firma del Director Técnico · hoy sale de
+`/tecnica`, con sus otras herramientas). El guard recorre lo que el navegador CARGA -- incluidos
+`/planta-core.js` y `/planta-app.js`, donde viven los enlaces que arma el JS (M166) -- y **nunca
+mira la propia pantalla**: una página que sólo se enlaza a sí misma sigue siendo inalcanzable.
+Las que se abren tecleando la URL se ENUMERAN con su motivo.
 
 ## INV-16 · El kardex sabe lo que pasa ADENTRO del lote (mig 396)
 

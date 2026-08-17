@@ -698,6 +698,11 @@ CORAZON=(
   # La alerta de MP de China (60 dias de lead time, escala a CRITICO) NUNCA se disparo: el set
   # salia vacio porque la consulta pedia `SELECT id` y maestro_mps se llavea por codigo_mp.
   "tests/test_alerta_mp_china.py"
+  # PRE-VUELO de `brd_visible`: cuando el registro de lote deje de nacer oculto, el piso tiene
+  # que llegar a CADA pantalla del batch record y ninguna puede compartir URL con otra (una
+  # queda muerta y el listado manda al lote ajeno). Abre las 19 paginas con las 11 personas
+  # del piso -- jose y milton incluidos, que hasta hoy el harness no podia loguear.
+  "tests/test_preflight_brd_visible.py"
 )
 
 echo ""

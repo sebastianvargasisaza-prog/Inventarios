@@ -128,6 +128,21 @@ textarea{resize:vertical;min-height:60px;}
             Revisarlos y guardarlos deja constancia de que el DT los aprob&oacute;.</div>
         </div></a>
 
+      <!-- La bandeja donde el DT ve lo que ESPERA SU FIRMA existia desde junio sin un solo
+           enlace: se llegaba tecleando la URL (M121). Es la pantalla que va a usar todos los
+           dias apenas el registro de lote sea visible y los controles empiecen a exigir su
+           visto bueno, asi que va con las demas herramientas suyas. -->
+      <a href="/planta/bandeja-dt" style="text-decoration:none;color:inherit">
+        <div style="border:1px solid var(--cx-border);border-radius:11px;padding:14px;height:100%;
+                    transition:transform .12s ease,box-shadow .12s ease"
+             onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 24px rgba(15,12,35,.12)'"
+             onmouseout="this.style.transform='';this.style.boxShadow=''">
+          <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">&#128203; Lo que espera su firma</div>
+          <div style="font-size:12.5px;color:var(--cx-text-mute);margin-top:5px;line-height:1.5">
+            Los lotes que esperan el visto bueno del director t&eacute;cnico y los que ya se
+            pueden liberar, en una sola cola.</div>
+        </div></a>
+
       <a href="/aseguramiento/reemplazo-mybatch" style="text-decoration:none;color:inherit">
         <div style="border:1px solid var(--cx-border);border-radius:11px;padding:14px;height:100%;
                     transition:transform .12s ease,box-shadow .12s ease"

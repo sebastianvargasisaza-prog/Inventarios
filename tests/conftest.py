@@ -31,6 +31,12 @@ ALL_USERS = [
     "valentina", "gloria", "hernando", "miguel", "laura", "yuliel",
     "jefferson", "felipe", "luis", "smurillo", "sergio", "mayerlin",
     "camilo",
+    # 'jose' (jefe de producción) y 'milton' faltaban desde siempre, así que NINGÚN test los
+    # pudo ejercer: el harness no les daba clave y el login devolvía 200 en vez de 302. Son
+    # justo las dos personas que más van a usar el registro de lote cuando se encienda
+    # `brd_visible`, o sea que el barrido de permisos medía todo MENOS a quien importa
+    # (M210: un usuario que se saltea deja el guard verde sin haber medido nada).
+    "jose", "milton",
 ]
 
 # Tablas TRANSACCIONALES que db_clean resetea entre tests para evitar

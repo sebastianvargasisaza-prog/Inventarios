@@ -567,5 +567,13 @@ def test_marcacion_alistar_urgencia(app, db_clean):
     it = next((o for o in (d.get('items') or []) if o.get('serigrafiado') == serig), None)
     assert it and it.get('fecha_alistar') == '2020-01-01', it
     assert it.get('hora_alistar') == '09:00', it
-    assert it.get('urgencia') == 'alta', ('urgencia manual de Catalina', it)
+    # ⚠ 17-ago: este assert pedía que la urgencia TECLEADA ganara. El 4-ago se decidió lo
+    # contrario y por un motivo fuerte: la columna `urgencia` se escribe UNA vez al crear la
+    # orden y nunca se recalcula, así que el semáforo salía siempre del valor viejo y una orden
+    # vencida hace días se pintaba igual que una recién creada, con el texto "hace 5d" al lado
+    # (M154/M109: el estado del tiempo se DERIVA de la fecha, no se teclea). Con un deadline en
+    # 2020 la respuesta correcta es 'vencido'. La marca de Catalina no se pierde: viaja aparte
+    # en `urgencia_manual`, y eso es lo que se exige acá -- si alguien la borra, este test cae.
+    assert it.get('urgencia') == 'vencido', ('el semáforo sale de la FECHA', it)
+    assert it.get('urgencia_manual') == 'alta', ('la marca manual se conserva aparte', it)
     assert it.get('dias_restantes') is not None and it['dias_restantes'] < 0, ('dias_restantes de ayuda', it)
