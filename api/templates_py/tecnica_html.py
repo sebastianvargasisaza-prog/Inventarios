@@ -173,15 +173,15 @@ textarea{resize:vertical;min-height:60px;}
             calibraci&oacute;n.</div>
         </div></a>
 
-      <a href="/aseguramiento/maestro-lotes" style="text-decoration:none;color:inherit">
+      <a href="/calidad/maestro-lotes" style="text-decoration:none;color:inherit">
         <div style="border:1px solid var(--cx-border);border-radius:11px;padding:14px;height:100%;
                     transition:transform .12s ease,box-shadow .12s ease"
              onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 24px rgba(15,12,35,.12)'"
              onmouseout="this.style.transform='';this.style.boxShadow=''">
           <div style="font-size:15px;font-weight:800;letter-spacing:-.01em">&#128230; Maestro de lotes</div>
           <div style="font-size:12.5px;color:var(--cx-text-mute);margin-top:5px;line-height:1.5">
-            Cada lote por presentaci&oacute;n, con lo que sali&oacute; de la l&iacute;nea contra
-            lo que Calidad liber&oacute;. Es la vista que MyBatch ten&iacute;a en Aseguramiento.</div>
+            Cada lote con sus tres fases, el rendimiento, los clientes y lo que Calidad
+            liber&oacute;. Es la vista que MyBatch ten&iacute;a en Aseguramiento.</div>
         </div></a>
 
     </div>

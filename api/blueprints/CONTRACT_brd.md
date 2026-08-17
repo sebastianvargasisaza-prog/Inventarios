@@ -814,24 +814,20 @@ peor forma de negar un permiso (M219, tercera aparición).
 pantalla de acondicionamiento, que es donde MyBatch pone *"Aprobar Etiqueta"* · antes sólo se
 llegaba por el modal del dashboard · M121).
 
-### Maestro de lotes · `GET /api/brd/maestro-lotes` + `/aseguramiento/maestro-lotes`
+### Maestro de lotes · vive en `/calidad/maestro-lotes`, y hay UNO solo
 
-Una fila por **(lote, presentación)**: el mismo lote aparece una vez por cada tamaño, porque el
-granel se reparte y cada presentación se libera por su cuenta. Reglas duras:
+⚠ El 17-ago construí un segundo maestro de lotes en `/aseguramiento/maestro-lotes` sin ver que
+ya existía uno desde el 15-ago en `/calidad/maestro-lotes` -- y más completo: trae las tres
+fases del lote con su rendimiento, los clientes, el material de envase y **declara de dónde saca
+la teórica**. Lo busqué preguntándole a EOS por `/api/brd/maestro-lotes`, una URL que inventé
+yo, vi el 404 y lo di por faltante (M170/M220).
 
-| Columna | De dónde sale | Por qué NO de otro lado |
-|---|---|---|
-| teóricas | `acondicionamiento.unidades_producidas`; si el lote no llegó a acondicionar, `envasado.unidades` (se declara cuál en `origen_teoricas`) | — |
-| **liberadas** | `stock_pt.unidades_inicial` | `unidades_disponible` baja con cada despacho: contestaría *cuánto queda*, no *cuánto se liberó* (M5) |
-| estado | `ebr_ejecuciones` (el más avanzado del lote) si existe; si no, el de la tabla de fase | — |
+**Dos pantallas con el mismo nombre no son dos vistas: son dos verdades que divergen**, y quien
+las mira no tiene forma de saber cuál creer (M99/M161). El duplicado se retiró; su ruta quedó
+**redirigiendo** porque llegó a estar enlazada desde Dirección Técnica (M120).
 
-- **Un lote sin fila en producto terminado NO es un lote con cero liberado**: puede estar en
-  cuarentena. Se declara `liberado:false` + `motivo_no_liberado` (M100/M154).
-- **Con varias presentaciones y sin SKU no se reparte a ojo** — repartir le pondría a una
-  presentación las unidades de otra (M19). Se declara `unidades_sin_repartir`, y ese número es
-  el **resto** (lo liberado del lote menos lo ya atribuido), nunca el total del lote: decir el
-  total manda a buscar un descuadre que no existe (M148/M155).
-- **El total se cuenta ANTES de recortar** (M207) y el recorte se declara en `aviso`.
-- La pantalla está enlazada desde Dirección Técnica; sin enlace la capacidad no existe (M121).
+Invariante: **una sola pantalla sirve un maestro de lotes**. El guard recorre el `url_map` REAL
+y ABRE cada ruta que lo mencione -- no lee el fuente, porque la primera versión encontró el
+`redirect` del login dentro de la pantalla buena y reportó cero (M170).
 
-Guard: `tests/test_maestro_de_lotes.py` (los dos asserts clave probados con dientes).
+Guard: `tests/test_maestro_de_lotes.py` (probado con dientes sirviendo una segunda pantalla).

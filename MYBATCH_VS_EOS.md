@@ -142,11 +142,14 @@ rango, y ahí queda el rastro.
 > checklists (despeje y controles de atributos) se quedan en código -versionados y
 > revisados- o pasan a ser configurables por el director técnico como en MyBatch.
 >
-> **Cerrado el 17-ago:** (a) el **maestro de lotes** (`/aseguramiento/maestro-lotes` ·
-> enlazado desde Dirección Técnica) cruza lote × presentación con teóricas vs liberadas;
-> (b) **"Aprobar Etiqueta"** ahora se puede dar **desde el legajo de acondicionamiento**,
-> que es donde MyBatch la tiene -- el endpoint existía desde junio y sólo se llegaba por
-> el modal del dashboard.
+> **Cerrado el 17-ago:** **"Aprobar Etiqueta"** ahora se puede dar **desde el legajo
+> de acondicionamiento**, que es donde MyBatch la tiene -- el endpoint existía desde junio
+> y sólo se llegaba por el modal del dashboard.
+>
+> ⚠ **Y una corrección honesta:** ese día di el **maestro de lotes** por faltante y construí
+> uno nuevo. Ya existía desde el 15-ago en `/calidad/maestro-lotes`, más completo. El mío se
+> retiró. Lo busqué por una URL que inventé en vez de medir qué tiene EOS -- el mismo error
+> que el párrafo de abajo ya describía.
 >
 > **Cómo se verificó esta vez (y por qué la primera medición mintió).** Se ejerció cada
 > punto del mapa contra los endpoints reales, no se leyó. La primera pasada dio "FALTA" en
@@ -163,7 +166,7 @@ rango, y ahí queda el rastro.
 | 2 | Las dos etapas del despeje (dispensación / fabricación) | fabricación | ✅ **ya existía** · lo verifiqué con datos, no por lectura: columna, endpoint y pantalla dicen "13 ítems × 2 etapas" |
 | 4 | Justificación del rendimiento | fabricación (y cualquier fase) | ✅ **hecho** 15-ago (mig 434): queda en el legajo y en el PDF, no sólo en el audit · y el control salió del bloque `strict`, donde **no corría nunca** (`tests/test_yield_justificacion_queda.py`) · falta todavía el % **por presentación** |
 | 5 | Saldo del granel ("cantidad por envasar") | envasado | ✅ **hecho** 15-ago · resultó que EOS **ya lo calculaba** (con remanente, tolerancia y si la cuenta CUADRA, que MyBatch no tiene) y sólo lo exponía en `/vista-completa`, que el legajo no llama: el número existía y no lo veía nadie. Ahora se pinta (`tests/test_conciliacion_granel_visible.py`) |
-| 6 | Maestro de lotes (lote x presentacion · teoricas vs liberadas) | Aseguramiento | OK **hecho** 17-ago · `/aseguramiento/maestro-lotes` + `GET /api/brd/maestro-lotes`, enlazado desde Direccion Tecnica. El dato ya existia repartido en `acondicionamiento`, `envasado` y `stock_pt` y nadie lo cruzaba. **liberadas** sale de `stock_pt.unidades_inicial` (lo que ENTRO al stock), nunca de `unidades_disponible`, que baja con cada despacho y contestaria otra pregunta (M5). Un lote sin fila en PT **declara por que** (cuarentena, rechazado, en proceso) en vez de mostrar un cero mudo, y con varias presentaciones sin SKU **dice que no se pudo repartir** en vez de inventar el reparto (`tests/test_maestro_de_lotes.py`) |
+| 6 | Maestro de lotes (lote x presentacion · teoricas vs liberadas) | Aseguramiento | OK **ya existia** desde el 15-ago en `/calidad/maestro-lotes` -- y mas completo que el de MyBatch: trae las tres fases del lote con su rendimiento, los clientes, el material de envase y **declara de donde saca la teorica**. ⚠ El 17-ago construi un SEGUNDO maestro en `/aseguramiento/maestro-lotes` sin verlo: lo busque preguntandole a EOS por `/api/brd/maestro-lotes`, una URL que invente yo, vi el 404 y lo anote como hueco. Se retiro (la ruta redirige) y quedo un guard que impide que vuelva a haber dos (`tests/test_maestro_de_lotes.py`). **Es exactamente el error que este mismo documento ya advertia: antes de anotar un hueco, medirlo contra el codigo** |
 | 7 | "Aprobar Etiqueta" desde la orden de acondicionamiento | acondicionamiento | OK **hecho** 17-ago · el endpoint existia desde junio para las tres fases, pero el unico camino era el modal del dashboard: en la pantalla del producto terminado la aprobacion era inalcanzable (M121). El guard fija ademas el CONTRATO: `firmar-rapido` firma siempre sobre `ebr_ejecuciones` y el aprobador valida contra `ebr_artes_codificacion`, asi que con la firma rapida el boton se ve bien y la aprobacion lo rechaza -- la peor forma de negar un permiso (M219) (`tests/test_aprobar_etiqueta_acondicionamiento.py`) |
 
 > **Corrección honesta del propio mapa (15-ago).** De los cinco huecos que listé al
