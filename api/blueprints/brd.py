@@ -3004,8 +3004,10 @@ def limpiar_demos():
         # a cargar un lote real bajo esos códigos, borrarlo sería tocar inventario de verdad.
         try:
             c.execute('SAVEPOINT _lim_demo3')
-            n_mp = c.execute("DELETE FROM movimientos WHERE lote=? AND material_id IN "
-                             "('MP-DEMO1','MP-DEMO2')", (_DEMO_MP_LOTE,)).rowcount or 0
+            # Por LOTE, sin filtrar material: ese lote lo crea únicamente el demo, y desde que
+            # el stock se siembra según la fórmula los materiales ya no son una lista fija.
+            n_mp = c.execute("DELETE FROM movimientos WHERE lote=?",
+                             (_DEMO_MP_LOTE,)).rowcount or 0
             c.execute('RELEASE SAVEPOINT _lim_demo3')
         except Exception as _e:
             # se DICE que quedó, en vez de callar: un demo a medio borrar se ve igual que uno
@@ -9109,11 +9111,41 @@ def crear_planta_demo():
         # Es seguro sembrar acá porque `MP-DEMO1`/`MP-DEMO2` son códigos PROPIOS del demo -- no
         # existen en la realidad --, así que esto no infla el inventario de ninguna materia prima
         # de verdad. El lote lleva el prefijo DEMO- para poder retirarlo entero después.
-        for _c in ("MP-DEMO1", "MP-DEMO2"):
-            _hay = cur.execute(
-                "SELECT COUNT(*) FROM movimientos WHERE material_id=? AND lote=?",
-                (_c, _DEMO_MP_LOTE)).fetchone()[0]
-            if not _hay:
+        # Se siembra lo que LA FÓRMULA PIDE, no una lista fija de códigos · Sebastián, dos veces
+        # seguidas: *"Stock insuficiente para producir DEMO PLANTA (BORRAR): 2 MP(s) sin stock"*,
+        # incluso después de sembrar MP-DEMO1/2.
+        #
+        # La primera versión sembraba esos dos códigos a mano, y `crear_planta_demo` sólo crea la
+        # fórmula SI NO EXISTE: un demo creado antes (con otros materiales) se queda con SU
+        # fórmula, así que el stock caía en códigos que nadie pedía. Leerlo de `formula_items` lo
+        # hace correcto sea cual sea la fórmula que el demo tenga hoy (M1: preguntarle a la
+        # fuente, no repetir una lista).
+        #
+        # Y se REPONE cuando está bajo, no sólo la primera vez: cada vuelta del demo consume MP,
+        # así que un guard de "¿ya hay algún movimiento?" lo dejaba seco a la segunda. El umbral
+        # mira el stock CANÓNICO (suma del kardex sin lo retenido), que es lo que ve producción.
+        _mp_demo = [r[0] for r in cur.execute(
+            "SELECT DISTINCT material_id FROM formula_items "
+            "WHERE producto_nombre=? AND COALESCE(material_id,'')<>''", (PROD,)).fetchall()]
+        if not _mp_demo:
+            _mp_demo = ["MP-DEMO1", "MP-DEMO2"]
+        for _c in _mp_demo:
+            # el material tiene que existir en el maestro o el trigger rechaza el movimiento
+            cur.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, activo) "
+                        "VALUES (?, 'Demo', 1)", (_c,))
+            try:
+                _st = cur.execute(
+                    "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA',"
+                    "        'Ajuste +','Ajuste') THEN cantidad "
+                    "        WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') "
+                    "        THEN -cantidad ELSE 0 END),0) "
+                    "FROM movimientos WHERE material_id=? "
+                    "  AND UPPER(COALESCE(estado_lote,'')) NOT IN "
+                    "      ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO',"
+                    "       'AGOTADO','BLOQUEADO')", (_c,)).fetchone()[0] or 0
+            except Exception:
+                _st = 0
+            if float(_st) < 5000:
                 cur.execute(
                     "INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, "
                     "                         fecha, fecha_vencimiento, estado_lote, operador, "

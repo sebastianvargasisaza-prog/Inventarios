@@ -2525,9 +2525,20 @@ def _handle_produccion_inner():
                 'faltantes': faltantes,
                 'auto_repair_candidatos': auto_repair_candidatos,
                 'auto_repair_disponible': len(auto_repair_candidatos) > 0,
+                # El mensaje DICE cuáles faltan y cuánto · antes decía "2 MP(s) sin stock" a
+                # secas: el número solo no deja hacer nada, hay que abrir el detalle para saber
+                # qué comprar o qué lote liberar. Se nombran hasta 4 y se declara el resto, en
+                # vez de recortar en silencio (Sebastián se trabó dos veces con este aviso).
                 'mensaje': (
-                    f"No se puede producir {cantidad_kg}kg de {producto}: "
-                    f"{len(faltantes)} MP(s) sin stock suficiente. "
+                    f"No se puede producir {cantidad_kg}kg de {producto}: falta "
+                    + ", ".join(
+                        "%s (necesita %.0f g, hay %.0f)" % (
+                            (f.get('material') or f.get('material_id') or '?'),
+                            float(f.get('requerido_g') or 0),
+                            float(f.get('disponible_g') or 0))
+                        for f in faltantes[:4])
+                    + (" y %d más" % (len(faltantes) - 4) if len(faltantes) > 4 else "")
+                    + ". "
                     + (f"Detectados {len(auto_repair_candidatos)} codigo_mp huérfanos · "
                        "usar botón 🔧 Auto-reparar." if auto_repair_candidatos else
                        "Verifica entradas en Bodega MP o crea OC en /compras.")

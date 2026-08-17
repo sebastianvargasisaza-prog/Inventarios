@@ -182,6 +182,67 @@ def test_el_demo_nace_con_materia_prima(app, db_clean):
             assert (g or 0) > 0, "%s nace sin stock · el demo se traba al arrancar" % cod
 
 
+def test_el_demo_siembra_LO_QUE_SU_FORMULA_PIDE(app, db_clean):
+    """El caso real, y el que me costó dos vueltas: Sebastián seguía viendo *"Stock insuficiente
+    para producir DEMO PLANTA (BORRAR): 2 MP(s) sin stock"* aun con el arreglo desplegado.
+
+    `crear_planta_demo` sólo crea la fórmula **si no existe**, así que un demo creado antes se
+    queda con SU fórmula — y yo sembraba stock para una lista fija (`MP-DEMO1/2`) que esa fórmula
+    no pedía. El stock caía en códigos que nadie mira (M1: preguntarle a la fuente en vez de
+    repetir una lista).
+    """
+    from database import get_db
+    prod = "DEMO PLANTA (BORRAR)"
+    with app.app_context():
+        conn = get_db(); cur = conn.cursor()
+        # el demo YA existe con otros materiales, como en producción
+        cur.execute("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
+        cur.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+        cur.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+                    "VALUES (?,1,1)", (prod,))
+        for cod, pct in (("ZZ-VIEJO-A", 90), ("ZZ-VIEJO-B", 10)):
+            cur.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, activo) "
+                        "VALUES (?, 'Demo vieja', 1)", (cod,))
+            cur.execute("INSERT INTO formula_items (producto_nombre, material_id, "
+                        "material_nombre, porcentaje, cantidad_g_por_lote) VALUES (?,?,?,?,?)",
+                        (prod, cod, cod, pct, pct * 10))
+        conn.commit()
+
+    cli = _login(app, "sebastian")
+    h = {"Content-Type": "application/json"}
+    h.update(csrf_headers())
+    r = cli.post("/api/admin/planta-demo/crear", json={}, headers=h)
+    assert r.status_code in (200, 201), r.data[:300]
+
+    with app.app_context():
+        from blueprints.programacion import _get_mp_stock
+        st = _get_mp_stock(get_db())
+    for cod in ("ZZ-VIEJO-A", "ZZ-VIEJO-B"):
+        assert (st.get(cod) or 0) > 0, (
+            "%s es lo que la fórmula del demo pide y quedó sin stock · el demo se traba" % cod)
+
+
+def test_el_aviso_de_stock_dice_QUE_falta(app, db_clean):
+    """*"2 MP(s) sin stock"* no deja hacer nada: hay que saber CUÁLES para comprar o liberar.
+
+    Se mira el fuente porque llegar al 422 exige una producción con déficit real, y un test que
+    no puede llegar al caso se saltea en silencio (M152); lo que se protege es que el mensaje
+    nombre los materiales, no el camino que lo produce.
+    """
+    import io
+    import os
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = io.open(os.path.join(raiz, "api", "blueprints", "inventario.py"),
+                  encoding="utf-8").read()
+    i = src.index("'error': 'Stock insuficiente para producir'")
+    ventana = re.sub(r"#[^\n]*", "", src[i:i + 2200])
+    assert "MP(s) sin stock suficiente" not in ventana, (
+        "el aviso sigue diciendo sólo cuántas faltan")
+    assert "faltantes[:4]" in ventana, "no nombra los materiales que faltan"
+    assert "requerido_g" in ventana and "disponible_g" in ventana, (
+        "no dice cuánto se necesita y cuánto hay")
+
+
 def test_borrar_el_demo_se_lleva_su_materia_prima(app, db_clean):
     """Si no, queda stock fantasma de un material que sólo existe para la demostración, y el
     inventario dice que hay 50 kg de algo que nadie compró."""

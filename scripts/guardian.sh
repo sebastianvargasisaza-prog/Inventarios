@@ -668,6 +668,9 @@ CORAZON=(
   # El ciclo de la sala CIERRA: limpiar y verificar la devuelve a LIBRE, una sala con lote
   # adentro NO se libera, hay por donde llegar al despeje, y el demo nace con materia prima.
   "tests/test_la_limpieza_libera_el_area.py"
+  # El plano dibuja la planta REAL (la distribucion que dibujo Sebastian), dice que hace el
+  # click en cada sala segun su estado, y calcula los tiempos con el ancla UTC explicita.
+  "tests/test_plano_de_planta.py"
 )
 
 echo ""

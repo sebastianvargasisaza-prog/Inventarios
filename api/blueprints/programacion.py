@@ -28271,7 +28271,14 @@ def plano_fabricacion_data():
                 _i = datetime.fromisoformat(str(_v).replace(' ', 'T')[:19])
                 # inicio_real_at/ocup_inicio se guardan en hora Colombia (-5h) → comparar contra
                 # un "ahora" también en Colombia, si no el elapsed se infla +5h (bug 24-jun).
-                _now_co = datetime.now() - timedelta(hours=5)
+                #
+                # ⚠ El ancla va sobre UTC EXPLÍCITO, no sobre `datetime.now()`: ese devuelve la
+                # hora LOCAL del servidor, así que sólo daba bien porque Render corre en UTC. En
+                # una máquina en hora Colombia restaba 5 horas de más y el elapsed salía
+                # NEGATIVO -- o sea "hace 0 min" para un lote que lleva dos horas (lo mostró la
+                # previa local). Un cálculo que depende de la zona del servidor miente el día
+                # que esa zona cambie (M24).
+                _now_co = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
                 return max(0, int((_now_co - _i).total_seconds() // 60))
             except Exception:
                 return None
@@ -28284,6 +28291,64 @@ def plano_fabricacion_data():
             _prod_out = {'id': None, 'producto': a[5], 'kg': 0, 'lotes': 1,
                          'inicio': a[7], 'operario': a[6] or '', 'mins': _mins_desde(a[7]),
                          'vivo': True, 'fase': a[8] or '', 'area_id': a[0]}
+        # QUÉ están haciendo AHORA · Sebastián 16-ago: *"que apenas la producción se monte
+        # aparezca allí el producto y la cantidad con el operario · todo debe calcular tiempos
+        # de producción, envasado y demás, así Alejandro y yo sabemos en tiempo real qué hacen"*.
+        #
+        # La etapa sale del LEGAJO de cada fase (`ebr_ejecuciones`), que es donde queda
+        # registrada de verdad: `produccion_programada` tiene columnas `etapa_*_inicio_at` y
+        # NADIE las escribe -- leerlas habría mostrado tiempos vacíos para siempre (M154).
+        #
+        # ⚠ Los tiempos del EBR están en UTC y `inicio_real_at` en hora Colombia: se calculan
+        # con las dos puntas en la MISMA base o el elapsed se infla 5 horas (M24 · ya pasó en
+        # esta pantalla).
+        if _prod_out:
+            try:
+                _lote_area = (_prod_out.get('producto') or '')
+                _ebr = c.execute(
+                    "SELECT COALESCE(e.fase,'fabricacion'), e.iniciado_at_utc, e.id, "
+                    "       COALESCE(e.lote_codigo, e.lote, '') "
+                    "FROM ebr_ejecuciones e "
+                    "WHERE COALESCE(e.produccion_id,0)=? "
+                    "  AND LOWER(COALESCE(e.estado,'')) IN ('iniciado','en_proceso') "
+                    "ORDER BY e.iniciado_at_utc DESC LIMIT 1",
+                    (_prod_out.get('id') or 0,)).fetchone()
+                if _ebr:
+                    _mins_etapa = None
+                    try:
+                        _ini = datetime.fromisoformat(str(_ebr[1]).replace(' ', 'T')[:19])
+                        _mins_etapa = max(0, int(
+                            (datetime.utcnow() - _ini).total_seconds() // 60))
+                    except Exception:
+                        pass
+                    # lo que el INSTRUCTIVO dice que debería tardar esta fase
+                    _est = c.execute(
+                        "SELECT COALESCE(SUM(COALESCE(p.tiempo_estimado_min,0)),0) "
+                        "FROM mbr_pasos p "
+                        "JOIN ebr_ejecuciones e2 ON e2.mbr_template_id=p.mbr_template_id "
+                        "WHERE e2.id=? AND LOWER(COALESCE(p.fase,''))=LOWER(?)",
+                        (_ebr[2], _ebr[0])).fetchone()
+                    _paso = c.execute(
+                        "SELECT orden, descripcion FROM ebr_pasos_ejecutados "
+                        "WHERE ebr_id=? AND LOWER(COALESCE(estado,'')) NOT IN "
+                        "      ('completado','omitido') ORDER BY orden LIMIT 1",
+                        (_ebr[2],)).fetchone()
+                    _total_pasos = c.execute(
+                        "SELECT COUNT(*) FROM ebr_pasos_ejecutados WHERE ebr_id=?",
+                        (_ebr[2],)).fetchone()[0]
+                    _prod_out['etapa'] = _ebr[0]
+                    _prod_out['etapa_mins'] = _mins_etapa
+                    _prod_out['etapa_estimado_min'] = int(_est[0] or 0) if _est else 0
+                    _prod_out['ebr_id'] = _ebr[2]
+                    _prod_out['lote'] = _ebr[3]
+                    if _paso:
+                        _prod_out['paso_actual'] = {'orden': _paso[0], 'descripcion': _paso[1],
+                                                    'de': _total_pasos}
+            except Exception as _e_et:
+                # el plano tiene que pintarse igual: sin la etapa se muestra lo que sí se sabe,
+                # y se DICE que no se pudo leer (una tarjeta muda se lee como "no hay nada")
+                log.warning("plano · etapa en curso del área %s no legible: %s", a[1], _e_et)
+                _prod_out['etapa_error'] = True
         out.append({
             'id': a[0], 'codigo': a[1], 'nombre': a[2], 'estado': a[3] or 'libre',
             'capacidad': a[4], 'produccion': _prod_out,
@@ -28656,140 +28721,214 @@ def planta_plano_page():
 
 _PLANO_FAB_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plano de Fabricación</title>
+<title>Plano de Planta &middot; en vivo</title>
+<link rel="stylesheet" href="/static/cortex.css">
 <style>
- body{font-family:system-ui,Arial;margin:0;background:var(--cx-text, #0f172a);color:var(--cx-border, #e2e8f0)}
- .wrap{max-width:1100px;margin:0 auto;padding:20px}
- h1{font-size:21px;margin:6px 0}.muted{color:var(--cx-text-faint, #94a3b8);font-size:13px}
- a{color:#a5b4fc;text-decoration:none}
- .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:14px}
- .card{background:var(--cx-text, #1e293b);border:1px solid var(--cx-text-soft, #334155);border-radius:14px;padding:14px;border-top:5px solid var(--cx-text-soft, #475569)}
- .card.libre{border-top-color:#22c55e}.card.ocupada{border-top-color:var(--cx-warn, #f59e0b)}
- .card.sucia{border-top-color:var(--cx-danger, #ef4444)}.card.limpiando{border-top-color:#38bdf8}
- .nom{font-size:16px;font-weight:800}.cap{font-size:11px;color:var(--cx-text-faint, #94a3b8)}
- .badge{display:inline-block;border-radius:6px;padding:2px 9px;font-size:11px;font-weight:700;margin:6px 0}
- .b-libre{background:#14532d;color:#bbf7d0}.b-ocupada{background:var(--cx-accent-dark, #78350f);color:#fde68a}
- .b-sucia{background:var(--cx-danger, #7f1d1d);color:#fecaca}.b-limpiando{background:var(--cx-info, #0c4a6e);color:#bae6fd}
- .prod{font-size:13px;margin:6px 0;line-height:1.5}.prod b{color:#fde68a}
- button{padding:8px 12px;border:0;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;width:100%}
- .b-iniciar{background:var(--cx-success, #16a34a)}.b-finalizar{background:var(--cx-accent-dark, #d97706)}
- .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
- .modal.show{display:flex}.box{background:var(--cx-text, #1e293b);border:1px solid var(--cx-text-soft, #334155);border-radius:14px;padding:20px;width:340px;max-width:92vw}
- label{font-size:12px;color:var(--cx-border, #cbd5e1);display:block;margin:9px 0 3px}
- select,input{width:100%;padding:8px;background:#0b1220;color:var(--cx-border, #e2e8f0);border:1px solid var(--cx-text-soft, #334155);border-radius:7px;box-sizing:border-box}
- .row2{display:flex;gap:8px;margin-top:14px}.row2 button{flex:1}
- .b-cancel{background:var(--cx-text-soft, #475569)}
- #msg{margin:10px 0;font-size:13px}.err{color:#f87171}.ok{color:#34d399}
-</style></head><body><div class="wrap">
-<a href="/inventarios" id="volver">&larr; Volver</a>
-<h1>&#127981; Plano de Fabricaci&oacute;n</h1>
-<script>if(location.search.indexOf('embed')>=0){var _v=document.getElementById('volver');if(_v)_v.style.display='none';}</script>
-<div class="muted">En vivo. <b>Iniciar</b> &rarr; el &aacute;rea queda <b>ocupada</b> + descuenta MP. <b>Finalizar</b> &rarr; <b>sucia</b> hasta que la limpien.
- <a href="/inventarios#produccion" style="margin-left:8px">rótulos de limpieza &rarr;</a></div>
-<div id="msg"></div>
-<div id="grid" class="grid"></div>
+ /* La pantalla vive en su propia pestana, asi que enlaza cortex y lee el tema como lo hace el
+    resto de EOS: sin esto cada var() cae a su color de respaldo y queda fuera del sistema de
+    diseno, clavada en claro (M203). */
+ body{font-family:Inter,system-ui,Arial;margin:0;background:var(--cx-bg,#f6f5fb);
+      color:var(--cx-text,#0f172a)}
+ .wrap{max-width:1280px;margin:0 auto;padding:22px}
+ h1{font-size:23px;margin:0;letter-spacing:-.02em;font-weight:800}
+ .sub{color:var(--cx-text-mute,#64748b);font-size:13.5px;margin:5px 0 0}
+ .barra{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap}
+ .kpis{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 4px}
+ .kpi{background:var(--cx-card,#fff);border:1px solid var(--cx-border,#e4e4e7);border-radius:11px;
+      padding:9px 14px;min-width:96px}
+ .kpi b{display:block;font-size:20px;font-weight:800;line-height:1.1}
+ .kpi span{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+           color:var(--cx-text-faint,#a1a1aa);font-weight:700}
+
+ /* EL MAPA · la distribucion fisica que dibujo Sebastian (16-ago-2026):
+      fila 1   lavado | dispensacion | fabricacion 1 | envasado 1
+      fila 2   materias primas | (circulacion)
+      fila 3   fabricacion 3 | fabricacion 2 | envasado 2 | calidad          */
+ .plano{display:grid;gap:10px;margin-top:14px;
+        grid-template-columns:repeat(4,1fr);
+        grid-template-areas:
+          "lav  disp p1   env1"
+          "almp pas  pas  pas"
+          "p3   p2   env2 cc"}
+ .sala{border-radius:13px;padding:13px 14px;min-height:112px;cursor:pointer;position:relative;
+       border:1.5px solid var(--cx-border,#e4e4e7);background:var(--cx-card,#fff);
+       transition:transform .12s ease, box-shadow .12s ease;display:flex;flex-direction:column}
+ .sala:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(15,12,35,.13)}
+ .sala .cod{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+            color:var(--cx-text-faint,#a1a1aa)}
+ .sala .nom{font-size:15px;font-weight:800;margin-top:1px;letter-spacing:-.01em}
+ .chip{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;
+       letter-spacing:.05em;padding:2px 8px;border-radius:999px;margin-top:7px;align-self:flex-start}
+ /* el estado se lee por COLOR y por TEXTO: el color solo deja afuera a quien no lo distingue */
+ .e-libre    {border-color:var(--cx-success,#16a34a)}
+ .e-libre     .chip{background:var(--cx-success-pale,#dcfce7);color:var(--cx-success-text,#15803d)}
+ .e-ocupada  {border-color:var(--cx-primary,#6d28d9);border-width:2px}
+ .e-ocupada   .chip{background:var(--cx-primary-pale,#f3e8ff);color:var(--cx-primary-text,#6d28d9)}
+ .e-sucia    {border-color:var(--cx-danger,#dc2626);border-width:2px}
+ .e-sucia     .chip{background:var(--cx-danger-pale,#fee2e2);color:var(--cx-danger-text,#b91c1c)}
+ .e-limpiando{border-color:var(--cx-warn,#f59e0b);border-width:2px}
+ .e-limpiando .chip{background:var(--cx-warn-pale,#fef3c7);color:var(--cx-warn-text,#92400e)}
+ .lav {grid-area:lav} .disp{grid-area:disp} .p1{grid-area:p1} .env1{grid-area:env1}
+ .almp{grid-area:almp} .p3{grid-area:p3} .p2{grid-area:p2} .env2{grid-area:env2} .cc{grid-area:cc}
+ .pasillo{grid-area:pas;border:1.5px dashed var(--cx-border,#e4e4e7);border-radius:13px;
+          display:flex;align-items:center;justify-content:center;
+          color:var(--cx-text-faint,#a1a1aa);font-size:11.5px;letter-spacing:.08em;
+          text-transform:uppercase;font-weight:700}
+ .prod{margin-top:9px;padding-top:9px;border-top:1px dashed var(--cx-border,#e4e4e7)}
+ .prod .pnom{font-size:13px;font-weight:800;line-height:1.25}
+ .prod .meta{font-size:11.5px;color:var(--cx-text-mute,#64748b);margin-top:3px;line-height:1.45}
+ .tiempo{font-variant-numeric:tabular-nums;font-weight:800}
+ .tarde{color:var(--cx-danger-text,#b91c1c)}
+ .paso{font-size:11px;color:var(--cx-text-mute,#64748b);margin-top:4px}
+ .accion{margin-top:auto;padding-top:9px;font-size:11.5px;font-weight:800}
+ .a-limpiar{color:var(--cx-danger-text,#b91c1c)}
+ .a-verificar{color:var(--cx-warn-text,#92400e)}
+ .a-ver{color:var(--cx-primary-text,#6d28d9)}
+ .a-libre{color:var(--cx-text-faint,#a1a1aa);font-weight:600}
+ .otras{margin-top:20px}
+ .otras h2{font-size:13px;text-transform:uppercase;letter-spacing:.07em;
+           color:var(--cx-text-faint,#a1a1aa);margin:0 0 8px}
+ .otras .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px}
+ .foot{margin-top:18px;font-size:12px;color:var(--cx-text-faint,#a1a1aa)}
+ a{color:var(--cx-primary-text,#6d28d9);text-decoration:none;font-weight:700}
+ @media(max-width:820px){
+   .plano{grid-template-columns:repeat(2,1fr);
+          grid-template-areas:"lav disp" "p1 env1" "almp almp" "p3 p2" "env2 cc"}
+   .pasillo{display:none}
+ }
+</style></head><body>
+<div class="wrap">
+  <div class="barra">
+    <div>
+      <h1>&#127981; Plano de planta</h1>
+      <p class="sub">Qu&eacute; se est&aacute; haciendo ahora mismo en cada sala &middot; se actualiza solo.
+         Click en una sala para actuar sobre ella.</p>
+    </div>
+    <div><a href="/inventarios">&#9198; Volver a Planta</a></div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="plano" id="plano"></div>
+  <div class="otras" id="otras"></div>
+  <div class="foot" id="foot">Cargando&hellip;</div>
 </div>
-
-<div id="modal" class="modal"><div class="box">
- <div style="font-size:16px;font-weight:800" id="m-area"></div>
- <label>Producto a fabricar</label>
- <select id="m-prod"></select>
- <label>Cantidad a producir (kg)</label>
- <input id="m-kg" type="number" min="0.1" step="0.1" placeholder="ej: 50">
- <label>Operario (qui&eacute;n fabrica)</label>
- <select id="m-op"><option value="">-- opcional --</option></select>
- <div id="m-msg" style="font-size:12px;margin-top:8px"></div>
- <div class="row2">
-   <button class="b-cancel" onclick="cerrar()">Cancelar</button>
-   <button class="b-iniciar" id="m-go" onclick="confirmar()">&#9654; Iniciar</button>
- </div>
-</div></div>
-
 <script>
- var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
- var _area=null;
- async function csrf(){try{return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;}catch(e){return '';}}
- function badge(e){return '<span class="badge b-'+e+'">'+({libre:'LIBRE',ocupada:'OCUPADA',sucia:'SUCIA · a limpiar',limpiando:'EN LIMPIEZA'}[e]||e)+'</span>';}
- async function cargar(){
-   var r=await fetch('/api/planta/plano-fabricacion',{credentials:'same-origin'});
-   if(!r.ok){document.getElementById('msg').innerHTML='<span class="err">Error cargando el plano</span>';return;}
-   var j=await r.json(); var salas=j.areas||[];
-   var h='';
-   salas.forEach(function(s){
-     var e=s.estado||'libre'; var p=s.produccion;
-     h+='<div class="card '+e+'"><div class="nom">'+ESC(s.nombre)+'</div>'+
-        (s.capacidad?('<div class="cap">hasta '+s.capacidad+' L</div>'):'')+badge(e);
-     if(p){
-       h+='<div class="prod">&#129514; <b>'+ESC(p.producto)+'</b><br>'+(p.kg?(p.kg+' kg · '):'')+(p.lotes||1)+' lote(s)'+
-          (p.operario?('<br>&#128100; '+ESC(p.operario)):'')+(p.inicio?('<br>&#128337; '+ESC(String(p.inicio).slice(11,16))):'')+'</div>'+
-          '<button class="b-finalizar" onclick="finalizar('+p.id+',\\''+ESC(s.nombre).replace(/'/g,'')+'\\')">&#9632; Finalizar</button>';
-     } else if(e==='libre'){
-       h+='<button class="b-iniciar" onclick="abrir('+s.id+',\\''+ESC(s.nombre).replace(/'/g,'')+'\\')">&#9654; Iniciar fabricaci&oacute;n</button>';
-     } else if(e==='sucia'){
-       h+='<div class="prod">&#129529; Pendiente de limpieza</div><a href="/inventarios#produccion">ir a limpieza &rarr;</a>';
-     } else {
-       h+='<div class="prod">&#129529; En limpieza...</div>';
+ // El tema se lee igual que en el resto de EOS: esta pantalla abre en pestana propia y el
+ // data-theme del documento de afuera no la alcanza (M203).
+ try{var _t=localStorage.getItem('cx-theme'); if(_t){document.documentElement.setAttribute('data-theme',_t);}}catch(e){}
+ function ESC(s){return String(s==null?'':s).replace(/[&<>"\']/g,function(ch){
+   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"\'":'&#39;'}[ch];});}
+ function hhmm(m){ if(m==null) return ''; var h=Math.floor(m/60), r=m%60;
+   return h? (h+' h '+(r<10?'0':'')+r) : (r+' min'); }
+
+ // Cada sala del dibujo, con su lugar en el mapa. Si una no existe en la base, se dice --
+ // dibujar una sala que el sistema no tiene seria inventar planta.
+ var MAPA=[['LAV','lav'],['DISP','disp'],['PROD1','p1'],['ENV1','env1'],
+           ['ALMP','almp'],['PROD3','p3'],['PROD2','p2'],['ENV2','env2'],['CC','cc']];
+
+ function tarjeta(a, clase){
+   var est=(a.estado||'libre').toLowerCase();
+   var p=a.produccion;
+   var h='<div class="sala e-'+ESC(est)+' '+clase+'" onclick="actuar('+a.id+')" '+
+         'title="Click para actuar sobre esta sala">'+
+         '<div class="cod">'+ESC(a.codigo)+'</div>'+
+         '<div class="nom">'+ESC(a.nombre)+'</div>'+
+         '<span class="chip">'+ESC(est==='libre'?'Libre':est==='ocupada'?'En proceso':
+                                   est==='sucia'?'Sucia':est==='limpiando'?'En limpieza':est)+'</span>';
+   if(p){
+     h+='<div class="prod"><div class="pnom">'+ESC(p.producto||'')+'</div><div class="meta">';
+     var partes=[];
+     if(p.lote) partes.push('lote '+ESC(p.lote));
+     if(p.kg) partes.push(ESC(p.kg)+' kg');
+     if(p.operario) partes.push(ESC(p.operario));
+     h+=partes.join(' &middot; ');
+     // el TIEMPO: cuanto lleva la etapa, y si se paso de lo que dice el instructivo
+     var mins=(p.etapa_mins!=null?p.etapa_mins:p.mins);
+     if(mins!=null){
+       var est_min=p.etapa_estimado_min||0;
+       var tarde=(est_min>0 && mins>est_min);
+       h+='<div style="margin-top:3px">'+
+          (p.etapa?('<b>'+ESC(p.etapa)+'</b> &middot; '):'')+
+          'hace <span class="tiempo'+(tarde?' tarde':'')+'">'+hhmm(mins)+'</span>'+
+          (est_min>0?(' <span style="color:var(--cx-text-faint,#a1a1aa)">de '+hhmm(est_min)+' estimado</span>'):'')+
+          (tarde?' <b class="tarde">&#9888; pasado</b>':'')+'</div>';
      }
      h+='</div>';
-   });
-   var dd=j.debug||{};
-   var vacio='<div class="muted">No hay áreas de fabricación activas.<br>Diagnóstico (v3): '+
-     (dd.total!=null?dd.total:'?')+' áreas en total · '+(dd.activas!=null?dd.activas:'?')+' activas · '+
-     '<b>'+(dd.fabricacion!=null?dd.fabricacion:'?')+'</b> con fabricación (puede_producir).<br>'+
-     'Las áreas FAB quedaron desactivadas por error en la limpieza. Reactivalas:<br>'+
-     '<button class="b-iniciar" style="width:auto;margin-top:10px;padding:10px 16px" onclick="reactivar()">&#128260; Reactivar áreas de fabricación (FAB1/2/3/FLOAT)</button></div>';
-   document.getElementById('grid').innerHTML=h||vacio;
+     if(p.paso_actual){
+       h+='<div class="paso">paso '+ESC(p.paso_actual.orden)+' de '+ESC(p.paso_actual.de)+
+          ': '+ESC(p.paso_actual.descripcion)+'</div>';
+     }
+     h+='</div>';
+   }
+   // Que hace el click, segun el estado · es lo que convierte el cartel en la salida
+   var acc={'sucia':['a-limpiar','&#129529; Registrar la limpieza'],
+            'limpiando':['a-verificar','&#128269; Verificar (Calidad)'],
+            'ocupada':['a-ver','&#128220; Ver el legajo'],
+            'libre':['a-libre','Disponible para producir']}[est]||['a-libre',''];
+   h+='<div class="accion '+acc[0]+'">'+acc[1]+'</div></div>';
+   return h;
  }
- async function abrir(aid,nom){
-   _area=aid; document.getElementById('m-area').textContent='Iniciar en '+nom;
-   document.getElementById('m-kg').value=''; document.getElementById('m-msg').textContent='';
-   var rp=await fetch('/api/programacion/productos',{credentials:'same-origin'}); var dp=await rp.json();
-   var ops='<option value="">-- elegí producto --</option>';
-   (dp.formulas||[]).forEach(function(f){ops+='<option value="'+ESC(f.nombre)+'">'+ESC(f.nombre)+'</option>';});
-   document.getElementById('m-prod').innerHTML=ops;
+
+ var AREAS={};
+ async function cargar(){
    try{
-     var ro=await fetch('/api/planta/operarios',{credentials:'same-origin'}); var dops=await ro.json();
-     var opo='<option value="">-- opcional --</option>';
-     (dops.operarios||dops.items||[]).filter(function(o){return !o.fija_en_dispensacion;}).forEach(function(o){opo+='<option value="'+o.id+'">'+ESC((o.nombre||'')+' '+(o.apellido||''))+'</option>';});
-     document.getElementById('m-op').innerHTML=opo;
-   }catch(e){}
-   document.getElementById('modal').classList.add('show');
+     var r=await fetch('/api/planta/plano-fabricacion?todas=1',{credentials:'same-origin'});
+     var d=await r.json();
+     if(!d.ok){document.getElementById('foot').textContent='No se pudo leer el plano: '+(d.error||'');return;}
+     AREAS={}; (d.areas||[]).forEach(function(a){AREAS[a.codigo]=a;});
+     var html='', faltan=[];
+     MAPA.forEach(function(par){
+       var a=AREAS[par[0]];
+       if(!a){faltan.push(par[0]);return;}
+       html+=tarjeta(a,par[1]);
+     });
+     html+='<div class="pasillo">circulaci&oacute;n</div>';
+     document.getElementById('plano').innerHTML=html;
+
+     // Las salas que existen y NO estan en el dibujo se muestran igual: esconderlas dejaria
+     // trabajo invisible, y una sala sucia que nadie ve no se limpia nunca (M124).
+     var enMapa={}; MAPA.forEach(function(p){enMapa[p[0]]=1;});
+     var otras=(d.areas||[]).filter(function(a){return !enMapa[a.codigo];});
+     document.getElementById('otras').innerHTML = otras.length
+       ? ('<h2>Otras &aacute;reas</h2><div class="grid">'+
+          otras.map(function(a){return tarjeta(a,'');}).join('')+'</div>') : '';
+
+     var cnt={libre:0,ocupada:0,sucia:0,limpiando:0};
+     (d.areas||[]).forEach(function(a){var e=(a.estado||'libre').toLowerCase();
+       if(cnt[e]!=null) cnt[e]++;});
+     document.getElementById('kpis').innerHTML=
+       '<div class="kpi"><b>'+cnt.ocupada+'</b><span>en proceso</span></div>'+
+       '<div class="kpi"><b>'+cnt.libre+'</b><span>libres</span></div>'+
+       '<div class="kpi"><b>'+cnt.sucia+'</b><span>por limpiar</span></div>'+
+       '<div class="kpi"><b>'+cnt.limpiando+'</b><span>en limpieza</span></div>';
+     var ahora=new Date();
+     document.getElementById('foot').innerHTML='Actualizado '+
+       ahora.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})+
+       (faltan.length?(' &middot; <b>no est&aacute;n cargadas en el sistema:</b> '+ESC(faltan.join(', '))):'');
+   }catch(e){
+     document.getElementById('foot').textContent='No se pudo leer el plano (revisa la conexi\u00f3n).';
+   }
  }
- function cerrar(){document.getElementById('modal').classList.remove('show');}
- async function confirmar(){
-   var prod=document.getElementById('m-prod').value;
-   var kg=parseFloat(document.getElementById('m-kg').value);
-   var op=document.getElementById('m-op').value;
-   var mm=document.getElementById('m-msg');
-   if(!prod){mm.innerHTML='<span class="err">Elegí un producto</span>';return;}
-   if(!kg||kg<=0){mm.innerHTML='<span class="err">Cantidad en kg (mayor a 0)</span>';return;}
-   document.getElementById('m-go').disabled=true; mm.textContent='Iniciando...';
-   var body={producto:prod,area_id:_area,cantidad_kg:kg}; if(op) body.operario_id=parseInt(op);
-   var t=await csrf();
-   var r=await fetch('/api/planta/fabricacion/crear-iniciar',{method:'POST',credentials:'same-origin',
-     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
-   var j=await r.json(); document.getElementById('m-go').disabled=false;
-   if(!r.ok){mm.innerHTML='<span class="err">'+ESC(j.mensaje||j.error||('Error '+r.status))+'</span>';return;}
-   cerrar(); document.getElementById('msg').innerHTML='<span class="ok">&#9654; Fabricación iniciada · MP descontada</span>'; cargar();
+
+ function actuar(id){
+   var a=null; for(var k in AREAS){ if(AREAS[k].id===id){a=AREAS[k];break;} }
+   if(!a) return;
+   var est=(a.estado||'libre').toLowerCase();
+   if(est==='sucia'||est==='limpiando'){
+     // el rotulo F02 es donde se registra la limpieza y donde Calidad la verifica
+     window.open('/planta/rotulos-limpieza?area='+encodeURIComponent(a.codigo),'_blank');
+   } else if(est==='ocupada' && a.produccion && a.produccion.ebr_id){
+     window.open('/brd/despeje/'+a.produccion.ebr_id,'_blank');
+   } else if(est==='ocupada'){
+     window.open('/inventarios#produccion','_blank');
+   } else {
+     window.open('/inventarios#programacion','_blank');
+   }
  }
- async function finalizar(pid,nom){
-   if(!confirm('¿Finalizar la fabricación en '+nom+'? El área quedará SUCIA hasta que la limpien.')) return;
-   var t=await csrf();
-   var r=await fetch('/api/programacion/programar/'+pid+'/terminar',{method:'POST',credentials:'same-origin',
-     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
-   var j=await r.json();
-   if(!r.ok){document.getElementById('msg').innerHTML='<span class="err">'+ESC(j.error||('Error '+r.status))+'</span>';return;}
-   document.getElementById('msg').innerHTML='<span class="ok">&#9632; Fabricación finalizada · área marcada sucia</span>'; cargar();
- }
- async function reactivar(){
-   var t=await csrf();
-   var r=await fetch('/api/planta/fabricacion/reactivar-areas',{method:'POST',credentials:'same-origin',
-     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
-   var j=await r.json();
-   if(!r.ok){document.getElementById('msg').innerHTML='<span class="err">'+ESC(j.error||('Error '+r.status))+'</span>';return;}
-   document.getElementById('msg').innerHTML='<span class="ok">&#9989; Reactivadas: '+ESC((j.reactivadas||[]).join(', ')||'ninguna')+'</span>'; cargar();
- }
- cargar(); setInterval(cargar, 20000);
+
+ cargar();
+ // se refresca solo, pero NO cuando la pestana esta oculta (cortex.js ya envuelve setInterval
+ // para eso: cuatro pestanas abiertas eran cuatro veces el trafico contra tres workers)
+ setInterval(cargar, 30000);
 </script>
 </body></html>"""
 

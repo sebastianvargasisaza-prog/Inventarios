@@ -1470,3 +1470,48 @@ El ciclo, y quién mueve cada paso:
 buscado DENTRO de la función y la liberación ocurre en el helper que llama una línea más arriba
 (M94). Lo cazó el test del borde — el de la sala ocupada —, que es justo el que parece que no
 aporta. Fijado en `tests/test_la_limpieza_libera_el_area.py` (en el gate).
+
+---
+
+## El PLANO de planta · la distribución real, en vivo (16-ago-2026)
+
+Sebastián dibujó la planta en Paint y pidió que el plano fuera así: *"la idea es que fuera súper
+inteligente · si salía sucia el área le daban click encima para limpiar"*, y *"que apenas la
+producción se monte aparezca allí el producto y la cantidad con el operario · recordá los tiempos
+… así Alejandro y yo sabemos en tiempo real qué hacen"*.
+
+Era una grilla que acomodaba las tarjetas sola (no decía dónde queda nada) y **no estaba enlazada
+desde ninguna pantalla**.
+
+**Reglas:**
+
+- **El mapa es fijo** (`grid-template-areas`), con las nueve salas del dibujo en su lugar. El
+  bloque de *otras áreas* sí se acomoda solo: ahí no hay posición física que respetar.
+- **Las salas del mapa se declaran por CÓDIGO y se verifican contra la base.** Dibujar una sala
+  que el sistema no tiene sería inventar planta; si falta, la pantalla lo dice y hay un test que
+  falla.
+- **Ninguna sala se esconde.** Las que existen y no están en el dibujo se muestran abajo: una sala
+  sucia que nadie ve no se limpia nunca (M124).
+- **El clic hace lo que toca según el estado** — sucia → registrar la limpieza · limpiando →
+  verificar (Calidad) · ocupada → abrir su legajo · libre → programar. Es lo que convierte el
+  cartel de "área sucia" en la salida.
+- **El estado va también en TEXTO**, no sólo en color.
+
+**De dónde salen los tiempos** (lo que decide si la pantalla sirve):
+
+| Dato | Fuente | Base horaria |
+|---|---|---|
+| arranque de la producción | `produccion_programada.inicio_real_at` | **Colombia** |
+| etapa en curso y su duración | `ebr_ejecuciones` de esa fase (`iniciado_at_utc`) | **UTC** |
+| paso actual | `ebr_pasos_ejecutados` | UTC |
+| estimado de la fase | `SUM(mbr_pasos.tiempo_estimado_min)` | minutos |
+
+⚠ **NO se usan `produccion_programada.etapa_disp/elab/env_*_at`**: están en el esquema y **nadie
+las escribe**, así que un plano que las leyera mostraría tiempos vacíos para siempre (M154).
+
+⚠ **El "ahora" se ancla a `datetime.now(timezone.utc)`, nunca a `datetime.now()`.** Ese devuelve
+la hora LOCAL del servidor, así que sólo daba bien porque Render corre en UTC; en una máquina en
+hora Colombia restaba 5 horas de más y el plano mostraba *"hace 0 min"* para un lote de dos horas.
+Lo mostró la previa con datos sembrados, no la lectura del código (M24).
+
+Fijado por `tests/test_plano_de_planta.py` (en el gate).
