@@ -671,6 +671,9 @@ CORAZON=(
   # El plano dibuja la planta REAL (la distribucion que dibujo Sebastian), dice que hace el
   # click en cada sala segun su estado, y calcula los tiempos con el ancla UTC explicita.
   "tests/test_plano_de_planta.py"
+  # El legajo DEMO se camina de punta a punta por UNA persona, sin pedir firmas ni
+  # autorizaciones ajenas -- y un lote REAL las sigue pidiendo todas.
+  "tests/test_demo_se_camina_solo.py"
 )
 
 echo ""

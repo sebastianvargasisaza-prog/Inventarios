@@ -609,11 +609,45 @@ def _gate_aprobacion_orden():
     # (producción y calidad); con una sola todavía no está aprobada.
     if (row[2] or "").strip() and (row[3] != "acondicionamiento" or (row[4] or "").strip()):
         return None
-    if str(row[1] or "").upper().startswith("DEMO-"):   # el legajo demo no firma nada
+    if es_lote_demo(row[1]):   # el legajo demo no firma nada
         return None
     return jsonify({
         "error": "La orden todavía no está aprobada · Producción debe autorizarla antes de arrancar",
         "codigo": "ORDEN_SIN_APROBAR"}), 409
+
+
+def es_lote_demo(valor):
+    """¿Este lote es de DEMOSTRACIÓN? · Sebastián 16-ago: *"lo importante es que el demo no pida
+    permisos, que me deje probar cada botón, continuar, guardar y seguir los flujos hasta el
+    final, así compruebo"*.
+
+    Un demo lo camina UNA persona sola, así que todo control que exija la firma o la
+    autorización de OTRO lo vuelve inútil: no se puede comprobar un flujo que se traba en el
+    segundo paso esperando a Laura.
+
+    El cálculo estaba copiado a mano en SIETE sitios (`str(x or '').upper().startswith('DEMO-')`)
+    y cada copia miraba un campo distinto -- `lote`, `_lote`, `row[2]`... --, así que un gate
+    nuevo nacía sin la excepción y el demo se trababa justo ahí (M3/M45). Ahora hay una sola.
+
+    ⚠ Lo que NO afloja: los controles de ESTADO y de DATO (`YA_CERRADO`, `LOTE_DUPLICADO`,
+    `CANTIDAD_INVALIDA`, `LEGAJO_INMUTABLE`). Esos no piden permiso a nadie -- dicen "ya lo
+    hiciste" o "el dato está mal" -- y en un demo tienen que frenar igual, porque son parte de
+    lo que se está comprobando.
+    """
+    return str(valor or "").strip().upper().startswith("DEMO-")
+
+
+def _es_demo_ebr(conn, ebr_id):
+    """Lo mismo, resolviendo el lote del legajo · para los gates que sólo tienen el id."""
+    try:
+        r = conn.execute(
+            "SELECT COALESCE(lote_codigo, lote, '') FROM ebr_ejecuciones WHERE id=?",
+            (ebr_id,)).fetchone()
+        return es_lote_demo(r[0] if r else "")
+    except Exception:
+        # ante la duda NO se afloja: un demo trabado es un fastidio, un lote real sin firma es
+        # un registro regulado falso
+        return False
 
 
 def _require_brd_ejecutor():
@@ -4777,7 +4811,7 @@ def completar_ebr(ebr_id):
         return jsonify({"error": f"EBR no completable (estado: {ebr['estado']})"}), 409
     # DEMO (Sebastián 20-jul): un lote DEMO (lote 'DEMO-...') se puede TERMINAR sin todos los
     # pasos/IPCs completos (es un sandbox para caminar el flujo). Los lotes reales exigen TODO (GMP).
-    _es_demo = str(ebr["lote"] or "").upper().startswith("DEMO-")
+    _es_demo = es_lote_demo(ebr["lote"] or "")
 
     pendientes = cur.execute(
         """SELECT COUNT(*) FROM ebr_pasos_ejecutados
@@ -5111,7 +5145,7 @@ def liberar_ebr(ebr_id):
     # DEMO (lote 'DEMO-...') · sandbox para caminar el flujo: un click, sin e-firma
     # (Part 11). Los lotes REALES siguen exigiendo signature_id 'libera'. Los gates
     # regulatorios de abajo (desviación/IPC OOS/micro/pesajes) siguen aplicando.
-    _es_demo = str(ebr["_lote"] or "").upper().startswith("DEMO-")
+    _es_demo = es_lote_demo(ebr["_lote"] or "")
     if not signature_id and not _es_demo:
         return jsonify({
             "error": "signature_id requerido · meaning='libera' record_table='ebr_ejecuciones'",
@@ -5897,7 +5931,7 @@ def brd_material_envase_verificar(ebr_id, row_id):
     if (fila[2] or "").strip():
         return jsonify({"error": "ya fue verificado por " + fila[2], "codigo": "YA_VERIFICADO"}), 409
     # DEMO: un lote de demostración se camina con una sola persona (igual que el despeje).
-    _es_demo = str(ebr["lote"] or "").upper().startswith("DEMO-")
+    _es_demo = es_lote_demo(ebr["lote"] or "")
     if not _es_demo and (fila[0] or "").strip() == user:
         return jsonify({
             "error": "No podés verificar tu propia recepción: la 2ª firma debe ser de OTRA persona "
@@ -6516,7 +6550,7 @@ def reportar_ipc_estandar(ebr_id):
             (ebr_id, cod)).fetchone()
     except Exception as _e:
         log.warning("registro previo de %s no legible: %s", cod, _e)
-    _es_demo_ipc = str(ebr["_lote"] or '').upper().startswith('DEMO-')
+    _es_demo_ipc = es_lote_demo(ebr["_lote"] or '')
     if _adjudica and not _es_demo_ipc:
         if not _batch_role_info(user).get("verifica"):
             return jsonify({
@@ -7480,7 +7514,11 @@ def reportar_pesaje(ebr_id):
     # la 1ª firma del pesaje es OBLIGATORIA (Part 11 / dato de lote regulado).
     user = session.get("compras_user", "")
     signature_id = body.get("signature_id")
-    if not signature_id and _ebr_mode_now(cur) != "off":
+    # El legajo DEMO se camina de un click, igual que el despeje, los controles y la liberación:
+    # es para comprobar el flujo, y una firma por pesaje lo traba en el primer paso.
+    # se resuelve por ID y no por `ebr["lote"]`: esta consulta no trae esa columna, así que
+    # leerla habría reventado -- el helper por id no depende de qué campos traiga cada SELECT
+    if not signature_id and _ebr_mode_now(cur) != "off" and not _es_demo_ebr(cur, ebr_id):
         return jsonify({
             "error": "Falta la e-firma del pesaje (firmá como ejecutor).",
             "codigo": "FIRMA_REQUERIDA",
@@ -8601,7 +8639,7 @@ def aprobar_orden_ebr(ebr_id):
         return jsonify({"error": "la orden ya fue aprobada por " + row[1], "codigo": "YA_APROBADA"}), 409
     if str(row[0] or "").lower() in ("liberado", "rechazado"):
         return jsonify({"error": "el legajo ya está cerrado", "codigo": "LEGAJO_INMUTABLE"}), 409
-    _es_demo = str(row[2] or "").upper().startswith("DEMO-")
+    _es_demo = es_lote_demo(row[2] or "")
     if not signature_id and not _es_demo:
         return jsonify({"error": "signature_id requerido · meaning='aprueba_orden' "
                                  "record_table='ebr_ejecuciones'"}), 400
@@ -9509,7 +9547,9 @@ def registrar_despeje_item_ebr(ebr_id):
     # Corregir un resultado ya registrado = atribución de quien CORRIGE (Calidad / Aseguramiento /
     # Dir. Técnica / Admin · resolver canónico _batch_role_info, consistente con la sección Correcciones).
     es_calidad = bool(_batch_role_info(user).get("corrige"))
-    if es_correccion and not es_calidad:
+    # el legajo DEMO lo camina una sola persona: corregir un ítem ahí es parte de lo que se
+    # viene a comprobar, no un acto sobre un registro real
+    if es_correccion and not es_calidad and not _es_demo_ebr(cur, ebr_id):
         return jsonify({
             "error": "Corregir un resultado ya registrado es atribución de Calidad / "
                      "Dirección Técnica. El operario solo registra el despeje inicial.",
@@ -9587,7 +9627,7 @@ def verificar_despeje_item_ebr(ebr_id):
         # DEMO (Sebastián 20-jul): en un lote DEMO se permite AUTO-verificar (mismo usuario marca y verifica)
         # para poder CAMINAR el demo con una sola persona. En lotes reales rige la regla de 2 personas (GMP).
         _lr = cur.execute("SELECT COALESCE(lote_codigo, lote) FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
-        _es_demo = str((_lr[0] if _lr else "") or "").upper().startswith("DEMO-")
+        _es_demo = es_lote_demo((_lr[0] if _lr else "") or "")
         if _es_demo:
             cur.execute(
                 "UPDATE ebr_despeje_items SET verificado_por=?, verificado_at_utc=datetime('now','utc') "
@@ -9690,7 +9730,7 @@ def aprobar_dt_ebr(ebr_id):
     ebr = cur.execute("SELECT estado, COALESCE(aprobado_dt_por,''), COALESCE(lote_codigo,lote,'') FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
     if not ebr:
         return jsonify({"error": "EBR no encontrado"}), 404
-    _es_demo = str(ebr[2] or "").upper().startswith("DEMO-")
+    _es_demo = es_lote_demo(ebr[2] or "")
     if not signature_id and not _es_demo:
         return jsonify({"error": "signature_id requerido · meaning='aprueba_dt' record_table='ebr_ejecuciones'"}), 400
     # VALIDAR la firma contra e_signatures en lote REAL (espejo de liberar_ebr · Part 11: la firma debe ser
@@ -9737,7 +9777,7 @@ def agregar_correccion_ebr(ebr_id):
     if err:
         return err
     user = session.get("compras_user", "")
-    if not _batch_role_info(user).get("corrige"):
+    if not _batch_role_info(user).get("corrige") and not _es_demo_ebr(get_db(), ebr_id):
         return jsonify({"error": "Registrar una corrección es atribución de Calidad / Aseguramiento / "
                                  "Dirección Técnica.", "codigo": "SOLO_CALIDAD_CORRIGE"}), 403
     body = request.get_json(silent=True) or {}
@@ -10440,7 +10480,7 @@ def ordenes_unificadas():
         # llave equivocada devuelve None y TODO queda marcado como no-demo, sin un solo
         # error a la vista (M94 · me pasó al escribir esto).
         _lt = str(_i.get("lote_bulk") or _i.get("lote") or "").upper()
-        _i["es_demo"] = _lt.startswith("DEMO-")
+        _i["es_demo"] = es_lote_demo(_lt)
     _reales = [i for i in items if not i["es_demo"]]
     _abiertas = [i for i in _reales if not (i.get("estado") or "").lower().startswith(
         ("complet", "liberad", "cerrad", "rechaz"))]

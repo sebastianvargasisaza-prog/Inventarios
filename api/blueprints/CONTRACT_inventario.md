@@ -1019,3 +1019,20 @@ la línea sin frascos. Queda auditado con el valor anterior (sin él no se puede
 el puente base↔serigrafiado (M139) y el método de marcación.
 
 Tests: `tests/test_rastro_maestro_envases.py` (en el gate).
+
+---
+
+## El aviso de STOCK INSUFICIENTE nombra los materiales (16-ago-2026)
+
+El 422 de `verificar-stock` decía *"No se puede producir 1kg de X: **2 MP(s) sin stock
+suficiente**"*. El detalle viajaba en `faltantes`, pero el MENSAJE -- que es lo que la persona lee
+-- sólo traía el número, así que no se podía saber qué comprar ni qué lote liberar sin abrir la
+respuesta cruda. Sebastián se trabó dos veces con ese aviso caminando el demo.
+
+**Regla:** un aviso que FRENA tiene que decir qué lo destraba. Ahora nombra hasta cuatro
+materiales con lo que se necesita y lo que hay (`falta MP00123 (necesita 900 g, hay 0)`) y
+**declara cuántos quedaron sin nombrar** en vez de recortar en silencio (M148/M155).
+
+El detalle completo sigue en `faltantes`, con los lotes retenidos y por qué no cuentan (M124): un
+total que excluye sin nombrar lo excluido se lee como "no hay", cuando lo que pasa es que el
+material está en cuarentena o vencido.
