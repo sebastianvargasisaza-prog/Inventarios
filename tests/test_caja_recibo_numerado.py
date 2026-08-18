@@ -106,17 +106,40 @@ def test_el_recibo_anulado_no_suma_al_saldo_pero_sigue_a_la_vista(app, db_clean)
         "el recibo anulado perdió su número · el hueco tiene que poder verse")
 
 
-def test_ninguna_fila_de_caja_queda_sin_recibo(app, db_clean):
-    """Invariante durable, incluye el backfill de la mig 383: si mañana alguien agrega otro
-    camino que inserta en caja y se olvida del número, esto lo caza."""
-    _limpiar(app)
-    c = _admin(app)
-    _registrar(c, concepto="ZZ recibo invariante")
-    conn = sqlite3.connect(os.environ["DB_PATH"])
-    huerfanas = conn.execute(
-        "SELECT id, fecha, concepto FROM animus_caja_menor "
-        "WHERE COALESCE(recibo_numero,'') = '' LIMIT 5").fetchall()
-    conn.close()
-    assert not huerfanas, (
-        "hay movimientos de caja sin número de recibo: %s. Todo INSERT a animus_caja_menor "
-        "asigna el correlativo (ver animus_caja_registrar)." % (huerfanas,))
+def test_ningun_camino_de_codigo_inserta_en_caja_sin_recibo():
+    """Invariante durable: si mañana alguien agrega otro camino que inserta en caja y se olvida
+    del número, esto lo caza.
+
+    ⚠ 17-ago · esto barría los DATOS (`WHERE recibo_numero=''` sobre toda la tabla) y se volvió
+    frágil al paralelizar el gate: **siete archivos de test siembran filas de caja con SQL crudo**,
+    sin pasar por el endpoint, así que este test fallaba o no según con qué archivo le tocara
+    compartir worker -- cada worker tiene su propia base (M133: un rojo intermitente no está
+    diagnosticado hasta poder NOMBRAR qué es lo no determinista; acá era el reparto).
+
+    El invariante que el docstring promete es sobre el CÓDIGO, no sobre los datos: se mide donde
+    vive. Así ninguna siembra de otro test lo puede ensuciar, y sigue cazando exactamente lo que
+    dice cazar. El comportamiento (que el endpoint asigne el correlativo) lo cubren los otros
+    casos de este mismo archivo.
+    """
+    import re
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    api = os.path.join(raiz, "api")
+    sin_recibo = []
+    for base, _dirs, files in os.walk(api):
+        if "__pycache__" in base:
+            continue
+        for f in files:
+            if not f.endswith(".py"):
+                continue
+            ruta = os.path.join(base, f)
+            with open(ruta, encoding="utf-8", errors="replace") as fh:
+                src = fh.read()
+            for m in re.finditer(r"INSERT\s+INTO\s+animus_caja_menor(.{0,400})", src,
+                                 re.S | re.I):
+                if "recibo_numero" not in m.group(1):
+                    linea = src[:m.start()].count("\n") + 1
+                    sin_recibo.append("%s:%d" % (os.path.relpath(ruta, raiz), linea))
+    assert not sin_recibo, (
+        "estos INSERT a animus_caja_menor no asignan el número de recibo: %s. Un correlativo "
+        "del que se pueden arrancar hojas no prueba nada (ver animus_caja_registrar)."
+        % sin_recibo)
