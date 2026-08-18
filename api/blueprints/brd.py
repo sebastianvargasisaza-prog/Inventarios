@@ -4154,7 +4154,8 @@ def ebr_vista_completa(ebr_id):
                 __import__('logging').getLogger('brd').warning('materiales envase planeados OF fallo: %s', _emp)
         # + materiales agregados/editados A MANO (se suman a lo auto-cargado · editables).
         try:
-            out['envasado_materiales'] = (out['envasado_materiales'] or []) + _materiales_envase_manuales(conn, ebr_id)
+            out['envasado_materiales'] = _fusionar_materiales(
+                out['envasado_materiales'], _materiales_envase_manuales(conn, ebr_id))
         except Exception as _emm:
             # Antes era `except: pass` y por eso un error en la consulta hacía DESAPARECER
             # las filas de material de la pantalla sin dejar rastro: indistinguible de "no
@@ -4220,6 +4221,11 @@ def ebr_vista_completa(ebr_id):
                     out['acond_materiales'].append({
                         'lote_acond': _loa,
                         'material': (_cod + (' ' + _nom if _nom else '')),
+                        # El CÓDIGO va aparte del texto que se muestra: es la llave con la que
+                        # esta fila derivada se empareja con la registrada. Sin él, la fusión no
+                        # puede reconocerlas como el mismo material y la etiqueta queda listada
+                        # dos veces (una vacía y una con los números).
+                        'material_codigo': _cod, 'material_nombre': _nom,
                         'lote_material': '', 'requerida': _req,
                         'devuelta': None, 'utilizada': None, 'averiada': None, 'diferencia': None,
                     })
@@ -4249,7 +4255,8 @@ def ebr_vista_completa(ebr_id):
                 __import__('logging').getLogger('brd').warning('materiales envase planeados OA fallo: %s', _emp)
         # + materiales agregados/editados A MANO (se suman a lo auto-cargado · editables).
         try:
-            out['acond_materiales'] = (out['acond_materiales'] or []) + _materiales_envase_manuales(conn, ebr_id)
+            out['acond_materiales'] = _fusionar_materiales(
+                out['acond_materiales'], _materiales_envase_manuales(conn, ebr_id))
         except Exception:
             pass
     # Elaborado por (enriquecido) + Supervisado por · Sebastián 5-jun-2026:
@@ -6112,6 +6119,31 @@ def brd_material_envase_delete(ebr_id, row_id):
               tabla="ebr_envase_materiales", registro_id=row_id)
     conn.commit()
     return jsonify({"ok": True, "eliminado": True})
+
+
+def _fusionar_materiales(derivadas, registradas):
+    """Une lo DERIVADO (lo que el lote debería llevar) con lo REGISTRADO (lo que alguien anotó).
+
+    Antes se concatenaban, así que al registrar la conciliación de un material la pantalla lo
+    mostraba DOS VECES: la fila derivada vacía y la registrada con los números. En una tabla de
+    conciliación eso no es ruido, es una contradicción -- las dos filas dicen cosas distintas
+    del mismo material y no hay forma de saber cuál manda (M161) --, y encima el total de
+    "registros" cuenta de más.
+
+    La derivada es una PROMESA (sale de la presentación del producto); la registrada es un
+    HECHO. Cuando existe el hecho, la promesa sobra.
+
+    ⚠ Sólo se retira la DERIVADA del material que ya tiene registro. Entre registradas NO se
+    deduplica: dos lotes distintos de la misma etiqueta son dos filas legítimas, y colapsarlas
+    perdería una recepción (M187 al revés · agrupar de más es tan malo como no agrupar).
+    """
+    con_registro = {
+        str(m.get("material_codigo") or "").strip().upper()
+        for m in (registradas or []) if (m.get("material_codigo") or "").strip()
+    }
+    quedan = [d for d in (derivadas or [])
+              if str(d.get("material_codigo") or "").strip().upper() not in con_registro]
+    return quedan + list(registradas or [])
 
 
 def _materiales_envase_manuales(conn, ebr_id):

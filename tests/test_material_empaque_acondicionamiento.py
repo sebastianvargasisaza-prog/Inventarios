@@ -200,3 +200,66 @@ def test_llenar_la_conciliacion_en_el_LEGAJO_deja_liberar_el_lote(app, db_clean)
             cn.commit()
         finally:
             cn.close()
+
+
+def test_registrar_un_material_no_lo_deja_DUPLICADO(app, db_clean):
+    """La fila derivada es una PROMESA; la registrada es un HECHO.
+
+    Al registrar la conciliación de la etiqueta, la tabla la mostraba DOS VECES: la derivada
+    (vacía, de la presentación del producto) y la registrada (con los números). En una tabla de
+    conciliación eso no es ruido: son dos filas diciendo cosas distintas del mismo material, sin
+    forma de saber cuál manda (M161), y el conteo de registros sale inflado.
+
+    ⚠ Lo que este test también fija es el borde opuesto: dos LOTES distintos del mismo material
+    siguen siendo dos filas. Agrupar de más pierde una recepción.
+    """
+    import os
+    import sqlite3
+    cli = _login(app)
+    d = cli.post("/api/admin/planta-demo/crear", json={}, headers=_h()).get_json()
+    oa = d["acondicionamiento_ebr"]
+
+    # ⚠ El demo se REUSA entre tests de este archivo, así que los materiales que registraron los
+    # casos anteriores siguen ahí y este test mediría otra cosa. Se limpia ANTES de sembrar, que
+    # es idempotente por construcción (un `finally` no corre si el proceso muere · M103).
+    cn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        cn.execute("DELETE FROM ebr_envase_materiales WHERE ebr_id=?", (oa,))
+        cn.commit()
+    finally:
+        cn.close()
+
+    def _codigos():
+        mats = (cli.get("/api/brd/ebr/%d/vista-completa" % oa).get_json()
+                or {}).get("acond_materiales") or []
+        return [(m.get("material_codigo") or "", m.get("lote_material") or "") for m in mats]
+
+    # Las filas DERIVADAS salen del acondicionamiento registrado (la etiqueta y el estuche que
+    # consumió), no de una tabla del legajo: sin caminarlo, la tabla arranca vacía y este test
+    # estaría midiendo el caso que no falla (M152).
+    cam = d.get("caminar") or {}
+    cli.post("/api/acondicionamiento", headers=_h(), json={
+        "lote": d["lote"], "producto": d["producto"], "presentacion": cam["presentacion"],
+        "batch_g": cam["batch_g"], "unidades": cam["unidades"],
+        "mee_consumido": [{"codigo": cam["etiqueta_codigo"], "cantidad": cam["unidades"]},
+                          {"codigo": cam["caja_codigo"], "cantidad": cam["unidades"]}]})
+
+    antes = _codigos()
+    assert any(c == "ETIQ-DEMO" for c, _ in antes), ("el demo tiene que traer la etiqueta", antes)
+
+    cli.post("/api/brd/ebr/%d/material-envase" % oa, headers=_h(), json={
+        "material_codigo": "ETIQ-DEMO", "lote_material": "ETQ-A",
+        "requerida": 30, "utilizada": 30})
+    despues = _codigos()
+    etiquetas = [x for x in despues if x[0] == "ETIQ-DEMO"]
+    assert len(etiquetas) == 1, (
+        "la etiqueta quedó duplicada: la fila derivada y la registrada conviven", despues)
+    assert etiquetas[0][1] == "ETQ-A", ("quedó la derivada en vez de la registrada", etiquetas)
+
+    # segundo LOTE de la misma etiqueta: eso SÍ son dos filas
+    cli.post("/api/brd/ebr/%d/material-envase" % oa, headers=_h(), json={
+        "material_codigo": "ETIQ-DEMO", "lote_material": "ETQ-B",
+        "requerida": 10, "utilizada": 10})
+    finales = [x for x in _codigos() if x[0] == "ETIQ-DEMO"]
+    assert sorted(l for _, l in finales) == ["ETQ-A", "ETQ-B"], (
+        "dos lotes distintos de la misma etiqueta tienen que seguir siendo dos filas", finales)
