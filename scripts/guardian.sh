@@ -762,6 +762,8 @@ CORAZON=(
   # un except mudo): no lo veia nadie porque la fase no se habia caminado todavia.
   "tests/test_demo_camina_envasado_y_acond.py"
   "tests/test_demo_se_puede_caminar_dos_veces.py"
+  "tests/test_conciliacion_no_contradice_al_legajo.py"
+  "tests/test_acondicionamiento_legajo.py"
   # UN lote atravesando las TRES fases en orden. Hay E2E de cada fase por separado, pero lo que
   # vive ENTRE ellas no lo ejercia nadie -- y ahi estaban los tres bugs del 17-ago: el cierre no
   # veia las unidades que registro la planta, el enlace al paso siguiente volvia vacio en el caso

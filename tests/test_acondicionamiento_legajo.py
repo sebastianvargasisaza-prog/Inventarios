@@ -73,9 +73,22 @@ def test_oa_legajo_convive_con_op_of(app, db_clean):
     lotes = [o.get("lote_bulk") for o in lu.get_json().get("ordenes", [])]
     assert "LOTEOA1" in lotes, lotes
 
-    # Idempotencia: re-crear la OA del mismo lote físico NO duplica (LOTE_DUPLICADO → 409).
+    # Idempotencia: re-crear la OA del mismo lote físico NO duplica.
+    #
+    # ⚠ 17-ago · antes se exigía 409 LOTE_DUPLICADO. Se cambió A PROPÓSITO: "ya existe" no es un
+    # error, es la respuesta -- contestar 409 en el caso MÁS COMÚN obligaba a cada botón a
+    # inventar su propio rescate, y el que no lo inventaba dejaba al operario sin el enlace al
+    # paso siguiente (fue justo lo que rompió el enganche envasado→acondicionamiento).
+    #
+    # La GARANTÍA que este test protege no cambió y es la que se verifica: no nace un segundo
+    # legajo. Por eso se exige el MISMO id, no sólo un código de respuesta (M97: el test se
+    # re-apunta a la garantía, nunca se afloja).
     oa2 = c.post("/api/brd/legajo-rapido", json={"producto": "ZZ-OA-LEG", "lote": "LOTEOA1", "fase": "acondicionamiento"}, headers=_h())
-    assert oa2.status_code == 409, oa2.data
+    assert oa2.status_code == 200, oa2.data
+    j2 = oa2.get_json()
+    assert j2.get("reusado") is True, ("re-crear la OA tiene que DECIR que reusó, no callarlo", j2)
+    assert j2.get("id") == oa_id, ("se creó un SEGUNDO legajo de acondicionamiento para el mismo "
+                                   "lote físico", j2, oa_id)
 
 
 def test_descartar_ebr_elimina_y_desaparece(app, db_clean):

@@ -706,17 +706,27 @@ def _conciliacion_granel(conn, ebr_id, header=None):
     h = header or {}
     row = None
     if not h:
+        # ⚠ `lote_codigo` y `producto` van en esta lectura, no sólo en la del caller: sin ellos
+        #   el puente del granel OP->OF y la caída a las unidades REGISTRADAS (más abajo) no
+        #   pueden correr, y los dos callers que NO pasan header -- el PDF del legajo y el flujo
+        #   de declarar remanente -- son justo los que se muestran en una auditoría.
+        # ⚠ el producto NO es columna de `ebr_ejecuciones`: vive en `mbr_templates`
+        #   (`producto_nombre`), igual que en las otras seis lecturas del archivo.
         row = conn.execute(
-            "SELECT COALESCE(fase,'fabricacion'), ml_envasable, densidad_g_ml, remanente_g, "
-            "COALESCE(remanente_destino,''), COALESCE(remanente_observaciones,''), "
-            "COALESCE(remanente_por,''), COALESCE(remanente_at_utc,'') "
-            "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+            "SELECT COALESCE(e.fase,'fabricacion'), e.ml_envasable, e.densidad_g_ml, "
+            "e.remanente_g, COALESCE(e.remanente_destino,''), "
+            "COALESCE(e.remanente_observaciones,''), COALESCE(e.remanente_por,''), "
+            "COALESCE(e.remanente_at_utc,''), COALESCE(e.lote_codigo,e.lote,''), "
+            "COALESCE(m.producto_nombre,'') "
+            "  FROM ebr_ejecuciones e "
+            "  LEFT JOIN mbr_templates m ON m.id = e.mbr_template_id "
+            " WHERE e.id=?", (ebr_id,)).fetchone()
         if not row:
             return None
         h = {"fase": row[0], "ml_envasable": row[1], "densidad_g_ml": row[2],
              "remanente_g": row[3], "remanente_destino": row[4],
              "remanente_observaciones": row[5], "remanente_por": row[6],
-             "remanente_at_utc": row[7]}
+             "remanente_at_utc": row[7], "lote_codigo": row[8], "producto": row[9]}
     if str(h.get("fase") or "").strip().lower() != "envasado":
         return None                      # la conciliación de granel es del envasado
 
@@ -770,6 +780,62 @@ def _conciliacion_granel(conn, ebr_id, header=None):
         envasado_ml += sub
         presentaciones.append({"codigo": r[0], "etiqueta": r[1], "volumen_ml": vol,
                                "unidades": uds, "subtotal_ml": sub})
+    if not presentaciones:
+        # ── LA CONCILIACIÓN LEÍA UNA SOLA DE LAS DOS FUENTES (17-ago) ──────────────────────
+        # Las unidades se registran por DOS caminos: `POST /api/envasado` -- la pantalla que
+        # usa la planta -- escribe en `envasado`, y el formulario del propio legajo escribe en
+        # `ebr_envasado_unidades`. Esta cuenta miraba sólo el segundo, así que en el MISMO
+        # legajo la tabla de arriba decía *"DEMO30 · 30 unidades · Completado"* y este bloque,
+        # tres centímetros más abajo, *"Sin unidades registradas todavía · 0 mL"*.
+        #
+        # Dos mitades de la misma pantalla contradiciéndose sobre el mismo hecho: el que mira
+        # no tiene forma de saber cuál creer, y deja de creerle a las dos (M161). Es el mismo
+        # defecto que ya se había pagado en el CIERRE del envasado, en la otra mitad del
+        # archivo -- se arregló ahí y este hermano quedó vivo (M45).
+        #
+        # ⚠ Se cae a lo REGISTRADO, NUNCA a las presentaciones PLANEADAS: lo planeado no es lo
+        #   producido, y conciliar el granel contra un plan da un rendimiento inventado.
+        _lote_env = (h.get("lote_codigo") or "").strip()
+        if _lote_env:
+            _vol = {}
+            try:
+                for _p in conn.execute(
+                    "SELECT UPPER(TRIM(COALESCE(presentacion_codigo,''))), "
+                    "       UPPER(TRIM(COALESCE(envase_codigo,''))), "
+                    "       COALESCE(volumen_ml,0), COALESCE(etiqueta,'') "
+                    "  FROM producto_presentaciones "
+                    " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+                        ((h.get("producto") or "").strip(),)).fetchall():
+                    for _k in (_p[0], _p[1]):
+                        if _k and float(_p[2] or 0) > 0:
+                            _vol.setdefault(_k, (float(_p[2]), _p[3]))
+            except Exception as _ev:
+                log.warning("volumen de presentaciones (ebr %s) no legible: %s", ebr_id, _ev)
+            _acc = {}
+            try:
+                for _r in conn.execute(
+                    "SELECT COALESCE(NULLIF(TRIM(presentacion),''), COALESCE(envase_codigo,'')), "
+                    "       COALESCE(envase_codigo,''), COALESCE(unidades,0) "
+                    "  FROM envasado WHERE UPPER(TRIM(lote))=UPPER(TRIM(?))",
+                        (_lote_env,)).fetchall():
+                    _cod, _uds = (_r[0] or '').strip(), float(_r[2] or 0)
+                    if not _cod or _uds <= 0:
+                        continue
+                    _v, _et = _vol.get(_cod.upper()) or _vol.get((_r[1] or '').strip().upper()) or (0.0, '')
+                    _a = _acc.setdefault(_cod, {"unidades": 0.0, "volumen_ml": _v, "etiqueta": _et})
+                    _a["unidades"] += _uds
+            except Exception as _ee:
+                log.warning("unidades registradas (ebr %s) no legibles: %s", ebr_id, _ee)
+            for _cod, _a in sorted(_acc.items()):
+                if _a["volumen_ml"] <= 0:
+                    sin_volumen += 1     # se declara: sin volumen no se puede pesar la cuenta
+                    continue
+                _sub = round(_a["unidades"] * _a["volumen_ml"], 2)
+                envasado_ml += _sub
+                presentaciones.append({"codigo": _cod, "etiqueta": _a["etiqueta"],
+                                       "volumen_ml": _a["volumen_ml"],
+                                       "unidades": _a["unidades"], "subtotal_ml": _sub,
+                                       "origen": "registro"})
     envasado_ml = round(envasado_ml, 2)
 
     # Unidades TEÓRICAS y rendimiento · derivados del granel que entró (M71: lo derivado
