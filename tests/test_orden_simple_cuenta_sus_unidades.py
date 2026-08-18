@@ -215,3 +215,49 @@ def test_el_boton_de_la_cola_abre_el_LEGAJO(app, db_clean):
     assert "abrirAcond" in cuerpo, (
         "se perdió la caída al registro a mano: un lote sin MBR aprobado no puede quedar sin "
         "forma de registrarse")
+
+
+def test_las_pantallas_del_batch_record_son_FULL_WIDTH():
+    """Sebastián lo pide desde siempre: los módulos van a ~96vw.
+
+    Las del batch record estaban clavadas en 1100-1200px, así que en un monitor de 1990 dejaban
+    el 40% en blanco **y la tabla de Materiales de Empaque -- 7 columnas -- se desbordaba dentro
+    de esa columna, cortando "Diferencia"**. La orden madre ya usaba 96vw: la asimetría entre
+    hermanas es la firma del hueco (M45).
+
+    Los dos INSTRUCTIVOS quedan angostos a propósito -- son formatos que se leen y se imprimen,
+    donde una medida corta se lee mejor -- y por eso se enumeran acá con su motivo, en vez de
+    aflojar la regla (M122).
+    """
+    import re
+    from blueprints import brd
+    ANGOSTAS = {"_INSTRUCCIONES_ACOND_HTML": "formato que se lee y se imprime",
+                "_INSTRUCCIONES_ENVASADO_HTML": "formato que se lee y se imprime",
+                "_BRD_OCULTO_HTML": "un aviso corto y centrado",
+                "_ACTIVAR_LEGAJOS_HTML": "un formulario chico de admin"}
+    angostas = []
+    for nom in dir(brd):
+        if not (nom.startswith("_") and nom.endswith("HTML")):
+            continue
+        h = getattr(brd, nom, "")
+        if not isinstance(h, str) or ".wrap{max-width:" not in h:
+            continue
+        m = re.search(r"\.wrap\{max-width:([^;]+)", h)
+        if not m:
+            continue
+        valor = m.group(1).strip()
+        if valor.endswith("px") and nom not in ANGOSTAS:
+            angostas.append("%s = %s" % (nom, valor))
+    assert not angostas, (
+        "estas pantallas del batch record volvieron a un ancho fijo en vez de 96vw: %s" % angostas)
+
+
+def test_el_legajo_no_llama_ACONDICIONADAS_a_las_unidades_PLANEADAS():
+    """El encabezado decía "Unidades acondicionadas: 333" mientras la fila de abajo decía
+    "Programado": sin acondicionamiento registrado la lista cae a las presentaciones PLANEADAS,
+    así que el rótulo prometía un hecho que no ocurrió (M19/M5)."""
+    from blueprints import brd
+    h = brd._ACOND_LEGAJO_HTML
+    assert "Unidades a acondicionar (plan)" in h, (
+        "el encabezado no distingue lo planeado de lo acondicionado")
+    assert "fld(rotUds," in h, "el rótulo volvió a ser fijo en vez de derivarse de los datos"

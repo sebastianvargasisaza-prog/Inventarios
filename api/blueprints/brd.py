@@ -10897,7 +10897,7 @@ _ORDENES_PROD_HTML = """<!DOCTYPE html>
 <title>Órdenes de Producción · EOS</title>
 <style>
 body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#f4f4f7;color:#18181b;margin:0;padding:20px;-webkit-font-smoothing:antialiased}
-.wrap{max-width:1200px;margin:0 auto}
+/* 96vw = la regla de EOS para los modulos. Estaban clavadas en 1100-1200px: en un monitor de 1990 dejaban el 40% en blanco y la tabla de materiales -7 columnas- se desbordaba cortando 'Diferencia'. La orden madre ya usaba 96vw; se alinean las de DATOS. Los dos INSTRUCTIVOS quedan angostos a proposito: son formatos que se leen y se imprimen. */.wrap{max-width:96vw;margin:0 auto}
 h1{color:var(--cx-primary-text, #7c3aed);font-size:22px;margin:0 0 4px}
 .sub{color:var(--cx-text-mute, #64748b);font-size:13px;margin-bottom:14px}
 .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
@@ -11060,7 +11060,7 @@ window.addEventListener('unhandledrejection',function(e){
 /*__TOOLTIP_CSS__*/
 *{box-sizing:border-box}
 body{font-family:var(--cx-font);background:var(--cx-bg);color:var(--cx-text);margin:0;padding:24px}
-.wrap{max-width:1150px;margin:0 auto}
+/* 96vw = la regla de EOS para los modulos. Estaban clavadas en 1100-1200px: en un monitor de 1990 dejaban el 40% en blanco y la tabla de materiales -7 columnas- se desbordaba cortando 'Diferencia'. La orden madre ya usaba 96vw; se alinean las de DATOS. Los dos INSTRUCTIVOS quedan angostos a proposito: son formatos que se leen y se imprimen. */.wrap{max-width:96vw;margin:0 auto}
 a.back{display:inline-flex;align-items:center;gap:8px;background:var(--cx-card, #fff);color:var(--cx-primary-text, #7c3aed);font-size:13px;font-weight:700;text-decoration:none;padding:10px 18px;border-radius:11px;border:1px solid #e9d5ff;box-shadow:0 2px 10px rgba(124,58,237,.10);transition:all .14s ease}
 a.back:hover{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border-color:transparent;box-shadow:0 6px 18px rgba(124,58,237,.30);transform:translateY(-1px)}
 a.back .arw{font-size:15px;line-height:1}
@@ -11748,7 +11748,7 @@ _ENVASADO_LEGAJO_HTML = """<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css">
 <style>
 body{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
-.wrap{max-width:1180px;margin:0 auto}
+/* 96vw = la regla de EOS para los modulos. Estaban clavadas en 1100-1200px: en un monitor de 1990 dejaban el 40% en blanco y la tabla de materiales -7 columnas- se desbordaba cortando 'Diferencia'. La orden madre ya usaba 96vw; se alinean las de DATOS. Los dos INSTRUCTIVOS quedan angostos a proposito: son formatos que se leen y se imprimen. */.wrap{max-width:96vw;margin:0 auto}
 .card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f1f4);border-radius:14px;padding:28px 32px;box-shadow:0 1px 3px rgba(24,24,27,.04),0 8px 24px -14px rgba(24,24,27,.10);margin-bottom:18px}
 a.back{color:var(--cx-primary-text,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
 .ortit{font-size:26px;font-weight:800;color:var(--cx-text,#18181b);margin:6px 0 6px;letter-spacing:-.4px}
@@ -11784,7 +11784,7 @@ table.t tfoot td{font-weight:800;color:var(--cx-text,#18181b);border-top:2px sol
    distinto (.grid 4 vs 5 columnas, .bt otro padding). ── */
 .ie-emb{margin-top:4px}
 .ie-emb{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
-.ie-emb .wrap{max-width:1180px;margin:0 auto}
+.ie-emb /* 96vw = la regla de EOS para los modulos. Estaban clavadas en 1100-1200px: en un monitor de 1990 dejaban el 40% en blanco y la tabla de materiales -7 columnas- se desbordaba cortando 'Diferencia'. La orden madre ya usaba 96vw; se alinean las de DATOS. Los dos INSTRUCTIVOS quedan angostos a proposito: son formatos que se leen y se imprimen. */.wrap{max-width:96vw;margin:0 auto}
 .ie-emb .card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f1f4);border-radius:14px;padding:28px 32px;box-shadow:0 1px 3px rgba(24,24,27,.04),0 8px 24px -14px rgba(24,24,27,.10);margin-bottom:18px}
 .ie-emb a.back{color:var(--cx-primary-text,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
 .ie-emb .htop{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
@@ -12497,7 +12497,7 @@ _ACOND_LEGAJO_HTML = """<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css">
 <style>
 body{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
-.wrap{max-width:1180px;margin:0 auto}
+/* 96vw = la regla de EOS para los modulos. Estaban clavadas en 1100-1200px: en un monitor de 1990 dejaban el 40% en blanco y la tabla de materiales -7 columnas- se desbordaba cortando 'Diferencia'. La orden madre ya usaba 96vw; se alinean las de DATOS. Los dos INSTRUCTIVOS quedan angostos a proposito: son formatos que se leen y se imprimen. */.wrap{max-width:96vw;margin:0 auto}
 .card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f1f4);border-radius:14px;padding:28px 32px;box-shadow:0 1px 3px rgba(24,24,27,.04),0 8px 24px -14px rgba(24,24,27,.10);margin-bottom:18px}
 a.back{color:var(--cx-primary-text,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
 .ortit{font-size:26px;font-weight:800;color:var(--cx-text,#18181b);margin:6px 0 6px;letter-spacing:-.4px}
@@ -12570,6 +12570,15 @@ async function load(){
     var estado=h.estado||'·';
     var pres=d.acond_presentaciones||[];
     var totUds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
+    // El encabezado decia "Unidades acondicionadas: 333" mientras la fila de abajo decia
+    // "Programado": sin acondicionamiento registrado la lista cae a las presentaciones
+    // PLANEADAS, o sea que el rotulo prometia un hecho que no habia ocurrido. El estado se
+    // DERIVA de lo que hay registrado, no se afirma (M19/M5).
+    var _hayReal=pres.some(function(p){
+      var e=String(p.estado||'').toLowerCase();
+      return e && e.indexOf('program')<0 && e.indexOf('planead')<0;
+    });
+    var rotUds=(_hayReal?'Unidades acondicionadas':'Unidades a acondicionar (plan)');
     document.getElementById('cab').innerHTML=
       '<div class="ortit">ORDEN DE ACONDICIONAMIENTO N°: '+esc(h.numero_op||('OA-'+EBR_ID))+'</div>'+
       '<div class="prod">'+esc(h.producto||h.titulo||'·')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
@@ -12577,7 +12586,7 @@ async function load(){
       bandaAprobacion(h,d.mi_rol)+
       '<div class="grid">'+
         fld('N° Lote','<span class="mono">'+esc(h.lote_codigo||'·')+'</span>')+
-        fld('Unidades acondicionadas',ufmt(totUds))+
+        fld(rotUds,ufmt(totUds))+
         fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
         fld('Elaborado por',esc(h.operario||'·'))+
         fld('Observaciones',esc(h.observaciones||'Ninguna'))+
@@ -13827,7 +13836,7 @@ _ANALITICA_BATCH_HTML = """<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css">
 <style>
 body{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;font-variant-numeric:tabular-nums}
-.wrap{max-width:1200px;margin:0 auto}
+/* 96vw = la regla de EOS para los modulos. Estaban clavadas en 1100-1200px: en un monitor de 1990 dejaban el 40% en blanco y la tabla de materiales -7 columnas- se desbordaba cortando 'Diferencia'. La orden madre ya usaba 96vw; se alinean las de DATOS. Los dos INSTRUCTIVOS quedan angostos a proposito: son formatos que se leen y se imprimen. */.wrap{max-width:96vw;margin:0 auto}
 a.back{color:var(--cx-primary-text,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
 h1{font-size:24px;font-weight:800;letter-spacing:-.4px;margin:8px 0 2px}
 .sub{color:var(--cx-text-mute,#71717a);font-size:13px;margin-bottom:20px}
@@ -13984,7 +13993,7 @@ _BANDEJA_DT_HTML = """<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css">
 <style>
 body{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;font-variant-numeric:tabular-nums}
-.wrap{max-width:1100px;margin:0 auto}
+/* 96vw = la regla de EOS para los modulos. Estaban clavadas en 1100-1200px: en un monitor de 1990 dejaban el 40% en blanco y la tabla de materiales -7 columnas- se desbordaba cortando 'Diferencia'. La orden madre ya usaba 96vw; se alinean las de DATOS. Los dos INSTRUCTIVOS quedan angostos a proposito: son formatos que se leen y se imprimen. */.wrap{max-width:96vw;margin:0 auto}
 a.back{color:var(--cx-primary-text,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
 h1{font-size:24px;font-weight:800;letter-spacing:-.4px;margin:8px 0 2px}
 .sub{color:var(--cx-text-mute,#71717a);font-size:13px;margin-bottom:20px}
