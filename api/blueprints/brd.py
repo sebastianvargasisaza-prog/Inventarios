@@ -12382,60 +12382,7 @@ async function _libConfirmar(){
 function _escLib(s){var d=document.createElement('div');d.textContent=(s==null?'':String(s));return d.innerHTML;}
 
 var _envOpc=null;
-async function cargarEnvaseOpc(){
-  if(_envOpc)return _envOpc;
-  try{var r=await fetch('/api/brd/envase-opciones',{credentials:'same-origin'});var d=await r.json();_envOpc=(d&&d.opciones)||[];}catch(e){_envOpc=[];}
-  return _envOpc;
-}
-async function matModal(i){
-  var m=(i>=0&&window._mats)?window._mats[i]:null;
-  var opc=await cargarEnvaseOpc();
-  var ov=document.getElementById('matov');
-  if(!ov){ov=document.createElement('div');ov.id='matov';ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999';document.body.appendChild(ov);}
-  var selCod=(m&&m.material_codigo)||'';
-  var opciones='<option value="">· elegí un material de envase ·</option>'+opc.map(function(o){return '<option value="'+esc(o.codigo)+'"'+(o.codigo===selCod?' selected':'')+'>'+esc(o.label)+'</option>';}).join('');
-  function v(x){return (x==null?'':x);}
-  ov.innerHTML='<div style="background:var(--cx-card, #fff);border-radius:14px;padding:22px;max-width:520px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)">'+
-    '<div style="font-weight:800;font-size:17px;margin-bottom:14px">'+(m?'Editar material de envase':'Agregar material de envase')+'</div>'+
-    '<input type="hidden" id="m_id" value="'+v(m&&m.id)+'">'+
-    '<label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Material de envase (catálogo completo)</label>'+
-    '<select id="m_cod" style="width:100%;padding:9px;margin:4px 0 12px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px">'+opciones+'</select>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">N° lote material</label><input id="m_lote" value="'+esc(v(m&&m.lote_material))+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
-      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Cant. requerida</label><input id="m_req" type="number" value="'+v(m&&m.requerida)+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
-      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Cant. devuelta</label><input id="m_dev" type="number" value="'+v(m&&m.devuelta)+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
-      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Cant. utilizada</label><input id="m_uti" type="number" value="'+v(m&&m.utilizada)+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
-      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Cant. averiada</label><input id="m_ave" type="number" value="'+v(m&&m.averiada)+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
-    '</div>'+
-    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
-      '<button onclick="cerrarMat()" style="padding:9px 16px;border:1px solid var(--cx-border, #cbd5e1);background:var(--cx-border-soft, #f1f5f9);border-radius:8px;cursor:pointer">Cancelar</button>'+
-      '<button onclick="guardarMat()" style="padding:9px 16px;border:0;background:var(--cx-primary, #7c3aed);color:#fff;border-radius:8px;cursor:pointer;font-weight:700">Guardar</button>'+
-    '</div></div>';
-  ov.style.display='flex';
-}
-function cerrarMat(){var ov=document.getElementById('matov');if(ov)ov.style.display='none';}
-async function guardarMat(){
-  var cod=document.getElementById('m_cod').value;
-  if(!cod){alert('Elegí un material del desplegable.');return;}
-  function n(id){var x=document.getElementById(id).value;return x===''?null:parseFloat(x);}
-  var body={material_codigo:cod,lote_material:document.getElementById('m_lote').value,requerida:n('m_req'),devuelta:n('m_dev'),utilizada:n('m_uti'),averiada:n('m_ave')};
-  var idv=document.getElementById('m_id').value;if(idv)body.id=parseInt(idv,10);
-  try{
-    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/material-envase',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
-    var d=await r.json();
-    if(!r.ok||!d.ok){alert('No se pudo guardar: '+((d&&d.error)||r.status));return;}
-    cerrarMat();load();
-  }catch(e){alert('Error: '+(e.message||e));}
-}
-async function borrarMat(id){
-  if(!confirm('¿Eliminar este material de envase agregado a mano?'))return;
-  try{
-    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/material-envase/'+id,{method:'DELETE',credentials:'same-origin'});
-    var d=await r.json();
-    if(!r.ok||!d.ok){alert('No se pudo eliminar: '+((d&&d.error)||r.status));return;}
-    load();
-  }catch(e){alert('Error: '+(e.message||e));}
-}
+/*__EDITOR_MATERIAL__*/
 function presModal(i){
   var p=(i>=0&&window._pres)?window._pres[i]:null;
   var ov=document.getElementById('presov');
@@ -12656,6 +12603,76 @@ def legajo_envasado_page(ebr_id):
                     mimetype="text/html")
 
 
+# ── EL EDITOR DEL MATERIAL DE EMPAQUE VIVE UNA SOLA VEZ (17-ago) ─────────────────────────
+# Caminando el lote completo apareció la asimetría: el legajo de ENVASADO tiene el editor
+# (agregar, editar cantidades, borrar) contra `/api/brd/ebr/<id>/material-envase`, y el de
+# ACONDICIONAMIENTO listaba las MISMAS seis columnas de conciliación -- requerida, devuelta,
+# utilizada, averiada, diferencia -- sin una sola forma de llenarlas.
+#
+# El endpoint NO es de una fase: escribe en `ebr_materiales_envase` por `ebr_id`, y el legajo
+# de acondicionamiento YA leía esas filas (`_materiales_envase_manuales`). O sea que la
+# capacidad estaba entera y desde esa pantalla no había cómo llegar (M121).
+#
+# Se INYECTA en las dos, no se copia: dos copias del mismo editor divergen el día que alguien
+# toque una (M3/M99), y el `assert` es parte del patrón -- si la marca no matchea, la pantalla
+# queda con botones llamando a funciones que no existen (M116).
+_EDITOR_MATERIAL_JS = r"""
+async function cargarEnvaseOpc(){
+  if(_envOpc)return _envOpc;
+  try{var r=await fetch('/api/brd/envase-opciones',{credentials:'same-origin'});var d=await r.json();_envOpc=(d&&d.opciones)||[];}catch(e){_envOpc=[];}
+  return _envOpc;
+}
+async function matModal(i){
+  var m=(i>=0&&window._mats)?window._mats[i]:null;
+  var opc=await cargarEnvaseOpc();
+  var ov=document.getElementById('matov');
+  if(!ov){ov=document.createElement('div');ov.id='matov';ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999';document.body.appendChild(ov);}
+  var selCod=(m&&m.material_codigo)||'';
+  var opciones='<option value="">· elegí un material de envase ·</option>'+opc.map(function(o){return '<option value="'+esc(o.codigo)+'"'+(o.codigo===selCod?' selected':'')+'>'+esc(o.label)+'</option>';}).join('');
+  function v(x){return (x==null?'':x);}
+  ov.innerHTML='<div style="background:var(--cx-card, #fff);border-radius:14px;padding:22px;max-width:520px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)">'+
+    '<div style="font-weight:800;font-size:17px;margin-bottom:14px">'+(m?'Editar material de envase':'Agregar material de envase')+'</div>'+
+    '<input type="hidden" id="m_id" value="'+v(m&&m.id)+'">'+
+    '<label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Material de envase (catálogo completo)</label>'+
+    '<select id="m_cod" style="width:100%;padding:9px;margin:4px 0 12px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px">'+opciones+'</select>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">N° lote material</label><input id="m_lote" value="'+esc(v(m&&m.lote_material))+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Cant. requerida</label><input id="m_req" type="number" value="'+v(m&&m.requerida)+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Cant. devuelta</label><input id="m_dev" type="number" value="'+v(m&&m.devuelta)+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Cant. utilizada</label><input id="m_uti" type="number" value="'+v(m&&m.utilizada)+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:var(--cx-text-soft, #475569);font-weight:600">Cant. averiada</label><input id="m_ave" type="number" value="'+v(m&&m.averiada)+'" style="width:100%;padding:9px;border:1px solid var(--cx-border, #cbd5e1);border-radius:8px"></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
+      '<button onclick="cerrarMat()" style="padding:9px 16px;border:1px solid var(--cx-border, #cbd5e1);background:var(--cx-border-soft, #f1f5f9);border-radius:8px;cursor:pointer">Cancelar</button>'+
+      '<button onclick="guardarMat()" style="padding:9px 16px;border:0;background:var(--cx-primary, #7c3aed);color:#fff;border-radius:8px;cursor:pointer;font-weight:700">Guardar</button>'+
+    '</div></div>';
+  ov.style.display='flex';
+}
+function cerrarMat(){var ov=document.getElementById('matov');if(ov)ov.style.display='none';}
+async function guardarMat(){
+  var cod=document.getElementById('m_cod').value;
+  if(!cod){alert('Elegí un material del desplegable.');return;}
+  function n(id){var x=document.getElementById(id).value;return x===''?null:parseFloat(x);}
+  var body={material_codigo:cod,lote_material:document.getElementById('m_lote').value,requerida:n('m_req'),devuelta:n('m_dev'),utilizada:n('m_uti'),averiada:n('m_ave')};
+  var idv=document.getElementById('m_id').value;if(idv)body.id=parseInt(idv,10);
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/material-envase',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo guardar: '+((d&&d.error)||r.status));return;}
+    cerrarMat();load();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+async function borrarMat(id){
+  if(!confirm('¿Eliminar este material de envase agregado a mano?'))return;
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/material-envase/'+id,{method:'DELETE',credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo eliminar: '+((d&&d.error)||r.status));return;}
+    load();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+"""
+
 _ACOND_LEGAJO_HTML = """<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -12722,8 +12739,10 @@ table.t tfoot td{font-weight:800;color:var(--cx-text,#18181b);border-top:2px sol
 </div>
 <script>
 var EBR_ID=__EBR_ID__;
+var _envOpc=null;
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
 function ufmt(n){return n==null?'·':Number(n).toLocaleString('es-CO');}
+/*__EDITOR_MATERIAL__*/
 function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
 function estCol(e){e=(e||'').toLowerCase();if(e.indexOf('aprob')>=0||e.indexOf('liber')>=0)return '#166534';if(e.indexOf('proceso')>=0)return '#b45309';if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)return '#b91c1c';return '#475569';}
 async function load(){
@@ -12791,9 +12810,21 @@ async function load(){
       '</table></div>'+
       '<div class="regfoot">Mostrando '+pres.length+' de '+pres.length+' registro'+(pres.length===1?'':'s')+'</div></div>';
     var mats=d.acond_materiales||[];
+    window._mats=mats;
+    // La conciliación del empaque se puede LLENAR, no sólo mirar. La tabla listaba las seis
+    // columnas (requerida, devuelta, utilizada, averiada, diferencia) y no había una sola forma
+    // de registrar ninguna, mientras el legajo de envasado -- contra el MISMO endpoint, que no
+    // es de una fase -- sí tenía el editor: la capacidad entera existía y desde acá no se podía
+    // llegar (M121). Un lote liberado/rechazado es inmutable, así que ahí no se ofrece.
+    var puedeEditarMat=(estado!=='liberado'&&estado!=='rechazado');
     function mc(v){return v!=null?Number(v).toLocaleString('es-CO'):'';}
     var matRows=mats.length
-      ? mats.map(function(m){
+      ? mats.map(function(m,i){
+          var acc='';
+          if(puedeEditarMat){
+            acc='<button class="ab ab-ed" onclick="matModal('+i+')" title="Editar / registrar cantidades">&#9998;</button>';
+            if(m.id){acc='<button class="ab ab-x" onclick="borrarMat('+m.id+')" title="Eliminar">&#215;</button>'+acc;}
+          }
           return '<tr>'+
             '<td class="mono">'+esc(m.lote_acond||'·')+'</td>'+
             '<td>'+esc(m.material||'·')+'</td>'+
@@ -12803,12 +12834,14 @@ async function load(){
             '<td>'+mc(m.utilizada)+'</td>'+
             '<td>'+mc(m.averiada)+'</td>'+
             '<td>'+mc(m.diferencia)+'</td>'+
+            '<td><div class="act">'+(acc||'<span class="muted">·</span>')+'</div></td>'+
           '</tr>';
         }).join('')
-      : '<tr><td colspan="8" class="muted" style="text-align:center;background:var(--cx-card, #fff)">Sin materiales de empaque registrados aún.</td></tr>';
-    var matCard='<div class="card"><div class="sectit">Materiales de Empaque</div>'+
+      : '<tr><td colspan="9" class="muted" style="text-align:center;background:var(--cx-card, #fff)">Sin materiales de empaque registrados aún.</td></tr>';
+    var matCard='<div class="card"><div class="sechead" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div class="sectit">Materiales de Empaque</div>'+
+      (puedeEditarMat?'<button class="bt bt-pdf" onclick="matModal(-1)" title="Elegir un material de empaque del catálogo completo">+ Material de empaque</button>':'')+'</div>'+
       '<div class="tw"><table class="t"><thead><tr>'+
-        '<th>N° lote acond.'+ar()+'</th><th>Material de empaque'+ar()+'</th><th>N° de lote material'+ar()+'</th><th>Cant. requerida'+ar()+'</th><th>Cant. devuelta'+ar()+'</th><th>Cant. utilizada'+ar()+'</th><th>Cant. averiada'+ar()+'</th><th>Diferencia'+ar()+'</th>'+
+        '<th>N° lote acond.'+ar()+'</th><th>Material de empaque'+ar()+'</th><th>N° de lote material'+ar()+'</th><th>Cant. requerida'+ar()+'</th><th>Cant. devuelta'+ar()+'</th><th>Cant. utilizada'+ar()+'</th><th>Cant. averiada'+ar()+'</th><th>Diferencia'+ar()+'</th><th>Acciones</th>'+
       '</tr></thead><tbody>'+matRows+'</tbody></table></div>'+
       '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
     // ARTES Y CODIFICACION · en MyBatch la accion "Aprobar Etiqueta" vive en la orden de
@@ -13170,6 +13203,24 @@ def _inyectar_aprobacion_orden(nombre, plantilla):
     i = plantilla.rfind("</script>")
     assert i > 0, "no encontré el <script> principal de " + nombre
     return plantilla[:i] + _JS_APROBACION_ORDEN + plantilla[i:]
+
+
+def _inyectar_editor_material(nombre, plantilla):
+    """Mete el editor del material de empaque en la pantalla, UNA sola vez.
+
+    Va en las DOS (envasado y acondicionamiento) porque el endpoint es el mismo y la
+    conciliación es la misma; copiarlo sería garantizar que diverjan (M3/M99). El assert vale
+    lo mismo que el de la aprobación: sin él, una marca que no matchea deja la tabla con
+    botones que llaman a funciones inexistentes.
+    """
+    marca = "/*__EDITOR_MATERIAL__*/"
+    assert marca in plantilla, "falta la marca del editor de material en " + nombre
+    assert plantilla.count(marca) == 1, "la marca del editor está dos veces en " + nombre
+    return plantilla.replace(marca, _EDITOR_MATERIAL_JS)
+
+
+_ENVASADO_LEGAJO_HTML = _inyectar_editor_material("_ENVASADO_LEGAJO_HTML", _ENVASADO_LEGAJO_HTML)
+_ACOND_LEGAJO_HTML = _inyectar_editor_material("_ACOND_LEGAJO_HTML", _ACOND_LEGAJO_HTML)
 
 
 _ORDEN_DETALLE_HTML = _inyectar_aprobacion_orden("_ORDEN_DETALLE_HTML", _ORDEN_DETALLE_HTML)
