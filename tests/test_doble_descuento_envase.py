@@ -177,13 +177,28 @@ def test_lo_que_YA_bajo_no_se_vuelve_a_descontar(app, admin_client, db_clean):
     _limpiar(app)
 
 
+def _cuerpo_de(src, firma):
+    """El cuerpo COMPLETO de una función, no los primeros N caracteres.
+
+    ⚠ 17-ago · acá había un `src[i:i + 12000]`, y agregar código ARRIBA dentro de la misma
+    función empujó las líneas que este guard busca más allá del corte: dio rojo con el código
+    sano (`sin_libro_mayor` seguía ahí, tres veces, en los offsets 19.193 / 22.649 / 24.001 de
+    una función de 27.403). Un guard anclado por POSICIÓN lo desplaza cualquier inserción
+    (M151/M176) -- y la salida no es subir el número, que sólo mueve la fecha del próximo rojo
+    falso (M218): se recorta por la función, que es lo que el guard dice mirar.
+    """
+    i = src.find(firma)
+    assert i > 0, 'no encontré %s' % firma
+    j = src.find('\n@bp.route', i)
+    return src[i:j if j > i else len(src)]
+
+
 def test_sin_libro_mayor_se_DECLARA(app, db_clean):
     """Un legajo sin `produccion_id` no tiene checklist que consultar: descuenta como siempre,
     pero lo dice. Un descuento que no se pudo coordinar no se puede presentar como coordinado."""
     src = _sin_comentarios(open(os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), 'api/blueprints/brd.py'), encoding='utf-8').read())
-    i = src.find('def cerrar_envasado_ebr')
-    bloque = src[i:i + 12000]
+    bloque = _cuerpo_de(src, 'def cerrar_envasado_ebr')
     assert '_sin_libro' in bloque, 'no distingue "coordinado" de "no se pudo coordinar"'
     assert 'sin_libro_mayor' in bloque, 'no lo deja en el audit'
 
