@@ -761,6 +761,7 @@ CORAZON=(
   # de acondicionamiento nunca mostro nada (json.loads con el nombre equivocado, tapado por
   # un except mudo): no lo veia nadie porque la fase no se habia caminado todavia.
   "tests/test_demo_camina_envasado_y_acond.py"
+  "tests/test_demo_se_puede_caminar_dos_veces.py"
   # UN lote atravesando las TRES fases en orden. Hay E2E de cada fase por separado, pero lo que
   # vive ENTRE ellas no lo ejercia nadie -- y ahi estaban los tres bugs del 17-ago: el cierre no
   # veia las unidades que registro la planta, el enlace al paso siguiente volvia vacio en el caso

@@ -36,6 +36,27 @@ def _sin_comentarios(txt):
     return chr(10).join(fuera)
 
 
+def _cuerpo(src, firma):
+    """El texto de UNA función, hasta donde de verdad termina.
+
+    ⚠ Antes se recortaba con una ventana FIJA (`src[i:i+16000]`), y eso hacía que el guard
+    midiera código ajeno: `cerrar_acondicionamiento_ebr` termina a los ~3.900 caracteres, así
+    que la ventana leía 12.000 más de las funciones que vienen después. El 17-ago encontró ahí
+    el `INSERT INTO movimientos_mee` de `crear_planta_demo` -- que no tiene nada que ver con
+    cerrar un lote -- y falló acusando al cierre de no validar el código, con el cierre sano y
+    delegando bien en la puerta compartida.
+
+    Un trinquete anclado por CONTEO DE CARACTERES lo secuestra cualquier función que se escriba
+    más abajo, y deja de proteger sin avisar (M151/M157). Acotado al cuerpo real, además muerde
+    más: mide el cierre, no lo que quede a 15.000 caracteres de distancia.
+    """
+    i = src.find(firma)
+    assert i > 0, firma
+    resto = src[i + len(firma):]
+    m = re.search(chr(10) + r'(?:@|def )', resto)
+    return src[i:i + len(firma) + (m.start() if m else len(resto))]
+
+
 def _limpiar(app):
     from database import get_db
     with app.app_context():
@@ -193,9 +214,7 @@ def test_los_DOS_cierres_mueven_el_cache(app, db_clean):
     for fn, quien in (('def cerrar_envasado_ebr', 'envasado'),
                       ('def cerrar_acondicionamiento_ebr', 'acondicionamiento'),
                       ('def descontar_mee_del_lote', 'la puerta compartida')):
-        i = src.find(fn)
-        assert i > 0, fn
-        bloque = src[i:i + 16000]
+        bloque = _cuerpo(src, fn)
         j = bloque.find("INSERT INTO movimientos_mee")
         if j < 0:
             # No lo hace acá: entonces tiene que DELEGAR en la puerta compartida, nunca

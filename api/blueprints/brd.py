@@ -9437,6 +9437,44 @@ def crear_planta_demo():
                     "        'VIGENTE', ?, 'Stock sembrado por el demo de planta')",
                     (_c, _DEMO_MP_LOTE, user))
 
+        # ── Y LO MISMO CON LAS CUATRO PIEZAS DEL EMPAQUE (17-ago) ────────────────────────────
+        # El demo sembraba su stock de envases SOLO en el cache `maestro_mee.stock_actual`, y el
+        # gate de envasado mide el CANONICO -- `SUM(movimientos_mee)`, con caida al cache SOLO si
+        # no hay ningun movimiento (M26). Entonces: un demo recien creado funciona (cae al cache)
+        # y uno YA CAMINADO no, porque sus Salidas hacen que la suma de 0 y el envasado contesta
+        # "stock insuficiente".
+        #
+        # O sea que el demo se podia caminar UNA vez y nunca mas -- justo lo que Sebastian
+        # encontro al apretar el paso 2 en produccion. Es el mismo defecto que ya se habia pagado
+        # con la materia prima ("un demo que no se puede caminar no sirve para nada"), en el otro
+        # kardex.
+        #
+        # Se REPONE, igual que la MP: como MOVIMIENTO, que es lo que el gate mide.
+        for _cm, _dm in (("ENV-DEMO", "Frasco demo 30ml"), ("TAPA-DEMO", "Tapa demo"),
+                         ("CAJA-DEMO", "Estuche demo"), ("ETIQ-DEMO", "Etiqueta demo")):
+            # Se pregunta con el resolver CANÓNICO, no con una copia del idiom: si el umbral
+            # se lee distinto de como mide el gate, vuelve a haber dos verdades sobre el mismo
+            # stock (M1). El canónico ignora los movimientos ANULADOS y conoce los tipos que
+            # esta copia no ('ingreso', 'devolucion', 'consumo', 'rechazo'), así que un ajuste
+            # hecho a mano sobre un envase del demo bastaba para que el umbral dijera "hay" y
+            # el envasado contestara "no hay" -- exactamente el bug que se está cerrando.
+            try:
+                from blueprints.inventario import _mee_stock_real as _stock_mee_canonico
+                _sm = _stock_mee_canonico(cur, _cm)
+            except Exception:
+                _sm = 0
+            if float(_sm) < 200:
+                cur.execute(
+                    "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, "
+                    "                             batch_ref, responsable, fecha, estado, "
+                    "                             observaciones) "
+                    "VALUES (?, 'Entrada', 2000, ?, ?, ?, datetime('now','utc'), 'VIGENTE', "
+                    "        'Stock sembrado por el demo de planta')",
+                    (_cm, _DEMO_PLANTA_LOTE, _DEMO_PLANTA_LOTE, user))
+                cur.execute(
+                    "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + 2000 "
+                    " WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (_cm,))
+
         def _legajo(_fase):
             # Idempotente: si el legajo del lote demo ya existe, reusarlo (crear_ebr_desde_mbr solo reusa por
             # produccion_id, que acá es None → sin esto daría LOTE_DUPLICADO al re-crear el demo).
@@ -9579,6 +9617,30 @@ async function pide(url, body){
   var d={}; try{ d=await r.json(); }catch(e){}
   return {ok:r.ok, d:d, status:r.status};
 }
+function motivo(d, status){
+  // El 422 del envasado trae el motivo REAL en `errores` (codigo, stock_disponible,
+  // requerido, falta) y la pagina mostraba solo el titular "No se puede registrar el
+  // envasado": el que camina el demo veia que algo fallo y NUNCA por que.
+  var t = (d && (d.error||d.detalle)) || ('Error '+status);
+  var e = (d && d.errores) || [];
+  if(e.length){
+    var filas = e.map(function(x){
+      var cod = x.codigo||x.mee_codigo||'?';
+      var hay = (x.stock_disponible!==undefined ? x.stock_disponible : x.disponible);
+      var pide = (x.requerido!==undefined ? x.requerido : x.cantidad);
+      var det = [];
+      if(hay!==undefined)  det.push('hay '+hay);
+      if(pide!==undefined) det.push('pide '+pide);
+      if(x.falta!==undefined) det.push('falta '+x.falta);
+      if(x.error) det.push(x.error);
+      if(x.tipo) det.push(x.tipo);
+      return '<code>'+cod+'</code>'+(det.length?(' &middot; '+det.join(' &middot; ')):'');
+    });
+    t += '<div class="datos">'+filas.join('<br>')+'</div>';
+  }
+  if(d && d.mensaje) t += '<div class="datos">'+d.mensaje+'</div>';
+  return t;
+}
 function conBoton(id, fn){
   // Un demo se aprieta dos veces por costumbre: sin esto, el segundo click registra
   // OTRO envasado del mismo lote (M63 - toda accion que INSERTA necesita su guard).
@@ -9590,7 +9652,7 @@ function conBoton(id, fn){
 }
 var crear = conBoton('b1', async function(){
   var r=await pide('/api/admin/planta-demo/crear', {});
-  if(!r.ok){ pinta('ok1', r.d.error||('Error '+r.status), true); return; }
+  if(!r.ok){ pinta('ok1', motivo(r.d, r.status), true); return; }
   DEMO=r.d;
   var c=DEMO.caminar||{};
   pinta('ok1', '&#10004; Demo '+(DEMO.reusado?'ya exist&iacute;a':'creado')+
@@ -9609,7 +9671,7 @@ var caminarEnvasado = conBoton('b2', async function(){
     presentacion:c.presentacion, batch_g:c.batch_g, unidades:c.unidades,
     envase_codigo:c.envase_codigo, tapa_codigo:c.tapa_codigo,
     observaciones:'Envasado del demo de planta'});
-  if(!r.ok){ pinta('ok2', r.d.error||('Error '+r.status), true); return; }
+  if(!r.ok){ pinta('ok2', motivo(r.d, r.status), true); return; }
   ENVID=r.d.id||0;
   pinta('ok2','&#10004; Envasado registrado &middot; '+(c.unidades||0)+' unidades de '+c.presentacion+
     '.<br><a href="/planta/legajo-envasado/'+DEMO.envasado_ebr+'" target="_blank">Abrir el legajo de envasado &rarr;</a>'+
@@ -9624,7 +9686,7 @@ var caminarAcond = conBoton('b3', async function(){
     unidades:c.unidades, observaciones:'Acondicionamiento del demo de planta',
     mee_consumido:[{codigo:c.etiqueta_codigo, cantidad:c.unidades},
                    {codigo:c.caja_codigo, cantidad:c.unidades}]});
-  if(!r.ok){ pinta('ok3', r.d.error||('Error '+r.status), true); return; }
+  if(!r.ok){ pinta('ok3', motivo(r.d, r.status), true); return; }
   var n=(r.d.descuentos||[]).length, salt=(r.d.saltados||[]).length;
   pinta('ok3','&#10004; Acondicionamiento registrado &middot; '+n+' material(es) descontado(s)'+
     (salt?(' &middot; '+salt+' saltado(s) porque ya los consumi&oacute; el legajo'):'')+

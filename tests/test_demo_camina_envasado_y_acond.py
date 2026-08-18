@@ -41,10 +41,13 @@ def _limpiar():
     vendrían llenas y el test pasaría sin haber caminado nada (M152)."""
     cn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
     try:
+        # ⚠ NO se borra `movimientos_mee`: borrarlo dejaba el kardex del demo sin un solo
+        # movimiento, y ahí el stock CANÓNICO cae al cache `maestro_mee.stock_actual` (M26).
+        # O sea que el fixture reproducía justo la condición que escondía el bug que Sebastián
+        # encontró caminando el demo en producción -- ahí sí hay Salidas y la caída no aplica
+        # (M153/M229). El demo repone su stock de envases como MOVIMIENTO, así que no hace falta.
         for q in ("DELETE FROM envasado WHERE lote='DEMO-PLANTA-1'",
-                  "DELETE FROM acondicionamiento WHERE lote='DEMO-PLANTA-1'",
-                  "DELETE FROM movimientos_mee WHERE mee_codigo IN "
-                  " ('ENV-DEMO','TAPA-DEMO','CAJA-DEMO','ETIQ-DEMO')"):
+                  "DELETE FROM acondicionamiento WHERE lote='DEMO-PLANTA-1'"):
             try:
                 cn.execute(q)
             except Exception:
