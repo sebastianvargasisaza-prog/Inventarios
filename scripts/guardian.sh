@@ -765,6 +765,7 @@ CORAZON=(
   "tests/test_conciliacion_no_contradice_al_legajo.py"
   "tests/test_acondicionamiento_legajo.py"
   "tests/test_material_empaque_acondicionamiento.py"
+  "tests/test_programar_cualquier_producto.py"
   # UN lote atravesando las TRES fases en orden. Hay E2E de cada fase por separado, pero lo que
   # vive ENTRE ellas no lo ejercia nadie -- y ahi estaban los tres bugs del 17-ago: el cierre no
   # veia las unidades que registro la planta, el enlace al paso siguiente volvia vacio en el caso

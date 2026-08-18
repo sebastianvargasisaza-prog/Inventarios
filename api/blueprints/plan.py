@@ -16962,6 +16962,60 @@ def plan_backfill_fabricacion():
     return jsonify({'ok': True, 'dry_run': False, 'creados': creados, 'cerrados': cerrados, **preview})
 
 
+@bp.route("/api/plan/opciones-programar", methods=["GET"])
+def plan_opciones_programar():
+    """Lo que el modal de "Programar producción" necesita para poder ofrecer TODO: los productos
+    que existen de verdad y los clientes que existen de verdad.
+
+    Antes el desplegable de producto se llenaba SÓLO con lo que ya estaba agendado en la ventana
+    visible del calendario, así que un producto que existe pero no está programado no aparecía --
+    y el campo de cliente era texto libre a secas. Programar "lo que ya existe" se sentía como que
+    no se podía, cuando en realidad había que escribirlo de memoria y exacto (M121: la capacidad
+    está y no hay cómo llegar).
+
+    Se sirve en UNA sola petición y con consultas agregadas: el modal se abre muchas veces al día
+    y sumarle dos cargas más es exactamente lo que satura los tres workers (M43).
+
+    El producto sigue siendo TEXTO LIBRE: esto sugiere, no obliga. Un piloto o una muestra que no
+    existe en ninguna tabla se escribe igual, que es el caso para el que este modal se construyó.
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    productos, clientes = [], []
+    try:
+        for r in conn.execute(
+            "SELECT TRIM(producto_nombre), COALESCE(lote_size_kg,0) "
+            "  FROM formula_headers WHERE COALESCE(activo,1)=1 "
+            "   AND COALESCE(TRIM(producto_nombre),'')<>'' "
+            " ORDER BY producto_nombre").fetchall():
+            productos.append({"nombre": r[0], "kg_lote": float(r[1] or 0), "origen": "formula"})
+    except Exception as e:
+        log.warning("opciones-programar · productos no legibles: %s", e)
+    _ya = {p["nombre"].upper() for p in productos}
+    try:
+        # Lo que ya se programó alguna vez y NO tiene fórmula (pilotos, maquila, muestras):
+        # se ofrece igual, marcado, porque volver a programarlo es lo más común.
+        for r in conn.execute(
+            "SELECT DISTINCT TRIM(producto) FROM produccion_programada "
+            " WHERE COALESCE(TRIM(producto),'')<>'' "
+            " ORDER BY producto").fetchall():
+            if (r[0] or "").upper() not in _ya:
+                productos.append({"nombre": r[0], "kg_lote": 0.0, "origen": "historico"})
+    except Exception as e:
+        log.warning("opciones-programar · históricos no legibles: %s", e)
+    try:
+        for r in conn.execute(
+            "SELECT TRIM(nombre) FROM clientes WHERE COALESCE(activo,1)=1 "
+            "   AND COALESCE(TRIM(nombre),'')<>'' ORDER BY nombre").fetchall():
+            clientes.append(r[0])
+    except Exception as e:
+        log.warning("opciones-programar · clientes no legibles: %s", e)
+    return jsonify({"ok": True, "productos": productos, "clientes": clientes,
+                    "n_productos": len(productos), "n_clientes": len(clientes)})
+
+
 @bp.route("/api/plan/programar-manual", methods=["POST"])
 def plan_programar_manual():
     """Sebastián 16-jun · clic en un día del calendario (o botón ➕) → programar
@@ -20372,7 +20426,7 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
 </div>
 
 <div id="nuevaProdModal" class="modal-back" onclick="if(event.target===this)cerrarNuevaProduccion()">
-  <div class="modal-box" style="max-width:460px">
+  <div class="modal-box" style="max-width:620px;width:94vw">
     <div class="modal-head">
       <h3 style="margin:0;font-size:16px;font-weight:800">➕ Programar producción</h3>
       <button onclick="cerrarNuevaProduccion()" style="background:transparent;border:none;color:white;font-size:22px;cursor:pointer;line-height:1">✕</button>
@@ -20380,7 +20434,7 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
     <div class="modal-body">
       <p style="margin:0 0 12px;font-size:12.5px;color:var(--cx-text-mute, #64748b)">Programa cualquier producto en el calendario · incluso pilotos o productos de otros clientes que no están en Necesidades. Queda <strong>Fijo</strong> (los automáticos no lo tocan).</p>
       <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Producto *</label>
-      <input id="np-producto" list="np-productos-list" placeholder="Ej: CREMA FACIAL UREA 10" autocomplete="off" onchange="_npResumen()" oninput="_npResumenDebounced()"
+      <input id="np-producto" list="np-productos-list" placeholder="Escribí o elegí · también vale un piloto o una muestra que no existe todavía" autocomplete="off" onchange="_npResumen();_npSugerirKg()" oninput="_npResumenDebounced();_npSugerirKg()"
         style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px;margin-bottom:11px">
       <datalist id="np-productos-list"></datalist>
       <!-- Resumen del producto (Sebastián 11-jul · como en Necesidades) -->
@@ -20417,12 +20471,22 @@ select,input{padding:6px 10px;border:1px solid var(--cx-border, #cbd5e1);border-
       </div>
       <div style="display:flex;gap:10px;margin-bottom:11px">
         <div style="flex:1">
-          <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Cantidad (kg)</label>
-          <input id="np-kg" type="number" min="0" step="0.01" placeholder="opcional" style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px">
+          <!-- OBLIGATORIO, y ahora lo DICE. Decía "opcional" y el backend rechaza sin kilos
+               ("El lote necesita kilos"), así que el formulario mandaba a fallar y después
+               explicaba: un campo no puede prometer lo contrario de lo que el guard exige
+               (M109). El botón de al lado pone el lote estándar del producto. -->
+          <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Cantidad (kg) <span style="color:var(--cx-danger-text, #dc2626)">*</span></label>
+          <div style="display:flex;gap:6px">
+            <input id="np-kg" type="number" min="0.01" step="0.01" required placeholder="ej: 30" oninput="_npValidarKg()"
+              style="flex:1;min-width:0;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px">
+            <button type="button" id="np-kg-std" onclick="_npKgEstandar()" title="Poner el tamaño de lote estándar de este producto"
+              style="display:none;background:var(--cx-primary-soft, #ede9fe);color:var(--cx-primary-text, #5b21b6);border:1px solid var(--cx-primary-light, #c4b5fd);border-radius:7px;padding:0 10px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap"></button>
+          </div>
         </div>
         <div style="flex:1">
           <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Cliente</label>
-          <input id="np-cliente" placeholder="opcional" style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px">
+          <input id="np-cliente" list="np-clientes-list" autocomplete="off" placeholder="ÁNIMUS si lo dejás vacío" style="width:100%;padding:9px 11px;border:1.5px solid var(--cx-border, #cbd5e1);border-radius:8px;font-size:14px">
+          <datalist id="np-clientes-list"></datalist>
         </div>
       </div>
       <label style="display:block;font-size:12px;font-weight:700;color:var(--cx-text-soft, #334155);margin-bottom:3px">Observaciones</label>
@@ -22579,16 +22643,97 @@ function abrirNuevaProduccion(fecha){
     document.getElementById('np-cad-preview').innerHTML = '';
     window._NP_P = null;
   } catch(e){}
-  // Sugerencias: nombres de productos ya conocidos (no obliga · se puede escribir libre).
-  try {
-    const ag = (PLAN_DATA && PLAN_DATA.agendadas) || [];
-    const vistos = new Set();
-    ag.forEach(a => { if (a.producto) vistos.add(a.producto); });
-    const dl = document.getElementById('np-productos-list');
-    dl.innerHTML = Array.from(vistos).sort().map(p => '<option value="' + escapeHtml(p) + '">').join('');
-  } catch(e){}
+  // Sugerencias: TODO lo que existe de verdad · no obliga, se puede escribir libre.
+  //
+  // Antes esto se llenaba SOLO con `PLAN_DATA.agendadas`, o sea con lo que ya estaba programado
+  // en la ventana visible del calendario: un producto que existe pero no esta agendado no
+  // aparecia, y habia que escribirlo de memoria y exacto. Programar "lo que ya existe" se sentia
+  // como que no se podia (M121). Ahora salen las formulas activas + lo que alguna vez se
+  // programo (pilotos, maquila, muestras) + lo agendado, y los CLIENTES reales.
+  _npCargarOpciones();
   document.getElementById('nuevaProdModal').classList.add('show');
+  try { _npValidarKg(); } catch(e){}
   setTimeout(() => { try { document.getElementById('np-producto').focus(); } catch(e){} }, 60);
+}
+async function _npCargarOpciones(){
+  // Una sola peticion, cacheada: este modal se abre muchas veces al dia y sumarle cargas es
+  // exactamente lo que satura los tres workers (M43).
+  try {
+    if (!window._NP_OPC){
+      const r = await fetch('/api/plan/opciones-programar', {credentials:'same-origin'});
+      window._NP_OPC = await r.json();
+    }
+    const o = window._NP_OPC || {};
+    const prods = (o.productos || []).slice();
+    // + lo agendado en la ventana visible, por si algo no esta en las dos fuentes de arriba
+    try {
+      const vistos = new Set(prods.map(p => (p.nombre||'').toUpperCase()));
+      ((PLAN_DATA && PLAN_DATA.agendadas) || []).forEach(a => {
+        if (a.producto && !vistos.has(a.producto.toUpperCase())){
+          vistos.add(a.producto.toUpperCase());
+          prods.push({nombre: a.producto, kg_lote: 0, origen: 'agendado'});
+        }
+      });
+    } catch(e){}
+    window._NP_KGSTD = {};
+    const dl = document.getElementById('np-productos-list');
+    if (dl){
+      dl.innerHTML = prods.map(function(p){
+        if (p.kg_lote > 0) window._NP_KGSTD[(p.nombre||'').toUpperCase()] = p.kg_lote;
+        // El origen se DECLARA: un piloto sin formula no es lo mismo que un producto con
+        // receta aprobada, y quien programa tiene que poder distinguirlos (M124).
+        const et = p.origen === 'formula'
+          ? (p.kg_lote > 0 ? ('lote estándar ' + p.kg_lote + ' kg') : 'con fórmula')
+          : 'sin fórmula (piloto / muestra)';
+        return '<option value="' + escapeHtml(p.nombre) + '">' + escapeHtml(et) + '</option>';
+      }).join('');
+    }
+    const dc = document.getElementById('np-clientes-list');
+    if (dc) dc.innerHTML = (o.clientes || []).map(c => '<option value="' + escapeHtml(c) + '">').join('');
+  } catch(e){}
+}
+function _npKgStdDe(nombre){
+  return (window._NP_KGSTD || {})[(nombre||'').trim().toUpperCase()] || 0;
+}
+function _npKgEstandar(){
+  const kg = _npKgStdDe((document.getElementById('np-producto')||{}).value);
+  if (kg > 0){ document.getElementById('np-kg').value = kg; _npValidarKg(); }
+}
+function _npValidarKg(){
+  // Se avisa MIENTRAS se escribe, no al guardar: descubrir que falta un dato recien al apretar
+  // el boton es mandar a rehacer el formulario (M197).
+  const el = document.getElementById('np-kg');
+  const btn = document.getElementById('np-guardar');
+  const msg = document.getElementById('np-msg');
+  if (!el || !btn) return true;
+  const kg = parseFloat(el.value || '0') || 0;
+  const ok = kg > 0;
+  el.style.borderColor = ok ? 'var(--cx-border, #cbd5e1)' : 'var(--cx-danger, #dc2626)';
+  btn.disabled = !ok;
+  btn.style.opacity = ok ? '1' : '.55';
+  btn.title = ok ? '' : 'Falta la cantidad en kg';
+  if (!ok && msg && !msg.innerHTML){
+    msg.innerHTML = '<span style="color:var(--cx-text-mute, #64748b)">Un lote necesita kilos: uno de 0 kg no produce nada ni pide materia prima, pero igual ocupa el día.</span>';
+  }
+  if (ok && msg && msg.textContent.indexOf('Un lote necesita kilos') === 0) msg.innerHTML = '';
+  return ok;
+}
+function _npSugerirKg(){
+  // Al elegir un producto con lote estandar: se OFRECE (boton), no se rellena solo si el
+  // usuario ya escribio algo -- pisarle un numero que tecleo es peor que no ayudar.
+  const nombre = (document.getElementById('np-producto')||{}).value || '';
+  const kg = _npKgStdDe(nombre);
+  const b = document.getElementById('np-kg-std');
+  const el = document.getElementById('np-kg');
+  if (!b || !el) return;
+  if (kg > 0){
+    b.style.display = '';
+    b.textContent = kg + ' kg';
+    if (!(parseFloat(el.value || '0') > 0)){ el.value = kg; }
+  } else {
+    b.style.display = 'none';
+  }
+  _npValidarKg();
 }
 function cerrarNuevaProduccion(){
   document.getElementById('nuevaProdModal').classList.remove('show');
@@ -22603,6 +22748,13 @@ async function guardarNuevaProduccion(){
   const msg = document.getElementById('np-msg');
   if (!producto || !fecha){
     msg.innerHTML = '<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ Producto y fecha son obligatorios.</span>';
+    return;
+  }
+  // Los kilos los EXIGE el backend (400 SIN_KG). Se dice acá, con el foco puesto en el campo,
+  // en vez de dejar que el guardado falle y explique después.
+  if (!(kg > 0)){
+    msg.innerHTML = '<span style="color:var(--cx-danger-text, #dc2626);font-weight:700">⚠ Falta la cantidad en kg · un lote de 0 kg no produce nada ni pide materia prima, pero igual ocupa el día.</span>';
+    try { document.getElementById('np-kg').focus(); _npValidarKg(); } catch(e){}
     return;
   }
   const btn = document.getElementById('np-guardar');
