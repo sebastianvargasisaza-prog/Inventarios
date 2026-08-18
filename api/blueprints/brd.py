@@ -3365,11 +3365,45 @@ def _pp_id_para_producto(cur, producto, ebr_produccion_id=None):
         return None
 
 
-def _materiales_envase_planeados(conn, producto, ebr_produccion_id=None, lote=''):
+def _codigos_de_envasado(cur, producto):
+    """Los códigos que consume el ENVASADO de ese producto: envase, tapa y caja.
+
+    Sirven para que el legajo de ACONDICIONAMIENTO no los liste como material suyo. La regla es
+    de Sebastián y está escrita en `cerrar-envasado` desde el 20-jul: *"Tapa/caja siempre el
+    default. Etiqueta NO va acá (se pone en Acondicionamiento)"*.
+    """
+    codigos = set()
+    try:
+        for r in cur.execute(
+            "SELECT COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), COALESCE(caja_codigo,'') "
+            "  FROM producto_presentaciones "
+            " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1",
+                (producto or '',)).fetchall():
+            for c in r:
+                c = str(c or '').strip().upper()
+                if c:
+                    codigos.add(c)
+    except Exception as _e:
+        # Sin la lista no se puede filtrar · se DICE en el log y se devuelve vacío, que deja el
+        # comportamiento anterior en vez de esconder material en silencio (M4/M94).
+        __import__('logging').getLogger('brd').warning(
+            'no pude leer los códigos de envasado de %s: %s', producto, _e)
+    return codigos
+
+
+def _materiales_envase_planeados(conn, producto, ebr_produccion_id=None, lote='',
+                                 excluir_envasado=False):
     """Material de envase PLANEADO de un producto desde la PROGRAMACIÓN (paridad MyBatch ·
     11-jun): por cada presentación, el envase + sus componentes (tapa/gotero/etiqueta vía
     sku_mee_config) con cant. REQUERIDA = unidades de esa presentación. Auto-carga la
-    sección 'Materiales de Envase' del legajo cuando aún no hay envasado real. READ-ONLY."""
+    sección 'Materiales de Envase' del legajo cuando aún no hay envasado real. READ-ONLY.
+
+    ⚠ `excluir_envasado=True` lo usa el legajo de ACONDICIONAMIENTO (17-ago). Sin eso, esa
+    pantalla listaba el FRASCO como su material de empaque -- porque cae a este helper y, sin
+    `sku_mee_config` para el SKU, devuelve sólo el envase --, o sea justo lo que el envasado YA
+    consumió. Quien llenara ahí la conciliación lo estaría contando dos veces. En
+    acondicionamiento el material es la etiqueta y el estuche; el frasco, la tapa y la caja son
+    del envasado (Sebastián 20-jul)."""
     if not producto:
         return []
     cur = conn.cursor()
@@ -3415,6 +3449,9 @@ def _materiales_envase_planeados(conn, producto, ebr_produccion_id=None, lote=''
             env = (v.get('envase_codigo') or '').strip()
             if env:
                 acc[env] = acc.get(env, 0.0) + uds
+    if excluir_envasado:
+        _del_envasado = _codigos_de_envasado(cur, producto)
+        acc = {c: v for c, v in acc.items() if str(c).strip().upper() not in _del_envasado}
     if not acc:
         return []
     out = []
@@ -4140,7 +4177,8 @@ def ebr_vista_completa(ebr_id):
             try:
                 out['acond_materiales'] = _materiales_envase_planeados(
                     conn, out['header'].get('producto'),
-                    out['header'].get('produccion_id'), out['header'].get('lote_codigo') or '')
+                    out['header'].get('produccion_id'), out['header'].get('lote_codigo') or '',
+                    excluir_envasado=True)
             except Exception as _emp:
                 __import__('logging').getLogger('brd').warning('materiales envase planeados OA fallo: %s', _emp)
         # + materiales agregados/editados A MANO (se suman a lo auto-cargado · editables).

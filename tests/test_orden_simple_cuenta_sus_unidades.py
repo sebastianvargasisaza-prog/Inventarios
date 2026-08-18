@@ -261,3 +261,81 @@ def test_el_legajo_no_llama_ACONDICIONADAS_a_las_unidades_PLANEADAS():
     assert "Unidades a acondicionar (plan)" in h, (
         "el encabezado no distingue lo planeado de lo acondicionado")
     assert "fld(rotUds," in h, "el rótulo volvió a ser fijo en vez de derivarse de los datos"
+
+
+def test_el_legajo_de_acond_no_lista_el_FRASCO_como_su_material(app, db_clean):
+    """El frasco, la tapa y la caja los consume el ENVASADO (Sebastián 20-jul, escrito en
+    `cerrar-envasado`); en acondicionamiento el material es la etiqueta y el estuche.
+
+    Sin acondicionamiento registrado, la sección caía a `_materiales_envase_planeados` -- el
+    helper de envasado -- que sin `sku_mee_config` devuelve **sólo el envase**. Resultado: el
+    legajo de acondicionamiento listaba el FRASCO como su material de empaque, o sea justo lo que
+    el envasado ya consumió. Quien llenara ahí la conciliación lo contaría dos veces.
+
+    ⚠ Se prueba sobre el HELPER con el plan sembrado, no sobre el legajo del demo: el demo no
+    tiene producción programada, así que las dos listas salen vacías y el test pasaría sin haber
+    filtrado nada (M152 · la primera versión de este test hacía exactamente eso).
+    """
+    from database import get_db
+    from blueprints.brd import _materiales_envase_planeados, _codigos_de_envasado
+    prod = "ZZ-FILTRO-FASE"
+    with app.app_context():
+        cn = get_db()
+        cn.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (prod,))
+        cn.execute("DELETE FROM produccion_programada WHERE producto=?", (prod,))
+        for cod, desc in (("ZZF-ENV", "Frasco"), ("ZZF-TAP", "Tapa"),
+                          ("ZZF-CAJ", "Estuche"), ("ZZF-ETQ", "Etiqueta")):
+            cn.execute("INSERT OR IGNORE INTO maestro_mee (codigo, descripcion, stock_actual, "
+                       " estado) VALUES (?,?,500,'Activo')", (cod, desc))
+        cn.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, "
+                   " etiqueta, volumen_ml, envase_codigo, tapa_codigo, caja_codigo, activo, "
+                   " sku_shopify) VALUES (?, 'ZZF30', '30ml', 30, 'ZZF-ENV', 'ZZF-TAP', "
+                   " 'ZZF-CAJ', 1, 'ZZF-SKU')", (prod,))
+        cn.commit()
+
+        # los tres codigos del envasado se resuelven
+        cods = _codigos_de_envasado(cn.cursor(), prod)
+        assert {"ZZF-ENV", "ZZF-TAP", "ZZF-CAJ"} <= cods, ("no resolvió los del envasado", cods)
+        assert "ZZF-ETQ" not in cods, ("la etiqueta NO es material de envasado", cods)
+
+        # y el filtro los saca sin tocar lo demas
+        crudo = [{"material": "ZZF-ENV Frasco"}, {"material": "ZZF-ETQ Etiqueta"}]
+        del crudo  # la salida real se compara abajo con el helper
+
+    # el helper, con y sin filtro, sobre el MISMO plan
+    with app.app_context():
+        cn = get_db()
+        cn.execute("INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, "
+                   " estado, origen) VALUES (?, date('now'), 10, 'programado', 'eos_plan')",
+                   (prod,))
+        cn.commit()
+        sin_filtro = _materiales_envase_planeados(cn, prod)
+        con_filtro = _materiales_envase_planeados(cn, prod, excluir_envasado=True)
+
+    _txt = lambda L: " ".join(str(m.get("material") or "") for m in (L or []))
+    if not sin_filtro:
+        import pytest
+        pytest.skip("el plan no produjo materiales: sin eso este caso no mide el filtro")
+    assert "ZZF-ENV" in _txt(sin_filtro), ("el envasado tiene que ver su frasco", sin_filtro)
+    assert "ZZF-ENV" not in _txt(con_filtro), (
+        "acondicionamiento sigue listando el frasco, que consume el envasado", con_filtro)
+
+
+def test_el_legajo_de_acond_PIDE_el_filtro_de_fase():
+    """El caso de arriba prueba el helper; éste prueba que el legajo lo USE.
+
+    Sin esto, quitar `excluir_envasado=True` de la vista dejaba el guard verde con el frasco de
+    vuelta en la pantalla: un guard que cubre el mecanismo y no el punto de llamada mide la mitad
+    (M96 · probado reintroduciendo exactamente ese cambio).
+    """
+    import re
+    import inspect
+    from blueprints import brd
+    src = inspect.getsource(brd.ebr_vista_completa)
+    src = re.sub(r"#[^\n]*", "", src)          # sin comentarios (M154)
+    i = src.find("acond_materiales")
+    assert i > 0, "no encontré la carga del material de empaque del legajo de acondicionamiento"
+    j = src.find("excluir_envasado", i)
+    assert j > 0, (
+        "el legajo de acondicionamiento volvió a pedir el material SIN filtrar por fase: "
+        "listaría el frasco, la tapa y la caja, que consume el envasado")
