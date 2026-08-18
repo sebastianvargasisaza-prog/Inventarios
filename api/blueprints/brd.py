@@ -2977,6 +2977,21 @@ def legajo_rapido():
     conn = get_db(); cur = conn.cursor()
     user = session.get("compras_user", "")
     r = crear_ebr_desde_mbr(cur, producto_nombre=producto, lote=lote, usuario=user, fase=fase)
+    if not r.get("ok") and r.get("error") == "LOTE_DUPLICADO":
+        # ── "YA EXISTE" NO ES UN ERROR: ES LA RESPUESTA (17-ago) ──────────────────────────────
+        # Este endpoint es el que usa la pantalla para **abrir o crear** el legajo de un lote, y
+        # contestaba 409 justo en el caso más común -- que el legajo ya esté --, obligando a cada
+        # llamador a inventar su propio rescate. El mismo defecto tenía el enganche
+        # envasado→acondicionamiento y ahí ya se pagó: el operario cerraba el envasado y no
+        # recibía el enlace al paso siguiente (M129: un registro que sale de una pantalla tiene
+        # que decir a dónde se fue). Devolver el que existe hace que el endpoint sea idempotente
+        # y que "abrir o crear" sea UNA llamada, no un árbol de casos en cada botón.
+        _ya = conn.execute(
+            "SELECT id, COALESCE(numero_op,'') FROM ebr_ejecuciones "
+            " WHERE COALESCE(NULLIF(lote_codigo,''), lote)=? AND COALESCE(fase,'')=? "
+            " ORDER BY id DESC LIMIT 1", (lote, fase)).fetchone()
+        if _ya:
+            r = {"ok": True, "id": _ya[0], "numero_op": _ya[1], "reusado": True}
     if not r.get("ok"):
         msg = ("El producto no tiene MBR APROBADO con pasos de esa fase · aprueba su MBR primero."
                if r.get("error") == "NO_MBR_APROBADO" else (r.get("detail") or r.get("error") or "error"))
@@ -2988,8 +3003,13 @@ def legajo_rapido():
     except Exception:
         pass
     conn.commit()
+    # El enlace lleva a la pantalla de SU fase. `/planta/orden/<id>` redirige para las otras dos,
+    # pero mandar al operario por un redirect es una vuelta que no hace falta dar.
+    _link = {"envasado": "/planta/legajo-envasado/%s" % r.get("id"),
+             "acondicionamiento": "/planta/legajo-acondicionamiento/%s" % r.get("id")}.get(
+        fase, "/planta/orden/%s" % r.get("id"))
     return jsonify({"ok": True, "id": r.get("id"), "numero_op": r.get("numero_op"),
-                    "link": f"/planta/orden/{r.get('id')}", "reusado": r.get("reusado", False)})
+                    "link": _link, "fase": fase, "reusado": r.get("reusado", False)})
 
 
 @bp.route("/api/brd/limpiar-demos", methods=["POST"])
@@ -10641,6 +10661,8 @@ def ordenes_unificadas():
             items.append({
                 "origen": "simple",
                 "numero_op": rd.get("lote") or f"ENV-{rd['id']:05d}",
+                # El SQL de arriba ya suma las unidades y este dict las TIRABA.
+                "unidades_simple": int(rd.get("unidades") or 0),
                 "lote_bulk": rd.get("lote") or "",
                 "producto": rd.get("producto") or "",
                 "teorica_g": None, "producida_g": None, "aprobada": None,
@@ -10675,6 +10697,8 @@ def ordenes_unificadas():
             items.append({
                 "origen": "simple",
                 "numero_op": rd.get("lote") or f"ACOND-{rd['id']:05d}",
+                # El SQL de arriba ya suma las unidades y este dict las TIRABA.
+                "unidades_simple": int(rd.get("unidades") or 0),
                 "lote_bulk": rd.get("lote") or "",
                 "producto": rd.get("producto") or "",
                 "teorica_g": None, "producida_g": None, "aprobada": None,
@@ -10823,6 +10847,33 @@ def ordenes_unificadas():
     _reales = [i for i in items if not i["es_demo"]]
     _abiertas = [i for i in _reales if not (i.get("estado") or "").lower().startswith(
         ("complet", "liberad", "cerrad", "rechaz"))]
+    # ── LO QUE EL ENRIQUECIMIENTO DE LEGAJOS NO TOCA (17-ago) ───────────────────────────────
+    # El bloque de arriba vive dentro de `if _ids:` y arranca con `if not eid: continue`, o sea
+    # que sólo mira LEGAJOS. Una orden registrada por la vía SIMPLE -- la pantalla que usa la
+    # planta -- entraba a la lista sin `unidades_total` y sin `dias`:
+    #
+    #   · su tarjeta decía "Sin unidades registradas todavía" con el trabajo hecho y registrado,
+    #   · el KPI "Unidades acondicionadas" la contaba como CERO,
+    #   · y "3 días o más sin cerrar" no la podía ver envejecer.
+    #
+    # Y con una lista compuesta SÓLO por registros simples -- ninguna con legajo -- el bloque
+    # entero no corría: la pantalla quedaba ciega justo donde la planta todavía no abre legajos,
+    # que es hoy acondicionamiento. Es la mitad de EOS que le faltaba a la vista de MyBatch: la
+    # ORDEN ya se mostraba, sin el número que la hace útil (M115).
+    from datetime import datetime as _dn2, timedelta as _td2
+    _hoy2 = (_dn2.utcnow() - _td2(hours=5)).date()   # ancla Colombia, nunca UTC crudo (M24)
+    for _it in items:
+        _us = int(_it.pop("unidades_simple", 0) or 0)
+        if _us > 0 and not _it.get("unidades_total"):
+            _it["unidades_total"] = _us
+        if _it.get("dias") is None:
+            _f2 = (_it.get("fecha") or "").strip()
+            if _f2:
+                try:
+                    _it["dias"] = (_hoy2 - _dn2.strptime(_f2[:10], "%Y-%m-%d").date()).days
+                except Exception:
+                    _it["dias"] = None
+
     resumen = {
         "total": len(_reales),
         "legajos": sum(1 for i in _reales if i["origen"] == "legajo"),

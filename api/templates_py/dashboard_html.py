@@ -2557,9 +2557,17 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
   </div>
 
-  <div id="ac-form-manual" style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px rgba(15,23,42,.05)">
-    <h3 style="margin:0 0 3px;font-size:15px;font-weight:800;color:var(--cx-text)">Registrar a mano</h3>
-    <div style="color:var(--cx-text-mute);font-size:12.5px;margin-bottom:14px">Para lo que no viene de la cola de arriba (reprocesos, entregas puntuales).</div>
+  <!-- La EXCEPCION va PLEGADA (Sebastian 17-ago, mirando la pestana: "no me parece que deba ser
+       asi"). Este formulario son nueve campos vacios y su propio subtitulo dice que es para
+       reprocesos y entregas puntuales; abierto de fabrica era el bloque mas grande de la
+       pantalla, mas que la cola de arriba -cuyo boton YA pre-llena presentacion, unidades,
+       etiquetas y plegadizas-. Eso invita a teclear a mano lo que el sistema ya sabe, que es lo
+       contrario de simplificar el trabajo. Se pliega, no se esconde: sigue a un clic y dice
+       cuando usarlo. -->
+  <details id="ac-form-manual" style="background:var(--cx-card);border:1px solid var(--cx-border);border-radius:12px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px rgba(15,23,42,.05)">
+    <summary style="cursor:pointer;font-size:15px;font-weight:800;color:var(--cx-text);list-style:none">Registrar a mano
+      <span style="font-weight:500;font-size:12.5px;color:var(--cx-text-mute)"> &middot; s&oacute;lo para reprocesos y entregas puntuales</span></summary>
+    <div style="color:var(--cx-text-mute);font-size:12.5px;margin:8px 0 14px">Lo normal es acondicionar desde la cola de arriba: ese bot&oacute;n ya trae el producto, el lote, las unidades y la presentaci&oacute;n.</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div>
         <label style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Producto</label>
@@ -2602,7 +2610,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <button onclick="registrarAcondSimple()" style="background:var(--cx-primary-grad);color:#fff;padding:10px 24px;border:none;border-radius:9px;cursor:pointer;font-weight:800;font-size:13.5px;box-shadow:0 3px 10px rgba(109,40,217,.28)">&#9989; Registrar acondicionamiento</button>
     <div id="ac-form-msg" style="margin-top:8px;font-size:13px"></div>
-  </div>
+  </details>
 
   <div id="ac-table-wrap">
     <h3 style="margin:0 0 10px;color:var(--cx-primary-text);font-size:14px">&#128202; Historial Acondicionamiento</h3>
@@ -11374,7 +11382,13 @@ function ordenesRenderLista(items, res, fase){
     h+='<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:7px;font-size:12px;'
       +'color:var(--cx-text-soft)">';
     if(o.lote_bulk) h+='<span>Lote <b style="font-family:ui-monospace,monospace">'+_escHTML(o.lote_bulk)+'</b></span>';
-    if(o.teorica_g) h+='<span>'+Math.round(o.teorica_g).toLocaleString('es-CO')+' g de granel</span>';
+    // Los gramos de granel son el insumo de FABRICACION y de ENVASADO. En acondicionamiento el
+    // producto ya esta envasado: ahi no se maneja granel, se manejan unidades, etiquetas y
+    // plegadizas -- y "1.000 g de granel" en una orden de acondicionamiento es pedirle la
+    // densidad a una caja (M205/M214). El renderizador se comparte a proposito para que el
+    // ESTILO no diverja entre las tres vistas; el CONTENIDO tiene que hablar de su fase.
+    if(o.teorica_g && fase!=='acondicionamiento')
+      h+='<span>'+Math.round(o.teorica_g).toLocaleString('es-CO')+' g de granel</span>';
     if(o.pasos_total){
       var pct=o.avance_pct||0;
       h+='<span style="display:flex;align-items:center;gap:7px">'
@@ -11396,6 +11410,14 @@ function ordenesRenderLista(items, res, fase){
         h+='<span style="font-size:12px;color:var(--cx-text-mute);align-self:center">= '
           +o.unidades_total.toLocaleString('es-CO')+' unidades</span>';
       h+='</div>';
+    } else if(o.unidades_total){
+      // Una orden registrada por la via simple no trae el desglose por presentacion, pero SI
+      // trae su total. Antes caia en el aviso de abajo y decia "sin unidades registradas"
+      // teniendo el trabajo hecho (M115).
+      h+='<div style="margin-top:9px"><span style="background:var(--cx-primary-pale);'
+        +'color:var(--cx-primary-text);font-size:12px;font-weight:700;padding:4px 10px;'
+        +'border-radius:8px;font-variant-numeric:tabular-nums">'
+        +o.unidades_total.toLocaleString('es-CO')+' unidades</span></div>';
     } else if(!cerrada){
       h+='<div style="margin-top:9px;font-size:12px;color:var(--cx-warn-text)">'
         +'&#9888; Sin unidades registradas todavía</div>';
@@ -11906,7 +11928,33 @@ function loadColaAcond(){
     })
     .catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:var(--cx-danger-text);text-align:center">Error cargando cola</td></tr>';});
 }
-function prefillAcond(id){ abrirAcond(id); }
+// ── ACONDICIONAR = TRABAJAR SOBRE EL LEGAJO DEL LOTE (Sebastian 17-ago) ────────────────────
+// Antes este boton abria un registro suelto, en paralelo al legajo. Eran dos verdades sobre el
+// mismo lote: el batch record por un lado y la tabla `acondicionamiento` por el otro. Ahora
+// ABRE (o crea) el legajo del lote -- la ORDEN, que es la unidad de trabajo de MyBatch -- y solo
+// cae al registro a mano cuando el legajo NO se puede abrir, diciendo por que (M100: lo que no
+// se pudo hacer se declara, no se reemplaza en silencio).
+async function prefillAcond(id){
+  var env=_pendAcondMap[id]||{};
+  var lote=(env.lote||'').trim(), prod=(env.producto||'').trim();
+  if(!lote||!prod){ abrirAcond(id); return; }
+  var btn=event&&event.target?event.target:null;
+  if(btn){ btn.disabled=true; btn.textContent='Abriendo...'; }
+  try{
+    var r=await fetch('/api/brd/legajo-rapido',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({producto:prod,lote:lote,fase:'acondicionamiento'})});
+    var d={}; try{ d=await r.json(); }catch(e){}
+    if(r.ok&&d.ok&&d.link){ location.href=d.link; return; }
+    // Sin MBR aprobado no hay legajo posible: se registra a mano, pero el operario tiene que
+    // saber POR QUE quedo por fuera del batch record.
+    abrirAcond(id);
+    var m=document.getElementById('ac-act-msg');
+    if(m) m.innerHTML='<span style="color:var(--cx-warn-text)">&#9888; Este lote se registra a mano: '
+      +((d&&d.error)||'no se pudo abrir su legajo')+'</span>';
+  }catch(e){ abrirAcond(id); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='&#128393; Acondicionar'; } }
+}
 var _acActObj = null;
 var _acPrIdx = 0;
 function _acPresRowHtml(idx, pres, uds){

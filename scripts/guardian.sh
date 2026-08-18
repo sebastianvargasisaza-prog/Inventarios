@@ -766,6 +766,11 @@ CORAZON=(
   # veia las unidades que registro la planta, el enlace al paso siguiente volvia vacio en el caso
   # normal, y frasco y tapa salian del kardex DOS veces (60 donde se envasaron 30).
   "tests/test_lote_completo_tres_fases.py"
+  # La pestana de acondicionamiento decia menos de lo que sabia: una orden registrada por la via
+  # SIMPLE entraba sin `unidades_total` (tarjeta "sin unidades registradas" con el trabajo hecho,
+  # KPI en cero) y la tarjeta hablaba de "g de granel" en una fase donde ya no hay granel. Y el
+  # formulario de EXCEPCION ocupaba mas pantalla que la cola, que es el camino normal.
+  "tests/test_orden_simple_cuenta_sus_unidades.py"
 )
 
 echo ""

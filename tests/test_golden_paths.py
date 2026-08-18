@@ -6204,7 +6204,18 @@ def test_golden_legajo_rapido_envasado(app, db_clean):
                     'lote': 'L-RAPIDO', 'fase': 'envasado'}, headers=csrf_headers())
         assert r.status_code == 200, r.data
         d = r.get_json()
-        assert d['ok'] and d['id'] and d['link'].startswith('/planta/orden/')
+        # ⚠ 17-ago · esto exigía que el link empezara con `/planta/orden/`, o sea la URL, no la
+        # capacidad. Desde que el enlace lleva a la pantalla de SU fase
+        # (`/planta/legajo-envasado/<id>`, sin pasar por el redirect) el assert daba rojo con el
+        # código MEJOR. Un golden que fija una URL en vez de una capacidad se rompe con cualquier
+        # reorganización y empuja a deformar el código para calmarlo (M202), así que se re-apunta
+        # a la GARANTÍA -- el enlace abre el legajo -- y se verifica ABRIÉNDOLO.
+        assert d['ok'] and d['id'] and d['link'], d
+        _pag = cs.get(d['link'])
+        assert _pag.status_code == 200, ('el link del legajo no abre', d['link'], _pag.status_code)
+        _htm = _pag.get_data(as_text=True)
+        assert 'en validación' not in _htm, 'el link cayó en el candado de Part 11'
+        assert str(d['id']) in _htm, ('la pantalla que abre no es la de ESE legajo', d['link'])
     finally:
         _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
               "(SELECT id FROM ebr_ejecuciones WHERE lote LIKE 'L-RAPIDO%')")
