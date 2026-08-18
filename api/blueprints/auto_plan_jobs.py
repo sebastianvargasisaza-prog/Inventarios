@@ -674,6 +674,10 @@ JOBS_SCHEDULE = [
     # (job_name, hora, minuto, días_semana[0=lun..6=dom] o None=todos, días_mes[1-31] o None=todos, callable_name)
     # ⭐ LUNES 7AM · Workflow completo (jefe producción no hace nada manual)
     ('lunes_7am_workflow',    7,  0, [0],  None,                'job_lunes_7am_workflow'),
+    # ⭐ Reporte semanal de Gerencia · lunes 7:00 (Colombia) · NACE APAGADO:
+    #   sólo envía si `app_settings.reporte_semanal_auto` está en '1'. Encender algo que
+    #   le escribe a Gerencia cada semana es decisión de Sebastián (M39).
+    ('reporte_semanal_ceo',   7,  0, [0],  None,                'job_reporte_semanal_ceo'),
     # ⭐ Resumen ejecutivo nocturno · 19:00 todos los días · Sebastián +
     #   Alejandro reciben campana con resumen del día (OLA 3 IA 20-may-2026)
     ('resumen_ejecutivo_noche', 19, 0, None, None,                'job_resumen_ejecutivo_noche'),
@@ -4341,6 +4345,105 @@ def job_refrescar_ventas_diarias(app):
             return False, {'error': str(e)[:200]}, 0
 
 
+def job_reporte_semanal_ceo(app):
+    """El reporte semanal de Gerencia, que llega SOLO los lunes a las 7:00 de Colombia.
+
+    Sebastián, en la spec de indicadores: *"generado por la plataforma, no redactado por
+    nadie"*. El reporte YA existía (`/api/reporte/semanal-ceo`, JSON bajo demanda) y su propio
+    docstring decía *"diseñado para enviar via email cada lunes 8am"*... y **no había ningún
+    cron que lo mandara**: la capacidad estaba entera y nadie la disparaba (M121).
+
+    ⚠ Nace APAGADO (`app_settings.reporte_semanal_auto`). Encender algo que le escribe a
+    Gerencia todas las semanas es una decisión de Sebastián, no mía; y un envío automático que
+    arranca solo es de las cosas que no se pueden deshacer (M39: el control se relaja -- o se
+    enciende -- con un interruptor reversible, nunca cambiando el default a ciegas).
+
+    Se prende desde `/api/admin/reporte-semanal/toggle` o poniendo la clave en '1'.
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb()
+        try:
+            _v = conn.execute(
+                "SELECT valor FROM app_settings WHERE clave='reporte_semanal_auto'").fetchone()
+        except Exception:
+            _v = None
+        if not (_v and str(_v[0]).strip() in ('1', 'true', 'True', 'si', 'sí')):
+            return True, {'enviado': False, 'motivo': 'apagado · app_settings.reporte_semanal_auto'}, None
+
+        # Los destinatarios salen de la tabla, no de una lista escrita acá: una lista en el
+        # código se pudre el día que entra alguien nuevo (M122).
+        destinatarios = []
+        try:
+            destinatarios = [r[0] for r in conn.execute(
+                "SELECT email FROM email_destinatarios_config "
+                " WHERE activo=1 AND COALESCE(email,'') <> '' "
+                "   AND (rol IN ('gerencia','gerencia_produccion','direccion') "
+                "        OR recibe_reporte_semanal=1)").fetchall() if r[0]]
+        except Exception:
+            destinatarios = []
+        if not destinatarios:
+            try:
+                destinatarios = [r[0] for r in conn.execute(
+                    "SELECT email FROM email_destinatarios_config "
+                    " WHERE activo=1 AND COALESCE(email,'') <> ''").fetchall() if r[0]]
+            except Exception:
+                destinatarios = []
+        if not destinatarios:
+            # Sin a quién mandarlo se DECLARA, no se da por enviado: un 'ok' mudo acá se ve
+            # igual que un reporte que llegó (M100).
+            return True, {'enviado': False, 'motivo': 'sin destinatarios configurados'}, None
+
+        # El contenido sale del MISMO endpoint que se consulta en pantalla · dos armadores del
+        # mismo reporte divergen el día que alguien toque uno (M99/M3).
+        datos = {}
+        try:
+            with app.test_request_context('/api/reporte/semanal-ceo'):
+                from flask import session as _ses
+                _ses['compras_user'] = 'sebastian'
+                from blueprints.hub import reporte_semanal_ceo as _rep
+                _r = _rep()
+                datos = _r.get_json() if hasattr(_r, 'get_json') else (_r[0].get_json() if isinstance(_r, tuple) else {})
+        except Exception as e:
+            log.warning('[reporte-semanal] no se pudo armar: %s', e)
+            return False, None, 'no se pudo armar el reporte: %s' % e
+
+        html = _reporte_semanal_html(datos)
+        _enviar_email_async('EOS · Reporte semanal de operación', html, destinatarios)
+        return True, {'enviado': True, 'destinatarios': len(destinatarios)}, None
+
+
+def _reporte_semanal_html(d):
+    """El reporte en HTML · lo que NO se pudo medir se dice, no se deja en blanco (M124)."""
+    def _fila(k, v):
+        return ('<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0">%s</td>'
+                '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;'
+                'font-weight:700">%s</td></tr>' % (k, v))
+    per = (d or {}).get('periodo') or {}
+    filas = []
+    caja = (d or {}).get('caja_semana') or {}
+    if caja:
+        filas.append(_fila('Ingresos de la semana', '$%s' % format(int(caja.get('ingresos') or 0), ',d')))
+        filas.append(_fila('Egresos de la semana', '$%s' % format(int(caja.get('egresos') or 0), ',d')))
+        filas.append(_fila('Neto', '$%s' % format(int(caja.get('neto') or 0), ',d')))
+    sh = (d or {}).get('shopify_semana') or {}
+    if sh:
+        filas.append(_fila('Pedidos Shopify', sh.get('pedidos', 0)))
+        filas.append(_fila('Venta Shopify', '$%s' % format(int(sh.get('total') or 0), ',d')))
+    if not filas:
+        filas.append(_fila('Sin datos que reportar', 'revisar la plataforma'))
+    return (
+        '<div style="font-family:system-ui,sans-serif;max-width:640px;margin:0 auto">'
+        '<h2 style="color:#5b21b6;margin:0 0 4px">Reporte semanal de operación</h2>'
+        '<div style="color:#64748b;font-size:13px;margin-bottom:14px">Del %s al %s · generado '
+        'por EOS, sin que nadie lo redacte</div>'
+        '<table style="width:100%%;border-collapse:collapse;font-size:14px">%s</table>'
+        '<div style="color:#94a3b8;font-size:12px;margin-top:14px">Se consulta en cualquier '
+        'momento en la plataforma. Si un número falta, es que el dato todavía no se captura: '
+        'el reporte prefiere decirlo antes que estimarlo.</div></div>'
+        % (per.get('desde', '-'), per.get('hasta', '-'), ''.join(filas)))
+
+
 def job_refrescar_estacionalidad(app):
     """PERF (Sebastián 15-jul) · 3×/día · precalcula la estacionalidad de ventas (24 meses) y la deja en la
     cache compartida (plan_vmaps_cache · clave estac:24:1.30). Es el ÚNICO scan del path de Necesidades sin
@@ -5520,6 +5623,7 @@ def _loop_multi_cron(app):
     import time as _time
     import time as time_mod
     from datetime import datetime as _dt
+    from datetime import timedelta as _td_col
     while True:
         try:
             # FIX · 22-may-2026 · Bug #9 audit Crons · NO reusar conn entre jobs
@@ -5528,7 +5632,22 @@ def _loop_multi_cron(app):
             with app.app_context():
                 from database import get_db
                 conn = get_db()
-                ahora = _dt.now()
+                # ── EL RELOJ DEL CRON ES COLOMBIA, NO EL DEL SERVIDOR (18-ago) ──────
+                # Render corre en UTC y esto era `_dt.now()` pelado, sin compensar: cada job
+                # disparaba 5 HORAS ANTES de lo que dice su nombre. Medido en producción:
+                # `resumen_ejecutivo_noche` (19:00) se ejecutó a las **14:05 Colombia**, o sea
+                # 19:05 UTC. Con eso, "lunes 7am" corría a las 2 de la mañana y el resumen
+                # "de la noche" llegaba a las 2 de la tarde.
+                #
+                # Los nombres, los comentarios y la memoria del proyecto asumen hora Colombia
+                # (`marcar_vencidos` "7:50", el workflow "lunes 7am"), así que esto ALINEA la
+                # realidad con la intención -- no cambia el diseño (M24, ahora en el
+                # PLANIFICADOR y no en un dato).
+                #
+                # ⚠ La transición no duplica nada: `_ya_ejecutado_hoy` compara por DÍA
+                # COLOMBIA contra un `ejecutado_at` que ya se guarda en Colombia, así que un
+                # job que hoy corrió a las 02:00 queda salteado y arranca mañana en su hora.
+                ahora = _dt.now() - _td_col(hours=5)
                 # BUG-14 fix · 19-may-2026 audit Planta PERFECTA: jobs
                 # NO idempotentes (insertan producciones, mandan emails)
                 # no deben re-ejecutarse a las 2h tras fallo · subir a 24h
@@ -5538,6 +5657,7 @@ def _loop_multi_cron(app):
                 # · Ahora: TODOS los jobs que insertan/mutan datos críticos a 24h
                 _RETRY_24H_JOBS = {
                     'lunes_7am_workflow',
+                    'reporte_semanal_ceo',          # manda correo · jamas dos veces
                     'auto_sc_mensual', 'auto_sc_mee_mensual', 'auto_sc_urgente_lun',
                     'auto_d20',                     # crea SCs decoración
                     'reconciliar_influencer_60d',   # UPDATE masivo

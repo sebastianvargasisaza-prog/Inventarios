@@ -11441,7 +11441,13 @@ def planta_health_check():
                 items.append({'categoria':'multi-cron','nombre':f'Job {job_name}','status':'warn',
                                 'valor':f'nunca · {sched}','sugerencia':'Esperando primera ejecución'})
             else:
-                ago = (datetime.now() - datetime.fromisoformat(ult[0])).total_seconds() / 3600
+                # `ejecutado_at` se guarda en hora COLOMBIA y `datetime.now()` es el reloj
+                # del servidor (UTC en Render): restarlos mezcla bases e infla el
+                # transcurrido en 5 h. Medido: un job que había corrido hacía 4,2 h se
+                # reportaba "hace 9,2h" -- y ese número es el que decide si un cron se da
+                # por caído (M24 · un diff now-inicio exige que los dos estén en la misma base).
+                _now_col = datetime.now() - timedelta(hours=5)
+                ago = (_now_col - datetime.fromisoformat(ult[0])).total_seconds() / 3600
                 if ult[1]:
                     items.append({'categoria':'multi-cron','nombre':f'Job {job_name}','status':'ok',
                                     'valor':f'hace {ago:.1f}h ({sched})','sugerencia':''})

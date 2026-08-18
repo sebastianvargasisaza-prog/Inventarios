@@ -1798,6 +1798,48 @@ def indicadores_despachos():
     })
 
 
+@bp.route('/api/reporte/semanal-ceo/auto', methods=['GET', 'PUT'])
+def reporte_semanal_auto():
+    """Prende o apaga el envío automático del reporte semanal (lunes 7:00 Colombia).
+
+    Nace APAGADO. El reporte existía desde hace tiempo y nadie lo mandaba; ahora hay un cron,
+    pero **encenderlo es decisión de Sebastián**: empieza a escribirle a Gerencia todas las
+    semanas y eso no se activa de callado (M39 · interruptor reversible, default seguro).
+    """
+    u = (session.get('compras_user', '') or '').lower()
+    if u not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'Solo admins'}), 403
+    conn = get_db()
+    if request.method == 'GET':
+        try:
+            r = conn.execute(
+                "SELECT valor FROM app_settings WHERE clave='reporte_semanal_auto'").fetchone()
+        except Exception:
+            r = None
+        return jsonify({'ok': True, 'activo': bool(r and str(r[0]).strip() == '1'),
+                        'cuando': 'lunes 7:00 (hora Colombia)'})
+    body = request.get_json(silent=True) or {}
+    val = '1' if body.get('activo') else '0'
+    conn.execute("INSERT INTO app_settings (clave, valor) VALUES ('reporte_semanal_auto', ?) "
+                 "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor", (val,))
+    # ⚠ `audit_log` NO está importado a nivel de módulo en este archivo: se importa local,
+    # como ya hace el resto de hub.py. Usarlo directo revienta con NameError la PRIMERA vez que
+    # alguien toca el botón, y ningún test de página lo vería (M78/M181).
+    try:
+        from audit_helpers import audit_log as _alog
+    except ImportError:
+        from api.audit_helpers import audit_log as _alog
+    # ⚠ Con la CONEXIÓN del request y ANTES del commit: el rastro entra en la MISMA
+    # transacción que el cambio (atómico · M22). Con `None` abriría una conexión aparte
+    # mientras ésta tiene la escritura abierta -- y eso es un `database is locked`, no un
+    # detalle de estilo.
+    _alog(conn, usuario=u, accion='REPORTE_SEMANAL_AUTO',
+          registro_id='reporte_semanal_auto', tabla='app_settings',
+          detalle='activo=%s' % val)
+    conn.commit()
+    return jsonify({'ok': True, 'activo': val == '1'})
+
+
 @bp.route('/api/reporte/semanal-ceo')
 def reporte_semanal_ceo():
     """Reporte semanal para el CEO — JSON con todo lo que cierra la semana.
