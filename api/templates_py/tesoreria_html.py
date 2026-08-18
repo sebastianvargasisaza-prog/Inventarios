@@ -696,7 +696,7 @@ function renderArchivoOCs(){
   document.getElementById('oc-kpi-anio').textContent=_ocMoney(totAnio);
   document.getElementById('oc-kpi-avg').textContent=_ocMoney(list.length?tot/list.length:0);
   // Gasto por categoría (barras)
-  var cats={}; list.forEach(function(o){ var k=o.categoria||'—'; cats[k]=(cats[k]||0)+(parseFloat(o.valor_total)||0); });
+  var cats={}; list.forEach(function(o){ var k=o.categoria||'·'; cats[k]=(cats[k]||0)+(parseFloat(o.valor_total)||0); });
   var catArr=Object.keys(cats).map(function(k){ return {k:k,v:cats[k]}; }).sort(function(a,b){ return b.v-a.v; });
   var maxc=catArr.reduce(function(m,x){ return Math.max(m,x.v); },0)||1;
   var catBox=document.getElementById('oc-por-cat');

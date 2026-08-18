@@ -696,7 +696,7 @@ async function loadDecisionesCEO(){
                     fmt(cj.saldo) + ' <span style="font-size:.5em;font-weight:600;color:var(--cx-text-mute)">en la gaveta</span>',
                     sub, cuerpo, ['Ir a la caja', '/animus']);
     } else {
-      h += _ceoCard('urge', '💵 Caja menor', '—', '', '<div class="ceo-aviso">No pude leerla</div>', null);
+      h += _ceoCard('urge', '💵 Caja menor', '·', '', '<div class="ceo-aviso">No pude leerla</div>', null);
     }
 
     // CREADORES · con nombre y monto, no dos agregados
@@ -713,7 +713,7 @@ async function loadDecisionesCEO(){
                     inf.n + ' esperando' + (inf.vencidos_n > 0 ? ' · ' + inf.vencidos_n + ' VENCIDOS' : ''),
                     cuerpoI, ['Ir a pagar', '/hoy']);
     } else {
-      h += _ceoCard('urge', '📣 Pagos a creadores', '—', '', '<div class="ceo-aviso">No pude leerlos</div>', null);
+      h += _ceoCard('urge', '📣 Pagos a creadores', '·', '', '<div class="ceo-aviso">No pude leerlos</div>', null);
     }
 
     // COMPRAS que esperan su firma

@@ -11671,6 +11671,25 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "       cargo=CASE WHEN COALESCE(cargo,'')='' THEN 'Operario Planta' ELSE cargo END "
         "WHERE LOWER(username)='milton' AND COALESCE(nombre_completo,'')=''",
     ]),
+    (440, "animus_shopify_orders · el CICLO DEL DESPACHO, que EOS no capturaba (spec de "
+          "Gerencia 17-ago · PASO 0 medido el 18-ago). La tabla tenía 24 columnas y ninguna "
+          "decía cuándo salió el pedido, con qué guía ni si LLEGÓ: el ciclo se cerraba cuando "
+          "el pedido SALE, no cuando llega, así que 'cuántos pedidos llegaron de verdad' no se "
+          "podía contestar. Shopify ya manda todo esto en `fulfillments[]` y el sync lo tiraba: "
+          "`created_at` (despacho), `tracking_number` + `tracking_company` (guía) y "
+          "`shipment_status`, que incluye 'delivered'. "
+          "⚠ `entregado_at` se llena SÓLO cuando la transportadora lo reporta. Donde no lo "
+          "reporte queda vacío, y vacío es honesto: inventar una entrega es peor que no "
+          "tenerla (M115/M124). Por eso `estado_envio` viaja aparte y se DECLARA -- distinguir "
+          "'no llegó' de 'nadie lo reportó' es justo lo que el indicador existe para medir.", [
+        "ALTER TABLE animus_shopify_orders ADD COLUMN despachado_at TEXT DEFAULT ''",
+        "ALTER TABLE animus_shopify_orders ADD COLUMN guia TEXT DEFAULT ''",
+        "ALTER TABLE animus_shopify_orders ADD COLUMN transportadora TEXT DEFAULT ''",
+        "ALTER TABLE animus_shopify_orders ADD COLUMN entregado_at TEXT DEFAULT ''",
+        "ALTER TABLE animus_shopify_orders ADD COLUMN estado_envio TEXT DEFAULT ''",
+        "CREATE INDEX IF NOT EXISTS idx_shopify_despachado ON animus_shopify_orders(despachado_at)",
+        "CREATE INDEX IF NOT EXISTS idx_shopify_entregado ON animus_shopify_orders(entregado_at)",
+    ]),
 ]
 
 

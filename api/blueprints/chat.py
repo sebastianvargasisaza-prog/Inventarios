@@ -34,7 +34,7 @@ def chat_widget_js():
     pagina"."""
     if 'compras_user' not in session:
         return Response("// no auth", mimetype="application/javascript")
-    # No cachear el widget JS — Sebastian (29-abr-2026): los browsers
+    # No cachear el widget JS · Sebastian (29-abr-2026): los browsers
     # cacheaban version vieja con bugs y costaba forzar Ctrl+F5.
     # Inyectar user actual en el JS para que el widget sepa "soy yo"
     me = session.get('compras_user', '')
@@ -46,7 +46,7 @@ def chat_widget_js():
   if (window.__chatWidgetLoaded) return;
   window.__chatWidgetLoaded = true;
 
-  // ── Sebastian (30-abr-2026): chat flotante REAL — panel desplegable
+  // ── Sebastian (30-abr-2026): chat flotante REAL · panel desplegable
   // tipo Messenger. Lista de hilos + visor de mensajes inline + envío.
   // Si el panel falla por cualquier motivo, "Abrir completo →" lleva a /chat.
 
@@ -342,7 +342,7 @@ def chat_widget_js():
       var d = await r.json();
       if (d.ok || d.tarea_id){
         document.getElementById('cw-task-modal').style.display = 'none';
-        abrirConversacion(ACTIVE_THREAD);  // refrescar mensajes — incluye el msg tipo 'tarea'
+        abrirConversacion(ACTIVE_THREAD);  // refrescar mensajes · incluye el msg tipo 'tarea'
       } else {
         alert('Error: '+(d.error || 'no se creó'));
       }
@@ -410,7 +410,7 @@ def chat_widget_js():
       var d = await r.json();
       var msgs = d.messages || [];
       if (!msgs.length) {
-        msgsBox.innerHTML = '<div class="cw-empty">Sin mensajes — empieza la conversación.</div>';
+        msgsBox.innerHTML = '<div class="cw-empty">Sin mensajes · empieza la conversación.</div>';
       } else {
         msgsBox.innerHTML = msgs.map(function(m){
           var own = (m.sender||'').toLowerCase() === (ME||'').toLowerCase();
@@ -650,7 +650,7 @@ def chat_threads():
         conn.commit()
         return jsonify({'ok': True, 'thread_id': thread_id})
 
-    # GET — mis threads con preview del último mensaje + unread count
+    # GET · mis threads con preview del último mensaje + unread count
     rows = c.execute("""
         SELECT t.id, t.tipo, t.nombre, t.ultimo_mensaje_preview, t.ultimo_mensaje_en,
                t.creado_por,
@@ -722,7 +722,7 @@ def chat_messages(thread_id):
         tipo = (d.get('tipo_mensaje') or 'texto').strip()
         if tipo not in ('texto', 'tarea', 'compromiso', 'archivo', 'imagen', 'sistema', 'llamado_atencion'):
             tipo = 'texto'
-        # Parsear @menciones del contenido (Fase 4) — solo nombres de
+        # Parsear @menciones del contenido (Fase 4) · solo nombres de
         # usuarios que SI son miembros del thread. Esto evita spam y
         # crear menciones invalidas.
         import re as _re
@@ -833,7 +833,7 @@ def chat_messages(thread_id):
                 logging.getLogger('chat').warning("Email mencion fallo: %s", _em)
         return jsonify({'ok': True, 'message_id': msg_id, 'mentions': valid_mentions})
 
-    # GET — paginated (default últimos 50)
+    # GET · paginated (default últimos 50)
     limit = min(int(request.args.get('limit', 50)), 200)
     before_id = request.args.get('before_id')
     where_extra = "AND id < ?" if before_id else ""
@@ -852,7 +852,7 @@ def chat_messages(thread_id):
     """, params).fetchall()
     cols = [d[0] for d in c.description]
     messages = [dict(zip(cols, r)) for r in rows]
-    # Enriquecer con reacciones (Fase 3) — agrega un dict {emoji: [users]} por msg
+    # Enriquecer con reacciones (Fase 3) · agrega un dict {emoji: [users]} por msg
     if messages:
         msg_ids = [m['id'] for m in messages]
         placeholders = ','.join('?' * len(msg_ids))
@@ -1054,7 +1054,7 @@ def chat_asignar_tarea(thread_id):
                 daemon=True
             ).start()
     except Exception as _e:
-        # Falla silenciosa — el chat no debe bloquearse por email
+        # Falla silenciosa · el chat no debe bloquearse por email
         import logging
         logging.getLogger('chat').warning("Email asignacion tarea fallo: %s", _e)
 

@@ -984,7 +984,7 @@ def centro_notificaciones():
                 'modulo': 'inventario',
                 'icono': '📅',
                 'titulo': f'Lote {r["lote"]} vence en <=7 días',
-                'detalle': f'{r["material_nombre"]} ({r["cantidad"]} g) — {r["fecha_vencimiento"]}',
+                'detalle': f'{r["material_nombre"]} ({r["cantidad"]} g) · {r["fecha_vencimiento"]}',
                 'link': '/inventarios',
                 'accion': 'Usar primero o transferir',
             })
@@ -1006,7 +1006,7 @@ def centro_notificaciones():
                     'modulo': 'compras',
                     'icono': '💰',
                     'titulo': f'OC {r["numero_oc"]} sin pagar >7 días',
-                    'detalle': f'{r["proveedor"] or "-"} — ${(r["valor_total"] or 0):,.0f}',
+                    'detalle': f'{r["proveedor"] or "-"} · ${(r["valor_total"] or 0):,.0f}',
                     'link': '/compras',
                     'accion': 'Pagar o cancelar',
                 })
@@ -1028,7 +1028,7 @@ def centro_notificaciones():
                 'titulo': f'NC abierta hace >30 días',
                 'detalle': (r['descripcion'] or '')[:100],
                 'link': '/calidad',
-                'accion': f'Cerrar — resp: {r["responsable"]}',
+                'accion': f'Cerrar · resp: {r["responsable"]}',
             })
     except Exception:
         pass
@@ -1087,7 +1087,7 @@ def centro_notificaciones():
                             'modulo': 'marketing',
                             'icono': '⏰',
                             'titulo': f'Toca pagar a {r["nombre"]}',
-                            'detalle': f'Hace {dias_desde}d del último pago — ciclo {r["ciclo_pago"]}',
+                            'detalle': f'Hace {dias_desde}d del último pago · ciclo {r["ciclo_pago"]}',
                             'link': '/marketing',
                             'accion': 'Crear solicitud pago',
                         })
@@ -1113,7 +1113,7 @@ def centro_notificaciones():
                 'modulo': 'comunicacion',
                 'icono': '📋',
                 'titulo': f'Tarea vencida: {r["titulo"][:60]}',
-                'detalle': f'Comprometida {r["fecha_compromiso"]} — area: {r["area"]}',
+                'detalle': f'Comprometida {r["fecha_compromiso"]} · area: {r["area"]}',
                 'link': '/comunicacion',
                 'accion': 'Completar o renegociar',
             })
@@ -1181,7 +1181,7 @@ def centro_notificaciones():
                 'modulo': 'comunicacion',
                 'icono': '♻️',
                 'titulo': f'Reincidente comite: {r["titulo"][:60]}',
-                'detalle': f'Sin avance hace {int(r["dias"])} días — resp: {r["resp"] or "-"}',
+                'detalle': f'Sin avance hace {int(r["dias"])} días · resp: {r["resp"] or "-"}',
                 'link': '/comunicacion',
                 'accion': 'Escalar o reasignar',
             })
@@ -1206,7 +1206,7 @@ def centro_notificaciones():
                 'modulo': 'tecnica',
                 'icono': '📜',
                 'titulo': f'SGD {"VENCIDO" if dias <= 0 else "vence pronto"}: {r["codigo"]}',
-                'detalle': f'{r["nombre"]} — revisión en {dias} días — resp: {r["responsable_revision"] or "-"}',
+                'detalle': f'{r["nombre"]} · revisión en {dias} días · resp: {r["responsable_revision"] or "-"}',
                 'link': '/tecnica',
                 'accion': 'Revisar y marcar revisado',
             })
@@ -1647,6 +1647,133 @@ def ia_analizar_semana():
                 return jsonify({'ok': True, 'datos': datos, 'analisis_raw': text})
         except Exception as e:
             return jsonify({'error': f'IA no disponible: {e}', 'datos': datos}), 500
+
+
+@bp.route('/api/indicadores/despachos')
+def indicadores_despachos():
+    """Los 7 indicadores de DESPACHOS de la spec de Gerencia (17-ago), sobre datos reales.
+
+    *"El 6 y el 7 son los importantes. Hoy cerramos el ciclo cuando el pedido SALE, no cuando
+    LLEGA. Sin ellos no sabemos cuántos pedidos llegaron de verdad."*
+
+    Todo sale de `animus_shopify_orders` (mig 440: despachado_at, guia, transportadora,
+    entregado_at, estado_envio). Nada se estima:
+
+      · lo que la transportadora NO reporta queda en `sin_dato`, con su propio conteo. Un cero
+        que nadie calculó se lee como "no hay nada que hacer" y significa lo contrario
+        (M100/M154), así que la respuesta declara `cobertura_entrega` -- de cuántos pedidos
+        despachados se tiene noticia de si llegaron;
+      · el **cumplimiento de promesa** se mide contra la ENTREGA, que es lo que se prometió, y
+        sólo sobre los pedidos de los que hay noticia · el resto se DECLARA, no se cuenta como
+        incumplido (contarlo sería castigar por falta de dato · M33).
+
+    ⚠ Las canceladas se excluyen SIEMPRE: Shopify no escribe 'cancelled' en fulfillment_status,
+    la marca es `cancelled_at` y el sync la traduce a `estado='cancelled'` (M108).
+    """
+    u = (session.get('compras_user', '') or '').lower()
+    if u not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'Solo admins'}), 403
+    try:
+        dias = max(1, min(365, int(request.args.get('dias') or 30)))
+    except (TypeError, ValueError):
+        dias = 30
+
+    conn = get_db(); c = conn.cursor()
+    _no_cancel = ("LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')")
+    _rango = "creado_en >= date('now','-5 hours','-%d day')" % dias
+
+    def _uno(sql, *a):
+        try:
+            r = c.execute(sql, a).fetchone()
+            return r[0] if r else 0
+        except Exception as e:
+            log.warning('indicadores despachos · %s', e)
+            return None
+
+    base = "FROM animus_shopify_orders WHERE %s AND %s" % (_rango, _no_cancel)
+    recibidos = _uno("SELECT COUNT(*) " + base)
+    despachados = _uno("SELECT COUNT(*) " + base + " AND COALESCE(despachado_at,'')<>''")
+    con_guia = _uno("SELECT COUNT(*) " + base + " AND COALESCE(guia,'')<>''")
+    entregados = _uno("SELECT COUNT(*) " + base + " AND COALESCE(entregado_at,'')<>''")
+    sin_confirmar = _uno("SELECT COUNT(*) " + base +
+                         " AND COALESCE(guia,'')<>'' AND COALESCE(entregado_at,'')=''")
+    # Antigüedad del pendiente MÁS VIEJO: sin esto "3 pendientes" se lee igual el día 1 que el
+    # día 47 y la alerta deja de mirarse (M129).
+    pend_viejo = None
+    try:
+        r = c.execute("SELECT MIN(substr(creado_en,1,10)) " + base +
+                      " AND COALESCE(despachado_at,'')=''").fetchone()
+        pend_viejo = (r[0] if r else None) or None
+    except Exception as e:
+        log.warning('indicadores despachos · pendiente más viejo: %s', e)
+    dias_pend = None
+    if pend_viejo:
+        try:
+            _hoy = (datetime.now() - timedelta(hours=5)).date()
+            dias_pend = (_hoy - datetime.strptime(pend_viejo, '%Y-%m-%d').date()).days
+        except Exception:
+            dias_pend = None
+
+    # Días transcurridos del despachado-sin-confirmar más viejo (el #7).
+    dias_sin_conf = None
+    try:
+        r = c.execute("SELECT MIN(substr(despachado_at,1,10)) " + base +
+                      " AND COALESCE(guia,'')<>'' AND COALESCE(entregado_at,'')=''").fetchone()
+        if r and r[0]:
+            _hoy = (datetime.now() - timedelta(hours=5)).date()
+            dias_sin_conf = (_hoy - datetime.strptime(r[0], '%Y-%m-%d').date()).days
+    except Exception as e:
+        log.warning('indicadores despachos · sin confirmar: %s', e)
+
+    # Cumplimiento de promesa · 5-7 días HÁBILES desde la creación hasta la ENTREGA.
+    # Sólo sobre los que tienen noticia de entrega; el resto se declara aparte.
+    cumple = fuera = 0
+    try:
+        for r in c.execute("SELECT substr(creado_en,1,10), substr(entregado_at,1,10) " + base +
+                           " AND COALESCE(entregado_at,'')<>''").fetchall():
+            try:
+                d0 = datetime.strptime(r[0], '%Y-%m-%d').date()
+                d1 = datetime.strptime(r[1], '%Y-%m-%d').date()
+            except Exception:
+                continue
+            habiles, d = 0, d0
+            while d < d1:
+                d += timedelta(days=1)
+                if d.weekday() < 5:
+                    habiles += 1
+            if habiles <= 7:
+                cumple += 1
+            else:
+                fuera += 1
+    except Exception as e:
+        log.warning('indicadores despachos · promesa: %s', e)
+
+    _desp = despachados or 0
+    return jsonify({
+        'ok': True,
+        'dias': dias,
+        'indicadores': {
+            'recibidos': recibidos,
+            'despachados': despachados,
+            'pendientes_despacho': (recibidos - _desp) if recibidos is not None else None,
+            'pendiente_mas_viejo_dias': dias_pend,
+            'con_guia': con_guia,
+            'entregados_confirmados': entregados,
+            'despachados_sin_confirmacion': sin_confirmar,
+            'sin_confirmar_mas_viejo_dias': dias_sin_conf,
+            'promesa_cumple': cumple,
+            'promesa_fuera': fuera,
+        },
+        # Lo que NO se pudo medir, con nombre propio: es la diferencia entre "no llegó" y
+        # "nadie lo reportó", y sin declararlo los otros números se leen como si fueran todo.
+        'cobertura_entrega': {
+            'despachados': _desp,
+            'con_noticia': entregados,
+            'sin_dato': max(0, _desp - (entregados or 0)),
+            'nota': ('La entrega la reporta la transportadora. Los pedidos sin noticia no se '
+                     'cuentan como incumplidos: se declaran acá.'),
+        },
+    })
 
 
 @bp.route('/api/reporte/semanal-ceo')

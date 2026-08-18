@@ -58,6 +58,42 @@ def _get_shopify_config(conn):
         return None, None
 
 
+def ciclo_despacho(orden):
+    """Cuándo salió el pedido, con qué guía y si LLEGÓ · sale de `fulfillments[]`.
+
+    Gerencia (17-ago): *"hoy cerramos el ciclo cuando el pedido SALE, no cuando LLEGA · sin esto
+    no sabemos cuántos pedidos llegaron de verdad"*. Shopify ya manda todo y el sync lo tiraba.
+
+    Devuelve `(despachado_at, guia, transportadora, entregado_at, estado_envio)`.
+
+    Reglas:
+      · se toma el fulfillment MÁS RECIENTE no cancelado -- un pedido se puede despachar en
+        partes y lo que interesa es el estado actual del envío;
+      · `entregado_at` se llena SÓLO si la transportadora reporta `shipment_status='delivered'`.
+        Donde no lo reporte queda VACÍO, y vacío es honesto: una entrega inventada se lee igual
+        que una confirmada, y es sobre eso que se decide (M115/M124);
+      · `estado_envio` viaja aparte justamente para poder distinguir *"no llegó"* de *"nadie lo
+        reportó"*, que es lo que el indicador existe para medir.
+
+    Está como función y no inline para poder MEDIRLA: la extracción es lo único que puede
+    equivocarse acá, y probarla contra una respuesta real de Shopify no exige red.
+    """
+    ffs = [f for f in ((orden or {}).get('fulfillments') or [])
+           if str((f or {}).get('status') or '').lower() != 'cancelled']
+    if not ffs:
+        return ('', '', '', '', '')
+    ff = ffs[-1] or {}
+    guia = (ff.get('tracking_number') or '')
+    if not guia:
+        _nums = ff.get('tracking_numbers') or []
+        guia = (_nums[0] if _nums else '')
+    estado_envio = (ff.get('shipment_status') or '')
+    entregado_at = (created_at_bogota(ff.get('updated_at', ''))
+                    if str(estado_envio).lower() == 'delivered' else '')
+    return (created_at_bogota(ff.get('created_at', '')), guia,
+            (ff.get('tracking_company') or ''), entregado_at, estado_envio)
+
+
 def sync_shopify_orders(conn, *, days: int = 90,
                           incluir_movimientos: bool = False,
                           timeout: int = 30,
@@ -144,6 +180,8 @@ def sync_shopify_orders(conn, *, days: int = 90,
                     addr.get('address1') or '', addr.get('address2') or '',
                     addr.get('company') or '') if x).strip()
                 gateway = ', '.join(o.get('payment_gateway_names') or []) or (o.get('gateway') or '')
+                (_despachado_at, _guia, _transportadora,
+                 _entregado_at, _estado_envio) = ciclo_despacho(o)
                 # UPSERT que toca SOLO las columnas de este sync (M20). Con `INSERT OR REPLACE`
                 # toda columna no listada vuelve a su default: éste borraba los descuentos y el
                 # flag `flujo_synced`, y el sync de marketing borraba a su vez estas etiquetas.
@@ -153,9 +191,10 @@ def sync_shopify_orders(conn, *, days: int = 90,
                        (shopify_id, nombre, email, total, moneda, estado,
                         estado_pago, sku_items, unidades_total, ciudad,
                         pais, creado_en, synced_at, tags, customer_tags,
-                        nota, gateway, direccion)
+                        nota, gateway, direccion, despachado_at, guia,
+                        transportadora, entregado_at, estado_envio)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,
-                               datetime('now', '-5 hours'), ?, ?, ?, ?, ?)
+                               datetime('now', '-5 hours'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(shopify_id) DO UPDATE SET
                          nombre=excluded.nombre, email=excluded.email,
                          total=excluded.total, moneda=excluded.moneda,
@@ -166,7 +205,11 @@ def sync_shopify_orders(conn, *, days: int = 90,
                          creado_en=excluded.creado_en, synced_at=excluded.synced_at,
                          tags=excluded.tags, customer_tags=excluded.customer_tags,
                          nota=excluded.nota, gateway=excluded.gateway,
-                         direccion=excluded.direccion""",
+                         direccion=excluded.direccion,
+                         despachado_at=excluded.despachado_at, guia=excluded.guia,
+                         transportadora=excluded.transportadora,
+                         entregado_at=excluded.entregado_at,
+                         estado_envio=excluded.estado_envio""",
                     (str(o['id']),
                      o.get('name', ''),
                      o.get('email', ''),
@@ -189,7 +232,12 @@ def sync_shopify_orders(conn, *, days: int = 90,
                      cust_tags,
                      nota,
                      gateway,
-                     direccion),
+                     direccion,
+                     _despachado_at,
+                     _guia,
+                     _transportadora,
+                     _entregado_at,
+                     _estado_envio),
                 )
                 synced += 1
             # Paginación cursor-based Link header rel=next

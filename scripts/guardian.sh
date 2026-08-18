@@ -68,7 +68,11 @@ PARALELO=""
 #
 # ⚠ El modo --pg NO paralela: ahi los workers comparten UNA sola base de PostgreSQL y se
 #   pisarian entre ellos. Ahi el aislamiento no sale gratis como en SQLite.
-PARALELO_CORAZON="-n 8 --dist loadfile"
+# Se puede BAJAR con EOS_PARALELO cuando la maquina esta ahogada. No es cosmetico:
+# con menos de ~1 GB libre el mismo archivo pasa de 44 s a mas de 600 y el gate no
+# termina -- y un gate que no se puede correr deja de proteger (M105/M223). El default
+# NO cambia: 8 workers por archivo, que es lo medido.
+PARALELO_CORAZON="${EOS_PARALELO:--n 8 --dist loadfile}"
 
 # ── SET DEL CORAZÓN (25-jul-2026) ─────────────────────────────────────────────
 # Lo que NO puede romperse en silencio: el descuento de MP, el motor de demanda,
@@ -766,6 +770,8 @@ CORAZON=(
   "tests/test_acondicionamiento_legajo.py"
   "tests/test_material_empaque_acondicionamiento.py"
   "tests/test_programar_cualquier_producto.py"
+  "tests/test_indicadores_despachos.py"
+  "tests/test_sin_rastro_de_ia_global.py"
   # UN lote atravesando las TRES fases en orden. Hay E2E de cada fase por separado, pero lo que
   # vive ENTRE ellas no lo ejercia nadie -- y ahi estaban los tres bugs del 17-ago: el cierre no
   # veia las unidades que registro la planta, el enlace al paso siguiente volvia vacio en el caso

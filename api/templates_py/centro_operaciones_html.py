@@ -478,7 +478,7 @@ async function cargarDecisionesCEO(){
             +' <span class="ceo-li-q">· '+_esc(x.solicitado_por)+'</span></span>'
             +'<span class="ceo-li-v">'+fmtM(x.monto)+'</span></div>';
         }, 'Nadie espera tu autorización'), ['Ir a la caja','/animus']);
-    } else { h += _ceoCard('urge','💵 Caja menor','—','','<div class="ceo-aviso">No pude leerla</div>',null); }
+    } else { h += _ceoCard('urge','💵 Caja menor','·','','<div class="ceo-aviso">No pude leerla</div>',null); }
     if(d.influencers){
       var inf = d.influencers;
       h += _ceoCard(inf.vencidos_n>0?'urge':(inf.n>0?'espera':'ok'), '📣 Pagos a creadores', fmtM(inf.monto),
@@ -489,7 +489,7 @@ async function cargarDecisionesCEO(){
             +(x.urgencia==='vencido' ? ' <span class="ceo-li-q">· vencido</span>' : '')
             +'</span><span class="ceo-li-v">'+fmtM(x.monto)+'</span></div>';
         }, 'Ningún creador esperando pago'), ['Ir a pagar','#pagos']);
-    } else { h += _ceoCard('urge','📣 Pagos a creadores','—','','<div class="ceo-aviso">No pude leerlos</div>',null); }
+    } else { h += _ceoCard('urge','📣 Pagos a creadores','·','','<div class="ceo-aviso">No pude leerlos</div>',null); }
     if(d.ocs_por_autorizar){
       var oc = d.ocs_por_autorizar;
       var tot = oc.reduce(function(a,x){ return a + (x.valor||0); }, 0);

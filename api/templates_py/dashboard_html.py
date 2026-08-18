@@ -8606,12 +8606,12 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
         +'<div style="font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;color:'
         +(col||'var(--cx-text)')+'">'+val+'</div></div>';
     };
-    var _ml=function(v){ return (v==null)?'—':(Number(v).toLocaleString('es-CO')+' mL'); };
+    var _ml=function(v){ return (v==null)?'·':(Number(v).toLocaleString('es-CO')+' mL'); };
     h+='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">';
     h+=_cgT('Granel disponible', _ml(_cg.disponible_ml));
     h+=_cgT('Envasado', _ml(_cg.envasado_ml), 'var(--cx-success-text)');
-    h+=_cgT('Remanente', (_cg.remanente_ml!=null?_ml(_cg.remanente_ml):(_cg.remanente_g!=null?(_cg.remanente_g+' g'):'—')));
-    h+=_cgT('Diferencia', (_cg.diferencia_ml!=null?(_ml(_cg.diferencia_ml)+(_cg.diferencia_pct!=null?(' ('+_cg.diferencia_pct+'%)'):'')):'—'),
+    h+=_cgT('Remanente', (_cg.remanente_ml!=null?_ml(_cg.remanente_ml):(_cg.remanente_g!=null?(_cg.remanente_g+' g'):'·')));
+    h+=_cgT('Diferencia', (_cg.diferencia_ml!=null?(_ml(_cg.diferencia_ml)+(_cg.diferencia_pct!=null?(' ('+_cg.diferencia_pct+'%)'):'')):'·'),
             (_cg.cuadra?'var(--cx-success-text)':'var(--cx-danger-text)'));
     if(_cg.rendimiento_ml_pct!=null) h+=_cgT('Rendimiento', _cg.rendimiento_ml_pct+'%', 'var(--cx-primary-text)');
     if(_cg.unidades_teoricas!=null) h+=_cgT('Unid. teóricas', Number(_cg.unidades_teoricas).toLocaleString('es-CO'));
