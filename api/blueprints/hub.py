@@ -1691,8 +1691,22 @@ def indicadores_despachos():
             return None
 
     base = "FROM animus_shopify_orders WHERE %s AND %s" % (_rango, _no_cancel)
+    # ── QUÉ CUENTA COMO DESPACHADO, y por qué no alcanza `despachado_at` ─────────────────
+    # `despachado_at` (mig 440) sólo se llena cuando el sync vuelve a pasar por el pedido, así
+    # que TODO lo anterior a la migración lo tiene vacío. Contar por ese campo decía **4.652
+    # pendientes de despacho** en producción el día del deploy: no están pendientes, es que el
+    # dato todavía no llegó -- y ese número se lee como una crisis (M5/M100).
+    #
+    # El discriminador que SÍ existe desde siempre es `estado` (el `fulfillment_status` de
+    # Shopify): 'fulfilled'/'partial' es despachado, vacío es pendiente de verdad. La FECHA es
+    # un plus que llega con el sync, y lo que falte se DECLARA en vez de disfrazarse de
+    # pendiente (M124).
+    _desp_cond = ("(LOWER(COALESCE(estado,'')) IN ('fulfilled','partial') "
+                  " OR COALESCE(despachado_at,'')<>'')")
     recibidos = _uno("SELECT COUNT(*) " + base)
-    despachados = _uno("SELECT COUNT(*) " + base + " AND COALESCE(despachado_at,'')<>''")
+    despachados = _uno("SELECT COUNT(*) " + base + " AND " + _desp_cond)
+    sin_fecha_desp = _uno("SELECT COUNT(*) " + base + " AND " + _desp_cond +
+                          " AND COALESCE(despachado_at,'')=''")
     con_guia = _uno("SELECT COUNT(*) " + base + " AND COALESCE(guia,'')<>''")
     entregados = _uno("SELECT COUNT(*) " + base + " AND COALESCE(entregado_at,'')<>''")
     sin_confirmar = _uno("SELECT COUNT(*) " + base +
@@ -1702,7 +1716,7 @@ def indicadores_despachos():
     pend_viejo = None
     try:
         r = c.execute("SELECT MIN(substr(creado_en,1,10)) " + base +
-                      " AND COALESCE(despachado_at,'')=''").fetchone()
+                      " AND NOT " + _desp_cond).fetchone()
         pend_viejo = (r[0] if r else None) or None
     except Exception as e:
         log.warning('indicadores despachos · pendiente más viejo: %s', e)
@@ -1763,6 +1777,14 @@ def indicadores_despachos():
             'sin_confirmar_mas_viejo_dias': dias_sin_conf,
             'promesa_cumple': cumple,
             'promesa_fuera': fuera,
+        },
+        # De los despachados, a cuántos les falta la FECHA porque el sync todavía no volvió a
+        # pasar por ellos. Sin esto, "despachados sin fecha" se confundiría con "pendientes".
+        'cobertura_despacho': {
+            'despachados': despachados,
+            'sin_fecha': sin_fecha_desp,
+            'nota': ('La fecha de despacho llega con el sync de Shopify. Los pedidos anteriores '
+                     'a la migración 440 la tienen vacía hasta que el sync vuelva a pasar.'),
         },
         # Lo que NO se pudo medir, con nombre propio: es la diferencia entre "no llegó" y
         # "nadie lo reportó", y sin declararlo los otros números se leen como si fueran todo.

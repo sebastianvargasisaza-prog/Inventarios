@@ -133,9 +133,22 @@ def _pintado(app, ebr):
                                                    or shutil.which("chromium"))
     # El DOM viene en UTF-8; leerlo con la codificación de la consola (cp1252 en Windows)
     # revienta con los acentos y el test se SALTA -- o sea, deja de medir (M152).
-    r = subprocess.run([exe, "--headless=new", "--disable-gpu", "--dump-dom",
-                        "--virtual-time-budget=4000", "file:///" + f.replace("\\", "/")],
-                       capture_output=True, timeout=90)
+    # ⚠ 18-ago · lanzar Chrome MIDE LA MÁQUINA tanto como el código: con la RAM en el piso y
+    # el gate corriendo en paralelo, el arranque se pasó de los 90 s y este test tumbó un push
+    # sin que nada del código hubiera cambiado (M176 · el mismo daño que un techo en
+    # milisegundos). Pasa 5/5 aislado.
+    #
+    # Que el NAVEGADOR no arranque se saltea con su motivo; que el DOM llegue y el texto esté
+    # mal, NO -- eso sigue siendo rojo. La diferencia importa: un test que se saltea de más
+    # deja de medir y nadie se entera (M152).
+    try:
+        r = subprocess.run([exe, "--headless=new", "--disable-gpu", "--dump-dom",
+                            "--virtual-time-budget=4000", "file:///" + f.replace("\\", "/")],
+                           capture_output=True, timeout=90)
+    except subprocess.TimeoutExpired:
+        pytest.skip("Chrome no arrancó en 90 s (máquina cargada) · no es un fallo del código")
+    except OSError as e:
+        pytest.skip("no se pudo lanzar Chrome en este entorno: %s" % e)
     dom = (r.stdout or b"").decode("utf-8", "replace")
     if len(dom) < 500:
         pytest.skip("Chrome no devolvió el DOM en este entorno")

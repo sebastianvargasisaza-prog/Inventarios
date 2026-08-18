@@ -171,3 +171,40 @@ def test_las_canceladas_no_cuentan(app, db_clean):
     despues = _ind(cli)["indicadores"]["recibidos"]
     assert despues == antes, (
         "una orden cancelada se está contando como pedido", antes, despues)
+
+
+def test_un_pedido_despachado_sin_fecha_NO_es_un_pendiente(app, db_clean):
+    """El día del deploy la pantalla decía "4.652 pendientes de despacho" en producción.
+
+    No estaban pendientes: `despachado_at` es de la mig 440 y sólo se llena cuando el sync
+    vuelve a pasar por el pedido, así que todo lo anterior lo tenía vacío. Contar por ese campo
+    convertía la falta de dato en una crisis (M5/M100).
+
+    El discriminador que existe desde siempre es `estado` (el `fulfillment_status` de Shopify).
+    Lo que falte de FECHA se declara en `cobertura_despacho`, no se disfraza de pendiente (M124).
+    """
+    cli = _login(app)
+    cn = _cn()
+    try:
+        hoy = cn.execute("SELECT date('now','-5 hours')").fetchone()[0]
+    finally:
+        cn.close()
+    _sembrar([])
+    base = _ind(cli)["indicadores"]
+
+    _sembrar([
+        # despachado según Shopify, pero SIN la fecha nueva (el caso de todo lo viejo)
+        ('ZIND-V1', 'v1', 100, 'fulfilled', 'paid', hoy, '', '', '', '', ''),
+        # pendiente de verdad: Shopify tampoco lo dio por despachado
+        ('ZIND-V2', 'v2', 100, '', 'paid', hoy, '', '', '', '', ''),
+    ])
+    ind = _ind(cli)["indicadores"]
+    cob = _ind(cli)["cobertura_despacho"]
+
+    assert ind["despachados"] == base["despachados"] + 1, (
+        "un pedido que Shopify da por despachado no se está contando como despachado", ind)
+    assert ind["pendientes_despacho"] == base["pendientes_despacho"] + 1, (
+        "está contando como PENDIENTE un pedido despachado al que sólo le falta la fecha", ind)
+    assert cob["sin_fecha"] >= 1, (
+        "no declara cuántos despachados están sin fecha · sin eso, el hueco de datos se lee "
+        "como un dato", cob)
