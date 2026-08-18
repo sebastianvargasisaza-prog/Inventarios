@@ -5238,27 +5238,32 @@ def calidad_maestro_lotes():
     #     una (M3/M99)- y lo que Compras no entregó completo queda señalado aparte.
     if ids:
         try:
+            # ⚠ 17-ago · esto leía SÓLO `ebr_conciliacion_material` (la tabla del modal del
+            # dashboard), así que la conciliación que se registra desde el LEGAJO -- que
+            # escribe en `ebr_materiales_envase` -- era invisible para Calidad: la pantalla del
+            # operario llena y la de Calidad vacía, sobre el mismo lote (M37). Se pregunta por
+            # las dos desde el resolvedor único de `brd`, que además ya deriva la diferencia.
             try:
-                from blueprints.brd import _conc_diferencia
+                from blueprints.brd import conciliacion_material_lote
             except Exception:
-                from api.blueprints.brd import _conc_diferencia
-            ph = ','.join('?' for _ in ids)
+                from api.blueprints.brd import conciliacion_material_lote
             por_ebr_mat = {}
-            for r in conn.execute(
-                "SELECT ebr_id, COALESCE(material_codigo,''), material_nombre, "
-                "       COALESCE(cant_requerida,0), COALESCE(cant_recibida,0), "
-                "       COALESCE(cant_utilizada,0), COALESCE(cant_devuelta,0), "
-                "       COALESCE(cant_averiada,0) "
-                "  FROM ebr_conciliacion_material WHERE ebr_id IN (%s)" % ph, ids).fetchall():
-                por_ebr_mat.setdefault(r[0], []).append({
-                    'codigo': r[1] or '', 'nombre': r[2] or '',
-                    'requerida': float(r[3] or 0), 'recibida': float(r[4] or 0),
-                    'utilizada': float(r[5] or 0), 'devuelta': float(r[6] or 0),
-                    'averiada': float(r[7] or 0),
-                    'diferencia': _conc_diferencia(r[3], r[4], r[6], r[5], r[7]),
-                    # Lo que se pidió y no llegó: es lo que hay que reclamarle a Compras.
-                    'sin_entregar': max(0.0, float(r[3] or 0) - float(r[4] or 0)),
-                })
+            for _eid in ids:
+                for m in conciliacion_material_lote(conn, _eid):
+                    _req = float(m.get('requerida') or 0)
+                    _rec = float(m.get('recibida') or 0)
+                    por_ebr_mat.setdefault(_eid, []).append({
+                        'codigo': m.get('material_codigo') or '',
+                        'nombre': m.get('material_nombre') or '',
+                        'requerida': _req, 'recibida': _rec,
+                        'utilizada': float(m.get('utilizada') or 0),
+                        'devuelta': float(m.get('devuelta') or 0),
+                        'averiada': float(m.get('averiada') or 0),
+                        'diferencia': m.get('diferencia'),
+                        'fuente': m.get('fuente') or '',
+                        # Lo que se pidió y no llegó: es lo que hay que reclamarle a Compras.
+                        'sin_entregar': max(0.0, _req - _rec),
+                    })
             for L in vista.values():
                 mats = []
                 for f in L['fases'].values():

@@ -5563,10 +5563,11 @@ def liberar_ebr(ebr_id):
                 "codigo": "PESAJES_SIN_VERIFICAR",
             }), 409
         try:
-            _n_concil = cur.execute(
-                "SELECT COUNT(*) FROM ebr_conciliacion_material WHERE ebr_id=?",
-                (ebr_id,),
-            ).fetchone()[0]
+            # Las dos pantallas que registran la conciliación escriben en tablas distintas
+            # y este gate miraba UNA: llenarla en el legajo dejaba el lote sin poder liberarse,
+            # con el mensaje diciendo que faltaba justo lo que estaba a la vista (M37/M161).
+            # No se afloja el control -- se le pregunta a las dos fuentes.
+            _n_concil = len(conciliacion_material_lote(conn, ebr_id))
         except Exception:
             _n_concil = 0
         if _n_concil == 0:
@@ -6139,9 +6140,20 @@ def _materiales_envase_manuales(conn, ebr_id):
     out = []
     for r in rows:
         req = r["requerida"]; dev = r["devuelta"]; uti = r["utilizada"]
+        # ── LA DIFERENCIA TENÍA DOS DERIVACIONES Y NO DECÍAN LO MISMO (17-ago) ─────────────
+        # Acá era `requerida - utilizada`, o sea que IGNORABA lo devuelto a bodega y lo
+        # averiado, mientras el resolvedor canónico (`_conc_diferencia`, el que usa
+        # `/conciliacion-material`) resta las tres. Con 30 requeridas, 27 usadas, 2 devueltas
+        # y 1 averiada -- todo explicado -- el legajo mostraba **3 sin explicar**, medido en
+        # producción caminando el lote.
+        #
+        # Y el legajo es el registro que lee una auditoría: mandaba a buscar tres etiquetas
+        # que están contadas. Es M99 (dos derivaciones del mismo número divergen siempre) y
+        # justo lo que M205 advertía: sin `averiada`, lo que se rompió en la línea se mezcla
+        # con lo que volvió a bodega -- y uno de los dos NO vuelve al stock.
         dif = None
-        if req is not None and uti is not None:
-            dif = round(float(req) - float(uti), 2)
+        if req is not None or r["recibida"] is not None:
+            dif = _conc_diferencia(req, r["recibida"], dev, uti, r["averiada"])
         nom = r["material_nombre"] or ""
         # Faltante de ENTREGA (lo que no mandaron) vs merma: son cosas distintas y sin
         # esta resta se confunden -- el reclamo al proveedor se pierde dentro de "utilizada".
@@ -7346,6 +7358,14 @@ def pdf_ebr(ebr_id):
                 f"{m['material']} (lote {m['lote_material'] or '-'}): "
                 f"requerida {_q(m['requerida'])} · recibida {_q(m['recibida'])}{_falta}",
                 h=5, font_size=9)
+            # La CONCILIACIÓN de esta fila (lo devuelto, lo usado, lo averiado y lo que queda
+            # sin explicar) se captura en el legajo y no llegaba al imprimible: sólo salía la
+            # mitad de recepción. Si no está en el PDF, no es un registro (INV-13).
+            if any(m.get(k) is not None for k in ("devuelta", "utilizada", "averiada")):
+                _line(
+                    f"   Devuelta {_q(m['devuelta'])} · utilizada {_q(m['utilizada'])} · "
+                    f"averiada {_q(m['averiada'])} · sin explicar {_q(m['diferencia'])}",
+                    h=5, font_size=9)
             _line(
                 f"   Recibido por: {m['recibido_por'] or 'SIN REGISTRAR'}"
                 + (f" ({m['recibido_at_utc'][:16]} UTC)" if m["recibido_at_utc"] else "")
@@ -7968,6 +7988,59 @@ def _conc_diferencia(requerida, recibida, devuelta, utilizada, averiada):
     """
     base = recibida if (recibida or 0) > 0 else (requerida or 0)
     return round((base or 0) - (utilizada or 0) - (devuelta or 0) - (averiada or 0), 3)
+
+
+def conciliacion_material_lote(conn, ebr_id):
+    """TODA la conciliación de material del lote, venga por donde venga.
+
+    El mismo hecho -- cuánto material de empaque se pidió, se usó, se devolvió y se rompió --
+    se puede registrar por DOS pantallas que escriben en DOS tablas:
+
+        modal del dashboard  ->  ebr_conciliacion_material
+        legajo (OF / OA)     ->  ebr_materiales_envase
+
+    y los consumidores leían UNA sola. El caro es el **gate de liberación**: exigía
+    `COUNT(*) FROM ebr_conciliacion_material > 0`, así que quien llenaba la conciliación en el
+    legajo veía su pantalla completa y al liberar recibía *"falta la conciliación de material"*
+    -- la pantalla y el botón diciendo lo contrario sobre el mismo hecho, y encima trabando la
+    liberación de un lote cuyo dato SÍ está (M37/M161).
+
+    No se agrega un tercer camino: se pregunta por los dos desde un solo lugar (M1/M3). Cada
+    fila declara su `fuente`, que es lo que permite auditar de dónde salió.
+    """
+    filas = []
+    try:
+        for r in conn.execute(
+            "SELECT COALESCE(tipo,''), COALESCE(material_codigo,''), "
+            "       COALESCE(material_nombre,''), COALESCE(lote_material,''), "
+            "       cant_requerida, cant_recibida, cant_devuelta, cant_utilizada, "
+            "       cant_averiada, COALESCE(registrado_por,'') "
+            "  FROM ebr_conciliacion_material WHERE ebr_id=? ORDER BY id", (ebr_id,)).fetchall():
+            filas.append({
+                "fuente": "modal", "tipo": r[0], "material_codigo": r[1],
+                "material_nombre": r[2], "lote_material": r[3],
+                "requerida": r[4], "recibida": r[5], "devuelta": r[6],
+                "utilizada": r[7], "averiada": r[8], "registrado_por": r[9],
+                "diferencia": _conc_diferencia(r[4], r[5], r[6], r[7], r[8]),
+            })
+    except Exception as _e:
+        log.warning("conciliación (modal) ebr=%s no legible: %s", ebr_id, _e)
+    try:
+        for m in _materiales_envase_manuales(conn, ebr_id):
+            filas.append({
+                "fuente": "legajo", "tipo": "envase",
+                "material_codigo": m.get("material_codigo") or "",
+                "material_nombre": m.get("material_nombre") or "",
+                "lote_material": m.get("lote_material") or "",
+                "requerida": m.get("requerida"), "recibida": m.get("recibida"),
+                "devuelta": m.get("devuelta"), "utilizada": m.get("utilizada"),
+                "averiada": m.get("averiada"),
+                "registrado_por": m.get("recibido_por") or "",
+                "diferencia": m.get("diferencia"),
+            })
+    except Exception as _e:
+        log.warning("conciliación (legajo) ebr=%s no legible: %s", ebr_id, _e)
+    return filas
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/conciliacion-material", methods=["GET"])

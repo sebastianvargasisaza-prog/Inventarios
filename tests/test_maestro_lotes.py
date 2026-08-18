@@ -265,11 +265,49 @@ def test_el_material_de_envase_conecta_con_compras(app, db_clean):
 
 
 def test_la_diferencia_no_se_recalcula_a_mano(app, db_clean):
-    """Dos copias de la misma resta divergen el día que alguien corrige una (M99)."""
+    """Dos copias de la misma resta divergen el día que alguien corrige una (M99).
+
+    ⚠ 18-ago · antes esto exigía el NOMBRE `_conc_diferencia` dentro de una ventana FIJA de
+    16.000 caracteres. Las dos mitades estaban mal:
+
+      · fijaba la IMPLEMENTACIÓN (qué helper se llama) en vez de la GARANTÍA (que Calidad no
+        haga su propia resta) -- y dio rojo con el código correcto el día que el maestro pasó a
+        pedirle el número al resolvedor unificado de `brd`, que internamente usa ese mismo
+        helper (M97/M216);
+      · y una ventana por CONTEO DE CARACTERES la secuestra cualquier función que se escriba
+        más abajo, así que deja de proteger sin avisar (M151/M157 · el mismo defecto apareció
+        hoy en el guard de los cierres).
+
+    Ahora se acota al cuerpo real de la función y se mide lo que importa: que el número venga de
+    `brd` y que acá no haya una resta escrita a mano.
+    """
+    import re
     ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "api", "blueprints", "calidad.py")
     fuente = open(ruta, encoding="utf-8").read()
     i = fuente.find("def calidad_maestro_lotes(")
-    bloque = fuente[i:i + 16000]
-    assert "_conc_diferencia" in bloque, (
-        "el maestro no usa el helper canónico de la diferencia de conciliación")
+    assert i > 0, "no encontré el maestro de lotes en calidad.py"
+    m = re.search(chr(10) + r"(?:@|def )", fuente[i + 30:])
+    bloque = fuente[i:i + 30 + (m.start() if m else len(fuente))]
+
+    # sin comentarios: el guard no se puede satisfacer con la nota que lo explica (M154)
+    codigo = chr(10).join(ln for ln in bloque.splitlines()
+                          if not ln.strip().startswith("#"))
+
+    assert ("_conc_diferencia" in codigo) or ("conciliacion_material_lote" in codigo), (
+        "el maestro no le pide la diferencia a `brd`: o llama al helper canónico o al "
+        "resolvedor unificado, nunca calcula por su cuenta")
+
+    # Y la garantía dura, medida donde vive: el valor que se publica como `diferencia` no
+    # puede salir de una cuenta escrita acá.
+    #
+    # ⚠ La primera versión de este assert buscaba el texto `requerida - utilizada` y NO mordía:
+    # basta con que la resta use otro nombre de variable (`_req - utilizada`) para esquivarla.
+    # Un guard que sólo caza la forma literal del bug de ayer no caza el de mañana -- se mide la
+    # expresión ASIGNADA, no la redacción (M96).
+    asignaciones = re.findall(r"['\"]diferencia['\"]\s*:\s*([^,]+),", codigo)
+    assert asignaciones, "el maestro ya no publica una `diferencia` · ¿se renombró el campo?"
+    for expr in asignaciones:
+        assert not re.search(r"[-+*/]", expr.replace("->", "")), (
+            "la diferencia se está calculando en calidad.py en vez de pedírsela a `brd`: %r"
+            % expr.strip())
