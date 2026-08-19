@@ -41,7 +41,22 @@ def _ahora_col():
 
 
 def _fmt_many(rows):
-    return [dict(r) for r in rows] if rows else []
+    """Serializa las filas de una alerta · y redondea los DIAS.
+
+    19-ago: el panel mostraba `073526 · 61.45688301557675` en la alerta de lotes en
+    cuarentena. `julianday(a) - julianday(b)` devuelve un FLOAT, y la pantalla lo
+    pintaba crudo con quince decimales. Se redondea acá -- en el serializador que
+    comparten las 24 alertas de este panel -- y no en cada consulta, porque 24 copias
+    del mismo `CAST` divergen el dia que alguien agregue la alerta 25 (M3).
+    """
+    out = []
+    for r in (rows or []):
+        d = dict(r)
+        for k, v in list(d.items()):
+            if isinstance(v, float) and (k == 'dias' or k.startswith('dias_')):
+                d[k] = int(v)          # dias enteros · truncar es como se lee "hace N dias"
+        out.append(d)
+    return out
 
 
 # ─── HOME (template) ────────────────────────────────────────────────────────
@@ -344,7 +359,7 @@ def resumen_pre_comite():
         out["reincidentes"] = _fmt_many(c.execute("""
             SELECT t.id, t.titulo, t.area,
                    (SELECT GROUP_CONCAT(usuario,',') FROM tareas_raci WHERE tarea_id=t.id AND rol='R') as responsables,
-                   (julianday('now') - julianday(t.fecha_creacion)) as dias_abierta
+                   (julianday('now','-5 hours') - julianday(t.fecha_creacion)) as dias_abierta
             FROM tareas_internas t
             WHERE t.estado NOT IN ('Hecha','Cancelada')
               AND t.origen = 'comite'
@@ -494,7 +509,7 @@ def quick_actions():
     try:
         rows = c.execute("""
             SELECT material_id, material_nombre, lote, cantidad, fecha,
-                   julianday('now') - julianday(fecha) as dias
+                   julianday('now','-5 hours') - julianday(fecha) as dias
               FROM movimientos
              WHERE UPPER(COALESCE(estado_lote,''))='CUARENTENA' AND tipo = 'Entrada'
                AND date(fecha) <= date('now', '-5 hours', '-7 day')
@@ -519,7 +534,7 @@ def quick_actions():
         rows = c.execute("""
             SELECT ep.codigo, MAX(ep.nombre) AS nombre, MAX(ep.area_codigo) AS area_codigo,
                    MAX(ee.fecha_proxima) as fecha_proxima,
-                   julianday('now') - julianday(MAX(ee.fecha_proxima)) as dias_vencido
+                   julianday('now','-5 hours') - julianday(MAX(ee.fecha_proxima)) as dias_vencido
               FROM equipos_planta ep
               LEFT JOIN equipos_eventos ee
                 ON ee.equipo_codigo = ep.codigo
@@ -578,7 +593,7 @@ def quick_actions():
         rows = c.execute("""
             SELECT mp.id, mp.numero, mp.cliente_nombre, mp.valor_total,
                    mp.fecha_pedido,
-                   julianday('now') - julianday(mp.fecha_pedido) as dias
+                   julianday('now','-5 hours') - julianday(mp.fecha_pedido) as dias
               FROM maquila_pedidos mp
              WHERE mp.estado = 'entregado'
                AND COALESCE(mp.valor_total, 0) > 0
@@ -586,7 +601,7 @@ def quick_actions():
                  SELECT 1 FROM flujo_ingresos fi
                   WHERE fi.referencia = mp.numero
                )
-               AND julianday('now') - julianday(mp.fecha_pedido) > 7
+               AND julianday('now','-5 hours') - julianday(mp.fecha_pedido) > 7
              ORDER BY dias DESC LIMIT 10
         """).fetchall()
         items = _fmt_many(rows)
@@ -747,7 +762,7 @@ def cartera_maquila():
                mp.fecha_pedido, mp.fecha_entrega_objetivo,
                mp.actualizado_en as fecha_estado_actual,
                COALESCE(fi.pagado_sum, 0) as pagado,
-               julianday('now') - julianday(mp.fecha_pedido) as dias_desde_pedido
+               julianday('now','-5 hours') - julianday(mp.fecha_pedido) as dias_desde_pedido
           FROM maquila_pedidos mp
           LEFT JOIN (
               SELECT referencia, COALESCE(SUM(monto),0) as pagado_sum
@@ -1158,7 +1173,7 @@ def lab_en_vivo():
         out["equipos_estado"] = _fmt_many(c.execute("""
             SELECT ep.codigo, MAX(ep.nombre) AS nombre, MAX(ep.area_codigo) AS area_codigo,
                    MAX(ee.fecha_proxima) as fecha_proxima,
-                   julianday(MAX(ee.fecha_proxima)) - julianday('now') as dias
+                   julianday(MAX(ee.fecha_proxima)) - julianday('now','-5 hours') as dias
               FROM equipos_planta ep
               LEFT JOIN equipos_eventos ee
                 ON ee.equipo_codigo = ep.codigo
@@ -1179,7 +1194,7 @@ def lab_en_vivo():
         out["lotes_cuarentena"] = _fmt_many(c.execute("""
             SELECT material_id, material_nombre, lote, cantidad,
                    fecha as fecha_entrada,
-                   julianday('now') - julianday(fecha) as dias_cuarentena
+                   julianday('now','-5 hours') - julianday(fecha) as dias_cuarentena
               FROM movimientos
              WHERE UPPER(COALESCE(estado_lote,''))='CUARENTENA' AND tipo = 'Entrada'
              ORDER BY fecha ASC
@@ -1225,7 +1240,7 @@ def lab_en_vivo():
     try:
         out["desviaciones_abiertas"] = _fmt_many(c.execute("""
             SELECT codigo, tipo, severidad, estado, fecha_deteccion,
-                   julianday('now') - julianday(fecha_deteccion) as dias_abierta
+                   julianday('now','-5 hours') - julianday(fecha_deteccion) as dias_abierta
               FROM desviaciones
              WHERE estado NOT IN ('cerrada','rechazada')
              ORDER BY fecha_deteccion DESC

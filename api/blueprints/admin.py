@@ -16679,7 +16679,8 @@ def admin_audit_inventario():
     try:
         rows = c.execute("""
             SELECT id, producto, fecha_programada,
-                   julianday('now') - julianday(fecha_programada) as dias_atraso
+                   CAST(julianday('now','-5 hours')
+                        - julianday(fecha_programada) AS INTEGER) as dias_atraso
             FROM produccion_programada
             WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
               AND fecha_programada < date('now', '-5 hours', '-1 day')

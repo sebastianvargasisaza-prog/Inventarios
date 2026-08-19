@@ -883,7 +883,8 @@ def documentos_vencimientos():
     rows = c.execute("""
         SELECT id, codigo, tipo_doc, titulo, version_actual,
                proxima_revision, aprobado_por, vigente_desde,
-               julianday(proxima_revision) - julianday('now') as dias_restantes
+               CAST(julianday(proxima_revision)
+                    - julianday('now','-5 hours') AS INTEGER) as dias_restantes
           FROM sgd_documentos
          WHERE estado='vigente'
            AND COALESCE(proxima_revision,'') != ''
