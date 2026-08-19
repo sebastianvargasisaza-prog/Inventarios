@@ -284,8 +284,13 @@ def gerencia_decisiones_ceo():
         # Centro de Pagos, que es donde se ejecuta (Habeas Data · Ley 1581).
         _pagos = _pagos_influencer_pendientes(conn.cursor(), con_banco=False) or []
         for x in _pagos:
+            # El helper devuelve el importe en `valor` (`COALESCE(pi.valor,0) valor`), NUNCA
+            # en `monto`. Leyendo la llave equivocada, `x.get('monto')` daba None -> 0 y el
+            # panel del CEO mostraba **$0 para 22 pagos pendientes** -- cada creadora en $0 y
+            # el total en $0 -- sin un solo error a la vista (M94/M215: una llave supuesta no
+            # falla, se ve como que no hay plata que pagar).
             try:
-                x['monto'] = float(x.get('monto') or 0)
+                x['monto'] = float(x.get('monto') or x.get('valor') or 0)
             except (TypeError, ValueError):
                 x['monto'] = 0.0
         _venc = [x for x in _pagos if (x.get('urgencia') or '') == 'vencido']
