@@ -25815,7 +25815,7 @@ function empqTarjeta(g){
     html += '<span id="abast-sel-count" style="color:var(--cx-primary-text);font-weight:800"></span>';
     html += '<button onclick="_abastAbrirSolicitar()" style="' + _abaBtn + ';background:linear-gradient(180deg,#22c55e,#16a34a)">📩 Solicitar seleccionados</button>';
     html += '<button onclick="_abastExportExcel()" style="' + _abaBtn + ';background:linear-gradient(180deg,#3b82f6,#1e40af)" title="Déficit por horizonte (para jefe producción) · respeta filtros · 2 sheets: detalle + agrupado por proveedor">📊 Excel déficit</button>';
-    html += '<button onclick="_abastExportConsumoBruto()" style="' + _abaBtn + ';background:linear-gradient(180deg,#10b981,#047857)" title="Consumo TOTAL en gramos/unidades sin restar inventario (para Alejandro · visión gerencial)">📦 Excel consumo</button>';
+    html += '<button onclick="_abastExportConsumoBruto()" style="' + _abaBtn + ';background:linear-gradient(180deg,#10b981,#047857)" title="Para Alejandro · el plan de producción por fecha, cuánto gasta cada materia prima, cuánto hay, cuánto falta y el valor total sin contar inventario · 5 hojas">📦 Excel plan y consumo</button>';
     html += '</div>';
 
     if (!items.length) {

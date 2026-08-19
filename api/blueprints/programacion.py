@@ -20797,7 +20797,7 @@ ATRASADAS_DIAS_DEFAULT = 7   # backlog de lotes atrasados no iniciados que TODOS
 
 
 def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
-                             solo_fijo, tipo, atrasadas_dias=ATRASADAS_DIAS_DEFAULT):
+                             solo_fijo, tipo, atrasadas_dias=ATRASADAS_DIAS_DEFAULT, detalle=False):
     """Núcleo PURO del MRP por horizontes (Sebastián 17-jul · extraído del endpoint para que
     generar-OC / mps-deficit usen EXACTAMENTE el mismo cálculo · UN SOLO motor de demanda · cierra
     la deuda M47). Devuelve el dict de resultado (sin jsonify). `atrasadas_dias` = días de backlog
@@ -21365,6 +21365,13 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             if dias_hasta <= h:
                 d[h] = d.get(h, 0.0) + uds
 
+    # DETALLE opcional (18-ago · el Excel de Alejandro) · apagado por defecto: quien no lo
+    # pide recibe exactamente lo de siempre (M117). Es el MISMO recorrido que calcula el
+    # consumo, no un segundo cálculo -- si fueran dos, el Excel y la pantalla terminarían
+    # diciendo cosas distintas del mismo día (M99).
+    _det_producciones = []
+    _det_consumo = []
+
     productos_sin_lote_size = set()  # AUDITORÍA P1-5 · reporte en respuesta
     productos_multi_volumen = set()  # AUDIT 24-may noche · MEE warning
 
@@ -21492,6 +21499,11 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
         cant_kg = float(cant_kg_expl or 0) or (int(lotes or 1) * float(lote_size or 0))
         if cant_kg <= 0:
             continue
+        if detalle:
+            _det_producciones.append({
+                'id': pid, 'producto': producto, 'fecha': str(fecha)[:10],
+                'kg': round(cant_kg, 3), 'lotes': int(lotes or 1),
+                'origen': _origen or '', 'dias_hasta': dias_hasta, 'fuente': 'calendario'})
         items = formulas.get(producto_norm) or []
         if not items:
             # B3 · fallback por ALIAS explícito (producto renombrado/sinónimo · mig 358)
@@ -21523,6 +21535,13 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
                 continue
             if incluir_mp:
                 _agregar_consumo_mp(it['codigo_mp'], gramos, dias_hasta, producto)
+                if detalle:
+                    _det_consumo.append({
+                        'fecha': str(fecha)[:10], 'producto': producto,
+                        'produccion_id': pid, 'kg_lote': round(cant_kg, 3),
+                        'codigo_mp': it['codigo_mp'],
+                        'nombre_mp': it.get('nombre') or '',
+                        'pct': it.get('pct') or 0, 'gramos': round(gramos, 2)})
         # MEE: requiere volumen por unidad
         if incluir_mee:
             vol = volumen_por_producto.get(producto_norm, 0.0)
@@ -21612,6 +21631,13 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
                 continue
             if incluir_mp:
                 _agregar_consumo_mp(it['codigo_mp'], gramos, dias_hasta, prod_nom)
+                if detalle:
+                    _det_consumo.append({
+                        'fecha': str(f_est or '')[:10], 'producto': prod_nom,
+                        'produccion_id': None, 'kg_lote': round(cant_kg, 3),
+                        'codigo_mp': it['codigo_mp'],
+                        'nombre_mp': it.get('nombre') or '',
+                        'pct': it.get('pct') or 0, 'gramos': round(gramos, 2)})
         if incluir_mee:
             uds_envasadas = float(cant_uds or 0)
             for me in mee_por_producto.get(producto_norm, []):
@@ -21906,7 +21932,12 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             # 'neto a pedir' = lo que falta comprar HOY: además del stock físico y la cuarentena,
             # descuenta lo EN CAMINO (pend_g) para no re-ordenar lo ya pedido. El `deficit` de arriba
             # queda bruto de en-camino (regla Alejandro) · misma fórmula de neteo que /generar-oc.
-            neto_a_pedir = {h: round(max(consumo[h] - stock_g - cuar_g - pend_g, 0), 1) for h in horizontes}
+            # El neto se DERIVA del déficit, no se re-calcula: son la misma cuenta menos lo que
+            # ya viene en camino. Escrito aparte, el 25-jul el déficit aprendió a descontar el
+            # stock que se VENCE antes de usarse y este no, así que el sistema decía "te falta"
+            # y "no compres" al mismo tiempo -- y el que decide la compra era el que no lo sabía
+            # (M45 · un patrón arreglado a medias · M5 · el número que se muestra y el que decide).
+            neto_a_pedir = {h: round(max(deficits[h] - pend_g, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
                 continue  # sin consumo · no mostrar
@@ -21917,13 +21948,22 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             _buf = int(info.get('buffer_dias', 30) or 30)
             _h_obj = _lead + _buf
             _demanda_cob = _consumo_al_dia(consumo, horizontes, _h_obj)
+            # Lo que se VENCE antes de la fecha en que hay que comprar (lead + buffer). Se pide al
+            # MISMO helper que usa el déficit, agregando el horizonte objetivo a la lista: un stock
+            # que no llega vivo a esa fecha no puede contarse como disponible para decidir la compra.
+            _venc_obj = _desperdicio_por_vencimiento(
+                _stock_venc.get(str(cod).strip(), []),
+                dict(list(consumo.items()) + [(_h_obj, _demanda_cob)]),
+                sorted(set(list(horizontes) + [_h_obj]))).get(_h_obj, 0.0)
             # Comprar ahora = neto: descuenta stock + cuarentena (ya llegó) + en-camino (ya pedido) · regla Alejandro 22-jul
-            _comprar = max(0.0, _demanda_cob - stock_g - cuar_g - pend_g)
+            _comprar = max(0.0, _demanda_cob - max(0.0, stock_g + cuar_g - _venc_obj) - pend_g)
             # tasa diaria de la VENTANA del lead (no el promedio sobre 365, que aplana la tasa si no
             # hay producción tras N días → sobreestimaba cobertura · revisión 17-jul). Si no hay demanda
             # en la ventana del lead, la cobertura es "infinita" (no urge comprar aunque haya lotes lejanos).
             _cons_diario = (_demanda_cob / _h_obj) if _h_obj > 0 else 0.0
-            _cob_dias = (stock_g / _cons_diario) if _cons_diario > 0.01 else None
+            # La cobertura cuenta el stock que llega VIVO a esa fecha · con el stock crudo, una MP
+            # cuyo lote se vence antes se veía cubierta y el reorden decía OK.
+            _cob_dias = (max(0.0, stock_g - _venc_obj) / _cons_diario) if _cons_diario > 0.01 else None
             # estado de reorden RELATIVO al lead time de la MP (no umbrales fijos)
             if _cons_diario <= 0.01:
                 _reorden = 'OK'
@@ -22005,7 +22045,8 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             # Regla Alejandro 22-jul (igual que MP): cuarentena SÍ se acredita (ya llegó); en-camino no reduce el déficit bruto.
             disponible = stock_u + cuar_u
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
-            neto_a_pedir = {h: round(max(consumo[h] - stock_u - cuar_u - pend_u, 0), 1) for h in horizontes}  # neto · descuenta stock+cuarentena+en-camino
+            # Derivado del déficit, igual que en MP: el neto es el déficit menos lo que ya viene.
+            neto_a_pedir = {h: round(max(deficits[h] - pend_u, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
                 continue
@@ -22117,6 +22158,8 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
         'mps': items_out_mp,
         'mees': items_out_mee,
         'resumen_por_horizonte': resumen,
+        'producciones': (_det_producciones if detalle else None),
+        'consumo_detalle': (_det_consumo if detalle else None),
         'productos_sin_lote_size': sorted(productos_sin_lote_size),
         'productos_multi_volumen': sorted(productos_multi_volumen),
         # FIX 24-may-2026 noche · diagnóstico de match producto↔fórmula
@@ -22845,19 +22888,28 @@ def abastecimiento_export_excel():
 
 @bp.route('/api/abastecimiento/consumo-bruto-excel', methods=['GET'])
 def abastecimiento_consumo_bruto_excel():
-    """Excel para Alejandro · CONSUMO BRUTO total de MP/MEE por horizonte.
+    """Excel de ALEJANDRO · el plan de producción y lo que se va a gastar de cada MP.
 
-    Diferente al export-excel normal (que muestra déficit a comprar
-    restando stock + pendiente): aquí se muestra el consumo TOTAL en
-    gramos (MP) o unidades (MEE) que se va a consumir según producciones
-    programadas, SIN restar inventario.
+    Sebastián 18-ago-2026: *"que diga las producciones de cada producto programadas,
+    cuántos kilos, cuánto gasta de cada materia prima, cuánto hay, cuánto faltaría con
+    lo que hay, y el valor total sin contar inventario"*.
 
-    Sebastián 23-may-2026: 'Alejandro quiere el gasto total en gramos
-    de las materias primas para el saber según los horizontes · sin
-    contar lo que tiene el inventario'.
+    Cuatro hojas, y la última es la que lo hace creíble:
 
-    Mismo modelo que el export-excel: respeta filtros UI + modo dual
-    (comprometido/run_rate).
+      1. Resumen      · los números con los que se decide, y lo que NO se pudo valorar
+      2. Producciones · el plan por fecha: qué producto, cuántos kg, qué día
+      3. Materia prima· por MP: gasta / hay / falta / precio / valor
+      4. Detalle      · de dónde sale cada gramo: qué producción pide cuánto de cada MP
+
+    Sale del MISMO motor que pinta la pantalla (`_consumo_horizontes_core`, con el
+    detalle encendido), no de un cálculo paralelo: dos cuentas del mismo hecho divergen
+    el día que alguien toque una, y entonces el Excel y la pantalla dirían cosas
+    distintas del mismo día (M99/M5).
+
+    El VALOR sale de `maestro_mps.precio_referencia`, que está en **$/kg** (M83), así que
+    el valor de un consumo en gramos es `gramos / 1000 × precio_kg`. Lo que no tiene
+    precio cargado NO se estima: se cuenta aparte y se dice en el Resumen (M124) -- un
+    total al que le faltan materiales sin avisar se lee como el total real.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -22867,259 +22919,369 @@ def abastecimiento_consumo_bruto_excel():
         from openpyxl.utils import get_column_letter
     except ImportError:
         return jsonify({'error': 'openpyxl no disponible'}), 500
-    from flask import current_app, send_file
+    from flask import send_file
     import io as _io
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timedelta as _td
 
-    # Llamar internamente al endpoint consumo-horizontes (misma lógica)
-    qs = []
-    for k in ('modo', 'tipo', 'horizontes'):
-        v = request.args.get(k)
-        if v:
-            qs.append(f'{k}={v}')
-    url_interno = '/api/abastecimiento/consumo-horizontes'
-    if qs:
-        url_interno += '?' + '&'.join(qs)
-    with current_app.test_request_context(url_interno):
-        from flask import session as _sess
-        _sess['compras_user'] = session.get('compras_user', 'sistema')
-        resp = abastecimiento_consumo_horizontes()
-    if isinstance(resp, tuple):
-        return resp
-    d = resp.get_json() or {}
-    horizontes = d.get('horizontes') or [15, 30, 60, 90, 120, 180, 365]
-    items_mp = d.get('mps') or []
+    # ── datos · UNA sola pasada del motor, con el detalle encendido ──────────────────
+    raw_h = request.args.get('horizontes', '15,30,60,90,120,180,365')
+    try:
+        horizontes = sorted({max(1, min(int(h.strip()), 730))
+                             for h in raw_h.split(',') if h.strip().isdigit()})
+    except Exception:
+        horizontes = [15, 30, 60, 90, 120, 180, 365]
+    if not horizontes:
+        horizontes = [15, 30, 60, 90, 120, 180, 365]
+    modo = (request.args.get('modo', 'comprometido') or '').lower()
+    if modo not in ('comprometido', 'run_rate'):
+        modo = 'comprometido'
+    solo_fijo = request.args.get('solo_fijo', '').lower() in ('1', 'true', 'yes', 'si')
+    try:
+        foco = int(request.args.get('foco', '90'))
+    except (TypeError, ValueError):
+        foco = 90
+    if foco not in horizontes:
+        foco = min(horizontes, key=lambda h: abs(h - foco))
+
+    conn = get_db()
+    c = conn.cursor()
+    d = _consumo_horizontes_core(conn, horizontes, True, True, modo, solo_fijo,
+                                 'mp,mee', detalle=True)
+    items = d.get('mps') or []
     items_mee = d.get('mees') or []
+    producciones = d.get('producciones') or []
+    detalle = d.get('consumo_detalle') or []
 
-    # Aplicar filtros UI (mismo patrón que export-excel normal)
+    # Filtros de la pantalla (para que el Excel sea lo que se está mirando).
     f_busq = (request.args.get('busqueda', '') or '').lower().strip()
     f_urg = request.args.get('urgencia', 'TODAS') or 'TODAS'
     f_prov = request.args.get('proveedor', 'TODOS') or 'TODOS'
-    f_tipo = request.args.get('tipo_filtro', 'TODOS') or 'TODOS'
+
     def _pasa(it):
-        # AUDIT FIX 23-may · .get() defensivo · KeyError potencial
         if f_urg != 'TODAS' and it.get('urgencia', 'OK') != f_urg:
             return False
-        prov = it.get('proveedor_sugerido') or '(sin proveedor)'
-        if f_prov != 'TODOS' and prov != f_prov:
-            return False
-        if f_tipo != 'TODOS' and it.get('tipo', '') != f_tipo:
+        if f_prov != 'TODOS' and (it.get('proveedor_sugerido') or '(sin proveedor)') != f_prov:
             return False
         if f_busq:
-            blob = (str(it.get('codigo', '')) + ' ' + (it.get('nombre') or '') + ' ' +
-                    (it.get('proveedor_sugerido') or '')).lower()
+            blob = ((it.get('codigo') or '') + ' ' + (it.get('nombre') or '') + ' '
+                    + (it.get('proveedor_sugerido') or '')).lower()
             if f_busq not in blob:
                 return False
         return True
-    items_mp = [it for it in items_mp if _pasa(it)]
-    items_mee = [it for it in items_mee if _pasa(it)]
 
-    # Excel
+    items = [it for it in items if _pasa(it)]
+    cods_visibles = {it.get('codigo') for it in items}
+    detalle = [x for x in detalle if x.get('codigo_mp') in cods_visibles]
+
+    # ── precios · $/kg desde el maestro (M83) ────────────────────────────────────────
+    precios = {}
+    try:
+        for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(precio_referencia,0) "
+                           "FROM maestro_mps").fetchall():
+            if r[0]:
+                precios[r[0]] = float(r[1] or 0)
+    except Exception as _e:
+        log.warning('excel consumo · precios no disponibles: %s', _e)
+
+    def _precio(cod):
+        return float(precios.get(str(cod or '').upper().strip(), 0) or 0)
+
+    fh = str(foco)
+    val_consumo_total = 0.0
+    val_falta_total = 0.0
+    sin_precio = []
+    for it in items:
+        p = _precio(it.get('codigo'))
+        cons_g = float((it.get('consumo') or {}).get(fh, 0) or 0)
+        falta_g = float((it.get('deficit') or {}).get(fh, 0) or 0)
+        if p <= 0:
+            if cons_g > 0:
+                sin_precio.append(it)
+            continue
+        val_consumo_total += cons_g / 1000.0 * p
+        val_falta_total += falta_g / 1000.0 * p
+
+    n_con_deficit = len([x for x in items
+                         if float((x.get('deficit') or {}).get(fh, 0) or 0) > 0])
+    kg_totales = sum(float(p.get('kg') or 0) for p in producciones)
+
+    # ── estilo · una sola paleta, sin adornos que no signifiquen nada ────────────────
+    VERDE, VERDE_CLARO = '065F46', 'D1FAE5'
+    GRIS_H, ROJO, AMBAR = '334155', 'B91C1C', 'B45309'
+    thin = Side(border_style='thin', color='D8DEE9')
+    borde = Border(left=thin, right=thin, top=thin, bottom=thin)
+    f_titulo = Font(size=15, bold=True, color='FFFFFF')
+    f_head = Font(size=10, bold=True, color='FFFFFF')
+    fill_titulo = PatternFill('solid', fgColor=VERDE)
+    fill_head = PatternFill('solid', fgColor=GRIS_H)
+    fill_kpi = PatternFill('solid', fgColor=VERDE_CLARO)
+    MILES = '#,##0'
+    MILES1 = '#,##0.0'
+    PESOS = '"$"#,##0'
+
+    def _titulo(ws, texto, ncols, sub=''):
+        ws.cell(row=1, column=1, value=texto)
+        ws.cell(row=1, column=1).font = f_titulo
+        ws.cell(row=1, column=1).fill = fill_titulo
+        ws.cell(row=1, column=1).alignment = Alignment(vertical='center')
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(ncols, 2))
+        ws.row_dimensions[1].height = 30
+        if sub:
+            ws.cell(row=2, column=1, value=sub)
+            ws.cell(row=2, column=1).font = Font(size=9, italic=True, color='64748B')
+            ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(ncols, 2))
+
+    def _encabezados(ws, fila, cols):
+        for j, (txt, ancho) in enumerate(cols, start=1):
+            cel = ws.cell(row=fila, column=j, value=txt)
+            cel.font = f_head
+            cel.fill = fill_head
+            cel.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            cel.border = borde
+            ws.column_dimensions[get_column_letter(j)].width = ancho
+        ws.row_dimensions[fila].height = 26
+        ws.freeze_panes = ws.cell(row=fila + 1, column=1)
+
+    hoy_txt = (_dt.now() - _td(hours=5)).strftime('%Y-%m-%d %H:%M')
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-    thin = Side(border_style='thin', color='CCCCCC')
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    header_fill = PatternFill('solid', fgColor='065F46')
-    title_fill = PatternFill('solid', fgColor='047857')
-    total_fill = PatternFill('solid', fgColor='D1FAE5')
-    mp_color = '0891B2'
-    mee_color = '7C3AED'
 
-    # AUDIT FIX 23-may · cursor para query de fecha última Fija
-    conn = get_db(); c = conn.cursor()
+    # ══ HOJA 1 · RESUMEN ════════════════════════════════════════════════════════════
+    ws = wb.create_sheet('Resumen')
+    _titulo(ws, 'Plan de producción y consumo de materia prima', 4,
+            'Generado %s · modo %s · foco %s días · el valor NO descuenta inventario'
+            % (hoy_txt, modo, foco))
+    fila = 4
+    kpis = [
+        ('Producciones programadas', len(producciones), MILES, ''),
+        ('Kilos totales a producir', kg_totales, MILES1, 'kg'),
+        ('Materias primas que se consumen', len(items), MILES, ''),
+        ('Materias primas que NO alcanzan', n_con_deficit, MILES, 'con lo que hay hoy'),
+        ('VALOR TOTAL a consumir (sin contar inventario)', val_consumo_total, PESOS,
+         'todo lo que pide el plan a %s días' % foco),
+        ('Valor de lo que FALTA comprar', val_falta_total, PESOS,
+         'sólo el faltante, ya descontado lo que hay'),
+    ]
+    for etiqueta, valor, fmt, nota in kpis:
+        ws.cell(row=fila, column=1, value=etiqueta).font = Font(bold=True, size=11)
+        cel = ws.cell(row=fila, column=2, value=valor)
+        cel.number_format = fmt
+        cel.font = Font(bold=True, size=13)
+        cel.fill = fill_kpi
+        cel.alignment = Alignment(horizontal='right')
+        cel.border = borde
+        if nota:
+            ws.cell(row=fila, column=3, value=nota).font = Font(size=9, color='64748B')
+        fila += 1
+    ws.column_dimensions['A'].width = 44
+    ws.column_dimensions['B'].width = 20
+    ws.column_dimensions['C'].width = 46
 
-    # SHEET 1 · Consumo bruto
-    ws = wb.create_sheet('Consumo bruto')
-    fecha_str = _dt.now().strftime('%Y-%m-%d %H:%M')
-    modo = d.get('modo', 'comprometido')
-    n_cols = 5 + len(horizontes)
-    # FIX 24-may noche · título explícito: SIN descontar inventario
-    ws.cell(row=1, column=1, value=f'Consumo TOTAL del Calendario · SIN descontar inventario · Modo {modo.upper()} · {fecha_str}')
-    ws.cell(row=1, column=1).font = Font(size=14, bold=True, color='FFFFFF')
-    ws.cell(row=1, column=1).fill = title_fill
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
-    ws.row_dimensions[1].height = 26
+    fila += 1
+    ws.cell(row=fila, column=1, value='Hasta cuándo llega este plan').font = Font(bold=True)
+    ws.cell(row=fila, column=2, value=(d.get('ultimo_lote_fecha') or '-'))
+    # El desglose tiene que SUMAR el total, y los PEDIDOS no son LOTES: mezclarlos en un
+    # solo renglón obliga a desconfiar de los tres números (M155). Lo proyectado cae en
+    # 'de otro origen', que es justo la categoría que antes no se pintaba.
+    fila += 1
+    _fij = int(d.get('n_producciones_fijas', 0) or 0)
+    _sug = int(d.get('n_producciones_sugeridas', 0) or 0)
+    _otr = int(d.get('n_producciones_otras', 0) or 0)
+    _b2b = int(d.get('n_pedidos_b2b_pendientes', 0) or 0)
+    for _et, _val in (('Lotes fijos (los que decidiste)', _fij),
+                      ('Lotes sugeridos', _sug),
+                      ('Lotes de otro origen (proyección)', _otr)):
+        ws.cell(row=fila, column=1, value=_et).font = Font(bold=True)
+        ws.cell(row=fila, column=2, value=_val).number_format = MILES
+        ws.cell(row=fila, column=2).alignment = Alignment(horizontal='right')
+        fila += 1
+    ws.cell(row=fila, column=1, value='   = total de lotes').font = Font(italic=True)
+    ws.cell(row=fila, column=2, value=_fij + _sug + _otr).number_format = MILES
+    ws.cell(row=fila, column=2).alignment = Alignment(horizontal='right')
+    fila += 1
+    ws.cell(row=fila, column=1,
+            value='%d pedido(s) B2B pendientes' % _b2b).font = Font(bold=True)
+    ws.cell(row=fila, column=3,
+            value='son PEDIDOS de cliente, no lotes: van aparte del total de arriba').font =         Font(size=9, color='64748B')
 
-    # Fecha del último lote programado · para que el usuario sepa hasta
-    # dónde llega el calendario realmente
-    fecha_ultimo_lote = None
-    try:
-        r_ult = c.execute(
-            "SELECT MAX(fecha_programada) FROM produccion_programada "
-            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado','esperando_recurso') "
-            "AND COALESCE(inventario_descontado_at,'') = ''"
-        ).fetchone()
-        if r_ult and r_ult[0]:
-            fecha_ultimo_lote = str(r_ult[0])[:10]
-    except Exception:
-        pass
+    # Lo que el total NO incluye · se dice, no se esconde (M124).
+    fila += 2
+    ws.cell(row=fila, column=1, value='Lo que este total NO alcanza a valorar').font = \
+        Font(bold=True, size=11, color=AMBAR)
+    fila += 1
+    if sin_precio:
+        ws.cell(row=fila, column=1,
+                value='%d materia(s) prima(s) se consumen y no tienen precio cargado, '
+                      'así que su costo NO está sumado arriba:' % len(sin_precio))
+        fila += 1
+        for it in sin_precio[:40]:
+            ws.cell(row=fila, column=1, value='   · %s · %s'
+                    % (it.get('codigo'), (it.get('nombre') or '')[:60]))
+            ws.cell(row=fila, column=2,
+                    value=round(float((it.get('consumo') or {}).get(fh, 0) or 0) / 1000.0, 2))
+            ws.cell(row=fila, column=2).number_format = MILES1
+            ws.cell(row=fila, column=3, value='kg sin valorar').font = Font(size=9, color='64748B')
+            fila += 1
+        if len(sin_precio) > 40:
+            ws.cell(row=fila, column=1, value='   … y %d más' % (len(sin_precio) - 40))
+            fila += 1
+    else:
+        ws.cell(row=fila, column=1,
+                value='Ninguna: todas las materias primas del plan tienen precio cargado.')
+    _lotes_sf = d.get('lotes_sin_formula')
+    if _lotes_sf:
+        fila += 1
+        ws.cell(row=fila, column=1,
+                value='⚠ %s lote(s) del calendario no cruzaron su fórmula, así que su consumo '
+                      'no está contado.' % _lotes_sf).font = Font(bold=True, color=ROJO)
 
-    # Desglose lotes por origen (alineado con UI nueva)
-    n_fijas = d.get('n_producciones_fijas', 0)
-    n_sugeridas = d.get('n_producciones_sugeridas', 0)
-    n_b2b = d.get('n_pedidos_b2b_pendientes', 0)
-    n_total = d.get('n_producciones_total', n_fijas + n_sugeridas)
-    lotes_sem = d.get('lotes_por_semana_90d', 0)
-    cobertura = d.get('cobertura_dias', 0)
+    # ══ HOJA 2 · PRODUCCIONES ═══════════════════════════════════════════════════════
+    ws = wb.create_sheet('Producciones')
+    _titulo(ws, 'Qué se va a producir, y cuándo', 6,
+            '%d producciones · %s kg en total · ordenadas por fecha'
+            % (len(producciones), format(round(kg_totales, 1), ',')))
+    _encabezados(ws, 4, [('Fecha', 13), ('Producto', 46), ('Kilos', 12), ('Lotes', 9),
+                         ('Origen', 16), ('En cuántos días', 16)])
+    fila = 5
+    mes_actual = ''
+    for p in sorted(producciones, key=lambda x: (str(x.get('fecha') or ''), str(x.get('producto') or ''))):
+        mes = str(p.get('fecha') or '')[:7]
+        if mes and mes != mes_actual:
+            # Un separador por MES: el plan se lee por bloques, no como una lista de 300 filas.
+            mes_actual = mes
+            cel = ws.cell(row=fila, column=1, value=mes)
+            cel.font = Font(bold=True, color='FFFFFF')
+            cel.fill = PatternFill('solid', fgColor=VERDE)
+            for j in range(1, 7):
+                ws.cell(row=fila, column=j).fill = PatternFill('solid', fgColor=VERDE)
+            fila += 1
+        ws.cell(row=fila, column=1, value=p.get('fecha'))
+        ws.cell(row=fila, column=2, value=p.get('producto'))
+        cel = ws.cell(row=fila, column=3, value=round(float(p.get('kg') or 0), 2))
+        cel.number_format = MILES1
+        ws.cell(row=fila, column=4, value=p.get('lotes'))
+        ws.cell(row=fila, column=5, value=p.get('origen'))
+        ws.cell(row=fila, column=6, value=p.get('dias_hasta'))
+        for j in range(1, 7):
+            ws.cell(row=fila, column=j).border = borde
+        fila += 1
+    if len(producciones) == 0:
+        ws.cell(row=5, column=1,
+                value='No hay producciones programadas en el horizonte · el consumo de la hoja '
+                      'siguiente saldría en cero por eso, no por falta de fórmulas.')
 
-    # ⚠ El desglose se lee al lado del total, así que tiene que SUMARLO. `n_b2b` son PEDIDOS,
-    # no lotes: ponerlo en la misma suma mezclaba dos unidades distintas y hacía que el renglón
-    # nunca cerrara. Va aparte, con su palabra.
-    _n_otras = d.get('n_producciones_otras', 0)
-    _resto = (' + ' + str(_n_otras) + ' de otro origen') if _n_otras else ''
-    subtitulo = (
-        f'{n_total} lotes totales · {n_fijas} Fijas + {n_sugeridas} Sugeridas{_resto} · '
-        f'{n_b2b} pedido(s) B2B pendientes · '
-        f'{lotes_sem} lotes/sem (90d) · cobertura {cobertura}d · '
-        f'último lote {fecha_ultimo_lote or "—"} · '
-        f'consumo acumulativo desde hoy · MP en gramos · MEE en unidades · '
-        f'NO se resta stock actual ni órdenes en curso'
-    )
-    ws.cell(row=2, column=1, value=subtitulo)
-    ws.cell(row=2, column=1).font = Font(size=10, italic=True, color='6B7280')
-    ws.cell(row=2, column=1).alignment = Alignment(wrap_text=True, vertical='top')
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
-    ws.row_dimensions[2].height = 32
+    # ══ HOJA 3 · MATERIA PRIMA ══════════════════════════════════════════════════════
+    ws = wb.create_sheet('Materia prima')
+    _titulo(ws, 'Cuánto se gasta de cada materia prima, cuánto hay y cuánto falta', 11,
+            'Foco %s días · "Falta" ya descuenta lo que hay en bodega y en cuarentena · '
+            '"Valor a consumir" NO descuenta inventario' % foco)
+    _encabezados(ws, 4, [
+        ('Código', 13), ('Materia prima', 40), ('Proveedor', 26),
+        ('Gasta (kg)', 13), ('Hay (kg)', 12), ('En cuarentena (kg)', 15),
+        ('Falta (kg)', 13), ('En camino (kg)', 14),
+        ('Precio $/kg', 14), ('Valor a consumir', 17), ('Valor faltante', 16)])
+    fila = 5
+    def _orden(it):
+        return -float((it.get('deficit') or {}).get(fh, 0) or 0)
+    for it in sorted(items, key=_orden):
+        cons_g = float((it.get('consumo') or {}).get(fh, 0) or 0)
+        if cons_g <= 0:
+            continue
+        falta_g = float((it.get('deficit') or {}).get(fh, 0) or 0)
+        p = _precio(it.get('codigo'))
+        vals = [
+            it.get('codigo'), it.get('nombre'),
+            (it.get('proveedor_sugerido') or '(sin proveedor)'),
+            round(cons_g / 1000.0, 3),
+            round(float(it.get('stock_actual_g') or 0) / 1000.0, 3),
+            round(float(it.get('cuarentena_g') or 0) / 1000.0, 3),
+            round(falta_g / 1000.0, 3),
+            round(float(it.get('pendiente_compras_g') or 0) / 1000.0, 3),
+            (p if p > 0 else None),
+            (round(cons_g / 1000.0 * p, 0) if p > 0 else None),
+            (round(falta_g / 1000.0 * p, 0) if p > 0 else None),
+        ]
+        for j, v in enumerate(vals, start=1):
+            cel = ws.cell(row=fila, column=j, value=v)
+            cel.border = borde
+            if j in (4, 5, 6, 7, 8):
+                cel.number_format = MILES1
+            elif j in (9, 10, 11):
+                cel.number_format = PESOS
+        if falta_g > 0:
+            ws.cell(row=fila, column=7).font = Font(bold=True, color=ROJO)
+        if p <= 0 and cons_g > 0:
+            ws.cell(row=fila, column=9, value='sin precio').font = Font(size=9, color=AMBAR)
+        fila += 1
+    # Totales al pie · el numero del Resumen tiene que poder sumarse acá (M5)
+    if fila > 5:
+        ws.cell(row=fila, column=3, value='TOTAL').font = Font(bold=True)
+        for col, letra in ((10, 'J'), (11, 'K')):
+            cel = ws.cell(row=fila, column=col,
+                          value='=SUM(%s5:%s%d)' % (letra, letra, fila - 1))
+            cel.number_format = PESOS
+            cel.font = Font(bold=True)
+            cel.fill = fill_kpi
+            cel.border = borde
 
-    # Aviso si modo comprometido sin actividad lejana
-    aviso_modo = ''
-    if modo == 'comprometido' and fecha_ultimo_lote and cobertura < 180:
-        aviso_modo = (f'⚠ Cobertura {cobertura}d · horizontes >cobertura muestran '
-                       'el mismo total porque no hay más lotes programados · '
-                       'usá Run-rate o llená el calendario')
-        ws.cell(row=3, column=1, value=aviso_modo)
-        ws.cell(row=3, column=1).font = Font(size=10, italic=True, color='B45309', bold=True)
-        ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n_cols)
+    # ══ HOJA 4 · DETALLE ════════════════════════════════════════════════════════════
+    ws = wb.create_sheet('Detalle por producción')
+    _titulo(ws, 'De dónde sale cada gramo', 7,
+            'Cada producción y lo que pide de cada materia prima · %d renglones' % len(detalle))
+    _encabezados(ws, 4, [('Fecha', 13), ('Producto', 38), ('Kilos del lote', 14),
+                         ('Código MP', 13), ('Materia prima', 34), ('% fórmula', 11),
+                         ('Gasta (kg)', 13)])
+    fila = 5
+    for x in sorted(detalle, key=lambda y: (str(y.get('fecha') or ''),
+                                            str(y.get('producto') or ''),
+                                            str(y.get('codigo_mp') or ''))):
+        vals = [x.get('fecha'), x.get('producto'), round(float(x.get('kg_lote') or 0), 2),
+                x.get('codigo_mp'), x.get('nombre_mp'), round(float(x.get('pct') or 0), 4),
+                round(float(x.get('gramos') or 0) / 1000.0, 4)]
+        for j, v in enumerate(vals, start=1):
+            cel = ws.cell(row=fila, column=j, value=v)
+            cel.border = borde
+            if j in (3, 7):
+                cel.number_format = MILES1 if j == 3 else '#,##0.000'
+            elif j == 6:
+                cel.number_format = '0.0000'
+        fila += 1
 
-    # Encabezados fila 4
-    # FIX 23-may-2026 · Sebastián pidió columna INCI · útil para Alejandro
-    # cuando contacta proveedores internacionales que usan INCI estándar
-    # + Proveedor (sugerencia auditoría · Alejandro contacta proveedores)
-    hdr = ['Código', 'Nombre', 'INCI', 'Proveedor', 'Tipo']
-    for h in horizontes:
-        hdr.append(f'{h}d')
-    for col, val in enumerate(hdr, start=1):
-        cell = ws.cell(row=4, column=col, value=val)
-        cell.font = Font(bold=True, color='FFFFFF')
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-        cell.border = border
-    ws.row_dimensions[4].height = 26
-
-    # Filas
-    todos = []
-    for it in items_mp:
-        todos.append({
-            'codigo': it['codigo'],
-            'nombre': it.get('nombre', ''),
-            'nombre_inci': it.get('nombre_inci', ''),
-            'proveedor': it.get('proveedor_sugerido', '') or '',
-            'tipo': 'MP',
-            'unit': 'g',
-            'consumo': it.get('consumo', {}),
-        })
-    for it in items_mee:
-        todos.append({
-            'codigo': it['codigo'],
-            'nombre': it.get('nombre', ''),
-            'nombre_inci': '',  # MEE no tiene INCI
-            'proveedor': it.get('proveedor_sugerido', '') or '',
-            'tipo': 'MEE',
-            'unit': 'u',
-            'consumo': it.get('consumo', {}),
-        })
-    # Ordenar por consumo del horizonte más largo desc (ver impacto anual)
-    horz_max = max(horizontes)
-    todos.sort(key=lambda x: -float(x['consumo'].get(str(horz_max), 0) or 0))
-
-    # AUDIT FIX 23-may · mensaje cuando no hay items
-    if not todos:
-        ws.cell(row=5, column=1, value='Sin consumo programado en el horizonte').font = Font(italic=True, color='6B7280')
-
-    r = 5
-    totales_h_mp = {h: 0.0 for h in horizontes}
-    totales_h_mee = {h: 0.0 for h in horizontes}
-    for it in todos:
-        valores = [it['codigo'], it['nombre'],
-                   it['nombre_inci'] or '—',
-                   it['proveedor'] or '(sin proveedor)',
-                   it['tipo']]
-        for h in horizontes:
-            v = float(it['consumo'].get(str(h), 0) or 0)
-            valores.append(v)
-            if it['tipo'] == 'MP':
-                totales_h_mp[h] += v
-            else:
-                totales_h_mee[h] += v
-        for col, val in enumerate(valores, start=1):
-            cell = ws.cell(row=r, column=col, value=val)
-            cell.border = border
-            if col == 1:
-                cell.font = Font(name='Consolas')
-                cell.alignment = Alignment(horizontal='center')
-            elif col == 3:  # INCI
-                cell.alignment = Alignment(horizontal='left')
-                cell.font = Font(italic=True, size=10, color='6B7280')
-            elif col == 4:  # Proveedor
-                cell.alignment = Alignment(horizontal='left')
-            elif col == 5:  # Tipo
-                cell.alignment = Alignment(horizontal='center')
-                cell.font = Font(bold=True, color=mp_color if val == 'MP' else mee_color)
-            elif col >= 6:  # números
-                cell.alignment = Alignment(horizontal='right')
-                cell.number_format = '#,##0'
-        r += 1
-
-    # Filas TOTALES · AUDIT FIX · borders en todas las celdas
-    def _tot_celda_vacia(row, col):
-        cell = ws.cell(row=row, column=col, value='')
-        cell.fill = total_fill
-        cell.border = border
-    ws.cell(row=r, column=1, value='TOTAL MP (g)').font = Font(bold=True, color='FFFFFF')
-    ws.cell(row=r, column=1).fill = PatternFill('solid', fgColor=mp_color)
-    ws.cell(row=r, column=1).alignment = Alignment(horizontal='center')
-    ws.cell(row=r, column=1).border = border
-    for col in (2, 3, 4, 5):
-        _tot_celda_vacia(r, col)
-    for i, h in enumerate(horizontes):
-        cell = ws.cell(row=r, column=6 + i, value=totales_h_mp[h])
-        cell.fill = total_fill
-        cell.font = Font(bold=True)
-        cell.number_format = '#,##0'
-        cell.alignment = Alignment(horizontal='right')
-        cell.border = border
-    r += 1
-    ws.cell(row=r, column=1, value='TOTAL MEE (u)').font = Font(bold=True, color='FFFFFF')
-    ws.cell(row=r, column=1).fill = PatternFill('solid', fgColor=mee_color)
-    ws.cell(row=r, column=1).alignment = Alignment(horizontal='center')
-    ws.cell(row=r, column=1).border = border
-    for col in (2, 3, 4, 5):
-        _tot_celda_vacia(r, col)
-    for i, h in enumerate(horizontes):
-        cell = ws.cell(row=r, column=6 + i, value=totales_h_mee[h])
-        cell.fill = total_fill
-        cell.font = Font(bold=True)
-        cell.number_format = '#,##0'
-        cell.alignment = Alignment(horizontal='right')
-        cell.border = border
-
-    # Anchos
-    ws.column_dimensions['A'].width = 12
-    ws.column_dimensions['B'].width = 32
-    ws.column_dimensions['C'].width = 28  # INCI
-    ws.column_dimensions['D'].width = 22  # Proveedor
-    ws.column_dimensions['E'].width = 6   # Tipo
-    for i in range(len(horizontes)):
-        ws.column_dimensions[get_column_letter(6 + i)].width = 14
-    ws.freeze_panes = 'F5'
-
-    # AUDIT FIX · n_cols correcto para merge_cells
-    # (5 cols base + horizontes · ajustar arriba si necesario)
+    # ══ HOJA 5 · ENVASES ═══════════════════════════════════════════════════════════
+    # El Excel anterior traía el material de envase · sacarlo en silencio sería perder algo
+    # que alguien ya usaba (M112). Va en UNIDADES, que es como se compra y se cuenta.
+    ws = wb.create_sheet('Envases')
+    _titulo(ws, 'Material de envase · cuánto se gasta, cuánto hay y cuánto falta', 7,
+            'Foco %s días · en UNIDADES · "Falta" ya descuenta bodega y cuarentena' % foco)
+    _encabezados(ws, 4, [('Código', 16), ('Envase', 44), ('Proveedor', 28),
+                         ('Gasta (uds)', 13), ('Hay (uds)', 12),
+                         ('Falta (uds)', 13), ('En camino (uds)', 15)])
+    fila = 5
+    for it in sorted(items_mee,
+                     key=lambda x: -float((x.get('deficit') or {}).get(fh, 0) or 0)):
+        cons_u = float((it.get('consumo') or {}).get(fh, 0) or 0)
+        if cons_u <= 0:
+            continue
+        falta_u = float((it.get('deficit') or {}).get(fh, 0) or 0)
+        vals = [it.get('codigo'), it.get('nombre'),
+                (it.get('proveedor_sugerido') or '(sin proveedor)'),
+                round(cons_u, 1), round(float(it.get('stock_actual_u') or 0), 1),
+                round(falta_u, 1), round(float(it.get('pendiente_compras_u') or 0), 1)]
+        for j, v in enumerate(vals, start=1):
+            cel = ws.cell(row=fila, column=j, value=v)
+            cel.border = borde
+            if j >= 4:
+                cel.number_format = MILES1
+        if falta_u > 0:
+            ws.cell(row=fila, column=6).font = Font(bold=True, color=ROJO)
+        fila += 1
+    if fila == 5:
+        ws.cell(row=5, column=1, value='Ningún envase se consume en este horizonte.')
 
     buf = _io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    nombre = f'consumo_bruto_alejandro_{modo}_{_dt.now().strftime("%Y%m%d_%H%M")}.xlsx'
+    nombre = 'plan_y_consumo_MP_%s.xlsx' % (_dt.now() - _td(hours=5)).strftime('%Y%m%d_%H%M')
     return send_file(buf, as_attachment=True, download_name=nombre,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 

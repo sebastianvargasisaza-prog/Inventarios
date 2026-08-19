@@ -1054,3 +1054,36 @@ La respuesta ahora devuelve `descuentos`, `saltados` y `sin_libro_mayor`, y el d
 `audit_log` (`ACONDICIONAMIENTO_DESCONTAR_MEE`). Tests:
 `tests/test_acondicionamiento_doble_descuento.py` y `tests/test_demo_camina_envasado_y_acond.py`
 (los dos en el gate).
+
+### INV-13 · El stock VENDIBLE de un lote se crea por UN solo camino, y una vez (18-ago-2026)
+
+`stock_pt` es el stock por SKU que alimenta despachos y el cruce con Shopify. Hay **dos
+puertas** por las que un lote se vuelve vendible y las dos escriben por el MISMO helper:
+
+| Puerta | Quién | Marca de idempotencia |
+|---|---|---|
+| Pantalla de Liberaciones (`PATCH /api/liberacion/<id>` estado=Liberado) | Calidad | `[lib#<id>]` |
+| Firma del Director Técnico en el legajo (`POST /api/brd/ebr/<id>/liberar`) | DT | `[ebr#<id>]` |
+
+**Reglas duras:**
+
+1. **Un solo escritor: `inventario.crear_stock_pt`.** Ningún endpoint arma su propio
+   `INSERT INTO stock_pt` desde una liberación. Dos copias divergen el día que alguien
+   toque una, y entonces el mismo lote entra al stock con reglas distintas según por
+   dónde se liberó (M3/M99).
+2. **La idempotencia se ancla al ACTO, no al par (sku, lote).** Con esa llave, una
+   segunda liberación PARCIAL legítima del mismo lote y el mismo SKU se saltearía en
+   silencio -- y perder unidades es peor que duplicarlas, porque no se ve (M134/M80).
+3. **`liberacion_update` va con CAS** (`WHERE id=? AND estado NOT IN ('Liberado','Rechazado')`
+   + `rowcount`). Sin eso, tres clics creaban TRES filas de stock vendible del mismo lote
+   y un lote RECHAZADO por Calidad se volvía a liberar con un clic (reproducido 18-ago).
+   Un stock que no existe no da ningún síntoma: se vende, y la falta aparece en el despacho.
+4. **Sólo la fase que CIERRA el lote crea producto terminado.** Si al lote le queda
+   envasado o acondicionamiento, crear stock ahí sería vender un granel. La regla vive
+   en `brd._hay_fase_posterior_lote`, que usan el completar y el liberar.
+5. **El SKU no se adivina.** Sale del registro de acondicionamiento o de la presentación,
+   y sólo si es inequívoco. Lo que no cruza se DECLARA (`sin_resolver`) en la respuesta y
+   en el audit: un lote entrando al stock del producto equivocado tampoco da error, se
+   vende (M19/M137).
+
+Guards: `tests/test_liberar_crea_stock_vendible.py` (en el gate).
