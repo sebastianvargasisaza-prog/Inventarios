@@ -296,7 +296,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
     <a href="/hub" style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);color:var(--cx-text);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">🏠 Panel Central</a>
     <!-- `/mi-bandeja` era una pantalla HUÉRFANA: 230 líneas de pendientes cross-módulo (recalls,
          hallazgos, cola de liberación, quejas, control de cambios) alcanzables sólo tecleando la
-         URL — ningún menú ni botón de toda la app la enlazaba. Una feature a la que no se puede
+         URL · ningún menú ni botón de toda la app la enlazaba. Una feature a la que no se puede
          llegar es una feature que no existe (M121). -->
     <a href="/mi-bandeja" style="background:var(--cx-primary-pale, #f5f3ff);border:1px solid var(--cx-primary-soft, #ddd6fe);color:var(--cx-primary-text);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">📋 Mi bandeja de pendientes</a>
     <a href="/hoy" style="background:var(--cx-primary-pale, #f5f3ff);border:1px solid var(--cx-primary-soft, #ddd6fe);color:var(--cx-primary-text);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">⚡ Centro de Mando · HOY</a>

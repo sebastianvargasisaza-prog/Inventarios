@@ -612,7 +612,7 @@ async function registrarRecepcion() {
   var ocItems = currentOC.items || [];
   for (var idx = 0; idx < ocItems.length; idx++) {
     var it = ocItems[idx];
-    // FIX (revisión ultracode): NO saltar el cargo con `continue` — el backend mapea lo recibido por
+    // FIX (revisión ultracode): NO saltar el cargo con `continue` · el backend mapea lo recibido por
     // POSICIÓN (enumerate de items_oc que SÍ incluye los cargos), y compactar la lista corría las
     // cantidades al material equivocado. Se manda el cargo con cant=0 (el backend salta cant=0) para
     // preservar el alineamiento posicional. Flete/domicilio/servicio no reciben stock físico igual.

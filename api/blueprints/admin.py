@@ -3048,7 +3048,7 @@ async function loadStatus() {
   }
 }
 
-function fmt(s) { return (s == null) ? '—' : String(s); }
+function fmt(s) { return (s == null) ? '·' : String(s); }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function render(d) {
@@ -30976,7 +30976,7 @@ function renderTabla(){
   dz.style.display = 'block';
   tbody.innerHTML = candidatos.map((it, i) => {
     const stkClass = Math.abs(it.stock_actual_g) < 1 ? 'stock-zero' : 'stock-nonzero';
-    const ua = it.ultima_actividad || '—nunca—';
+    const ua = it.ultima_actividad || 'nunca';
     const di = (it.dias_inactivo !== null && it.dias_inactivo !== undefined) ? it.dias_inactivo : '∞';
     const archivable = Math.abs(it.stock_actual_g) < 1;
     return `<tr>
@@ -33159,7 +33159,7 @@ function render(d){
     '</tr></thead><tbody>';
   (d.items || []).forEach((it, i) => {
     const ds = it.dias_stock;
-    const dsTxt = ds === null ? '—' : (ds === 0 ? 'YA' : ds.toFixed(1)+'d');
+    const dsTxt = ds === null ? '·' : (ds === 0 ? 'YA' : ds.toFixed(1)+'d');
     const barW = ds === null ? 0 : Math.min(100, ds / 90 * 100);
     const barClass = it.status === 'BACKORDER' ? 'b' :
                      it.status === 'URGENTE_30d' ? 'u' :
