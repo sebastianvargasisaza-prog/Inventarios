@@ -8061,6 +8061,52 @@ def planta_actualizar_estado_area(area_id):
 
 
 # ════════════════════════════════════════════════════════════════════════
+# ── Encabezado de control documental · el estandar corporativo de Espagiria ────
+# Aseguramiento 19-ago: la estructura es la MISMA en todos los formatos de la empresa
+# (procedimientos, instructivos, registros) y no es decorativa: es la evidencia de que
+# el documento que se esta usando corresponde a la version vigente y autorizada
+# (ISO 22716 · Res. 2214/2021 · BPM cosmetica INVIMA).
+#
+#   [ logo + nombre ] | [ FORMATO / titulo ] | [ Codigo · Version · Pagina · Vigencia ]
+#
+# Las etiquetas son EXACTAS y la vigencia NO se resume en una sola fecha: lleva sus dos
+# subcampos. Vive en un solo sitio porque el rotulo operativo y el snapshot del expediente
+# imprimen el mismo formato -- dos copias divergen y ahi el documento deja de probar de
+# que version es (M3/M1).
+F02_CONTROL = {
+    'codigo': 'PRD-PRO-002-F02',
+    'titulo': 'Identificación de Estado de Limpieza de Áreas o Equipos',
+    'version': '02',
+    'pagina': '1 de 1',
+    'desde': '09-Abr-2026',
+    'hasta': '08-Abr-2029',
+}
+
+
+def _encabezado_formato_zonas(ctl=None):
+    """Las DOS zonas del encabezado que no son el logo: centro y bloque de control.
+
+    Devuelve HTML con clases `doc`/`tipo`/`ctrl`/`cf`/`rango`; cada pantalla define su
+    propio CSS porque una imprime en etiqueta de 100x100mm y la otra en hoja.
+    """
+    d = dict(F02_CONTROL)
+    d.update(ctl or {})
+    return (
+        "<div class=\"doc\">"
+        "<div class=\"tipo\">FORMATO</div>"
+        "<h1>" + d['titulo'] + "</h1>"
+        "</div>"
+        "<div class=\"ctrl\">"
+        "<div class=\"cf\"><b>Código:</b> " + d['codigo'] + "</div>"
+        "<div class=\"cf\"><b>Versión:</b> " + d['version'] + "</div>"
+        "<div class=\"cf\"><b>Página:</b> " + d['pagina'] + "</div>"
+        "<div class=\"cf\"><b>Vigencia:</b>"
+        "<div class=\"rango\">"
+        "<div><b>Desde:</b> " + d['desde'] + "</div>"
+        "<div><b>Hasta:</b> " + d['hasta'] + "</div>"
+        "</div></div></div>")
+
+
 # RÓTULO VIRTUAL DE LIMPIEZA · PRD-PRO-002-F02 (Estado de Limpieza de
 # Áreas/Equipos) · Sebastián 6-jun-2026.
 #
@@ -8368,7 +8414,7 @@ def planta_rotulo_limpieza_realizar(area_id):
     try:
         if (lote_elab or '').strip():
             from audit_helpers import registrar_documento as _regdoc
-            _regdoc(c, tipo_doc='ROTULO_LIMPIEZA', formato='PRD-PRO-002-F02',
+            _regdoc(c, tipo_doc='ROTULO_LIMPIEZA', formato=F02_CONTROL['codigo'],
                     titulo='Rótulo de limpieza de área/equipos',
                     url='/planta/rotulo-limpieza/registro/%s/pdf' % rid,
                     entidad='PT', codigo=(base.get('area_codigo', '') if isinstance(base, dict) else ''),
@@ -8661,10 +8707,9 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado=''):
       <img class="mark" src="{_logo_src}" alt="" onerror="this.remove()">
       <div class="co">ESPAGIRIA Laboratorio SAS</div>
     </div>
-    <div class="ctrl"><b>Código:</b> PRD-PRO-002-F02<br><b>Versión:</b> 02 &nbsp;·&nbsp; <b>Página:</b> 1 de 1<br><b>Vigencia:</b> 9-Abr-2026 a 8-Abr-2029</div>
+    {_encabezado_formato_zonas()}
   </div>
   <div class="title">
-    <h1>Estado de Limpieza de Áreas / Equipos</h1>
     <div class="k">Registro de verificación previo a fabricación · BPM / INVIMA · 21 CFR Part 11</div>
   </div>
   <div class="estado">
@@ -8719,14 +8764,32 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
   .sheet{{max-width:760px;margin:0 auto 22px;background:var(--cx-card, #fff);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 12px 28px rgba(24,24,27,.08)}}
   .sheet + .sheet{{page-break-before:always}}
   .accent{{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}}
-  .top{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:20px 26px 14px}}
-  .brand{{display:flex;align-items:center;gap:12px}}
+  /* Encabezado de control documental · Aseguramiento 19-ago: la estructura es la misma
+     en TODOS los formatos de Espagiria y es la evidencia de que se esta usando la version
+     vigente (ISO 22716 · Res. 2214/2021). Tres zonas fijas: logo+nombre | FORMATO+titulo |
+     Codigo/Version/Pagina/Vigencia(Desde-Hasta). El estilo puede ser moderno; la ESTRUCTURA no. */
+  .top{{display:grid;grid-template-columns:auto 1fr auto;align-items:stretch;gap:0;
+        padding:0;border-bottom:1px solid var(--line)}}
+  .top > *{{padding:12px 14px}}
+  .top > * + *{{border-left:1px solid var(--line)}}
+  .brand{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center}}
   .mark{{width:68px;height:68px;border-radius:14px;flex-shrink:0;object-fit:contain;background:var(--cx-card, #fff);border:1px solid var(--line);padding:5px}}
   .brand .co{{font-size:16px;font-weight:800;letter-spacing:-.3px;line-height:1.1}}
   .brand .sub{{font-size:11.5px;color:var(--mute);margin-top:2px;font-weight:500}}
-  .ctrl{{font-size:11px;color:var(--soft);text-align:right;line-height:1.7;background:var(--pale);border:1px solid var(--cx-primary-soft, #ede9fe);border-radius:10px;padding:9px 14px}}
+  /* Zona central · la etiqueta FORMATO va literal y SEPARADA del titulo */
+  .doc{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px}}
+  .doc .tipo{{font-size:12px;font-weight:800;letter-spacing:2.4px;color:var(--violet-d)}}
+  .doc h1{{margin:0;font-size:15px;font-weight:800;line-height:1.2;letter-spacing:-.2px;
+           color:var(--ink);text-transform:uppercase;text-wrap:balance}}
+  /* Zona derecha · los 4 campos de control, cada uno en su renglon */
+  .ctrl{{font-size:10.5px;color:var(--ink);line-height:1.45;min-width:196px;
+         display:flex;flex-direction:column;justify-content:center;gap:0}}
+  .ctrl .cf{{padding:3px 0}}
+  .ctrl .cf + .cf{{border-top:1px solid var(--line)}}
   .ctrl b{{color:var(--violet-d);font-weight:700}}
-  .title{{text-align:center;padding:6px 26px 16px}}
+  .ctrl .rango{{margin-top:2px;padding-left:8px;border-left:2px solid var(--cx-primary-soft, #ede9fe)}}
+  .ctrl .rango div + div{{margin-top:1px}}
+  .title{{text-align:center;padding:5px 26px 12px}}
   .title h1{{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px;color:var(--ink);text-transform:uppercase}}
   .title .k{{font-size:11.5px;color:var(--mute);margin-top:4px;font-weight:600;letter-spacing:.4px}}
   .estado{{text-align:center;padding:6px 20px 20px;border-bottom:1px solid var(--line)}}
@@ -8760,10 +8823,18 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
     /* Compactar para caber TODO en 1 página 100×100mm (Sebastián 20-jul) sin recortar */
     .accent{{height:2px}}
     td{{padding:1px 9px;font-size:6.6pt;line-height:1.05}} td.k{{font-size:5.6pt}}
-    .top{{padding:4px 11px 2px;gap:8px}} .mark{{width:28px;height:28px;padding:2px}}
-    .co{{font-size:8.5pt;white-space:nowrap}} .brand .sub{{display:none}}
-    .ctrl{{font-size:6pt;line-height:1.3;padding:4px 7px}}
-    .title{{padding:1px 11px 3px}} .title h1{{font-size:9pt}} .title .k{{font-size:5.2pt;margin-top:0}}
+    /* Columnas FIJAS al imprimir: con `auto` el nombre de la empresa se comia el ancho
+       y el titulo -que en el formato oficial es la columna mas ancha- quedaba en una
+       tira angosta. Medido sobre la etiqueta real de 100x100mm. */
+    .top{{gap:0;grid-template-columns:24mm 1fr 29mm}}
+    .top > *{{padding:3px 5px}} .mark{{width:24px;height:24px;padding:1px}}
+    .co{{font-size:5.4pt;white-space:normal;line-height:1.02;word-break:break-word}}
+    .brand{{gap:2px}} .brand .sub{{display:none}}
+    .doc .tipo{{font-size:6pt;letter-spacing:1.4px}} .doc h1{{font-size:7pt;line-height:1.08}}
+    .doc{{gap:2px}}
+    .ctrl{{font-size:5pt;line-height:1.18;min-width:0;padding:3px 5px}}
+    .ctrl .cf{{padding:1px 0}} .ctrl .rango{{padding-left:4px;margin-top:1px}}
+    .title{{padding:1px 11px 2px}} .title .k{{font-size:5pt;margin-top:0}}
     .estado{{padding:1px 10px 4px}} .chip{{padding:2px 10px;font-size:8pt;margin:0 2px}} .estado .elbl{{margin-bottom:2px;font-size:5.6pt}}
     .firma{{padding:3px 11px 4px}} .firma .l{{font-size:5.6pt}} .firma .who{{margin-top:2px;font-size:7.5pt;line-height:1.1}}
     .firma .sig-ok{{margin-top:1px;font-size:6pt;padding:1px 5px}}
@@ -9049,10 +9120,8 @@ def planta_rotulo_limpieza_registro_pdf(reg_id):
     _est_cls = 'ok' if _est in ('verificado', 'liberado', 'realizado') else ''
     _fld = lambda k, v: "<div class='f'><span class='k'>%s</span><span class='v'>%s</span></div>" % (_e(k), _e(v) or '-')
     body = ("<div class='sheet'><div class='accent'></div>"
-            "<div class='hd'><div><div class='co'>Espagiria Laboratorio</div>"
-            "<div class='sub'>Control de Calidad · Estado de Limpieza de Áreas y Equipos</div></div>"
-            "<div class='cod'>PRD-PRO-002-F02<small>Rótulo de limpieza</small></div></div>"
-            "<div class='ti'>RÓTULO DE LIMPIEZA F02</div>"
+            "<div class='hd'><div class='brand'><div class='co'>ESPAGIRIA Laboratorio SAS</div></div>"
+            + _encabezado_formato_zonas() + "</div>"
             "<div class='grid'>"
             + _fld('Área', (d['area_nom'] or d['area_cod']))
             + _fld('Producto a elaborar', d['prod_elab'])
@@ -9074,9 +9143,22 @@ def planta_rotulo_limpieza_registro_pdf(reg_id):
            "-webkit-print-color-adjust:exact;print-color-adjust:exact}"
            ".sheet{max-width:760px;margin:0 auto;background:var(--cx-card, #fff);border:1px solid #e4e4e7;border-radius:14px;overflow:hidden;box-shadow:0 12px 28px rgba(24,24,27,.08)}"
            ".accent{height:5px;background:linear-gradient(90deg,#a78bfa,#6d28d9)}"
-           ".hd{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:18px 24px 8px}"
-           ".co{font-size:16px;font-weight:800;letter-spacing:-.3px}.sub{font-size:11px;color:var(--cx-text-mute, #78716c);margin-top:2px}"
-           ".cod{text-align:right;font-size:11px;color:var(--cx-primary-text, #6d28d9);font-weight:700}.cod small{display:block;color:#a1a1b0;font-weight:500;margin-top:2px}"
+           # Encabezado de control documental · las tres zonas del estandar (ver
+           # `_encabezado_formato_zonas`). Antes esta pantalla tenia su propio bloque
+           # `.hd/.co/.sub/.cod` + un titulo suelto, o sea otra estructura para el MISMO
+           # formato -- y esta es la copia que va al expediente del lote.
+           ".hd{display:grid;grid-template-columns:auto 1fr auto;align-items:stretch;border-bottom:1px solid var(--cx-border, #e7e5e4)}"
+           ".hd > *{padding:12px 14px}.hd > * + *{border-left:1px solid var(--cx-border, #e7e5e4)}"
+           ".brand{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}"
+           ".co{font-size:14px;font-weight:800;letter-spacing:-.3px;line-height:1.15}"
+           ".sub{font-size:11px;color:var(--cx-text-mute, #78716c);margin-top:2px}"
+           ".doc{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px}"
+           ".doc .tipo{font-size:12px;font-weight:800;letter-spacing:2.4px;color:var(--cx-primary-text, #6d28d9)}"
+           ".doc h1{margin:0;font-size:15px;font-weight:800;line-height:1.2;text-transform:uppercase}"
+           ".ctrl{font-size:10.5px;line-height:1.45;min-width:200px;display:flex;flex-direction:column;justify-content:center}"
+           ".ctrl .cf{padding:3px 0}.ctrl .cf + .cf{border-top:1px solid var(--cx-border, #e7e5e4)}"
+           ".ctrl b{color:var(--cx-primary-text, #6d28d9);font-weight:700}"
+           ".ctrl .rango{margin-top:2px;padding-left:8px;border-left:2px solid var(--cx-primary-soft, #ede9fe)}"
            ".ti{text-align:center;font-size:17px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;padding:4px 24px 12px}"
            ".grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;padding:0 24px}"
            ".f{border-bottom:1px solid #f1f0f7;padding:7px 0;display:flex;gap:8px;align-items:baseline}.grid .f,.sheet>.f{margin:0 24px}"

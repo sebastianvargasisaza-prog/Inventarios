@@ -161,6 +161,8 @@ CORAZON=(
   "tests/test_panel_luz_no_muestra_decimales.py"
   "tests/test_jeferson_no_pierde_solicitudes.py"
   "tests/test_influencers_dedup.py"
+  "tests/test_estados_oc_declarados.py"
+  "tests/test_f02_encabezado_control_documental.py"
   "tests/test_codigo_kardex_limpio.py"
   "tests/test_auditoria_lotes_pg.py"
   "tests/test_envases_kardex_mp.py"

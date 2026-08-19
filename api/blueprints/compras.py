@@ -41,7 +41,14 @@ bp = Blueprint('compras', __name__)
 # ── Estados OC canonical · simplificación 8→6 · 22-may-2026 ─────────────────
 # Consultor LEAN: menos estados = menos confusión Catalina.
 # Eliminados: 'Revisada' (sub-estado interno) y 'Parcial' (calc por cantidad_recibida_g)
-ESTADOS_OC_VALIDOS = ('Borrador', 'Autorizada', 'Recibida', 'Pagada', 'Cancelada', 'Rechazada')
+# 19-ago · faltaba 'Aprobada' y por eso 27 ordenes reales figuraban como un estado que
+# 'nadie declara'. Son las solicitudes de pago a creadores: `mkt_solicitar_pago_influencer`
+# crea su OC directamente en 'Aprobada' (no pasan por autorizacion porque el acto de
+# solicitar el pago YA es la decision). Se verifico que se pagan bien de punta a punta
+# (PATCH /pagar -> OC 'Pagada' + el pago del creador 'Pagada'), asi que el estado es real
+# y funcional: lo que estaba mal era el catalogo. Se DECLARA, no se cambia el flujo.
+ESTADOS_OC_VALIDOS = ('Borrador', 'Aprobada', 'Autorizada', 'Recibida', 'Pagada',
+                      'Cancelada', 'Rechazada')
 ESTADOS_OC_ACTIVAS = ('Borrador', 'Autorizada', 'Recibida')  # NO cerradas (Pagada/Cancelada/Rechazada)
 ESTADOS_OC_LEGACY = ('Revisada', 'Parcial')                  # solo lectura · mig 157 los migró
 
