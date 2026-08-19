@@ -3805,21 +3805,77 @@ def _indicadores_asg_valores(c):
                 pass
         return ratio(ok, tot)
 
+    def _pct_a_tiempo(rows, limite_dias=None):
+        """% cumplido contando TAMBIEN lo que sigue abierto y ya se paso de plazo.
+
+        Los cuatro indicadores de "a tiempo" miraban SOLO lo ya cerrado, asi que con cero
+        cerrados el denominador era cero y el semaforo quedaba GRIS -- **el peor escenario
+        posible producia "sin dato" en vez de rojo**. Medido el 19-ago: el tablero mostraba
+        tres quejas de SALUD sin responder arriba, y el indicador "Quejas respondidas en
+        plazo" en gris (M129/M154: un numero que nadie calculo se lee como "no hay nada
+        que hacer", y significa lo contrario).
+
+        Reglas, iguales para los cuatro:
+          · cerrado dentro del plazo      -> cumple
+          · cerrado fuera del plazo       -> incumple
+          · ABIERTO y ya vencido          -> incumple  (lo que antes era invisible)
+          · abierto y todavia en plazo    -> NO entra al denominador: no incumplio nada
+
+        `rows` = (fecha_inicio, fecha_fin_o_vacio, fecha_limite_o_vacio). Si viene la fecha
+        limite manda esa; si no, se usa `limite_dias` desde el inicio.
+        """
+        hoy_d = datetime.now() - timedelta(hours=5)
+        tot = ok = 0
+        for r in rows:
+            try:
+                d0 = datetime.fromisoformat(str(r[0])[:10])
+            except Exception:
+                continue          # sin fecha de inicio no se puede medir nada
+            fin = str(r[1] or '')[:10]
+            lim_txt = str(r[2] or '')[:10] if len(r) > 2 else ''
+            try:
+                tope = (datetime.fromisoformat(lim_txt) if lim_txt
+                        else d0 + timedelta(days=int(limite_dias or 0)))
+            except Exception:
+                continue
+            if fin:
+                try:
+                    d1 = datetime.fromisoformat(fin)
+                except Exception:
+                    continue
+                tot += 1
+                if d1 <= tope:
+                    ok += 1
+            elif hoy_d > tope:
+                tot += 1          # abierto y vencido: cuenta, y cuenta MAL
+        return ratio(ok, tot)
+
     v = {}
     v['desv_abiertas'] = cont("SELECT COUNT(*) FROM desviaciones WHERE estado NOT IN ('cerrada','rechazada')")
-    v['desv_a_tiempo'] = _dias_pct(c.execute(
-        "SELECT fecha_deteccion, fecha_cierre FROM desviaciones WHERE estado='cerrada' "
-        "AND COALESCE(fecha_cierre,'')<>'' AND fecha_cierre >= date('now','-5 hours','-180 days')"
+    v['desv_a_tiempo'] = _pct_a_tiempo(c.execute(
+        "SELECT fecha_deteccion, COALESCE(fecha_cierre,''), '' FROM desviaciones "
+        " WHERE fecha_deteccion >= date('now','-5 hours','-180 days')"
     ).fetchall(), 30)
     capa_cerr = cont("SELECT COUNT(*) FROM capa_acciones WHERE estado IN ('Cerrada','Verificada','Ejecutada') AND COALESCE(fecha_compromiso,'')<>'' AND COALESCE(fecha_ejecucion,'')<>''")
     capa_ok = cont("SELECT COUNT(*) FROM capa_acciones WHERE estado IN ('Cerrada','Verificada','Ejecutada') AND COALESCE(fecha_compromiso,'')<>'' AND COALESCE(fecha_ejecucion,'')<>'' AND fecha_ejecucion <= fecha_compromiso")
-    v['capa_a_tiempo'] = ratio(capa_ok, capa_cerr)
+    # El plazo de una CAPA es su fecha de COMPROMISO · una sin ejecutar y con el
+    # compromiso vencido es el caso que mas importa, y era el unico invisible.
+    v['capa_a_tiempo'] = _pct_a_tiempo(c.execute(
+        "SELECT fecha_compromiso, COALESCE(fecha_ejecucion,''), fecha_compromiso "
+        "  FROM capa_acciones WHERE COALESCE(fecha_compromiso,'')<>''"
+    ).fetchall())
     inv_impl = cont("SELECT COUNT(*) FROM control_cambios WHERE requiere_invima=1 AND COALESCE(implementado_at,'')<>''")
     inv_ok = cont("SELECT COUNT(*) FROM control_cambios WHERE requiere_invima=1 AND COALESCE(implementado_at,'')<>'' AND COALESCE(notificacion_invima_at,'')<>'' AND notificacion_invima_at <= implementado_at")
-    v['cambios_invima_ok'] = ratio(inv_ok, inv_impl)
-    v['quejas_sla'] = _dias_pct(c.execute(
-        "SELECT fecha_recepcion, respondido_at FROM quejas_clientes WHERE COALESCE(respondido_at,'')<>'' "
-        "AND respondido_at >= date('now','-5 hours','-180 days')"
+    # Notificar a INVIMA es la obligacion: un cambio IMPLEMENTADO y sin notificar
+    # incumple, y antes ni siquiera entraba al denominador.
+    v['cambios_invima_ok'] = _pct_a_tiempo(c.execute(
+        "SELECT implementado_at, COALESCE(notificacion_invima_at,''), implementado_at "
+        "  FROM control_cambios WHERE requiere_invima=1 "
+        "    AND COALESCE(implementado_at,'')<>''"
+    ).fetchall())
+    v['quejas_sla'] = _pct_a_tiempo(c.execute(
+        "SELECT fecha_recepcion, COALESCE(respondido_at,''), '' FROM quejas_clientes "
+        " WHERE fecha_recepcion >= date('now','-5 hours','-180 days')"
     ).fetchall(), 15)
     v['recalls_abiertos'] = cont("SELECT COUNT(*) FROM recalls WHERE estado NOT IN ('cerrado','cancelado')")
     sgd_base = cont("SELECT COUNT(*) FROM sgd_documentos WHERE estado='vigente'")

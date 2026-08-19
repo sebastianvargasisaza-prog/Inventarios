@@ -155,6 +155,7 @@ CORAZON=(
   "tests/test_chat_badge_no_frena_la_app.py"
   "tests/test_menu_enlaza_todo.py"
   "tests/test_ceo_ve_la_plata_real.py"
+  "tests/test_indicadores_no_se_ponen_grises.py"
   "tests/test_codigo_kardex_limpio.py"
   "tests/test_auditoria_lotes_pg.py"
   "tests/test_envases_kardex_mp.py"
