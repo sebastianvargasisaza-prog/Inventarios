@@ -110,7 +110,10 @@ def test_ningun_modulo_de_la_matriz_quedo_SIN_paginas(app, db_clean):
     import config
     con_rutas = {mod for _pref, mod in config.MODULO_POR_RUTA}
     fantasma = sorted(set(config.MODULOS_ACCESO.keys()) - con_rutas)
-    CONOCIDOS = {"inteligencia", "invima"}
+    # 19-ago · `inteligencia` e `invima` se RETIRARON de la matriz (eran llaves sin
+    # ninguna ruta detras y sin un solo consumidor). La excepcion se vacia: si vuelve a
+    # aparecer un modulo sin paginas, este guard lo nombra en vez de callarlo.
+    CONOCIDOS = set()
     nuevos = sorted(set(fantasma) - CONOCIDOS)
     assert not nuevos, (
         "aparecieron módulos en la matriz de permisos sin ninguna página detrás: %s · o se "

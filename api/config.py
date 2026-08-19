@@ -148,8 +148,12 @@ MODULOS_ACCESO = {
     'centro':        set(ADMIN_USERS),
     'comercial':     set(ADMIN_USERS),
     'compliance':    set(ADMIN_USERS),
-    'inteligencia':  set(ADMIN_USERS),
-    'invima':        set(ADMIN_USERS),
+    # 19-ago · se retiran `inteligencia` e `invima`: eran llaves SIN NINGUNA ruta detras,
+    # asi que no otorgaban nada y hacian que esta matriz -que es la unica fuente de quien
+    # ve que- describiera dos modulos que no existen. Verificado: cero consumidores en
+    # api/ y tests/. El contenido INVIMA vive dentro de /tecnica, que ya tiene su llave
+    # ('tecnica'); `inteligencia` quedo de la IA de Marketing que se retiro el 16-jul.
+    # Si alguna vez se les cuelga una pantalla, se vuelven a declarar CON su ruta.
     'seguridad':     set(ADMIN_USERS),
     'admin':         set(ADMIN_USERS),
 }
