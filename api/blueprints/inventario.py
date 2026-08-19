@@ -10942,7 +10942,19 @@ def generar_rotulos(producto_nombre, cantidad_str):
                 '<div class="bt"><div class="co">ESPAGIRIA Laboratorio SAS</div>'
                 '<div class="ttl">R&oacute;tulo para dispensar materia prima</div>'
                 '<div class="sub">'+op_num+' &middot; '+hoy+_parte_txt+'</div></div></div>')
-        rhtml+='<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08<br><b>Versión:</b> 01 &middot; <b>Etiqueta</b> '+str(i+1)+' de '+str(len(_filas_rot))+'<br><b>Vigencia:</b> 04-Mar-2025 / 03-Mar-2028</div></div>'
+        # Aseguramiento 19-ago: la vigencia NO se resume en un rango de una linea · lleva
+        # sus dos subcampos `Desde:` y `Hasta:`, que es como se declara en TODOS los
+        # formatos de Espagiria (evidencia de version vigente · ISO 22716 / Res. 2214).
+        # ⚠ El LAYOUT de tres zonas (FORMATO + titulo centrado) NO se aplica aca a
+        # proposito: Sebastian 30-jul pidio el titulo chico y al costado porque lo que el
+        # operario lee de lejos en la bascula es la materia prima y el peso. Esa tension
+        # la deciden el y Aseguramiento; el codigo no la resuelve solo (M19/M218).
+        rhtml+=('<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08'
+                '<br><b>Versión:</b> 01'
+                '<br><b>Etiqueta:</b> '+str(i+1)+' de '+str(len(_filas_rot))+
+                '<br><b>Vigencia:</b>'
+                '<br><b>Desde:</b> 04-Mar-2025 &middot; <b>Hasta:</b> 03-Mar-2028'
+                '</div></div>')
         # HERO · nombre de la MP y el peso, que es lo unico que se mira al dispensar.
         _falto = _fila['falta'] > 0.01
         _sub_peso = ('' if _fila['n_partes'] <= 1 else

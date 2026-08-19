@@ -73,6 +73,26 @@
   imprimible `GET /planta/rotulo-limpieza/<area_id>/pdf`. Tests:
   `tests/test_rotulo_limpieza.py`.
 - Background cron NUNCA debe pasar force_mirror=True.
+- **Encabezado de control documental (Aseguramiento 19-ago-2026).** El F02 se imprime
+  desde DOS pantallas -- el rótulo operativo (`/planta/rotulos-limpieza`) y el snapshot
+  inmutable del expediente (`/planta/rotulo-limpieza/registro/<id>/pdf`, el que se le
+  muestra a INVIMA) -- y las dos DEBEN llevar la estructura corporativa de Espagiria,
+  que no es decorativa: es la evidencia de que se está usando la versión vigente
+  (ISO 22716 · Res. 2214/2021).
+
+      [ logo + nombre ] | [ FORMATO / título ] | [ Código · Versión · Página · Vigencia ]
+
+  Etiquetas EXACTAS (`Código:`, `Versión:`, `Página:`, `Vigencia:`) y la vigencia lleva
+  sus dos subcampos `Desde:` y `Hasta:` -- **nunca resumida en un rango**. La palabra
+  `FORMATO` va literal y separada del título.
+- **Los datos de control salen de `F02_CONTROL` (una constante) vía
+  `_encabezado_formato_zonas()`**, que usan las dos pantallas y el registro en el
+  expediente. Dos copias divergen, y el día que Aseguramiento libere la versión 03 una
+  seguiría diciendo 02 -- las dos viéndose igual de oficiales (M3/M1).
+- ⚠ El rótulo se imprime en **etiqueta de 100×100 mm**: cualquier cambio al encabezado se
+  verifica MIDIENDO (simular `@media print` como hoja normal y medir milímetros), no a
+  ojo. Al 19-ago: 72,6 mm de alto y columnas 24 / 43,5 / 29 mm.
+  Tests: `tests/test_f02_encabezado_control_documental.py`.
 
 ### INV-4 · Idempotencia
 - INSERT a `produccion_programada` idempotente por `(producto, fecha_programada)`.

@@ -131,3 +131,43 @@ def test_los_datos_de_control_salen_de_UN_solo_sitio(app, db_clean):
     for k in ('codigo', 'titulo', 'version', 'pagina', 'desde', 'hasta'):
         assert str(F02_CONTROL.get(k) or '').strip(), (
             "el bloque de control documental no declara '%s'" % k)
+
+
+def test_ningun_formato_impreso_resume_la_vigencia(app, db_clean):
+    """La regla vale para TODOS los formatos, no solo para el F02.
+
+    Aseguramiento: *"no resumir Vigencia en una sola fecha ni omitir el rango"*. El
+    rotulo de dispensacion (PRD-PRO-001-F08) la traia colapsada como
+    "04-Mar-2025 / 03-Mar-2028".
+
+    NO se exige aca el layout de tres zonas: para ese rotulo Sebastian pidio (30-jul) el
+    titulo chico y al costado, porque lo que el operario lee de lejos en la bascula es la
+    materia prima y el peso. Esa tension entre el estandar de Aseguramiento y el uso real
+    la deciden ellos; el guard mide lo que NO esta en discusion.
+    """
+    import io as _io
+    import os as _os
+    import re as _re
+    raiz = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    base = _os.path.join(raiz, "api", "blueprints")
+    culpables = []
+    medidos = 0
+    for nombre in sorted(_os.listdir(base)):
+        if not nombre.endswith(".py"):
+            continue
+        src = _io.open(_os.path.join(base, nombre), encoding="utf-8").read()
+        sin_com = chr(10).join(l for l in src.splitlines()
+                               if not l.strip().startswith("#"))
+        # ⚠ `.` NO cruza saltos de linea sin DOTALL, y el HTML de estos formatos viene
+        # partido en literales concatenados: sin re.S la ventana se cortaba en el primer
+        # renglon y el guard acusaba a codigo correcto (el detector, no el codigo).
+        for m in _re.finditer(r"<b>Vigencia:</b>(.{0,200})", sin_com, _re.S):
+            medidos += 1
+            cola = m.group(1)
+            if "Desde:" not in cola:
+                culpables.append("%s: %s" % (nombre, cola.strip()[:70]))
+    assert medidos >= 1, (
+        "no se encontro ningun bloque de vigencia · el guard dejo de medir (M210)")
+    assert not culpables, (
+        "hay formatos impresos que resumen la vigencia en vez de declarar Desde/Hasta · "
+        "Aseguramiento lo declaro no negociable: %s" % culpables)
