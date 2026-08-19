@@ -23,6 +23,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg-alt);col
 .kpi-label{font-size:0.67em;text-transform:uppercase;letter-spacing:1.5px;color:var(--cx-text-mute);margin-bottom:6px;}
 .kpi-val{font-size:2em;font-weight:800;color:var(--cx-text);}
 .kpi-val.warn{color:#fb923c;} .kpi-val.crit{color:var(--cx-danger-text);} .kpi-val.good{color:var(--cx-success-text);}
+/* Registro sin una sola fila: se dice con palabras, apagado, para que no se lea
+   como un cero medido (un cero que nadie calculo parece 'todo al dia'). */
+.kpi-val.muted-val{color:var(--cx-text-mute, #78716c);font-weight:700;letter-spacing:.2px;}
 .kpi-sub{font-size:0.68em;color:var(--cx-text-faint);margin-top:3px;}
 .card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:18px;margin-bottom:16px;}
 .card-title{font-size:0.7em;text-transform:uppercase;letter-spacing:1.5px;color:var(--cx-text-mute);margin-bottom:14px;font-weight:700;}
@@ -460,13 +463,28 @@ function vencimientoBadge(fv) {
 }
 function loadDash() {
   _apiGet('/api/tecnica/dashboard').then(function(d) {
-    document.getElementById('kv-form').textContent = d.formulas_vigentes || 0;
-    document.getElementById('kv-fich').textContent = d.fichas_vigentes || 0;
-    document.getElementById('kv-inv').textContent = d.registros_vigentes || 0;
-    document.getElementById('kv-pv').textContent = d.por_vencer || 0;
-    document.getElementById('kv-tram').textContent = d.registros_tramite || 0;
-    document.getElementById('kv-docs').textContent = d.docs_vigentes || 0;
-    document.getElementById('kv-rev').textContent = d.docs_revisar || 0;
+    // Un registro VACIO no es lo mismo que uno en cero: "0 vigentes" se lee como
+    // "esta todo al dia" cuando en realidad nadie ha cargado nada todavia. Cuando no
+    // hay ni una fila lo decimos con palabras y invitamos a cargar (M154/M100).
+    var _cg = d.cargados || {};
+    function _kpi(id, valor, grupo, subVacio) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var total = _cg[grupo];
+      var vacio = (total === 0);
+      el.textContent = vacio ? 'Sin cargar' : (valor || 0);
+      el.style.fontSize = vacio ? '15px' : '';
+      el.classList.toggle('muted-val', vacio);
+      var sub = el.parentNode ? el.parentNode.querySelector('.kpi-sub') : null;
+      if (sub && vacio && subVacio) sub.textContent = subVacio;
+    }
+    _kpi('kv-form', d.formulas_vigentes, 'formulas', 'Ninguna cargada todavia');
+    _kpi('kv-fich', d.fichas_vigentes,   'fichas',   'Ninguna cargada todavia');
+    _kpi('kv-inv',  d.registros_vigentes,'invima',   'Ninguno cargado todavia');
+    _kpi('kv-pv',   d.por_vencer,        'invima',   'Sin registros que vigilar');
+    _kpi('kv-tram', d.registros_tramite, 'invima',   'Sin registros que vigilar');
+    _kpi('kv-docs', d.docs_vigentes,     'docs',     'Ninguno cargado todavia');
+    _kpi('kv-rev',  d.docs_revisar,      'docs',     'Sin documentos que revisar');
     var tb = document.getElementById('tb-proximos');
     if (!d.proximos_vencimientos || d.proximos_vencimientos.length === 0) {
       tb.innerHTML = '<tr><td colspan="4" class="empty">Sin registros de vencimiento</td></tr>'; return;

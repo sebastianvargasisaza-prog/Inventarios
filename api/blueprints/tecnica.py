@@ -276,7 +276,20 @@ def tecnica_dashboard():
     proximos = [{'producto': r[0], 'num_registro': r[1],
                  'fecha_vencimiento': r[2], 'estado': r[3]}
                 for r in c.fetchall()]
+    # Cuantos hay CARGADOS en cada registro, sin filtrar por estado. Sin esto, "0
+    # vigentes" y "nadie ha cargado ninguno" se ven identicos -- y un cero que nadie
+    # calculo se lee como "no hay nada que hacer", que aca es lo contrario: hay que
+    # cargarlos (M154/M100). Los registros propios del DT nacen vacios a proposito.
+    _tot = {}
+    for _clave, _tabla in (('formulas', 'formulas_maestras'), ('fichas', 'fichas_tecnicas'),
+                           ('invima', 'registros_invima'), ('docs', 'sgd_documentos')):
+        try:
+            c.execute("SELECT COUNT(*) FROM " + _tabla)
+            _tot[_clave] = c.fetchone()[0] or 0
+        except Exception:
+            _tot[_clave] = None      # no se pudo medir · se DECLARA, no se asume cero
     return jsonify({
+        'cargados': _tot,
         'formulas_vigentes': formulas_vigentes,
         'fichas_vigentes': fichas_vigentes,
         'registros_vigentes': registros_vigentes,
