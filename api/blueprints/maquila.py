@@ -671,11 +671,13 @@ def hub_salida_page():
 @bp.route('/api/hub-salida/pedidos-pendientes')
 def hub_pedidos_pendientes():
     conn = get_db(); c = conn.cursor()
-    c.execute("""SELECT p.numero, p.cliente_id, cl.nombre as cliente, p.fecha, p.estado, p.valor_total
-                 FROM pedidos p
-                 LEFT JOIN clientes cl ON p.cliente_id = cl.id
-                 WHERE p.estado IN ('Confirmado','En preparacion','En Produccion','Aprobado','Listo')
-                 ORDER BY p.fecha DESC""")
+    # ⚠ Misma lista canónica que el resto (antes faltaba 'Produciendo').
+    from .clientes import ESTADOS_PEDIDO_ACTIVOS as _EPA
+    c.execute("SELECT p.numero, p.cliente_id, cl.nombre as cliente, p.fecha, p.estado, "
+              "       p.valor_total "
+              "  FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id = cl.id "
+              " WHERE p.estado IN (%s) "
+              " ORDER BY p.fecha DESC" % ','.join('?' * len(_EPA)), tuple(_EPA))
     cols = ['numero','cliente_id','cliente','fecha','estado','valor_total']
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
     return jsonify({'pedidos': rows})

@@ -137,7 +137,12 @@ def gerencia_kpis():
         sol_pendientes = 0
     c.execute("SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE estado='Disponible'")
     uds_pt = c.fetchone()[0] or 0
-    c.execute("SELECT COUNT(*) FROM pedidos WHERE estado IN ('Confirmado','En preparacion')")
+    # ⚠ La lista de estados NO se re-escribe acá: se importa del dueño de la tabla.
+    # Antes decía ('Confirmado','En preparacion') -- 'En preparacion' no existe y
+    # faltaban 'Produciendo' y 'Listo', asi que el CEO contaba de menos (M1/M5).
+    from .clientes import ESTADOS_PEDIDO_ACTIVOS as _EPA
+    c.execute("SELECT COUNT(*) FROM pedidos WHERE estado IN (%s)"
+              % ','.join('?' * len(_EPA)), tuple(_EPA))
     pedidos_activos = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(DISTINCT sku) FROM stock_pt WHERE unidades_disponible>0 AND estado='Disponible'")
     skus_stock = c.fetchone()[0] or 0
@@ -378,10 +383,14 @@ def gerencia_flujo_operacional():
                  ORDER BY fecha_recepcion DESC LIMIT 10""")
     recepciones_disc = [{'numero_oc': r[0], 'proveedor': r[1], 'fecha': r[2]} for r in c.fetchall()]
     # Pedidos listos para despachar
-    c.execute("""SELECT p.numero, cl.nombre as cliente, p.fecha, p.valor_total, p.estado
-                 FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id=cl.id
-                 WHERE p.estado IN ('Confirmado','En preparacion','En Produccion','Aprobado','Listo')
-                 ORDER BY p.fecha ASC LIMIT 20""")
+    # ⚠ La lista de estados se importa del dueño de la tabla · antes faltaba
+    # 'Produciendo' (el estado REAL) y traía tres palabras que no existen, así que un
+    # pedido en producción no aparecía como pendiente de despachar (M1/M5).
+    from .clientes import ESTADOS_PEDIDO_ACTIVOS as _EPA
+    c.execute("SELECT p.numero, cl.nombre as cliente, p.fecha, p.valor_total, p.estado "
+              "  FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id=cl.id "
+              " WHERE p.estado IN (%s) "
+              " ORDER BY p.fecha ASC LIMIT 20" % ','.join('?' * len(_EPA)), tuple(_EPA))
     ped_cols = ['numero','cliente','fecha','valor_total','estado']
     pedidos_listos = [dict(zip(ped_cols, r)) for r in c.fetchall()]
     # Despachos recientes (last 10)

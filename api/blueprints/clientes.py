@@ -16,6 +16,17 @@ from templates_py.clientes_html import CLIENTES_HTML
 
 bp = Blueprint('clientes', __name__)
 
+# El vocabulario REAL del estado de un pedido · sale del desplegable que la pantalla
+# ofrece (clientes_html) y del mapa de badges que pinta; no hay otro productor.
+# 19-ago: TRES tableros contaban "pedidos activos" con TRES vocabularios distintos y
+# en dos de ellos la mayoria de las palabras no existia ('Pendiente', 'En produccion',
+# 'En despacho', 'En preparacion'), asi que un pedido en `Confirmado` -el estado en el
+# que NACE cada pedido- era invisible para Espagiria y para el Centro de Mando (M1/M5).
+ESTADOS_PEDIDO_VALIDOS = ('Confirmado', 'Produciendo', 'Listo',
+                          'Despachado', 'Facturado', 'Cancelado')
+# ACTIVO = todavia debe algo. Despachado/Facturado/Cancelado son terminales.
+ESTADOS_PEDIDO_ACTIVOS = ('Confirmado', 'Produciendo', 'Listo')
+
 
 def _require_clientes_access():
     """Helper de auth · audit zero-error 2-may-2026.

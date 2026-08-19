@@ -1375,9 +1375,11 @@ def centro_operaciones_data():
         sh_mes = c.execute("""SELECT COUNT(*), COALESCE(SUM(total),0)
                               FROM animus_shopify_orders WHERE creado_en LIKE ?
                            """, (mes + '%',)).fetchone()
-        n_pedidos_b2b = c.execute("""SELECT COUNT(*) FROM pedidos
-                                     WHERE estado IN ('Pendiente','En produccion','Listo')
-                                  """).fetchone()[0]
+        # ⚠ La lista se importa del dueño de la tabla (mismo defecto que Espagiría).
+        from .clientes import ESTADOS_PEDIDO_ACTIVOS as _EPA
+        n_pedidos_b2b = c.execute(
+            "SELECT COUNT(*) FROM pedidos WHERE estado IN (%s)"
+            % ','.join('?' * len(_EPA)), tuple(_EPA)).fetchone()[0]
         out['comercial'] = {
             'shopify_hoy_count': sh_hoy[0] if sh_hoy else 0,
             'shopify_hoy_total': sh_hoy[1] if sh_hoy else 0,

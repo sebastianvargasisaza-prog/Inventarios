@@ -157,6 +157,7 @@ CORAZON=(
   "tests/test_ceo_ve_la_plata_real.py"
   "tests/test_indicadores_no_se_ponen_grises.py"
   "tests/test_dt_ve_el_sgd_real.py"
+  "tests/test_pedidos_estado_un_solo_vocabulario.py"
   "tests/test_codigo_kardex_limpio.py"
   "tests/test_auditoria_lotes_pg.py"
   "tests/test_envases_kardex_mp.py"

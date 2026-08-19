@@ -210,10 +210,13 @@ def dashboard():
 
     # 9) Pedidos cliente activos (Fernando Mesa principal)
     try:
-        out["pedidos_activos"] = c.execute("""
-            SELECT COUNT(*) FROM pedidos
-            WHERE estado IN ('Pendiente','En produccion','Listo','En despacho')
-        """).fetchone()[0]
+        # ⚠ La lista se importa del dueño de la tabla · antes decía
+        # ('Pendiente','En produccion','Listo','En despacho') y TRES de esas cuatro
+        # palabras no existen: un pedido `Confirmado` o `Produciendo` no se contaba.
+        from .clientes import ESTADOS_PEDIDO_ACTIVOS as _EPA
+        out["pedidos_activos"] = c.execute(
+            "SELECT COUNT(*) FROM pedidos WHERE estado IN (%s)"
+            % ','.join('?' * len(_EPA)), tuple(_EPA)).fetchone()[0]
     except Exception:
         out["pedidos_activos"] = 0
 
