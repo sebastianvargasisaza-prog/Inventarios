@@ -223,3 +223,18 @@ def test_el_rotulo_no_lleva_la_leyenda_del_pie(app, db_clean):
                 follow_redirects=True).get_data(as_text=True)
     assert 'Registro de verificaci' not in h, (
         "volvio la leyenda del pie que Sebastian pidio quitar del rotulo")
+
+
+def test_el_atajo_NA_devuelve_el_valor_anterior(app, db_clean):
+    """Apretar N/A por error no puede costar el valor por defecto del area.
+
+    Verificado en produccion apretandolo dos veces: con el toggle que borraba, el campo
+    quedaba vacio y habia que recordar que decia. Ahora vuelve a lo que habia.
+    """
+    cli = _cli(app)
+    sel = cli.get('/planta/rotulos-limpieza?area=FAB1',
+                  follow_redirects=True).get_data(as_text=True)
+    assert 'dataset.prev' in sel, (
+        "el atajo N/A no recuerda el valor anterior · apretarlo dos veces lo borra")
+    assert 'Alcohol 70%' in sel, (
+        "el campo de sanitizante perdio su valor sugerido")

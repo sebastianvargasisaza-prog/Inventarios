@@ -8873,8 +8873,12 @@ def _campo_producto_limpieza(cid, etiqueta, sugerido):
     tocar nada; N/A queda a un click para el equipo que no lo lleva -- tecleado a mano
     cada vez termina escrito de cinco formas distintas, y entonces no se puede agrupar.
     """
+    # El toggle DEVUELVE lo que habia, no lo borra: quien apriete N/A por error
+    # perderia el valor por defecto del area y tendria que recordarlo (19-ago,
+    # verificado apretandolo dos veces en produccion).
     _js = ("var e=document.getElementById('%s');"
-           "e.value=(e.value==='N/A'?'':'N/A');" % cid)
+           "if(e.value==='N/A'){e.value=e.dataset.prev||'';}"
+           "else{e.dataset.prev=e.value;e.value='N/A';}" % cid)
     return (
         '<div style="flex:1;min-width:210px">'
         '<label for="' + cid + '" style="display:block;font-size:12px;font-weight:700;'
