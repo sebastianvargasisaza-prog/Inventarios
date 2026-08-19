@@ -46,8 +46,9 @@ def _limpiar():
         # O sea que el fixture reproducía justo la condición que escondía el bug que Sebastián
         # encontró caminando el demo en producción -- ahí sí hay Salidas y la caída no aplica
         # (M153/M229). El demo repone su stock de envases como MOVIMIENTO, así que no hace falta.
-        for q in ("DELETE FROM envasado WHERE lote='DEMO-PLANTA-1'",
-                  "DELETE FROM acondicionamiento WHERE lote='DEMO-PLANTA-1'"):
+        # Por PREFIJO: el demo rota de lote cuando el anterior quedo liberado.
+        for q in ("DELETE FROM envasado WHERE lote LIKE 'DEMO-PLANTA%'",
+                  "DELETE FROM acondicionamiento WHERE lote LIKE 'DEMO-PLANTA%'"):
             try:
                 cn.execute(q)
             except Exception:

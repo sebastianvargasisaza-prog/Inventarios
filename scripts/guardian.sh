@@ -776,6 +776,7 @@ CORAZON=(
   "tests/test_cron_hora_colombia.py"
   "tests/test_reporte_semanal_llega_solo.py"
   "tests/test_acond_lista_dice_sus_unidades.py"
+  "tests/test_liberar_crea_stock_vendible.py"
   # UN lote atravesando las TRES fases en orden. Hay E2E de cada fase por separado, pero lo que
   # vive ENTRE ellas no lo ejercia nadie -- y ahi estaban los tres bugs del 17-ago: el cierre no
   # veia las unidades que registro la planta, el enlace al paso siguiente volvia vacio en el caso

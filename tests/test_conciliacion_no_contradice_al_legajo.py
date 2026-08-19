@@ -45,7 +45,10 @@ def _sin_envasado_previo():
     las unidades puestas y el test pasaría sin haber caminado nada (M152)."""
     cn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
     try:
-        cn.execute("DELETE FROM envasado WHERE lote=?", (LOTE,))
+        # El demo rota de lote cuando el anterior quedo LIBERADO (inmutable · Part 11),
+        # asi que limpiar por el nombre fijo dejaria las filas de la corrida anterior
+        # y el test mediria eso en vez del flujo. Se limpia por PREFIJO.
+        cn.execute("DELETE FROM envasado WHERE lote LIKE 'DEMO-PLANTA%'")
         cn.commit()
     finally:
         cn.close()

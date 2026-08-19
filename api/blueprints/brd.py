@@ -4929,6 +4929,156 @@ def completar_paso_ebr(ebr_id, orden):
     return jsonify({"ok": True, "estado": "completado"})
 
 
+def _norm_pres(t):
+    """Normaliza una etiqueta de presentacion para compararla ('30 ml' == '30ML')."""
+    import re as _re
+    import unicodedata as _ud
+    t = _ud.normalize('NFKD', str(t or '')).encode('ascii', 'ignore').decode('ascii')
+    return _re.sub(r'[^A-Z0-9]+', '', t.upper())
+
+
+def unidades_pt_del_lote(cur, ebr_id, lote_ref, producto=''):
+    """Las unidades de producto terminado que la planta REGISTRO, resueltas a SKU.
+
+    Se lee lo REGISTRADO, nunca lo planeado: crear stock vendible contra un plan
+    daria unidades que nadie envaso (M230), y eso se despacha.
+
+    El SKU sale, en este orden, de lo mas especifico a lo mas general:
+      1. el que se cargo en el registro de acondicionamiento;
+      2. el de la presentacion del producto, y SOLO si es inequivoco.
+    Lo que no cruza se DECLARA (`sin_sku` / `sku_ambiguo`), nunca se le imputa a un
+    SKU parecido: un lote entrando al stock del producto equivocado no da ningun
+    error, se vende (M19/M137).
+    """
+    filas = []
+    try:
+        for r in cur.execute(
+            "SELECT COALESCE(presentacion,''), COALESCE(sku,''), "
+            "       SUM(COALESCE(unidades_producidas,0)), MAX(COALESCE(precio_base,0)) "
+            "  FROM acondicionamiento WHERE lote=? "
+            " GROUP BY COALESCE(presentacion,''), COALESCE(sku,'')",
+                (lote_ref,)).fetchall():
+            if int(r[2] or 0) > 0:
+                filas.append({'presentacion': r[0], 'sku': (r[1] or '').strip(),
+                              'unidades': int(r[2] or 0), 'precio_base': float(r[3] or 0),
+                              'origen': 'acondicionamiento'})
+    except Exception as _e:
+        log.warning('unidades_pt_del_lote · acondicionamiento fallo: %s', _e)
+
+    if not filas:
+        # Un lote que cierra en ENVASADO (sin fase de acondicionamiento) registra sus
+        # unidades en el propio legajo.
+        try:
+            for r in cur.execute(
+                "SELECT COALESCE(NULLIF(etiqueta,''), presentacion_codigo, ''), "
+                "       SUM(COALESCE(unidades,0)) FROM ebr_envasado_unidades "
+                " WHERE ebr_id=? GROUP BY COALESCE(NULLIF(etiqueta,''), presentacion_codigo, '')",
+                    (ebr_id,)).fetchall():
+                if int(r[1] or 0) > 0:
+                    filas.append({'presentacion': r[0], 'sku': '',
+                                  'unidades': int(r[1] or 0), 'precio_base': 0.0,
+                                  'origen': 'envasado'})
+        except Exception as _e:
+            log.warning('unidades_pt_del_lote · envasado fallo: %s', _e)
+
+    # Presentaciones del producto, para resolver el SKU de lo que no lo trae.
+    pres = []
+    if producto:
+        try:
+            pres = cur.execute(
+                "SELECT COALESCE(sku_shopify,''), COALESCE(etiqueta,''), "
+                "       COALESCE(presentacion_codigo,''), COALESCE(volumen_ml,0) "
+                "  FROM producto_presentaciones "
+                " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+                "   AND COALESCE(activo,1)=1", (producto,)).fetchall()
+        except Exception as _e:
+            log.warning('unidades_pt_del_lote · presentaciones fallo: %s', _e)
+
+    for f in filas:
+        if f['sku']:
+            f['sku_origen'] = 'registro'
+            continue
+        clave = _norm_pres(f['presentacion'])
+        cand = [p for p in pres if (p[0] or '').strip()
+                and clave and clave in (_norm_pres(p[1]), _norm_pres(p[2]))]
+        if len(cand) == 1:
+            f['sku'] = (cand[0][0] or '').strip()
+            f['sku_origen'] = 'presentacion'
+        elif len(cand) > 1:
+            f['sku_origen'] = 'sku_ambiguo'
+        else:
+            f['sku_origen'] = 'sin_sku'
+    return filas
+
+
+def _cantidad_del_cierre(cur, ebr, unidades_body=0.0):
+    """Los gramos con los que se cierra el lote · (cantidad, origen).
+
+    El ACONDICIONAMIENTO se mide en UNIDADES -- etiqueta, tapa, estuche --, no en
+    gramos: pedirle gramos a esa fase es pedirle la magnitud de otra (M205/M214), y
+    encima el boton prometia *"(g, opcional · Enter para usar el objetivo)"* mientras
+    el endpoint cortaba con 400 SIEMPRE, asi que darle Enter daba error (M233 · el
+    campo anuncia lo contrario de lo que el guard exige).
+
+    El orden va de lo mas cierto a lo mas supuesto: lo que el operario escribio, lo
+    que la planta REGISTRO, y recien al final el objetivo del legajo. Lo REGISTRADO
+    nunca cae a lo PLANEADO sin decirlo, porque el rendimiento sale de este numero y
+    es lo que se mira en una auditoria (M230).
+    """
+    fase = (ebr['fase'] or 'fabricacion') if ebr else 'fabricacion'
+    lote = ((ebr['lote'] or '') if ebr else '')
+    objetivo = float((ebr['cantidad_objetivo_g'] or 0) if ebr else 0)
+
+    if fase == 'acondicionamiento' and lote:
+        try:
+            r = cur.execute(
+                "SELECT COALESCE(SUM(cantidad_batch_g),0), COALESCE(SUM(unidades_producidas),0) "
+                "  FROM acondicionamiento WHERE lote=?", (lote,)).fetchone()
+            g_reg, u_reg = float(r[0] or 0), float(r[1] or 0)
+        except Exception as _e:
+            log.warning('_cantidad_del_cierre · acondicionamiento fallo: %s', _e)
+            g_reg = u_reg = 0.0
+        if unidades_body > 0:
+            if u_reg > 0 and g_reg > 0:
+                # El operario corrige las unidades al cerrar: los gramos se re-escalan
+                # con el factor REAL del lote, no con uno de catalogo.
+                return round(g_reg / u_reg * unidades_body, 2), 'unidades'
+            return 0.0, 'sin_factor'
+        if g_reg > 0:
+            return g_reg, 'registrado'
+
+    if unidades_body > 0:
+        return 0.0, 'sin_factor'
+    if objetivo > 0:
+        return objetivo, 'objetivo'
+    return 0.0, 'sin_dato'
+
+
+_FASE_ORDEN_LOTE = {'fabricacion': 1, 'envasado': 2, 'acondicionamiento': 3}
+
+
+def _hay_fase_posterior_lote(cur, ebr_id, lote_ref, fase):
+    """True si al lote fisico le queda una fase DESPUES de esta.
+
+    Es la regla que decide cual legajo es el CIERRE del lote, y por lo tanto quien
+    crea el producto terminado. Vive en un solo sitio porque la usan dos actos
+    distintos -- completar (nace el PT en cuarentena) y liberar (el PT se vuelve
+    vendible) -- y si divergieran, un lote podria crear stock en una fase y
+    promoverlo en otra (M3).
+    """
+    lote_ref = (lote_ref or '').strip()
+    if not lote_ref:
+        return False
+    _actual = _FASE_ORDEN_LOTE.get(fase or 'fabricacion', 1)
+    for _r in cur.execute(
+        "SELECT DISTINCT COALESCE(fase,'fabricacion') FROM ebr_ejecuciones "
+        "WHERE COALESCE(NULLIF(lote_codigo,''), lote) = ? AND id != ?",
+            (lote_ref, ebr_id)).fetchall():
+        if _FASE_ORDEN_LOTE.get(_r[0], 1) > _actual:
+            return True
+    return False
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/completar", methods=["POST"])
 def completar_ebr(ebr_id):
     err = _require_brd_ejecutor()
@@ -4939,8 +5089,10 @@ def completar_ebr(ebr_id):
         cantidad_real = float(body.get("cantidad_real_g") or 0)
     except (ValueError, TypeError):
         return jsonify({"error": "cantidad_real_g inválida"}), 400
-    if cantidad_real <= 0:
-        return jsonify({"error": "cantidad_real_g debe ser > 0"}), 400
+    try:
+        _uds_cierre = float(body.get("unidades") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "unidades inválida"}), 400
 
     conn = get_db()
     cur = conn.cursor()
@@ -4954,6 +5106,19 @@ def completar_ebr(ebr_id):
         return jsonify({"error": "EBR no encontrado"}), 404
     if ebr["estado"] not in ("iniciado", "en_proceso"):
         return jsonify({"error": f"EBR no completable (estado: {ebr['estado']})"}), 409
+    # La cantidad del cierre se resuelve CON la fase a la vista: acondicionamiento
+    # cierra por unidades y fabricación/envasado por gramos (ver _cantidad_del_cierre).
+    _origen_cant = 'body'
+    if cantidad_real <= 0:
+        cantidad_real, _origen_cant = _cantidad_del_cierre(cur, ebr, _uds_cierre)
+    if cantidad_real <= 0:
+        return jsonify({
+            "error": ("no puedo pasar las unidades a gramos: este lote todavía no tiene "
+                      "acondicionamiento registrado · registrá las unidades o escribí la "
+                      "cantidad real" if _origen_cant == 'sin_factor' else
+                      "no hay cantidad para cerrar el lote: registrá las unidades "
+                      "acondicionadas o escribí la cantidad real"),
+            "codigo": "SIN_CANTIDAD"}), 400
     # DEMO (Sebastián 20-jul): un lote DEMO (lote 'DEMO-...') se puede TERMINAR sin todos los
     # pasos/IPCs completos (es un sandbox para caminar el flujo). Los lotes reales exigen TODO (GMP).
     _es_demo = es_lote_demo(ebr["lote"] or "")
@@ -5103,17 +5268,8 @@ def completar_ebr(ebr_id):
         # para el mismo lote fisico, esta fase NO crea el PT (lo creara la final) ->
         # evita 2-3 Entradas PT del mismo lote (una por OP/OF/OA · M10/M3).
         lote_ref = (ebr_full.get('lote_codigo') or ebr_full.get('lote') or '').strip()
-        _FASE_ORDEN = {'fabricacion': 1, 'envasado': 2, 'acondicionamiento': 3}
-        _orden_actual = _FASE_ORDEN.get(ebr['fase'] or 'fabricacion', 1)
-        _hay_fase_posterior = False
-        if lote_ref:
-            for _r in cur.execute(
-                "SELECT DISTINCT COALESCE(fase,'fabricacion') FROM ebr_ejecuciones "
-                "WHERE COALESCE(NULLIF(lote_codigo,''), lote) = ? AND id != ?",
-                (lote_ref, ebr_id)).fetchall():
-                if _FASE_ORDEN.get(_r[0], 1) > _orden_actual:
-                    _hay_fase_posterior = True
-                    break
+        _hay_fase_posterior = _hay_fase_posterior_lote(
+            cur, ebr_id, lote_ref, ebr['fase'])
         if lote_ref and cantidad_real and cantidad_real > 0 and not _hay_fase_posterior:
             # Buscar producto del producción para material_id (puede ser PT)
             prod_row = cur.execute(
@@ -5684,6 +5840,53 @@ def liberar_ebr(ebr_id):
     except Exception as _e:
         import logging as _log
         _log.getLogger('inventario.brd').warning('liberar_ebr promocion PT fallo: %s', _e)
+
+    # ── El lote LIBERADO se vuelve VENDIBLE (18-ago-2026) ─────────────────────────
+    # MyBatch termina en "lote liberado" porque es un EBR y no vende. EOS SI vende, y
+    # hasta hoy el batch record dejaba el producto terminado en el kardex mientras
+    # `stock_pt` -el stock por SKU que alimenta despachos y el cruce con Shopify- lo
+    # tenia que volver a teclear alguien por la pantalla de Liberaciones. Un lote
+    # liberado que no se puede despachar se ve, desde afuera, igual que uno sin liberar.
+    # La firma del Director Tecnico es el acto que dice "este producto puede salir":
+    # crear el stock ahi no es un permiso nuevo, es su consecuencia.
+    pt_stock = {'creado': [], 'ya_estaba': [], 'sin_resolver': []}
+    try:
+        _row = cur.execute(
+            "SELECT COALESCE(e.lote_codigo, e.lote, ''), COALESCE(e.fase,'fabricacion'), "
+            "       COALESCE(m.producto_nombre,'') FROM ebr_ejecuciones e "
+            "  LEFT JOIN mbr_templates m ON m.id = e.mbr_template_id WHERE e.id=?",
+            (ebr_id,)).fetchone()
+        _lote_pt = ((_row[0] or '').strip() if _row else '')
+        _fase_pt = ((_row[1] or 'fabricacion') if _row else 'fabricacion')
+        _prod_pt = ((_row[2] or '') if _row else '')
+        # SOLO el legajo que CIERRA el lote crea producto terminado. Si al lote todavia
+        # le queda envasado o acondicionamiento, lo vendible lo crea esa fase: crearlo
+        # acá seria vender un granel.
+        if _lote_pt and not _hay_fase_posterior_lote(cur, ebr_id, _lote_pt, _fase_pt):
+            try:
+                from blueprints.inventario import crear_stock_pt as _crear_pt
+            except ImportError:
+                from api.blueprints.inventario import crear_stock_pt as _crear_pt
+            for _f in unidades_pt_del_lote(cur, ebr_id, _lote_pt, _prod_pt):
+                _r = _crear_pt(
+                    cur, sku=_f['sku'], descripcion=_prod_pt, lote=_lote_pt,
+                    unidades=_f['unidades'], precio_base=_f['precio_base'],
+                    marca='[ebr#%d]' % ebr_id,
+                    observaciones='Liberado por %s · %s' % (user, _f['presentacion'] or ''))
+                _fila = {'sku': _f['sku'], 'presentacion': _f['presentacion'],
+                         'unidades': _f['unidades'], 'sku_origen': _f.get('sku_origen', '')}
+                if _r['creado']:
+                    pt_stock['creado'].append(_fila)
+                elif _r['motivo'] == 'ya_existe':
+                    pt_stock['ya_estaba'].append(_fila)
+                else:
+                    # Se DECLARA lo que no pudo entrar al stock y por que. Callarlo
+                    # dejaria un lote liberado y sin poder despachar, sin una sola
+                    # senal de por que (M124).
+                    _fila['motivo'] = _r['motivo']
+                    pt_stock['sin_resolver'].append(_fila)
+    except Exception as _e:
+        log.warning('liberar_ebr · stock vendible fallo: %s', _e)
     # Expediente por lote (INVIMA · zero-paper): inscribir el BATCH RECORD (EBR liberado) en el registro central
     try:
         _einfo = cur.execute("SELECT COALESCE(e.numero_op,''), COALESCE(m.producto_nombre,''), "
@@ -5702,6 +5905,7 @@ def liberar_ebr(ebr_id):
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"liberado_por": user, "signature_id": signature_id,
                        "pt_lotes_promovidos": pt_lote_promovidos,
+                       "stock_pt": pt_stock,
                        "yield_pct": _yp,
                        "yield_justificacion": _yjust or None,
                        # Con el control apagado esto es lo único que queda: que se sepa
@@ -5734,6 +5938,7 @@ def liberar_ebr(ebr_id):
             'auto-crear EBR envasado al liberar fallo (no bloquea): %s', _e2)
     return jsonify({"ok": True, "estado": "liberado",
                     "pt_lotes_promovidos": pt_lote_promovidos,
+                    "stock_pt": pt_stock,
                     "envasado_ebr_id": _envasado_habilitado})
 
 
@@ -9469,6 +9674,37 @@ def cerrar_acondicionamiento_ebr(ebr_id):
 # ── DEMO de planta (27-jun · Sebastián) · seeder one-click para ver el flujo fabricación→envasado ─────────
 _DEMO_PLANTA_PROD = "DEMO PLANTA (BORRAR)"
 _DEMO_PLANTA_LOTE = "DEMO-PLANTA-1"
+
+
+def _lote_demo_utilizable(cur, base=_DEMO_PLANTA_LOTE, maximo=60):
+    """El lote con el que el demo SI se puede volver a caminar.
+
+    Un legajo liberado o rechazado es INMUTABLE (Part 11 · mig 111). El demo intentaba
+    revivirlo con un UPDATE y el trigger lo tumba, asi que el boton contestaba
+    **500 "EBR liberado/rechazado es inmutable"** -- y justo DESPUES de caminar el flujo
+    entero, que es cuando el demo mas se usa (M229: un demo que se camina una sola vez
+    no sirve para nada).
+
+    La salida no es forzar el UPDATE: reescribir un registro firmado es exactamente lo
+    que ese trigger existe para impedir. Cada corrida se lleva SU lote, que ademas es
+    como funciona en la planta -- un lote se libera una vez y el siguiente es otro.
+    """
+    import re as _re
+    m = _re.match(r'^(.*?)(\d+)$', base or '')
+    raiz, n0 = (m.group(1), int(m.group(2))) if m else ((base or '') + '-', 1)
+    for i in range(n0, n0 + maximo):
+        lote = '%s%d' % (raiz, i)
+        try:
+            usado = cur.execute(
+                "SELECT 1 FROM ebr_ejecuciones "
+                " WHERE COALESCE(NULLIF(lote_codigo,''), lote)=? "
+                "   AND LOWER(COALESCE(estado,'')) IN ('liberado','rechazado') LIMIT 1",
+                (lote,)).fetchone()
+        except Exception:
+            return lote
+        if not usado:
+            return lote
+    return '%s%d' % (raiz, n0 + maximo)
 # Lote de la materia prima que el demo siembra en bodega · prefijo DEMO- para poder retirarlo
 # entero y para que se distinga a simple vista de un lote real en el kardex.
 _DEMO_MP_LOTE = "DEMO-MP-1"
@@ -9488,6 +9724,9 @@ def crear_planta_demo():
     user = session.get("compras_user", "")
     PROD, LOTE = _DEMO_PLANTA_PROD, _DEMO_PLANTA_LOTE
     conn = get_db(); cur = conn.cursor()
+    # Si el demo anterior se camino hasta LIBERAR, su legajo quedo inmutable: el
+    # siguiente arranca en un lote nuevo en vez de reventar contra el trigger.
+    LOTE = _lote_demo_utilizable(cur, LOTE)
     try:
         for c_, n_ in (("MP-DEMO1", "Demo Base"), ("MP-DEMO2", "Demo Activo")):
             cur.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES (?,?,1)", (c_, n_))
@@ -9641,7 +9880,7 @@ def crear_planta_demo():
                     "                             observaciones) "
                     "VALUES (?, 'Entrada', 2000, ?, ?, ?, datetime('now','utc'), 'VIGENTE', "
                     "        'Stock sembrado por el demo de planta')",
-                    (_cm, _DEMO_PLANTA_LOTE, _DEMO_PLANTA_LOTE, user))
+                    (_cm, LOTE, LOTE, user))
                 cur.execute(
                     "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + 2000 "
                     " WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (_cm,))
@@ -9741,8 +9980,9 @@ que usa la planta</b>, as&iacute; que lo que ves es lo que ver&iacute;a un opera
 <div class="card">
   <div class="paso">Paso 1 &middot; el lote</div>
   <h2>Crear el lote y sus tres legajos</h2>
-  <p class="sub">Producto "DEMO PLANTA (BORRAR)" &middot; lote DEMO-PLANTA-1, con materia prima en
-  bodega, las cuatro piezas del empaque y un instructivo con pasos por fase.</p>
+  <p class="sub">Producto "DEMO PLANTA (BORRAR)" &middot; un lote DEMO-PLANTA nuevo por cada
+  corrida, con materia prima en bodega, las cuatro piezas del empaque y un instructivo
+  con pasos por fase. El n&uacute;mero exacto aparece ac&aacute; abajo al crearlo.</p>
   <button id="b1" onclick="crear()">Crear el lote demo</button>
   <div class="ok" id="ok1"></div>
 </div>
@@ -13146,10 +13386,13 @@ async function regenerarMBR(){
   }catch(e){alert('Error: '+(e.message||e));}
 }
 async function terminarLote(){
-  var cant=prompt('Terminar el acondicionamiento · cantidad real (g, opcional · Enter para usar el objetivo):');
+  // El acondicionamiento se mide en UNIDADES (etiqueta, tapa, estuche), no en
+  // gramos: pedirle gramos a esta fase es pedirle la magnitud de otra. Los
+  // gramos los deriva el servidor del acondicionamiento REGISTRADO.
+  var cant=prompt('Terminar el acondicionamiento · unidades acondicionadas (Enter para usar las ya registradas):');
   if(cant===null)return;
   var body={};
-  if(String(cant).trim()!==''){var n=parseFloat(cant);if(n>0)body.cantidad_real_g=n;}
+  if(String(cant).trim()!==''){var n=parseFloat(cant);if(n>0)body.unidades=n;}
   try{
     var r=await fetch('/api/brd/ebr/'+EBR_ID+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
     var d=await r.json();

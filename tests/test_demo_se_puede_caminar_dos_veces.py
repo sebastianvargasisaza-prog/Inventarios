@@ -189,3 +189,41 @@ def test_la_pagina_del_demo_DICE_por_que_fallo(app):
     # y los tres pasos tienen que usarlo: si uno se queda con `d.error` pelado, ese vuelve a ser mudo
     mudos = re.findall(r"pinta\('ok\d',\s*r\.d\.error", js)
     assert not mudos, "hay pasos que siguen mostrando sólo el titular: %s" % mudos
+
+
+def test_el_demo_sigue_sirviendo_DESPUES_de_liberar_el_lote(app, db_clean):
+    """Caminarlo hasta el final es justo lo que rompía el botón.
+
+    Un legajo liberado es INMUTABLE (Part 11 · mig 111) y el demo intentaba revivirlo
+    con un `UPDATE ... SET estado='iniciado'`: el trigger lo tumba y el botón contestaba
+    **500 "EBR liberado/rechazado es inmutable"** -- o sea que el demo se podía caminar
+    ENTERO una sola vez, y el 500 aparecía en el paso donde uno acaba de ver que todo
+    funcionó (M229, ahora en el último eslabón).
+
+    El arreglo no fuerza el UPDATE -reescribir un registro firmado es lo que ese trigger
+    existe para impedir- sino que cada corrida se lleva SU lote, como en la planta.
+    """
+    cli = _login(app)
+    h = _h()
+
+    d1 = cli.post("/api/admin/planta-demo/crear", json={}, headers=h).get_json() or {}
+    assert d1.get("lote"), d1
+    oa = d1["acondicionamiento_ebr"]
+    cam = d1.get("caminar") or {}
+    cli.post("/api/acondicionamiento", headers=h, json={
+        "lote": d1["lote"], "producto": d1["producto"],
+        "presentacion": cam.get("presentacion"), "batch_g": cam.get("batch_g"),
+        "unidades": cam.get("unidades")})
+    cli.post("/api/brd/ebr/%d/completar" % oa, json={"cantidad_real_g": 900}, headers=h)
+    r = cli.post("/api/brd/ebr/%d/liberar" % oa, json={}, headers=h)
+    assert r.status_code == 200, r.get_data(as_text=True)[:200]
+
+    r2 = cli.post("/api/admin/planta-demo/crear", json={}, headers=h)
+    assert r2.status_code == 200, (
+        "tras caminar el demo hasta liberar, volver a crearlo revienta: el demo sólo "
+        "se puede caminar entero UNA vez", r2.get_data(as_text=True)[:200])
+    d2 = r2.get_json() or {}
+    assert d2.get("lote") and d2["lote"] != d1["lote"], (
+        "el segundo demo reusa el lote ya liberado: o revienta contra el trigger, o "
+        "estaría escribiendo sobre un registro firmado", d1.get("lote"), d2.get("lote"))
+    assert d2.get("acondicionamiento_ebr"), d2

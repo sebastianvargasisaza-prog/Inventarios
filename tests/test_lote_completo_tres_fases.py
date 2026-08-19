@@ -59,14 +59,16 @@ def _salidas_por_codigo():
 def _limpiar():
     """Registrar un envasado NO es idempotente: una corrida anterior dejaría el lote ya
     caminado y este test pasaría sin haber recorrido nada (M152/M103 · limpiar ANTES)."""
-    _sql("DELETE FROM envasado WHERE lote=?", (LOTE,))
-    _sql("DELETE FROM acondicionamiento WHERE lote=?", (LOTE,))
+    # Por PREFIJO · el demo rota de lote cuando el anterior quedo LIBERADO (inmutable).
+    _sql("DELETE FROM envasado WHERE lote LIKE 'DEMO-PLANTA%'")
+    _sql("DELETE FROM acondicionamiento WHERE lote LIKE 'DEMO-PLANTA%'")
     _sql("DELETE FROM movimientos_mee WHERE mee_codigo IN (?,?,?,?)", MEE)
     # `crear_planta_demo` REUSA los legajos, así que uno cerrado por el caso anterior devuelve
     # 409 YA_CERRADO y el caso siguiente mediría el rechazo en vez del flujo (M102).
     _sql("UPDATE ebr_ejecuciones SET estado='iniciado', envases_descontados_at=NULL, "
          "       completado_at_utc=NULL "
-         " WHERE COALESCE(NULLIF(lote_codigo,''), lote)=? AND estado<>'liberado'", (LOTE,))
+         " WHERE COALESCE(NULLIF(lote_codigo,''), lote) LIKE 'DEMO-PLANTA%' "
+         "   AND estado<>'liberado'")
 
 
 def test_un_lote_recorre_las_tres_fases_y_el_inventario_cuadra(app, db_clean):
@@ -77,6 +79,7 @@ def test_un_lote_recorre_las_tres_fases_y_el_inventario_cuadra(app, db_clean):
     d = cli.post("/api/admin/planta-demo/crear", json={}, headers=_h()).get_json()
     assert d.get("ok"), d
     cam = d["caminar"]
+    LOTE = d["lote"]   # el lote que el demo DEVUELVE, no una constante (M216)
     op, of, oa = d["fabricacion_ebr"], d["envasado_ebr"], d["acondicionamiento_ebr"]
 
     fases = cli.get("/api/brd/lote/%s/fases" % LOTE).get_json() or {}
@@ -140,6 +143,7 @@ def test_cerrar_el_envasado_habilita_el_acondicionamiento(app, db_clean):
     cli = _login(app)
     d = cli.post("/api/admin/planta-demo/crear", json={}, headers=_h()).get_json()
     cam = d["caminar"]
+    LOTE = d["lote"]   # el lote que el demo DEVUELVE, no una constante (M216)
 
     # Primero se REGISTRA lo envasado y después se cierra: cerrar sin unidades devuelve 400 con
     # el motivo, y eso es correcto -- no se cierra un envasado que nadie registró.
@@ -175,6 +179,7 @@ def test_registrar_y_CERRAR_el_envasado_no_descuenta_dos_veces(app, db_clean):
     cli = _login(app)
     d = cli.post("/api/admin/planta-demo/crear", json={}, headers=_h()).get_json()
     cam = d["caminar"]
+    LOTE = d["lote"]   # el lote que el demo DEVUELVE, no una constante (M216)
 
     r = cli.post("/api/envasado", headers=_h(), json={
         "lote": LOTE, "producto": d["producto"], "presentacion": cam["presentacion"],
@@ -209,6 +214,7 @@ def test_el_cierre_que_SI_descuenta_tambien_habilita_el_acondicionamiento(app, d
     cli = _login(app)
     d = cli.post("/api/admin/planta-demo/crear", json={}, headers=_h()).get_json()
     cam = d["caminar"]
+    LOTE = d["lote"]   # el lote que el demo DEVUELVE, no una constante (M216)
     of = d["envasado_ebr"]
 
     r = cli.post("/api/brd/ebr/%d/registrar-unidades" % of, headers=_h(),

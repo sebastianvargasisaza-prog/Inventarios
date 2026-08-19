@@ -18107,6 +18107,62 @@ def liberacion_list():
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
     return jsonify(rows)
 
+def crear_stock_pt(c, *, sku, descripcion, lote, unidades, precio_base=0.0,
+                   marca='', observaciones='', fecha='', empresa='ANIMUS'):
+    """UN solo punto de escritura de `stock_pt` desde una liberacion (M3).
+
+    Lo usan las DOS puertas por las que un lote se vuelve vendible: la pantalla de
+    Liberaciones y la firma del Director Tecnico en el legajo de acondicionamiento.
+    Dos copias de este INSERT divergirian el dia que alguien toque una, y entonces
+    el mismo lote entraria al stock con reglas distintas segun por donde se libero.
+
+    La idempotencia se ancla al ACTO (`marca`, ej. '[lib#12]' o '[ebr#345]'), NO al
+    par (sku, lote): dos liberaciones PARCIALES legitimas del mismo lote y el mismo
+    SKU son dos filas correctas, y colapsarlas perderia unidades EN SILENCIO --
+    peor que duplicarlas, porque no se ve (M134/M80).
+
+    Devuelve un dict que DECLARA lo que hizo y por que; nunca adivina un SKU.
+    """
+    sku = (sku or '').strip()
+    lote = (lote or '').strip()
+    try:
+        uds = int(float(unidades or 0))
+    except (TypeError, ValueError):
+        uds = 0
+    if not sku:
+        return {'creado': False, 'motivo': 'sin_sku', 'sku': '', 'lote': lote,
+                'unidades': uds}
+    if uds <= 0:
+        return {'creado': False, 'motivo': 'sin_unidades', 'sku': sku, 'lote': lote,
+                'unidades': uds}
+
+    marca = (marca or '').strip()
+    if marca:
+        # Anclado al token completo: un LIKE suelto sobre un id corto matchea por
+        # substring ('[lib#1]' dentro de '[lib#12]') y saltaria una fila legitima.
+        ya = c.execute(
+            "SELECT id FROM stock_pt WHERE sku=? AND lote_produccion=? "
+            "AND COALESCE(observaciones,'') LIKE ?",
+            (sku, lote, '%' + marca + '%')).fetchone()
+        if ya:
+            return {'creado': False, 'motivo': 'ya_existe', 'sku': sku, 'lote': lote,
+                    'unidades': uds, 'id': (ya['id'] if hasattr(ya, 'keys') else ya[0])}
+
+    if not fecha:
+        fecha = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d')
+    obs = ((observaciones or '').strip() + (' ' + marca if marca else '')).strip()
+    c.execute(
+        """INSERT INTO stock_pt
+             (sku, descripcion, lote_produccion, fecha_produccion,
+              unidades_inicial, unidades_disponible, precio_base,
+              empresa, estado, observaciones)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (sku, (descripcion or '')[:200], lote, fecha, uds, uds,
+         float(precio_base or 0), empresa, 'Disponible', obs))
+    return {'creado': True, 'motivo': 'creado', 'sku': sku, 'lote': lote,
+            'unidades': uds, 'id': c.lastrowid}
+
+
 @bp.route('/api/liberacion/<int:lid>', methods=['PATCH'])
 def liberacion_update(lid):
     """Aprueba/rechaza liberación de PT · DECISIÓN INVIMA art. 10.
@@ -18125,6 +18181,7 @@ def liberacion_update(lid):
     if estado == 'Rechazado' and len(obs) < 10:
         return jsonify({'error': 'observaciones (≥10 chars) requeridas para rechazar liberación'}), 400
     conn = get_db(); c = conn.cursor()
+    _res_pt = None
     antes_row = c.execute(
         "SELECT lote, producto, unidades, sku, estado FROM liberaciones WHERE id=?",
         (lid,)).fetchone()
@@ -18132,23 +18189,34 @@ def liberacion_update(lid):
         return jsonify({'error': 'Liberación no encontrada'}), 404
     antes = dict(antes_row)
     if estado == 'Liberado':
-        c.execute("UPDATE liberaciones SET estado='Liberado', fecha_liberacion=?, aprobado_por=?, cliente=? WHERE id=?",
-                  (datetime.now().strftime('%Y-%m-%d'), u, d.get('cliente', ''), lid))
-        # Auto-crear entrada en stock_pt al liberar
-        c.execute("SELECT lote, producto, unidades, sku, precio_base, presentacion FROM liberaciones WHERE id=?", (lid,))
+        # CAS (M27/M160) · sin la condicion de estado esto iba `WHERE id=?` a secas, y se
+        # reprodujo el 18-ago: TRES clics en "Liberar" creaban TRES filas de stock
+        # vendible del mismo lote (90 unidades donde hay 30), y un lote RECHAZADO por
+        # Calidad se volvia a liberar con un clic sumando otra vez. Un stock que no
+        # existe no da ningun sintoma: se vende y despues falta.
+        _hoy_col = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d')
+        c.execute("UPDATE liberaciones SET estado='Liberado', fecha_liberacion=?, "
+                  "aprobado_por=?, cliente=? "
+                  "WHERE id=? AND COALESCE(estado,'') NOT IN ('Liberado','Rechazado')",
+                  (_hoy_col, u, d.get('cliente', ''), lid))
+        if c.rowcount == 0:
+            conn.rollback()
+            _est = antes.get('estado') or ''
+            return jsonify({
+                'error': ('Este lote ya estaba liberado' if _est == 'Liberado' else
+                          'Calidad RECHAZO este lote: no se re-libera con un clic · '
+                          'hace falta registrar el reanalisis'),
+                'codigo': 'LIBERACION_YA_DECIDIDA', 'estado_actual': _est}), 409
+        # El stock vendible lo crea el helper canonico, no un INSERT propio: la otra
+        # puerta (la firma del DT en el legajo) escribe por el MISMO camino (M3).
+        c.execute("SELECT lote, producto, unidades, sku, precio_base, presentacion "
+                  "FROM liberaciones WHERE id=?", (lid,))
         lib = c.fetchone()
-        if lib and lib[3]:  # sku presente
-            lote_lib, prod_lib, uds_lib, sku_lib, precio_lib, pres_lib = lib
-            fecha_lib = datetime.now().strftime('%Y-%m-%d')
-            c.execute("""INSERT INTO stock_pt
-                         (sku, descripcion, lote_produccion, fecha_produccion,
-                          unidades_inicial, unidades_disponible, precio_base,
-                          empresa, estado, observaciones)
-                         VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                      (sku_lib, prod_lib, lote_lib, fecha_lib,
-                       uds_lib, uds_lib, precio_lib,
-                       'ANIMUS', 'Disponible',
-                       f'Liberacion aprobada por {u} · {pres_lib}'))
+        if lib:
+            _res_pt = crear_stock_pt(
+                c, sku=lib[3], descripcion=lib[1], lote=lib[0], unidades=lib[2],
+                precio_base=lib[4], marca='[lib#%d]' % lid, fecha=_hoy_col,
+                observaciones='Liberacion aprobada por %s · %s' % (u, lib[5] or ''))
         # Registrar en calidad como BPM completado
         try:
             _lib_val = lib[1] if lib else 'PT'
@@ -18171,7 +18239,10 @@ def liberacion_update(lid):
     audit_log(c, usuario=u, accion=accion, tabla='liberaciones',
               registro_id=lid, antes=antes,
               despues={'estado': estado, 'aprobado_por': u, 'observaciones': obs,
-                       'cliente': d.get('cliente', '')},
+                       'cliente': d.get('cliente', ''),
+                       # Que quede en el rastro si el lote llego o NO al stock vendible:
+                       # un 'liberado' sin stock se ve igual que uno con stock (M124).
+                       'stock_pt': (_res_pt if estado == 'Liberado' else None)},
               detalle=f"{accion} lote {antes.get('lote','·')} ({antes.get('producto','')})"
                       + (f" · {obs}" if obs else ""))
     conn.commit()
