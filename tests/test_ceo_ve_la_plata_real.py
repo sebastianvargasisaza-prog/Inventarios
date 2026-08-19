@@ -201,3 +201,51 @@ def test_una_orden_ya_AUTORIZADA_no_vuelve_a_pedir_firma(app, db_clean):
         assert 'ZCEO-OC-3' not in nums, ("pide firmar una orden ya pagada", nums[:5])
     finally:
         _limpiar_oc()
+
+
+# ── El mismo hecho, contado UNA sola vez ────────────────────────────────────────
+
+def test_el_CEO_y_PLANTA_cuentan_igual_las_MP_bajo_minimo(app, db_clean):
+    """Dos números del mismo hecho, y el del CEO era el optimista.
+
+    El panel del CEO usaba el CASE canónico pero SIN excluir los estados, así que sumaba
+    como disponible lo que está en CUARENTENA y lo VENCIDO. En producción decía **40**
+    donde Planta decía **60**: 54 lotes en cuarentena y 23 vencidos alcanzan de sobra para
+    explicar la diferencia, y el que decidía miraba el número que no dolía (M161 · el
+    tablero del CEO no calcula nada propio; regla #4 · el stock disponible excluye los
+    seis estados).
+    """
+    COD = 'ZDISP01'
+    cn = _cn()
+    try:
+        cn.execute("DELETE FROM movimientos WHERE material_id=?", (COD,))
+        cn.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (COD,))
+        cn.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, activo, stock_minimo) "
+                   "VALUES (?,?,1,1000)", (COD, 'ZDISP INCI'))
+        # TODO su stock está en CUARENTENA: no es material usable, así que esta MP SÍ está
+        # bajo el mínimo · contarlo como disponible la esconde.
+        cn.execute("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, "
+                   "lote, fecha, estado_lote, operador) VALUES (?,?,'Entrada',9000,'ZDISP-L1',"
+                   "date('now','-5 hours'),'CUARENTENA','guard')", (COD, 'ZDISP INCI'))
+        cn.commit()
+    finally:
+        cn.close()
+    try:
+        cli = _cli(app)
+        ceo = ((cli.get('/api/gerencia/kpis').get_json() or {})
+               .get('espagiria') or {}).get('mps_bajo_minimo')
+        planta = (((cli.get('/api/inventario').get_json() or {})
+                   .get('kpis') or {}).get('ahora') or {}).get('mps_bajo_minimo')
+        assert ceo is not None and planta is not None, (ceo, planta)
+        assert int(ceo) == int(planta), (
+            "el CEO y Planta cuentan distinto las materias primas bajo el mínimo · el "
+            "panel del CEO está contando como disponible lo que está en cuarentena o "
+            "vencido", {'ceo': ceo, 'planta': planta})
+    finally:
+        cn = _cn()
+        try:
+            cn.execute("DELETE FROM movimientos WHERE material_id=?", (COD,))
+            cn.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (COD,))
+            cn.commit()
+        finally:
+            cn.close()

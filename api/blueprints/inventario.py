@@ -50,6 +50,17 @@ bp = Blueprint('inventario', __name__)
 #     u, err, code = _require_planta_write()
 #     if err: return err, code
 
+# El filtro CANONICO de stock disponible · una sola definicion para toda la app.
+#
+# 19-ago: el panel del CEO contaba las materias primas bajo el minimo con el CASE correcto
+# pero SIN excluir los estados, asi que sumaba como disponible lo que esta en cuarentena
+# (54 lotes) y lo vencido (23) · resultado: **decia 40 donde Planta decia 60**. Dos numeros
+# del mismo hecho, y el que veia el CEO era el optimista (M161: el tablero del CEO no
+# calcula nada propio, le pregunta a quien es dueno del dato).
+STOCK_DISPONIBLE_SQL = (
+    "(estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) "
+    "NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))")
+
 QC_USERS = (CALIDAD_USERS | ASEGURAMIENTO_USERS | TECNICA_USERS | ADMIN_USERS | MP_LIBERA_USERS)
 # Libera/aprueba MP (cc-review COC-PRO-001): Calidad (laura/yuliel) + Aseguramiento (miguel) + Técnica/Director
 # técnico (hernando) + admin + Catalina (MP_LIBERA · Sebastián 26-jun). Ampliado 8-jul a técnica/aseguramiento.
@@ -328,8 +339,7 @@ def get_inventario():
     # no se puede producir con él. Ahora se excluyen esos estados (patrón
     # canónico de stock disponible · zero-error protocol). Las Salidas
     # (estado_lote NULL) siguen restando.
-    _avail_filter = ("(estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) "
-                     "NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))")
+    _avail_filter = STOCK_DISPONIBLE_SQL
     # PERF 9-jul (speed-audit #13): sin_stock y bajo_min usaban la MISMA subquery SUM sobre
     # movimientos (2 full-scans idénticos · misma base m.activo=1 AND stock_minimo>0, solo cambia el
     # umbral final). Se colapsan en 1 con SUM(CASE) → mismos números, 1 scan. (bajo_min incluye sin_stock.)
