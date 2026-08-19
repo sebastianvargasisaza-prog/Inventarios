@@ -138,3 +138,66 @@ def test_un_pago_en_CERO_sigue_siendo_cero(app, db_clean):
             "un pago sin monto dejó de ser cero", mios[0].get('monto'))
     finally:
         _limpiar()
+
+
+# ── COMPRAS que esperan su firma ────────────────────────────────────────────────
+
+def _limpiar_oc():
+    cn = _cn()
+    try:
+        cn.execute("DELETE FROM ordenes_compra WHERE numero_oc LIKE 'ZCEO-OC-%'")
+        cn.commit()
+    finally:
+        cn.close()
+
+
+def test_las_ordenes_por_autorizar_usan_el_criterio_de_COMPRAS(app, db_clean):
+    """El bloque preguntaba por un estado MUERTO, así que decía siempre cero.
+
+    `Revisada` es legacy: `compras.py` lo declara *"solo lectura · mig 157 los migró"*. El
+    panel del CEO filtraba **sólo** por ese estado, así que mostraba *"Ninguna orden
+    esperando tu firma"* teniendo diez en `Borrador`. Compras cuenta las que faltan
+    autorizar como `estado IN ('Borrador','Revisada')`, y el CEO tiene que usar ESA misma
+    definición: dos criterios del mismo hecho divergen, y el que se olvida es el que
+    decide (M1/M5).
+    """
+    _limpiar_oc()
+    cn = _cn()
+    try:
+        cn.execute("INSERT INTO ordenes_compra (numero_oc, proveedor, valor_total, fecha, "
+                   "estado) VALUES ('ZCEO-OC-1','ZPROV',1500000,'2020-01-01','Borrador')")
+        cn.commit()
+    finally:
+        cn.close()
+    try:
+        d = _cli(app).get('/api/gerencia/decisiones-ceo').get_json() or {}
+        ocs = d.get('ocs_por_autorizar')
+        assert ocs is not None, ("el bloque de compras no llegó", sorted(d.keys()))
+        mias = [o for o in ocs if o.get('numero_oc') == 'ZCEO-OC-1']
+        assert mias, ("una orden en Borrador no aparece como pendiente de firma · el panel "
+                      "sigue preguntando por un estado que ya no se usa", ocs[:3])
+        assert float(mias[0].get('valor') or 0) == 1500000.0, mias[0]
+    finally:
+        _limpiar_oc()
+
+
+def test_una_orden_ya_AUTORIZADA_no_vuelve_a_pedir_firma(app, db_clean):
+    """El borde: ampliar el filtro no puede traer de vuelta lo ya firmado (M96)."""
+    _limpiar_oc()
+    cn = _cn()
+    try:
+        cn.execute("INSERT INTO ordenes_compra (numero_oc, proveedor, valor_total, fecha, "
+                   "estado) VALUES ('ZCEO-OC-2','ZPROV',900000,'2020-01-01','Autorizada')")
+        cn.execute("INSERT INTO ordenes_compra (numero_oc, proveedor, valor_total, fecha, "
+                   "estado) VALUES ('ZCEO-OC-3','ZPROV',800000,'2020-01-01','Pagada')")
+        cn.commit()
+    finally:
+        cn.close()
+    try:
+        ocs = ((_cli(app).get('/api/gerencia/decisiones-ceo').get_json() or {})
+               .get('ocs_por_autorizar') or [])
+        nums = [o.get('numero_oc') for o in ocs]
+        assert 'ZCEO-OC-2' not in nums, ("pide firmar una orden ya autorizada", nums[:5])
+        assert 'ZCEO-OC-3' not in nums, ("pide firmar una orden ya pagada", nums[:5])
+    finally:
+        _limpiar_oc()

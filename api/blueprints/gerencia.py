@@ -310,7 +310,11 @@ def gerencia_decisiones_ceo():
     try:
         _oc = conn.execute(
             "SELECT numero_oc, proveedor, COALESCE(valor_total,0), fecha "
-            "  FROM ordenes_compra WHERE estado='Revisada' "
+            # `Revisada` es un estado LEGACY que la mig 157 ya migro (compras.py lo declara
+            # "solo lectura"), asi que este bloque decia SIEMPRE cero -- el CEO veia que
+            # ninguna orden esperaba su firma teniendo diez en Borrador. Se usa el MISMO
+            # criterio que Compras (`ocs_sin_autorizar`): un solo resolver por entidad (M1).
+            "  FROM ordenes_compra WHERE estado IN ('Borrador','Revisada') "
             " ORDER BY COALESCE(valor_total,0) DESC LIMIT 10").fetchall()
         out['ocs_por_autorizar'] = [
             {'numero_oc': r[0], 'proveedor': r[1], 'valor': float(r[2] or 0), 'fecha': r[3]}
