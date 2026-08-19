@@ -3119,6 +3119,36 @@ def mkt_influencer_detail(iid):
                 ).fetchone()[0] or 0
             except Exception:
                 n_sols = 0
+            # ⚠ Lo PENDIENTE tambien frena el borrado, y es lo que faltaba.
+            # El guard contaba unicamente lo `Pagada`, asi que un creador con solicitudes
+            # de pago EN CURSO contaba como "sin pagos" y se dejaba borrar -- y el DELETE de
+            # mas abajo se lleva `pagos_influencers ... estado != 'Pagada'`. O sea que limpiar
+            # un duplicado destruia solicitudes vivas de Jeferson, en silencio y sin rastro
+            # (el audit registraba los conteos de lo pagado, que eran 0).
+            # Una solicitud pendiente es plata comprometida: no puede desaparecer como efecto
+            # colateral de otra cosa (M138/M144 · lo que se descarta se ve y se puede deshacer).
+            try:
+                _pend = c.execute(
+                    "SELECT COALESCE(numero_oc,''), COALESCE(valor,0), COALESCE(concepto,'') "
+                    "  FROM pagos_influencers "
+                    " WHERE influencer_id=? AND LOWER(COALESCE(estado,'')) "
+                    "       NOT IN ('pagada','rechazada','anulada')", (iid,)).fetchall()
+                _pend = [tuple(r) for r in _pend]
+            except Exception:
+                _pend = []
+            _forzar = str(request.args.get('forzar') or '').strip() in ('1', 'true', 'si')
+            if _pend and not (_forzar and es_admin):
+                _tot = sum(float(x[1] or 0) for x in _pend)
+                return jsonify({
+                    "error": (f"Este creador tiene {len(_pend)} solicitud(es) de pago "
+                              f"PENDIENTE(s) por ${_tot:,.0f}. Borrarlo las destruiria. "
+                              "Resolvelas primero (pagarlas o rechazarlas desde Compras), "
+                              "o dale de baja en vez de eliminarlo."),
+                    "codigo": "TIENE_PAGOS_PENDIENTES",
+                    "pendientes": [{"numero_oc": x[0], "valor": x[1], "concepto": x[2]}
+                                   for x in _pend],
+                }), 409
+
             tiene_pagos = (n_pagados > 0) or (n_sols > 0)
             if tiene_pagos and not es_admin:
                 return jsonify({
@@ -3161,7 +3191,13 @@ def mkt_influencer_detail(iid):
                 _al(c, usuario=u, accion='ELIMINAR_INFLUENCER',
                     tabla='marketing_influencers', registro_id=iid,
                     antes=_snap_dict,
-                    despues={'n_pagados_pagados': n_pagados, 'n_sols_pagadas': n_sols})
+                    despues={'n_pagados_pagados': n_pagados, 'n_sols_pagadas': n_sols,
+                             # lo que el borrado DESTRUYO · sin esto no hay como saber que
+                             # solicitud desaparecio ni reconstruirla
+                             'pagos_pendientes_destruidos': [
+                                 {'numero_oc': x[0], 'valor': x[1], 'concepto': x[2]}
+                                 for x in _pend],
+                             'forzado': bool(_pend)})
             except Exception: pass
             conn.commit()
             return jsonify({"ok": True, "mensaje": "Influencer eliminado"})
@@ -5427,10 +5463,21 @@ def mkt_solicitar_pago_influencer(iid):
         # Sin token (cliente viejo) → no dedup (compat · el disable del botón sigue). El token se libera en rollback.
         _sid = str(d.get('solicitud_id') or '').strip()[:80]
         if _sid:
-            from datetime import datetime as _dtsid
+            # ⚠ `timedelta` se importa ACA y no mas abajo: el import de `_td_hoy` vive 86
+            # lineas despues, asi que usarlo aca daria NameError -> 500 en CADA solicitud
+            # de pago (M78: un nombre fuera de scope solo revienta cuando alguien lo usa).
+            from datetime import datetime as _dtsid, timedelta as _td_sid
             try:
+                # La llave se ancla al ACTO: token + CREADORA. Con el token suelto, uno que
+                # quedo colgado en la ventana de Jeferson (una respuesta que se perdio) viajaba
+                # con el pago de OTRA creadora y el UNIQUE global lo rechazaba como duplicado:
+                # esa solicitud no se creaba nunca y desde Marketing se veia como que desaparecio.
+                # Dos creadoras distintas son dos pagos distintos, mande el token que mande el
+                # cliente (M240/M134: la idempotencia se ancla al hecho que identifica, o se
+                # saltea algo legitimo EN SILENCIO, que es peor que duplicarlo porque no se ve).
                 c.execute("INSERT INTO oc_recepcion_dedup (recepcion_id, numero_oc, creado_en) VALUES (?,?,?)",
-                          (_sid, f'MKT-PAGO-{iid}', _dtsid.now().isoformat()))
+                          (f'MKT-{iid}|{_sid}', f'MKT-PAGO-{iid}',
+                           (_dtsid.now() - _td_sid(hours=5)).isoformat()))
             except Exception as _ed_sid:
                 if 'unique' in str(_ed_sid).lower() or 'duplicate' in str(_ed_sid).lower():
                     conn.rollback()

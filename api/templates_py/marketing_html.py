@@ -2484,6 +2484,10 @@ function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
     prev.innerHTML = '<span style="color:var(--cx-warn-text);">\u26a0\ufe0f Sin datos bancarios. Edita el influencer primero.</span>';
   }
   document.getElementById('pago-inf-alert').style.display='none';
+  // El token identifica UN pago, asi que nace con el modal. Antes solo se limpiaba al
+  // exito: si una respuesta se perdia, el token quedaba colgado y viajaba con la
+  // solicitud siguiente, que el backend rechazaba como duplicada.
+  window._pagoInfTok = null;
   document.getElementById('modal-inf-pago').classList.add('open');
 }
 
@@ -2533,7 +2537,15 @@ async function confirmarPagoInf() {
       try { if(typeof cargarPagosInfluencers === 'function') cargarPagosInfluencers(); } catch(_){}
       loadInfluencers();
     } else {
-      showAlert('pago-inf-alert', data.error||'Error al crear solicitud','error');
+      if(resp.status===409){
+        // Ya existia: lo que hay que hacer es MOSTRARSELA, no dejarlo con la duda de
+        // si quedo guardada -- que es exactamente lo que reporta como "desaparecen".
+        window._pagoInfTok=null;
+        try { if(typeof loadPagosInfluencers === 'function') await loadPagosInfluencers(); } catch(_){}
+        showAlert('pago-inf-alert','Esa solicitud ya estaba registrada · quedo en la lista de pagos, no se creo dos veces','warn');
+      } else {
+        showAlert('pago-inf-alert', data.error||'Error al crear solicitud','error');
+      }
     }
   } catch(e){
     showAlert('pago-inf-alert', 'Error de red: '+e.message,'error');

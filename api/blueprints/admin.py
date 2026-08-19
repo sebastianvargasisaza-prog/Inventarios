@@ -17000,6 +17000,32 @@ def admin_influencers_reset_pendientes():
     conn = db_connect(); c = conn.cursor()
     eliminado = {'pagos_influencers': 0, 'solicitudes_compra': 0, 'ordenes_compra': 0}
 
+    # ⚠ VISTA PREVIA obligatoria · esto borra plata comprometida de un POST, y lo que
+    # borra es exactamente lo que Marketing acaba de crear: las solicitudes de pago
+    # PENDIENTES de Jeferson. Sin un paso de confirmacion, una corrida pensada para
+    # "limpiar lo viejo" se lleva tambien lo de hoy, y desde Marketing eso se ve como
+    # que las solicitudes desaparecieron solas (19-ago · su reporte).
+    # Mismo patron que su hermano `pagos-historico-cleanup`, que ya pedia confirm.
+    try:
+        _body_rp = request.get_json(silent=True) or {}
+    except Exception:
+        _body_rp = {}
+    if _body_rp.get('confirm') is not True:
+        _pi = c.execute("SELECT COUNT(*), COALESCE(SUM(valor),0) FROM pagos_influencers "
+                        "WHERE LOWER(COALESCE(estado,''))='pendiente'").fetchone()
+        _sc = c.execute("SELECT COUNT(*) FROM solicitudes_compra "
+                        "WHERE categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro') "
+                        "  AND LOWER(COALESCE(estado,'')) IN ('pendiente','aprobada')").fetchone()
+        conn.close()
+        return jsonify({
+            'dry_run': True,
+            'a_eliminar': {'pagos_influencers': (_pi[0] if _pi else 0),
+                           'monto_pagos': (_pi[1] if _pi else 0),
+                           'solicitudes_compra': (_sc[0] if _sc else 0)},
+            'aviso': ('Esto BORRA solicitudes de pago pendientes (plata comprometida). '
+                      'Reenvia con {"confirm": true} si es lo que queres.'),
+        })
+
     # 1. Pagos influencers en estado Pendiente
     c.execute("DELETE FROM pagos_influencers WHERE LOWER(COALESCE(estado,''))='pendiente'")
     eliminado['pagos_influencers'] = c.rowcount

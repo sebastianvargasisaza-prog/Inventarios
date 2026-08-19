@@ -159,6 +159,8 @@ CORAZON=(
   "tests/test_dt_ve_el_sgd_real.py"
   "tests/test_pedidos_estado_un_solo_vocabulario.py"
   "tests/test_panel_luz_no_muestra_decimales.py"
+  "tests/test_jeferson_no_pierde_solicitudes.py"
+  "tests/test_influencers_dedup.py"
   "tests/test_codigo_kardex_limpio.py"
   "tests/test_auditoria_lotes_pg.py"
   "tests/test_envases_kardex_mp.py"

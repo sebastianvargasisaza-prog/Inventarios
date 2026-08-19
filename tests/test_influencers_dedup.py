@@ -19,6 +19,14 @@ def test_dedup_merge_influencers(app, db_clean):
         conn = get_db(); cu = conn.cursor()
         cu.execute("DELETE FROM marketing_influencers WHERE UPPER(TRIM(nombre))='JUANITO REBEL'")
         cu.execute("DELETE FROM pagos_influencers WHERE influencer_nombre='Juanito Rebel'")
+        # 19-ago · el test llevaba tiempo ROJO y NO era una regresion: desde que existe
+        # `idx_mktinf_nombre_unq` (UNIQUE sobre el nombre normalizado) ya no se pueden
+        # sembrar dos creadores con el mismo nombre, asi que reventaba en su propio setup.
+        # La herramienta que prueba sigue viva y hace falta: existe para limpiar los
+        # duplicados ANTERIORES al indice, y ella misma lo crea al terminar (por eso
+        # afirma `unique_index`). El escenario real, entonces, empieza SIN el indice.
+        # Estaba fuera de todo gate, que es por lo que se pudrio sin que nadie lo viera (M95).
+        cu.execute("DROP INDEX IF EXISTS idx_mktinf_nombre_unq")
         # 3 duplicados del mismo nombre (distinto formato/case)
         cu.execute("INSERT INTO marketing_influencers (nombre, estado) VALUES ('Juanito Rebel','Activo')")
         a = cu.lastrowid
