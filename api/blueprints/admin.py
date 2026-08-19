@@ -23870,6 +23870,17 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
  <button onclick="setBrd('oculto')" style="background:var(--cx-text-mute, #64748b)">Oculto</button>
  <span id="brdMsg" class="muted" style="margin-left:10px"></span>
 </div>
+
+<div class="card">
+ <h3 style="margin:0 0 6px">&#128231; Reporte semanal de Gerencia</h3>
+ <div class="muted" style="margin-bottom:8px">Los <b>lunes a las 7:00</b> (hora Colombia), EOS
+ arma el reporte de la semana y lo manda por correo a los destinatarios configurados, sin que
+ nadie lo redacte. Nace <b>apagado</b>: no le escribe a nadie hasta que lo prendas ac&aacute;.</div>
+ <div id="repEstado" class="muted" style="margin-bottom:8px"></div>
+ <button onclick="setRep(true)" style="background:var(--cx-success, #16a34a)">Enviar cada lunes</button>
+ <button onclick="setRep(false)" style="background:var(--cx-text-mute, #64748b)">No enviar</button>
+ <span id="repMsg" class="muted" style="margin-left:10px"></span>
+</div>
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
  async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});return (await r.json()).csrf_token;}catch(e){return '';}}
@@ -23878,6 +23889,22 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
    try{ var r=await fetch('/api/admin/brd-visibilidad'); var j=await r.json();
      if(j.ok){ document.getElementById('brdEstado').innerHTML='Estado actual: <b>'+ESC(_BRD_MODOS[j.modo]||j.modo)+'</b>'+(j.valor&&j.modo==='solo_usuario'?(' ('+ESC(j.valor)+')'):'')+(j.por?(' &middot; por '+ESC(j.por)):''); }
    }catch(e){}
+ }
+ async function cargarRep(){
+   try{ var r=await fetch('/api/reporte/semanal-ceo/auto',{credentials:'same-origin'}); var j=await r.json();
+     if(j.ok){ document.getElementById('repEstado').innerHTML='Estado actual: <b>'+
+       (j.activo?'se env&iacute;a solo':'apagado')+'</b> &middot; '+ESC(j.cuando||''); }
+   }catch(e){}
+ }
+ async function setRep(activo){
+   document.getElementById('repMsg').textContent='Aplicando...';
+   var t=await csrf();
+   var r=await fetch('/api/reporte/semanal-ceo/auto',{method:'PUT',credentials:'same-origin',
+     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({activo:!!activo})});
+   var j=await r.json();
+   if(!r.ok){document.getElementById('repMsg').innerHTML='<span class="bad-t">Error: '+ESC(j.error||r.status)+'</span>';return;}
+   document.getElementById('repMsg').innerHTML='<span class="ok-t">&#10004; '+(j.activo?'queda encendido':'queda apagado')+'</span>';
+   cargarRep();
  }
  async function setBrd(modo){
    document.getElementById('brdMsg').textContent='Aplicando...';
@@ -23981,7 +24008,7 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
    cargar();
  }
  cargar();
- cargarBrd();
+ cargarBrd(); cargarRep();
 </script>
 </div></body></html>"""
 

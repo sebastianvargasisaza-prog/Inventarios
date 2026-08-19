@@ -11027,6 +11027,47 @@ def ordenes_unificadas():
                             "unidades": int(r[3] or 0)})
             except Exception as _e:
                 log.warning("ordenes-unificadas presentaciones fallo: %s", _e)
+            # ── ACONDICIONAMIENTO GUARDA SUS UNIDADES EN OTRA TABLA (18-ago) ─────────────
+            # Lo de arriba lee `ebr_envasado_unidades`, que es del ENVASADO. Lo que registra
+            # `POST /api/acondicionamiento` -- la pantalla que usa la planta -- va a la tabla
+            # `acondicionamiento`, así que la tarjeta decía **"Sin unidades registradas
+            # todavía"** con el historial mostrando 30 unidades tres renglones más abajo, en
+            # la MISMA pantalla (M161 · Sebastián lo vio en la captura).
+            #
+            # Es la tercera vez hoy que aparece la misma forma: un hecho que entra por dos
+            # puertas y un lector que conoce una sola (M37). Se cae a lo REGISTRADO, y con UNA
+            # consulta agregada para toda la lista -- pedirlo por fila es lo que satura los
+            # tres workers (M43).
+            if fase == "acondicionamiento":
+                _falta = [i for i in items
+                          if i.get("ebr_id") and not _pres.get(i["ebr_id"])
+                          and (i.get("lote_bulk") or "").strip()]
+                if _falta:
+                    _por_lote = {}
+                    for _i in _falta:
+                        _por_lote.setdefault((_i.get("lote_bulk") or "").strip().upper(),
+                                             []).append(_i["ebr_id"])
+                    try:
+                        _lph = ",".join("?" for _ in _por_lote)
+                        for _r in conn.execute(
+                            "SELECT UPPER(TRIM(COALESCE(lote,''))), "
+                            "       COALESCE(NULLIF(TRIM(presentacion),''),'') AS pres, "
+                            # ⚠ la columna es `unidades_producidas` · pedir `unidades` es
+                            # una columna FANTASMA que el except convierte en "no hay datos",
+                            # indistinguible de la realidad (M12a/M94). Verificar el CREATE
+                            # TABLE antes de escribir el SELECT cuesta un grep.
+                            "       SUM(COALESCE(unidades_producidas,0)) "
+                            "  FROM acondicionamiento "
+                            " WHERE UPPER(TRIM(COALESCE(lote,''))) IN (%s) "
+                            " GROUP BY 1, 2" % _lph, list(_por_lote.keys())).fetchall():
+                            if (_r[2] or 0) <= 0:
+                                continue
+                            for _eid in _por_lote.get(_r[0], []):
+                                _pres.setdefault(_eid, []).append({
+                                    "etiqueta": _r[1], "volumen_ml": 0.0,
+                                    "unidades": int(_r[2] or 0)})
+                    except Exception as _e:
+                        log.warning("ordenes-unificadas unidades de acondicionamiento: %s", _e)
         # CLIENTES del lote, en la LISTA (Sebastián 15-ago-2026: "que aparezca foto con
         # cantidades que son para cada cliente en el envasado"). El dato ya se mostraba
         # dentro del legajo, pero para verlo había que abrir orden por orden; en el piso

@@ -11444,10 +11444,27 @@ function ordenesRenderLista(items, res, fase){
       h+='</div>';
     }
     // acciones
-    h+='<div style="display:flex;gap:8px;margin-top:11px">'
-      +'<button onclick="abrirEBR('+o.ebr_id+',&#39;envasado-runner&#39;)" '
-      +'style="background:var(--cx-primary-grad);color:#fff;border:none;border-radius:7px;'
-      +'padding:7px 15px;font-size:12px;font-weight:700;cursor:pointer">&#128203; Abrir legajo</button>';
+    h+='<div style="display:flex;gap:8px;margin-top:11px">';
+    // ── "Abrir legajo" TIENE QUE ABRIR DONDE EL USUARIO ESTA PARADO (18-ago) ──────────
+    // Este renderizador se comparte entre envasado y acondicionamiento, y el boton pasaba
+    // SIEMPRE `envasado-runner`. Ese contenedor EXISTE (vive en la pestaña de al lado), asi
+    // que desde Acondicionamiento la funcion lo encontraba, pintaba el legajo adentro... y el
+    // panel esta oculto: el usuario apretaba y no pasaba nada.
+    //
+    // Es peor que un no-op: el trabajo se hace y no se ve, asi que ni siquiera hay error que
+    // mirar (M112/M166). El renderizador YA recibe `fase` -- solo habia que usarla.
+    //
+    // Acondicionamiento tiene su PROPIA pantalla de legajo, que es la que hay que abrir.
+    if(fase==='acondicionamiento'){
+      h+='<a href="/planta/legajo-acondicionamiento/'+o.ebr_id+'" '
+        +'style="display:inline-block;text-decoration:none;background:var(--cx-primary-grad);'
+        +'color:#fff;border:none;border-radius:7px;padding:7px 15px;font-size:12px;'
+        +'font-weight:700;cursor:pointer">&#128203; Abrir legajo</a>';
+    } else {
+      h+='<button onclick="abrirEBR('+o.ebr_id+',&#39;envasado-runner&#39;)" '
+        +'style="background:var(--cx-primary-grad);color:#fff;border:none;border-radius:7px;'
+        +'padding:7px 15px;font-size:12px;font-weight:700;cursor:pointer">&#128203; Abrir legajo</button>';
+    }
     if(o.lote_bulk)
       h+='<button onclick="verLoteFases(encodeURIComponent(&#39;'+_escHTML(o.lote_bulk)+'&#39;))" '
         +'style="background:var(--cx-card);color:var(--cx-primary-text);border:1px solid var(--cx-border);'
