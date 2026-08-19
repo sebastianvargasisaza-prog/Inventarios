@@ -151,6 +151,7 @@ CORAZON=(
   "tests/test_mover_lote_cadena.py"
   "tests/test_abastecimiento_vencimiento.py"
   "tests/test_excel_plan_consumo_alejandro.py"
+  "tests/test_laura_firma_y_coa.py"
   "tests/test_codigo_kardex_limpio.py"
   "tests/test_auditoria_lotes_pg.py"
   "tests/test_envases_kardex_mp.py"

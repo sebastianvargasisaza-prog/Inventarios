@@ -11690,6 +11690,25 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_shopify_despachado ON animus_shopify_orders(despachado_at)",
         "CREATE INDEX IF NOT EXISTS idx_shopify_entregado ON animus_shopify_orders(entregado_at)",
     ]),
+    (441, "calidad_coa_archivos · el informe del laboratorio se puede SUBIR, y no se pierde. "
+          "Laura (jefa de CC) 18-ago: el certificado de análisis sólo aceptaba una URL, así "
+          "que para adjuntar el PDF del laboratorio había que hospedarlo en otro lado -- en "
+          "la práctica, no se adjuntaba. Y el importador de correos guardaba sus PDF en "
+          "`/var/data/coas`, que es disco EFÍMERO (el servicio ya no tiene disco "
+          "persistente): esos certificados desaparecían en cada despliegue, siendo documento "
+          "regulado. Se guarda en la BASE, igual que `facturas_proveedor_pdf`.",
+     [
+         "CREATE TABLE IF NOT EXISTS calidad_coa_archivos ("
+         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+         " nombre TEXT DEFAULT '',"
+         " mime TEXT DEFAULT 'application/pdf',"
+         " contenido TEXT DEFAULT '',"
+         " bytes INTEGER DEFAULT 0,"
+         " lote TEXT DEFAULT '',"
+         " subido_por TEXT DEFAULT '',"
+         " creado_en TEXT DEFAULT (datetime('now','-5 hours')))",
+         "CREATE INDEX IF NOT EXISTS idx_coaarch_lote ON calidad_coa_archivos(lote)",
+     ]),
 ]
 
 

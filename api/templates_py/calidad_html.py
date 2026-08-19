@@ -734,7 +734,15 @@ textarea{resize:vertical;min-height:70px;}
       <div class="form-group"><label>Laboratorio</label><input id="m-micro-lab" placeholder="Ej: BioQu&iacute;mica Ltda. (o Interno)"></div>
       <div class="form-group"><label>EBR id (opcional)</label><input id="m-micro-ebr" type="number" min="0" placeholder="liga al legajo del lote"></div>
     </div>
-    <div class="form-group"><label>COA / informe del laboratorio (URL)</label><input id="m-micro-coa" placeholder="https://... (PDF del informe)"></div>
+    <div class="form-group"><label>COA / informe del laboratorio <span style="color:var(--cx-text-faint,#94a3b8);font-weight:400">&middot; opcional</span></label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="m-micro-coa" placeholder="https://... o sub&iacute; el PDF &rarr;" style="flex:1;min-width:220px">
+        <label class="btn btn-ghost" style="margin:0;cursor:pointer;white-space:nowrap">&#128206; Subir informe
+          <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="subirCoaMicro(this)">
+        </label>
+      </div>
+      <div id="m-micro-coa-est" style="font-size:11px;color:var(--cx-text-faint,#94a3b8);margin-top:4px"></div>
+    </div>
     <div class="form-group"><label>Observaciones</label><textarea id="m-micro-obs" style="min-height:50px"></textarea></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('m-micro')">Cancelar</button>
@@ -1725,6 +1733,7 @@ function prefillDesdeLotePlanta(){
 function abrirModalNuevoResultadoMicro(){
   ['m-micro-prod','m-micro-lote','m-micro-val','m-micro-txt','m-micro-obs','m-micro-lab','m-micro-coa','m-micro-ebr'].forEach(function(id){var el=document.getElementById(id); if(el) el.value='';});
   var lp=document.getElementById('m-micro-lote-planta'); if(lp) lp.value='';
+  var _ce=document.getElementById('m-micro-coa-est'); if(_ce) _ce.textContent='';
   document.getElementById('m-micro-fecha').value = new Date().toISOString().slice(0,10);
   cargarLotesPlantaPicker();
   openModal('m-micro');
@@ -1780,6 +1789,28 @@ async function toggleMicroGate(on){
 }
 
 // === MICROBIOLOGÍA · sub-navegación (Resultados / Gráficas) =====================
+async function subirCoaMicro(input){
+  // El informe del laboratorio se SUBE · queda guardado en EOS y el campo se llena solo.
+  // Es opcional: registrar el resultado sin adjuntar nada sigue funcionando igual.
+  var f = input.files && input.files[0];
+  if(!f){ return; }
+  var est = document.getElementById('m-micro-coa-est');
+  if(est) est.textContent = 'Subiendo ' + f.name + '...';
+  var fd = new FormData();
+  fd.append('archivo', f);
+  var lote = (document.getElementById('m-micro-lote')||{}).value || '';
+  if(lote) fd.append('lote', lote);
+  try{
+    var headers = {}; var tok = _csrf(); if(tok) headers['X-CSRF-Token'] = tok;
+    var r = await fetch('/api/calidad/micro/coa-archivo', {method:'POST', credentials:'same-origin', headers:headers, body:fd});
+    var d = await r.json();
+    if(!r.ok || d.error){ if(est) est.textContent = ''; alert('No se pudo subir: '+(d.error||r.status)); return; }
+    document.getElementById('m-micro-coa').value = d.url;
+    if(est) est.innerHTML = '&#10004; ' + _esc(d.nombre) + ' &middot; ' + Math.round(d.bytes/1024) + ' KB &middot; <a href="'+d.url+'" target="_blank" rel="noopener">ver</a>';
+  }catch(e){ if(est) est.textContent = ''; alert('Error de red: '+(e.message||e)); }
+  finally{ input.value = ''; }
+}
+
 async function importarEmlCoa(input){
   var f = input.files && input.files[0];
   if(!f){ return; }

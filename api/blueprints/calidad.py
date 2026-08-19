@@ -1860,7 +1860,15 @@ def calidad_certificado_analisis():
             cols = [d[0] for d in c.description]
             return jsonify({'ok': True, 'f02': dict(zip(cols, row)), 'prefill': pre})
         return jsonify({'ok': True, 'f02': None, 'prefill': pre})
-    err, code = _require_calidad()
+    # Laura (jefa de CC) 18-ago: *"quien aprueba la liberación también lo puede hacer el
+    # director técnico o aseguramiento"*. Y la política ya estaba escrita en `config.py` el
+    # día que se sacó a Catalina por la Res. 2214/2021: *"la liberación queda donde
+    # corresponde: Control de Calidad, Aseguramiento, Dirección Técnica y Dirección"*.
+    # Este endpoint gateaba con `_require_calidad` (Calidad ∪ admin), MÁS ANGOSTO que esa
+    # política y que el otro camino de liberación (`QC_USERS`): el director técnico podía
+    # liberar por una puerta y no por la otra · dos gates del MISMO acto que no dicen lo
+    # mismo, y el usuario ve el botón y la firma lo rechaza (M32/M219).
+    err, code = _require_libera_mp()
     if err:
         return err, code
     u = session.get('compras_user', '')
@@ -2079,6 +2087,59 @@ def _rc_firma(c, valor):
         return ''
 
 
+def _require_libera_mp():
+    """Quién puede LIBERAR materia prima · UNA sola fuente para los dos caminos.
+
+    Se pide el conjunto canónico (`QC_USERS`, inventario.py) en vez de re-escribirlo: dos
+    listas del mismo permiso divergen, y el día que divergen alguien libera por una
+    pantalla y no por la otra (M1/M3). Import perezoso para no cerrar el ciclo.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        from blueprints.inventario import QC_USERS as _QC
+    except ImportError:
+        from api.blueprints.inventario import QC_USERS as _QC
+    if session.get('compras_user', '') not in _QC:
+        return jsonify({'error': 'Sólo Control de Calidad, Aseguramiento o Dirección '
+                                 'Técnica pueden liberar materia prima'}), 403
+    return None, None
+
+
+def _rc_cargo(c, valor):
+    """El CARGO REAL de quien firmó · para no preimprimir uno en el formato.
+
+    Laura 18-ago: el F02 decía *"Aprueba · Jefe de Control de Calidad"* fijo, y la
+    liberación también la dan el director técnico y aseguramiento, así que **el formato
+    estaba limitando quién puede firmar** -- lo contrario de lo que un registro debe hacer.
+
+    Si no se puede resolver devuelve '': inventar un cargo en un documento regulado es
+    peor que no ponerlo (M19).
+    """
+    v = (str(valor or '')).strip()
+    if not v:
+        return ''
+    try:
+        r = c.execute(
+            "SELECT COALESCE(cargo,'') FROM usuarios_identidad "
+            " WHERE LOWER(TRIM(username))=LOWER(TRIM(?)) "
+            "    OR LOWER(TRIM(COALESCE(nombre_completo,'')))=LOWER(TRIM(?)) LIMIT 1",
+            (v, v)).fetchone()
+    except Exception:
+        return ''
+    cargo = ((r[0] if r else '') or '').strip()
+    # 'Por definir' es el DEFAULT de la tabla: no es un cargo, es la ausencia de uno.
+    if not cargo or cargo.lower() in ('por definir', 'n/a', '-'):
+        return ''
+    return cargo
+
+
+def _rc_acto(c, valor, acto):
+    """La línea bajo la rúbrica: el ACTO siempre, el cargo sólo si se conoce."""
+    cargo = _rc_cargo(c, valor)
+    return _e(acto) + (' · ' + _e(cargo) if cargo else '')
+
+
 def _rc_fecha_firma(v):
     """Línea de fecha bajo la rúbrica (GMP: toda firma va fechada). '' si no hay fecha."""
     v = (str(v or '')).strip()
@@ -2168,8 +2229,13 @@ def calidad_f02_imprimible():
             + "<div class='firmas'>"
             + (f"<div class='firma'>{_rc_firma(c, d.get('responsable_analisis'))}"
                f"<b>{_e(d.get('responsable_analisis') or '-')}</b>Realiza el análisis{_rc_fecha_firma(d.get('realiza_fecha'))}</div>")
+            # El cargo sale de QUIEN firmó, no preimpreso: la liberación también la dan
+            # el director técnico y aseguramiento, y un cargo fijo limita quién puede
+            # firmar (Laura, 18-ago).
             + (f"<div class='firma'>{_rc_firma(c, d.get('aprobo_por'))}"
-               f"<b>{_e(d.get('aprobo_por') or '-')}</b>Aprueba · Jefe de Control de Calidad{_rc_fecha_firma(d.get('aprobo_fecha'))}</div>")
+               f"<b>{_e(d.get('aprobo_por') or '-')}</b>"
+               f"{_rc_acto(c, d.get('aprobo_por'), 'Aprueba la liberación')}"
+               f"{_rc_fecha_firma(d.get('aprobo_fecha'))}</div>")
             + "</div>"
             + f"<p style='margin-top:18px;font-size:9px;color:var(--cx-text-faint, #94a3b8)'>Registrado por {_e(d.get('creado_por'))} · {_e((d.get('creado_en') or '')[:19])}</p>"
             + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
@@ -2256,7 +2322,10 @@ def coa_pt_imprimible(lote):
             + "<div class='firmas'>"
             + ("<div class='firma'>%s<b>%s</b>Realiza el análisis%s</div>"
                % (_rc_firma(c, analista), _e(analista or '-'), _rc_fecha_firma(fecha_an)))
-            + "<div class='firma'><b>-</b>Aprueba · Jefe de Control de Calidad</div></div>"
+            # Este certificado no guarda quién aprobó, así que la línea va EN BLANCO para
+            # que la firme quien corresponda · inventar un aprobador en un documento
+            # regulado es falsificarlo (M93), y preimprimir un cargo limita quién puede.
+            + "<div class='firma'><b>-</b>Aprueba la liberación</div></div>"
             + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
     return Response(body, mimetype='text/html')
 
@@ -3577,8 +3646,14 @@ def calidad_micro_resultados():
         fecha_analisis = (d.get('fecha_analisis') or '').strip() or _hoy_col
         # Fase 2 · COA del laboratorio (URL http/https) + ligado al EBR/lote del PT
         coa_url = (d.get('archivo_coa_url') or '').strip() or None
-        if coa_url and not (coa_url.startswith('http://') or coa_url.startswith('https://')):
-            return jsonify({'error': 'archivo_coa_url debe ser una URL http(s)'}), 400
+        # Acepta una URL externa O el archivo que se acaba de subir a EOS. Sin esta segunda
+        # rama, adjuntar el informe y guardar el resultado fallaba en el paso siguiente:
+        # el campo ofrecía subir y el guard lo rechazaba (M109).
+        if coa_url and not (coa_url.startswith('http://') or coa_url.startswith('https://')
+                            or coa_url.startswith('/api/calidad/micro/coa-archivo/')
+                            or coa_url.startswith('/api/calidad/micro/coa/')):
+            return jsonify({'error': 'El COA debe ser una URL http(s) o un archivo subido '
+                                     'a EOS'}), 400
         ebr_id = d.get('ebr_id')
         try:
             ebr_id = int(ebr_id) if ebr_id not in (None, '') else None
@@ -4100,6 +4175,76 @@ def calidad_importar_eml():
               registro_id=0, despues={**tot, 'archivo': (f.filename or '')[:120]})
     conn.commit()
     return jsonify({'ok': True, **tot, 'archivo': f.filename})
+
+
+@bp.route('/api/calidad/micro/coa-archivo', methods=['POST'])
+def calidad_micro_coa_subir():
+    """Sube el informe del laboratorio · OPCIONAL, y guardado donde no se pierde.
+
+    Laura (jefa de CC) 18-ago: el certificado de análisis sólo aceptaba una **URL**, así que
+    para adjuntar el PDF del laboratorio había que hospedarlo en otra parte -- en la práctica,
+    no se adjuntaba nunca.
+
+    Se guarda en la BASE y no en disco: el servicio no tiene disco persistente, así que lo que
+    escribe el importador de correos en `/var/data/coas` **desaparece en cada despliegue**, y
+    esto es documento regulado (M91). Mismo patrón que `facturas_proveedor_pdf`.
+
+    Sigue siendo OPCIONAL: registrar el resultado sin adjuntar nada no cambia.
+    """
+    err, code = _require_calidad()
+    if err:
+        return err, code
+    import base64 as _b64
+    f = request.files.get('archivo')
+    if not f or not (f.filename or '').strip():
+        return jsonify({'error': 'No llegó ningún archivo'}), 400
+    nombre = (f.filename or 'coa')[:200]
+    ext = nombre.rsplit('.', 1)[-1].lower() if '.' in nombre else ''
+    if ext not in ('pdf', 'png', 'jpg', 'jpeg', 'webp'):
+        return jsonify({'error': 'Formato no admitido · subí el PDF del informe '
+                                 '(o una foto: png/jpg)'}), 400
+    data = f.read()
+    if not data:
+        return jsonify({'error': 'El archivo llegó vacío'}), 400
+    if len(data) > 8 * 1024 * 1024:
+        return jsonify({'error': 'Archivo demasiado grande (máx 8 MB) · subí el PDF, '
+                                 'no el escaneo en alta'}), 400
+    mime = {'pdf': 'application/pdf', 'png': 'image/png', 'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg', 'webp': 'image/webp'}[ext]
+    u = session.get('compras_user', '')
+    lote = (request.form.get('lote') or '').strip()[:80]
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("INSERT INTO calidad_coa_archivos (nombre, mime, contenido, bytes, lote, "
+              "subido_por) VALUES (?,?,?,?,?,?)",
+              (nombre, mime, _b64.b64encode(data).decode('ascii'), len(data), lote, u))
+    aid = c.lastrowid
+    audit_log(c, usuario=u, accion='SUBIR_COA_LABORATORIO', tabla='calidad_coa_archivos',
+              registro_id=aid, despues={'nombre': nombre, 'bytes': len(data), 'lote': lote},
+              detalle='Informe de laboratorio adjuntado al certificado de análisis')
+    conn.commit()
+    return jsonify({'ok': True, 'id': aid, 'nombre': nombre, 'bytes': len(data),
+                    'url': '/api/calidad/micro/coa-archivo/%d' % aid})
+
+
+@bp.route('/api/calidad/micro/coa-archivo/<int:aid>', methods=['GET'])
+def calidad_micro_coa_archivo(aid):
+    """Sirve el informe subido · se abre desde el certificado y desde el expediente."""
+    if 'compras_user' not in session:
+        return Response('No autorizado', status=401)
+    import base64 as _b64
+    r = get_db().execute("SELECT nombre, mime, contenido FROM calidad_coa_archivos "
+                         "WHERE id=?", (aid,)).fetchone()
+    if not r:
+        return Response('No encontrado', status=404)
+    try:
+        datos = _b64.b64decode(r[2] or '')
+    except Exception:
+        return Response('Archivo ilegible', status=500)
+    resp = Response(datos, mimetype=(r[1] or 'application/pdf'))
+    # inline · el informe se MIRA, no se descarga para volver a subirlo a otro lado
+    resp.headers['Content-Disposition'] = 'inline; filename="%s"' % (r[0] or 'coa')
+    return resp
 
 
 @bp.route('/api/calidad/micro/coa/<path:fname>', methods=['GET'])

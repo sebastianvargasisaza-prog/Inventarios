@@ -1350,7 +1350,7 @@ def mbr_imprimible(mbr_id):
             + ("<div class='firma'>%s<b>%s</b>Elabora el maestro%s</div>"
                % (_firma(conn, m["creado_por"]), _e(m["creado_por"] or "-"),
                   _fecha_firma((m["creado_at_utc"] or "")[:19])))
-            + ("<div class='firma'>%s<b>%s</b>Aprueba · Aseguramiento / Control de Calidad%s%s</div>"
+            + ("<div class='firma'>%s<b>%s</b>Aprueba%s%s</div>"
                % (_firma(conn, _ap_user), _e(_ap_nom or "-"),
                   _fecha_firma(((sig["signed_at_utc"] if sig else m["aprobado_at_utc"]) or "")[:19]), _ap_meta))
             + "</div>"
