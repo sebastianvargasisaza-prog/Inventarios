@@ -26113,12 +26113,27 @@ function empqTarjeta(g){
     return params.toString();
   }
 
+  function _abastDescargar(url) {
+    // En el CELULAR `window.open(url,'_blank')` abre una pestana que, al recibir una
+    // descarga, queda EN BLANCO -- y el bloqueador de pop-ups la corta seguido, asi que
+    // desde afuera se ve como que el boton no hizo nada. Un enlace normal descarga por el
+    // `Content-Disposition: attachment` del servidor, sin abrir pestana ni pedir permiso,
+    // y funciona igual en escritorio, iOS y Android.
+    var a = document.createElement('a');
+    a.href = url;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { if (a.parentNode) a.parentNode.removeChild(a); }, 0);
+  }
+
   function _abastExportExcel() {
-    window.open('/api/abastecimiento/export-excel?' + _abastBuildExportParams(), '_blank');
+    _abastDescargar('/api/abastecimiento/export-excel?' + _abastBuildExportParams());
   }
 
   function _abastExportConsumoBruto() {
-    window.open('/api/abastecimiento/consumo-bruto-excel?' + _abastBuildExportParams(), '_blank');
+    _abastDescargar('/api/abastecimiento/consumo-bruto-excel?' + _abastBuildExportParams());
   }
 
   async function _abastAbrirSolicitar() {

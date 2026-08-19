@@ -132,9 +132,9 @@ def test_las_cuatro_hojas_traen_lo_que_Alejandro_pidio(app, db_clean):
         mps = {f['Código']: f for f in _filas(wb['Materia prima']) if f.get('Código')}
         assert COD in mps, "la materia prima del plan no aparece"
         m = mps[COD]
-        assert abs(float(m['Gasta (kg)']) - 2.0) < 0.01, ('10% de 20 kg = 2 kg', m)
+        assert abs(float(m['Gasta 90d']) - 2.0) < 0.01, ('10% de 20 kg = 2 kg', m)
         assert abs(float(m['Hay (kg)']) - 0.5) < 0.01, m
-        assert abs(float(m['Falta (kg)']) - 1.5) < 0.01, ('gasta 2, hay 0.5', m)
+        assert abs(float(m['Falta 90d']) - 1.5) < 0.01, ('gasta 2, hay 0.5', m)
 
         # 3 · el VALOR en $/kg, no en $/g (M83)
         assert float(m['Precio $/kg']) == 50000, m
@@ -162,7 +162,7 @@ def test_el_detalle_SUMA_lo_mismo_que_el_agregado(app, db_clean):
             cod = f.get('Código MP')
             if cod:
                 por_mp[cod] = por_mp.get(cod, 0.0) + float(f.get('Gasta (kg)') or 0)
-        agregado = {f['Código']: float(f.get('Gasta (kg)') or 0)
+        agregado = {f['Código']: float(f.get('Gasta 90d') or 0)
                     for f in _filas(wb['Materia prima']) if f.get('Código')}
         assert por_mp, "la hoja de detalle salió vacía"
         revisados = 0
@@ -245,3 +245,72 @@ def test_el_desglose_de_lotes_del_resumen_CUADRA(app, db_clean):
             etiquetas)
     finally:
         _borrar()
+
+
+def test_la_necesidad_va_por_HORIZONTE_no_solo_por_el_foco(app, db_clean):
+    """Sebastián 19-ago: *"que diga necesidades de materias primas para 15 días, 30, 60,
+    90, 120, 360"*. Con una sola columna, el Excel contesta una pregunta de las siete.
+    """
+    _sembrar()
+    try:
+        wb = _abrir(_login(app))
+        cols = [c.value for c in wb['Materia prima'][4]]
+        for h in (15, 30, 60, 90, 120, 180, 365):
+            assert 'Gasta %sd' % h in cols, ('falta el consumo a %s días' % h, cols)
+            assert 'Falta %sd' % h in cols, ('falta el faltante a %s días' % h, cols)
+        # y el consumo por horizonte es MONÓTONO en la fila (15d ⊂ 30d ⊂ 60d ...)
+        fila = next(f for f in _filas(wb['Materia prima']) if f.get('Código') == COD)
+        vals = [float(fila['Gasta %sd' % h] or 0) for h in (15, 30, 60, 90, 120, 180, 365)]
+        assert vals == sorted(vals), ('el consumo por horizonte no es acumulativo', vals)
+
+        cols_env = [c.value for c in wb['Envases'][4]]
+        for h in (15, 90, 365):
+            assert 'Gasta %sd' % h in cols_env, ('los envases no van por horizonte', cols_env)
+
+        # el Resumen trae la necesidad por horizonte, que es lo que se pidió
+        txt = '\n'.join(str(c.value) for row in wb['Resumen'].iter_rows()
+                        for c in row if c.value is not None)
+        assert 'Necesidad de materia prima por horizonte' in txt, txt[:300]
+        for h in (15, 30, 60, 90, 120, 180, 365):
+            assert '%s días' % h in txt, ('el resumen no llega a %s días' % h)
+    finally:
+        _borrar()
+
+
+def test_los_DOS_exceles_se_descargan_como_archivo(app, db_clean):
+    """Que el navegador lo baje como archivo, no que lo abra como texto.
+
+    En el CELULAR los botones usaban `window.open(url,'_blank')`: la pestaña nueva recibe
+    una descarga y queda EN BLANCO, y el bloqueador de pop-ups la corta seguido -- desde
+    afuera se ve como que el botón no hizo nada. La descarga la manda el
+    `Content-Disposition: attachment` del servidor, así que ese encabezado es el contrato.
+    """
+    cli = _login(app)
+    for ruta in ('/api/abastecimiento/consumo-bruto-excel',
+                 '/api/abastecimiento/export-excel'):
+        r = cli.get(ruta)
+        assert r.status_code == 200, (ruta, r.get_data(as_text=True)[:200])
+        cd = r.headers.get('Content-Disposition', '')
+        assert cd.lower().startswith('attachment'), (
+            'sin `attachment` el celular abre el archivo en vez de bajarlo', ruta, cd)
+        assert '.xlsx' in cd, (ruta, cd)
+        assert 'spreadsheetml' in (r.headers.get('Content-Type') or ''), (
+            ruta, r.headers.get('Content-Type'))
+
+
+def test_la_pantalla_no_baja_los_exceles_con_una_pestana_nueva(app, db_clean):
+    """El guard del lado del navegador · el otro mide el servidor, éste el disparador."""
+    import re as _re
+    from .conftest import pantalla_servida
+    js = pantalla_servida(_login(app), '/inventarios')
+    i = js.find('function _abastExportConsumoBruto')
+    assert i > 0, 'desapareció el botón del Excel de consumo'
+    cuerpo = js[i:i + 400]
+    assert "window.open" not in cuerpo, (
+        'vuelve a abrir una pestaña para descargar: en el celular queda en blanco',
+        cuerpo[:200])
+    assert '_abastDescargar' in cuerpo, cuerpo[:200]
+
+    j = js.find('function _abastExportExcel')
+    assert j > 0 and 'window.open' not in js[j:j + 400], (
+        'el Excel de déficit sigue abriendo pestaña', js[j:j + 200])

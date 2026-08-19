@@ -23031,7 +23031,7 @@ def abastecimiento_consumo_bruto_excel():
             ws.cell(row=2, column=1).font = Font(size=9, italic=True, color='64748B')
             ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(ncols, 2))
 
-    def _encabezados(ws, fila, cols):
+    def _encabezados(ws, fila, cols, congelar_col=1):
         for j, (txt, ancho) in enumerate(cols, start=1):
             cel = ws.cell(row=fila, column=j, value=txt)
             cel.font = f_head
@@ -23040,7 +23040,21 @@ def abastecimiento_consumo_bruto_excel():
             cel.border = borde
             ws.column_dimensions[get_column_letter(j)].width = ancho
         ws.row_dimensions[fila].height = 26
-        ws.freeze_panes = ws.cell(row=fila + 1, column=1)
+        # Con los siete horizontes la hoja se va a la derecha: se congelan las columnas de
+        # identidad para que al desplazarse no se pierda de qué materia prima es la fila.
+        ws.freeze_panes = ws.cell(row=fila + 1, column=congelar_col)
+
+    def _banda(ws, fila, desde, hasta, texto, color):
+        """Rótulo que agrupa un bloque de columnas · sin esto, catorce columnas de números
+        seguidas no dicen cuáles son consumo y cuáles faltante."""
+        if hasta < desde:
+            return
+        cel = ws.cell(row=fila, column=desde, value=texto)
+        cel.font = Font(size=10, bold=True, color='FFFFFF')
+        cel.alignment = Alignment(horizontal='center', vertical='center')
+        for j in range(desde, hasta + 1):
+            ws.cell(row=fila, column=j).fill = PatternFill('solid', fgColor=color)
+        ws.merge_cells(start_row=fila, start_column=desde, end_row=fila, end_column=hasta)
 
     hoy_txt = (_dt.now() - _td(hours=5)).strftime('%Y-%m-%d %H:%M')
     wb = openpyxl.Workbook()
@@ -23103,6 +23117,38 @@ def abastecimiento_consumo_bruto_excel():
             value='%d pedido(s) B2B pendientes' % _b2b).font = Font(bold=True)
     ws.cell(row=fila, column=3,
             value='son PEDIDOS de cliente, no lotes: van aparte del total de arriba').font =         Font(size=9, color='64748B')
+
+    # Necesidad POR HORIZONTE · lo que Sebastián pidió el 19-ago: no alcanza con el foco,
+    # el plan se compra a 15 / 30 / 60 / 90 / 120 / 180 / 365 días.
+    fila += 2
+    ws.cell(row=fila, column=1, value='Necesidad de materia prima por horizonte').font =         Font(bold=True, size=12)
+    fila += 1
+    for _c, _t in ((1, 'Horizonte'), (2, 'Falta (kg)'), (3, 'Valor de lo que falta')):
+        cel = ws.cell(row=fila, column=_c, value=_t)
+        cel.font = f_head
+        cel.fill = fill_head
+        cel.alignment = Alignment(horizontal='center')
+        cel.border = borde
+    fila += 1
+    for _h in horizontes:
+        _kg = 0.0
+        _val = 0.0
+        for _it in items:
+            _f = float((_it.get('deficit') or {}).get(str(_h), 0) or 0)
+            if _f <= 0:
+                continue
+            _kg += _f / 1000.0
+            _p = _precio(_it.get('codigo'))
+            if _p > 0:
+                _val += _f / 1000.0 * _p
+        ws.cell(row=fila, column=1, value='%s días' % _h).font = Font(bold=True)
+        cel = ws.cell(row=fila, column=2, value=round(_kg, 1))
+        cel.number_format = MILES1
+        cel.border = borde
+        cel = ws.cell(row=fila, column=3, value=round(_val, 0))
+        cel.number_format = PESOS
+        cel.border = borde
+        fila += 1
 
     # Lo que el total NO incluye · se dice, no se esconde (M124).
     fila += 2
@@ -23172,52 +23218,69 @@ def abastecimiento_consumo_bruto_excel():
 
     # ══ HOJA 3 · MATERIA PRIMA ══════════════════════════════════════════════════════
     ws = wb.create_sheet('Materia prima')
-    _titulo(ws, 'Cuánto se gasta de cada materia prima, cuánto hay y cuánto falta', 11,
-            'Foco %s días · "Falta" ya descuenta lo que hay en bodega y en cuarentena · '
-            '"Valor a consumir" NO descuenta inventario' % foco)
-    _encabezados(ws, 4, [
-        ('Código', 13), ('Materia prima', 40), ('Proveedor', 26),
-        ('Gasta (kg)', 13), ('Hay (kg)', 12), ('En cuarentena (kg)', 15),
-        ('Falta (kg)', 13), ('En camino (kg)', 14),
-        ('Precio $/kg', 14), ('Valor a consumir', 17), ('Valor faltante', 16)])
+    _titulo(ws, 'Necesidad de materia prima por horizonte', 6 + 2 * len(horizontes) + 3,
+            'GASTA = lo que pide el plan · FALTA = lo que no alcanza con lo que hay hoy '
+            '(bodega + cuarentena, ya descontado lo que se vence) · el valor es del foco '
+            'de %s días y NO descuenta inventario' % foco)
+    NH = len(horizontes)
+    C_GASTA, C_FALTA = 7, 7 + NH
+    C_PRECIO = 7 + 2 * NH
+    _banda(ws, 3, C_GASTA, C_GASTA + NH - 1, 'GASTA (kg) · acumulado a', GRIS_H)
+    _banda(ws, 3, C_FALTA, C_FALTA + NH - 1, 'FALTA (kg) · con lo que hay hoy', ROJO)
+    cols = ([('Código', 13), ('Materia prima', 38), ('Proveedor', 24),
+             ('Hay (kg)', 11), ('Cuarentena (kg)', 13), ('En camino (kg)', 13)]
+            + [('Gasta %sd' % h, 12) for h in horizontes]
+            + [('Falta %sd' % h, 12) for h in horizontes]
+            + [('Precio $/kg', 13), ('Valor a consumir', 16), ('Valor faltante', 15)])
+    _encabezados(ws, 4, cols, congelar_col=4)
     fila = 5
-    def _orden(it):
-        return -float((it.get('deficit') or {}).get(fh, 0) or 0)
-    for it in sorted(items, key=_orden):
-        cons_g = float((it.get('consumo') or {}).get(fh, 0) or 0)
-        if cons_g <= 0:
+    for it in sorted(items,
+                     key=lambda x: -float((x.get('deficit') or {}).get(fh, 0) or 0)):
+        cons_foco = float((it.get('consumo') or {}).get(fh, 0) or 0)
+        if cons_foco <= 0:
             continue
-        falta_g = float((it.get('deficit') or {}).get(fh, 0) or 0)
-        p = _precio(it.get('codigo'))
-        vals = [
-            it.get('codigo'), it.get('nombre'),
-            (it.get('proveedor_sugerido') or '(sin proveedor)'),
-            round(cons_g / 1000.0, 3),
-            round(float(it.get('stock_actual_g') or 0) / 1000.0, 3),
-            round(float(it.get('cuarentena_g') or 0) / 1000.0, 3),
-            round(falta_g / 1000.0, 3),
-            round(float(it.get('pendiente_compras_g') or 0) / 1000.0, 3),
-            (p if p > 0 else None),
-            (round(cons_g / 1000.0 * p, 0) if p > 0 else None),
-            (round(falta_g / 1000.0 * p, 0) if p > 0 else None),
-        ]
-        for j, v in enumerate(vals, start=1):
+        falta_foco = float((it.get('deficit') or {}).get(fh, 0) or 0)
+        pr = _precio(it.get('codigo'))
+        base = [it.get('codigo'), it.get('nombre'),
+                (it.get('proveedor_sugerido') or '(sin proveedor)'),
+                round(float(it.get('stock_actual_g') or 0) / 1000.0, 3),
+                round(float(it.get('cuarentena_g') or 0) / 1000.0, 3),
+                round(float(it.get('pendiente_compras_g') or 0) / 1000.0, 3)]
+        for j, v in enumerate(base, start=1):
             cel = ws.cell(row=fila, column=j, value=v)
             cel.border = borde
-            if j in (4, 5, 6, 7, 8):
+            if j >= 4:
                 cel.number_format = MILES1
-            elif j in (9, 10, 11):
-                cel.number_format = PESOS
-        if falta_g > 0:
-            ws.cell(row=fila, column=7).font = Font(bold=True, color=ROJO)
-        if p <= 0 and cons_g > 0:
-            ws.cell(row=fila, column=9, value='sin precio').font = Font(size=9, color=AMBAR)
+        for k, h in enumerate(horizontes):
+            g = float((it.get('consumo') or {}).get(str(h), 0) or 0) / 1000.0
+            cel = ws.cell(row=fila, column=C_GASTA + k, value=round(g, 3))
+            cel.number_format = MILES1
+            cel.border = borde
+        for k, h in enumerate(horizontes):
+            f_ = float((it.get('deficit') or {}).get(str(h), 0) or 0) / 1000.0
+            cel = ws.cell(row=fila, column=C_FALTA + k, value=round(f_, 3))
+            cel.number_format = MILES1
+            cel.border = borde
+            if f_ > 0:
+                cel.font = Font(bold=True, color=ROJO)
+        cel = ws.cell(row=fila, column=C_PRECIO, value=(pr if pr > 0 else 'sin precio'))
+        cel.border = borde
+        if pr > 0:
+            cel.number_format = PESOS
+        else:
+            cel.font = Font(size=9, color=AMBAR)
+        for off, g in ((1, cons_foco), (2, falta_foco)):
+            cel = ws.cell(row=fila, column=C_PRECIO + off,
+                          value=(round(g / 1000.0 * pr, 0) if pr > 0 else None))
+            cel.number_format = PESOS
+            cel.border = borde
         fila += 1
-    # Totales al pie · el numero del Resumen tiene que poder sumarse acá (M5)
+    # Totales al pie · el número del Resumen tiene que poder sumarse acá (M5)
     if fila > 5:
         ws.cell(row=fila, column=3, value='TOTAL').font = Font(bold=True)
-        for col, letra in ((10, 'J'), (11, 'K')):
-            cel = ws.cell(row=fila, column=col,
+        for off in (1, 2):
+            letra = get_column_letter(C_PRECIO + off)
+            cel = ws.cell(row=fila, column=C_PRECIO + off,
                           value='=SUM(%s5:%s%d)' % (letra, letra, fila - 1))
             cel.number_format = PESOS
             cel.font = Font(bold=True)
@@ -23251,29 +23314,44 @@ def abastecimiento_consumo_bruto_excel():
     # El Excel anterior traía el material de envase · sacarlo en silencio sería perder algo
     # que alguien ya usaba (M112). Va en UNIDADES, que es como se compra y se cuenta.
     ws = wb.create_sheet('Envases')
-    _titulo(ws, 'Material de envase · cuánto se gasta, cuánto hay y cuánto falta', 7,
-            'Foco %s días · en UNIDADES · "Falta" ya descuenta bodega y cuarentena' % foco)
-    _encabezados(ws, 4, [('Código', 16), ('Envase', 44), ('Proveedor', 28),
-                         ('Gasta (uds)', 13), ('Hay (uds)', 12),
-                         ('Falta (uds)', 13), ('En camino (uds)', 15)])
+    _titulo(ws, 'Necesidad de material de envase por horizonte', 5 + 2 * len(horizontes),
+            'En UNIDADES · GASTA = lo que pide el plan · FALTA = lo que no alcanza con lo '
+            'que hay hoy (bodega + cuarentena)')
+    NHE = len(horizontes)
+    E_GASTA, E_FALTA = 6, 6 + NHE
+    _banda(ws, 3, E_GASTA, E_GASTA + NHE - 1, 'GASTA (uds) · acumulado a', GRIS_H)
+    _banda(ws, 3, E_FALTA, E_FALTA + NHE - 1, 'FALTA (uds) · con lo que hay hoy', ROJO)
+    cols = ([('Código', 16), ('Envase', 40), ('Proveedor', 26),
+             ('Hay (uds)', 11), ('En camino (uds)', 13)]
+            + [('Gasta %sd' % h, 12) for h in horizontes]
+            + [('Falta %sd' % h, 12) for h in horizontes])
+    _encabezados(ws, 4, cols, congelar_col=3)
     fila = 5
     for it in sorted(items_mee,
                      key=lambda x: -float((x.get('deficit') or {}).get(fh, 0) or 0)):
-        cons_u = float((it.get('consumo') or {}).get(fh, 0) or 0)
-        if cons_u <= 0:
+        if float((it.get('consumo') or {}).get(fh, 0) or 0) <= 0:
             continue
-        falta_u = float((it.get('deficit') or {}).get(fh, 0) or 0)
-        vals = [it.get('codigo'), it.get('nombre'),
+        base = [it.get('codigo'), it.get('nombre'),
                 (it.get('proveedor_sugerido') or '(sin proveedor)'),
-                round(cons_u, 1), round(float(it.get('stock_actual_u') or 0), 1),
-                round(falta_u, 1), round(float(it.get('pendiente_compras_u') or 0), 1)]
-        for j, v in enumerate(vals, start=1):
-            cel = ws.cell(row=fila, column=j, value=v)
+                round(float(it.get('stock_actual_u') or 0), 1),
+                round(float(it.get('pendiente_compras_u') or 0), 1)]
+        for k, v in enumerate(base, start=1):
+            cel = ws.cell(row=fila, column=k, value=v)
             cel.border = borde
-            if j >= 4:
+            if k >= 4:
                 cel.number_format = MILES1
-        if falta_u > 0:
-            ws.cell(row=fila, column=6).font = Font(bold=True, color=ROJO)
+        for k, h in enumerate(horizontes):
+            cel = ws.cell(row=fila, column=E_GASTA + k,
+                          value=round(float((it.get('consumo') or {}).get(str(h), 0) or 0), 1))
+            cel.number_format = MILES1
+            cel.border = borde
+        for k, h in enumerate(horizontes):
+            fu = float((it.get('deficit') or {}).get(str(h), 0) or 0)
+            cel = ws.cell(row=fila, column=E_FALTA + k, value=round(fu, 1))
+            cel.number_format = MILES1
+            cel.border = borde
+            if fu > 0:
+                cel.font = Font(bold=True, color=ROJO)
         fila += 1
     if fila == 5:
         ws.cell(row=5, column=1, value='Ningún envase se consume en este horizonte.')
