@@ -8590,7 +8590,8 @@ def _rotulo_firma_vigente(realizado_at):
     return (ahora - cuando) <= _td(days=_ROTULO_FIRMA_VIGENTE_DIAS)
 
 
-def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado=''):
+def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
+                      sanit_override=None, deterg_override=None):
     """Devuelve el <div class="sheet"> del rótulo F02. Si equipo=(codigo,nombre), el rótulo es de ESE
     equipo (uno por máquina · Sebastián 25-jun); si no, del área. '' si el área no existe."""
     from html import escape as _e
@@ -8631,6 +8632,15 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado=''):
         prod_prev, lote_prev = base['producto_anterior'], base['lote_anterior']
         sanit, deterg, eq_json = 'Alcohol 70%', 'Detergente Neutro Industrial', ''
         realizado_por = realizado_at = verificado_por = verificado_at = ''
+    # Lo que se escribio en el selector MANDA sobre el ultimo ciclo y sobre el default:
+    # es la decision de quien esta por imprimir, tomada para ESTA tanda. Vacio es una
+    # decision valida (dejar la linea para llenarla a mano), por eso se compara contra
+    # None y no por truthiness -- con `or` una cadena vacia caeria al valor viejo y el
+    # rotulo saldria con el sanitizante de otro ciclo (M19).
+    if sanit_override is not None:
+        sanit = sanit_override
+    if deterg_override is not None:
+        deterg = deterg_override
     try:
         equipos_lst = json.loads(eq_json) if eq_json else []
     except Exception:
@@ -8709,9 +8719,7 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado=''):
     </div>
     {_encabezado_formato_zonas()}
   </div>
-  <div class="title">
-    <div class="k">Registro de verificación previo a fabricación · BPM / INVIMA · 21 CFR Part 11</div>
-  </div>
+
   <div class="estado">
     <div class="elbl">ESTADO</div>
     {estado_chips}
@@ -8854,6 +8862,31 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
 </body></html>'''
 
 
+def _campo_producto_limpieza(cid, etiqueta, sugerido):
+    """Un campo del rotulo que se escribe ANTES de imprimir, con atajo a N/A.
+
+    Sebastian 19-ago: *"opcion para escribir detergente y sanitizante para que salga
+    impreso, incluyendo la opcion N/A"*. Se escriben aca y no a mano en el piso, igual
+    que el nombre de quien limpia.
+
+    El valor por defecto es el que el area usa siempre, asi que el caso normal es no
+    tocar nada; N/A queda a un click para el equipo que no lo lleva -- tecleado a mano
+    cada vez termina escrito de cinco formas distintas, y entonces no se puede agrupar.
+    """
+    _js = ("var e=document.getElementById('%s');"
+           "e.value=(e.value==='N/A'?'':'N/A');" % cid)
+    return (
+        '<div style="flex:1;min-width:210px">'
+        '<label for="' + cid + '" style="display:block;font-size:12px;font-weight:700;'
+        'margin-bottom:4px">' + etiqueta + '</label>'
+        '<div style="display:flex;gap:6px">'
+        '<input id="' + cid + '" class="cx-input" style="flex:1" maxlength="60" '
+        'value="' + sugerido + '" placeholder="en blanco = se llena a mano">'
+        '<button type="button" class="cx-btn" style="padding:0 12px" '
+        'title="Marcar como No Aplica" onclick="' + _js + '">N/A</button>'
+        '</div></div>')
+
+
 def _rotulos_limpieza_selector(c, areas, area_foco='', operario=''):
     """Pantalla para elegir QUE EQUIPOS se van a usar antes de sacar los rotulos F02.
 
@@ -8947,7 +8980,13 @@ def _rotulos_limpieza_selector(c, areas, area_foco='', operario=''):
         + ('' if _de_limpieza or not _nombres else
            ' Ning&uacute;n operario tiene el rol <i>limpieza</i> todav&iacute;a: se puede '
            'asignar en el maestro de operarios.')
-        + '</div></div>')
+        + '</div>'
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--cx-hairline)">'
+        + _campo_producto_limpieza('sanit', 'Sanitizante', 'Alcohol 70%')
+        + _campo_producto_limpieza('deterg', 'Detergente', 'Detergente Neutro Industrial')
+        + '</div>'
+        '<div style="font-size:11.5px;margin-top:6px;opacity:.85">Lo que escribas ac&aacute; sale impreso en el r&oacute;tulo. En blanco queda la l&iacute;nea para llenarla a mano.</div>'
+        + '</div>')
     return """<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">
 <meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width,initial-scale=1.0"><title>R&oacute;tulos de limpieza &middot; qu&eacute; equipos</title>
@@ -9022,15 +9061,19 @@ function imprimir(){
   if (!cods.length) return;
   var q = document.getElementById('quien');
   var quien = q ? (q.value || '') : '';
+  function _v(id){ var e = document.getElementById(id); return e ? (e.value || '').trim() : ''; }
   window.location.href = '/planta/rotulos-limpieza?equipos=' + encodeURIComponent(cods.join(','))
-    + (quien ? ('&operario=' + encodeURIComponent(quien)) : '');
+    + (quien ? ('&operario=' + encodeURIComponent(quien)) : '')
+    + '&sanit=' + encodeURIComponent(_v('sanit'))
+    + '&deterg=' + encodeURIComponent(_v('deterg'));
 }
 refrescar();
 </script>
 </body></html>"""
 
 
-def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None, operario_asignado=''):
+def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None, operario_asignado='',
+                     sanit_override=None, deterg_override=None):
     """Lista de hojas F02 de una sala: UNA POR EQUIPO (cada máquina su etiqueta · reusa el catálogo
     canónico _equipos_de_area, que devuelve dicts). Si la sala no tiene equipos, una hoja de área.
 
@@ -9046,9 +9089,13 @@ def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None, operario_asigna
             return []   # esta sala no aporta equipos a la selección
     if equipos:
         return [s for s in (_rotulo_f02_sheet(c, area_id, equipo=(e['codigo'], e['nombre']),
-                                              operario_asignado=operario_asignado)
+                                              operario_asignado=operario_asignado,
+                                              sanit_override=sanit_override,
+                                              deterg_override=deterg_override)
                             for e in equipos) if s]
-    s = _rotulo_f02_sheet(c, area_id, operario_asignado=operario_asignado)
+    s = _rotulo_f02_sheet(c, area_id, operario_asignado=operario_asignado,
+                          sanit_override=sanit_override,
+                          deterg_override=deterg_override)
     return [s] if s else []
 
 
@@ -9398,6 +9445,15 @@ def planta_rotulos_limpieza_todas():
     # asignado se imprime como NOMBRE en la línea -la firma la sigue poniendo la persona.
     _area_ctx = (request.args.get('area') or '').strip().upper()
     _oper_ctx = (request.args.get('operario') or '').strip()[:80]
+    # Sanitizante y detergente se escriben en el selector y viajan al rotulo. Se pasan
+    # SIEMPRE que el parametro venga -aunque sea vacio-, porque vacio es una decision
+    # explicita (dejar la linea en blanco para llenarla a mano) y no es lo mismo que no
+    # haber pasado por el selector, donde manda el valor del ultimo ciclo.
+    _sanit_ctx = _deterg_ctx = None
+    if 'sanit' in request.args:
+        _sanit_ctx = (request.args.get('sanit') or '').strip()[:60]
+    if 'deterg' in request.args:
+        _deterg_ctx = (request.args.get('deterg') or '').strip()[:60]
     if not _sel and not _todos:
         # charset explicito, como las rutas vecinas: el <meta> ya lo cubre, pero un
         # encabezado que no lo declara deja los acentos a merced del navegador.
@@ -9415,7 +9471,9 @@ def planta_rotulos_limpieza_todas():
             continue
         vistos.add(nm)
         sheets.extend(_rotulos_de_area(c, a[0], a[2], solo_codigos=solo,
-                                       operario_asignado=_oper_ctx))
+                                       operario_asignado=_oper_ctx,
+                                       sanit_override=_sanit_ctx,
+                                       deterg_override=_deterg_ctx))
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:var(--cx-text-mute, #888);padding:40px">No hay salas configuradas.</div>')
     _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)

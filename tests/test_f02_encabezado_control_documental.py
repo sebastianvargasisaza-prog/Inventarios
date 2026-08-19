@@ -171,3 +171,55 @@ def test_ningun_formato_impreso_resume_la_vigencia(app, db_clean):
     assert not culpables, (
         "hay formatos impresos que resumen la vigencia en vez de declarar Desde/Hasta · "
         "Aseguramiento lo declaro no negociable: %s" % culpables)
+
+
+# ── Sanitizante y detergente se escriben ANTES de imprimir · 19-ago ──────────
+
+def test_el_selector_ofrece_escribir_sanitizante_y_detergente(app, db_clean):
+    """Sebastian: *"opcion para escribir detergente y sanitizante para que salga
+    impreso, incluyendo la opcion N/A"*.
+
+    Igual que el nombre de quien limpia: se escribe aca y no a mano en el piso. N/A va
+    como boton porque tecleado cada vez termina escrito de cinco formas distintas.
+    """
+    cli = _cli(app)
+    sel = cli.get('/planta/rotulos-limpieza?area=FAB1',
+                  follow_redirects=True).get_data(as_text=True)
+    faltan = [x for x in ('id="sanit"', 'id="deterg"', '>N/A<', 'Sanitizante', 'Detergente')
+              if x not in sel]
+    assert not faltan, ("el selector no ofrece escribir los productos de limpieza", faltan)
+
+
+def test_lo_que_se_escribe_SALE_IMPRESO_en_el_rotulo(app, db_clean):
+    cli = _cli(app)
+    h = cli.get('/planta/rotulos-limpieza?todos=1&sanit=Amonio+cuaternario&deterg=Jabon+enzimatico',
+                follow_redirects=True).get_data(as_text=True)
+    assert 'Amonio cuaternario' in h, "el sanitizante escrito no sale impreso"
+    assert 'Jabon enzimatico' in h, "el detergente escrito no sale impreso"
+
+
+def test_NA_sale_impreso_y_el_VACIO_deja_la_linea_en_blanco(app, db_clean):
+    """El borde que hace util el campo: vacio es una DECISION, no 'usar lo de antes'.
+
+    Si vacio cayera al valor del ultimo ciclo, el rotulo saldria con el sanitizante de
+    otra tanda -- que es la misma familia del rotulo prefirmado que se corrigio el
+    15-ago (M19: un hecho viejo no habla de este lote).
+    """
+    cli = _cli(app)
+    na = cli.get('/planta/rotulos-limpieza?todos=1&sanit=N%2FA&deterg=N%2FA',
+                 follow_redirects=True).get_data(as_text=True)
+    assert na.count('N/A') >= 2, "N/A no llega al rotulo"
+    vacio = cli.get('/planta/rotulos-limpieza?todos=1&sanit=&deterg=',
+                    follow_redirects=True).get_data(as_text=True)
+    assert 'Alcohol 70%' not in vacio, (
+        "con el campo vacio el rotulo cae al valor por defecto en vez de dejar la linea "
+        "en blanco · vacio es una decision explicita")
+
+
+def test_el_rotulo_no_lleva_la_leyenda_del_pie(app, db_clean):
+    """Sebastian 19-ago: *"QUITA ESTO DEL ROTULO"* (la linea de BPM/INVIMA/Part 11)."""
+    cli = _cli(app)
+    h = cli.get('/planta/rotulos-limpieza?todos=1',
+                follow_redirects=True).get_data(as_text=True)
+    assert 'Registro de verificaci' not in h, (
+        "volvio la leyenda del pie que Sebastian pidio quitar del rotulo")
