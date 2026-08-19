@@ -2157,14 +2157,19 @@ def job_tecnica_vencimientos(app):
 
         # ─── SGD ────────────────────────────────────────────────────────
         try:
+            # `documentos_sgd` es la tabla LEGACY (migrada a `sgd_documentos` y sin un
+            # solo INSERT en el repo), asi que este aviso NUNCA se disparo: leia una
+            # tabla vacia. Un aviso que no puede sonar se ve igual que "no hay nada
+            # que revisar" (M127: una integracion que enmudece es peor que una que
+            # nunca funciono).
             sgd_rows = c.execute("""
-                SELECT id, tipo, codigo, nombre, fecha_proxima_revision,
-                       responsable_revision
-                  FROM documentos_sgd
+                SELECT id, tipo_doc, codigo, titulo, proxima_revision,
+                       COALESCE(revisado_por,'')
+                  FROM sgd_documentos
                  WHERE LOWER(COALESCE(estado,'')) = 'vigente'
-                   AND COALESCE(fecha_proxima_revision,'') != ''
-                   AND date(fecha_proxima_revision) <= date('now', '-5 hours', '+30 days')
-                 ORDER BY fecha_proxima_revision ASC
+                   AND COALESCE(proxima_revision,'') != ''
+                   AND date(proxima_revision) <= date('now', '-5 hours', '+30 days')
+                 ORDER BY proxima_revision ASC
                  LIMIT 200
             """).fetchall()
         except Exception as e:

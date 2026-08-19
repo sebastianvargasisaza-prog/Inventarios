@@ -253,11 +253,20 @@ def tecnica_dashboard():
                    AND fecha_vencimiento <= date('now', '-5 hours', '+90 days')
                    AND fecha_vencimiento >= date('now', '-5 hours')""")
     por_vencer = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM documentos_sgd WHERE estado='Vigente'")
+    # `documentos_sgd` es la tabla LEGACY: la migracion one-shot de mas arriba en este
+    # mismo archivo la movio a `sgd_documentos`, y desde entonces **nadie la escribe** (0
+    # INSERT en todo el repo). El dashboard del Director Tecnico seguia contando de la
+    # vieja, asi que decia "DOCS SGD VIGENTES: 0" mientras Aseguramiento -que lee la
+    # nueva- mostraba 2. El mismo hecho en dos tablas, y el DT leia la muerta (M37/M143).
+    # ⚠ El estado de la tabla nueva va en MINUSCULA ('vigente') y la fecha se llama
+    # `proxima_revision`, no `fecha_revision` · se compara con LOWER (M23).
+    c.execute("SELECT COUNT(*) FROM sgd_documentos "
+              " WHERE LOWER(COALESCE(estado,''))='vigente'")
     docs_vigentes = c.fetchone()[0]
-    c.execute("""SELECT COUNT(*) FROM documentos_sgd
-                 WHERE estado='Vigente' AND fecha_revision IS NOT NULL
-                   AND fecha_revision <= date('now', '-5 hours', '+30 days')""")
+    c.execute("SELECT COUNT(*) FROM sgd_documentos "
+              " WHERE LOWER(COALESCE(estado,''))='vigente' "
+              "   AND COALESCE(proxima_revision,'')<>'' "
+              "   AND date(proxima_revision) <= date('now','-5 hours','+30 days')")
     docs_revisar = c.fetchone()[0]
     # Próximos vencimientos INVIMA
     c.execute("""SELECT producto, num_registro, fecha_vencimiento, estado
