@@ -509,7 +509,15 @@ def chat_widget_js():
   }
 
   cwCheckUnread();
-  setInterval(cwCheckUnread, 12000);
+  // 20 s, no 12 · dos razones medidas el 19-ago:
+  //   (a) `cortex.js` sólo saltea el tick con la pestaña oculta a partir de 15 s (por
+  //       debajo viven relojes y animaciones, que no se tocan). Con 12 s este poll quedaba
+  //       AFUERA de esa protección y seguía pidiendo desde cada pestaña abierta, mirara
+  //       alguien o no -- y este widget se inyecta en TODAS las pantallas (M217).
+  //   (b) su mediana en producción era 781 ms contra tres workers.
+  // Un contador de mensajes sin leer no necesita frescura de 12 segundos; el panel del
+  // chat, cuando está abierto, refresca por su cuenta.
+  setInterval(cwCheckUnread, 20000);
 })();
 """
     resp = Response(js, mimetype="application/javascript")
@@ -1161,19 +1169,35 @@ def chat_unread_summary():
     user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
     try:
+        # UNA pasada agrupada, no un COUNT correlacionado POR HILO.
+        #
+        # Esta es la consulta que MÁS veces corre en todo EOS: el widget de chat la pide
+        # cada 12 s y se inyecta en TODAS las pantallas, así que su costo se multiplica por
+        # la cantidad de pestañas abiertas contra tres workers (M43/M217). Medido en
+        # producción el 19-ago, ANTES de tocar nada: mediana **781 ms**, picos de 6,2 s.
+        #
+        # ⚠ La forma correcta depende del MOTOR, y medirlo en SQLite habría hecho tomar la
+        # decisión al revés. Con 180.000 mensajes:
+        #     SQLite      · correlacionado  27 ms   · agrupado  60 ms
+        #     PostgreSQL  · correlacionado  92 ms   · agrupado  58 ms
+        #                   y sobre todo: 101.079 páginas leídas contra 1.684 (60x menos)
+        # Producción es PostgreSQL, así que manda el agrupado. Las páginas leídas pesan más
+        # que los milisegundos cuando la base está cargada o remota.
         rows = c.execute("""
             SELECT t.id, t.tipo, t.nombre, t.ultimo_mensaje_preview,
-                   t.ultimo_mensaje_en, m.username as me_user,
+                   t.ultimo_mensaje_en, m.username AS me_user,
                    m.ultimo_leido_id,
-                   (SELECT COUNT(*) FROM chat_messages msg
-                    WHERE msg.thread_id=t.id
-                      AND msg.eliminado=0
-                      AND msg.sender != ?
-                      AND (m.ultimo_leido_id IS NULL OR msg.id > m.ultimo_leido_id)
-                   ) as unread
+                   COUNT(msg.id) AS unread
             FROM chat_threads t
-            JOIN chat_thread_members m ON m.thread_id=t.id
-            WHERE m.username=?
+            JOIN chat_thread_members m ON m.thread_id = t.id
+            LEFT JOIN chat_messages msg
+                   ON msg.thread_id = t.id
+                  AND msg.eliminado = 0
+                  AND msg.sender != ?
+                  AND (m.ultimo_leido_id IS NULL OR msg.id > m.ultimo_leido_id)
+            WHERE m.username = ?
+            GROUP BY t.id, t.tipo, t.nombre, t.ultimo_mensaje_preview,
+                     t.ultimo_mensaje_en, m.username, m.ultimo_leido_id
         """, (user, user)).fetchall()
         cols = [d[0] for d in c.description]
         threads_unread = [dict(zip(cols, r)) for r in rows if (r[-1] or 0) > 0]
