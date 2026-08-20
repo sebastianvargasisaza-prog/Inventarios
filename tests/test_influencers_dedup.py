@@ -50,7 +50,14 @@ def test_dedup_merge_influencers(app, db_clean):
     assert r2.status_code == 200, r2.data
     d2 = r2.get_json()
     assert d2["aplicado"] is True
-    assert d2["duplicados_eliminados"] == 2
+    # ⚠ `duplicados_eliminados` es un total sobre TODA la base, no sobre el grupo de este
+    # test: otros 9 archivos siembran creadores y la herramienta fusiona todos los grupos
+    # que encuentre. Exigir el numero exacto hace que el test pase aislado y falle en el
+    # gate segun con quien le toque compartir worker -- que es justo el rojo intermitente
+    # que se lee como "flaky" y no lo es (M207/M227: un total sobre un universo que el
+    # test no controla). Lo que este test SI controla es su propio grupo, y eso se verifica
+    # abajo: queda 1 solo Juanito y sus 3 pagos quedaron en el keeper.
+    assert d2["duplicados_eliminados"] >= 2, d2
     assert d2["unique_index"] is True
     with app.app_context():
         from database import get_db

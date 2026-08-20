@@ -165,6 +165,7 @@ CORAZON=(
   "tests/test_f02_encabezado_control_documental.py"
   "tests/test_dt_distingue_vacio_de_cero.py"
   "tests/test_valor_inventario_sale_del_kardex.py"
+  "tests/test_planta_no_saca_al_usuario_de_la_vista.py"
   "tests/test_codigo_kardex_limpio.py"
   "tests/test_auditoria_lotes_pg.py"
   "tests/test_envases_kardex_mp.py"

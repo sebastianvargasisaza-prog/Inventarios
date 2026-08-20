@@ -169,7 +169,11 @@ textarea{resize:vertical;min-height:60px;}
             por dominio. Es lo que se le muestra a INVIMA.</div>
         </div></a>
 
-      <a href="/planta/plano" target="_blank" style="text-decoration:none;color:inherit">
+      <!-- 19-ago · apuntaba a /planta/plano, la pantalla VIEJA: sin pantalla completa,
+           sin modal de sala, sin equipos y sin el rotulo F02 desde el plano. El plano
+           en vivo que se rehizo vive como pestana del dashboard de Planta, y el DT y
+           Aseguramiento tienen acceso (medido). -->
+      <a href="/inventarios#plano" target="_blank" style="text-decoration:none;color:inherit">
         <div style="border:1px solid var(--cx-border);border-radius:11px;padding:14px;height:100%;
                     transition:transform .12s ease,box-shadow .12s ease"
              onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 24px rgba(15,12,35,.12)'"

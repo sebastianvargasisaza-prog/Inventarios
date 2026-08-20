@@ -164,6 +164,12 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       onkeydown="if(event.key==='Enter')confirmarOper()">
     <div id="oper-error" style="display:none;color:var(--cx-danger-text);font-size:0.82em;margin-bottom:8px;">&#9888; Escribe tu nombre para continuar.</div>
     <button onclick="confirmarOper()" style="width:100%;background:linear-gradient(135deg,#6d28d9,#4c1d95);color:white;border:none;border-radius:10px;padding:13px;font-size:1em;font-weight:700;cursor:pointer;margin-top:4px;">Entrar al sistema &#8594;</button>
+    <!-- Sebastian 19-ago: *"hay pop up que se abren y no tienen opcion de x para salirse
+         y toca darle actualizar"*. Este era el unico de los 26 de Planta sin salida.
+         La X aparece SOLO si ya hay un operador: sin operador el modal es obligatorio
+         (todo movimiento del kardex queda con quien lo hizo), pero cuando alguien entra
+         a "[cambiar]" y se arrepiente tiene que poder volver a lo que estaba. -->
+    <button id="oper-cancelar" hidden onclick="cancelarCambioOperador()" style="width:100%;background:none;border:none;color:var(--cx-text-mute);font-size:0.85em;cursor:pointer;margin-top:10px;padding:6px;">Cancelar &middot; seguir como <b id="oper-cancelar-nombre"></b></button>
   </div>
 </div>
 <div id="modal-solicitud-compra" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9996;display:none;align-items:center;justify-content:center;">
@@ -639,7 +645,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub');cargarEBRs()">&#127981; Fabricación</button>
     <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');cargarEnvasadoRunner()">&#128230; Envasado</button>
     <button class="sub-btn" onclick="subSwitchTab('acondicionamiento',this,'bar-prodHub');loadColaAcond()">&#128295; Acondicionamiento</button>
-    <button class="sub-btn" onclick="subSwitchTab('plano',this,'bar-prodHub');if(typeof cargarPlanoGrid==='function')cargarPlanoGrid();">&#128506;&#65039; Plano</button>
+    <button class="sub-btn" id="btn-tab-plano" onclick="subSwitchTab('plano',this,'bar-prodHub');if(typeof cargarPlanoGrid==='function')cargarPlanoGrid();">&#128506;&#65039; Plano</button>
     <button class="sub-btn" onclick="subSwitchTab('historicos',this,'bar-prodHub');if(typeof cargarHistProd==='function')cargarHistProd();">&#128218; Históricos</button>
   </div>
   <div id="bar-calidadHub" class="sub-tab-bar">
@@ -1098,7 +1104,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="window.open('/planta/rotulos-limpieza?todos=1','_blank')" style="padding:6px 14px;background:var(--cx-info);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Saca TODOS los rótulos F02 en una hoja (uno por página) para imprimir y entregar de una">&#128424;&#65039; Imprimir TODOS</button>
-        <button onclick="window.open('/planta/plano','_blank')" style="padding:6px 14px;background:var(--cx-primary-grad,var(--cx-primary));color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="El plano de la planta en vivo: qué se está haciendo en cada sala, y click en la sala para actuar sobre ella">&#127981; Plano de planta</button>
+        <button onclick="irAlPlano()" style="padding:6px 14px;background:var(--cx-primary-grad,var(--cx-primary));color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="El plano de la planta en vivo: qué se está haciendo en cada sala, y click en la sala para actuar sobre ella">&#127981; Plano de planta</button>
         <button onclick="window.open('/planta/despeje-linea','_blank')" style="padding:6px 14px;background:var(--cx-success);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Despeje de línea (PRD-PRO-001): es lo que devuelve una sala SUCIA a LIBRE para poder producir">&#9989; Despeje de línea</button>
         <button onclick="cargarRotulosLimp()" style="padding:6px 12px;background:var(--cx-primary);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
       </div>
@@ -3220,6 +3226,10 @@ document.addEventListener('DOMContentLoaded',function(){
 function _openTabFromHash(){
   var h = (location.hash || '').replace('#','').trim();
   if(!h) return;
+  // 'plano' es una sub-pestana (vive en la barra bar-prodHub, no en .tab-button), asi que
+  // se abre por su propio camino · sin esto, /inventarios#plano no llevaba a ningun lado
+  // y quien lo enlazaba terminaba mandando a la pantalla vieja (Sebastian 19-ago).
+  if(h === 'plano'){ if(typeof irAlPlano==='function') irAlPlano(); return; }
   var valid = ['dashboard','stock','empaque','programacion','formulas','produccion',
                'cuarentena','alertas','movimientos','ingreso','abc'];
   if(valid.indexOf(h) < 0) return;
@@ -3235,16 +3245,38 @@ function _eq(s){return (s||'').split("'").join('&#39;');}
 function selOper(n){
   OPER_ACTUAL=n;
   try{localStorage.setItem('espagiria_operador',n);}catch(e){}
+  // el boton de cancelar es del dialogo de CAMBIO: se apaga al confirmar, o quedaria
+  // visible la proxima vez ofreciendo volver a un operador que ya no es el actual
+  var _c=document.getElementById('oper-cancelar'); if(_c)_c.hidden=true;
+  var _e=document.getElementById('oper-error'); if(_e)_e.style.display='none';
   document.getElementById('modal-operador').style.display='none';
   var c=document.getElementById('oper-chip');if(c)c.innerHTML='<span onclick="cambiarOperador()" title="Cambiar operador" style="cursor:pointer;">&#128100; '+n+' <span style="font-size:0.75em;opacity:0.7;">[cambiar]</span></span>';
   loadDashboardCompleto();loadFormulas();
 }
 function cambiarOperador(){
-  try{localStorage.removeItem('espagiria_operador');}catch(e){}
+  // ⚠ NO se borra el operador actual aca. Antes se hacia `removeItem` ANTES de abrir el
+  // modal: quien apretaba "[cambiar]" por accidente ya lo habia perdido, y como el modal
+  // no tenia salida quedaba atrapado y habia que recargar la pagina (Sebastian 19-ago).
+  // El estado se destruye cuando la persona CONFIRMA el cambio, no cuando abre el dialogo.
   document.getElementById('oper-input').value=OPER_ACTUAL||'';
+  var _c=document.getElementById('oper-cancelar');
+  var _n=document.getElementById('oper-cancelar-nombre');
+  if(_c&&OPER_ACTUAL){ if(_n)_n.textContent=OPER_ACTUAL; _c.hidden=false; }
   document.getElementById('modal-operador').style.display='flex';
   setTimeout(function(){document.getElementById('oper-input').focus();},100);
 }
+function cancelarCambioOperador(){
+  // Volver a lo que estaba: el operador nunca se borro, asi que no hay nada que restaurar.
+  var e=document.getElementById('oper-error'); if(e)e.style.display='none';
+  var c=document.getElementById('oper-cancelar'); if(c)c.hidden=true;
+  document.getElementById('modal-operador').style.display='none';
+}
+// Escape cierra el dialogo SOLO si hay operador · sin operador no hay a donde volver.
+document.addEventListener('keydown',function(ev){
+  if(ev.key!=='Escape')return;
+  var m=document.getElementById('modal-operador');
+  if(m&&m.style.display!=='none'&&OPER_ACTUAL)cancelarCambioOperador();
+});
 function confirmarOper(){var inp=document.getElementById('oper-input');var n=(inp?inp.value:'').trim();if(!n){var e=document.getElementById('oper-error');if(e)e.style.display='block';return;}selOper(n);}
 function abrirAjusteIdx(idx){
   var i=_lotes[idx];
@@ -4723,6 +4755,18 @@ async function verDetalleProduccion(pid){
 }
 
 
+// Sebastian 19-ago: *"el plano sigue el antiguo no el arreglo nuevo"*. Este boton hacia
+// window.open('/planta/plano') -- la pantalla VIEJA, en otra pestana -- mientras el
+// dashboard ya tiene su propia pestana de Plano en vivo, que es la que se rehizo. Se va a
+// ESA, en la misma vista, apretando el boton de la barra: reusar el camino que ya funciona
+// evita una segunda forma de abrir el plano que despues divergiria (M166/M3).
+function irAlPlano(){
+  var b=document.getElementById('btn-tab-plano');
+  if(b){ b.click(); if(b.scrollIntoView) b.scrollIntoView({block:'nearest'}); return; }
+  // Si la barra no esta (pestana oculta para ese rol), no se deja al usuario sin nada:
+  // cae a la pantalla propia del plano, que sigue viva (M120).
+  window.open('/planta/plano','_blank');
+}
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
   document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
@@ -11250,7 +11294,14 @@ function cargarOrdenesEnvasado(){
     var ords=(d&&d.ordenes)||[];
     if(!ords.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--cx-text-faint);padding:10px">Sin órdenes de envasado aún · envasá un lote para crearlas</td></tr>';return;}
     tb.innerHTML=ords.map(function(o){
-      var leg=o.link?('<a href="'+E(o.link)+'" style="color:var(--cx-primary-text);font-weight:700;text-decoration:none">Abrir legajo →</a>'):('<button data-prod="'+E(o.producto)+'" data-lote="'+E(o.lote_bulk||o.numero_op||'')+'" onclick="crearLegajoEnvasado(this)" style="background:var(--cx-success);color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:12px;cursor:pointer">Crear legajo &rarr;</button>');
+      // Sebastian 19-ago: *"cuando le doy legajo en envasado me abre otra pagina,
+      // organizalo que sea en el mismo vista"*. Era un <a href> que NAVEGABA fuera del
+      // dashboard: se perdia la pestana, los filtros y el scroll, y para volver habia que
+      // usar el boton de atras. La lista premium de ESTA MISMA pestana ya lo abria inline
+      // con abrirEBR sobre #envasado-runner; esta tabla se habia quedado con el enlace
+      // viejo (M150: dos hermanos que hacen lo mismo y uno se quedo atras).
+      // Se reusa el MISMO contrato que la lista premium, no uno propio (M166).
+      var leg=o.ebr_id?('<button onclick="abrirEBR('+o.ebr_id+',&#39;envasado-runner&#39;)" style="background:none;border:none;color:var(--cx-primary-text);font-weight:700;cursor:pointer;font-size:12px;padding:4px 6px;text-decoration:underline">Abrir legajo →</button>'):('<button data-prod="'+E(o.producto)+'" data-lote="'+E(o.lote_bulk||o.numero_op||'')+'" onclick="crearLegajoEnvasado(this)" style="background:var(--cx-success);color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:12px;cursor:pointer">Crear legajo &rarr;</button>');
       return '<tr style="border-bottom:1px solid var(--cx-border-soft)">'+
         '<td style="padding:8px;font-weight:600">'+E(o.numero_op)+'</td>'+
         '<td style="padding:8px">'+E(o.producto)+'</td>'+
