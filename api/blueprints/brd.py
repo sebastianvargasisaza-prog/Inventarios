@@ -393,12 +393,43 @@ def _ipc_estandar_ebr(conn, ebr_id):
         return IPC_ESTANDAR
 
 
-def _batch_role_info(usuario):
-    """Rol del usuario en el batch record (segregación de funciones GMP · 25-jun).
-    UI-hint: el backend YA bloquea con 403; esto adapta la vista · quién REALIZA
-    (operario/jefe prod) vs quién VERIFICA (calidad/jefe prod/dir. téc.). Reusa los
-    sets de config.py. Roles finos: operario · jefe_produccion · calidad ·
-    aseguramiento · director_tecnico · admin · consulta."""
+# Qué habilita cada puesto dentro del batch record. Es la MISMA tabla que estaba escrita
+# como un `tipo in (...)` por capacidad; puesta así, quien ejerce dos puestos suma lo de los
+# dos sin repetir la regla en cada línea.
+_BATCH_CAPS_POR_ROL = {
+    "operario":         {"realiza", "puede_ejecutar"},
+    # PRD-PRO-001: el Jefe de Producción REALIZA el despeje y Control de Calidad lo verifica
+    # "de forma independiente al Jefe de Producción" -- por eso no está en `verifica`.
+    "jefe_produccion":  {"realiza", "puede_ejecutar"},
+    # Analista y Jefe de Control de Calidad · COC-PRO-010 §3.4: ejecutar verificaciones,
+    # revisiones y aprobaciones conforme a su perfil autorizado.
+    "calidad":          {"verifica", "corrige", "puede_ejecutar", "puede_liberar",
+                         "puede_aprobar"},
+    # Aseguramiento (Jefe de Garantía de Calidad) · COC-PRO-010 §3.2: verificar el
+    # cumplimiento y revisar la trazabilidad de los registros electrónicos.
+    "aseguramiento":    {"verifica", "corrige", "puede_liberar"},
+    # Director Técnico · su acto propio es la LIBERACIÓN del producto terminado (acta de
+    # revisión con Hernando, 27-jul-2026).
+    "director_tecnico": {"corrige", "aprueba_dt", "puede_liberar", "puede_aprobar"},
+    "admin":            {"realiza", "verifica", "corrige", "aprueba_dt", "puede_ejecutar",
+                         "puede_liberar", "puede_aprobar"},
+    "administrativo":   set(),
+    "consulta":         set(),
+}
+
+_BATCH_ROL_LABEL = {
+    "operario": "Operario", "jefe_produccion": "Jefe de Producción",
+    "calidad": "Control de Calidad", "aseguramiento": "Aseguramiento",
+    "director_tecnico": "Director Técnico", "admin": "Dirección / Admin",
+    "administrativo": "Administrativo", "consulta": "Consulta",
+}
+
+
+def _batch_cargo(usuario):
+    """El CARGO de la persona: uno solo, y es el que se muestra e imprime.
+
+    No cambia por una suplencia: quien cubre a Control de Calidad durante una ausencia sigue
+    siendo el Director Técnico, y el registro tiene que decir eso."""
     u = (usuario or "").strip().lower()
     try:
         from config import ASEGURAMIENTO_USERS, TECNICA_USERS
@@ -407,47 +438,75 @@ def _batch_role_info(usuario):
     A, C, P = set(ADMIN_USERS), set(CALIDAD_USERS), set(PLANTA_USERS)
     AS_, T = set(ASEGURAMIENTO_USERS), set(TECNICA_USERS)
     if u in A:
-        tipo, rol = "admin", "Dirección / Admin"
-    elif u in (C - A):
-        tipo, rol = "calidad", "Control de Calidad"
-    elif u in (AS_ - A):
-        tipo, rol = "aseguramiento", "Aseguramiento"
-    elif u in (T - A - AS_):
-        tipo, rol = "director_tecnico", "Director Técnico"
-    elif u in {"jose"}:
-        tipo, rol = "jefe_produccion", "Jefe de Producción"
-    elif u in (P | {"milton"}):
-        tipo, rol = "operario", "Operario"
-    elif u in {"luz", "catalina"}:
-        tipo, rol = "administrativo", "Administrativo"
-    else:
-        tipo, rol = "consulta", "Consulta"
-    realiza = tipo in ("operario", "jefe_produccion", "admin")
-    # Quién VERIFICA · corregido 16-ago-2026 contra el sistema documental de la empresa (Drive), a pedido de
-    # Sebastián: *"todas las verificaciones las pueden hacer analista y jefe de control de calidad"*.
-    #   · COC-PRO-010 §3.4 (procedimiento del batch digital): "Analista de Calidad: EJECUTAR verificaciones,
-    #     revisiones y aprobaciones conforme a su perfil autorizado".
-    #   · PRD-INS-001-004 (instructivos operativos): las tablas de verificación son "de diligenciamiento
-    #     EXCLUSIVO de Control de Calidad", firmadas por el Analista CC.
-    #   · PRD-PRO-001 (despejes): el Jefe de Producción REALIZA el despeje y Control de Calidad lo verifica
-    #     "de forma INDEPENDIENTE al Jefe de Producción" -- por eso el jefe queda en `realiza` y NO en
-    #     `verifica`: quien ejecuta no puede dar su propia 2ª firma (segregación de funciones).
-    #   · El Director Técnico sale de acá porque su acto es la LIBERACIÓN del producto terminado (acta de
-    #     revisión con Hernando, 27-jul-2026), no verificar pasos de proceso · sigue con `aprueba_dt`.
-    # Aseguramiento (Jefe de Garantía de Calidad) se conserva: COC-PRO-010 §3.2 le da verificar el
-    # cumplimiento y revisar la trazabilidad de los registros electrónicos.
-    verifica = tipo in ("calidad", "aseguramiento", "admin")
+        return "admin"
+    if u in (C - A):
+        return "calidad"
+    if u in (AS_ - A):
+        return "aseguramiento"
+    if u in (T - A - AS_):
+        return "director_tecnico"
+    if u in {"jose"}:
+        return "jefe_produccion"
+    if u in (P | {"milton"}):
+        return "operario"
+    if u in {"luz", "catalina"}:
+        return "administrativo"
+    return "consulta"
+
+
+def _batch_role_info(usuario):
+    """Rol del usuario en el batch record (segregación de funciones GMP · 25-jun).
+    UI-hint: el backend YA bloquea con 403; esto adapta la vista · quién REALIZA
+    (operario/jefe prod) vs quién VERIFICA (calidad/aseguramiento). Reusa los
+    sets de config.py. Roles finos: operario · jefe_produccion · calidad ·
+    aseguramiento · director_tecnico · admin · consulta.
+
+    20-ago-2026 · a los puestos propios se les suman los que la persona ejerce por SUPLENCIA
+    vigente (`api/suplencias.py`). Sebastián: *"son backup, como reemplazos: en caso de que no
+    estén, ellos pueden hacerlo"* · *"sólo por plan de suplencias"*. Sin plan, cubrir una
+    ausencia obliga a firmar con el usuario de otro, y ahí la firma deja de decir quién hizo
+    el acto. La suplencia caduca sola: sin fecha de fin no habilita nada.
+
+    Lo que NO cambia: quien ejecuta un paso no puede firmar su propia verificación. Ese
+    control es por REGISTRO -- pesajes, pasos y despeje comparan contra quién ejecutó -- y no
+    depende de esta tabla. Un puesto de más nunca habilita firmar dos veces el mismo renglón.
+    """
+    u = (usuario or "").strip().lower()
+    tipo = _batch_cargo(u)
+    try:
+        from suplencias import roles_vigentes
+        suplidos = set(roles_vigentes(u))
+    except Exception:
+        suplidos = set()
+    roles = {tipo} | suplidos
+    caps = set()
+    for r in roles:
+        caps |= _BATCH_CAPS_POR_ROL.get(r, set())
     return {
-        "usuario": u, "tipo": tipo, "rol": rol,
-        "realiza": realiza,
-        "verifica": verifica,
-        "corrige": tipo in ("calidad", "aseguramiento", "director_tecnico", "admin"),
-        "aprueba_dt": tipo in ("director_tecnico", "admin"),
-        "puede_ejecutar": tipo in ("operario", "jefe_produccion", "calidad", "admin"),
-        "puede_verificar": verifica,
-        "puede_liberar": tipo in ("calidad", "aseguramiento", "director_tecnico", "admin"),
-        "puede_aprobar": tipo in ("calidad", "director_tecnico", "admin"),
+        "usuario": u, "tipo": tipo, "rol": _BATCH_ROL_LABEL.get(tipo, "Consulta"),
+        "roles": sorted(roles),
+        "suple": sorted(suplidos),
+        "suple_label": [_BATCH_ROL_LABEL.get(r, r) for r in sorted(suplidos)],
+        "realiza": "realiza" in caps,
+        "verifica": "verifica" in caps,
+        "corrige": "corrige" in caps,
+        "aprueba_dt": "aprueba_dt" in caps,
+        "puede_ejecutar": "puede_ejecutar" in caps,
+        "puede_verificar": "verifica" in caps,
+        "puede_liberar": "puede_liberar" in caps,
+        "puede_aprobar": "puede_aprobar" in caps,
     }
+
+
+def _brd_puede(usuario, *capacidades):
+    """¿La persona tiene ALGUNA de esas capacidades en el batch record?
+
+    Los gates de este módulo preguntaban por el SET de un puesto (`user in CALIDAD_USERS`) y
+    no por la capacidad. Con eso, el Director Técnico no entraba a la Bandeja del Director
+    Técnico, y Aseguramiento no podía dar la 2ª firma de un pesaje aunque su propio rol
+    dijera que verifica."""
+    info = _batch_role_info(usuario)
+    return any(info.get(c) for c in capacidades)
 
 
 def _qc_verificadores():
@@ -495,7 +554,7 @@ def _require_login():
 
 def _require_qa_or_admin():
     u = session.get("compras_user", "")
-    if u not in ADMIN_USERS and u not in CALIDAD_USERS:
+    if not _brd_puede(u, "puede_aprobar"):
         return jsonify({"error": "Solo admin o calidad pueden aprobar/obsoletar MBR"}), 403
     return None
 
@@ -2565,7 +2624,7 @@ def mbr_generar_desde_formula():
     if err:
         return err
     user = session.get("compras_user", "")
-    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+    if not _brd_puede(user, "puede_aprobar"):
         return jsonify({"error": "solo Admin/Calidad puede generar MBR"}), 403
     body = request.get_json(silent=True) or {}
     producto = (body.get("producto_nombre") or "").strip()
@@ -2594,7 +2653,7 @@ def mbr_preparar_aprobado():
     if err:
         return err
     user = session.get("compras_user", "")
-    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+    if not _brd_puede(user, "puede_aprobar"):
         return jsonify({"ok": False, "error": "solo Admin/Calidad puede aprobar MBR"}), 403
     body = request.get_json(silent=True) or {}
     producto = (body.get("producto_nombre") or "").strip()
@@ -2670,7 +2729,7 @@ def mbr_generar_todas_desde_formulas():
     if err:
         return err
     user = session.get("compras_user", "")
-    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+    if not _brd_puede(user, "puede_aprobar"):
         return jsonify({"error": "solo Admin/Calidad puede generar MBR"}), 403
     conn = get_db(); cur = conn.cursor()
     productos = [r[0] for r in cur.execute(
@@ -2855,7 +2914,7 @@ def mbr_sync_procedimiento():
     if err:
         return err
     user = session.get("compras_user", "")
-    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+    if not _brd_puede(user, "puede_aprobar"):
         return jsonify({"error": "solo Admin/Calidad puede editar el MBR"}), 403
     b = request.get_json(silent=True) or {}
     producto = (b.get("producto_nombre") or "").strip()
@@ -8152,7 +8211,7 @@ def verificar_pesaje_ebr(ebr_id, pesaje_id):
     if err:
         return err
     user = session.get("compras_user", "")
-    if user not in (CALIDAD_USERS | ADMIN_USERS):
+    if not _brd_puede(user, "verifica"):
         return jsonify({
             "error": "Solo Calidad o Admin pueden verificar pesajes (2ª firma GMP)"
         }), 403
@@ -10191,7 +10250,7 @@ def aprobar_arte_codificacion(ebr_id, arte_id):
     if err:
         return err
     user = session.get("compras_user", "")
-    if user not in (CALIDAD_USERS | ADMIN_USERS):
+    if not _brd_puede(user, "puede_aprobar"):
         return jsonify({
             "error": "Solo Calidad o Admin aprueban artes/codificación"
         }), 403
@@ -14567,7 +14626,7 @@ def bandeja_dt():
     if err:
         return err
     u = session.get("compras_user", "")
-    if u not in ADMIN_USERS and u not in CALIDAD_USERS:
+    if not _brd_puede(u, "puede_aprobar", "puede_liberar"):
         return jsonify({"error": "solo Dirección Técnica / Calidad / Admin"}), 403
     conn = get_db()
     try:
@@ -15053,7 +15112,7 @@ def activar_legajos_page():
     if not u:
         return Response('<script>location.href="/login?next=/planta/activar-legajos"</script>',
                         mimetype="text/html")
-    if u not in ADMIN_USERS and u not in CALIDAD_USERS:
+    if not _brd_puede(u, "puede_aprobar"):
         return Response('<div style="font-family:sans-serif;padding:40px;color:var(--cx-danger-text, #991b1b)">Solo Admin o Calidad pueden activar legajos automáticos.</div>',
                         mimetype="text/html")
     return Response(_ACTIVAR_LEGAJOS_HTML, mimetype="text/html")

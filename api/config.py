@@ -230,7 +230,17 @@ def puede_ver_modulo(usuario, modulo):
         return False
     if u in ADMIN_USERS:
         return True                      # fundador y CEO entran a todo
-    return u in MODULOS_ACCESO.get(modulo, set())
+    if u in MODULOS_ACCESO.get(modulo, set()):
+        return True
+    # Suplencia VIGENTE (plan de suplencias · Sebastian 20-ago-2026): quien cubre un puesto
+    # necesita la pantalla donde ese puesto firma, o el permiso no sirve de nada (M121). Se
+    # cae solo cuando la suplencia vence. Import perezoso: `config` no puede depender de la
+    # base al importarse -- lo cargan hasta los scripts que no levantan la app.
+    try:
+        from suplencias import roles_vigentes, MODULO_POR_ROL
+        return any(MODULO_POR_ROL.get(r) == modulo for r in roles_vigentes(u))
+    except Exception:
+        return False
 
 
 DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")

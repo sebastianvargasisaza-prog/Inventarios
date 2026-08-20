@@ -666,6 +666,13 @@ CORAZON=(
   # una demo de junio, asi que todas las salas salian prefirmadas por quien no ejecuto esa
   # limpieza. Y ahora pregunta QUE EQUIPOS se van a usar antes de imprimir.
   "tests/test_rotulo_limpieza_firma_y_equipos.py"
+  # El desplegable de areas ofrecia SOLO las de fabricacion (4 de 14) y la pantalla de admin
+  # mostraba encendidas las que estan apagadas (un 0 que se volvia 1). Y el rotulo F02 sale a
+  # una TERMICA: el logo va binarizado, sin la sala, con la firma en blanco y uno por estado.
+  "tests/test_areas_y_rotulo_20ago.py"
+  # Un puesto se cubre por SUPLENCIA con vigencia, no ampliando permisos: sin fecha de fin no
+  # habilita, el cargo no cambia, y la regla de las dos personas sigue intacta.
+  "tests/test_plan_suplencias.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

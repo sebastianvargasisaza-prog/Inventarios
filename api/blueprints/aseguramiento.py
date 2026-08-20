@@ -5673,3 +5673,178 @@ def aseguramiento_reemplazo_mybatch_page():
         return redirect('/login?next=/aseguramiento/reemplazo-mybatch')
     from templates_py.reemplazo_mybatch_html import REEMPLAZO_MYBATCH_HTML
     return Response(REEMPLAZO_MYBATCH_HTML, mimetype='text/html; charset=utf-8')
+
+
+# ══ PLAN DE SUPLENCIAS ══════════════════════════════════════════════════════════════
+# Sebastián 20-ago-2026, sobre quién puede firmar como quién en el batch record: *"son
+# backup, como reemplazos: en caso de que no estén, ellos pueden hacerlo"* y *"lo puede
+# hacer sólo por plan de suplencias"*.
+#
+# Vive en Aseguramiento porque es gobierno del sistema de calidad, no configuración técnica:
+# quién cubre a quién, por qué y hasta cuándo es un documento del SGC (COC-PRO-010).
+# La LECTURA es abierta -saber quién cubre a quién es parte de operar-; la ESCRITURA la
+# tienen Aseguramiento y Dirección, y la pantalla lo dice en vez de ofrecer un botón que
+# va a dar 403.
+
+# Tope duro de vigencia. Una suplencia de dos años no es una suplencia: es una ampliación
+# de permisos permanente con otro nombre, y ésa sí contradice el procedimiento aprobado.
+_SUPLENCIA_MAX_DIAS = 365
+
+
+def _autorizados_suplencias():
+    """Quién administra el plan: Aseguramiento (gobierna el SGC) y Dirección."""
+    try:
+        from config import ASEGURAMIENTO_USERS as _AC
+    except Exception:
+        _AC = set()
+    return set(_AC) | set(ADMIN_USERS)
+
+
+def _suplencia_fecha_ok(txt):
+    """YYYY-MM-DD o nada. Devuelve date o None; lanza ValueError si viene y está mal."""
+    t = (txt or '').strip()
+    if not t:
+        return None
+    return date.fromisoformat(t)
+
+
+@bp.route('/api/aseguramiento/suplencias', methods=['GET'])
+def suplencias_listar():
+    """El plan completo: lo declarado y lo que está vigente hoy."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from suplencias import plan_completo, ROLES_SUPLIBLES, ROL_LABEL
+    filas = plan_completo()
+    return jsonify({
+        'ok': True,
+        'suplencias': filas,
+        'vigentes': [f for f in filas if f['vigente']],
+        'roles': [{'rol': r, 'label': ROL_LABEL.get(r, r)} for r in ROLES_SUPLIBLES],
+        # La lista sale de los usuarios del sistema y no de las filas del plan: si saliera
+        # del plan, para dar de alta a alguien nuevo habria que darlo de alta antes.
+        'usuarios': sorted(COMPRAS_USERS),
+        'puede_editar': session.get('compras_user', '') in _autorizados_suplencias(),
+        'max_dias': _SUPLENCIA_MAX_DIAS,
+    })
+
+
+@bp.route('/api/aseguramiento/suplencias/guardar', methods=['POST'])
+def suplencias_guardar():
+    """Declara una suplencia o la ACTIVA para una ausencia concreta.
+
+    Activar exige motivo y FECHA DE FIN: sin fecha de fin no se habilita nada, porque eso
+    sería una ampliación permanente. El registro queda en `audit_log` con el antes y el
+    después -- quién habilitó a quién, para qué puesto y por cuánto tiempo es exactamente
+    lo que una auditoría pregunta.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in _autorizados_suplencias():
+        return jsonify({'error': 'Solo Aseguramiento o Dirección administran el plan'}), 403
+    from suplencias import ROLES_SUPLIBLES
+    d = request.get_json(silent=True) or {}
+    suplente = (d.get('suplente') or '').strip().lower()
+    rol = (d.get('rol') or '').strip().lower()
+    titular = (d.get('titular') or '').strip().lower()
+    motivo = (d.get('motivo') or '').strip()[:300]
+    activo = 1 if d.get('activo') else 0
+    if rol not in ROLES_SUPLIBLES:
+        return jsonify({'error': 'rol inválido'}), 400
+    if suplente not in set(COMPRAS_USERS):
+        return jsonify({'error': 'el suplente no es un usuario del sistema'}), 400
+    if titular and titular not in set(COMPRAS_USERS):
+        return jsonify({'error': 'el titular no es un usuario del sistema'}), 400
+    if suplente == titular:
+        return jsonify({'error': 'nadie se suple a sí mismo'}), 400
+    try:
+        desde = _suplencia_fecha_ok(d.get('desde'))
+        hasta = _suplencia_fecha_ok(d.get('hasta'))
+    except ValueError:
+        return jsonify({'error': 'fecha inválida · usá AAAA-MM-DD'}), 400
+
+    hoy = _hoy_co()
+    if activo:
+        if not motivo:
+            return jsonify({'error': 'una suplencia activa necesita motivo: es lo que '
+                                     'justifica el permiso ante una auditoría'}), 400
+        if not hasta:
+            return jsonify({'error': 'una suplencia activa necesita fecha de fin. Sin fin '
+                                     'no es una suplencia, es un permiso permanente'}), 400
+        if hasta < hoy:
+            return jsonify({'error': 'la fecha de fin ya pasó'}), 400
+        if desde and desde > hasta:
+            return jsonify({'error': 'la fecha de inicio es posterior a la de fin'}), 400
+        if (hasta - (desde or hoy)).days > _SUPLENCIA_MAX_DIAS:
+            return jsonify({'error': 'la vigencia máxima es de %d días. Para una ausencia '
+                                     'más larga hay que reasignar el cargo, no suplirlo'
+                                     % _SUPLENCIA_MAX_DIAS}), 400
+
+    conn = get_db(); c = conn.cursor()
+    prev = c.execute("SELECT id, COALESCE(activo,0), COALESCE(desde,''), COALESCE(hasta,'') "
+                     "FROM plan_suplencias WHERE LOWER(suplente)=? AND LOWER(rol)=?",
+                     (suplente, rol)).fetchone()
+    vals = (titular, motivo,
+            desde.isoformat() if desde else '',
+            hasta.isoformat() if hasta else '',
+            activo, user)
+    if prev:
+        c.execute("UPDATE plan_suplencias SET titular=?, motivo=?, desde=?, hasta=?, "
+                  "activo=?, creado_por=?, revocado_por='', revocado_en='' WHERE id=?",
+                  vals + (prev[0],))
+        sid = prev[0]
+    else:
+        c.execute("INSERT INTO plan_suplencias (suplente, rol, titular, motivo, desde, "
+                  "hasta, activo, creado_por) VALUES (?,?,?,?,?,?,?,?)",
+                  (suplente, rol) + vals)
+        sid = c.lastrowid
+    _audit_log(c, usuario=user, accion='SUPLENCIA_GUARDAR', tabla='plan_suplencias',
+               registro_id=str(sid),
+               antes={'activo': (prev[1] if prev else None),
+                      'desde': (prev[2] if prev else ''), 'hasta': (prev[3] if prev else '')},
+               despues={'suplente': suplente, 'rol': rol, 'titular': titular,
+                        'motivo': motivo, 'desde': vals[2], 'hasta': vals[3],
+                        'activo': activo})
+    conn.commit()
+    return jsonify({'ok': True, 'id': sid, 'activo': activo})
+
+
+@bp.route('/api/aseguramiento/suplencias/revocar', methods=['POST'])
+def suplencias_revocar():
+    """Corta una suplencia antes de su fecha de fin (el titular volvió)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in _autorizados_suplencias():
+        return jsonify({'error': 'Solo Aseguramiento o Dirección administran el plan'}), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        sid = int(d.get('id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'id requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT suplente, rol, COALESCE(activo,0) FROM plan_suplencias "
+                    "WHERE id=?", (sid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'esa suplencia no existe'}), 404
+    # La fila NO se borra: el plan es un documento y la constancia de que alguien estuvo
+    # habilitado durante un período es justo lo que hay que poder mostrar después.
+    c.execute("UPDATE plan_suplencias SET activo=0, revocado_por=?, revocado_en=? WHERE id=?",
+              (user, (datetime.now(timezone.utc) - timedelta(hours=5))
+                     .strftime('%Y-%m-%d %H:%M:%S'), sid))
+    _audit_log(c, usuario=user, accion='SUPLENCIA_REVOCAR', tabla='plan_suplencias',
+               registro_id=str(sid),
+               antes={'activo': row[2]},
+               despues={'suplente': row[0], 'rol': row[1], 'activo': 0})
+    conn.commit()
+    return jsonify({'ok': True, 'id': sid})
+
+
+@bp.route('/aseguramiento/suplencias', methods=['GET'])
+def suplencias_page():
+    """Pantalla · plan de suplencias (quién cubre a quién, por qué y hasta cuándo)."""
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/aseguramiento/suplencias')
+    from templates_py.suplencias_html import SUPLENCIAS_HTML
+    return Response(SUPLENCIAS_HTML, mimetype='text/html; charset=utf-8')

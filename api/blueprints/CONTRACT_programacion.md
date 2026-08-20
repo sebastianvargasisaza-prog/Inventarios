@@ -1558,3 +1558,28 @@ Invariantes:
 - El `except` **loguea**: un set vacío acá apaga una alerta crítica sin dejar rastro (M4).
 
 Guard: `tests/test_alerta_mp_china.py` (probado con dientes reintroduciendo `SELECT id`).
+
+---
+
+## 🏷️ El rótulo F02 sale a una TÉRMICA (20-ago-2026)
+
+Tres cosas que decidió la etiqueta impresa, no la pantalla:
+
+1. **El logo se binariza en el servidor** (`_logo_mono_datauri`), reduciendo PRIMERO al tamaño de
+   impresión y binarizando DESPUÉS: al revés, la interpolación del navegador vuelve a inventar
+   los grises y el logo sale rayado. Va con `image-rendering: pixelated` y
+   `print-color-adjust: exact` (sin eso el chip del estado activo se imprime sin relleno y su
+   texto blanco queda invisible). El logo se declara UNA vez en el CSS del documento: embebido
+   por hoja eran 180 copias del mismo PNG.
+2. **El rótulo por equipo NO lleva la sala.** Se pega EN la máquina y la máquina se mueve entre
+   salas; la sala del ciclo queda en el registro `rotulos_limpieza`, que es lo que va al
+   expediente.
+3. **La línea de la firma va vacía.** El asignado y el que termina limpiando no siempre son el
+   mismo, y un nombre ya impreso empuja a que firme quien no hizo el acto. Con eso el
+   desplegable de "quién limpia" dejó de cambiar lo que sale de la impresora y se retiró.
+
+**Un rótulo por ESTADO** (`?estados=limpio,en_uso,sucio`): el área pasa de limpia a en uso y a
+sucia en la misma jornada, así que se imprime el juego y se cambia la etiqueta pegada. Sin el
+parámetro sale una sola con el estado real del área -- la URL vieja no cambia de comportamiento.
+
+Guard: `tests/test_areas_y_rotulo_20ago.py` + `tests/test_rotulo_limpieza_firma_y_equipos.py`.

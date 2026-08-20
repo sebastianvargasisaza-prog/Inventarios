@@ -11709,6 +11709,43 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
          " creado_en TEXT DEFAULT (datetime('now','-5 hours')))",
          "CREATE INDEX IF NOT EXISTS idx_coaarch_lote ON calidad_coa_archivos(lote)",
      ]),
+
+    (442, "plan_suplencias · quién puede cubrir el puesto de quién, y HASTA CUÁNDO. "
+          "Sebastián 20-ago: *\"son backup, como reemplazos: en caso de que no estén, ellos "
+          "pueden hacerlo\"* y *\"lo puede hacer sólo por plan de suplencias\"*. Sin esto, "
+          "cubrir una ausencia obligaba a firmar con el usuario de otro -- que es lo único "
+          "que un registro Part 11 no puede permitir, porque la firma deja de decir quién "
+          "hizo el acto. La VIGENCIA es obligatoria: una suplencia sin fecha de fin no es una "
+          "suplencia, es una ampliación de permisos permanente, y ésa sí contradice el "
+          "procedimiento aprobado (COC-PRO-010).",
+     [
+         "CREATE TABLE IF NOT EXISTS plan_suplencias ("
+         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+         " suplente TEXT NOT NULL,"
+         " rol TEXT NOT NULL,"
+         " titular TEXT DEFAULT '',"
+         " motivo TEXT DEFAULT '',"
+         " desde TEXT DEFAULT '',"
+         " hasta TEXT DEFAULT '',"
+         " activo INTEGER NOT NULL DEFAULT 0,"
+         " creado_por TEXT DEFAULT '',"
+         " creado_en TEXT DEFAULT (datetime('now','-5 hours')),"
+         " revocado_por TEXT DEFAULT '',"
+         " revocado_en TEXT DEFAULT '')",
+         "CREATE INDEX IF NOT EXISTS idx_supl_suplente ON plan_suplencias(suplente, activo)",
+         "CREATE UNIQUE INDEX IF NOT EXISTS idx_supl_unica ON plan_suplencias(suplente, rol)",
+         # El PLAN que dictó Sebastián. Nace DECLARADO y NO ACTIVO (activo=0, sin fechas):
+         # dice quién puede cubrir qué puesto, y no otorga nada hasta que alguien registre la
+         # ausencia concreta con su vigencia. El jefe de producción no lleva suplencia por
+         # ahora (decisión suya el 20-ago).
+         "INSERT OR IGNORE INTO plan_suplencias (suplente, rol, titular, motivo, activo, creado_por) VALUES"
+         " ('hernando','calidad','','Plan de suplencias · Dirección Técnica cubre Control de Calidad',0,'sistema'),"
+         " ('hernando','jefe_produccion','','Plan de suplencias · Dirección Técnica cubre Jefatura de Producción',0,'sistema'),"
+         " ('miguel','calidad','','Plan de suplencias · Aseguramiento cubre Control de Calidad',0,'sistema'),"
+         " ('miguel','jefe_produccion','','Plan de suplencias · Aseguramiento cubre Jefatura de Producción',0,'sistema'),"
+         " ('laura','aseguramiento','','Plan de suplencias · Control de Calidad cubre Aseguramiento',0,'sistema'),"
+         " ('laura','director_tecnico','','Plan de suplencias · Control de Calidad cubre Dirección Técnica',0,'sistema')",
+     ]),
 ]
 
 

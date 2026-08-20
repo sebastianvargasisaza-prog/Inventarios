@@ -889,3 +889,51 @@ y ABRE cada ruta que lo mencione -- no lee el fuente, porque la primera versión
 `redirect` del login dentro de la pantalla buena y reportó cero (M170).
 
 Guard: `tests/test_maestro_de_lotes.py` (probado con dientes sirviendo una segunda pantalla).
+
+---
+
+## INV-25 · Un puesto se cubre por SUPLENCIA, con vigencia (20-ago-2026 · mig 442)
+
+Sebastián, sobre quién puede firmar como quién en el batch record: *"son backup, como
+reemplazos: en caso de que no estén, ellos pueden hacerlo"* · *"lo puede hacer sólo por plan de
+suplencias"*.
+
+**El modelo.** `_batch_role_info` daba UN rol por persona. Ahora el CARGO se sigue calculando
+igual (uno solo, y es el que se muestra e imprime) y se le SUMAN los puestos que la persona
+ejerce por suplencia VIGENTE (`api/suplencias.py` → `plan_suplencias`). Las capacidades son la
+unión; el rol mostrado, no.
+
+**Por qué una suplencia y no permisos más anchos:**
+- Cubrir una ausencia sin plan obliga a firmar con el usuario de otro, y ahí la firma deja de
+  decir quién hizo el acto -- lo único que un registro Part 11 no puede permitir.
+- Una ampliación PERMANENTE contradice el procedimiento aprobado: `COC-PRO-010` §3.4 y
+  `PRD-INS-001-004` reservan las verificaciones de proceso a Control de Calidad. Una suplencia
+  con titular, motivo y fecha de fin es la figura que el propio sistema de calidad contempla.
+
+**Invariantes:**
+1. **Sin fecha de fin no habilita nada.** Una fila activa sin `hasta` es un permiso permanente
+   con otro nombre. Vigencia máxima 365 días; para una ausencia más larga se reasigna el cargo.
+2. **Declarar no es otorgar.** El plan nace con `activo=0` y sin fechas: dice quién PUEDE cubrir
+   qué puesto y no da nada hasta que Aseguramiento registre la ausencia concreta.
+3. **El cargo no cambia.** Quien cubre a Calidad sigue siendo el Director Técnico. El rol que se
+   muestra sale de los sets base (`CALIDAD_USERS`, `ASEGURAMIENTO_USERS`, `TECNICA_USERS`).
+4. **Se apaga sola** al vencer, y `revocar` la corta antes sin borrar la fila: la constancia de
+   que alguien estuvo habilitado durante un período es lo que hay que poder mostrar después.
+5. **La regla de las DOS PERSONAS no se relaja.** Quien ejecuta un paso, un pesaje o un ítem de
+   despeje sigue sin poder firmar su propia verificación; ese control es por REGISTRO y ya
+   existía. Un puesto de más nunca habilita firmar dos veces el mismo renglón.
+6. **Quien cubre un puesto ve su pantalla** (`puede_ver_modulo` consulta las suplencias): un
+   permiso de firma sin el módulo donde se firma no sirve de nada (M121).
+
+**Los gates preguntan por CAPACIDAD, no por el set de un puesto** (`_brd_puede`). Con
+`user in CALIDAD_USERS` pasaban dos cosas que nadie veía: la **Bandeja del Director Técnico le
+estaba cerrada al Director Técnico** (su mensaje decía "solo Dirección Técnica / Calidad /
+Admin" y el chequeo sólo admitía Calidad y Admin), y Aseguramiento no podía dar la 2ª firma de
+un pesaje aunque su rol dijera `verifica`.
+
+**Quién administra el plan:** Aseguramiento (gobierna el SGC) y Dirección, en
+`/aseguramiento/suplencias`. La LECTURA es abierta -- saber quién cubre a quién es parte de
+operar. Cada alta/cambio/revocación queda en `audit_log` con el antes y el después.
+
+Guard: `tests/test_plan_suplencias.py` (12 casos, con los bordes: declarada, sin fin, vencida,
+no empezada, y compras afuera).
