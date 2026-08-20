@@ -8590,8 +8590,25 @@ def _rotulo_firma_vigente(realizado_at):
     return (ahora - cuando) <= _td(days=_ROTULO_FIRMA_VIGENTE_DIAS)
 
 
+# Los tres estados del F02, en el orden del formato oficial. El rotulo se imprime UNA VEZ
+# POR ESTADO (Sebastian 20-ago): el area pasa por limpia -> en uso -> sucia en la misma
+# jornada, y el operario cambia la etiqueta pegada en vez de tachar la anterior.
+_ROTULO_ESTADOS = (('limpio', 'libre'), ('en_uso', 'ocupada'), ('sucio', 'sucia'))
+_ROTULO_ESTADOS_MAP = dict(_ROTULO_ESTADOS)
+
+
+def _rotulo_estados_pedidos(raw):
+    """Lee `?estados=limpio,en_uso,sucio` y devuelve las claves validas EN EL ORDEN DEL
+    FORMATO (no en el que vengan). Vacio -> [None] = una sola hoja con el estado real del
+    area, que es como se comportaba antes de tener el juego de tres."""
+    pedidos = {x.strip().lower().replace(' ', '_').replace('-', '_')
+               for x in (raw or '').split(',') if x.strip()}
+    orden = [k for k, _v in _ROTULO_ESTADOS if k in pedidos]
+    return orden or [None]
+
+
 def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
-                      sanit_override=None, deterg_override=None):
+                      sanit_override=None, deterg_override=None, estado_override=None):
     """Devuelve el <div class="sheet"> del rótulo F02. Si equipo=(codigo,nombre), el rótulo es de ESE
     equipo (uno por máquina · Sebastián 25-jun); si no, del área. '' si el área no existe."""
     from html import escape as _e
@@ -8659,12 +8676,17 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
     # pasa a una fila aparte y el encabezado es el equipo.
     if equipo is not None:
         area_label = f"{equipo[1]} · {equipo[0]}"
-        fila_equipo_lbl = 'Sala / área'
-        fila_equipo_val = f"{base['area_nombre']} · {base['area_codigo']}"
+        # Sin fila de sala: el rotulo se pega EN la maquina, que ya esta parada en su
+        # sala, y el equipo se mueve entre salas -- el papel decia una sala y la maquina
+        # estaba en otra (Sebastian 20-ago). La sala del ciclo queda en el registro
+        # `rotulos_limpieza`, que es el documento del expediente.
+        fila_equipo_lbl = fila_equipo_val = None
     else:
         fila_equipo_lbl = 'Equipos'
         fila_equipo_val = equipos_txt
-    estado_fisico = base['estado_fisico']
+    # `estado_override` es la copia que se esta imprimiendo (limpio / en uso / sucio),
+    # no lo que el area es ahora: son las tres etiquetas que el operario ira rotando.
+    estado_fisico = _ROTULO_ESTADOS_MAP.get(estado_override or '', base['estado_fisico'])
     realizado_full = _persona_corta(c, realizado_por)
     # Sin limpieza registrada vigente, se imprime el operario que la orden ya asignó -sólo
     # el NOMBRE, con la línea en blanco- para que no haya que escribirlo a mano en el piso.
@@ -8686,21 +8708,14 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
         vcls = ' class="num"' if num else ''
         return f'<tr><td class="k">{_e(lbl)}</td><td{vcls}>{_e(str(val) if val else "—")}</td></tr>'
 
-    # Logo Espagiria · data-uri en app_settings (se sube en /admin/logo-espagiria) o fallback al SVG. Sebastián 7-jul.
-    try:
-        _lr = c.execute("SELECT valor FROM app_settings WHERE clave='logo_espagiria'").fetchone()
-        _logo_src = ((_lr[0] if _lr else '') or '').strip() or '/static/logos/espagiria.svg'
-    except Exception:
-        _logo_src = '/static/logos/espagiria.svg'
-
     def _firma(rol, nombre, fecha, solo_nombre=False):
-        if nombre and solo_nombre:
-            # El nombre se imprime para ahorrar escribirlo a mano; la LINEA queda para que
-            # la persona firme. La marca "firma electrónica" certifica que alguien ejecutó
-            # el acto y la registró en el sistema: ponerla acá sería certificar por él,
-            # que es justo lo que este rótulo dejó de hacer (Sebastián 15-ago).
-            cuerpo = (f'<div class="who">{_e(nombre)}</div>'
-                      f'<div class="sig-line"></div><div class="f">Firma y fecha</div>')
+        if solo_nombre:
+            # Sin limpieza registrada, la linea va VACIA: firma con lapicero quien limpio.
+            # El 15-ago se imprimia el nombre del operario asignado para ahorrar escribirlo;
+            # Sebastian lo saco el 20-ago -- el asignado y el que termina limpiando no
+            # siempre son el mismo, y un nombre ya impreso empuja a que firme quien no hizo
+            # el acto. La marca "firma electronica" tampoco va: certificaria por el.
+            cuerpo = '<div class="sig-line"></div><div class="f">Firma y fecha</div>'
             return f'<div class="firma"><div class="l">{_e(rol)}</div>{cuerpo}</div>'
         if nombre:
             cuerpo = (f'<div class="who">{_e(nombre)}</div>'
@@ -8714,7 +8729,7 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
   <div class="accent"></div>
   <div class="top">
     <div class="brand">
-      <img class="mark" src="{_logo_src}" alt="" onerror="this.remove()">
+      <div class="mark" role="img" aria-label="Logo Espagiria"></div>
       <div class="co">ESPAGIRIA Laboratorio SAS</div>
     </div>
     {_encabezado_formato_zonas()}
@@ -8726,7 +8741,7 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
   </div>
   <table>
     {_row('Área o equipo · código', area_label)}
-    {_row(fila_equipo_lbl, fila_equipo_val)}
+    {_row(fila_equipo_lbl, fila_equipo_val) if fila_equipo_lbl else ''}
     {_row('Producto a elaborar', prod_elab)}
     {_row('Lote', lote_elab, num=True)}
     {_row('Sanitizante', sanit)}
@@ -8741,6 +8756,69 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
 </div>'''
 
 
+_LOGO_MONO_CACHE = {}
+
+
+def _logo_espagiria_src():
+    """Logo Espagiria · data-uri en app_settings (se sube en /admin/logo-espagiria) o
+    fallback al SVG del repo. Sebastián 7-jul."""
+    try:
+        c = get_db().cursor()
+        _lr = c.execute(
+            "SELECT valor FROM app_settings WHERE clave='logo_espagiria'").fetchone()
+        return ((_lr[0] if _lr else '') or '').strip() or '/static/logos/espagiria.svg'
+    except Exception:
+        return '/static/logos/espagiria.svg'
+
+
+def _logo_mono_datauri(src, ancho_px=160, umbral=215):
+    """Version en blanco y negro PUROS del logo, para la impresora TERMICA.
+
+    Sebastian 20-ago, con la etiqueta impresa en la mano: *"el logo se pierde, salen
+    esas rayas"*. La termica no tiene grises: cada tono intermedio lo resuelve con una
+    trama de puntos, y un logo de 6mm con antialiasing sale como un rayado. Binarizar
+    aca -- y no dejarselo al driver -- es lo que hace que salga el trazo.
+
+    Devuelve '' si no se puede (sin Pillow, o el logo no viene embebido): en ese caso el
+    rotulo imprime el logo normal, como hasta hoy.
+    """
+    if not src or not src.startswith('data:image'):
+        return ''
+    llave = (src, ancho_px, umbral)
+    hit = _LOGO_MONO_CACHE.get(llave)
+    if hit is not None:
+        return hit
+    out = ''
+    try:
+        import base64
+        import io as _io
+        from PIL import Image
+        _h, _sep, b64 = src.partition(',')
+        im = Image.open(_io.BytesIO(base64.b64decode(b64))).convert('RGBA')
+        fondo = Image.new('RGBA', im.size, (255, 255, 255, 255))
+        fondo.alpha_composite(im)          # transparente -> blanco, no -> negro
+        gris = fondo.convert('L')
+        # Reducir ANTES de binarizar, al tamano con el que se va a imprimir (19mm a 203
+        # puntos por pulgada son ~150 puntos). Si se binariza en grande y se deja que el
+        # navegador lo achique, la interpolacion vuelve a inventar grises y regresa el
+        # rayado: el paso al blanco y negro tiene que ser el ULTIMO. Nunca se agranda --
+        # estirar un logo chico solo lo emborrona.
+        if ancho_px and gris.width > ancho_px:
+            alto = max(1, round(gris.height * ancho_px / gris.width))
+            gris = gris.resize((ancho_px, alto), Image.LANCZOS)
+        # Umbral generoso: el trazo es azul oscuro sobre blanco, asi que todo lo que no
+        # sea casi-blanco es tinta. Deja pasar el antialiasing como negro y engorda el
+        # trazo, que es justo lo que necesita a ese tamano.
+        bn = gris.point(lambda px: 255 if px > umbral else 0).convert('1')
+        buf = _io.BytesIO()
+        bn.save(buf, format='PNG', optimize=True)
+        out = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode('ascii')
+    except Exception:
+        out = ''
+    _LOGO_MONO_CACHE[llave] = out
+    return out
+
+
 def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=100, base_path=None):
     """Envuelve uno o varios <div class='sheet'> en la página imprimible (head + CSS + botón).
     Con .sheet + .sheet → cada rótulo en su propia página al imprimir.
@@ -8751,6 +8829,9 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
         lw = max(50, min(int(round(float(lw))), 210)); lh = max(30, min(int(round(float(lh))), 297))
     except Exception:
         lw, lh = 100, 150
+    # El logo va UNA vez, en el CSS: antes viajaba embebido en cada etiqueta.
+    _logo = _logo_espagiria_src()
+    _logo_print = _logo_mono_datauri(_logo) or _logo
     _sel = ''
     if base_path:
         _sizes = [(100, 100, '4×4"'), (100, 150, '4×6"'), (100, 75, '4×3"'), (50, 30, 'chica')]
@@ -8781,7 +8862,9 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
   .top > *{{padding:12px 14px}}
   .top > * + *{{border-left:1px solid var(--line)}}
   .brand{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center}}
-  .mark{{width:68px;height:68px;border-radius:14px;flex-shrink:0;object-fit:contain;background:var(--cx-card, #fff);border:1px solid var(--line);padding:5px}}
+  .mark{{width:68px;height:68px;border-radius:14px;flex-shrink:0;border:1px solid var(--line);padding:5px;
+         background-color:var(--cx-card, #fff);background-image:url("{_logo}");background-size:contain;
+         background-position:center;background-repeat:no-repeat;background-origin:content-box}}
   .brand .co{{font-size:16px;font-weight:800;letter-spacing:-.3px;line-height:1.1}}
   .brand .sub{{font-size:11.5px;color:var(--mute);margin-top:2px;font-weight:500}}
   /* Zona central · la etiqueta FORMATO va literal y SEPARADA del titulo */
@@ -8824,7 +8907,11 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
   .ph .printbtn{{background:var(--cx-card, #fff);color:var(--cx-primary-text, #4c1d95);box-shadow:none}}
   @media(max-width:560px){{ .top{{flex-direction:column;gap:10px}} .ctrl{{text-align:left}} .firmas{{flex-direction:column}} .firma+.firma{{border-left:0;border-top:1px solid var(--line)}} }}
   @media print{{
-    body{{padding:0;background:var(--cx-card, #fff);font-size:7pt}}
+    /* Sin `print-color-adjust: exact` el navegador descarta fondos: el chip del estado
+       activo sale sin su relleno y el texto blanco encima queda INVISIBLE (M · rotulo de
+       pesaje). Con exact, en termica el chip activo sale negro solido. */
+    body{{padding:0;background:var(--cx-card, #fff);font-size:7pt;
+          -webkit-print-color-adjust:exact;print-color-adjust:exact}}
     .sheet{{box-shadow:none;border:1px solid var(--cx-border, #ddd);border-radius:0;margin:0 auto;max-width:{lw-3}mm;width:{lw-3}mm;page-break-inside:avoid}}
     .sheet + .sheet{{page-break-before:always}}
     .printbar{{display:none}} .ph{{display:none}}
@@ -8835,7 +8922,12 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
        y el titulo -que en el formato oficial es la columna mas ancha- quedaba en una
        tira angosta. Medido sobre la etiqueta real de 100x100mm. */
     .top{{gap:0;grid-template-columns:24mm 1fr 29mm}}
-    .top > *{{padding:3px 5px}} .mark{{width:24px;height:24px;padding:1px}}
+    .top > *{{padding:3px 5px}}
+    /* 24px de alto era menos de 3mm: el logo se perdia. Ahora ocupa la columna entera y
+       usa la version 1-bit, que es lo que la termica sabe imprimir (Sebastian 20-ago). */
+    .mark{{width:19mm;height:13mm;padding:0;border:0;border-radius:0;background-color:transparent;
+           background-image:url("{_logo_print}");image-rendering:pixelated;
+           image-rendering:-webkit-optimize-contrast}}
     .co{{font-size:5.4pt;white-space:normal;line-height:1.02;word-break:break-word}}
     .brand{{gap:2px}} .brand .sub{{display:none}}
     .doc .tipo{{font-size:6pt;letter-spacing:1.4px}} .doc h1{{font-size:7pt;line-height:1.08}}
@@ -8891,7 +8983,7 @@ def _campo_producto_limpieza(cid, etiqueta, sugerido):
         '</div></div>')
 
 
-def _rotulos_limpieza_selector(c, areas, area_foco='', operario=''):
+def _rotulos_limpieza_selector(c, areas, area_foco=''):
     """Pantalla para elegir QUE EQUIPOS se van a usar antes de sacar los rotulos F02.
 
     Sebastian 15-ago-2026: *"no van a usar todos los equipos, deberian poder seleccionarlos,
@@ -8947,44 +9039,19 @@ def _rotulos_limpieza_selector(c, areas, area_foco='', operario=''):
 
     cuerpo = ''.join(bloques) or '<div class="vacio">No hay salas configuradas.</div>'
 
-    # QUIEN LIMPIA, no quien fabrica. Sebastián 15-ago: *"el que limpia no siempre es el
-    # que fabrica... tenemos operaria de limpieza, entonces mejor limpia"*. Poner en la
-    # línea del F02 al operario de fabricación induciría a que firme quien no limpió, que
-    # es la misma falsificación que este rótulo acaba de dejar de hacer.
-    #
-    # Se PROPONE a quien tenga el rol de limpieza, y sólo si hay UNA: con dos no hay forma
-    # de saber cuál va, así que no se elige ninguna (M179/M19). Y el nombre se imprime sin
-    # la marca de firma: certificar el acto es de quien lo ejecuta.
-    try:
-        _ops = c.execute(
-            "SELECT nombre, COALESCE(apellido,''), COALESCE(rol_predeterminado,'') "
-            "  FROM operarios_planta WHERE COALESCE(activo,1)=1 "
-            " ORDER BY nombre, apellido").fetchall()
-    except Exception as _e2:
-        log.warning('operarios para el rótulo de limpieza no legibles: %s', _e2)
-        _ops = []
-    _nombres = [(str(r[0] or '').strip() + ' ' + str(r[1] or '').strip()).strip()
-                for r in _ops]
-    _de_limpieza = [(str(r[0] or '').strip() + ' ' + str(r[1] or '').strip()).strip()
-                    for r in _ops if str(r[2] or '').strip().lower() == 'limpieza']
-    _sug = (operario or '').strip() or (_de_limpieza[0] if len(_de_limpieza) == 1 else '')
-    _opts = ''.join(
-        '<option value="%s"%s>%s</option>'
-        % (_e(n2), (' selected' if n2 == _sug else ''), _e(n2))
-        for n2 in _nombres if n2)
+    # El desplegable de "quien limpia" se retiro el 20-ago: existia solo para imprimir el
+    # nombre en la linea, y Sebastian pidio que la linea vaya VACIA para firmar con
+    # lapicero. Un control que ya no cambia lo que sale de la impresora es un boton muerto.
+    _est_ck = ''.join(
+        '<label class="est"><input type="checkbox" class="ckest" value="%s" checked> %s</label>'
+        % (k, lbl)
+        for k, lbl in (('limpio', 'Limpio'), ('en_uso', 'En uso'), ('sucio', 'Sucio')))
     aviso_quien = (
-        '<div class="quien"><b>&iquest;Qui&eacute;n limpia?</b> '
-        '<select id="quien" class="cx-input" style="max-width:280px;display:inline-block;'
-        'margin:0 8px">'
-        '<option value="">-- dejar la l&iacute;nea en blanco --</option>' + _opts +
-        '</select>'
-        '<div style="font-size:11.5px;margin-top:6px;opacity:.85">Su nombre se imprime en '
-        'la l&iacute;nea del r&oacute;tulo para no escribirlo a mano. La <b>firma</b> la '
-        'pone ella al limpiar: el sistema no firma por nadie.'
-        + ('' if _de_limpieza or not _nombres else
-           ' Ning&uacute;n operario tiene el rol <i>limpieza</i> todav&iacute;a: se puede '
-           'asignar en el maestro de operarios.')
-        + '</div>'
+        '<div class="quien"><b>&iquest;Qu&eacute; estados se imprimen?</b>'
+        '<div class="ests">' + _est_ck + '</div>'
+        '<div style="font-size:11.5px;margin-top:6px;opacity:.85">Sale <b>un r&oacute;tulo '
+        'por estado</b> de cada equipo: el &aacute;rea pasa de limpia a en uso y a sucia en '
+        'la misma jornada, y se cambia la etiqueta pegada en vez de tachar la anterior.</div>'
         '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--cx-hairline)">'
         + _campo_producto_limpieza('sanit', 'Sanitizante', 'Alcohol 70%')
         + _campo_producto_limpieza('deterg', 'Detergente', 'Detergente Neutro Industrial')
@@ -9014,6 +9081,9 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
 .sala.foco{border-color:var(--cx-primary-light);box-shadow:0 0 0 2px var(--cx-primary-soft);}
 .badge{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--cx-primary-soft);color:var(--cx-primary-text);margin-left:6px;}
 .quien{background:var(--cx-primary-soft);border:1px solid var(--cx-primary-light);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--cx-primary-text);margin-bottom:10px;}
+.ests{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.est{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:999px;background:var(--cx-card);border:1px solid var(--cx-primary-light);font-weight:700;font-size:13px;cursor:pointer;}
+.est:hover{border-color:var(--cx-primary);}
 .barra{position:fixed;left:0;right:0;bottom:0;background:var(--cx-card);border-top:1px solid var(--cx-hairline);padding:12px 22px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 -4px 20px rgba(15,23,42,.07);z-index:50;}
 .barra .cuenta{font-size:13.5px;font-weight:700;}
 .barra .der{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap;}
@@ -9044,10 +9114,17 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
 <script>
 function cks(){return Array.prototype.slice.call(document.querySelectorAll('.ck'));}
 function sel(){return cks().filter(function(x){return x.checked;});}
+function ests(){return Array.prototype.slice.call(document.querySelectorAll('.ckest'))
+  .filter(function(x){return x.checked;}).map(function(x){return x.value;});}
 function refrescar(){
-  var n = sel().length;
+  var n = sel().length, e = ests().length || 1;
+  // La cuenta dice HOJAS, no equipos: con 3 estados marcados, 12 equipos son 36 etiquetas
+  // y eso se sabe ANTES de mandar a imprimir, no despues de gastar el rollo.
+  var hojas = n * e;
   document.getElementById('cuenta').textContent =
-    n === 0 ? 'Ningun equipo seleccionado' : (n === 1 ? '1 equipo seleccionado' : n + ' equipos seleccionados');
+    n === 0 ? 'Ningun equipo seleccionado'
+            : (n + (n === 1 ? ' equipo' : ' equipos') + ' x ' + e + (e === 1 ? ' estado' : ' estados')
+               + ' = ' + hojas + (hojas === 1 ? ' rotulo' : ' rotulos'));
   document.getElementById('btn-imp').disabled = (n === 0);
 }
 function marcarTodos(v){ cks().forEach(function(x){ x.checked = v; });
@@ -9063,11 +9140,10 @@ document.addEventListener('change', function(ev){
 function imprimir(){
   var cods = sel().map(function(x){ return x.value; }).filter(Boolean);
   if (!cods.length) return;
-  var q = document.getElementById('quien');
-  var quien = q ? (q.value || '') : '';
+  var es = ests();
   function _v(id){ var e = document.getElementById(id); return e ? (e.value || '').trim() : ''; }
   window.location.href = '/planta/rotulos-limpieza?equipos=' + encodeURIComponent(cods.join(','))
-    + (quien ? ('&operario=' + encodeURIComponent(quien)) : '')
+    + (es.length ? ('&estados=' + encodeURIComponent(es.join(','))) : '')
     + '&sanit=' + encodeURIComponent(_v('sanit'))
     + '&deterg=' + encodeURIComponent(_v('deterg'));
 }
@@ -9077,7 +9153,7 @@ refrescar();
 
 
 def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None, operario_asignado='',
-                     sanit_override=None, deterg_override=None):
+                     sanit_override=None, deterg_override=None, estados=None):
     """Lista de hojas F02 de una sala: UNA POR EQUIPO (cada máquina su etiqueta · reusa el catálogo
     canónico _equipos_de_area, que devuelve dicts). Si la sala no tiene equipos, una hoja de área.
 
@@ -9091,16 +9167,30 @@ def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None, operario_asigna
                    if str(e.get('codigo') or '').strip().upper() in solo_codigos]
         if not equipos:
             return []   # esta sala no aporta equipos a la selección
+    # `estados`: una hoja por cada estado pedido, juntas por equipo -- asi el juego de
+    # tres etiquetas de una misma maquina sale seguido y no hay que ordenarlo a mano.
+    ests = [x for x in (estados or [None])]
     if equipos:
-        return [s for s in (_rotulo_f02_sheet(c, area_id, equipo=(e['codigo'], e['nombre']),
-                                              operario_asignado=operario_asignado,
-                                              sanit_override=sanit_override,
-                                              deterg_override=deterg_override)
-                            for e in equipos) if s]
-    s = _rotulo_f02_sheet(c, area_id, operario_asignado=operario_asignado,
-                          sanit_override=sanit_override,
-                          deterg_override=deterg_override)
-    return [s] if s else []
+        out = []
+        for e in equipos:
+            for est in ests:
+                s = _rotulo_f02_sheet(c, area_id, equipo=(e['codigo'], e['nombre']),
+                                      operario_asignado=operario_asignado,
+                                      sanit_override=sanit_override,
+                                      deterg_override=deterg_override,
+                                      estado_override=est)
+                if s:
+                    out.append(s)
+        return out
+    out = []
+    for est in ests:
+        s = _rotulo_f02_sheet(c, area_id, operario_asignado=operario_asignado,
+                              sanit_override=sanit_override,
+                              deterg_override=deterg_override,
+                              estado_override=est)
+        if s:
+            out.append(s)
+    return out
 
 
 @bp.route('/planta/rotulo-limpieza/<int:area_id>/pdf', methods=['GET'])
@@ -9114,7 +9204,8 @@ def planta_rotulo_limpieza_pdf(area_id):
     base = _rotulo_derivar(c, area_id)
     if not base:
         return Response('<h1>Área no encontrada</h1>', mimetype='text/html', status=404)
-    sheets = _rotulos_de_area(c, area_id, base['area_codigo'])
+    sheets = _rotulos_de_area(c, area_id, base['area_codigo'],
+                              estados=_rotulo_estados_pedidos(request.args.get('estados')))
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:var(--cx-text-mute, #888);padding:40px">Sin equipos en esta sala.</div>')
     _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)
@@ -9458,11 +9549,13 @@ def planta_rotulos_limpieza_todas():
         _sanit_ctx = (request.args.get('sanit') or '').strip()[:60]
     if 'deterg' in request.args:
         _deterg_ctx = (request.args.get('deterg') or '').strip()[:60]
+    # Un rotulo por estado (limpio / en uso / sucio). Sin el parametro sale uno solo, con
+    # el estado real del area, como antes.
+    _ests = _rotulo_estados_pedidos(request.args.get('estados'))
     if not _sel and not _todos:
         # charset explicito, como las rutas vecinas: el <meta> ya lo cubre, pero un
         # encabezado que no lo declara deja los acentos a merced del navegador.
-        return Response(_rotulos_limpieza_selector(c, areas, area_foco=_area_ctx,
-                                                   operario=_oper_ctx),
+        return Response(_rotulos_limpieza_selector(c, areas, area_foco=_area_ctx),
                         mimetype='text/html; charset=utf-8')
     solo = None
     if _sel:
@@ -9477,7 +9570,8 @@ def planta_rotulos_limpieza_todas():
         sheets.extend(_rotulos_de_area(c, a[0], a[2], solo_codigos=solo,
                                        operario_asignado=_oper_ctx,
                                        sanit_override=_sanit_ctx,
-                                       deterg_override=_deterg_ctx))
+                                       deterg_override=_deterg_ctx,
+                                       estados=_ests))
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:var(--cx-text-mute, #888);padding:40px">No hay salas configuradas.</div>')
     _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)

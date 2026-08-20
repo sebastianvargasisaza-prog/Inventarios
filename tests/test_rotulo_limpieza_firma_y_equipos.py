@@ -177,9 +177,12 @@ def test_el_area_elegida_viaja_y_queda_en_foco(app, db_clean):
     assert html.count('class="sala') >= 2 or html.count('class="sala') == 1
 
 
-def test_quien_limpia_se_imprime_sin_firmar_por_el(app, db_clean):
-    """El nombre ahorra escribirlo a mano; la marca de firma electrónica certifica que
-    alguien ejecutó el acto, así que NO se pone por él (es lo que se acaba de arreglar)."""
+def test_la_linea_de_firma_sale_vacia(app, db_clean):
+    """La línea va EN BLANCO para firmar con lapicero (Sebastián 20-ago, con la etiqueta
+    impresa en la mano). El 15-ago se imprimía el nombre del operario asignado para no
+    escribirlo a mano; el problema es que el asignado y el que termina limpiando no
+    siempre son el mismo, y un nombre ya impreso empuja a que firme quien no hizo el acto.
+    La marca de firma electrónica tampoco va: certificaría por él."""
     aid, acod = _area()
     _exec("DELETE FROM rotulos_limpieza WHERE area_id=?", (aid,))
     c = _login(app)
@@ -192,51 +195,65 @@ def test_quien_limpia_se_imprime_sin_firmar_por_el(app, db_clean):
         pytest.skip("el área sembrada no tiene equipos")
     html = c.get("/planta/rotulos-limpieza?equipos=%s&operario=mayerlin"
                  % eqs[0]["codigo"]).data.decode("utf-8")
-    # Desde el 16-ago se imprime el NOMBRE de quien limpia, no el username: el rótulo lo va
-    # a leer una persona y firmarlo otra. Se acepta el username como respaldo por si ese
-    # nombre todavía no está cargado (M97: se fija la garantía, no la implementación).
-    assert ("maierlin" in html.lower() or "mayerlin" in html.lower()), (
-        "no imprimió el nombre del operario asignado")
+    assert "mayerlin" not in html.lower(), "imprimió el nombre en la línea de la firma"
     assert "Firma electr" not in html, (
         "certificó la firma de alguien que no registró la limpieza")
     assert "Firma y fecha" in html, "no dejó la línea para firmar"
 
 
-def test_el_selector_pregunta_quien_limpia(app, db_clean):
-    """El que limpia NO siempre es el que fabrica: hay operaria de limpieza (Sebastián).
+def test_el_rotulo_por_equipo_no_lleva_la_sala(app, db_clean):
+    """El rótulo se pega EN la máquina y la máquina se mueve entre salas: el papel decía
+    una sala y el equipo estaba en otra (Sebastián 20-ago). La sala del ciclo queda en el
+    registro, que es lo que va al expediente."""
+    aid, acod = _area()
+    c = _login(app)
+    from api.blueprints.programacion import _equipos_de_area
+    from api.database import get_db
+    with app.app_context():
+        eqs = _equipos_de_area(get_db(), acod)
+    if not eqs:
+        import pytest
+        pytest.skip("el área sembrada no tiene equipos")
+    html = c.get("/planta/rotulos-limpieza?equipos=%s" % eqs[0]["codigo"]).data.decode("utf-8")
+    assert "Sala / " not in html, "el rótulo por equipo sigue imprimiendo la sala"
+    assert eqs[0]["codigo"] in html, "perdió el código del equipo, que es el sujeto del rótulo"
 
-    Poner en la línea del F02 al operario de fabricación induciría a que firme quien no
-    limpió, que es la misma falsificación que este rótulo dejó de hacer. Así que el dato
-    se pregunta acá, y se aclara que el nombre no es la firma.
-    """
+
+def test_sale_un_rotulo_por_estado(app, db_clean):
+    """El área pasa de limpia a en uso y a sucia en la misma jornada: se imprimen las tres
+    etiquetas y se cambia la pegada, en vez de tachar la anterior (Sebastián 20-ago)."""
+    aid, acod = _area()
+    c = _login(app)
+    from api.blueprints.programacion import _equipos_de_area
+    from api.database import get_db
+    with app.app_context():
+        eqs = _equipos_de_area(get_db(), acod)
+    if not eqs:
+        import pytest
+        pytest.skip("el área sembrada no tiene equipos")
+    cod = eqs[0]["codigo"]
+    una = c.get("/planta/rotulos-limpieza?equipos=%s" % cod).data.decode("utf-8")
+    tres = c.get("/planta/rotulos-limpieza?equipos=%s&estados=limpio,en_uso,sucio"
+                 % cod).data.decode("utf-8")
+    assert una.count('class="sheet"') == 1, "sin el parámetro debería salir un solo rótulo"
+    assert tres.count('class="sheet"') == 3, "no salieron las tres etiquetas"
+    # Cada copia marca SU estado: son tres etiquetas distintas, no la misma tres veces.
+    assert tres.count('class="chip on"') == 3, "las tres copias no marcan un estado cada una"
+    dos = c.get("/planta/rotulos-limpieza?equipos=%s&estados=limpio,sucio"
+                % cod).data.decode("utf-8")
+    assert dos.count('class="sheet"') == 2, "no respetó los estados elegidos"
+
+
+def test_el_selector_deja_elegir_los_estados(app, db_clean):
+    """La pantalla previa elige qué estados se imprimen. Y ya NO pregunta quién limpia: ese
+    desplegable existía sólo para imprimir el nombre, que dejó de imprimirse."""
     aid, acod = _area()
     c = _login(app)
     html = c.get("/planta/rotulos-limpieza?area=%s" % acod).data.decode("utf-8")
-    assert 'id="quien"' in html, "no pregunta quién limpia"
-    assert "Qui&eacute;n limpia" in html or "Quién limpia" in html, "no lo dice con esas palabras"
-    assert "dejar la l" in html, "no deja la opción de imprimir la línea en blanco"
-    assert "no firma por nadie" in html, "no aclara que el nombre no es la firma"
-
-
-def test_se_propone_al_operario_de_limpieza(app, db_clean):
-    """Se ofrece a quien tiene el rol, y sólo si hay UNA: con dos no hay forma de saber
-    cuál va, así que no se elige ninguna (M179/M19)."""
-    aid, acod = _area()
-    _exec("DELETE FROM operarios_planta WHERE nombre LIKE 'ZLIMP%'")
-    _exec("INSERT INTO operarios_planta (nombre, apellido, rol_predeterminado, activo) "
-          "VALUES ('ZLIMPA','Uno','limpieza',1)")
-    c = _login(app)
-    html = c.get("/planta/rotulos-limpieza?area=%s" % acod).data.decode("utf-8")
-    assert "ZLIMPA" in html, "no ofrece a la operaria de limpieza"
-    assert 'value="ZLIMPA Uno" selected' in html, "no la propone estando sola"
-
-    _exec("INSERT INTO operarios_planta (nombre, apellido, rol_predeterminado, activo) "
-          "VALUES ('ZLIMPB','Dos','limpieza',1)")
-    html2 = c.get("/planta/rotulos-limpieza?area=%s" % acod).data.decode("utf-8")
-    assert "ZLIMPB" in html2, "no ofrece a la segunda"
-    assert " selected" not in html2.split('id="quien"')[1][:1200], (
-        "eligió una habiendo dos candidatas")
-    _exec("DELETE FROM operarios_planta WHERE nombre LIKE 'ZLIMP%'")
+    assert 'class="ckest"' in html, "no deja elegir los estados"
+    for v in ('value="limpio"', 'value="en_uso"', 'value="sucio"'):
+        assert v in html, "falta el estado %s" % v
+    assert 'id="quien"' not in html, "quedó el desplegable de quién limpia, que ya no hace nada"
 
 
 def test_el_rol_limpieza_no_se_convierte_en_todero(app, db_clean):

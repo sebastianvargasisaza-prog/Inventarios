@@ -1415,7 +1415,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <datalist id="pres-sugerencias"><option value="10ml"><option value="15ml"><option value="20ml"><option value="30ml"><option value="50ml"><option value="60ml"><option value="100ml"><option value="120ml"><option value="150ml"><option value="50g"><option value="100g"><option value="250g"></datalist>
         </div>
         <div>
-          <label class="cx-flabel">Área o línea de fabricación</label>
+          <label class="cx-flabel">Área o línea de trabajo <span class="cx-hint">· fabricación · envasado · apoyo</span></label>
           <select id="prod-area" class="cx-input"><option value="">-- Selecciona área --</option></select>
         </div>
         <div>
@@ -7812,18 +7812,32 @@ function abrirRotulosLimpieza(){
 }
 
 async function cargarAreasFab(){
-  // Carga las áreas de FABRICACIÓN (puede_producir) en el desplegable del form.
+  // Áreas donde se trabaja un lote: fabricación, envasado y apoyo (dispensación,
+  // acondicionamiento). Sebastián 20-ago: antes sólo salían las de puede_producir y
+  // faltaban las demás salas con las que cuenta la planta. Quedan FUERA las que no
+  // tocan el lote: almacenes, lavado, esclusa, calidad y recepción.
   var sel=document.getElementById('prod-area'); if(!sel) return;
+  var APOYO={'DISP':1,'ACOND':1};
   try{
     var r=await fetch('/api/planta/areas',{credentials:'same-origin'});
     var d=await r.json(); var arr=(d&&(d.areas||d.items))||(Array.isArray(d)?d:[]);
     // Dedup por NOMBRE: FAB1/PROD1 (y FAB2/PROD2, FAB3/PROD3) son el MISMO cuarto físico con
     // códigos duplicados → mostrar "Fabricación 1" una sola vez (el plano ya los fusiona vía TWIN).
-    var opts='<option value="">-- Selecciona área --</option>'; var _seenAr={};
-    arr.filter(function(a){return a.puede_producir;}).forEach(function(a){
+    var _seenAr={}; var gFab=[], gEnv=[], gApo=[];
+    arr.forEach(function(a){
+      var _cod=(a.codigo||'').trim().toUpperCase();
+      var _esApoyo=!!APOYO[_cod];
+      if(!a.puede_producir && !a.puede_envasar && !_esApoyo) return;
       var _k=(a.nombre||'').trim().toLowerCase(); if(_seenAr[_k]) return; _seenAr[_k]=1;
-      opts+='<option value="'+a.id+'" data-codigo="'+_escHTML(a.codigo||'')+'">'+_escHTML(a.nombre)+'</option>';
+      var _op='<option value="'+a.id+'" data-codigo="'+_escHTML(a.codigo||'')+'">'+_escHTML(a.nombre)+'</option>';
+      if(a.puede_producir) gFab.push(_op);
+      else if(a.puede_envasar) gEnv.push(_op);
+      else gApo.push(_op);
     });
+    var opts='<option value="">-- Selecciona área --</option>';
+    if(gFab.length) opts+='<optgroup label="Fabricación">'+gFab.join('')+'</optgroup>';
+    if(gEnv.length) opts+='<optgroup label="Envasado">'+gEnv.join('')+'</optgroup>';
+    if(gApo.length) opts+='<optgroup label="Apoyo">'+gApo.join('')+'</optgroup>';
     sel.innerHTML=opts;
   }catch(e){}
 }

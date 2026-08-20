@@ -21920,6 +21920,34 @@ def admin_cambiar_formula():
                     'reversible': 'sí · la receta vieja queda en el header [ARCHIVADA] activo=0 + audit_log'})
 
 
+def _flag_activo(v, default=1):
+    """Lee una bandera 0/1 sin convertir el CERO en UNO.
+
+    `int(v or 1)` parece defensivo y es al reves: `0`, `False` y `''` son falsy, asi que
+    una fila APAGADA salia encendida. Sebastian 20-ago: la pantalla de areas mostraba
+    activas las cuatro areas que estan apagadas en la base -- y el mismo patron contaba
+    formulas inactivas como activas. En Postgres el valor ademas puede llegar como bool
+    (`True`/`False`) o como texto (`'t'`/`'f'`), que es la otra mitad de la trampa.
+    """
+    if v is None:
+        return default
+    if isinstance(v, bool):
+        return 1 if v else 0
+    if isinstance(v, (int, float)):
+        return 1 if v else 0
+    sv = str(v).strip().lower()
+    if sv in ('', 'none', 'null'):
+        return default
+    if sv in ('0', 'f', 'false', 'no', 'n'):
+        return 0
+    if sv in ('1', 't', 'true', 'si', 'sí', 'yes', 'y'):
+        return 1
+    try:
+        return 1 if int(float(sv)) else 0
+    except (TypeError, ValueError):
+        return default
+
+
 @bp.route("/api/admin/ajustar-formula-pct", methods=["POST"])
 def admin_ajustar_formula_pct():
     """Ajusta el % de ítems PUNTUALES de una fórmula (corrección fina · ej. alinear EOS con
@@ -21946,7 +21974,7 @@ def admin_ajustar_formula_pct():
 
     real = None
     for r in c.execute("SELECT producto_nombre, COALESCE(activo,1) FROM formula_headers").fetchall():
-        if _norm(r[0]) == _norm(producto) and int(r[1] or 1) == 1:
+        if _norm(r[0]) == _norm(producto) and _flag_activo(r[1]) == 1:
             real = r[0]
             break
     if not real:
@@ -22032,13 +22060,13 @@ def admin_salud_formulas():
                      "FROM formula_headers").fetchall()
     porn = defaultdict(list)
     for nom, act, _l in hdrs:
-        if int(act or 1) == 1:
+        if _flag_activo(act) == 1:
             porn[_norm(nom)].append(nom)
     dups = {nom for v in porn.values() if len(v) > 1 for nom in v}
 
     out = []
     for nom, act, lote in hdrs:
-        if int(act or 1) != 1:
+        if _flag_activo(act) != 1:
             continue
         its = c.execute("SELECT material_id, COALESCE(material_nombre,''), COALESCE(porcentaje,0) "
                         "FROM formula_items WHERE producto_nombre=?", (nom,)).fetchall()
@@ -22138,7 +22166,7 @@ def admin_areas_planta():
                      "marmita_ml, COALESCE(estado,'') FROM areas_planta ORDER BY COALESCE(activo,1) DESC, orden, id").fetchall()
     porn = defaultdict(list)
     for r in rows:
-        if int(r[4] or 1) == 1:
+        if _flag_activo(r[4]) == 1:
             porn[_norm(r[2])].append(r[1])
     dups = {nm for v in porn.values() if len(v) > 1 for nm in v}
 
@@ -22147,11 +22175,13 @@ def admin_areas_planta():
         cod = str(r[1]).strip().upper()
         e = eq.get(cod, {'n': 0, 'max_l': 0, 'max_kg': 0})
         oficial = (r[3] == 'produccion') or cod in ('DISP', 'ACOND')
-        out.append({'id': r[0], 'codigo': r[1], 'nombre': r[2], 'tipo': r[3], 'activo': int(r[4] or 1),
-                    'puede_producir': int(r[5] or 0), 'puede_envasar': int(r[6] or 0),
+        out.append({'id': r[0], 'codigo': r[1], 'nombre': r[2], 'tipo': r[3],
+                    'activo': _flag_activo(r[4]),
+                    'puede_producir': _flag_activo(r[5], 0), 'puede_envasar': _flag_activo(r[6], 0),
                     'marmita_ml': r[7], 'estado': r[8], 'n_equipos': e['n'],
                     'cap_litros': e['max_l'], 'cap_kg': e['max_kg'], 'n_producciones': prod.get(r[0], 0),
-                    'oficial': oficial, 'duplicado': (int(r[4] or 1) == 1 and r[1] in dups)})
+                    'oficial': oficial,
+                    'duplicado': (_flag_activo(r[4]) == 1 and r[1] in dups)})
     return jsonify({'ok': True, 'areas': out})
 
 
