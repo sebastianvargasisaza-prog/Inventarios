@@ -1432,6 +1432,20 @@ por lote.
   `solo_codigos` para acotar.
 - Nada viene marcado de fábrica en el selector: marcar todo por defecto reproduce el
   problema con un paso extra.
+- **El rótulo de un EQUIPO no lleva área, y el ÁREA tiene el suyo** (Sebastián 21-ago-2026:
+  *"los rótulos de equipo no llevan área, entonces debe decir sólo equipo sin área; pero
+  además necesito rótulos para el área"*). El encabezado dice `Equipo · código` o
+  `Área · código` según qué se pidió, y el renglón de área existe **sólo** en el del área,
+  una vez. Razón: el rótulo del equipo se pega en la máquina y **la máquina se mueve entre
+  salas**, así que nombrar el área ahí afirma algo que puede dejar de ser cierto — es la
+  misma razón por la que el 20-ago se quitó *"Sala / área"*.
+  - La sala se pide como un ítem más: `?equipos=AREA:<codigo>` (el selector la emite con
+    `value="AREA:<cod>"`). Se resuelve **por código y FUERA** del loop que recorre las áreas:
+    ese loop deduplica por NOMBRE para no imprimir dos veces la misma sala cuando conviven
+    códigos gemelos (`FAB2`/`PROD2` se llaman igual), y con la gemela primero **se comía la
+    sala pedida en silencio** (M261).
+  - La sala sigue en el **índice de búsqueda** de cada fila de equipo (`data-buscar`) aunque
+    no se pinte: se puede buscar por *"fabricación 2"* sin que el papel prometa un área.
 
 Tests: `tests/test_rotulo_limpieza_firma_y_equipos.py` (en el gate) + `test_rotulo_limpieza.py`.
 
