@@ -18004,6 +18004,36 @@ def mee_ajustar_stock(codigo):
                     'unidades_por_caja': _por_caja or None})
 
 
+@bp.route('/api/mee/<path:codigo>/tandas', methods=['GET'])
+def mee_tandas_con_cajas(codigo):
+    """Las entradas de este envase que se contaron POR CAJAS, para poder reimprimir.
+
+    Sirve para las tres preguntas que aparecen con un inventario de muchas cajas: cuántas
+    cajas entraron, cuánto trae cada una, y cuál reimprimir si una se daña. Read-only.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    cod = (codigo or '').strip()
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute(
+            "SELECT id, COALESCE(fecha,''), COALESCE(n_cajas,0), COALESCE(unidades_por_caja,0), "
+            "       cantidad, COALESCE(lote_ref,''), COALESCE(responsable,'') "
+            "  FROM movimientos_mee "
+            " WHERE UPPER(TRIM(mee_codigo))=UPPER(TRIM(?)) AND COALESCE(anulado,0)=0 "
+            "   AND UPPER(COALESCE(tipo,''))='ENTRADA' AND COALESCE(n_cajas,0) > 0 "
+            " ORDER BY id DESC LIMIT 40", (cod,)).fetchall()
+    except Exception as e:
+        # Distinguir "no hay tandas" de "no pude mirar": un vacio se lee como lo primero (M100).
+        __import__('logging').getLogger('inventario').warning('tandas de %s: %s', cod, e)
+        return jsonify({'ok': False, 'error': 'no se pudo consultar: %s' % str(e)[:150]}), 500
+    tandas = [{'mov_id': r[0], 'fecha': str(r[1] or '')[:10], 'n_cajas': int(r[2] or 0),
+               'unidades_por_caja': float(r[3] or 0), 'cantidad': float(r[4] or 0),
+               'lote': r[5], 'quien': r[6]} for r in rows]
+    return jsonify({'ok': True, 'codigo': cod, 'tandas': tandas,
+                    'cajas_totales': sum(t['n_cajas'] for t in tandas)})
+
+
 @bp.route('/api/mee/<codigo>/historico', methods=['GET'])
 def mee_historico_item(codigo):
     """Histórico de movimientos de UN item MEE (ordenado descendente)."""

@@ -10601,9 +10601,67 @@ function meeAjustarRotulo(){
   var cant=parseFloat(document.getElementById('mee-adj-cant').value)||0;
   window.open('/rotulo-recepcion-mee/'+encodeURIComponent(cod)+'/'+(cant>0?cant:1),'_blank');
 }
-function meeRotulo(codigo){
+async function meeRotulo(codigo){
   var dd=(window._MEE_DATA||{})[codigo]||{}; var cant=parseFloat(dd.stock)||0;
-  window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+(cant>0?cant:1),'_blank');
+  var tandas=[];
+  try{
+    var r=await fetch('/api/mee/'+encodeURIComponent(codigo)+'/tandas',{credentials:'same-origin'});
+    var d=await r.json();
+    if(r.ok&&d.ok) tandas=d.tandas||[];
+  }catch(e){ /* sin tandas se cae al rotulo del total, que es lo de siempre */ }
+  // Sin cajas declaradas no hay nada que elegir: se imprime el total y listo. Un menu de una
+  // sola opcion es un paso de mas.
+  if(!tandas.length){
+    window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+(cant>0?cant:1),'_blank');
+    return;
+  }
+  _meeRotMenu(codigo, cant, tandas);
+}
+function _meeRotMenu(codigo, cant, tandas){
+  var m=document.getElementById('mee-rot-modal');
+  if(!m){
+    m=document.createElement('div'); m.id='mee-rot-modal';
+    m.hidden=true;
+    m.style.cssText='position:fixed;inset:0;background:rgba(24,24,27,.55);z-index:10000;align-items:center;justify-content:center;padding:18px';
+    m.innerHTML='<div style="background:var(--cx-card);border-radius:16px;max-width:560px;width:100%;max-height:82vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.28)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 20px;border-bottom:1px solid var(--cx-border)">'
+      +'<div style="font-weight:800;font-size:15px;color:var(--cx-text)" id="mee-rot-tit">Imprimir r&oacute;tulo</div>'
+      +'<button onclick="_meeRotCerrar()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--cx-text-mute);line-height:1">&times;</button>'
+      +'</div><div id="mee-rot-body" style="padding:16px 20px"></div></div>';
+    document.body.appendChild(m);
+  }
+  document.getElementById('mee-rot-tit').textContent='Imprimir rotulo · '+codigo;
+  var h='';
+  tandas.forEach(function(t){
+    h+='<div style="border:1px solid var(--cx-border);border-radius:11px;padding:12px 14px;margin-bottom:10px">'
+      +'<div style="font-weight:800;font-size:13.5px;color:var(--cx-text)">'+t.n_cajas+' caja(s) de '+Number(t.unidades_por_caja||0).toLocaleString('es-CO')+'</div>'
+      +'<div style="font-size:11.5px;color:var(--cx-text-mute);margin-bottom:9px">'+(t.fecha||'')+(t.lote?(' &middot; lote '+_escR(t.lote)):'')+(t.quien?(' &middot; '+_escR(t.quien)):'')+'</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+      +'<button class="cx-btn cx-btn-sm cx-btn-grad" onclick="_meeRotAbrir('+t.mov_id+')">Las '+t.n_cajas+' cajas</button>'
+      +'<span style="font-size:12px;color:var(--cx-text-mute)">o s&oacute;lo la caja</span>'
+      +'<input type="number" min="1" max="'+t.n_cajas+'" id="mee-rot-c-'+t.mov_id+'" placeholder="7" style="width:74px;padding:6px 9px;border:1px solid var(--cx-border);border-radius:8px;font-size:13px">'
+      +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="_meeRotUna('+t.mov_id+','+t.n_cajas+')" title="Si una caja se dana o se pierde la etiqueta, se reimprime esa sola">Esa sola</button>'
+      +'</div></div>';
+  });
+  h+='<div style="border-top:1px solid var(--cx-border);padding-top:11px;margin-top:4px">'
+    +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="_meeRotTotal('+JSON.stringify(codigo).replace(/"/g,'&quot;')+','+(cant>0?cant:1)+')">Una etiqueta con el total ('+Number(cant||0).toLocaleString('es-CO')+' und)</button>'
+    +'</div>';
+  document.getElementById('mee-rot-body').innerHTML=h;
+  m.hidden=false; m.style.display='flex';
+}
+// El cierre va en una funcion propia: un onclick con comillas anidadas dentro de una cadena
+// JS rompe la cadena, y eso deja el modal SIN salida (M65/M254).
+function _meeRotCerrar(){ var m=document.getElementById('mee-rot-modal'); if(m) m.hidden=true; }
+function _escR(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _meeRotAbrir(mov){ window.open('/rotulos-recepcion-mee?mov='+encodeURIComponent(mov),'_blank'); }
+function _meeRotUna(mov, maxCajas){
+  var el=document.getElementById('mee-rot-c-'+mov);
+  var n=parseInt((el&&el.value)||'0',10)||0;
+  if(n<1||n>maxCajas){ alert('Escrib\u00ed el n\u00famero de la caja, entre 1 y '+maxCajas+'.'); if(el)el.focus(); return; }
+  window.open('/rotulos-recepcion-mee?mov='+encodeURIComponent(mov)+'&caja='+n,'_blank');
+}
+function _meeRotTotal(codigo, cant){
+  window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+cant,'_blank');
 }
 // ─── Kit de partes por envase (Sebastián 9-jul) ───────────────────────────────
 var _kitPartes=[];

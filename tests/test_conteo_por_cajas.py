@@ -133,6 +133,47 @@ def test_sin_cajas_el_ajuste_sigue_funcionando_igual(app, db_clean):
         _limpiar()
 
 
+def test_las_tandas_con_cajas_se_pueden_consultar_para_reimprimir(app, db_clean):
+    """Sebastián: *"¿si se daña? ¿si quiero reemplazar solo uno?"*. Para reimprimir UNA caja hay
+    que saber qué tandas tiene el envase y cuántas cajas trae cada una."""
+    _sembrar()
+    try:
+        c = _login(app)
+        c.post('/api/mee/%s/ajustar' % _COD,
+               json={'n_cajas': 37, 'unidades_por_caja': 200, 'motivo': 'conteo fisico'},
+               headers=csrf_headers())
+        d = c.get('/api/mee/%s/tandas' % _COD).get_json()
+        assert d['ok'] and d['tandas'], "no lista la tanda que se acaba de contar"
+        t = d['tandas'][0]
+        assert t['n_cajas'] == 37 and t['unidades_por_caja'] == 200.0
+        assert d['cajas_totales'] == 37
+        # y se puede imprimir UNA sola caja: la que se dañó
+        html = c.get('/rotulos-recepcion-mee?mov=%d&caja=7' % t['mov_id']).get_data(as_text=True)
+        assert html.count('class="sheet"') == 1,             "pidiendo una caja salieron %d rótulos" % html.count('class="sheet"')
+        assert 'Caja 7 de 37' in html, "no imprimió la caja que se pidió"
+    finally:
+        _limpiar()
+
+
+def test_el_boton_de_la_LISTA_ofrece_elegir_que_imprimir(app, db_clean):
+    """Salía una etiqueta con el total porque el botón de la lista seguía yendo a la ruta de a
+    uno: arreglé el del historial y el del modal, y quedó el tercero -- el que se usa (M45)."""
+    from .conftest import pantalla_servida
+    js = pantalla_servida(_login(app), '/inventarios')
+    i = js.find('function meeRotulo')
+    assert i != -1, "no existe el botón de la lista"
+    cuerpo = js[i:i + 900]
+    assert '/api/mee/' in cuerpo and 'tandas' in cuerpo,         "el botón no averigua si el envase tiene cajas: imprimiría siempre el total"
+    assert 'function _meeRotMenu' in js, "no hay menú para elegir qué imprimir"
+    assert 'function _meeRotUna' in js, "no se puede reimprimir UNA caja (la que se dañó)"
+    assert 'caja=' in js, "el menú no pide una caja puntual"
+    # y el modal se puede cerrar. Se oculta con `hidden`, no con display:none: el trinquete
+    # de diseño mide los `display:none` para cazar pantallas viejas escondidas, y su techo es
+    # EXACTO -- un control condicional no gasta ese presupuesto (M104/M254).
+    assert 'function _meeRotCerrar' in js, "el menú no tiene salida (M254)"
+    assert 'm.hidden=true' in js.replace(' ', ''),         "el menú se oculta con display:none, que es el presupuesto de otra cosa"
+
+
 def test_el_modal_tiene_los_campos_y_el_boton_imprime_la_TANDA(app, db_clean):
     """Un endpoint sin puerta no existe (M121). Y el estado de la tanda anterior NO puede
     sobrevivir a abrir otro envase, o el botón imprimiría las cajas del envase de antes."""
