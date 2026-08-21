@@ -679,6 +679,9 @@ CORAZON=(
   # El plano decia "0 ocupadas" mientras dibujaba tres salas con lote adentro, y esos lotes
   # llevaban 1.237 horas "corriendo". Un lote de 51 dias no corre: esta sin cerrar.
   "tests/test_plano_en_vivo.py"
+  # Cuadre rapido: lo que hay en el estante manda, y el kardex se mueve en el mismo request.
+  # Rapido no puede significar flojo: conserva estado de lote y vencimiento, y audita.
+  "tests/test_cuadre_inventario.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

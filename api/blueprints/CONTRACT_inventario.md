@@ -1087,3 +1087,28 @@ puertas** por las que un lote se vuelve vendible y las dos escriben por el MISMO
    vende (M19/M137).
 
 Guards: `tests/test_liberar_crea_stock_vendible.py` (en el gate).
+
+---
+
+## INV-12 · Cuadre rápido: una acción por lote (21-ago-2026)
+
+`POST /api/inventario/cuadre` deja UN lote en lo que hay físicamente, en el mismo request, y la
+pantalla es `/planta/cuadre` (enlazada desde Bodega MP). Es la puerta para cuadrar parado frente
+al estante; el conteo cíclico sigue siendo el proceso para el conteo programado.
+
+Invariantes:
+1. **El movimiento va con cantidad > 0** y con un tipo VÁLIDO: `Entrada`/`Salida`/`Ajuste` son
+   los únicos que `trg_mov_tipo_valido` acepta. Sumar es `Ajuste` (el canónico lo cuenta como
+   entrada), restar es `Salida`. `'Ajuste +'`/`'Ajuste -'` NO son tipos, aunque el lector del
+   stock los entienda.
+2. **Conserva el estado del lote**: un cuadre sobre un lote en cuarentena lo deja en cuarentena.
+   Ajustar no es liberar.
+3. **Conserva el vencimiento y la ubicación**: sin fecha, el FEFO trataría el saldo como eterno.
+4. **Diferencia cero no escribe kardex**, pero deja `CUADRE_CONFIRMA` en el rastro: confirmar que
+   un lote cuadra es información, no un no-evento.
+5. **Dar de alta un (material, lote) que el sistema no tenía exige motivo** — una entrada sin
+   documento debe decir de dónde salió.
+6. **Token por acción** (`oc_recepcion_dedup`), reclamado ANTES de calcular la diferencia: un
+   doble clic devuelve 409 y no ajusta dos veces.
+
+Guard: `tests/test_cuadre_inventario.py` (9 casos, en el gate).

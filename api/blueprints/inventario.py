@@ -8478,6 +8478,170 @@ def liberar_lote():
 # Soporta filtro por tipo_material (MP / Envase Primario / Envase Secundario /
 # Empaque) · clave para inventario cíclico de E&E (envase y empaque).
 # Sin filtro = todo. Filtro = solo materiales del tipo indicado.
+# ══ CUADRE RÁPIDO DE INVENTARIO ═════════════════════════════════════════════════════
+# Una acción por lote: lo que hay FÍSICAMENTE gana, y el kardex se mueve en el mismo
+# request. Nada de flujo de cuatro pasos -- eso ya existe en el conteo cíclico, que es
+# para el conteo programado. Acá se cuadra parado frente al estante.
+#
+# Reglas que NO se relajan porque sea rápido:
+#   · el movimiento va como Ajuste con cantidad > 0 (nunca 0 · trigger PG · M18);
+#   · conserva el lote, su estado, su vencimiento y su ubicación -- un ajuste que pierde
+#     el vencimiento devuelve material eterno al FEFO (M118);
+#   · `audit_log` ANTES del commit, con el antes y el después (M22);
+#   · y un token por acción, porque un doble clic sobre un botón que ajusta stock duplica
+#     el ajuste y eso no da ningún síntoma (M63/M45).
+
+def _cuadre_stock_lote(c, codigo, lote):
+    """Stock canónico de UN lote: la suma de sus movimientos (regla #4)."""
+    r = c.execute(
+        "SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') "
+        "              THEN cantidad "
+        "            WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad "
+        "            ELSE 0 END) "
+        "  FROM movimientos WHERE material_id=? AND COALESCE(lote,'')=?",
+        (codigo, lote or '')).fetchone()
+    return float((r[0] if r and r[0] is not None else 0) or 0)
+
+
+def _cuadre_contexto_lote(c, codigo, lote):
+    """Los datos que el ajuste tiene que CONSERVAR: estado, vencimiento y dónde está."""
+    r = c.execute(
+        "SELECT MAX(COALESCE(material_nombre,'')), MAX(COALESCE(estanteria,'')), "
+        "       MAX(COALESCE(posicion,'')), MAX(COALESCE(proveedor,'')), "
+        "       MAX(COALESCE(fecha_vencimiento,'')), MAX(COALESCE(estado_lote,'')) "
+        "  FROM movimientos WHERE material_id=? AND COALESCE(lote,'')=?",
+        (codigo, lote or '')).fetchone()
+    if not r:
+        return {}
+    return {'nombre': r[0] or '', 'estanteria': r[1] or '', 'posicion': r[2] or '',
+            'proveedor': r[3] or '', 'vence': r[4] or '', 'estado_lote': r[5] or ''}
+
+
+@bp.route('/planta/cuadre', methods=['GET'])
+def planta_cuadre_page():
+    """Pantalla · cuadre rápido de inventario, parado frente al estante (Sebastián 21-ago)."""
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/planta/cuadre')
+    from flask import Response
+    from templates_py.cuadre_html import CUADRE_HTML
+    return Response(CUADRE_HTML, mimetype='text/html; charset=utf-8')
+
+
+@bp.route('/api/inventario/cuadre', methods=['POST'])
+def inventario_cuadre():
+    """Deja UN lote en la cantidad que hay físicamente. Un request, un ajuste.
+
+    Body: {codigo_mp, lote, fisico, motivo?, token?, estanteria?, vence?}
+
+    · `fisico` = 0 es *"no existe"*: se saca todo lo que el sistema creía tener.
+    · Si el (material, lote) no tiene movimientos, se está dando de ALTA lo que apareció en
+      el estante y el sistema no sabía -- ahí el motivo es obligatorio: una Entrada sin
+      documento tiene que decir de dónde salió.
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    codigo = str(d.get('codigo_mp') or '').strip()
+    lote = str(d.get('lote') or '').strip()
+    motivo = str(d.get('motivo') or '').strip()[:200]
+    if not codigo:
+        return jsonify({'error': 'falta el código del material'}), 400
+    try:
+        fisico = float(d.get('fisico'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'la cantidad física no es un número'}), 400
+    if fisico < 0:
+        return jsonify({'error': 'la cantidad física no puede ser negativa'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    existe = c.execute(
+        "SELECT 1 FROM movimientos WHERE material_id=? AND COALESCE(lote,'')=? LIMIT 1",
+        (codigo, lote)).fetchone()
+    if not existe and not motivo:
+        return jsonify({'error': 'este lote no existe en el sistema: para darlo de alta hace '
+                                 'falta decir de dónde salió',
+                        'codigo': 'MOTIVO_REQUERIDO'}), 400
+
+    token = str(d.get('token') or '').strip()[:80]
+    if token:
+        try:
+            c.execute("INSERT INTO oc_recepcion_dedup (recepcion_id, numero_oc, creado_en) "
+                      "VALUES (?,?,?)", (token, 'CUADRE', datetime.now().isoformat()))
+        except Exception as _edup:
+            if 'unique' in str(_edup).lower() or 'duplicate' in str(_edup).lower():
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                return jsonify({'error': 'Este ajuste ya se registró (doble envío)',
+                                'codigo': 'CUADRE_DUPLICADO'}), 409
+            raise
+
+    sistema = _cuadre_stock_lote(c, codigo, lote)
+    dif = round(fisico - sistema, 3)
+    if abs(dif) <= 0.01:
+        # Contar y encontrar lo mismo NO es un no-evento: es la confirmación de que ese lote
+        # está cuadrado. Se deja en el rastro sin tocar el kardex (un movimiento de 0 lo
+        # rechaza el trigger, y además ensuciaría la trazabilidad).
+        try:
+            audit_log(c, usuario=user, accion='CUADRE_CONFIRMA', tabla='movimientos',
+                      registro_id=codigo,
+                      despues={'codigo': codigo, 'lote': lote, 'fisico': fisico,
+                               'sistema': sistema})
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        return jsonify({'ok': True, 'sin_cambio': True, 'stock': sistema,
+                        'mensaje': 'Coincide con el sistema'})
+
+    ctx = _cuadre_contexto_lote(c, codigo, lote)
+    nombre = ctx.get('nombre') or str(d.get('nombre') or '').strip() or codigo
+    if not nombre or nombre == codigo:
+        _mp = c.execute("SELECT COALESCE(NULLIF(nombre_comercial,''), nombre_inci, '') "
+                        "  FROM maestro_mps WHERE codigo_mp=?", (codigo,)).fetchone()
+        if _mp and _mp[0]:
+            nombre = _mp[0]
+    estanteria = str(d.get('estanteria') or ctx.get('estanteria') or '').strip()
+    vence = str(d.get('vence') or ctx.get('vence') or '').strip()
+    # El estado del lote se CONSERVA: si estaba en cuarentena, el ajuste no lo libera por la
+    # puerta de atrás (M31/M23). Un lote nuevo nace VIGENTE porque es material que está en el
+    # estante y alguien lo está declarando.
+    estado_lote = (ctx.get('estado_lote') or 'VIGENTE').upper()
+    # Los tipos válidos son EXACTAMENTE tres: `trg_mov_tipo_valido` rechaza cualquier otro,
+    # así que 'Ajuste +' / 'Ajuste -' no existen como tipo aunque el lector del stock los
+    # entienda (M62: los valores permitidos se leen del CHECK, no se inventan). Sumar es
+    # 'Ajuste' -- que el canónico cuenta como entrada -- y restar es 'Salida'.
+    tipo = 'Ajuste' if dif > 0 else 'Salida'
+    hoy = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+    obs = '[cuadre] fisico=%s sistema=%s%s' % (fisico, sistema, (' · ' + motivo) if motivo else '')
+    try:
+        c.execute(
+            "INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, "
+            " fecha, operador, observaciones, estanteria, posicion, proveedor, "
+            " fecha_vencimiento, estado_lote) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (codigo, nombre, tipo, abs(dif), lote, hoy, user, obs, estanteria,
+             ctx.get('posicion', ''), ctx.get('proveedor', ''), vence, estado_lote))
+        audit_log(c, usuario=user, accion='CUADRE_INVENTARIO', tabla='movimientos',
+                  registro_id=codigo,
+                  antes={'stock': sistema},
+                  despues={'codigo': codigo, 'lote': lote, 'fisico': fisico,
+                           'ajuste': dif, 'tipo': tipo, 'motivo': motivo,
+                           'alta': (not existe)},
+                  detalle='Cuadre de inventario %s lote %s: %s → %s' % (codigo, lote or '-',
+                                                                        sistema, fisico))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo ajustar: %s' % str(e)[:200]}), 500
+    return jsonify({'ok': True, 'stock': fisico, 'ajuste': dif, 'tipo': tipo,
+                    'alta': (not existe),
+                    'mensaje': ('Dado de alta' if not existe else
+                                ('Bajado a 0' if fisico == 0 else 'Corregido'))})
+
+
 @bp.route('/api/conteo/estanterias', methods=['GET'])
 def conteo_estanterias():
     tipo = (request.args.get('tipo_material') or '').strip()

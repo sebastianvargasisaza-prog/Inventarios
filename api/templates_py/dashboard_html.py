@@ -639,6 +639,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <button class="sub-btn" onclick="subSwitchTab('ingreso',this,'bar-bodegaMP')">&#128666; Recepciones</button>
     <button class="sub-btn" onclick="subSwitchTab('alertas',this,'bar-bodegaMP')">&#9888; Alertas</button>
     <button class="sub-btn" onclick="subSwitchTab('movimientos',this,'bar-bodegaMP')">&#128203; Movimientos</button>
+    <a class="sub-btn" href="/planta/cuadre" style="text-decoration:none" title="Cuadrar el inventario parado frente al estante: se escribe lo que hay y el kardex queda ajustado en el momento">&#9878;&#65039; Cuadre r&aacute;pido</a>
   </div>
   <div id="bar-prodHub" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('formulas',this,'bar-prodHub')">&#129514; Fórmulas</button>
