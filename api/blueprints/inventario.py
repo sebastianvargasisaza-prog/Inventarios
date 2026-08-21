@@ -17898,6 +17898,21 @@ def mee_ajustar_stock(codigo):
     from http_helpers import validate_money
     motivo = (d.get('motivo') or '').strip()
     # ¿el usuario cambia el stock? (si no manda cantidad_nueva, es un guardado SOLO de ubicación/mínimo)
+    # Contar por CAJAS: "13 cajas de 164" es el dato del muelle, y contar 2.132 de a uno no lo
+    # hace nadie. Si vienen las cajas, ELLAS mandan sobre la cantidad -- si no, el total y el
+    # desglose podrían decir cosas distintas del mismo conteo (M5).
+    try:
+        _n_cajas = int(float(d.get('n_cajas') or 0))
+    except (TypeError, ValueError):
+        _n_cajas = 0
+    try:
+        _por_caja = float(d.get('unidades_por_caja') or 0)
+    except (TypeError, ValueError):
+        _por_caja = 0.0
+    if _n_cajas > 0 and _por_caja > 0:
+        d = dict(d)
+        d['cantidad_nueva'] = round(_n_cajas * _por_caja, 3)
+    _mov_id_ajuste = None
     _raw_cant = d.get('cantidad_nueva', None)
     _cambiar_stock = _raw_cant is not None and str(_raw_cant).strip() != ''
     cantidad_nueva = 0
@@ -17963,10 +17978,15 @@ def mee_ajustar_stock(codigo):
         tipo_mov = 'Entrada' if delta > 0 else 'Salida'
         obs_msg = (f'AJUSTE MANUAL: {stock_anterior} → {cantidad_nueva} '
                     f'({"+" if delta>=0 else ""}{delta}). {motivo}')
+        if _n_cajas > 0 and _por_caja > 0:
+            obs_msg += ' · %d caja(s) de %g' % (_n_cajas, _por_caja)
         c.execute("""
-            INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
-            VALUES (?, ?, ?, ?, ?)
-        """, (codigo, tipo_mov, abs(delta), user, obs_msg))
+            INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones,
+                                         n_cajas, unidades_por_caja)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (codigo, tipo_mov, abs(delta), user, obs_msg,
+              _n_cajas or None, _por_caja or None))
+        _mov_id_ajuste = c.lastrowid
     audit_log(c, usuario=user, accion='AJUSTAR_STOCK_MEE', tabla='maestro_mee',
               registro_id=codigo,
               antes={'stock_actual': stock_anterior},
@@ -17975,8 +17995,13 @@ def mee_ajustar_stock(codigo):
                        'stock_minimo': _min_val},
               detalle=f"Ajustó MEE {codigo}: stock {stock_anterior}→{cantidad_nueva if _cambiar_stock else stock_anterior} (Δ {delta:+}) · ubic {_zona}/{_estante}/{_posicion} · {motivo}")
     conn.commit()
+    # El `mov_id` viaja de vuelta para que el botón Rótulo imprima ESTA tanda -- un rótulo por
+    # caja -- y no una etiqueta suelta con el total.
     return jsonify({'ok': True, 'codigo': codigo, 'stock_anterior': stock_anterior,
-                    'stock_nuevo': cantidad_nueva if _cambiar_stock else stock_anterior, 'delta': delta})
+                    'stock_nuevo': cantidad_nueva if _cambiar_stock else stock_anterior,
+                    'delta': delta, 'mov_id': _mov_id_ajuste,
+                    'n_cajas': _n_cajas or None,
+                    'unidades_por_caja': _por_caja or None})
 
 
 @bp.route('/api/mee/<codigo>/historico', methods=['GET'])

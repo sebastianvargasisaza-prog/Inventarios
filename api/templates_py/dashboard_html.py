@@ -2147,6 +2147,15 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           </div>
           <div style="padding:20px 22px;">
             <div style="background:var(--cx-primary-pale);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--cx-primary-text)">Stock actual: <b id="mee-adj-stockact">-</b></div>
+            <div style="background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:10px;padding:11px 13px;margin-bottom:12px">
+              <div style="font-size:11.5px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px">&#128230; Cont&eacute; por cajas</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end">
+                <div class="form-group" style="margin:0"><label>Cajas</label><input type="number" id="mee-adj-ncajas" min="0" step="1" placeholder="13" oninput="meeCalcCajas()"></div>
+                <div class="form-group" style="margin:0"><label>Envases por caja</label><input type="number" id="mee-adj-porcaja" min="0" step="1" placeholder="164" oninput="meeCalcCajas()"></div>
+                <div id="mee-adj-cajastot" style="font-size:12.5px;font-weight:700;color:var(--cx-text-mute);padding-bottom:9px">&nbsp;</div>
+              </div>
+              <div style="font-size:11.5px;color:var(--cx-text-mute);margin-top:6px">Si llen&aacute;s las cajas, la cantidad se calcula sola y el r&oacute;tulo sale <b>uno por caja</b>.</div>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div class="form-group" style="margin:0"><label>Nueva cantidad</label><input type="number" id="mee-adj-cant" min="0" step="1"></div>
               <div class="form-group" style="margin:0"><label>Stock m&iacute;nimo</label><input type="number" id="mee-adj-min" min="0" step="1"></div>
@@ -10545,6 +10554,12 @@ async function meeAjustar(codigo){
   var st=(dd.stock!=null?dd.stock:0);
   document.getElementById('mee-adj-cod').textContent=codigo;
   document.getElementById('mee-adj-desc').textContent=dd.desc||'';
+  // El conteo por cajas y el movimiento son de LA TANDA ANTERIOR: si sobreviven a abrir otro
+  // envase, el boton Rotulo imprimiria las cajas del envase de antes (M112).
+  delete m.dataset.movAjuste;
+  ['mee-adj-ncajas','mee-adj-porcaja'].forEach(function(i){var e=document.getElementById(i); if(e)e.value='';});
+  var _ct=document.getElementById('mee-adj-cajastot'); if(_ct)_ct.innerHTML='&nbsp;';
+  var _m0=document.getElementById('mee-adj-msg'); if(_m0)_m0.innerHTML='';
   document.getElementById('mee-adj-stockact').textContent=st+' '+(dd.unidad||'und');
   document.getElementById('mee-adj-cant').value=st;
   document.getElementById('mee-adj-min').value=(dd.min||0);
@@ -10559,8 +10574,30 @@ async function meeAjustar(codigo){
   _meeFillUbic('mee-adj-pos','posicion',dd.pos||'');
 }
 function meeAjustarClose(){ var m=document.getElementById('mee-adj-modal'); if(m) m.style.display='none'; }
+// Las cajas mandan sobre el total: se cuenta "13 cajas de 164", no 2.132 de a uno.
+function meeCalcCajas(){
+  var nc=parseInt((document.getElementById('mee-adj-ncajas')||{}).value||'0',10)||0;
+  var pc=parseFloat((document.getElementById('mee-adj-porcaja')||{}).value||'0')||0;
+  var out=document.getElementById('mee-adj-cajastot');
+  var cant=document.getElementById('mee-adj-cant');
+  if(nc>0&&pc>0){
+    var tot=nc*pc;
+    if(cant) cant.value=tot;
+    if(out) out.innerHTML='= <b style="color:var(--cx-primary-text)">'+tot.toLocaleString('es-CO')+'</b> und';
+  }else if(out){ out.innerHTML='&nbsp;'; }
+}
 function meeAjustarRotulo(){
   var m=document.getElementById('mee-adj-modal'); var cod=(m&&m.dataset.cod)||''; if(!cod) return;
+  // Si el ajuste ya se guardo con cajas, se imprime ESA tanda: un rotulo POR CAJA. Antes
+  // abria siempre la ruta de a uno con el total, asi que de 13 cajas salia UNA etiqueta y las
+  // otras doce quedaban sin identificar.
+  var mv=(m&&m.dataset.movAjuste)||'';
+  if(mv){ window.open('/rotulos-recepcion-mee?mov='+encodeURIComponent(mv),'_blank'); return; }
+  var nc=parseInt((document.getElementById('mee-adj-ncajas')||{}).value||'0',10)||0;
+  if(nc>1){
+    alert('Guarda primero el ajuste: as\u00ed el r\u00f3tulo sale uno por cada una de las '+nc+' cajas.');
+    return;
+  }
   var cant=parseFloat(document.getElementById('mee-adj-cant').value)||0;
   window.open('/rotulo-recepcion-mee/'+encodeURIComponent(cod)+'/'+(cant>0?cant:1),'_blank');
 }
@@ -10690,6 +10727,9 @@ async function meeAjustarGuardar(){
   var _pv=document.getElementById('mee-adj-prov');
   var _mdEl=document.getElementById('mee-adj-medida');
   var body={ zona:document.getElementById('mee-adj-zona').value||'', estanteria:document.getElementById('mee-adj-estante').value||'', posicion:document.getElementById('mee-adj-pos').value||'', proveedor:(_pv?_pv.value:'')||'', medida:(_mdEl?_mdEl.value:'')||'' };
+  var _nc=parseInt((document.getElementById('mee-adj-ncajas')||{}).value||'0',10)||0;
+  var _pc=parseFloat((document.getElementById('mee-adj-porcaja')||{}).value||'0')||0;
+  if(_nc>0&&_pc>0){ body.n_cajas=_nc; body.unidades_por_caja=_pc; }
   if(!isNaN(min)) body.stock_minimo=min;
   var cambiaStock=!isNaN(cant) && cant!==st;
   if(cambiaStock){
@@ -10701,7 +10741,19 @@ async function meeAjustarGuardar(){
   try{
     var r=await fetch('/api/mee/'+encodeURIComponent(codigo)+'/ajustar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     var d=await r.json();
-    if(r.ok&&d.ok){ meeAjustarClose(); _toast('Guardado'+(cambiaStock?(' · stock '+d.stock_anterior+' → '+d.stock_nuevo):''),1); cargarMeeStock(); }
+    if(r.ok&&d.ok){
+      // Si se conto por cajas, el modal NO se cierra: queda con el movimiento a mano para
+      // imprimir un rotulo por caja. Cerrarlo obligaria a buscar la tanda en el historial,
+      // que es justo lo que hace que las etiquetas no se impriman (M129).
+      if(d.mov_id&&d.n_cajas>0){
+        m.dataset.movAjuste=String(d.mov_id);
+        var _ms=document.getElementById('mee-adj-msg');
+        if(_ms) _ms.innerHTML='<span style="color:var(--cx-success-text);font-weight:700">&#10003; Guardado: '+d.n_cajas+' caja(s) de '+d.unidades_por_caja+' &middot; stock '+d.stock_anterior+' &rarr; '+d.stock_nuevo+'.</span> Apret&aacute; <b>R&oacute;tulo</b> para imprimir una etiqueta por caja.';
+        cargarMeeStock();
+      } else {
+        meeAjustarClose(); _toast('Guardado'+(cambiaStock?(' · stock '+d.stock_anterior+' → '+d.stock_nuevo):''),1); cargarMeeStock();
+      }
+    }
     else { _adjMsg('Error: '+(d.error||r.status),'#dc2626'); }
   }catch(e){ _adjMsg('Error de red','#dc2626'); }
 }

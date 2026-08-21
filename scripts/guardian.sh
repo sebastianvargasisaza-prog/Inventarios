@@ -704,6 +704,10 @@ CORAZON=(
   # lugar con autoguardado, la sugerencia "esto tambien esta en otra estanteria" (calculada
   # en UNA consulta, no una por fila) y buscar en todo el inventario sin salir de la hoja.
   "tests/test_hoja_inventario.py"
+  # Contar por CAJAS ("13 cajas de 164") y que salgan 13 rotulos numerados: contar 2.132
+  # envases de a uno no lo hace nadie, y el rotulo por caja no tenia de donde sacar las
+  # cajas cuando el conteo entraba por el ajuste de stock.
+  "tests/test_conteo_por_cajas.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.
