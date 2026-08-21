@@ -1210,5 +1210,30 @@ versión, página ni vigencia.
    alto sobre 100 y cero desbordes**. Antes daba 131 mm, o sea que cada rótulo se partía en dos
    etiquetas. El alto depende de que el bloque de control conserve su ancho fijo y su tamaño.
 
-Guard: `tests/test_rotulo_envase_f06.py` (11 casos, en el gate · incluye el barrido de
-`COALESCE` con el fallback muerto y sus excepciones enumeradas).
+7. **Está hecho para la térmica de 10x10.** Medido en el navegador con las reglas del
+   `@media print` aplicadas y con el PEOR caso (nombre de 65 caracteres, lote largo,
+   observación de tres renglones): **95,3 mm de alto sobre 100, 4,7 mm de margen, cero
+   desbordes y cero celdas solapadas**. Antes daba **137,7 mm**: cada rótulo se comía dos
+   etiquetas. Lo que sostiene esa medida:
+   - **`print-color-adjust: exact`** -- sin él el navegador descarta los fondos y el chip del
+     estado marcado se imprime sin relleno (M123);
+   - **el logo BINARIZADO** (`_rotulo_logo_termico`, que reusa el binarizador del F02): la
+     térmica es de 1 bit y cada gris lo resuelve con una trama de puntos, así que un PNG con
+     antialiasing sale rayado (M256). Si no se puede convertir, cae al logo normal;
+   - **las etiquetas sin fondo gris**: en 1 bit un `#e6e6ea` a 5pt es ruido de puntos debajo
+     del texto. La jerarquía se hace con peso y caja;
+   - **el nombre del insumo se ESCALA** según su largo (cuatro escalones, clases `n1`..`n4`),
+     nunca se trunca: un rótulo de identificación cortado no identifica (M203);
+   - **el ancho de las columnas**: con las etiquetas más anchas, "CAFARCOL" se partía en
+     "CAFARC / OL" y la fecha en dos renglones.
+8. **El encabezado sale de `_encabezado_formato(logo, ctl)`**, con el bloque de control por
+   parámetro: sumar otro formato es una constante más, no un segundo encabezado copiado.
+
+⚠ Pendiente de Aseguramiento: el rótulo de ingreso de **materia prima** cita `COC-PRO-002-F07`
+**sin versión, página ni vigencia**, y el de **identificación de equipo** no cita formato
+alguno. No se completan inventando los datos -- una vigencia inventada en un documento regulado
+es peor que no tenerla (M19/M93).
+
+Guards: `tests/test_rotulo_envase_f06.py` (14 casos, en el gate · incluye el barrido de
+`COALESCE` con el fallback muerto y sus excepciones enumeradas, el escalado del nombre y las
+reglas que sostienen los 95,3 mm).

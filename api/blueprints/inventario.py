@@ -11981,15 +11981,19 @@ F06_CONTROL = {
 }
 
 
-def _encabezado_f06(logo):
+def _encabezado_formato(logo, ctl=None):
     """Las TRES zonas del encabezado oficial: logo | FORMATO + t&iacute;tulo | control.
 
     No es decoraci&oacute;n: el bloque de c&oacute;digo/versi&oacute;n/vigencia es la evidencia de que el
     registro se llen&oacute; en la versi&oacute;n vigente del formato (M251). Sale de UNA constante para
     que el d&iacute;a que Aseguramiento libere la versi&oacute;n 03 no queden dos rótulos diciendo cosas
     distintas y los dos con cara de oficiales.
+
+    El bloque de control entra por PAR&Aacute;METRO para que sumar otro formato -- el r&oacute;tulo de
+    materia prima, cuando Aseguramiento pase su versi&oacute;n y vigencia -- sea una constante m&aacute;s y
+    no un segundo encabezado copiado.
     """
-    d = F06_CONTROL
+    d = ctl or F06_CONTROL
     return ('<div class="top f06">'
             '<div class="brand"><img class="mark" src="' + logo + '" alt="" '
             'onerror="this.remove()"></div>'
@@ -12049,7 +12053,7 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
     _cls_n = ('n1' if _ldesc <= 22 else 'n2' if _ldesc <= 40
               else 'n3' if _ldesc <= 62 else 'n4')
     return ('<div class="sheet"><div class="accent"></div>'
-            + _encabezado_f06(logo) +
+            + _encabezado_formato(logo, F06_CONTROL) +
             '<div class="title"><div class="eyebrow">Ingreso de material' + _cajatag + '</div>'
             '<div class="nlbl">Nombre del insumo</div>'
             '<h1 class="name ' + _cls_n + '">' + _e(desc) + '</h1>' + _cajachip + '</div>'
