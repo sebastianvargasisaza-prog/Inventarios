@@ -10980,7 +10980,7 @@ async function cargarMeeHistorial(){ try{ var r=await fetch('/api/mee/movimiento
   if(!d.movimientos||!d.movimientos.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--cx-text-faint);">Sin movimientos registrados</td></tr>';return;}
   var tC={Entrada:'#27ae60',Salida:'#e74c3c',Ajuste:'#9b59b6'}; var h='';
   d.movimientos.forEach(function(m){var c=tC[m.tipo]||'#555'; var ref=m.batch_ref||m.lote_ref||'';
-    var btnRotulo=m.tipo==='Entrada'?'<button data-codigo="'+encodeURIComponent(m.mee_codigo)+'" data-cantidad="'+m.cantidad+'" data-lote="'+encodeURIComponent(ref||'')+'" onclick="abrirRotuloMEE(this)" style="background:var(--cx-primary);color:white;border:none;padding:4px 8px;font-size:0.75em;margin-right:4px;border-radius:3px;cursor:pointer;">&#128203; R&#243;tulo</button>':'';
+    var btnRotulo=m.tipo==='Entrada'?'<button data-codigo="'+encodeURIComponent(m.mee_codigo)+'" data-cantidad="'+m.cantidad+'" data-lote="'+encodeURIComponent(ref||'')+'" data-mov="'+m.id+'" onclick="abrirRotuloMEE(this)" style="background:var(--cx-primary);color:white;border:none;padding:4px 8px;font-size:0.75em;margin-right:4px;border-radius:3px;cursor:pointer;">&#128203; R&#243;tulo</button>':'';
     h+='<tr><td style="color:#bbb;font-size:0.8em;">#'+m.id+'</td><td style="font-family:monospace;font-size:0.82em;">'+m.mee_codigo+'</td><td style="font-size:0.85em;">'+m.descripcion+'</td><td><span style="color:'+c+';font-weight:700;font-size:0.88em;">'+m.tipo+'</span></td><td style="font-weight:700;">'+m.cantidad+' <span style="color:var(--cx-text-faint);font-size:0.8em;">'+m.unidad+'</span></td><td style="font-size:0.8em;color:#777;font-family:monospace;">'+(ref||'--')+'</td><td style="font-size:0.82em;">'+m.responsable+'</td><td style="font-size:0.8em;color:var(--cx-text-mute);">'+(m.fecha?m.fecha.substring(0,16):'')+'</td><td>'+btnRotulo+'<button onclick="meeAnular('+m.id+')" style="background:var(--cx-danger);padding:4px 8px;font-size:0.75em;">Anular</button></td></tr>';
   }); tb.innerHTML=h;
   }catch(e){}}
@@ -10988,6 +10988,12 @@ function abrirRotuloMEE(btn){
   var c=btn.getAttribute('data-codigo')||'';
   var q=btn.getAttribute('data-cantidad')||'1';
   var l=btn.getAttribute('data-lote')||'';
+  var mv=btn.getAttribute('data-mov')||'';
+  // Con el id del movimiento se imprime UN ROTULO POR CAJA, segun las cajas que se
+  // declararon al recibir (Sebastian 21-ago: "en la recepcion puso cuantas cajas y cuanto
+  // venian; al darle imprimir rotulo necesito que me genere TODOS"). Sin cajas declaradas
+  // esa misma ruta saca uno solo, asi que no hay caso en que imprima de menos.
+  if(mv){ window.open('/rotulos-recepcion-mee?mov='+encodeURIComponent(mv),'_blank'); return; }
   window.open('/rotulo-recepcion-mee/'+c+'/'+q+'?lote='+l,'_blank');
 }
 async function meeAnular(id){ var m=prompt('Motivo de anulacion (obligatorio):'); if(!m||!m.trim()){alert('Debes ingresar un motivo.');return;}

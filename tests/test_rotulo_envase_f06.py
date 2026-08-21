@@ -215,6 +215,59 @@ def test_el_encabezado_conserva_las_tres_zonas_medidas(app, db_clean):
         _limpiar()
 
 
+# ── un rótulo POR CAJA, según lo que se declaró al recibir ───────────────────
+
+def test_imprime_un_rotulo_por_CAJA_segun_lo_que_se_recibio(app, db_clean):
+    """Sebastián 21-ago: *"en la recepción puso cuántas cajas y cuánto venían; al darle imprimir
+    rótulo necesito que me genere TODOS para poder imprimirlos, según lo que ella puso"*.
+
+    El circuito existía y ningún botón lo usaba: todos abrían la ruta de a UNO, así que de una
+    recepción de 6 cajas salía un solo rótulo y las otras 5 cajas quedaban sin identificar.
+    """
+    _limpiar()
+    _sql("INSERT INTO maestro_mee (codigo,descripcion,categoria,proveedor,estado,"
+         "stock_actual,stock_minimo,unidad) VALUES (?,?,?,?,'Activo',0,0,'und')",
+         (_COD, 'ENVASE QA', 'Envase', 'PROV QA'))
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        sin_cajas = conn.execute(
+            "INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,unidad,lote_ref,responsable,"
+            "fecha,estado,anulado) VALUES (?,'Entrada',5551,'und','INT-1','catalina',"
+            "'2026-08-06','VIGENTE',0)", (_COD,)).lastrowid
+        con_cajas = conn.execute(
+            "INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,unidad,lote_ref,responsable,"
+            "fecha,estado,anulado,n_cajas,unidades_por_caja) VALUES (?,'Entrada',5551,'und',"
+            "'OC-2026-0309','catalina','2026-08-06','VIGENTE',0,6,1000)", (_COD,)).lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+    try:
+        c = _login(app)
+        html = c.get('/rotulos-recepcion-mee?mov=%d' % con_cajas).get_data(as_text=True)
+        assert html.count('class="sheet"') == 6,             "se declararon 6 cajas y salieron %d rótulos" % html.count('class="sheet"')
+        cajas = re.findall(r'Caja (\d+) de (\d+)', html)
+        assert [x[0] for x in cajas] == ['1', '2', '3', '4', '5', '6'],             "los rótulos no vienen numerados por caja: %r" % (cajas,)
+        assert all(x[1] == '6' for x in cajas), "no dicen de cuántas cajas son"
+        # Sin cajas declaradas sale UNO: no hay caso en que imprima de menos.
+        h1 = c.get('/rotulos-recepcion-mee?mov=%d' % sin_cajas).get_data(as_text=True)
+        assert h1.count('class="sheet"') == 1,             "sin cajas declaradas debería salir un rótulo, salieron %d" % h1.count('class="sheet"')
+    finally:
+        _limpiar()
+
+
+def test_el_boton_del_historial_pide_los_rotulos_POR_MOVIMIENTO(app, db_clean):
+    """La capacidad estaba construida y sin puerta: el botón mandaba código y cantidad, que es
+    justo lo que NO sabe de cajas (M121). Se mide sobre la pantalla SERVIDA (M216)."""
+    from .conftest import pantalla_servida
+    c = _login(app)
+    js = pantalla_servida(c, '/inventarios')
+    assert 'data-mov="' in js, "el botón del historial no manda el movimiento"
+    i = js.find('function abrirRotuloMEE')
+    assert i != -1, "no existe la función que abre el rótulo"
+    cuerpo = js[i:i + 900]
+    assert "/rotulos-recepcion-mee?mov=" in cuerpo,         "el botón sigue abriendo la ruta de a UNO, así que de 6 cajas imprime 1"
+
+
 # ── el patrón que causó el proveedor vacío, en todo el repo ──────────────────
 
 def test_ningun_COALESCE_deja_su_fallback_muerto(app, db_clean):
