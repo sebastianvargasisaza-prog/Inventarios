@@ -14208,20 +14208,32 @@ def _lotes_de_material(c, cod, limite=12):
         # "no pude leer los lotes" en "no hay lotes", que es justo el engaño a evitar (M4/M94).
         log.warning('lotes de %s para el aviso de stock: %s', cod, _e)
         return {'usables': [], 'retenidos': [], 'error': True}
+    from audit_helpers import fecha_iso as _fecha_iso
     for r in rows:
         lote = str(r[0] or '').strip()
         est = str(r[1] or '').strip()
-        fv = str(r[2] or '').strip()[:10]
+        fv_crudo = str(r[2] or '').strip()
+        # La fecha se NORMALIZA antes de compararla. Sin esto, `26-Dic-2026` se comparaba como
+        # TEXTO y salía "vigente" porque empieza con 2, mientras el motor -- que usa
+        # `date(fecha_vencimiento)` y ante un texto recibe NULL -- lo excluía del stock: la
+        # misma fila decía "disponible 0g · FALTA" y "LOTES A USAR: 29.137,5g" (M5/M161).
+        fv = _fecha_iso(fv_crudo)
         neto = round(float(r[3] or 0), 2)
         if neto <= 0.01:
             continue
-        item = {'lote': lote, 'g': neto, 'vence': fv, 'estado': est or 'VIGENTE'}
+        item = {'lote': lote, 'g': neto, 'vence': fv or fv_crudo[:10],
+                'estado': est or 'VIGENTE'}
         if est in _ESTADOS_LOTE_NO_PRODUCIBLES:
             item['motivo'] = ('en CUARENTENA · falta que Calidad lo libere'
                               if est.startswith('CUARENTENA') else est)
             retenidos.append(item)
         elif fv and fv < hoy_col:
             item['motivo'] = 'VENCIDO el ' + fv
+            retenidos.append(item)
+        elif fv_crudo and not fv:
+            # Ilegible: el FEFO tampoco lo va a consumir, así que decir "usable" sería
+            # prometer un material que el descuento no toma. Se declara el motivo real.
+            item['motivo'] = 'fecha de vencimiento ilegible (%s) · corregila en el lote' % fv_crudo[:14]
             retenidos.append(item)
         else:
             usables.append(item)

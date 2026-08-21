@@ -33896,7 +33896,8 @@ def completar_info_lote_bulk():
         for it in items:
             mid = (it.get('material_id') or '').strip()
             lote = (it.get('lote') or '').strip()
-            fv = (it.get('fecha_vencimiento') or '').strip() or None
+            from audit_helpers import fecha_iso as _fecha_iso
+            fv = _fecha_iso(it.get('fecha_vencimiento') or '') or None
             prov = (it.get('proveedor') or '').strip() or None
 
             if not mid or not lote:

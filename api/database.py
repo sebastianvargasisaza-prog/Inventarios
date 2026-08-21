@@ -11746,6 +11746,32 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
          " ('laura','aseguramiento','','Plan de suplencias · Control de Calidad cubre Aseguramiento',0,'sistema'),"
          " ('laura','director_tecnico','','Plan de suplencias · Control de Calidad cubre Dirección Técnica',0,'sistema')",
      ]),
+
+    (443, "movimientos · la fecha de vencimiento vuelve a ISO. Sebastián 21-ago, con el "
+          "AZ HYBRID CLEAR abierto: *\"le digo que me mire stock y dice esto, pero cuando "
+          "reviso el inventario sí tengo esas materias primas\"*. El PROPYLENE GLYCOL decía "
+          "'disponible 0g · FALTA 4000g' y en la MISMA fila 'LOTES A USAR: 29.137,5g', con el "
+          "lote VIGENTE en bodega. No era el motor: era el formato. El lote traía "
+          "'26-Dic-2026' en vez de '2026-12-26', y `date('26-Dic-2026')` devuelve NULL -- así "
+          "que la comparación de vencimiento es falsa y el lote se cae del stock distribuible "
+          "(el FEFO tampoco lo consume), mientras la lista de la pantalla, que compara como "
+          "TEXTO, lo daba por vigente porque empieza con '2'. Y `job_marcar_vencidos` usa el "
+          "mismo `date(...)`, o sea que un lote realmente vencido con la fecha en texto NUNCA "
+          "se marca: el control deja de sonar sin avisar. Sólo se convierten los patrones "
+          "INEQUÍVOCOS; lo que no se puede leer se deja como está y se ve en "
+          "/api/inventario/fechas-vencimiento-raras -- una fecha de vencimiento no se adivina.",
+     [
+         "UPDATE movimientos SET fecha_vencimiento = substr(fecha_vencimiento,8,4) || '-' || CASE LOWER(substr(fecha_vencimiento,4,3)) WHEN 'ene' THEN '01' WHEN 'jan' THEN '01' WHEN 'feb' THEN '02' WHEN 'mar' THEN '03' WHEN 'abr' THEN '04' WHEN 'apr' THEN '04' WHEN 'may' THEN '05' WHEN 'jun' THEN '06' WHEN 'jul' THEN '07' WHEN 'ago' THEN '08' WHEN 'aug' THEN '08' WHEN 'sep' THEN '09' WHEN 'set' THEN '09' WHEN 'oct' THEN '10' WHEN 'nov' THEN '11' WHEN 'dic' THEN '12' WHEN 'dec' THEN '12' END || '-' || substr(fecha_vencimiento,1,2) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) = 11   AND substr(fecha_vencimiento,3,1) = '-'   AND substr(fecha_vencimiento,7,1) = '-'   AND LOWER(substr(fecha_vencimiento,4,3)) IN ('ene','jan','feb','mar','abr','apr','may','jun','jul','ago','aug','sep','set','oct','nov','dic','dec')",
+         "UPDATE movimientos SET fecha_vencimiento = substr(fecha_vencimiento,7,4) || '-' || substr(fecha_vencimiento,4,2) || '-' || substr(fecha_vencimiento,1,2) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) = 10   AND substr(fecha_vencimiento,3,1) = '/'   AND substr(fecha_vencimiento,6,1) = '/'",
+         "UPDATE movimientos SET fecha_vencimiento = substr(fecha_vencimiento,7,4) || '-' || substr(fecha_vencimiento,4,2) || '-' || substr(fecha_vencimiento,1,2) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) = 10   AND substr(fecha_vencimiento,3,1) = '-'   AND substr(fecha_vencimiento,6,1) = '-'",
+         "UPDATE movimientos SET fecha_vencimiento = substr(fecha_vencimiento,7,4) || '-' || CASE LOWER(substr(fecha_vencimiento,3,3)) WHEN 'ene' THEN '01' WHEN 'jan' THEN '01' WHEN 'feb' THEN '02' WHEN 'mar' THEN '03' WHEN 'abr' THEN '04' WHEN 'apr' THEN '04' WHEN 'may' THEN '05' WHEN 'jun' THEN '06' WHEN 'jul' THEN '07' WHEN 'ago' THEN '08' WHEN 'aug' THEN '08' WHEN 'sep' THEN '09' WHEN 'set' THEN '09' WHEN 'oct' THEN '10' WHEN 'nov' THEN '11' WHEN 'dic' THEN '12' WHEN 'dec' THEN '12' END || '-0' || substr(fecha_vencimiento,1,1) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) = 10   AND substr(fecha_vencimiento,2,1) = '-'   AND substr(fecha_vencimiento,6,1) = '-'   AND LOWER(substr(fecha_vencimiento,3,3)) IN ('ene','jan','feb','mar','abr','apr','may','jun','jul','ago','aug','sep','set','oct','nov','dic','dec')",
+         "UPDATE movimientos SET fecha_vencimiento = substr(fecha_vencimiento,1,10) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) > 10   AND substr(fecha_vencimiento,5,1) = '-'   AND substr(fecha_vencimiento,8,1) = '-'",
+         "UPDATE movimientos_mee SET fecha_vencimiento = substr(fecha_vencimiento,8,4) || '-' || CASE LOWER(substr(fecha_vencimiento,4,3)) WHEN 'ene' THEN '01' WHEN 'jan' THEN '01' WHEN 'feb' THEN '02' WHEN 'mar' THEN '03' WHEN 'abr' THEN '04' WHEN 'apr' THEN '04' WHEN 'may' THEN '05' WHEN 'jun' THEN '06' WHEN 'jul' THEN '07' WHEN 'ago' THEN '08' WHEN 'aug' THEN '08' WHEN 'sep' THEN '09' WHEN 'set' THEN '09' WHEN 'oct' THEN '10' WHEN 'nov' THEN '11' WHEN 'dic' THEN '12' WHEN 'dec' THEN '12' END || '-' || substr(fecha_vencimiento,1,2) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) = 11   AND substr(fecha_vencimiento,3,1) = '-'   AND substr(fecha_vencimiento,7,1) = '-'   AND LOWER(substr(fecha_vencimiento,4,3)) IN ('ene','jan','feb','mar','abr','apr','may','jun','jul','ago','aug','sep','set','oct','nov','dic','dec')",
+         "UPDATE movimientos_mee SET fecha_vencimiento = substr(fecha_vencimiento,7,4) || '-' || substr(fecha_vencimiento,4,2) || '-' || substr(fecha_vencimiento,1,2) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) = 10   AND substr(fecha_vencimiento,3,1) = '/'   AND substr(fecha_vencimiento,6,1) = '/'",
+         "UPDATE movimientos_mee SET fecha_vencimiento = substr(fecha_vencimiento,7,4) || '-' || substr(fecha_vencimiento,4,2) || '-' || substr(fecha_vencimiento,1,2) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) = 10   AND substr(fecha_vencimiento,3,1) = '-'   AND substr(fecha_vencimiento,6,1) = '-'",
+         "UPDATE movimientos_mee SET fecha_vencimiento = substr(fecha_vencimiento,7,4) || '-' || CASE LOWER(substr(fecha_vencimiento,3,3)) WHEN 'ene' THEN '01' WHEN 'jan' THEN '01' WHEN 'feb' THEN '02' WHEN 'mar' THEN '03' WHEN 'abr' THEN '04' WHEN 'apr' THEN '04' WHEN 'may' THEN '05' WHEN 'jun' THEN '06' WHEN 'jul' THEN '07' WHEN 'ago' THEN '08' WHEN 'aug' THEN '08' WHEN 'sep' THEN '09' WHEN 'set' THEN '09' WHEN 'oct' THEN '10' WHEN 'nov' THEN '11' WHEN 'dic' THEN '12' WHEN 'dec' THEN '12' END || '-0' || substr(fecha_vencimiento,1,1) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) = 10   AND substr(fecha_vencimiento,2,1) = '-'   AND substr(fecha_vencimiento,6,1) = '-'   AND LOWER(substr(fecha_vencimiento,3,3)) IN ('ene','jan','feb','mar','abr','apr','may','jun','jul','ago','aug','sep','set','oct','nov','dic','dec')",
+         "UPDATE movimientos_mee SET fecha_vencimiento = substr(fecha_vencimiento,1,10) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) > 10   AND substr(fecha_vencimiento,5,1) = '-'   AND substr(fecha_vencimiento,8,1) = '-'",
+     ]),
 ]
 
 

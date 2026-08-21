@@ -21,7 +21,7 @@ except Exception:
     ASEGURAMIENTO_USERS, TECNICA_USERS = set(), set()
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
-from audit_helpers import audit_log, siguiente_correlativo
+from audit_helpers import audit_log, siguiente_correlativo, fecha_iso
 from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -2124,7 +2124,7 @@ def handle_movimientos():
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (material_id, material_nombre, cantidad,
                    tipo, datetime.now().isoformat(), data.get('observaciones',''),
-                   lote_in, data.get('fecha_vencimiento',''),
+                   lote_in, fecha_iso(data.get('fecha_vencimiento','')),
                    data.get('estanteria',''), data.get('posicion',''),
                    data.get('proveedor',''), estado_lote_in,
                    data.get('operador','') or u))
@@ -6045,20 +6045,21 @@ def editar_fecha_vencimiento_lote(material_id, lote):
         return err, code
 
     d = request.json or {}
-    nueva_fv = (d.get('fecha_vencimiento') or '').strip()
+    _fv_crudo = str(d.get('fecha_vencimiento') or '').strip()
+    # Acepta lo que la gente escribe (`26-Dic-2026`, `26/12/2026`) y GUARDA ISO: con la
+    # fecha en texto, `date(...)` devuelve NULL y el lote se cae del stock sin avisar (mig 443).
+    nueva_fv = fecha_iso(_fv_crudo)
     motivo = (d.get('motivo') or '').strip()
 
-    # Validar formato ISO si no vacío
-    if nueva_fv:
-        try:
-            from datetime import date as _date
-            _date.fromisoformat(nueva_fv[:10])
-            nueva_fv = nueva_fv[:10]  # solo YYYY-MM-DD
-        except (ValueError, TypeError):
-            return jsonify({
-                'error': 'fecha_vencimiento inválida',
-                'detail': 'Formato esperado: YYYY-MM-DD',
-            }), 400
+    # Lo que se mandó y NO se pudo leer se RECHAZA, nunca se trata como "borrar la fecha":
+    # un lote sin vencimiento es eterno para el FEFO y el cron de vencidos deja de verlo
+    # (M118). Vacío explícito sí borra -- eso es una decisión, un typo no lo es.
+    if _fv_crudo and not nueva_fv:
+        return jsonify({
+            'error': 'fecha_vencimiento inválida',
+            'detail': 'No se pudo leer "%s". Formato esperado: YYYY-MM-DD '
+                      '(también se aceptan 26-Dic-2026 y 26/12/2026).' % _fv_crudo[:30],
+        }), 400
 
     sin_lote = (lote == '_SIN_LOTE_')
 
@@ -7771,7 +7772,7 @@ def registrar_recepcion():
     # (puerta lateral · recibir_oc ya lo bloquea). Antes registrar_recepcion
     # aceptaba fecha_vencimiento < hoy y la metia como VIGENTE -> material
     # vencido usable en FEFO sin alerta. Override admin: forzar_vencido=true.
-    _fv = (d.get('fecha_vencimiento') or '').strip()
+    _fv = fecha_iso(d.get('fecha_vencimiento') or '')
     if _fv and len(_fv) >= 10 and not d.get('forzar_vencido'):
         try:
             from datetime import date as _dvenc
@@ -7844,7 +7845,7 @@ def registrar_recepcion():
                   precio_kg,numero_factura,numero_oc,n_recipientes)
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
               (codigo,nombre,cantidad_recibida,'Entrada',datetime.now().isoformat(),
-               d.get('observaciones','Ingreso MP'),lote,d.get('fecha_vencimiento',''),
+               d.get('observaciones','Ingreso MP'),lote,_fv,
                d.get('estanteria',''),d.get('posicion',''),proveedor,estado_lote,
                d.get('operador',''),precio_kg,numero_factura,numero_oc,_nrec_ing))
     mov_id = c.lastrowid
@@ -8531,6 +8532,53 @@ def _ubic_norm(v):
     return t
 
 
+@bp.route('/api/inventario/fechas-vencimiento-raras', methods=['GET'])
+def inventario_fechas_vencimiento_raras():
+    """Los lotes cuya fecha de vencimiento NO está en ISO · el vigía de lo que pasó el 21-ago.
+
+    Una fecha en texto (`26-Dic-2026`) no da error: `date(...)` devuelve NULL, la comparación de
+    vencimiento es falsa y **el lote se cae del stock distribuible** -- el material existe en la
+    estantería y producción dice "no hay" (Sebastián: *"le digo que me mire stock y dice esto,
+    pero cuando reviso el inventario sí tengo esas materias primas"*). Y el cron de vencidos usa
+    el mismo `date(...)`, así que un lote realmente vencido con la fecha así **nunca se marca**.
+
+    La mig 443 convirtió los patrones inequívocos. Esto muestra lo que quedó -- y lo que entre
+    de acá en adelante --, con el stock que cada uno esconde, para corregirlo en el lote.
+    Read-only: no toca nada.
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    from audit_helpers import fecha_iso as _fecha_iso
+    conn = get_db(); c = conn.cursor()
+    out, revisados = [], 0
+    for tabla, col_cod, col_lote in (('movimientos', 'material_id', 'lote'),
+                                     ('movimientos_mee', 'mee_codigo', 'lote_ref')):
+        try:
+            rows = c.execute(
+                "SELECT %s, COALESCE(%s,''), COALESCE(fecha_vencimiento,''), COUNT(*) "
+                "  FROM %s WHERE COALESCE(fecha_vencimiento,'') <> '' "
+                " GROUP BY %s, COALESCE(%s,''), COALESCE(fecha_vencimiento,'')"
+                % (col_cod, col_lote, tabla, col_cod, col_lote)).fetchall()
+        except Exception as e:
+            # Distinguir "no hay ninguna rara" de "no pude mirar": un cero que nadie calculó
+            # se lee como "está todo bien", que acá es lo contrario (M100/M154).
+            out.append({'error': 'no se pudo revisar %s: %s' % (tabla, str(e)[:120])})
+            continue
+        for cod, lote, fv, n in rows:
+            revisados += 1
+            if _fecha_iso(fv) == str(fv or '').strip()[:10]:
+                continue
+            out.append({'tabla': tabla, 'codigo': cod, 'lote': lote, 'fecha_cruda': fv,
+                        'sugerida': _fecha_iso(fv), 'movimientos': int(n or 0),
+                        'legible': bool(_fecha_iso(fv))})
+    # Lo ilegible primero: es lo que ninguna herramienta puede arreglar sola.
+    out.sort(key=lambda x: (x.get('legible', True), x.get('tabla', ''), x.get('codigo', '')))
+    return jsonify({'ok': True, 'revisados': revisados, 'raras': out[:300],
+                    'total_raras': len(out),
+                    'recortado': max(0, len(out) - 300)})
+
+
 @bp.route('/api/inventario/cuadre-lotes', methods=['GET'])
 def inventario_cuadre_lotes():
     """Lo que hay que revisar en una estantería, incluido lo que NO tiene ubicación.
@@ -8779,7 +8827,7 @@ def inventario_cuadre():
             " fecha, operador, observaciones, estanteria, posicion, proveedor, "
             " fecha_vencimiento, estado_lote) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (codigo, nombre, tipo, abs(dif), lote, hoy, user, obs, estanteria,
-             ctx.get('posicion', ''), ctx.get('proveedor', ''), vence, estado_lote))
+             ctx.get('posicion', ''), ctx.get('proveedor', ''), fecha_iso(vence), estado_lote))
         audit_log(c, usuario=user, accion='CUADRE_INVENTARIO', tabla='movimientos',
                   registro_id=codigo,
                   antes={'stock': sistema},
@@ -16036,7 +16084,7 @@ def mee_registrar_movimiento():
         precio_r = float(d.get('precio_unitario') or 0)
     except (ValueError, TypeError):
         precio_r = 0
-    fvenc_r     = d.get('fecha_vencimiento','').strip()
+    fvenc_r     = fecha_iso(d.get('fecha_vencimiento',''))
     oc_r        = d.get('oc_numero','').strip()
     factura_r   = d.get('factura_numero','').strip()
 

@@ -1721,7 +1721,8 @@ def calidad_recepcion_tecnica():
 
                 # 3) VENCIMIENTO del envase. Sin esto el lote entra sin fecha y el cron de
                 #    vencidos nunca lo puede marcar.
-                _fv_f01 = (vals.get('fecha_vencimiento') or '').strip()
+                from audit_helpers import fecha_iso as _fecha_iso
+                _fv_f01 = _fecha_iso(vals.get('fecha_vencimiento') or '')
                 if _fv_f01 and _fv_f01[:10] != str(_k_fv or '')[:10]:
                     cur.execute("UPDATE movimientos SET fecha_vencimiento=? "
                                 "WHERE material_id=? AND lote=? AND tipo='Entrada'",
@@ -1965,7 +1966,8 @@ def calidad_certificado_analisis():
                 if _cf is not None and str(_cf[0] or '')[:10] != _frec_new[:10]:
                     cur.execute("UPDATE movimientos SET fecha=? WHERE id=?", (_frec_new, mov_id))
                     _corr.append('FRecep:' + _frec_new)
-            _fv_new = (str(b.get('fecha_vencimiento_final') or '')).strip()
+            from audit_helpers import fecha_iso as _fecha_iso
+            _fv_new = _fecha_iso(b.get('fecha_vencimiento_final') or '')
             if _fv_new:
                 _cv = cur.execute("SELECT COALESCE(fecha_vencimiento,'') FROM movimientos WHERE id=?", (mov_id,)).fetchone()
                 if _cv is not None and str(_cv[0] or '')[:10] != _fv_new[:10]:

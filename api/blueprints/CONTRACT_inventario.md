@@ -1128,3 +1128,35 @@ Guard: `tests/test_cuadre_inventario.py` (9 casos, en el gate).
 - Ubicar un lote suelto reusa `PATCH /api/lotes/<material>/<lote>/ubicacion` (no se duplicó).
 
 Guard: `tests/test_cuadre_inventario.py`.
+
+---
+
+## INV-15 · La fecha de vencimiento del kardex vive en **ISO** (`YYYY-MM-DD`)
+
+**Desde el 21-ago-2026** (mig 443). `movimientos.fecha_vencimiento` y
+`movimientos_mee.fecha_vencimiento` se guardan SIEMPRE en ISO. Una fecha en texto
+(`26-Dic-2026`) no da error y hace dos cosas a la vez, las dos silenciosas:
+
+- el cálculo del stock distribuible compara con `date(fecha_vencimiento)`, que ante un texto
+  devuelve **NULL** → la comparación es falsa → **el lote se cae del stock** y el FEFO no lo
+  consume. En producción eso fue *"PROPYLENE GLYCOL · disponible 0g · FALTA 4000g"* con 29 kg
+  VIGENTES en bodega;
+- `job_marcar_vencidos` usa el mismo `date(...)`, así que un lote **realmente vencido** con la
+  fecha así **nunca se marca**: el control de vencimiento deja de sonar sin avisar.
+
+**Reglas:**
+
+1. Todo punto de entrada que reciba la fecha del usuario la pasa por
+   **`audit_helpers.fecha_iso`** antes de escribirla (recepción manual, recepción de OC, F01,
+   liberación de Calidad, corrección de lote, ajuste masivo de admin).
+2. `fecha_iso` acepta lo que la gente y los Excel escriben (`26-Dic-2026`, `5-Dic-2025`,
+   `26/12/2026`, `26-12-2026`, ISO con o sin hora) y **devuelve `''` si no la puede leer**:
+   una fecha de vencimiento **no se adivina** (inventarla deja entrar material vencido).
+3. Un lote con fecha **ilegible** se muestra como RETENIDO con ese motivo, nunca como usable:
+   si el FEFO no lo va a consumir, la pantalla no puede prometerlo (M5).
+4. `GET /api/inventario/fechas-vencimiento-raras` lista lo que quedó fuera de ISO (read-only,
+   con el stock que cada uno esconde). El vencimiento de una **factura de proveedor** es otro
+   dominio y no entra acá.
+
+Guard: `tests/test_fecha_vencimiento_iso.py` (7 casos, en el gate · incluye la migración
+probada con datos sembrados y un barrido del fuente con piso de medición).

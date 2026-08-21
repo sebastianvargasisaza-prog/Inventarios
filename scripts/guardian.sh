@@ -682,6 +682,11 @@ CORAZON=(
   # Cuadre rapido: lo que hay en el estante manda, y el kardex se mueve en el mismo request.
   # Rapido no puede significar flojo: conserva estado de lote y vencimiento, y audita.
   "tests/test_cuadre_inventario.py"
+  # La fecha de vencimiento del kardex vive en ISO. Con "26-Dic-2026" en vez de
+  # "2026-12-26", date() devuelve NULL: el lote se cae del stock distribuible y el
+  # FEFO no lo consume, mientras la pantalla -que comparaba texto- lo daba por vigente.
+  # 29 kg VIGENTES en bodega y produccion decia "FALTA 4000g".
+  "tests/test_fecha_vencimiento_iso.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

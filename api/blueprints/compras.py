@@ -16,7 +16,7 @@ from config import (
 )
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
-from audit_helpers import audit_log, intentar_insert_con_retry, siguiente_numero_oc as _siguiente_numero_oc, siguiente_correlativo, registrar_documento
+from audit_helpers import audit_log, intentar_insert_con_retry, siguiente_numero_oc as _siguiente_numero_oc, siguiente_correlativo, registrar_documento, fecha_iso
 from http_helpers import validate_money
 # El "hoy" contable se ancla en Colombia, nunca en el UTC del server (M24): Render corre en UTC y
 # después de las 19:00 locales un pago de fin de mes caía en el período contable siguiente.
@@ -6391,7 +6391,7 @@ def recibir_oc(numero_oc):
             })
 
         # Fecha vencimiento pasada
-        fv_check = (ir.get('fecha_vencimiento') or '').strip()
+        fv_check = fecha_iso(ir.get('fecha_vencimiento') or '')
         if fv_check and len(fv_check) >= 10:
             try:
                 if fv_check[:10] < hoy_iso:
@@ -6465,7 +6465,9 @@ def recibir_oc(numero_oc):
                 return jsonify(err), 400
             cant_recibida = cant_validada
         lote_num = ir.get('lote', '').strip()
-        fv = ir.get('fecha_vencimiento', '').strip()
+        # Al kardex va ISO o nada: con la fecha en texto `date(...)` da NULL y el lote se
+        # cae del stock distribuible sin un solo mensaje (mig 443).
+        fv = fecha_iso(ir.get('fecha_vencimiento', ''))
         estado_item = ir.get('estado', 'OK')
         notas_item = ir.get('notas', '')
         # N° de recipientes del lote (Laura 16-jul · si llegó en varios envases · default 1)

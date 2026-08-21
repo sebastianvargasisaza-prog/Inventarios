@@ -450,3 +450,74 @@ def lote_juliano(c, fecha=None):
             return prefijo + str(n)
     log.warning('lote_juliano: el día %s ya tiene 9 lotes · el formato no admite más', prefijo)
     return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Fecha de vencimiento del kardex · UN solo formato · 21-ago-2026
+# ──────────────────────────────────────────────────────────────────────────────
+_MESES_TXT = {
+    'ene': '01', 'jan': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'apr': '04',
+    'may': '05', 'jun': '06', 'jul': '07', 'ago': '08', 'aug': '08', 'sep': '09',
+    'set': '09', 'oct': '10', 'nov': '11', 'dic': '12', 'dec': '12',
+}
+
+
+def fecha_iso(v):
+    """Toda fecha que va al kardex se guarda en **ISO `YYYY-MM-DD`**. Devuelve '' si no se puede.
+
+    Sebastián 21-ago-2026, con el AZ HYBRID CLEAR abierto: *"le digo que me mire stock y dice
+    esto, pero cuando reviso el inventario sí tengo esas materias primas"*. El PROPYLENE GLYCOL
+    decía **"disponible 0g · FALTA 4000g"** y en la misma fila, tres milímetros más abajo,
+    *"LOTES A USAR (FEFO): 20251226 · 29.137,5g"* — con 29 kg VIGENTES en bodega.
+
+    La causa no era el motor: era el FORMATO de `movimientos.fecha_vencimiento`. El lote tenía
+    `26-Dic-2026` en vez de `2026-12-26`, y de ahí salen dos comportamientos distintos:
+
+      · el cálculo del DISPONIBLE compara con `date(fecha_vencimiento)`, que ante un texto que
+        no es ISO devuelve **NULL** → la comparación es falsa → el lote se excluye del stock
+        distribuible. Lo mismo hace el FEFO, así que el material existe y no se puede consumir.
+      · la lista de lotes de la pantalla compara **como texto**, donde `26-Dic-2026` es "mayor"
+        que `2026-08-21` sólo porque empieza por `2`, así que lo daba por vigente.
+
+    Las dos mitades de la misma fila se contradicen, y ninguna de las dos se puede creer (M161).
+    Peor: `job_marcar_vencidos` también usa `date(...)`, así que un lote REALMENTE vencido con
+    fecha en texto **nunca se marca** — el control de vencimiento deja de sonar en silencio.
+
+    Acepta lo que la gente y los Excel escriben de verdad: ISO (con o sin hora), `DD/MM/YYYY`,
+    `DD-MM-YYYY`, `DD-Mmm-YYYY` con el mes en letras (español o inglés) y `YYYY/MM/DD`. Lo que
+    no se puede leer devuelve '' — **nunca se adivina una fecha de vencimiento**: inventarla es
+    dejar entrar material vencido a producción (M19/M118).
+    """
+    if v is None or v == '':
+        return ''
+    from datetime import datetime as _dt, date as _date
+    if isinstance(v, _dt):
+        return v.date().isoformat()
+    if isinstance(v, _date):
+        return v.isoformat()
+    s = str(v).strip()
+    if not s:
+        return ''
+    # ISO, que es lo normal: se valida de verdad (un '2026-13-45' no pasa).
+    cab = s[:10]
+    for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%d/%m/%Y', '%d-%m-%Y'):
+        try:
+            return _dt.strptime(cab, fmt).date().isoformat()
+        except ValueError:
+            pass
+    # Mes en letras: `26-Dic-2026`, `26 dic 26`, `26/DICIEMBRE/2026`.
+    import re as _re
+    m = _re.match(r'^\s*(\d{1,2})[-/ ]\s*([A-Za-zÁÉÍÓÚáéíóú]{3,12})\.?[-/ ]\s*(\d{2,4})\s*$', s)
+    if m:
+        mes = _MESES_TXT.get(m.group(2)[:3].lower())
+        if mes:
+            anio = m.group(3)
+            if len(anio) == 2:
+                # Un lote no vence 90 años atrás: dos dígitos son de este siglo.
+                anio = '20' + anio
+            try:
+                return _dt.strptime('%s-%s-%02d' % (anio, mes, int(m.group(1))),
+                                    '%Y-%m-%d').date().isoformat()
+            except ValueError:
+                return ''
+    return ''
