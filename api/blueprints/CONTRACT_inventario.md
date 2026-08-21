@@ -1178,3 +1178,37 @@ Guards: `tests/test_fecha_vencimiento_iso.py` (8 casos · incluye la migración 
 sembrados, el límite del cron declarado y un barrido del fuente con piso de medición) y
 `tests/test_cadena_descuento_coherente.py` (la invariante de los tres caminos + el orden FEFO).
 Los dos en el gate.
+
+---
+
+## INV-16 · El rótulo de ingreso de envase ES el formato **COC-PRO-002-F06**
+
+**Desde el 21-ago-2026.** `/rotulo-recepcion-mee/...` y `/rotulos-recepcion-mee?mov=...`
+imprimen el formato oficial *Identificación de Material de Envase* (versión 02, vigencia
+21-Jul-2026 a 20-Jul-2029). Antes citaba **COC-PRO-002-F04**, que es otro formato, y sin
+versión, página ni vigencia.
+
+1. **El bloque de control sale de UNA constante** (`F06_CONTROL`) y el encabezado tiene las
+   tres zonas del oficial: logo | `FORMATO` + título | código/versión/página/vigencia. Dos
+   rótulos con su propio bloque divergen, y el día que Aseguramiento libere la versión 03 uno
+   seguiría diciendo 02 -- los dos con cara de oficiales (M251).
+2. **Los campos son los del formato**: nombre del insumo, tipo (las **dos** casillas
+   `MATERIAL DE EMPAQUE` / `MATERIAL DE ENVASE`, nunca la de materia prima, que tiene su propio
+   formato), código interno, lote, cantidad, proveedor, fecha de recepción, **fecha de
+   análisis**, observaciones, estado, realizado por y aprobado por.
+3. **La fecha de análisis sale del hecho registrado** (`mee_cajas_disposicion.dispuesto_at_utc`,
+   anclada a Colombia · M24). Si nadie revisó la caja va **vacía** para llenarla a mano: poner
+   la fecha de impresión sería fechar un análisis que no ocurrió.
+4. **Un rótulo POR CAJA.** `?mov=<id>` usa las cajas declaradas al recibir (`n_cajas`,
+   `unidades_por_caja`) y numera *"Caja N de M"*; sin cajas declaradas imprime uno. **Todo botón
+   que imprima el rótulo de una recepción manda el MOVIMIENTO**, no el código y la cantidad --
+   con eso imprimía uno solo y las demás cajas quedaban sin identificar.
+5. **Las marcas del SISTEMA no se imprimen** (`_MARCAS_SISTEMA_OBS`). Son correctas en la base
+   pero en el cartón se leen como una nota de quien recibió. Se quitan sólo las declaradas:
+   filtrar cualquier corchete borraría lo que la gente escribe entre corchetes a propósito.
+6. **Cabe en la etiqueta**: medido con las reglas del `@media print` aplicadas, **96,8 mm de
+   alto sobre 100 y cero desbordes**. Antes daba 131 mm, o sea que cada rótulo se partía en dos
+   etiquetas. El alto depende de que el bloque de control conserve su ancho fijo y su tamaño.
+
+Guard: `tests/test_rotulo_envase_f06.py` (11 casos, en el gate · incluye el barrido de
+`COALESCE` con el fallback muerto y sus excepciones enumeradas).

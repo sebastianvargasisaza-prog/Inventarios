@@ -215,6 +215,32 @@ def test_el_encabezado_conserva_las_tres_zonas_medidas(app, db_clean):
         _limpiar()
 
 
+def test_las_marcas_del_SISTEMA_no_se_imprimen_en_el_formato(app, db_clean):
+    """En producción el rótulo salía con *"[liberado 30-jul: los envases no van a cuarentena]"*
+    dentro de OBSERVACIONES. Esa marca la escribió una MIGRACIÓN, no una persona: es correcta en
+    la base -- traza el cambio de política -- y en el cartón se lee como una nota de quien
+    recibió. Se quitan sólo las marcas DECLARADAS: filtrar cualquier corchete borraría lo que la
+    gente escribe entre corchetes a propósito.
+    """
+    _limpiar()
+    _sql("INSERT INTO maestro_mee (codigo,descripcion,categoria,proveedor,estado,"
+         "stock_actual,stock_minimo,unidad) VALUES (?,?,?,?,'Activo',0,0,'und')",
+         (_COD, 'ENVASE QA', 'Envase', 'PROV QA'))
+    obs = ('Recepcion OC OC-2026-0282 [liberado 30-jul: los envases no van a cuarentena] '
+           '[REVISADO] llego en [dos] estibas')
+    _sql("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,unidad,lote_ref,responsable,"
+         "fecha,observaciones,estado,anulado) VALUES (?,'Entrada',500,'und',?,'catalina',"
+         "'2026-08-20',?,'VIGENTE',0)", (_COD, _LOTE, obs))
+    try:
+        html = _rotulo(app)
+        assert 'liberado 30-jul' not in html, "imprime una marca que escribió una migración"
+        assert 'REVISADO' not in html, "imprime la marca interna del cierre de revisión"
+        assert 'Recepcion OC OC-2026-0282' in html, "se llevó por delante la observación real"
+        assert 'llego en [dos] estibas' in html,             "borró un corchete que escribió una persona"
+    finally:
+        _limpiar()
+
+
 # ── un rótulo POR CAJA, según lo que se declaró al recibir ───────────────────
 
 def test_imprime_un_rotulo_por_CAJA_segun_lo_que_se_recibio(app, db_clean):

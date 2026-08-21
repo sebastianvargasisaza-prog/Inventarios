@@ -11913,6 +11913,25 @@ def _fecha_analisis_larga(ts_utc):
     return _fecha_larga_es(d.date())
 
 
+# Marcas que escribe el SISTEMA en las observaciones del kardex. Son correctas en la base
+# -- trazan un cambio de politica o reclaman un cierre con CAS -- y no tienen nada que hacer
+# impresas en un formato regulado: el que lee el carton no sabe que son del sistema y las
+# toma como una nota de quien recibio. Se quitan SOLO estas, declaradas: filtrar cualquier
+# corchete borraria lo que la gente escribe entre corchetes a proposito.
+_MARCAS_SISTEMA_OBS = (
+    '[REVISADO]',
+    '[liberado 30-jul: los envases no van a cuarentena]',
+)
+
+
+def _obs_sin_marcas_del_sistema(txt):
+    """Las observaciones que se IMPRIMEN, sin las marcas internas (Sebastian 21-ago)."""
+    t = str(txt or '')
+    for marca in _MARCAS_SISTEMA_OBS:
+        t = t.replace(marca, '')
+    return ' '.join(t.split()).strip()
+
+
 F06_CONTROL = {
     'codigo': 'COC-PRO-002-F06',
     'titulo': 'IDENTIFICACI&Oacute;N DE MATERIAL DE ENVASE',
@@ -11968,7 +11987,7 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
     _tp_emp = _chk(not is_env) + ' MATERIAL DE EMPAQUE'
     # `[REVISADO]` es la marca interna con la que se reclama el cierre de la revisión (CAS):
     # es del sistema, no del operario, y no tiene nada que hacer impresa en un formato regulado.
-    observaciones = str(observaciones or '').replace('[REVISADO]', '').strip()
+    observaciones = _obs_sin_marcas_del_sistema(observaciones)
     _est = str(estado or '').strip().upper()
     # pendiente = el material puede estar disponible y aun así nadie lo revisó
     _pend = bool(revision_pendiente) and _est not in ('RECHAZADO',)
