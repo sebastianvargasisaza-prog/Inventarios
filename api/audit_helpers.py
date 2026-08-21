@@ -268,6 +268,23 @@ def intentar_insert_con_retry(insert_fn, *, max_intentos=5, columna='codigo'):
 # rótulo, batch record/EBR, liberación, CoA micro/FQ...) DEBE inscribirse aquí en el mismo
 # commit vía registrar_documento() → el Expediente por lote junta todos los docs de un lote.
 # ──────────────────────────────────────────────────────────────────────────────
+def inscribir_rotulo_envase(c, mov_id, codigo_mee, lote='', usuario='', descripcion=''):
+    """Inscribe el rótulo de ingreso de envase (COC-PRO-002-F06) en el expediente.
+
+    La URL es estable y por MOVIMIENTO (`?mov=<id>`), que es la que imprime un rótulo por caja:
+    quien audite el lote llega a la identificación de TODAS las cajas, no a una.
+    """
+    if not mov_id:
+        return
+    registrar_documento(
+        c, tipo_doc='ROTULO_ENVASE', formato='COC-PRO-002-F06',
+        titulo='Identificacion de material de envase',
+        url='/rotulos-recepcion-mee?mov=%s' % mov_id,
+        entidad='MEE', codigo=str(codigo_mee or ''), producto_nombre=str(descripcion or ''),
+        lote=str(lote or ''), ref_tabla='movimientos_mee', ref_id=str(mov_id),
+        generado_por=str(usuario or ''))
+
+
 def registrar_documento(c, *, tipo_doc, url, entidad='MP', codigo='', producto_nombre='', lote='',
                         formato='', titulo='', ref_tabla='', ref_id='', mov_id=None, firma_id=None,
                         generado_por='', generado_at=None):

@@ -6574,6 +6574,11 @@ def recibir_oc(numero_oc):
                          (prov_nombre or ''), numero_oc, (fv or ''), _nrec,
                          round(cant_recibida / _nrec, 2) if _nrec else cant_recibida))
                     _mid_mee = cur.lastrowid
+                    try:
+                        from audit_helpers import inscribir_rotulo_envase as _inscr_env3
+                        _inscr_env3(cur, _mid_mee, codigo, _lote_mee, operador)
+                    except Exception as _e:
+                        log.warning('expediente rotulo envase (recepcion OC): %s', _e)
                     # Cada CAJA con su fila: es lo que Calidad dispone escaneando el rótulo. Sin
                     # esto la revisión caja por caja no tiene qué revisar y el envase recibido
                     # por OC queda fuera de la bandeja (M112: el par disparador↔destino).

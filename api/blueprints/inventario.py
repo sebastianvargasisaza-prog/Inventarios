@@ -11558,6 +11558,30 @@ def scan_rotulo(codigo, lote):
     return html_out
 
 
+def _rotulo_logo_termico(c):
+    """El logo listo para la impresora de calor: reducido al tamano real y en 1 bit.
+
+    Reusa el binarizador del F02 (M1: un solo binarizador, no dos que se separen). Si por lo
+    que sea no se puede convertir, cae al logo normal -- un rotulo sin logo es peor que uno
+    con el logo tramado, y el fallback no puede tumbar la impresion.
+    """
+    _src = _rotulo_logo_src(c)
+    try:
+        from blueprints.programacion import _logo_mono_datauri as _mono
+    except Exception:
+        try:
+            from .programacion import _logo_mono_datauri as _mono
+        except Exception:
+            return _src
+    try:
+        # 16mm a ~200 puntos por pulgada = ~126 px. Se pide algo mas para que el trazo
+        # sobreviva al reescalado del driver.
+        return _mono(_src, ancho_px=140) or _src
+    except Exception as _e:
+        __import__('logging').getLogger('inventario').warning('logo termico: %s', _e)
+        return _src
+
+
 def _rotulo_logo_src(c):
     """Logo Espagiria · data-uri de app_settings (se sube en /admin/logo-espagiria) o fallback SVG. Sebastián 7-jul."""
     try:
@@ -11589,6 +11613,7 @@ def _rotulo_recep_css(lw, lh):
       ".top.f06{align-items:stretch;gap:0;padding:0;border-bottom:1.2px solid #111}"
       ".top.f06 .brand{flex:0 0 22mm;display:flex;align-items:center;justify-content:center;padding:2px;border-right:1.2px solid #111}"
       ".top.f06 .mark{width:16mm;height:16mm;border:0;padding:0;border-radius:0}"
+      "@media print{.top.f06 .brand{flex:0 0 18mm}.top.f06 .mark{width:13mm;height:13mm}.f06ctrl{flex:0 0 25mm;font-size:6pt;line-height:1.2}.f06tit{font-size:8pt}.f06tipo{font-size:6.5pt}}"
       ".f06doc{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2px 4px;border-right:1.2px solid #111;min-width:0}"
       ".f06tipo{font-size:8px;font-weight:800;letter-spacing:.12em;line-height:1.2}"
       ".f06tit{font-size:9.5px;font-weight:800;line-height:1.15}"
@@ -11605,6 +11630,8 @@ def _rotulo_recep_css(lw, lh):
       ".ctrl-t{font-size:9.5px;font-weight:800;color:var(--ink);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}"
       ".hero{text-align:center;padding:11px 18px 12px;border-top:1px solid var(--line)}"
       ".hero .name{font-size:26px;font-weight:800;letter-spacing:-.5px;line-height:1.08;color:var(--ink)}"
+      ".name.n2{font-size:21px}.name.n3{font-size:17px}.name.n4{font-size:14px;letter-spacing:0}"
+      ".nlbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);margin-bottom:3px}"
       ".inci{font-size:12px;color:var(--mute);font-weight:700;letter-spacing:.8px;margin-top:5px;text-transform:uppercase}"
       ".tipo{display:inline-block;font-size:10.5px;font-weight:700;margin-right:14px;white-space:nowrap;color:var(--mute)}.tipo.on{color:var(--violet-d)}"
       # El número de caja es lo que el operario busca de lejos entre 24 cartones iguales:
@@ -11639,12 +11666,24 @@ def _rotulo_recep_css(lw, lh):
       # sin cortarse ni a la derecha ni abajo. Los valores ENVUELVEN (no nowrap → no fuerzan la tabla
       # más ancha que la hoja · la fila Tipo de insumo cortaba "Material de Empaque"). Compactado
       # vertical fuerte para que las firmas queden en la misma página (Sebastián 18-jul).
-      "@media print{html,body{background:var(--cx-card, #fff)}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px}"
+      "@media print{html,body{background:#fff;"      "-webkit-print-color-adjust:exact;print-color-adjust:exact}"      ".ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px;background:#111}"
       ".sheet{width:" + w4 + "mm;max-width:" + w4 + "mm;border-radius:0;box-shadow:none;border:1px solid #bbb;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;overflow:hidden}.sheet:last-child{page-break-after:auto}"
-      "td{padding:0.5px 9px;font-size:6.5pt;line-height:1.05}td.k{font-size:5.6pt}"
+      "td{padding:0.75px 5px;font-size:6.6pt;line-height:1.14;vertical-align:middle}"
+      "td.k{font-size:5.2pt}"
+      "td.k{font-size:5.6pt;background:transparent;color:#111;font-weight:800;text-transform:uppercase;letter-spacing:.2pt}"
+      # El encabezado del formato ya nombra el documento: repetirlo abajo cuesta un renglon
+      # de los 100mm, y lo que se lee de lejos es el insumo, no el rotulo del rotulo.
+      ".title .eyebrow{display:none}.title{padding-top:3px}"
+      ".lote svg{max-height:2.4mm}.lote{margin-bottom:1px;padding:1px 0}"
+      ".lote .ll{font-size:4.8pt;letter-spacing:.2pt}.lote .lv{font-size:9pt;line-height:1}"
+      # el texto bajo el codigo de barras repite lo que dice el codigo de arriba
+      ".lote>div:last-child{display:none}"
+      "table{width:100%}td.k{width:21%}td:not(.k){width:29%}"
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"  # PRINT: los valores ENVUELVEN (no cortan a la derecha)
       ".top{padding:4px 14px 3px}.mark{width:26px;height:26px;border-radius:7px;padding:2px}.brandrow{gap:8px}.co{font-size:10pt;letter-spacing:.8pt}.cosub{font-size:4.6pt;letter-spacing:1.6pt;margin-top:1px}.ctrl{font-size:5pt;line-height:1.4}.ctrl-t{font-size:5.4pt;margin-bottom:2px}"
       ".hero{padding:4px 14px 5px}.hero .name{font-size:16pt;line-height:1.04}.inci{font-size:6.5pt;margin-top:2px}.tipo{font-size:6.5pt;margin-right:8px}"
+      ".name.n2{font-size:12.5pt}.name.n3{font-size:10pt}.name.n4{font-size:8.5pt;line-height:1.06}"
+      ".nlbl{font-size:5.4pt;font-weight:800;text-transform:uppercase;letter-spacing:.3pt;color:#111;margin-bottom:1px}"
       ".cajanum{margin-top:2px;padding:1px 10px;font-size:9.5pt;border-width:1pt}"
       ".lote{margin:0 12px 2px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:4mm;height:auto}"
       ".qc{padding:2px 12px;font-size:6.5pt;gap:9px}.firma{padding:3px 11px 4px}.firma .l{font-size:6pt}.firma .sig{margin:5px 0 1px}.firma .f{font-size:5.6pt}"
@@ -12003,17 +12042,23 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
         if cant_total:
             _cant_val = (_e(cantidad) + ' <span style="font-weight:400;opacity:.75">&middot; de '
                          + _e(cant_total) + ' en ' + str(n_cajas) + ' cajas</span>')
+    # El nombre del insumo NO se corta -- un rotulo de identificacion truncado no identifica
+    # (M203) -- pero la etiqueta mide 100mm y no crece: el cuerpo se ESCALA segun el largo,
+    # que es lo que hace un diseniador con un espacio fijo, y no pierde una letra.
+    _ldesc = len(str(desc or ''))
+    _cls_n = ('n1' if _ldesc <= 22 else 'n2' if _ldesc <= 40
+              else 'n3' if _ldesc <= 62 else 'n4')
     return ('<div class="sheet"><div class="accent"></div>'
             + _encabezado_f06(logo) +
             '<div class="title"><div class="eyebrow">Ingreso de material' + _cajatag + '</div>'
-            '<h1 class="name">' + _e(desc) + '</h1>' + _cajachip + '</div>'
+            '<div class="nlbl">Nombre del insumo</div>'
+            '<h1 class="name ' + _cls_n + '">' + _e(desc) + '</h1>' + _cajachip + '</div>'
             '<div class="lote"><div class="ll">Codigo interno</div><div class="lv">' + _e(codigo) + '</div>'
             '<svg id="' + _e(bc_id) + '"></svg>'
             + (('<div style="font-size:9px;letter-spacing:.06em;opacity:.7;margin-top:2px">'
                 + _e(bc_valor) + '</div>') if bc_valor else '')
             + '</div>'
             '<table>'
-            '<tr><td class="k">Nombre del insumo</td><td colspan="3"><b>' + _e(desc) + '</b></td></tr>'
             '<tr><td class="k">Tipo de insumo</td><td colspan="3">'
             '<span class="tipo' + ('' if is_env else ' on') + '">' + _tp_emp + '</span>'
             '<span class="tipo' + (' on' if is_env else '') + '">' + _tp_me + '</span></td></tr>'
@@ -12025,8 +12070,8 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
                if str(lote or '').upper().startswith('INT-') else '') + '</td></tr>'
             '<tr><td class="k">Fecha de recepci&oacute;n</td><td>' + _e(fecha_recep) + '</td>'
             '<td class="k">Fecha de an&aacute;lisis</td><td class="escribir">' + _e(fecha_analisis) + '</td></tr>'
-            '<tr><td class="k">Ubicaci&oacute;n</td><td colspan="3">' + (_e(zona) or '') + '</td></tr>'
-            '<tr><td class="k">Proveedor</td><td colspan="3">' + (_e(proveedor) or '-') + '</td></tr>'
+            '<tr><td class="k">Proveedor</td><td>' + (_e(proveedor) or '') + '</td>'
+            '<td class="k">Ubicaci&oacute;n</td><td class="escribir">' + (_e(zona) or '') + '</td></tr>'
             + ('<tr><td class="k">Observaciones</td><td colspan="3">' + _e(observaciones)
                + '</td></tr>' if str(observaciones or '').strip() else '')
             + 
@@ -12232,7 +12277,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
         observaciones=obs, lote=lote, cantidad=f"{cantidad:,} {unid}", unidad=unid,
         fecha_recep=_frec, fecha_impresion=hoy, estado=_est,
         fecha_analisis=_fanalisis,
-        logo=_rotulo_logo_src(c), bc_id='bc')
+        logo=_rotulo_logo_termico(c), bc_id='bc')
     return _rotulo_mee_pagina('Rotulo de recepcion &middot; Material de envase',
                               [hoja], [('bc', codigo)], lw, lh)
 
@@ -12292,7 +12337,7 @@ def rotulos_recepcion_mee_cajas():
     if not rows:
         return "<h2>No se encontraron esos movimientos</h2>", 404
 
-    logo = _rotulo_logo_src(c)
+    logo = _rotulo_logo_termico(c)
     lw, lh = _rotulo_mee_medidas()
     # Disposición POR CAJA (mig 399): si Calidad revisó caja por caja, cada rótulo imprime
     # el estado de SU caja. Es lo que hace que reimprimir la caja 7 salga marcada como
@@ -12321,17 +12366,24 @@ def rotulos_recepcion_mee_cajas():
         # tal cual, no 24 iguales que no suman lo recibido.
         # Si la recepción guardó la cantidad DE CADA CAJA, esa manda (mig 399): es el dato que
         # se contó en el muelle. La derivación queda sólo para las recepciones anteriores.
-        _cajas = [(int(k), float(q)) for (m_, k, q) in
-                  [(mk, ck, cq) for (mk, ck), cq in _cantidades.items() if mk == int(r[0])]] \
-            if _cantidades else []
-        _cajas.sort()
-        if not _cajas:
-            _acum = 0.0
-            for k in range(1, _n + 1):
-                _c_k = (_cant - _acum) if k == _n else min(_por, _cant - _acum)
-                _acum += _c_k
-                if _c_k > 0:
-                    _cajas.append((k, round(_c_k, 2)))
+        # Cuánto tiene CADA caja según lo que se contó en el muelle (mig 399).
+        _cant_caja = dict((ck, float(cq)) for (mk, ck), cq in _cantidades.items()
+                          if mk == int(r[0]))
+        # El universo son las cajas DECLARADAS al recibir. Antes salía de la disposición
+        # cuando esa tabla tenía alguna fila, así que con una revisión PARCIAL -- Calidad
+        # dispuso la caja 1 de 4 -- se imprimía UN rótulo y las otras tres quedaban sin
+        # identificar, que son justo las que siguen esperando (Sebastián 21-ago: *"necesito
+        # que me genere TODOS para poder imprimirlos, según lo que ella puso"*).
+        _n_total = max([_n] + list(_cant_caja.keys() or [0]))
+        _cajas, _acum = [], 0.0
+        for k in range(1, _n_total + 1):
+            if k in _cant_caja:
+                _c_k = _cant_caja[k]
+            else:
+                _c_k = (_cant - _acum) if k == _n_total else min(_por, _cant - _acum)
+            _acum += _c_k
+            if _c_k > 0:
+                _cajas.append((k, round(_c_k, 2)))
         for k, cant_k in _cajas:
             if _solo_caja is not None and k != _solo_caja:
                 continue
@@ -16240,6 +16292,13 @@ def mee_registrar_movimiento():
     mov_id = c.lastrowid
 
     if tipo == 'Entrada':
+        # El rótulo de ingreso de envase entra al EXPEDIENTE por lote: sin esto, buscar un lote
+        # de envase en el expediente no muestra su identificación (COC-PRO-002-F06).
+        try:
+            from audit_helpers import inscribir_rotulo_envase as _inscr_env
+            _inscr_env(c, mov_id, codigo, lote_ref, responsable)
+        except Exception as _e:
+            __import__('logging').getLogger('inventario').warning('expediente rotulo envase (mov manual): %s', _e)
         # FIX 30-jul · el cache NO se infla con lo que está RETENIDO. El canónico
         # (`_get_mee_stock`) excluye CUARENTENA y el cron de las 3AM alinea el cache a él,
         # así que sumarlo acá dejaba el cache mintiendo hasta la madrugada. Al liberar,
@@ -16567,6 +16626,11 @@ def mee_recepcion_lineas():
              l['fecha_vencimiento'], oc_num, factura, estado,
              l['n_cajas'], l['unidades_por_caja']))
         _mid = c.lastrowid
+        try:
+            from audit_helpers import inscribir_rotulo_envase as _inscr_env2
+            _inscr_env2(c, _mid, m['codigo'], l.get('lote_ref') or '', user)
+        except Exception as _e:
+            __import__('logging').getLogger('inventario').warning('expediente rotulo envase (recepcion por lineas): %s', _e)
         # El cache sólo refleja lo USABLE: lo retenido entra al número cuando Calidad libera.
         if estado != 'CUARENTENA':
             c.execute("UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? WHERE codigo=?",

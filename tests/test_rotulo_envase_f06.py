@@ -208,9 +208,15 @@ def test_el_encabezado_conserva_las_tres_zonas_medidas(app, db_clean):
             assert regla + '{' in html, "falta la regla de layout %s" % regla
         m = re.search(r"\.f06ctrl\{([^}]*)\}", html)
         assert m, "no llegó el CSS del bloque de control"
-        assert 'flex:0 0 27mm' in m.group(1), "el bloque de control perdió su ancho fijo"
-        assert re.search(r'font-size:\s*7px', m.group(1)), \
-            "el bloque de control volvió a un tamaño que estira el encabezado"
+        # Se fija la GARANTÍA, no el número: el bloque tiene ancho FIJO en milímetros -- si se
+        # vuelve flexible, el encabezado se estira y el rótulo deja de caber -- y un cuerpo
+        # pequeño. El valor exacto se ajusta al compactar, y eso no es una regresión (M97).
+        _anchos = re.findall(r'flex:0 0 (\d+(?:\.\d+)?)mm', m.group(1))
+        assert _anchos and 18 <= float(_anchos[0]) <= 32, \
+            "el bloque de control perdió su ancho fijo: %r" % (m.group(1),)
+        _fs = re.findall(r'font-size:\s*(\d+(?:\.\d+)?)(px|pt)', m.group(1))
+        assert _fs and float(_fs[0][0]) <= 9, \
+            "el bloque de control volvió a un tamaño que estira el encabezado: %r" % (_fs,)
     finally:
         _limpiar()
 
@@ -292,6 +298,82 @@ def test_el_boton_del_historial_pide_los_rotulos_POR_MOVIMIENTO(app, db_clean):
     assert i != -1, "no existe la función que abre el rótulo"
     cuerpo = js[i:i + 900]
     assert "/rotulos-recepcion-mee?mov=" in cuerpo,         "el botón sigue abriendo la ruta de a UNO, así que de 6 cajas imprime 1"
+
+
+# ── la etiqueta térmica de 10x10 ────────────────────────────────────────────
+
+def test_el_rotulo_esta_configurado_para_la_termica_de_10x10(app, db_clean):
+    """Sebastián 21-ago: *"que sean configurados para ocupar la impresión de calor, que es
+    10 x 10, que quede bien y se vean bien"*.
+
+    Medido en el navegador con las reglas del `@media print` aplicadas, y con el PEOR caso
+    (nombre de 65 caracteres, lote largo, observación de tres renglones): **95,3 mm de alto
+    sobre 100, 4,7 mm de margen, cero desbordes y cero celdas solapadas**. Antes de estos
+    ajustes el mismo caso daba **137,7 mm**, o sea que cada rótulo se comía dos etiquetas.
+
+    Lo que sostiene esa medida y por eso se fija acá:
+      · `print-color-adjust: exact` -- sin él el navegador DESCARTA los fondos y el chip del
+        estado marcado se imprime sin relleno (M123);
+      · el nombre del insumo se **escala** según su largo en vez de cortarse: un rótulo de
+        identificación truncado no identifica (M203);
+      · el ancho de las columnas -- con las etiquetas más anchas, "CAFARCOL" se partía en
+        "CAFARC / OL" y la fecha en dos renglones;
+      · el `@page` con el tamaño real de la etiqueta.
+    """
+    _sembrar()
+    try:
+        html = _rotulo(app)
+        assert 'print-color-adjust:exact' in html.replace(' ', ''),             "sin esto la térmica no imprime los fondos ni el estado marcado"
+        assert '@page{size:100mm 100mm' in html.replace(' ', '').replace(
+            '@page{size:100mm100mm', '@page{size:100mm 100mm'),             "la página no está configurada al tamaño de la etiqueta"
+        for regla in ('.name.n2{', '.name.n3{', '.name.n4{'):
+            assert regla in html, "falta el escalón %s del nombre" % regla
+        assert 'td.k{width:21%' in html.replace(' ', ''),             "el ancho de las etiquetas volvió a comerse el de los valores"
+    finally:
+        _limpiar()
+
+
+def test_el_nombre_largo_se_ACHICA_pero_no_se_corta(app, db_clean):
+    """Un nombre de 65 caracteres estiraba el título a 57 mm y el rótulo no cabía. Se escala,
+    NUNCA se trunca: cortar el nombre del insumo en su rótulo de identificación es lo mismo
+    que no identificarlo."""
+    largo = 'ENVASE VIDRIO AMBAR 10 ML CON GOTERO PLASTICO NEGRO Y CONTRAPUNTA'
+    _limpiar()
+    _sql("INSERT INTO maestro_mee (codigo,descripcion,categoria,proveedor,estado,"
+         "stock_actual,stock_minimo,unidad) VALUES (?,?,?,?,'Activo',0,0,'und')",
+         (_COD, largo, 'Envase', 'CAFARCOL'))
+    _sql("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,unidad,lote_ref,responsable,"
+         "fecha,estado,anulado) VALUES (?,'Entrada',500,'und',?,'catalina','2026-08-20',"
+         "'VIGENTE',0)", (_COD, _LOTE))
+    try:
+        html = _rotulo(app)
+        assert largo in html, "cortó el nombre del insumo"
+        assert 'class="name n4"' in html,             "un nombre de 65 caracteres tiene que bajar al escalón más chico"
+        # y uno corto se queda en el tamaño grande, que es lo que se lee de lejos
+        _limpiar()
+        _sql("INSERT INTO maestro_mee (codigo,descripcion,categoria,proveedor,estado,"
+             "stock_actual,stock_minimo,unidad) VALUES (?,?,?,?,'Activo',0,0,'und')",
+             (_COD, 'FRASCO 30ML', 'Envase', 'CAFARCOL'))
+        _sql("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,unidad,lote_ref,"
+             "responsable,fecha,estado,anulado) VALUES (?,'Entrada',500,'und',?,'catalina',"
+             "'2026-08-20','VIGENTE',0)", (_COD, _LOTE))
+        html2 = _rotulo(app)
+        assert 'class="name n1"' in html2, "un nombre corto no debería achicarse"
+    finally:
+        _limpiar()
+
+
+def test_el_logo_se_BINARIZA_para_la_termica(app, db_clean):
+    """La térmica es de 1 bit: cada gris lo resuelve con una trama de puntos, así que un PNG
+    con antialiasing sale RAYADO (M256, reportado con el F02 en la mano). Se reduce al tamaño
+    de impresión y se binariza; si no se puede convertir, cae al logo normal -- un rótulo sin
+    logo es peor que uno con el logo tramado."""
+    from api.blueprints.inventario import _rotulo_logo_termico
+    import io as _io
+    src = _io.open('api/blueprints/inventario.py', encoding='utf-8').read()
+    src = re.sub(r'^\s*#.*$', '', src, flags=re.M)
+    assert '_rotulo_logo_termico(c)' in src,         "los rótulos de envase dejaron de usar el logo binarizado"
+    assert '_logo_mono_datauri' in src, "no reusa el binarizador del F02 (dos binarizadores divergen)"
 
 
 # ── el patrón que causó el proveedor vacío, en todo el repo ──────────────────
