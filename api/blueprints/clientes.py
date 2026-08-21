@@ -427,7 +427,7 @@ def aliados_skus_segmento():
             SELECT
                 COALESCE(NULLIF(TRIM(cl.categoria_profesional),''), 'Sin categoría') as cat,
                 pi.sku,
-                MIN(COALESCE(pi.descripcion, pi.sku)) as descripcion,
+                MIN(COALESCE(NULLIF(TRIM(pi.descripcion),''), pi.sku)) as descripcion,
                 SUM(pi.cantidad) as uds,
                 COUNT(DISTINCT p.numero) as pedidos,
                 SUM(pi.subtotal) as revenue

@@ -16880,7 +16880,7 @@ def producciones_faltantes():
     try:
         for r in c.execute("""
             SELECT mm.codigo,
-                   COALESCE(mm.descripcion, mm.codigo) as descripcion,
+                   COALESCE(NULLIF(TRIM(mm.descripcion),''), mm.codigo) as descripcion,
                    COALESCE(cfg.proveedor_principal, mm.proveedor, '') as prov
             FROM maestro_mee mm
             LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = mm.codigo
@@ -31026,7 +31026,7 @@ def planta_cronograma_areas():
     try:
         rows = c.execute(f"""
             SELECT lpc.fecha, lpc.area_codigo,
-                   COALESCE(ap.nombre, lpc.area_codigo) as nombre,
+                   COALESCE(NULLIF(TRIM(ap.nombre),''), lpc.area_codigo) as nombre,
                    lpc.estado
             FROM limpieza_profunda_calendario lpc
             LEFT JOIN areas_planta ap ON ap.codigo = lpc.area_codigo

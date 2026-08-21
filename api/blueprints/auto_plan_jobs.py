@@ -1958,7 +1958,7 @@ def job_mee_cuarentena_pendiente(app):
         conn = get_db(); c = conn.cursor()
         try:
             filas = c.execute(
-                "SELECT mv.mee_codigo, COALESCE(m.descripcion, mv.mee_codigo), mv.cantidad, "
+                "SELECT mv.mee_codigo, COALESCE(NULLIF(TRIM(m.descripcion),''), mv.mee_codigo), mv.cantidad, "
                 "       COALESCE(mv.fecha,'') "
                 "  FROM movimientos_mee mv "
                 "  LEFT JOIN maestro_mee m ON m.codigo = mv.mee_codigo "

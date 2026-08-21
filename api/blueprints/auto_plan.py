@@ -1142,7 +1142,7 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             SELECT mlt.lead_time_dias, mlt.buffer_dias, mlt.cobertura_min_dias,
                    mlt.cobertura_ideal_dias, mlt.origen, mlt.es_envase,
                    COALESCE(NULLIF(TRIM(mlt.proveedor_principal),''), mm.proveedor, '') as prov,
-                   COALESCE(mlt.material_nombre, mm.nombre_comercial, mm.nombre_inci) as nombre
+                   COALESCE(NULLIF(TRIM(mlt.material_nombre),''), mm.nombre_comercial, mm.nombre_inci) as nombre
             FROM mp_lead_time_config mlt
             LEFT JOIN maestro_mps mm ON mm.codigo_mp = mlt.material_id
             WHERE mlt.material_id=?
@@ -1208,7 +1208,7 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
     cursor_dia = _proximo_dia_acond(fecha_hoy + timedelta(days=1))
     materiales_a_contar = c.execute("""
         SELECT cc.material_id, cc.categoria_abc, cc.frecuencia_dias, cc.ultimo_conteo_fecha,
-               COALESCE(mlt.material_nombre, cc.material_id)
+               COALESCE(NULLIF(TRIM(mlt.material_nombre),''), cc.material_id)
         FROM conteo_ciclico_config cc
         LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = cc.material_id
         ORDER BY

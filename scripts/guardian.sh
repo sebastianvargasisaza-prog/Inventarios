@@ -691,6 +691,11 @@ CORAZON=(
   # pantalla que ofrece, el gate que deja arrancar y el FEFO que descuenta. Cazo que
   # el FEFO consumia PRIMERO el lote sin fecha, o sea al reves de first-expired.
   "tests/test_cadena_descuento_coherente.py"
+  # El rotulo de ingreso de envase ES el formato COC-PRO-002-F06: citaba el codigo de OTRO
+  # formato (F04), sin version ni vigencia, le faltaba la fecha de analisis, ofrecia una
+  # casilla que el oficial no tiene, salia SIN proveedor y no cabia en la etiqueta (131mm
+  # sobre 100). Incluye el barrido de COALESCE con el fallback muerto.
+  "tests/test_rotulo_envase_f06.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

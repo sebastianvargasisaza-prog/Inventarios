@@ -4134,7 +4134,7 @@ def ebr_vista_completa(ebr_id):
                 _rows = conn.execute(
                     """SELECT COALESCE(e.presentacion,'') AS presentacion,
                               COALESCE(e.lote,'') AS lote, COALESCE(e.unidades,0) AS unidades,
-                              COALESCE(ap.nombre, e.area_codigo, '') AS area,
+                              COALESCE(NULLIF(TRIM(ap.nombre),''), e.area_codigo, '') AS area,
                               COALESCE(e.estado,'') AS estado, COALESCE(e.envase_codigo,'') AS envase
                          FROM envasado e
                          LEFT JOIN areas_planta ap ON ap.codigo = e.area_codigo

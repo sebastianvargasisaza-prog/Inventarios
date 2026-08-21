@@ -11586,6 +11586,17 @@ def _rotulo_recep_css(lw, lh):
       # marca a la izquierda, tipo de rótulo + formato/fecha a la derecha, divisor, y el nombre del
       # material GRANDE con el INCI de subtítulo (hero).
       ".top{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 18px 10px}"
+      ".top.f06{align-items:stretch;gap:0;padding:0;border-bottom:1.2px solid #111}"
+      ".top.f06 .brand{flex:0 0 22mm;display:flex;align-items:center;justify-content:center;padding:2px;border-right:1.2px solid #111}"
+      ".top.f06 .mark{width:16mm;height:16mm;border:0;padding:0;border-radius:0}"
+      ".f06doc{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2px 4px;border-right:1.2px solid #111;min-width:0}"
+      ".f06tipo{font-size:8px;font-weight:800;letter-spacing:.12em;line-height:1.2}"
+      ".f06tit{font-size:9.5px;font-weight:800;line-height:1.15}"
+      ".f06ctrl{flex:0 0 27mm;font-size:7px;line-height:1.25;padding:2px 4px;display:flex;flex-direction:column;justify-content:center}"
+      ".f06ctrl b{font-weight:800}"
+      ".f06ctrl div{white-space:nowrap}"
+      ".f06rango{padding-left:4px}"
+      "td.escribir{height:6mm}"
       ".brandrow{display:inline-flex;align-items:center;gap:12px}"
       ".mark{width:50px;height:50px;border-radius:14px;flex:none;object-fit:contain;background:var(--cx-card, #fff);border:1px solid var(--line);padding:5px}"
       ".co{display:flex;flex-direction:column;align-items:flex-start;font-weight:800;line-height:1;font-size:17px;letter-spacing:1.5px;color:var(--ink)}"
@@ -11883,8 +11894,62 @@ def _mee_token_caja(mov_id, caja):
     return 'MEE-%d-%d' % (int(mov_id), int(caja))
 
 
+def _fecha_analisis_larga(ts_utc):
+    """`dispuesto_at_utc` -> fecha larga en espa&ntilde;ol, anclada a Colombia (M24). '' si no hay."""
+    t = str(ts_utc or '').strip()
+    if not t:
+        return ''
+    from datetime import datetime as _dt, timedelta as _td
+    for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+        try:
+            d = _dt.strptime(t[:19] if len(t) >= 19 else t[:10], fmt)
+            break
+        except ValueError:
+            d = None
+    if d is None:
+        return ''
+    if len(t) > 10:
+        d = d - _td(hours=5)
+    return _fecha_larga_es(d.date())
+
+
+F06_CONTROL = {
+    'codigo': 'COC-PRO-002-F06',
+    'titulo': 'IDENTIFICACI&Oacute;N DE MATERIAL DE ENVASE',
+    'version': '02',
+    'pagina': '1 de 1',
+    'desde': '21-Jul-2026',
+    'hasta': '20-Jul-2029',
+}
+
+
+def _encabezado_f06(logo):
+    """Las TRES zonas del encabezado oficial: logo | FORMATO + t&iacute;tulo | control.
+
+    No es decoraci&oacute;n: el bloque de c&oacute;digo/versi&oacute;n/vigencia es la evidencia de que el
+    registro se llen&oacute; en la versi&oacute;n vigente del formato (M251). Sale de UNA constante para
+    que el d&iacute;a que Aseguramiento libere la versi&oacute;n 03 no queden dos rótulos diciendo cosas
+    distintas y los dos con cara de oficiales.
+    """
+    d = F06_CONTROL
+    return ('<div class="top f06">'
+            '<div class="brand"><img class="mark" src="' + logo + '" alt="" '
+            'onerror="this.remove()"></div>'
+            '<div class="f06doc"><div class="f06tipo">FORMATO</div>'
+            '<div class="f06tit">' + d['titulo'] + '</div></div>'
+            '<div class="f06ctrl">'
+            '<div><b>C&oacute;digo:</b> ' + d['codigo'] + '</div>'
+            '<div><b>Versi&oacute;n:</b> ' + d['version'] + '</div>'
+            '<div><b>P&aacute;gina:</b> ' + d['pagina'] + '</div>'
+            '<div><b>Vigencia</b></div>'
+            '<div class="f06rango">Desde ' + d['desde'] + '</div>'
+            '<div class="f06rango">Hasta ' + d['hasta'] + '</div>'
+            '</div></div>')
+
+
 def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones,
                       lote, cantidad, unidad, fecha_recep, fecha_impresion, estado,
+                      fecha_analisis='',
                       logo, bc_id='bc', caja_idx=None, n_cajas=None, cant_total=None,
                       bc_valor=None, revision_pendiente=False):
     """UNA hoja de rótulo de envase. La usan la ruta de a uno Y la de por-caja.
@@ -11899,9 +11964,8 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
     _chk = lambda on: ('&#9746;' if on else '&#9744;')
     # M.ENV: envases primarios / M.EMP: empaque secundario
     is_env = categoria in {'Envase', 'Frasco', 'Tapa', 'Gotero', 'Contorno'}
-    _tp_mp = '&#9744; Materia Prima (MP)'
-    _tp_me = _chk(is_env) + ' Material de Envase (ME)'
-    _tp_emp = _chk(not is_env) + ' Material de Empaque (MEMP)'
+    _tp_me = _chk(is_env) + ' MATERIAL DE ENVASE'
+    _tp_emp = _chk(not is_env) + ' MATERIAL DE EMPAQUE'
     # `[REVISADO]` es la marca interna con la que se reclama el cierre de la revisión (CAS):
     # es del sistema, no del operario, y no tiene nada que hacer impresa en un formato regulado.
     observaciones = str(observaciones or '').replace('[REVISADO]', '').strip()
@@ -11921,9 +11985,8 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
             _cant_val = (_e(cantidad) + ' <span style="font-weight:400;opacity:.75">&middot; de '
                          + _e(cant_total) + ' en ' + str(n_cajas) + ' cajas</span>')
     return ('<div class="sheet"><div class="accent"></div>'
-            '<div class="top"><div class="brand"><img class="mark" src="' + logo + '" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
-            '<div class="ctrl"><b>Formato:</b> COC-PRO-002-F04<br><b>F. Impresion:</b> ' + _e(fecha_impresion) + '</div></div>'
-            '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Material de envase' + _cajatag + '</div>'
+            + _encabezado_f06(logo) +
+            '<div class="title"><div class="eyebrow">Ingreso de material' + _cajatag + '</div>'
             '<h1 class="name">' + _e(desc) + '</h1>' + _cajachip + '</div>'
             '<div class="lote"><div class="ll">Codigo interno</div><div class="lv">' + _e(codigo) + '</div>'
             '<svg id="' + _e(bc_id) + '"></svg>'
@@ -11931,18 +11994,19 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
                 + _e(bc_valor) + '</div>') if bc_valor else '')
             + '</div>'
             '<table>'
-            '<tr><td class="k">Nombre comercial</td><td colspan="3"><b>' + _e(desc) + '</b></td></tr>'
-            '<tr><td class="k">Tipo de insumo</td><td colspan="3"><span class="tipo">' + _tp_mp + '</span>'
-            '<span class="tipo' + (' on' if is_env else '') + '">' + _tp_me + '</span>'
-            '<span class="tipo' + ('' if is_env else ' on') + '">' + _tp_emp + '</span></td></tr>'
+            '<tr><td class="k">Nombre del insumo</td><td colspan="3"><b>' + _e(desc) + '</b></td></tr>'
+            '<tr><td class="k">Tipo de insumo</td><td colspan="3">'
+            '<span class="tipo' + ('' if is_env else ' on') + '">' + _tp_emp + '</span>'
+            '<span class="tipo' + (' on' if is_env else '') + '">' + _tp_me + '</span></td></tr>'
             '<tr><td class="k">Categoria</td><td>' + (_e(categoria) or '-') + '</td>'
             '<td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
             '<tr><td class="k">Lote</td><td class="num" colspan="3"><b>' + (_e(lote) or '-') + '</b>'
             + ('<span style="font-weight:600;font-size:.8em;opacity:.75"> &middot; interno EOS '
                '(el proveedor no envi&oacute; lote)</span>'
                if str(lote or '').upper().startswith('INT-') else '') + '</td></tr>'
-            '<tr><td class="k">Fecha recep.</td><td>' + _e(fecha_recep) + '</td>'
-            '<td class="k">Ubicaci&oacute;n</td><td>' + (_e(zona) or '-') + '</td></tr>'
+            '<tr><td class="k">Fecha de recepci&oacute;n</td><td>' + _e(fecha_recep) + '</td>'
+            '<td class="k">Fecha de an&aacute;lisis</td><td class="escribir">' + _e(fecha_analisis) + '</td></tr>'
+            '<tr><td class="k">Ubicaci&oacute;n</td><td colspan="3">' + (_e(zona) or '') + '</td></tr>'
             '<tr><td class="k">Proveedor</td><td colspan="3">' + (_e(proveedor) or '-') + '</td></tr>'
             + ('<tr><td class="k">Observaciones</td><td colspan="3">' + _e(observaciones)
                + '</td></tr>' if str(observaciones or '').strip() else '')
@@ -12115,9 +12179,18 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
         c.execute("SELECT descripcion, categoria, proveedor, unidad FROM maestro_mee WHERE codigo=?", (codigo,))
         mee = c.fetchone()
         c.execute("SELECT lote_ref, responsable, fecha, observaciones, COALESCE(zona,''), "
-                  "COALESCE(estado,'VIGENTE') FROM movimientos_mee WHERE mee_codigo=? "
+                  "COALESCE(estado,'VIGENTE'), id FROM movimientos_mee WHERE mee_codigo=? "
                   "AND tipo='Entrada' AND anulado=0 ORDER BY id DESC LIMIT 1", (codigo,))
         mov = c.fetchone()
+        # FECHA DE ANÁLISIS: cuándo Calidad dispuso la caja. Si nadie la revisó todavía, queda
+        # VACÍA para llenarla a mano -- poner la fecha de impresión sería fechar un análisis
+        # que no ocurrió.
+        _fanalisis = ''
+        if mov and len(mov) > 6 and mov[6]:
+            _fa = c.execute(
+                "SELECT MAX(COALESCE(dispuesto_at_utc,'')) FROM mee_cajas_disposicion "
+                "WHERE mov_id=? AND COALESCE(dispuesto_at_utc,'') <> ''", (mov[6],)).fetchone()
+            _fanalisis = _fecha_analisis_larga(_fa[0] if _fa else '')
     except Exception as e:
         return f"<h2>Error DB: {e}</h2>", 500
     desc  = mee[0] if mee else codigo
@@ -12139,6 +12212,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
         codigo=codigo, desc=desc, categoria=cat, proveedor=prov, zona=zona,
         observaciones=obs, lote=lote, cantidad=f"{cantidad:,} {unid}", unidad=unid,
         fecha_recep=_frec, fecha_impresion=hoy, estado=_est,
+        fecha_analisis=_fanalisis,
         logo=_rotulo_logo_src(c), bc_id='bc')
     return _rotulo_mee_pagina('Rotulo de recepcion &middot; Material de envase',
                               [hoja], [('bc', codigo)], lw, lh)
@@ -12186,10 +12260,10 @@ def rotulos_recepcion_mee_cajas():
     _ph = ','.join(['?'] * len(ids))
     try:
         rows = c.execute(
-            "SELECT mv.id, mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), "
-            "       COALESCE(mm.categoria,''), COALESCE(mv.proveedor, mm.proveedor, ''), "
+            "SELECT mv.id, mv.mee_codigo, COALESCE(NULLIF(TRIM(mm.descripcion),''), mv.mee_codigo), "
+            "       COALESCE(mm.categoria,''), COALESCE(NULLIF(TRIM(mv.proveedor),''), mm.proveedor, ''), "
             "       COALESCE(mv.zona,''), COALESCE(mv.observaciones,''), COALESCE(mv.lote_ref,''), "
-            "       mv.cantidad, COALESCE(mv.unidad, mm.unidad, 'und'), mv.fecha, "
+            "       mv.cantidad, COALESCE(NULLIF(TRIM(mv.unidad),''), mm.unidad, 'und'), mv.fecha, "
             "       COALESCE(mv.estado,'VIGENTE'), mv.n_cajas, mv.unidades_por_caja "
             "  FROM movimientos_mee mv "
             "  LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mv.mee_codigo)) "
@@ -12204,12 +12278,15 @@ def rotulos_recepcion_mee_cajas():
     # Disposición POR CAJA (mig 399): si Calidad revisó caja por caja, cada rótulo imprime
     # el estado de SU caja. Es lo que hace que reimprimir la caja 7 salga marcada como
     # rechazada sin que nadie tenga que tachar nada a mano.
-    _disp, _cantidades = {}, {}
+    _disp, _cantidades, _fanal = {}, {}, {}
     try:
         for _d in c.execute(
-            f"SELECT mov_id, caja, estado, cantidad FROM mee_cajas_disposicion WHERE mov_id IN ({_ph})",
+            f"SELECT mov_id, caja, estado, cantidad, COALESCE(dispuesto_at_utc,'') "
+            f"  FROM mee_cajas_disposicion WHERE mov_id IN ({_ph})",
             ids).fetchall():
             _disp[(int(_d[0]), int(_d[1]))] = str(_d[2] or '')
+            if len(_d) > 4 and str(_d[4] or '').strip():
+                _fanal[(int(_d[0]), int(_d[1]))] = str(_d[4])
             if _d[3] is not None:
                 _cantidades[(int(_d[0]), int(_d[1]))] = float(_d[3])
     except Exception as _e:
@@ -12252,6 +12329,7 @@ def rotulos_recepcion_mee_cajas():
                 cantidad=f"{cant_k:,.0f} {_uni}", unidad=_uni,
                 fecha_recep=_frec, fecha_impresion=hoy,
                 estado=_est_caja_lbl, revision_pendiente=_pend_caja, logo=logo,
+                fecha_analisis=_fecha_analisis_larga(_fanal.get((int(r[0]), k), '')),
                 bc_id=_bid, caja_idx=k, n_cajas=(_n if _n > 1 else None),
                 cant_total=(f"{_cant:,.0f} {_uni}" if _n > 1 else None),
                 bc_valor=_mee_token_caja(r[0], k)))
@@ -16614,7 +16692,7 @@ def mee_cuarentena_pendientes():
     out = []
     try:
         rows = c.execute(
-            """SELECT mv.id, mv.mee_codigo, COALESCE(m.descripcion, mv.mee_codigo), mv.cantidad, mv.unidad,
+            """SELECT mv.id, mv.mee_codigo, COALESCE(NULLIF(TRIM(m.descripcion),''), mv.mee_codigo), mv.cantidad, mv.unidad,
                       COALESCE(mv.lote_ref,''), COALESCE(mv.zona,''), COALESCE(mv.proveedor,''),
                       COALESCE(mv.responsable,''), mv.fecha
                FROM movimientos_mee mv
@@ -16870,7 +16948,7 @@ def mee_escanear_caja():
     mov_id, caja = int(m.group(1)), int(m.group(2))
     c = get_db().cursor()
     mov = c.execute(
-        "SELECT mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), mv.cantidad, "
+        "SELECT mv.mee_codigo, COALESCE(NULLIF(TRIM(mm.descripcion),''), mv.mee_codigo), mv.cantidad, "
         "       COALESCE(mv.unidad,'und'), COALESCE(mv.lote_ref,''), COALESCE(mv.proveedor,''), "
         "       COALESCE(mv.estado,'VIGENTE'), mv.n_cajas, mv.fecha, COALESCE(mv.zona,'') "
         "  FROM movimientos_mee mv "

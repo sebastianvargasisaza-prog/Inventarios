@@ -1503,7 +1503,7 @@ def calidad_recepcion_pipeline():
     # ── ENVASES (MEE) en cuarentena · movimientos_mee (id colisiona con movimientos.id → origen='MEE') ──
     try:
         for r in c.execute(
-            """SELECT mv.id, mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), mv.cantidad,
+            """SELECT mv.id, mv.mee_codigo, COALESCE(NULLIF(TRIM(mm.descripcion),''), mv.mee_codigo), mv.cantidad,
                       COALESCE(mv.lote_ref,''), COALESCE(mv.fecha_vencimiento,''), COALESCE(mv.proveedor,''),
                       mv.fecha, COALESCE(mv.oc_numero,''), COALESCE(mv.estado,''),
                       COALESCE(mv.n_cajas,0), COALESCE(mv.observaciones,'')
@@ -1584,7 +1584,7 @@ def calidad_recepcion_tecnica():
             return jsonify({'ok': True, 'f01': _f01, 'codigo_real': _cr, 'origen': origen})
         pre = {}
         if origen == 'MEE':
-            m = c.execute("SELECT mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), mv.cantidad, mv.lote_ref, "
+            m = c.execute("SELECT mv.mee_codigo, COALESCE(NULLIF(TRIM(mm.descripcion),''), mv.mee_codigo), mv.cantidad, mv.lote_ref, "
                           "COALESCE(mv.proveedor,''), mv.fecha, COALESCE(mv.oc_numero,''), COALESCE(mv.fecha_vencimiento,'') "
                           "FROM movimientos_mee mv LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mv.mee_codigo)) "
                           "WHERE mv.id=?", (mov_id,)).fetchone()
@@ -1768,7 +1768,7 @@ def calidad_recepcion_tecnica():
             _liberado = cur.rowcount
             if resultado == 'no_conforme' and _liberado > 0:
                 # envase rechazado → No Conformidad + devolución al proveedor (trazabilidad)
-                mrow = cur.execute("SELECT mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), mv.cantidad, "
+                mrow = cur.execute("SELECT mv.mee_codigo, COALESCE(NULLIF(TRIM(mm.descripcion),''), mv.mee_codigo), mv.cantidad, "
                                    "COALESCE(mv.lote_ref,''), COALESCE(mv.proveedor,''), COALESCE(mv.oc_numero,'') "
                                    "FROM movimientos_mee mv LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mv.mee_codigo)) "
                                    "WHERE mv.id=?", (mov_id,)).fetchone()
@@ -2381,7 +2381,7 @@ def calidad_reconstruir_expediente():
             n_f02 += 1
         for r in c.execute(
                 "SELECT e.id, COALESCE(e.numero_op,''), COALESCE(m.producto_nombre,''), "
-                "COALESCE(e.lote_codigo, e.lote, ''), COALESCE(e.liberado_por, e.iniciado_por,''), "
+                "COALESCE(e.lote_codigo, e.lote, ''), COALESCE(NULLIF(TRIM(e.liberado_por),''), e.iniciado_por,''), "
                 "COALESCE(e.liberado_at_utc, e.iniciado_at_utc,'') FROM ebr_ejecuciones e "
                 "LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id").fetchall():
             registrar_documento(c, tipo_doc='EBR', formato='Batch Record', titulo='Registro de lote (batch record)',
