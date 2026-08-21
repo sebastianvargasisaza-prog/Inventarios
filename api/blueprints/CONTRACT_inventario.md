@@ -1112,3 +1112,19 @@ Invariantes:
    doble clic devuelve 409 y no ajusta dos veces.
 
 Guard: `tests/test_cuadre_inventario.py` (9 casos, en el gate).
+
+### INV-12b · Ubicaciones: unificar y ubicar lo suelto (21-ago-2026)
+
+- `GET /api/inventario/ubicaciones-agrupadas` agrupa las estanterías que son la MISMA escrita
+  distinto (sin acentos, sin mayúsculas, sin plural final; **los números no se tocan**: `10` y
+  `1` son estanterías distintas).
+- `POST /api/inventario/unificar-ubicacion` las deja con un solo nombre. **Rechaza unificar dos
+  ubicaciones que no normalizan igual**: eso movería material de un estante a otro sin que nadie
+  lo haya movido. No toca cantidades ni lotes, y queda auditado con las variantes movidas.
+- `GET /api/inventario/cuadre-lotes?est=X` trae los lotes de esa estantería **más los lotes SIN
+  ubicar de esos mismos materiales**, marcados `sin_ubicar`: si sólo se listara lo ubicado, quien
+  cuadra el estante no se entera de que ese material tiene otro lote suelto. Con `est=` vacío
+  devuelve la cola completa de lo que no está en ningún lado.
+- Ubicar un lote suelto reusa `PATCH /api/lotes/<material>/<lote>/ubicacion` (no se duplicó).
+
+Guard: `tests/test_cuadre_inventario.py`.
