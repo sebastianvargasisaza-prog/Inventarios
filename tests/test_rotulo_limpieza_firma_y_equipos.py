@@ -19,6 +19,7 @@ Lo que fija este guard:
     URL viva no se rompe (M120).
 """
 import os
+import re
 import sqlite3
 
 from .conftest import TEST_PASSWORD, csrf_headers
@@ -160,6 +161,16 @@ def test_los_botones_dicen_lo_que_hacen(app, db_clean):
         "el botón de Registrar Producción no avisa que ahora se eligen los equipos")
 
 
+def _nombre_area(aid):
+    """El nombre de la sala, para verificar que se la puede buscar por él."""
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        r = conn.execute("SELECT nombre FROM areas_planta WHERE id=?", (aid,)).fetchone()
+    finally:
+        conn.close()
+    return (r[0] if r else "") or ""
+
+
 def test_el_area_elegida_viaja_y_queda_en_foco(app, db_clean):
     """Sebastián: *"se supone que yo aquí elijo el área, entonces debería mostrarme"*.
 
@@ -176,10 +187,25 @@ def test_el_area_elegida_viaja_y_queda_en_foco(app, db_clean):
     # viene de Registrar Producción encuentra ESA sala servida, sin buscarla a mano.
     assert 'class="eq foco"' in html, "no distingue los equipos de la sala elegida"
     assert 'id="q"' in html and 'value="' in html, "el buscador no viene con la sala"
-    assert 'class="sala-chip"' in html, "la fila no dice a qué sala pertenece el equipo"
+    # El chip con el nombre de la sala salió de la fila del equipo el 21-ago, y no es una
+    # pérdida: Sebastián lo pidió con todas las letras (*"aquí en el equipo no es necesario el
+    # área, se puede quitar todo esto que dice área"*) porque el rótulo del equipo tampoco la
+    # lleva -- mostrarla en la lista prometía algo que el papel no dice. Lo que NO se puede
+    # perder es poder ubicar el equipo por su sala, así que la garantía se mide donde ahora
+    # vive: el nombre de la sala sigue en el índice de búsqueda de cada fila.
+    _nom_sala = _nombre_area(aid).lower()
+    # Se mide sobre las filas de EQUIPO, no sobre el HTML entero: el nombre de la sala también
+    # aparece en su propia fila de área, así que un `in html` pasaría verde con el índice de los
+    # equipos vacío -- o sea dejaría de medir (M96).
+    _filas_eq = [m for m in re.findall(r'<label class="eq([^"]*)" data-buscar="([^"]*)"', html)
+                 if 'area' not in m[0]]
+    assert _filas_eq, "no hay filas de equipo"
+    # Anclado al FINAL, que es donde el generador pone la sala: sin anclar, "Fabricación 1"
+    # matchea dentro de "tanque de fabricación 100L" y el guard mide su propio ruido (M80).
+    assert any(b.lower().rstrip().endswith(_nom_sala) for _cls, b in _filas_eq),         "no se puede encontrar el equipo buscando por su sala"
     assert "checked" in html, "los equipos de esa sala no vienen marcados"
-    # y las otras salas siguen disponibles
-    assert html.count('class="sala') >= 2 or html.count('class="sala') == 1
+    # y la sala se puede pedir como ítem propio: su rótulo es el que no trae equipo
+    assert 'value="AREA:%s"' % acod in html, "el área no se puede elegir en la lista"
 
 
 def test_la_linea_de_firma_sale_vacia(app, db_clean):

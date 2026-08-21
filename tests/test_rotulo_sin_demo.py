@@ -188,31 +188,43 @@ def test_el_rotulo_no_lleva_raya_ni_el_nombre_de_la_empresa(app, db_clean):
     _limpiar(aid)
 
 
-def test_el_area_es_un_campo_que_se_elige_y_se_imprime(app, db_clean):
-    """*"faltaría un espacio que diga área, y que se pueda seleccionar, aunque se puede traer
-    desde fabricación"* (Sebastián 21-ago).
+def test_el_area_tiene_su_propio_rotulo_y_el_del_equipo_no_la_menciona(app, db_clean):
+    """*"Aquí es UNO SOLO que diga área, no repetido; pero los rótulos de equipo no llevan área,
+    entonces debe decir sólo equipo sin área. Y además necesito rótulos PARA EL ÁREA"* (Sebastián
+    21-ago, con los rótulos impresos delante).
 
-    No es volver a la fila que se quitó el 20-ago: aquella la DERIVABA el sistema y podía decir
-    una sala donde el equipo ya no está. Ésta la elige quien imprime, de las salas reales."""
+    Reemplaza al guard de la mañana, que fijaba la implementación anterior (un desplegable de área
+    dentro del formulario, cuyo valor se imprimía como un renglón más en TODOS los rótulos). Esa
+    forma repetía el área en el rótulo de la sala y la afirmaba en el de la máquina -- y una
+    máquina se mueve entre salas, así que el papel pegado en ella prometía algo que puede dejar de
+    ser cierto (es la misma razón por la que el 20-ago se quitó "Sala / área").
+
+    La garantía que sí importa: el ÁREA es un ítem que se puede pedir y trae su propio rótulo; el
+    del EQUIPO habla del equipo y de nada más."""
     aid, acod = _area_fab()
     _limpiar(aid)
     c = _login(app)
-    # (a) el desplegable existe y trae las salas
+    # (a) la sala se puede pedir como un ítem más de la lista
     sel = c.get("/planta/rotulos-limpieza?area=%s" % acod).get_data(as_text=True)
-    assert 'id="area_txt"' in sel, "no hay dónde elegir el área"
-    assert "<select" in sel.split('id="area_txt"')[0][-120:] or 'id="area_txt" class' in sel, \
-        "el área debería elegirse de una lista, no teclearse"
-    assert "en blanco = se llena a mano" in sel, "no deja la opción de dejarlo en blanco"
-    # (b) lo elegido se imprime
-    html = c.get("/planta/rotulos-limpieza?todos=1&estados=limpio&area_txt=ZONA%20ZZ").get_data(as_text=True)
-    assert ">Área<" in html or ">&Aacute;rea<" in html, "el rótulo no tiene el renglón de área"
-    assert "ZONA ZZ" in html, "no imprimió el área elegida"
-    # (c) viniendo de fabricación, se trae sola
-    html2 = c.get("/planta/rotulos-limpieza?area=%s&todos=1" % acod).get_data(as_text=True)
-    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    assert 'value="AREA:%s"' % acod in sel, "el área no se puede elegir en el selector"
+    # (b) pedirla produce un rótulo de ÁREA -- encabezado propio y sin renglón de equipo
+    hoja_area = c.get("/planta/rotulos-limpieza?equipos=AREA:%s&estados=limpio" % acod
+                      ).get_data(as_text=True)
+    assert hoja_area.count('class="sheet"') == 1, "no salió el rótulo del área"
+    assert "rea &middot; c" in hoja_area or "rea · c" in hoja_area,         "el rótulo del área no se nombra como área"
+    assert "Equipo &middot; c" not in hoja_area and "Equipo · c" not in hoja_area,         "el rótulo del área no debería encabezarse como equipo"
+    # (c) el rótulo de un EQUIPO no menciona el área por ningún lado
+    # El equipo se SIEMBRA: condicionarlo a que el área ya tenga uno dejaba el guard sin medir
+    # -- y pasó verde con el bug puesto (M96). Limpieza ANTES, con código fijo (M103).
+    _sql("DELETE FROM equipos_planta WHERE codigo=?", ("EQ-ROT-TEST",))
+    _sql("INSERT INTO equipos_planta (codigo, nombre, area_codigo, tipo, activo) "
+         "VALUES (?,?,?,?,1)", ("EQ-ROT-TEST", "Marmita de prueba", acod, "otro"))
     try:
-        nom = conn.execute("SELECT nombre FROM areas_planta WHERE id=?", (aid,)).fetchone()[0]
+        hoja_eq = c.get("/planta/rotulos-limpieza?equipos=EQ-ROT-TEST&estados=limpio"
+                        ).get_data(as_text=True)
+        assert hoja_eq.count('class="sheet"') == 1, "no salió el rótulo del equipo"
+        assert "Equipo &middot; c" in hoja_eq or "Equipo · c" in hoja_eq,             "el rótulo del equipo no se nombra como equipo"
+        assert ">&Aacute;rea<" not in hoja_eq and ">Área<" not in hoja_eq,             "el rótulo del equipo no lleva área (la máquina se mueve de sala)"
     finally:
-        conn.close()
-    assert nom in html2, "no trajo el área que se eligió en Registrar Producción"
+        _sql("DELETE FROM equipos_planta WHERE codigo=?", ("EQ-ROT-TEST",))
     _limpiar(aid)
