@@ -12612,6 +12612,118 @@ def compras_cash_flow():
     return jsonify(out)
 
 
+@bp.route('/api/compras/donde-esta/<path:numero>', methods=['GET'])
+def compras_donde_esta(numero):
+    """Dado un número de SOL o de OC, dice en qué estado está y EN QUÉ PANTALLA se ve.
+
+    Existe por un reporte de Catalina (21-ago): aprobó una solicitud y no la encontró. Un
+    registro que sale de la lista donde se creó tiene que decir a dónde se fue (M129); mientras
+    eso no esté en el flujo, al menos se puede preguntar.
+    """
+    # Read-only: alcanza con estar autenticado. No se inventa un guard que no existe -- un
+    # nombre fuera de scope revienta recien cuando alguien aprieta el boton (M78).
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    num = (numero or '').strip().upper()
+    if not num:
+        return jsonify({'error': 'falta el número'}), 400
+    conn = get_db(); c = conn.cursor()
+    out = {'ok': True, 'numero': num, 'encontrado': False, 'pasos': []}
+
+    # ── la SOLICITUD ──────────────────────────────────────────────────────────
+    sol = c.execute(
+        "SELECT numero, estado, solicitante, area, categoria, fecha, "
+        "       COALESCE(numero_oc,''), COALESCE(aprobado_por,''), COALESCE(fecha_aprobacion,''), "
+        "       COALESCE(observaciones,'') "
+        "  FROM solicitudes_compra WHERE UPPER(TRIM(numero))=?", (num,)).fetchone()
+    if sol:
+        out['encontrado'] = True
+        out['tipo'] = 'solicitud'
+        out['solicitud'] = {
+            'numero': sol[0], 'estado': sol[1], 'solicitante': sol[2], 'area': sol[3],
+            'categoria': sol[4], 'fecha': sol[5], 'numero_oc': sol[6],
+            'aprobado_por': sol[7], 'fecha_aprobacion': sol[8],
+        }
+        _est = str(sol[1] or '').strip()
+        out['pasos'].append({'que': 'Solicitud creada por %s' % (sol[2] or '?'),
+                             'cuando': sol[5], 'estado': _est})
+        if sol[7]:
+            out['pasos'].append({'que': 'Aprobada por %s' % sol[7], 'cuando': sol[8],
+                                 'estado': _est})
+        # ¿A dónde se fue? Se responde por el HECHO (tiene OC o no), no por suposición.
+        if sol[6]:
+            num = sol[6]          # sigue el rastro por la OC, abajo
+        else:
+            _area = str(sol[3] or '').strip().lower()
+            if _est.lower() == 'aprobada':
+                out['donde_esta'] = (
+                    'Aprobada y SIN orden de compra todavía. Las solicitudes de producción se '
+                    'consolidan por proveedor: se ve en Compras > Solicitudes agrupadas, '
+                    'poniendo el filtro de estado en "Aprobada".'
+                    if _area.startswith('produc') else
+                    'Aprobada y SIN orden de compra. Se ve en Compras > Solicitudes con el '
+                    'filtro de estado en "Aprobada".')
+                out['pantalla'] = '/compras'
+                out['filtro'] = {'estado': 'Aprobada',
+                                 'pestana': 'agrupadas' if _area.startswith('produc') else 'solicitudes'}
+                out['siguiente_paso'] = ('Generar la orden de compra desde la bandeja de '
+                                         'agrupadas, o desde la solicitud si va sola.')
+            elif _est.lower() in ('pendiente', 'en revision', 'borrador'):
+                out['donde_esta'] = 'Esperando decisión en Compras > Solicitudes.'
+                out['pantalla'] = '/compras'
+                out['filtro'] = {'estado': _est, 'pestana': 'solicitudes'}
+            elif _est.lower() in ('rechazada', 'cancelada'):
+                out['donde_esta'] = 'Cerrada (%s). Se ve con el filtro de estado en "%s".' % (_est, _est)
+                out['pantalla'] = '/compras'
+                out['filtro'] = {'estado': _est, 'pestana': 'solicitudes'}
+
+    # ── la ORDEN DE COMPRA (propia o la que generó la solicitud) ──────────────
+    oc = c.execute(
+        "SELECT numero_oc, estado, proveedor, valor_total, fecha, "
+        "       COALESCE(fecha_recepcion,''), COALESCE(categoria,'') "
+        "  FROM ordenes_compra WHERE UPPER(TRIM(numero_oc))=?", (num,)).fetchone()
+    if oc:
+        out['encontrado'] = True
+        out.setdefault('tipo', 'orden')
+        out['orden'] = {'numero_oc': oc[0], 'estado': oc[1], 'proveedor': oc[2],
+                        'valor_total': float(oc[3] or 0), 'fecha': oc[4],
+                        'fecha_recepcion': oc[5], 'categoria': oc[6]}
+        _eoc = str(oc[1] or '').strip()
+        out['pasos'].append({'que': 'Orden de compra %s · %s' % (oc[0], oc[2] or 'sin proveedor'),
+                             'cuando': oc[4], 'estado': _eoc})
+        _e = _eoc.lower()
+        if _e in ('borrador', 'revisada'):
+            out['donde_esta'] = 'La orden está en Compras > Órdenes, esperando autorización.'
+            out['pantalla'] = '/compras'
+            out['filtro'] = {'pestana': 'ordenes', 'estado': _eoc}
+            out['siguiente_paso'] = 'Autorizar la orden.'
+        elif _e == 'autorizada':
+            _pago_directo = str(oc[6] or '').strip().lower() in {
+                str(x).strip().lower() for x in CATEGORIAS_PAGO_DIRECTO}
+            out['donde_esta'] = ('Autorizada · va a Compras > Por pagar.' if _pago_directo
+                                 else 'Autorizada · esperando que llegue la mercancía, '
+                                      'en Recepción.')
+            out['pantalla'] = '/compras' if _pago_directo else '/recepcion'
+            out['filtro'] = {'pestana': 'por_pagar' if _pago_directo else 'recepcion'}
+            out['siguiente_paso'] = ('Pagar cuando corresponda.' if _pago_directo
+                                     else 'Recibir la mercancía cuando llegue.')
+        elif _e in ('recibida', 'parcial'):
+            out['donde_esta'] = 'Recibida · se ve en Compras > Por pagar.'
+            out['pantalla'] = '/compras'
+            out['filtro'] = {'pestana': 'por_pagar'}
+        elif _e == 'pagada':
+            out['donde_esta'] = 'Pagada. El ciclo está cerrado.'
+            out['pantalla'] = '/compras'
+            out['filtro'] = {'pestana': 'ordenes', 'estado': 'Pagada'}
+        elif _e == 'cancelada':
+            out['donde_esta'] = 'La orden fue cancelada.'
+    if not out['encontrado']:
+        # Distinguir "no existe" de "no lo pude buscar" (M100): acá SÍ se buscó en las dos tablas.
+        out['donde_esta'] = ('No hay ninguna solicitud ni orden con ese número. Verificá el '
+                             'número: las solicitudes son SOL-AAAA-NNNN y las órdenes OC-AAAA-NNNN.')
+    return jsonify(out)
+
+
 @bp.route('/api/compras/trazabilidad-oc/<numero_oc>', methods=['GET'])
 def compras_trazabilidad_oc(numero_oc):
     """Compras MAX · 21-may-2026 · Trazabilidad full-chain.

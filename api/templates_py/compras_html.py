@@ -233,13 +233,67 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--c
     <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; OCs, proveedores &amp; pagos &middot; <span style="color:var(--cx-text-faint)">{usuario}</span></div>
   </div>
   <div class="cx-mod-header__nav">
+    <input id="dd-num" placeholder="&#128269; &#191;D&oacute;nde qued&oacute;? SOL-2026-0292"
+           onkeydown="if(event.key==='Enter')dondeQuedo()" title="Escrib&iacute; el n&uacute;mero de una solicitud o de una orden y te digo en qu&eacute; pantalla est&aacute;"
+           style="width:210px;padding:7px 11px;border:1px solid var(--cx-border);border-radius:9px;font-size:12.5px;font-family:inherit;background:var(--cx-card);color:var(--cx-text)">
+    <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="dondeQuedo()" title="Buscar">Buscar</button>
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">Módulos</a>
     <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
     </button>
   </div>
 </header>
-<script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
+<div id="dd-modal" style="display:none;position:fixed;inset:0;background:rgba(24,24,27,.55);z-index:9999;align-items:center;justify-content:center;padding:18px">
+  <div style="background:var(--cx-card);border-radius:16px;max-width:620px;width:100%;max-height:82vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--cx-border)">
+      <div style="font-weight:800;font-size:15px;color:var(--cx-text)">&#191;D&oacute;nde qued&oacute;?</div>
+      <button onclick="document.getElementById('dd-modal').style.display='none'" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--cx-text-mute);line-height:1">&times;</button>
+    </div>
+    <div id="dd-body" style="padding:18px 20px"></div>
+  </div>
+</div>
+<script>
+function dondeQuedo(){
+  var el=document.getElementById('dd-num'); var num=(el&&el.value||'').trim();
+  if(!num){ if(el) el.focus(); return; }
+  var m=document.getElementById('dd-modal'), b=document.getElementById('dd-body');
+  m.style.display='flex';
+  b.innerHTML='<div style="color:var(--cx-text-mute);font-size:13px">Buscando '+_ddEsc(num)+'...</div>';
+  fetch('/api/compras/donde-esta/'+encodeURIComponent(num),{credentials:'same-origin'})
+    .then(function(r){return r.json();})
+    .then(function(d){ b.innerHTML=_ddPintar(d); })
+    .catch(function(e){ b.innerHTML='<div style="color:var(--cx-danger-text)">No se pudo consultar: '+_ddEsc(String(e))+'</div>'; });
+}
+function _ddEsc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _ddPintar(d){
+  if(!d||d.error) return '<div style="color:var(--cx-danger-text)">'+_ddEsc((d&&d.error)||'sin respuesta')+'</div>';
+  var h='';
+  if(!d.encontrado){
+    return '<div style="background:var(--cx-warn-pale);border:1px solid var(--cx-warn-light);border-radius:11px;padding:14px;color:var(--cx-warn-text);font-size:13px">'+_ddEsc(d.donde_esta||'No se encontr&oacute;')+'</div>';
+  }
+  h+='<div style="background:var(--cx-primary-pale);border:1px solid var(--cx-primary-light);border-radius:12px;padding:14px 16px;margin-bottom:14px">';
+  h+='<div style="font-weight:800;font-size:14px;color:var(--cx-primary-text);margin-bottom:5px">'+_ddEsc(d.donde_esta||'')+'</div>';
+  if(d.siguiente_paso) h+='<div style="font-size:12.5px;color:var(--cx-text-soft)">&rarr; '+_ddEsc(d.siguiente_paso)+'</div>';
+  h+='</div>';
+  if(d.solicitud){
+    h+='<div style="font-size:12.5px;margin-bottom:10px"><b>Solicitud '+_ddEsc(d.solicitud.numero)+'</b> &middot; '+_ddEsc(d.solicitud.estado)
+      +'<div style="color:var(--cx-text-mute)">'+_ddEsc(d.solicitud.solicitante||'')+(d.solicitud.area?(' &middot; '+_ddEsc(d.solicitud.area)):'')+'</div></div>';
+  }
+  if(d.orden){
+    h+='<div style="font-size:12.5px;margin-bottom:10px"><b>Orden '+_ddEsc(d.orden.numero_oc)+'</b> &middot; '+_ddEsc(d.orden.estado)
+      +'<div style="color:var(--cx-text-mute)">'+_ddEsc(d.orden.proveedor||'sin proveedor')+' &middot; $'+Number(d.orden.valor_total||0).toLocaleString('es-CO')+'</div></div>';
+  }
+  if(d.pasos&&d.pasos.length){
+    h+='<div style="border-top:1px solid var(--cx-border);padding-top:11px;margin-top:6px"><div style="font-size:10.5px;font-weight:800;letter-spacing:.5px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:7px">Rastro</div>';
+    d.pasos.forEach(function(p){
+      h+='<div style="font-size:12.5px;color:var(--cx-text);margin-bottom:4px">&middot; '+_ddEsc(p.que||'')
+        +(p.cuando?('<span style="color:var(--cx-text-faint)"> &middot; '+_ddEsc(String(p.cuando).substring(0,10))+'</span>'):'')+'</div>';
+    });
+    h+='</div>';
+  }
+  return h;
+}
+function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
 <!-- Sebastián 21-may-2026 · 11 tabs → 4 grupos top (como hicimos con
      Programación 8→4). Catalina ya tenía muscular memory · IDs originales
@@ -7608,6 +7662,14 @@ async function gestionarSol(decision){
       if(d.numero_oc) msg+='\\nOC generada: '+d.numero_oc;
       if(d.oc_estado) msg+=' ('+d.oc_estado+')';
       if(d.siguiente_paso) msg+='\\n\\n→ '+d.siguiente_paso;
+      // Sin OC, la solicitud sale de la lista de pendientes y no queda a donde ir: aprobarla
+      // la dejaba invisible en las DOS pantallas donde se la busca (Catalina, 21-ago: "se me
+      // perdio"). Un registro que sale de su lista tiene que decir a donde se fue (M129).
+      if(!d.numero_oc){
+        msg += _esProduccion
+          ? '\\n\\nQueda para consolidar por proveedor: Compras > Solicitudes agrupadas, poniendo el filtro de estado en "Aprobada".'
+          : '\\n\\nQueda aprobada SIN orden de compra: se ve en Solicitudes con el filtro de estado en "Aprobada".';
+      }
       alert(msg);
     } else {
       alert('Solicitud rechazada.');
