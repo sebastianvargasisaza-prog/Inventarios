@@ -676,6 +676,9 @@ CORAZON=(
   # Un rotulo regulado no puede hablar de un lote DEMO: 37 de 70 salian con "DEMO PLANTA
   # (BORRAR)" como producto a elaborar, y el boton de limpiar demos no los reconocia.
   "tests/test_rotulo_sin_demo.py"
+  # El plano decia "0 ocupadas" mientras dibujaba tres salas con lote adentro, y esos lotes
+  # llevaban 1.237 horas "corriendo". Un lote de 51 dias no corre: esta sin cerrar.
+  "tests/test_plano_en_vivo.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

@@ -1233,6 +1233,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         return a||t||null;
       }
       function _esc2(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+      function _dias(m){m=parseInt(m,10);if(isNaN(m)||m<0)return '';var d=Math.floor(m/1440);return d<=1?'1 d&iacute;a':(d+' d&iacute;as');}
       function _elapsed(m){m=parseInt(m,10);if(isNaN(m)||m<0)return '';var h=Math.floor(m/60),mm=m%60;return (h?h+'h ':'')+mm+'m';}
       function _wrap(lab,lw,fs){var words=String(lab).toUpperCase().split(' ');var max=Math.max(5,Math.floor(lw/(fs*0.56)));var lines=[],cur='';words.forEach(function(wd){var tt=cur?cur+' '+wd:wd;if(tt.length<=max||!cur){cur=tt;}else{lines.push(cur);cur=wd;}});if(cur)lines.push(cur);return lines.slice(0,3);}
       function _label(lab,cx,cy,fs,lw,rot,color,weight){
@@ -1245,6 +1246,18 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       window.planoCerrarSala=function(){var m=document.getElementById('plano-sala-modal');if(m)m.style.display='none';};
       window.planoImprimirRotulo=function(aid){ if(aid) window.open('/planta/rotulo-limpieza/'+aid+'/pdf','_blank'); };
       window.planoFinalizar=function(pid){planoCerrarSala();if(window.finalizarFabVivo){var pr=window.finalizarFabVivo(pid);if(pr&&pr.then){pr.then(function(){setTimeout(window.cargarPlanoGrid,500);});}else{setTimeout(window.cargarPlanoGrid,900);}}};
+      window.planoEstado=async function(aid,nuevo,actual){
+        if(!aid) return;
+        if(actual==='sucia'&&nuevo==='libre'){ planoCerrarSala(); window.location.href='/planta/despeje-linea?area='+aid; return; }
+        try{
+          var t=(typeof csrfTokenNec==='function')?csrfTokenNec():(window._csrfTok||'');
+          var r=await fetch('/api/planta/areas/'+aid+'/estado',{method:'PATCH',credentials:'same-origin',
+            headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({estado:nuevo})});
+          var d=await r.json();
+          if(!r.ok){ alert(d.error||'No se pudo cambiar el estado'); return; }
+          planoCerrarSala(); cargarPlanoGrid();
+        }catch(e){ alert('No se pudo cambiar el estado.'); }
+      };
       window.planoIrLimpieza=function(){planoCerrarSala();var b=document.querySelector('.sub-btn[onclick*="rotuloslimp"]');if(b)b.click();};
       window.planoIniciarAqui=function(aid){planoCerrarSala();var b=document.querySelector('.sub-btn[onclick*="produccion"]');if(b)b.click();setTimeout(function(){var s=document.getElementById('prod-area');if(s)s.value=aid;},600);};
       window.planoAbrirSala=function(cod){
@@ -1255,7 +1268,16 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         var cc=CP[e]||'#64748b';
         var h='<div style="font-weight:800;font-size:17px;color:var(--cx-text)">'+_esc2(a.nombre||cod)+'</div>';
         h+='<div style="display:inline-block;margin:8px 0;padding:3px 12px;border-radius:8px;font-weight:800;font-size:12px;background:'+cc+'22;color:'+cc+'">'+(LP[e]||e)+'</div>';
-        if(p){ h+='<div style="font-size:14px;line-height:1.7;color:var(--cx-text-soft)">&#129514; <b>'+_esc2(p.producto||'')+'</b>'+(p.kg?(' · '+p.kg+' kg'):'')+(p.operario?('<br>&#128100; '+_esc2(p.operario)):'')+(p.mins!=null?('<br>&#9201; '+_elapsed(p.mins)+' corriendo'):'')+'</div>'; }
+        var pAbierto=!!(p&&p.mins!=null&&p.mins>1440);
+        if(p){ h+='<div style="font-size:14px;line-height:1.7;color:var(--cx-text-soft)">&#129514; <b>'+_esc2(p.producto||'')+'</b>'+(p.kg?(' · '+p.kg+' kg'):'')+(p.operario?('<br>&#128100; '+_esc2(p.operario)):'')+(p.mins!=null?('<br>'+(pAbierto?('&#9209;&#65039; <b>sin cerrar</b> hace '+_dias(p.mins)+' &middot; nadie lo finaliz&oacute;'):('&#9201; '+_elapsed(p.mins)+' corriendo'))):'')+'</div>'; }
+        h+='<div style="margin-top:14px;font-size:11px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Estado del area</div>';
+        h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">';
+        [['libre','Libre'],['ocupada','En uso'],['sucia','Sucia']].forEach(function(op){
+          var act=(e===op[0]);
+          h+='<button onclick="planoEstado('+(a.id||0)+',&#39;'+op[0]+'&#39;,&#39;'+e+'&#39;)"'+(act?' disabled':'')+' style="flex:1;padding:8px 6px;border-radius:8px;font-weight:700;font-size:12px;cursor:'+(act?'default':'pointer')+';border:1px solid '+(act?(CP[op[0]]||'#64748b'):'var(--cx-border)')+';background:'+(act?((CP[op[0]]||'#64748b')+'22'):'var(--cx-card)')+';color:'+(act?(CP[op[0]]||'#64748b'):'var(--cx-text-soft)')+'">'+op[1]+(act?' &#10003;':'')+'</button>';
+        });
+        h+='</div>';
+        if(e==='sucia'){ h+='<div style="font-size:11px;color:var(--cx-text-mute);margin-top:5px">Para pasarla a Libre hay que hacer el despeje de l&iacute;nea y firmarlo (BPM). El bot&oacute;n te lleva.</div>'; }
         h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">';
         if(p){ if(p.vivo){ h+='<button onclick="planoFinalizarVivo('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:var(--cx-success);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar '+_esc2(p.fase||'envasado')+'</button>'; } else { h+='<button onclick="planoFinalizar('+p.id+')" style="flex:1 1 100%;padding:10px;background:var(--cx-success);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar producción</button>'; } }
         if(e==='sucia'||e==='limpiando'){ h+='<button onclick="planoCerrarSala();abrirRotulo('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:var(--cx-primary);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">'+(e==='limpiando'?'&#10003; Verificar limpieza (Calidad)':'&#129529; Registrar limpieza')+'</button>'; }
@@ -1345,6 +1367,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         sv+='<polygon points="36,40 722,40 722,87 760,53 793,576 700,562 700,587 33,587 33,40" fill="none" stroke="#2a2a2a" stroke-width="2.6" stroke-linejoin="round"/>';
         POLYS.forEach(function(pp){ sv+='<polygon points="'+pp.pts+'" fill="none" stroke="'+WALL+'" stroke-width="0.9"/>'; });
         var cards=''; var cnt={libre:0,ocupada:0,sucia:0,limpiando:0}; var totKg=0; var nLate=0; var LATE=480;
+        // Un lote que lleva mas de un dia "corriendo" no esta corriendo: nadie lo cerro. Se
+        // cuenta aparte y se dice con esas palabras, en vez de un cronometro de 1.237 horas.
+        var SIN_CERRAR=1440; var nSinCerrar=0;
         ROOMS.forEach(function(r){
           var live=r.cod?_pickArea(byCod,r.cod):null;
           var e=live?(live.estado||'libre'):null;
@@ -1356,14 +1381,17 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           sv+='<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" fill="none" stroke="'+(st?st.stroke:WALL)+'" stroke-width="'+(st?1.4:0.8)+'"'+(r.cod?(' style="cursor:pointer" onclick="planoAbrirSala(&#39;'+r.cod+'&#39;)"'):'')+'><title>'+_esc2(r.lab)+(e?(' · '+(LBL[e]||e)):'')+(r.cod?' · clic para acciones':'')+'</title></rect>';
           var cx=r.x+r.w/2, cy=r.y+r.h/2;
           sv+=_label(r.lab,cx,(hasP?cy-r.h*0.24:cy),r.fs,lw,r.rot||0,'#454545',(st?600:400));
-          if(hasP){var p=live.produccion;if(p.kg)totKg+=parseFloat(p.kg)||0;var lt=(p.mins!=null&&p.mins>LATE);if(lt)nLate++;var t2=r.fs*0.92;sv+='<text text-anchor="middle" font-family="system-ui,sans-serif" fill="#1f2937" font-size="'+t2+'" font-weight="700"><tspan x="'+cx+'" y="'+(cy+r.h*0.04)+'">'+_esc2(String(p.producto||'').slice(0,18))+'</tspan>'+(p.operario?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*1.15)+'">&#128100; '+_esc2(String(p.operario).slice(0,16))+'</tspan>'):'')+(p.mins!=null?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*2.3)+'" fill="'+(lt?'#dc2626':'#b45309')+'" font-weight="800">'+(lt?'&#9888;&#65039; ':'&#9201; ')+_elapsed(p.mins)+'</tspan>'):'')+'</text>';}
+          if(hasP){var p=live.produccion;var abierto=(p.mins!=null&&p.mins>SIN_CERRAR);if(abierto)nSinCerrar++;if(p.kg&&!abierto)totKg+=parseFloat(p.kg)||0;var lt=(p.mins!=null&&p.mins>LATE&&!abierto);if(lt)nLate++;var t2=r.fs*0.92;sv+='<text text-anchor="middle" font-family="system-ui,sans-serif" fill="#1f2937" font-size="'+t2+'" font-weight="700"><tspan x="'+cx+'" y="'+(cy+r.h*0.04)+'">'+_esc2(String(p.producto||'').slice(0,18))+'</tspan>'+(p.operario?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*1.15)+'">&#128100; '+_esc2(String(p.operario).slice(0,16))+'</tspan>'):'')+(p.mins!=null?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*2.3)+'" fill="'+(abierto?'#6b7280':(lt?'#dc2626':'#b45309'))+'" font-weight="800">'+(abierto?('&#9209;&#65039; sin cerrar '+_dias(p.mins)):((lt?'&#9888;&#65039; ':'&#9201; ')+_elapsed(p.mins)))+'</tspan>'):'')+'</text>';}
           if(r.cod){
             var cc=e?COL[e]:'#94a3b8';
-            cards+='<div style="background:var(--cx-card);border:1px solid var(--cx-border);border-top:5px solid '+cc+';border-radius:12px;padding:12px">';
-            cards+='<div style="font-weight:800;font-size:14px;color:#111">'+_esc2(r.lab)+'</div>';
+            // El cuadrado es el punto de entrada: se aprieta y ahi se registra el cambio.
+            cards+='<div onclick="planoAbrirSala(&#39;'+r.cod+'&#39;)" title="Clic para cambiar el estado o registrar" style="background:var(--cx-card);border:1px solid var(--cx-border);border-top:5px solid '+cc+';border-radius:12px;padding:12px;cursor:pointer;transition:transform .08s ease,box-shadow .12s ease" onmouseover="this.style.transform=&#39;translateY(-2px)&#39;;this.style.boxShadow=&#39;0 8px 20px rgba(15,23,42,.12)&#39;" onmouseout="this.style.transform=&#39;&#39;;this.style.boxShadow=&#39;&#39;">';
+            cards+='<div style="font-weight:800;font-size:14px;color:var(--cx-text)">'+_esc2(r.lab)+'</div>';
             cards+='<div style="display:inline-block;margin:5px 0;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700;background:'+cc+'22;color:'+cc+'">'+(LBL[e]||e||'-')+'</div>';
-            if(hasP){var q=live.produccion;cards+='<div style="font-size:13px;line-height:1.5;color:var(--cx-text)">&#129514; <b>'+_esc2(q.producto||'')+'</b>'+(q.kg?('<br>'+q.kg+' kg'):'')+(q.operario?('<br>&#128100; '+_esc2(q.operario)):'')+(q.mins!=null?('<br>&#9201; '+_elapsed(q.mins)+' corriendo'):'')+'</div>';}
-            else{cards+='<div style="color:#9ca3af;font-size:13px">disponible</div>';}
+            if(hasP){var q=live.produccion;var qab=(q.mins!=null&&q.mins>SIN_CERRAR);
+              cards+='<div style="font-size:13px;line-height:1.5;color:var(--cx-text)">&#129514; <b>'+_esc2(q.producto||'')+'</b>'+(q.kg?('<br>'+q.kg+' kg'):'')+(q.operario?('<br>&#128100; '+_esc2(q.operario)):'')+(q.mins!=null?('<br><span style="color:'+(qab?'#6b7280':'var(--cx-warn-text)')+';font-weight:700">'+(qab?('&#9209;&#65039; sin cerrar hace '+_dias(q.mins)):('&#9201; '+_elapsed(q.mins)+' corriendo'))+'</span>'):'')+'</div>';}
+            else{cards+='<div style="color:var(--cx-text-faint);font-size:13px">disponible</div>';}
+            cards+='<div style="margin-top:8px;font-size:11px;font-weight:700;color:var(--cx-primary-text)">Clic para registrar &rarr;</div>';
             cards+='</div>';
           }
         });
@@ -1376,7 +1404,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         mapa.innerHTML=sv;
         if(g) g.innerHTML=cards;
         var rs=document.getElementById('plano-resumen');
-        if(rs){ rs.innerHTML='<span style="background:#16a34a22;color:var(--cx-success-text);padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.libre+' libres</span><span style="background:#d9770622;color:var(--cx-warn-text);padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.ocupada+' ocupadas</span><span style="background:#dc262622;color:var(--cx-danger-text);padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.sucia+' sucias</span>'+(cnt.limpiando?('<span style="background:#0ea5e922;color:#0369a1;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.limpiando+' limpiando</span>'):'')+(totKg>0?('<span style="background:#7c3aed22;color:var(--cx-primary-text);padding:2px 8px;border-radius:8px;font-weight:700">'+Math.round(totKg)+' kg en producción</span>'):'')+(nLate?('<span style="background:var(--cx-danger);color:#fff;padding:2px 8px;border-radius:8px;font-weight:700">&#9888;&#65039; '+nLate+' pasada(s) de tiempo</span>'):''); }
+        if(rs){ rs.innerHTML='<span style="background:#16a34a22;color:var(--cx-success-text);padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.libre+' libres</span><span style="background:#d9770622;color:var(--cx-warn-text);padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.ocupada+' ocupadas</span><span style="background:#dc262622;color:var(--cx-danger-text);padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.sucia+' sucias</span>'+(nSinCerrar?('<span title="Lotes que nadie cerro: el area sigue figurando con produccion adentro" style="background:#6b728022;color:#374151;padding:2px 8px;border-radius:8px;font-weight:700">&#9209;&#65039; '+nSinCerrar+' lote(s) sin cerrar</span>'):'')+(cnt.limpiando?('<span style="background:#0ea5e922;color:#0369a1;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.limpiando+' limpiando</span>'):'')+(totKg>0?('<span style="background:#7c3aed22;color:var(--cx-primary-text);padding:2px 8px;border-radius:8px;font-weight:700">'+Math.round(totKg)+' kg en producción</span>'):'')+(nLate?('<span style="background:var(--cx-danger);color:#fff;padding:2px 8px;border-radius:8px;font-weight:700">&#9888;&#65039; '+nLate+' pasada(s) de tiempo</span>'):''); }
         var up=document.getElementById('plano-update');
         if(up){ var n=new Date(); up.textContent='actualizado '+('0'+n.getHours()).slice(-2)+':'+('0'+n.getMinutes()).slice(-2); }
       };
