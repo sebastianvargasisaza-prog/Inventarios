@@ -170,8 +170,13 @@ def test_el_area_elegida_viaja_y_queda_en_foco(app, db_clean):
     aid, acod = _area()
     c = _login(app)
     html = c.get("/planta/rotulos-limpieza?area=%s" % acod).data.decode("utf-8")
-    assert "la que elegiste" in html, "no marca cuál es la sala elegida"
-    assert 'class="sala foco"' in html, "la sala elegida no queda destacada"
+    # Desde el 21-ago la pantalla es UNA lista con buscador, no tarjetas por sala
+    # (Sebastán: *"que no aparecieran por áreas sino el listado completo ... y con un
+    # buscador así buscan los equipos que necesitan"*). La garantía es la misma: quien
+    # viene de Registrar Producción encuentra ESA sala servida, sin buscarla a mano.
+    assert 'class="eq foco"' in html, "no distingue los equipos de la sala elegida"
+    assert 'id="q"' in html and 'value="' in html, "el buscador no viene con la sala"
+    assert 'class="sala-chip"' in html, "la fila no dice a qué sala pertenece el equipo"
     assert "checked" in html, "los equipos de esa sala no vienen marcados"
     # y las otras salas siguen disponibles
     assert html.count('class="sala') >= 2 or html.count('class="sala') == 1

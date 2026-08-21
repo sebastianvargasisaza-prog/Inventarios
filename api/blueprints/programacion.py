@@ -8747,8 +8747,12 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
                     + _chip('Sucio', estado_fisico in ('sucia', 'limpiando')))
 
     def _row(lbl, val, num=False):
-        vcls = ' class="num"' if num else ''
-        return f'<tr><td class="k">{_e(lbl)}</td><td{vcls}>{_e(str(val) if val else "—")}</td></tr>'
+        # Sin dato la celda va VACÍA, no con una raya (Sebastián 21-ago: *"cuando algo no está
+        # escrito sale una raya, quitala para que puedan escribir a mano"*). La celda conserva
+        # su alto mínimo para que quepa la letra.
+        _cls = (' class="num vacio"' if num else ' class="vacio"') if not val else (
+            ' class="num"' if num else '')
+        return f'<tr><td class="k">{_e(lbl)}</td><td{_cls}>{_e(str(val)) if val else ""}</td></tr>'
 
     def _firma(rol, nombre, fecha, solo_nombre=False):
         if solo_nombre:
@@ -8771,8 +8775,7 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
   <div class="accent"></div>
   <div class="top">
     <div class="brand">
-      <div class="mark" role="img" aria-label="Logo Espagiria"></div>
-      <div class="co">ESPAGIRIA Laboratorio SAS</div>
+      <div class="mark" role="img" aria-label="ESPAGIRIA Laboratorio SAS"></div>
     </div>
     {_encabezado_formato_zonas()}
   </div>
@@ -8904,7 +8907,9 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
   .top > *{{padding:12px 14px}}
   .top > * + *{{border-left:1px solid var(--line)}}
   .brand{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center}}
-  .mark{{width:68px;height:68px;border-radius:14px;flex-shrink:0;border:1px solid var(--line);padding:5px;
+  /* El nombre de la empresa salió del encabezado el 21-ago: el logo ya lo dice y ocupaba el
+     ancho de la primera zona. El texto sigue en el `aria-label` para quien no ve la imagen. */
+  .mark{{width:96px;height:64px;border-radius:12px;flex-shrink:0;border:0;padding:0;
          background-color:var(--cx-card, #fff);background-image:url("{_logo}");background-size:contain;
          background-position:center;background-repeat:no-repeat;background-origin:content-box}}
   .brand .co{{font-size:16px;font-weight:800;letter-spacing:-.3px;line-height:1.1}}
@@ -8934,14 +8939,17 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
   td{{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:14px}}
   td.k{{width:34%;color:var(--mute);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;background:#fafafa}}
   .num{{font-variant-numeric:tabular-nums;font-weight:600}}
+  /* Celda para llenar a mano: sin raya, con alto suficiente para escribir encima. */
+  td.vacio{{height:22px}}
   .firmas{{display:flex;border-top:1px solid var(--line)}}
   .firma{{flex:1;padding:18px 22px 22px}}
   .firma+.firma{{border-left:1px solid var(--line)}}
+  .firma{{display:flex;flex-direction:column}}
   .firma .l{{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}}
   .firma .who{{font-size:15px;font-weight:700;color:var(--ink);margin-top:12px}}
   .firma .sig-ok{{display:inline-block;margin-top:6px;font-size:10.5px;font-weight:700;color:var(--cx-success-text, #15803d);background:var(--cx-success-pale, #f0fdf4);border:1px solid #bbf7d0;border-radius:6px;padding:2px 9px}}
-  .firma .sig-line{{height:1px;background:var(--ink);margin:30px 0 6px}}
-  .firma .f{{font-size:11.5px;color:var(--mute);margin-top:4px;font-variant-numeric:tabular-nums}}
+  .firma .sig-line{{height:0;border-bottom:1px solid var(--ink);margin:26px 0 4px}}
+  .firma .f{{font-size:10.5px;color:var(--mute);margin-top:0;font-variant-numeric:tabular-nums}}
   .printbar{{text-align:center;margin-top:18px}}
   .printbtn{{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}}
   .ph{{position:sticky;top:0;z-index:30;background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}}
@@ -8960,6 +8968,7 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
     /* Compactar para caber TODO en 1 página 100×100mm (Sebastián 20-jul) sin recortar */
     .accent{{height:2px}}
     td{{padding:1px 9px;font-size:6.6pt;line-height:1.05}} td.k{{font-size:5.6pt}}
+    td.vacio{{height:6mm}}
     /* Columnas FIJAS al imprimir: con `auto` el nombre de la empresa se comia el ancho
        y el titulo -que en el formato oficial es la columna mas ancha- quedaba en una
        tira angosta. Medido sobre la etiqueta real de 100x100mm. */
@@ -8967,7 +8976,7 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
     .top > *{{padding:3px 5px}}
     /* 24px de alto era menos de 3mm: el logo se perdia. Ahora ocupa la columna entera y
        usa la version 1-bit, que es lo que la termica sabe imprimir (Sebastian 20-ago). */
-    .mark{{width:19mm;height:13mm;padding:0;border:0;border-radius:0;background-color:transparent;
+    .mark{{width:21mm;height:14mm;padding:0;border:0;border-radius:0;background-color:transparent;
            background-image:url("{_logo_print}");image-rendering:pixelated;
            image-rendering:-webkit-optimize-contrast}}
     .co{{font-size:5.4pt;white-space:normal;line-height:1.02;word-break:break-word}}
@@ -8980,18 +8989,19 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
     .estado{{padding:1px 10px 4px}} .chip{{padding:2px 10px;font-size:8pt;margin:0 2px}} .estado .elbl{{margin-bottom:2px;font-size:5.6pt}}
     .firma{{padding:3px 11px 4px}} .firma .l{{font-size:5.6pt}} .firma .who{{margin-top:2px;font-size:7.5pt;line-height:1.1}}
     .firma .sig-ok{{margin-top:1px;font-size:6pt;padding:1px 5px}}
-    .firma .sig-line{{margin:9px 0 2px}} .firma .f{{font-size:6pt;margin-top:1px}}
+    .firma .sig-line{{margin:8mm 0 1px;border-bottom-color:#000}} .firma .f{{font-size:5.6pt;margin-top:0}}
     @page{{size:{lw}mm {lh}mm;margin:1.5mm}}
   }}
 </style></head><body>
 <div class="ph">
   <div><div class="pt">{_e(titulo)}</div><div class="ps">etiqueta {lw}×{lh}mm</div></div>
-  <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">{_sel}<button class="printbtn" onclick="window.print()" style="margin-left:10px">🖨 Imprimir todos</button></div>
+  <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">{_sel}<a class="printbtn" href="/planta/rotulos-limpieza" style="margin-left:10px">← Elegir equipos</a><button class="printbtn" onclick="window.print()" style="margin-left:6px">🖨 Imprimir todos</button></div>
 </div>
 {sheets_html}
 <div class="printbar">
   <div style="margin-bottom:10px">{_sel}</div>
   <button class="printbtn" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
+  <a class="printbtn" href="/planta/rotulos-limpieza" style="margin-left:8px;background:var(--cx-card, #fff);color:var(--violet-d);border:1px solid var(--line);box-shadow:none">← Elegir otros equipos</a>
 </div>
 </body></html>'''
 
@@ -9049,37 +9059,37 @@ def _rotulos_limpieza_selector(c, areas, area_foco=''):
     _foco = (area_foco or '').strip().upper()
     if _foco:
         areas = sorted(areas, key=lambda a: 0 if str(a[2] or '').upper() == _foco else 1)
+    # UNA lista con todos los equipos, no bloques por sala (Sebastián 21-ago). El equipo se
+    # busca por su nombre o su código, que es como lo nombra quien está en el piso; la sala
+    # queda como dato de cada fila -- sigue importando para saber dónde está la máquina, pero
+    # ya no es la forma de navegar.
+    vistos_eq = set()
     for a in areas:
         nom = (a[1] or '').strip()
         if nom.lower() in vistos:
             continue
         vistos.add(nom.lower())
-        eqs = _equipos_de_area(c, a[2])
-        total_eq += len(eqs)
         _es_foco = bool(_foco) and str(a[2] or '').upper() == _foco
-        if eqs:
-            filas = ''.join(
-                '<label class="eq"><input type="checkbox" class="ck" value="%s" '
-                'data-area="%s"%s> <b>%s</b> <span class="cod">%s</span></label>'
-                % (_e(str(e.get('codigo') or '')), _e(nom),
-                   (' checked' if _es_foco else ''),
-                   _e(str(e.get('nombre') or '')), _e(str(e.get('codigo') or '')))
-                for e in eqs)
-        else:
-            filas = ('<div class="vacio">Esta sala no tiene equipos cargados: sale un '
-                     'r&oacute;tulo del &aacute;rea.</div>')
-        bloques.append(
-            '<div class="sala%s"><div class="shead">'
-            '<label class="todos"><input type="checkbox" class="ckall"%s> '
-            '<b>%s</b> <span class="cod">%s</span>%s</label>'
-            '<span class="n">%d equipo(s)</span></div>'
-            '<div class="eqs">%s</div></div>'
-            % (' foco' if _es_foco else '', (' checked' if _es_foco else ''),
-               _e(nom), _e(str(a[2] or '')),
-               (' <span class="badge">la que elegiste</span>' if _es_foco else ''),
-               len(eqs), filas))
+        for e in _equipos_de_area(c, a[2]):
+            cod = str(e.get('codigo') or '').strip()
+            if not cod or cod.upper() in vistos_eq:
+                continue          # el mismo equipo puede figurar en dos salas gemelas
+            vistos_eq.add(cod.upper())
+            total_eq += 1
+            nombre_eq = str(e.get('nombre') or '').strip()
+            bloques.append(
+                '<label class="eq%s" data-buscar="%s"><input type="checkbox" class="ck" '
+                'value="%s" data-area="%s"%s> <b>%s</b> <span class="cod">%s</span>'
+                '<span class="sala-chip">%s</span></label>'
+                % (' foco' if _es_foco else '',
+                   _e((nombre_eq + ' ' + cod + ' ' + nom).lower()),
+                   _e(cod), _e(nom), (' checked' if _es_foco else ''),
+                   _e(nombre_eq), _e(cod), _e(nom)))
 
-    cuerpo = ''.join(bloques) or '<div class="vacio">No hay salas configuradas.</div>'
+    cuerpo = ('<div class="eqs" id="lista">' + ''.join(bloques) + '</div>'
+              '<div class="vacio" id="sin-resultado" hidden>Ning&uacute;n equipo coincide con '
+              'la b&uacute;squeda.</div>') if bloques else (
+        '<div class="vacio">No hay equipos cargados.</div>')
 
     # El desplegable de "quien limpia" se retiro el 20-ago: existia solo para imprimir el
     # nombre en la linea, y Sebastian pidio que la linea vaya VACIA para firmar con
@@ -9087,8 +9097,28 @@ def _rotulos_limpieza_selector(c, areas, area_foco=''):
     # Sugerencias del área en foco: lo que el sistema ya sabe de esa sala. Si no hay foco (o
     # el área no tiene nada programado) quedan vacías -- nunca se inventa un producto.
     _sug_prod = _sug_lote = _sug_prev = _sug_lote_prev = ''
+    _nom_foco = ''
     try:
         _aid_foco = next((a[0] for a in areas if str(a[2] or '').upper() == _foco), None)
+        _nom_foco = next((str(a[1] or '').strip() for a in areas
+                          if str(a[2] or '').upper() == _foco), '')
+        if not _aid_foco:
+            # Sin sala elegida, se autocarga con el lote que está CORRIENDO en la planta
+            # (Sebastián 21-ago: *"debería auto cargar lo que ya está"*). Se prefiere el que
+            # ya arrancó sobre el que está por arrancar, y de haber varios, el más reciente.
+            _r_viva = c.execute(
+                """SELECT area_id FROM produccion_programada
+                       WHERE area_id IS NOT NULL
+                         AND COALESCE(estado,'programado') NOT IN ('completado','cancelado')
+                       ORDER BY (COALESCE(inicio_real_at,'')=''), fecha_programada DESC
+                       LIMIT 12""").fetchall()
+            for _rv in _r_viva:
+                _cand = _rotulo_derivar(c, _rv[0]) or {}
+                if _cand.get('producto_elaborar') and not _es_produccion_demo(
+                        _cand.get('producto_elaborar'), _cand.get('lote_elaborar')):
+                    _aid_foco = _rv[0]
+                    _nom_foco = ''      # el buscador NO se filtra: el dato es una sugerencia
+                    break
         if _aid_foco:
             _b = _rotulo_derivar(c, _aid_foco) or {}
             _sug_prod = _e(str(_b.get('producto_elaborar') or ''))
@@ -9136,17 +9166,17 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
 .wrap{width:96vw;max-width:1200px;margin:0 auto;padding:22px 18px 96px;}
 .card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:18px;box-shadow:0 1px 3px rgba(15,23,42,.04),0 10px 30px rgba(15,23,42,.05);padding:20px 22px;margin-bottom:16px;}
 .intro{color:var(--cx-text-mute);font-size:13.5px;line-height:1.55;max-width:900px;}
-.sala{border:1px solid var(--cx-hairline);border-radius:14px;padding:14px 16px;margin-bottom:12px;background:var(--cx-card);}
-.shead{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;}
-.shead .n{margin-left:auto;font-size:11.5px;color:var(--cx-text-mute);font-weight:700;}
-.todos{display:flex;align-items:center;gap:8px;font-size:14.5px;cursor:pointer;}
-.eqs{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;}
+.buscador{display:flex;align-items:center;gap:12px;margin-top:14px;}
+.buscador input{flex:1;max-width:520px;}
+.buscador .hint{font-size:12px;color:var(--cx-text-mute);font-weight:700;}
+.eqs{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;}
+.sala-chip{margin-left:auto;font-size:11px;font-weight:700;color:var(--cx-primary-text);background:var(--cx-primary-soft);border-radius:999px;padding:2px 9px;white-space:nowrap;}
 .eq{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:7px 10px;border:1px solid var(--cx-hairline);border-radius:10px;cursor:pointer;background:var(--cx-bg-alt);}
 .eq:hover{border-color:var(--cx-primary-light);}
 .cod{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--cx-text-mute);}
 .vacio{font-size:12.5px;color:var(--cx-text-mute);padding:6px 0;}
-.sala.foco{border-color:var(--cx-primary-light);box-shadow:0 0 0 2px var(--cx-primary-soft);}
-.badge{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--cx-primary-soft);color:var(--cx-primary-text);margin-left:6px;}
+.eq.oculto{display:none;}
+.eq.foco{border-color:var(--cx-primary-light);box-shadow:0 0 0 2px var(--cx-primary-soft);}
 .quien{background:var(--cx-primary-soft);border:1px solid var(--cx-primary-light);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--cx-primary-text);margin-bottom:10px;}
 .ests{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
 .est{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:999px;background:var(--cx-card);border:1px solid var(--cx-primary-light);font-weight:700;font-size:13px;cursor:pointer;}
@@ -9167,8 +9197,13 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
   </div>
 </header>
 <div class="wrap">
-<div class="card">AVISO_QUIEN<div class="intro">Marc&aacute; <b>los equipos que se van a usar</b> en esta tanda: se imprime un r&oacute;tulo por cada uno. Sacar el r&oacute;tulo de una m&aacute;quina que nadie va a tocar termina en papel descartado o pegado donde no corresponde.<br>El formato sale <b>para firmar</b>: la firma la pone quien ejecuta la limpieza, en el piso.</div></div>
-""".replace('AVISO_QUIEN', aviso_quien) + cuerpo + """
+<div class="card">AVISO_QUIEN<div class="intro">Marc&aacute; <b>los equipos que se van a usar</b> en esta tanda: se imprime un r&oacute;tulo por cada uno. Sacar el r&oacute;tulo de una m&aacute;quina que nadie va a tocar termina en papel descartado o pegado donde no corresponde.<br>El formato sale <b>para firmar</b>: lo dem&aacute;s se escribe ac&aacute; y sale impreso; la firma la pone quien ejecuta la limpieza, en el piso.</div>
+<div class="buscador">
+  <input id="q" class="cx-input" type="search" placeholder="Buscar equipo por nombre, c&oacute;digo o sala..." autocomplete="off" oninput="filtrar()" value="NOM_FOCO">
+  <span class="hint" id="vistos-n"></span>
+  <button type="button" class="cx-btn cx-btn-ghost cx-btn-sm" onclick="document.getElementById('q').value='';filtrar()">Ver todos</button>
+</div></div>
+""".replace('AVISO_QUIEN', aviso_quien).replace('NOM_FOCO', _e(_nom_foco)) + cuerpo + """
 </div>
 <div class="barra">
   <span class="cuenta" id="cuenta">Ning&uacute;n equipo seleccionado</span>
@@ -9188,22 +9223,33 @@ function refrescar(){
   // La cuenta dice HOJAS, no equipos: con 3 estados marcados, 12 equipos son 36 etiquetas
   // y eso se sabe ANTES de mandar a imprimir, no despues de gastar el rollo.
   var hojas = n * e;
+  var ocultos = sel().filter(function(x){ return x.closest('.eq').classList.contains('oculto'); }).length;
   document.getElementById('cuenta').textContent =
     n === 0 ? 'Ningun equipo seleccionado'
             : (n + (n === 1 ? ' equipo' : ' equipos') + ' x ' + e + (e === 1 ? ' estado' : ' estados')
-               + ' = ' + hojas + (hojas === 1 ? ' rotulo' : ' rotulos'));
+               + ' = ' + hojas + (hojas === 1 ? ' rotulo' : ' rotulos')
+               + (ocultos ? (' (' + ocultos + ' fuera de la busqueda)') : ''));
   document.getElementById('btn-imp').disabled = (n === 0);
 }
-function marcarTodos(v){ cks().forEach(function(x){ x.checked = v; });
-  document.querySelectorAll('.ckall').forEach(function(x){ x.checked = v; }); refrescar(); }
-document.addEventListener('change', function(ev){
-  var t = ev.target;
-  if (t && t.classList && t.classList.contains('ckall')){
-    var sala = t.closest('.sala');
-    if (sala) sala.querySelectorAll('.ck').forEach(function(x){ x.checked = t.checked; });
-  }
+function visibles(){ return cks().filter(function(x){ return !x.closest('.eq').classList.contains('oculto'); }); }
+// "Marcar todos" marca lo que se esta VIENDO: con el buscador puesto, buscar "balanza" y
+// marcar todas las balanzas es el gesto natural; marcar tambien lo filtrado seria una sorpresa.
+function marcarTodos(v){ visibles().forEach(function(x){ x.checked = v; }); refrescar(); }
+function filtrar(){
+  var q = (document.getElementById('q').value || '').trim().toLowerCase();
+  var n = 0;
+  document.querySelectorAll('.eq').forEach(function(el){
+    var hay = !q || (el.dataset.buscar || '').indexOf(q) >= 0;
+    el.classList.toggle('oculto', !hay);
+    if (hay) n++;
+  });
+  var vacio = document.getElementById('sin-resultado');
+  if (vacio) vacio.hidden = (n > 0);
+  var etq = document.getElementById('vistos-n');
+  if (etq) etq.textContent = q ? (n + ' de ' + document.querySelectorAll('.eq').length + ' equipos') : '';
   refrescar();
-});
+}
+document.addEventListener('change', refrescar);
 function imprimir(){
   var cods = sel().map(function(x){ return x.value; }).filter(Boolean);
   if (!cods.length) return;
@@ -9218,7 +9264,7 @@ function imprimir(){
     + '&prod_prev=' + encodeURIComponent(_v('prod_prev'))
     + '&lote_prev=' + encodeURIComponent(_v('lote_prev'));
 }
-refrescar();
+filtrar();
 </script>
 </body></html>"""
 

@@ -1583,3 +1583,22 @@ sucia en la misma jornada, así que se imprime el juego y se cambia la etiqueta 
 parámetro sale una sola con el estado real del área -- la URL vieja no cambia de comportamiento.
 
 Guard: `tests/test_areas_y_rotulo_20ago.py` + `tests/test_rotulo_limpieza_firma_y_equipos.py`.
+
+### El rótulo, ajustado en el piso (21-ago-2026)
+
+- **Nunca nombra un lote de demostración.** El derivador saltea las producciones demo (nombre o
+  lote) y toma la primera REAL; si el ciclo de limpieza guardado habla de un demo, sus datos de
+  proceso tampoco se imprimen. Guard: `tests/test_rotulo_sin_demo.py`.
+- **Todo lo que imprime se puede escribir antes** (producto, lote, producto anterior, lote
+  anterior, sanitizante, detergente). Se autocarga con lo que el sistema ya sabe -- la sala
+  elegida, o el lote que está corriendo -- y lo escrito MANDA sobre lo derivado. Vacío es una
+  decisión: deja el renglón para llenarlo a mano. Lo único físico es la firma.
+- **Un campo sin dato va en blanco, no con raya**, y con alto propio (6mm) para escribir encima.
+- **El encabezado lleva sólo el logo**: el nombre de la empresa ocupaba una zona entera y el logo
+  ya lo dice (queda en el `aria-label`). ⚠ Aseguramiento definió las tres zonas del encabezado
+  (M251) con logo + nombre: este cambio lo pidió Sebastián el 21-ago y conviene que Miguel lo
+  valide contra el formato oficial.
+- **La pantalla previa es UNA lista con buscador**, no tarjetas por sala. "Marcar todos" marca lo
+  que se está viendo, y lo seleccionado fuera de la búsqueda se declara en la cuenta.
+- **Desde la hoja se vuelve al selector** sin cerrar la pestaña.
+- Medido con el `@media print` simulado: **97 × 77,5 mm** sobre una etiqueta de 100×100.

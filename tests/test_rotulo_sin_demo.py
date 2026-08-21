@@ -135,3 +135,54 @@ def test_limpiar_demos_reconoce_al_demo_de_planta(app, db_clean):
         conn.close()
     assert n == 0, "el limpiador dejó vivo el lote del demo de Planta"
     _limpiar(aid)
+
+
+def test_los_campos_se_autocargan_con_lo_que_ya_hay(app, db_clean):
+    """*"debería auto cargar lo que ya está: el nombre del producto, cantidad, todo lo que
+    esté"* (Sebastián 21-ago). Con sala elegida sale de esa sala; sin sala, del lote que está
+    corriendo en la planta. Lo que el sistema NO sabe queda vacío: no se inventa un producto."""
+    aid, acod = _area_fab()
+    _limpiar(aid)
+    from datetime import date
+    _sql("INSERT INTO produccion_programada (producto, fecha_programada, lotes, area_id, "
+         "estado, inicio_real_at) VALUES (?,?,1,?,'en_proceso',?)",
+         ("ZROT EN CURSO", date.today().isoformat(), aid, date.today().isoformat() + " 07:00:00"))
+    c = _login(app)
+    # (a) viniendo de la sala
+    sel = c.get("/planta/rotulos-limpieza?area=%s" % acod).get_data(as_text=True)
+    assert "ZROT EN CURSO" in sel, "no autocargó el producto de la sala elegida"
+    # (b) sin sala: igual trae el lote que está corriendo
+    sel2 = c.get("/planta/rotulos-limpieza").get_data(as_text=True)
+    assert "ZROT EN CURSO" in sel2, "sin sala elegida no autocargó lo que está corriendo"
+    _limpiar(aid)
+
+
+def test_un_demo_no_se_autocarga(app, db_clean):
+    """La autocarga no puede meter por la ventana lo que el rótulo acaba de dejar de imprimir."""
+    aid, acod = _area_fab()
+    _limpiar(aid)
+    from datetime import date
+    _sql("INSERT INTO produccion_programada (producto, fecha_programada, lotes, area_id, "
+         "estado, inicio_real_at) VALUES (?,?,1,?,'en_proceso',?)",
+         ("ZROT DEMO PLANTA (BORRAR)", date.today().isoformat(), aid,
+          date.today().isoformat() + " 07:00:00"))
+    c = _login(app)
+    sel = c.get("/planta/rotulos-limpieza").get_data(as_text=True)
+    assert "ZROT DEMO PLANTA" not in sel, "autocargó un lote de demostración"
+    _limpiar(aid)
+
+
+def test_el_rotulo_no_lleva_raya_ni_el_nombre_de_la_empresa(app, db_clean):
+    """*"cuando algo no está escrito sale una raya, quitala para que puedan escribir a mano"* y
+    *"el encabezado deja solo el logo, quita ESPAGIRIA Laboratorio SAS, el logo ya lo dice"*."""
+    aid, acod = _area_fab()
+    _limpiar(aid)
+    c = _login(app)
+    html = c.get("/planta/rotulos-limpieza?area=%s&todos=1&prod=&lote=" % acod).get_data(as_text=True)
+    assert ">—<" not in html, "sigue imprimiendo la raya en los campos vacíos"
+    assert 'class="co"' not in html, "el nombre de la empresa sigue ocupando el encabezado"
+    assert 'class="vacio"' in html or 'class="num vacio"' in html, "las celdas vacías no dejan renglón"
+    # Y desde la hoja se puede volver a elegir equipos sin cerrar la pestaña.
+    assert "Elegir equipos" in html or "Elegir otros equipos" in html, \
+        "no hay forma de volver al selector desde la impresión"
+    _limpiar(aid)
