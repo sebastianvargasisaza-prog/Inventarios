@@ -5756,8 +5756,31 @@ def _salud_mp_core(c):
                  'movimientos': int(r[2] or 0), 'ultima': str(r[3] or '')[:19]} for r in rows]
     _chk('salidas_que_ninguna_formula_declara', _sin_formula)
 
+    # 7 · una FECHA DE VENCIMIENTO que el motor no puede leer. Es el bug del 21-ago: con
+    #     `26-Dic-2026` en vez de ISO, `date(...)` devuelve NULL, el lote se cae del stock
+    #     distribuible -- producción dice "no hay" con el material en la estantería -- y el
+    #     cron de vencidos tampoco lo puede marcar, así que un lote vencido así se queda
+    #     VIGENTE para siempre. Grave por las dos puntas, y sin un solo síntoma a la vista.
+    def _fv_ilegible():
+        from audit_helpers import fecha_iso as _fi
+        rows = c.execute(
+            "SELECT material_id, COALESCE(lote,''), COALESCE(fecha_vencimiento,''), COUNT(*) "
+            "  FROM movimientos WHERE COALESCE(fecha_vencimiento,'') <> '' "
+            " GROUP BY material_id, COALESCE(lote,''), COALESCE(fecha_vencimiento,'')").fetchall()
+        out_ = []
+        for cod, lote, fv, n in rows:
+            crudo = str(fv or '').strip()
+            if _fi(crudo) == crudo[:10]:
+                continue
+            out_.append({'codigo': cod, 'lote': lote, 'fecha_cruda': crudo,
+                         'sugerida': _fi(crudo), 'movimientos': int(n or 0)})
+        out_.sort(key=lambda x: (bool(x['sugerida']), x['codigo']))
+        return out_[:40]
+    _chk('fecha_vencimiento_que_el_motor_no_lee', _fv_ilegible)
+
     graves = ('formula_no_suma_100', 'formula_apunta_a_codigo_muerto', 'colision_a_medio_corregir',
-              'codigo_con_espacios_en_kardex', 'stock_negativo_por_lote')
+              'codigo_con_espacios_en_kardex', 'stock_negativo_por_lote',
+              'fecha_vencimiento_que_el_motor_no_lee')
     out['graves'] = list(graves)
     out['n_graves'] = sum(len(out['hallazgos'].get(k) or []) for k in graves)
     out['ok'] = (out['n_graves'] == 0 and not out['checks_fallidos'])

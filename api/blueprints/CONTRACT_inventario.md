@@ -1158,5 +1158,23 @@ Guard: `tests/test_cuadre_inventario.py`.
    con el stock que cada uno esconde). El vencimiento de una **factura de proveedor** es otro
    dominio y no entra acá.
 
-Guard: `tests/test_fecha_vencimiento_iso.py` (7 casos, en el gate · incluye la migración
-probada con datos sembrados y un barrido del fuente con piso de medición).
+5. **El orden FEFO pone el lote SIN FECHA al final.** `COALESCE(col, '9999-12-31')` NO alcanza:
+   la columna es `TEXT DEFAULT ''`, así que un lote sin fecha guarda la **cadena vacía y no
+   NULL**, y la vacía ordena antes que cualquier fecha. Con el COALESCE a secas se gastaba
+   primero el material que nunca vence y el que caduca el mes entrante se quedaba hasta
+   vencerse. Va **`COALESCE(NULLIF(TRIM(CAST(col AS TEXT)), ''), '9999-12-31')`**, y vale para
+   los 7 sitios que ordenan lotes por vencimiento -- incluidas las VISTAS, porque si la pantalla
+   ofrece un orden y el kardex descuenta otro, el operario baja del estante el lote equivocado.
+6. **La PANTALLA, el GATE de arranque y el DESCUENTO deciden lo mismo sobre cada lote.** Los
+   tres excluyen los 6 estados no producibles (con `UPPER`) y aplican la guarda de vencimiento
+   por FECHA aunque el cron todavía no haya marcado el lote (M25). Un lote que uno de los tres
+   trate distinto produce o bien *"disponible 0g"* junto a *"lotes a usar"*, o bien la forma
+   peligrosa: el gate deja arrancar y el descuento no encuentra de dónde sacar.
+7. **El vigía diario lo hace visible.** `job_salud_materias_primas` (7:40) lleva la firma
+   `fecha_vencimiento_que_el_motor_no_lee` entre las **graves**: sin ella, un lote con la fecha
+   en texto es invisible por las dos puntas (no cuenta como stock y el cron no lo puede vencer).
+
+Guards: `tests/test_fecha_vencimiento_iso.py` (8 casos · incluye la migración probada con datos
+sembrados, el límite del cron declarado y un barrido del fuente con piso de medición) y
+`tests/test_cadena_descuento_coherente.py` (la invariante de los tres caminos + el orden FEFO).
+Los dos en el gate.

@@ -25,6 +25,7 @@ from .conftest import TEST_PASSWORD, csrf_headers
 
 _COD = 'MP-FVISO-TEST'
 _LOTE = 'LOTE-FVISO-1'
+_NOM_MP = 'MP DE PRUEBA FVISO'
 
 
 def _login(app, user="sebastian"):
@@ -140,6 +141,46 @@ def test_con_la_fecha_en_ISO_el_lote_vuelve_a_contarse(app, db_clean):
     assert _LOTE in [x['lote'] for x in res['usables']], "la pantalla no lo ve"
     assert not faltan, "el motor dice que falta con 29 kg vigentes en bodega: %r" % (faltan,)
     _limpiar()
+
+
+def test_el_cron_de_vencidos_marca_lo_ISO_y_NO_puede_con_lo_ilegible(app, db_clean):
+    """El otro lado del mismo bug, y el límite se DECLARA en vez de esconderse.
+
+    `job_marcar_vencidos` compara `fecha_vencimiento < date('now','-5 hours')`, o sea texto
+    contra texto. Con ISO marca bien. Con `26-Dic-2026` la comparación no puede funcionar, así
+    que un lote vencido escrito así **se queda VIGENTE para siempre** y el control de
+    vencimiento deja de sonar sin avisar (M127). Por eso el vigía diario de materias primas
+    lleva la firma `fecha_vencimiento_que_el_motor_no_lee`: es lo único que lo hace visible.
+    """
+    _limpiar()
+    _sembrar_mp()
+    _sql("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, lote, "
+         "fecha_vencimiento, estado_lote) VALUES (?,?,?,'Entrada',?,?,?,'VIGENTE')",
+         (_COD, _NOM_MP, 100.0, '2026-01-10', 'FVISO-VENC-ISO', '2020-05-01'))
+    _sql("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, lote, "
+         "fecha_vencimiento, estado_lote) VALUES (?,?,?,'Entrada',?,?,?,'VIGENTE')",
+         (_COD, _NOM_MP, 100.0, '2026-01-10', 'FVISO-VENC-TXT', '01-May-2020'))
+    try:
+        from api.blueprints.auto_plan_jobs import job_marcar_vencidos
+        job_marcar_vencidos(app)
+        estados = dict(_sql("SELECT lote, UPPER(COALESCE(estado_lote,'')) FROM movimientos "
+                            "WHERE material_id=?", (_COD,)))
+        assert estados.get('FVISO-VENC-ISO') == 'VENCIDO',             "el cron no marcó un lote vencido con fecha ISO: %r" % (estados,)
+        # El límite, dicho con todas las letras: el cron NO puede con la fecha en texto.
+        assert estados.get('FVISO-VENC-TXT') == 'VIGENTE', (
+            "si esto cambia, el cron aprendió a leer texto y hay que actualizar la nota "
+            "-- pero mientras compare como texto, ese lote es invisible para el control")
+        # Y lo que lo hace visible: el vigía diario lo reporta como GRAVE.
+        with app.app_context():
+            from api.database import get_db
+            from api.blueprints.programacion import _salud_mp_core
+            salud = _salud_mp_core(get_db().cursor())
+        assert 'fecha_vencimiento_que_el_motor_no_lee' in salud['graves'],             "el vigía no vigila las fechas que el motor no lee"
+        raros = [h for h in (salud['hallazgos'].get('fecha_vencimiento_que_el_motor_no_lee') or [])
+                 if h.get('codigo') == _COD]
+        assert raros, "el lote con la fecha en texto no aparece en el vigía"
+    finally:
+        _limpiar()
 
 
 # ── la migración, probada con datos sembrados (M105) ─────────────────────────

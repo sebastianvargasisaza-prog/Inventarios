@@ -4391,8 +4391,13 @@ def alertas_all():
                -- AGOTADO a la exclusión (antes solo CUARENTENA/RECHAZADO/ANULADO)
                -- · un MP cuyo stock está vencido NO es usable → debe disparar
                -- "bajo mínimo". Unifica con /api/alertas-reabastecimiento.
+               -- FIX 21-ago-2026 · faltaba BLOQUEADO, el sexto estado no producible: un lote
+               -- bloqueado contado como stock hace que la alerta de bajo mínimo NO suene
+               -- cuando debería, o sea sub-compra. Los otros consumidores ya excluían los
+               -- seis (M52: al cerrar un criterio hay que barrer a todos los hermanos).
                WHERE UPPER(COALESCE(estado_lote,'')) NOT IN
-                     ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','ANULADO','VENCIDO','AGOTADO')
+                     ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','ANULADO','VENCIDO',
+                      'AGOTADO','BLOQUEADO')
                GROUP BY material_id
            ) s ON mp.codigo_mp = s.material_id
            WHERE COALESCE(mp.activo, 1) = 1

@@ -38,8 +38,8 @@ def _limpiar():
         db.execute("DELETE FROM formula_items WHERE producto_nombre=?", (PROD,))
         db.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (PROD,))
         db.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (COD_OK,))
-        db.execute("DELETE FROM movimientos WHERE material_id IN (?,?,?)",
-                   (COD_OK, ' ' + COD_OK, 'MPQANEG1'))
+        db.execute("DELETE FROM movimientos WHERE material_id IN (?,?,?,?)",
+                   (COD_OK, ' ' + COD_OK, 'MPQANEG1', 'MPQAFV1'))
         db.commit()
     finally:
         db.close()
@@ -159,6 +159,46 @@ def test_caza_el_lote_en_negativo(app):
     js = _cli(app).get(URL).get_json()
     negs = [h for h in _hall(js, 'stock_negativo_por_lote') if h['codigo'] == 'MPQANEG1']
     assert len(negs) == 1 and negs[0]['stock_g'] == -25.0
+
+
+def test_caza_la_fecha_de_vencimiento_que_el_motor_no_puede_leer(app):
+    """El bug del 21-ago, que no daba UN solo síntoma: con `26-Dic-2026` en vez de ISO,
+    `date(...)` devuelve NULL, el lote se cae del stock distribuible -- producción dice "no hay"
+    con el material en la estantería -- y el cron de vencidos tampoco lo puede marcar, así que
+    un lote vencido así se queda VIGENTE para siempre.
+
+    Se prueba que el detector DISTINGUE: sembrar el bug, verlo, dejar la fecha en ISO, verlo
+    desaparecer (M172 · un vigía que no distingue no sirve)."""
+    _limpiar(); _sembrar_formula(100.0)
+    db = _db()
+    try:
+        db.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,"
+                   "lote,fecha_vencimiento,estado_lote) VALUES "
+                   "('MPQAFV1','QA FechaVenc',1000.0,'Entrada','2026-08-01 08:00:00',"
+                   "'L-FV','26-Dic-2027','VIGENTE')")
+        db.commit()
+    finally:
+        db.close()
+    js = _cli(app).get(URL).get_json()
+    hall = [h for h in _hall(js, 'fecha_vencimiento_que_el_motor_no_lee')
+            if h['codigo'] == 'MPQAFV1']
+    assert len(hall) == 1, "no cazó la fecha en texto: %r" % (hall,)
+    assert hall[0]['sugerida'] == '2027-12-26',         "no dice cuál sería la fecha correcta: %r" % (hall[0],)
+    # y es GRAVE: un lote que se cae del stock sin avisar no puede ser informativo
+    assert 'fecha_vencimiento_que_el_motor_no_lee' in (js.get('graves') or []),         "la firma quedó fuera de las graves, así que el cron no avisaría"
+
+    # Con la fecha en ISO, el vigía se calla.
+    db = _db()
+    try:
+        db.execute("UPDATE movimientos SET fecha_vencimiento='2027-12-26' "
+                   "WHERE material_id='MPQAFV1'")
+        db.commit()
+    finally:
+        db.close()
+    js2 = _cli(app).get(URL).get_json()
+    assert not [h for h in _hall(js2, 'fecha_vencimiento_que_el_motor_no_lee')
+                if h['codigo'] == 'MPQAFV1'], "sigue reportando una fecha que ya está bien"
+    _limpiar()
 
 
 def test_la_colision_a_medio_corregir_usa_el_MISMO_calculo_que_la_devolucion(app):
