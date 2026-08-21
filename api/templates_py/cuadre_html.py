@@ -53,6 +53,9 @@ body{font-family:"Inter",system-ui,-apple-system,Arial,sans-serif;background:var
 .lote .acc{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
 .lote.ok{background:var(--cx-success-pale)}
 .lote.ok .sis{color:var(--cx-success-text)}
+.chip-sinubic{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:800;background:var(--cx-warn-pale);color:var(--cx-warn-text);border:1px solid var(--cx-warn)}
+.est.pend{border-color:var(--cx-warn);color:var(--cx-warn-text)}
+.est.pend.on{background:var(--cx-warn);color:#fff;border-color:var(--cx-warn)}
 .msg{font-size:12px;font-weight:700;min-width:120px}
 .msg.ok{color:var(--cx-success-text)}
 .msg.err{color:var(--cx-danger-text)}
@@ -93,6 +96,7 @@ label.f2{display:block;font-size:11.5px;font-weight:800;text-transform:uppercase
     <div class="barra">
       <input id="q" class="cx-input" type="search" placeholder="Buscar material o lote..." autocomplete="off" oninput="filtrar()">
       <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="abrirAlta()">+ Est&aacute; en el estante y no aparece</button>
+      <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="abrirUbic()" title="La misma estanteria escrita de varias formas parte el inventario en pedazos">&#129513; Unificar ubicaciones</button>
       <span class="prog" id="prog"></span>
     </div>
   </div>
@@ -103,6 +107,24 @@ label.f2{display:block;font-size:11.5px;font-weight:800;text-transform:uppercase
 <div class="pie">
   <span id="pie-msg" style="font-size:13px;font-weight:700"></span>
   <span style="margin-left:auto;font-size:12px;color:var(--cx-text-mute)">Enter guarda &middot; lo ajustado queda en verde</span>
+</div>
+
+<div class="ov" id="ov-ubic">
+  <div class="modal" style="width:min(720px,95vw)">
+    <div class="h">Ubicaciones escritas de varias formas</div>
+    <div class="b" style="display:block;max-height:60vh;overflow:auto">
+      <div style="font-size:13px;color:var(--cx-text-soft);line-height:1.55;margin-bottom:12px">
+        Para el sistema, <b>Estiba</b> y <b>ESTIBAS</b> son dos lugares distintos, as&iacute; que el
+        material queda partido y el inventario por estanter&iacute;a no cuadra. Ac&aacute; se dejan con un
+        solo nombre. No se mueve ni una unidad: s&oacute;lo c&oacute;mo se llama el lugar.
+      </div>
+      <div id="ubic-lista"><div class="vacio">Buscando&hellip;</div></div>
+    </div>
+    <div class="f">
+      <span class="msg" id="u-msg"></span>
+      <button class="cx-btn cx-btn-ghost" onclick="cerrarUbic()">Cerrar</button>
+    </div>
+  </div>
 </div>
 
 <div class="ov" id="ov-alta">
@@ -157,8 +179,9 @@ async function cargarEstanterias(){
     var box=document.getElementById('ests');
     if(!Array.isArray(d)||!d.length){ box.innerHTML='<span class="vacio">No hay estanter&iacute;as cargadas.</span>'; return; }
     box.innerHTML=d.map(function(e){
-      return '<button class="est" data-est="'+esc(e.estanteria)+'" onclick="elegir(this,\''+esc(e.estanteria).replace(/'/g,"\\'")+'\')">'
-        +esc(e.estanteria)+'<span class="n">'+(e.total_mps||0)+'</span></button>';
+      var nom=e.estanteria, sinUbic=/^sin estanter/i.test(nom);
+      return '<button class="est'+(sinUbic?' pend':'')+'" data-est="'+esc(e.estanteria)+'" onclick="elegir(this,\''+esc(e.estanteria).replace(/'/g,"\\'")+'\')">'
+        +(sinUbic?'&#128205; Sin ubicaci&oacute;n &middot; para ubicar':esc(nom))+'<span class="n">'+(e.total_mps||0)+'</span></button>';
     }).join('');
   }catch(e){ document.getElementById('ests').innerHTML='<span class="vacio">No se pudieron cargar.</span>'; }
 }
@@ -173,8 +196,8 @@ async function cargarMateriales(){
   var cont=document.getElementById('lista');
   cont.innerHTML='<div class="vacio">Cargando&hellip;</div>';
   try{
-    var r=await fetch('/api/conteo/materiales?tipo_material=MP&estanteria='+encodeURIComponent(EST),{credentials:'same-origin'});
-    DATOS=await r.json();
+    var r=await fetch('/api/inventario/cuadre-lotes?est='+encodeURIComponent(EST),{credentials:'same-origin'});
+    var _d=await r.json(); DATOS=(_d&&_d.lotes)||[];
   }catch(e){ cont.innerHTML='<div class="vacio">No se pudo cargar la estanter&iacute;a.</div>'; return; }
   if(!Array.isArray(DATOS)||!DATOS.length){ cont.innerHTML='<div class="vacio">Esta estanter&iacute;a no tiene material con stock.</div>'; pintarProg(); return; }
   // Un material puede tener VARIOS lotes: se agrupan para verlos juntos, que es como estan
@@ -192,6 +215,7 @@ async function cargarMateriales(){
       var id=esc(m.cod)+'__'+i;
       html+='<div class="lote" id="row-'+id+'">'
         +'<div class="id"><b>'+(l.lote?esc(l.lote):'<span style="color:var(--cx-text-mute)">sin lote</span>')+'</b>'
+        +(l.sin_ubicar?'<span class="chip-sinubic" title="Existe pero nadie sabe donde esta: aparece aca porque su material si esta en esta estanteria">&#128205; sin ubicar</span>':'')
         +'<span class="meta">'+(l.posicion?('pos. '+esc(l.posicion)+' &middot; '):'')+(l.fecha_vencimiento?('vence '+esc(l.fecha_vencimiento)):'sin vencimiento')+'</span></div>'
         +'<div class="sis" id="sis-'+id+'">'+(parseFloat(l.stock_sistema)||0).toLocaleString('es-CO')+'</div>'
         +'<input type="number" step="0.001" min="0" class="cx-input" id="in-'+id+'" placeholder="lo que hay" '
@@ -200,6 +224,7 @@ async function cargarMateriales(){
         +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="igual(\''+id+'\')">= Igual</button>'
         +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="noExiste(\''+id+'\')">No existe</button>'
         +'<button class="cx-btn cx-btn-sm cx-btn-grad" onclick="guardar(\''+id+'\')">Guardar</button>'
+        +((l.sin_ubicar&&EST)?('<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="ubicarAqui(\''+id+'\')" title="Dejar este lote en la estanteria que estas revisando">&#128205; Ubicar aqu&iacute;</button>'):'')
         +'</div><span class="msg" id="msg-'+id+'"></span></div>';
       DATOS_MAP[id]=l;
     });
@@ -246,6 +271,61 @@ async function guardar(id, motivo){
   }catch(e){ msg.className='msg err'; msg.textContent='Sin conexión'; }
 }
 
+async function ubicarAqui(id){
+  var l=DATOS_MAP[id]; if(!l||!EST) return;
+  var msg=document.getElementById('msg-'+id);
+  msg.className='msg'; msg.textContent='Ubicando...';
+  try{
+    var r=await fetch('/api/lotes/'+encodeURIComponent(l.codigo_mp)+'/'+encodeURIComponent(l.lote||'_SIN_LOTE_')+'/ubicacion',
+      _opts('PATCH', {estanteria:EST, motivo:'ubicado durante el cuadre'}));
+    var d=await r.json();
+    if(!r.ok){ msg.className='msg err'; msg.textContent=d.error||'No se pudo ubicar'; return; }
+    msg.className='msg ok'; msg.textContent='Ubicado en '+EST;
+    var chip=document.querySelector('#row-'+id+' .chip-sinubic'); if(chip) chip.remove();
+  }catch(e){ msg.className='msg err'; msg.textContent='Sin conexion'; }
+}
+
+async function abrirUbic(){
+  document.getElementById('ov-ubic').classList.add('on');
+  var box=document.getElementById('ubic-lista');
+  box.innerHTML='<div class="vacio">Buscando&hellip;</div>';
+  try{
+    var r=await fetch('/api/inventario/ubicaciones-agrupadas',{credentials:'same-origin'});
+    var d=await r.json();
+    var g=(d&&d.grupos)||[];
+    if(!g.length){ box.innerHTML='<div class="vacio">Ninguna ubicaci&oacute;n est&aacute; partida: todas se escriben de una sola forma.</div>'; return; }
+    box.innerHTML=g.map(function(x,i){
+      var opts=x.variantes.map(function(v){return '<option value="'+esc(v.nombre)+'"'+(v.nombre===x.sugerida?' selected':'')+'>'+esc(v.nombre)+' ('+v.lotes+')</option>';}).join('');
+      return '<div style="border:1px solid var(--cx-hairline);border-radius:12px;padding:12px;margin-bottom:10px">'
+        +'<div style="font-weight:800;font-size:14px">'+x.variantes.map(function(v){return esc(v.nombre)+' <span style="font-weight:600;color:var(--cx-text-mute)">('+v.lotes+')</span>';}).join(' &nbsp;+&nbsp; ')+'</div>'
+        +'<div style="font-size:12px;color:var(--cx-text-mute);margin:6px 0">'+x.lotes+' lote(s) repartidos en '+x.variantes.length+' formas de escribirlo</div>'
+        +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+        +'<span style="font-size:12px;font-weight:700">Queda como:</span>'
+        +'<select id="u-sel-'+i+'" class="cx-input" style="max-width:260px">'+opts+'</select>'
+        +'<button class="cx-btn cx-btn-sm cx-btn-grad" onclick="unificar('+i+')">Unificar</button>'
+        +'<span class="msg" id="u-msg-'+i+'"></span></div></div>';
+    }).join('');
+    window._UBIC=g;
+  }catch(e){ box.innerHTML='<div class="vacio">No se pudo consultar.</div>'; }
+}
+function cerrarUbic(){ document.getElementById('ov-ubic').classList.remove('on'); }
+
+async function unificar(i){
+  var g=(window._UBIC||[])[i]; if(!g) return;
+  var canonica=document.getElementById('u-sel-'+i).value;
+  var msg=document.getElementById('u-msg-'+i);
+  var variantes=g.variantes.map(function(v){return v.nombre;}).filter(function(n){return n!==canonica;});
+  if(!confirm('Todo lo que está en ' + variantes.join(', ') + ' pasa a llamarse "' + canonica + '". No se mueve material.')) return;
+  msg.className='msg'; msg.textContent='Unificando...';
+  try{
+    var r=await fetch('/api/inventario/unificar-ubicacion', _opts('POST', {canonica:canonica, variantes:variantes}));
+    var d=await r.json();
+    if(!r.ok){ msg.className='msg err'; msg.textContent=d.error||'No se pudo'; return; }
+    msg.className='msg ok'; msg.textContent='Listo · '+d.movidos+' movimiento(s)';
+    cargarEstanterias();
+  }catch(e){ msg.className='msg err'; msg.textContent='Sin conexión'; }
+}
+
 async function abrirAlta(){
   document.getElementById('a-est').value=EST||'';
   document.getElementById('a-msg').textContent='';
@@ -260,7 +340,7 @@ async function abrirAlta(){
   document.getElementById('ov-alta').classList.add('on');
 }
 function cerrarAlta(){ document.getElementById('ov-alta').classList.remove('on'); }
-document.addEventListener('keydown', function(e){ if(e.key==='Escape') cerrarAlta(); });
+document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ cerrarAlta(); cerrarUbic(); } });
 
 async function guardarAlta(){
   var msg=document.getElementById('a-msg');

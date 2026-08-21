@@ -8517,6 +8517,162 @@ def _cuadre_contexto_lote(c, codigo, lote):
             'proveedor': r[3] or '', 'vence': r[4] or '', 'estado_lote': r[5] or ''}
 
 
+def _ubic_norm(v):
+    """La misma ubicación escrita de cualquier forma cae en la misma clave.
+
+    Minúsculas, sin acentos, sin puntuación y sin el plural final: `ESTIBAS` y `Estiba` son el
+    mismo lugar. Los números NO se tocan (`10` y `1` son estanterías distintas)."""
+    import unicodedata
+    import re as _re
+    t = unicodedata.normalize('NFKD', str(v or '')).encode('ascii', 'ignore').decode()
+    t = _re.sub(r'[^a-zA-Z0-9]+', ' ', t).strip().lower()
+    if len(t) > 3 and t.endswith('s') and not t[-2].isdigit():
+        t = t[:-1]
+    return t
+
+
+@bp.route('/api/inventario/cuadre-lotes', methods=['GET'])
+def inventario_cuadre_lotes():
+    """Lo que hay que revisar en una estantería, incluido lo que NO tiene ubicación.
+
+    · `?est=<estantería>`: los lotes de esa estantería **más** los lotes SIN ubicar de esos
+      mismos materiales -- marcados `sin_ubicar` --, porque quien está parado ahí es quien
+      puede encontrarlos y ubicarlos.
+    · `?est=` (vacío): el área de **materiales sin ubicación**, que es la cola de trabajo para
+      irlos ubicando.
+
+    Se excluyen los estados que no son stock usable (mismo criterio que el canónico) y los
+    saldos de polvo (M21).
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    est = (request.args.get('est') or '').strip()
+    if est.lower() in ('sin estanteria', 'sin estantería', 'sin ubicacion', 'sin ubicación'):
+        est = ''
+    conn = get_db(); c = conn.cursor()
+    estados = (" AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN "
+               "('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))")
+    campos = ("""SELECT m.material_id, MAX(m.material_nombre), COALESCE(m.lote,''),
+                        SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste')
+                                 THEN m.cantidad
+                                 WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -')
+                                 THEN -m.cantidad ELSE 0 END) AS stock,
+                        MAX(COALESCE(m.posicion,'')), MAX(COALESCE(m.fecha_vencimiento,'')),
+                        MAX(COALESCE(m.estanteria,''))
+                   FROM movimientos m """)
+    cierre = (" GROUP BY m.material_id, COALESCE(m.lote,'') HAVING stock > 0.01 "
+              " ORDER BY MAX(m.material_nombre), COALESCE(m.lote,'')")
+    out = []
+    if est:
+        for r in c.execute(campos + " WHERE m.estanteria=?" + estados + cierre, (est,)).fetchall():
+            out.append({'codigo_mp': r[0], 'nombre': r[1], 'lote': r[2],
+                        'stock_sistema': round(float(r[3] or 0), 3), 'posicion': r[4],
+                        'fecha_vencimiento': r[5], 'estanteria': r[6], 'sin_ubicar': False})
+        # Los hermanos sin ubicación del MISMO material: existen, y quien está frente al
+        # estante es quien puede encontrarlos.
+        for r in c.execute(
+                campos + " WHERE COALESCE(m.estanteria,'')='' AND m.material_id IN "
+                         " (SELECT material_id FROM movimientos WHERE estanteria=?)"
+                + estados + cierre, (est,)).fetchall():
+            out.append({'codigo_mp': r[0], 'nombre': r[1], 'lote': r[2],
+                        'stock_sistema': round(float(r[3] or 0), 3), 'posicion': r[4],
+                        'fecha_vencimiento': r[5], 'estanteria': '', 'sin_ubicar': True})
+    else:
+        for r in c.execute(campos + " WHERE COALESCE(m.estanteria,'')=''" + estados + cierre).fetchall():
+            out.append({'codigo_mp': r[0], 'nombre': r[1], 'lote': r[2],
+                        'stock_sistema': round(float(r[3] or 0), 3), 'posicion': r[4],
+                        'fecha_vencimiento': r[5], 'estanteria': '', 'sin_ubicar': True})
+    return jsonify({'ok': True, 'estanteria': est, 'lotes': out,
+                    'sin_ubicar': sum(1 for x in out if x['sin_ubicar'])})
+
+
+@bp.route('/api/inventario/ubicaciones-agrupadas', methods=['GET'])
+def inventario_ubicaciones_agrupadas():
+    """Las ubicaciones que son la MISMA escrita distinto, con cuántos lotes esconde cada una."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        "SELECT COALESCE(estanteria,''), COUNT(DISTINCT material_id || '|' || COALESCE(lote,'')) "
+        "  FROM movimientos WHERE COALESCE(estanteria,'') <> '' GROUP BY COALESCE(estanteria,'')"
+    ).fetchall()
+    grupos = {}
+    for nombre, n in rows:
+        k = _ubic_norm(nombre)
+        if not k:
+            continue
+        g = grupos.setdefault(k, {'clave': k, 'variantes': [], 'lotes': 0})
+        g['variantes'].append({'nombre': nombre, 'lotes': int(n or 0)})
+        g['lotes'] += int(n or 0)
+    # Sólo interesa lo que está PARTIDO: una ubicación con una sola forma de escribirse no
+    # tiene nada que unificar.
+    out = []
+    for g in grupos.values():
+        if len(g['variantes']) < 2:
+            continue
+        g['variantes'].sort(key=lambda v: (-v['lotes'], v['nombre']))
+        # La sugerida es la que más material tiene: mover lo menos posible.
+        g['sugerida'] = g['variantes'][0]['nombre']
+        out.append(g)
+    out.sort(key=lambda g: -g['lotes'])
+    return jsonify({'ok': True, 'grupos': out,
+                    'total_partidas': sum(len(g['variantes']) for g in out)})
+
+
+@bp.route('/api/inventario/unificar-ubicacion', methods=['POST'])
+def inventario_unificar_ubicacion():
+    """Deja todas las variantes de una ubicación con UN solo nombre.
+
+    No toca cantidades ni lotes: sólo cómo se llama el lugar. Queda auditado con las variantes
+    que se movieron, así que se puede deshacer sabiendo exactamente qué se cambió.
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    canonica = str(d.get('canonica') or '').strip()[:50]
+    variantes = [str(x).strip() for x in (d.get('variantes') or []) if str(x).strip()]
+    if not canonica:
+        return jsonify({'error': 'falta el nombre que queda'}), 400
+    variantes = [v for v in variantes if v != canonica]
+    if not variantes:
+        return jsonify({'ok': True, 'movidos': 0, 'mensaje': 'no había nada que unificar'})
+    # Todas las variantes tienen que ser LA MISMA ubicación escrita distinto: unificar dos
+    # lugares de verdad movería material de un estante a otro sin que nadie lo haya movido.
+    esperada = _ubic_norm(canonica)
+    ajenas = [v for v in variantes if _ubic_norm(v) != esperada]
+    if ajenas:
+        return jsonify({'error': 'estas no son la misma ubicación: %s' % ', '.join(ajenas[:5]),
+                        'codigo': 'UBICACIONES_DISTINTAS'}), 400
+    conn = get_db(); c = conn.cursor()
+    marcas = ','.join(['?'] * len(variantes))
+    antes = c.execute(
+        "SELECT COALESCE(estanteria,''), COUNT(*) FROM movimientos "
+        "  WHERE COALESCE(estanteria,'') IN (%s) GROUP BY COALESCE(estanteria,'')" % marcas,
+        tuple(variantes)).fetchall()
+    if not antes:
+        return jsonify({'ok': True, 'movidos': 0, 'mensaje': 'no había nada que unificar'})
+    try:
+        cur = c.execute(
+            "UPDATE movimientos SET estanteria=? WHERE COALESCE(estanteria,'') IN (%s)" % marcas,
+            (canonica,) + tuple(variantes))
+        movidos = cur.rowcount or 0
+        audit_log(c, usuario=user, accion='UNIFICAR_UBICACION', tabla='movimientos',
+                  registro_id=canonica,
+                  antes={'variantes': [{'nombre': r[0], 'movimientos': r[1]} for r in antes]},
+                  despues={'canonica': canonica, 'movimientos': movidos},
+                  detalle='Unificó %d formas de escribir "%s"' % (len(variantes) + 1, canonica))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo unificar: %s' % str(e)[:200]}), 500
+    return jsonify({'ok': True, 'movidos': movidos, 'canonica': canonica,
+                    'variantes': variantes})
+
+
 @bp.route('/planta/cuadre', methods=['GET'])
 def planta_cuadre_page():
     """Pantalla · cuadre rápido de inventario, parado frente al estante (Sebastián 21-ago)."""

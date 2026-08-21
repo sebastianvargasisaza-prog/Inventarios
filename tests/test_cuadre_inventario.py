@@ -182,3 +182,95 @@ def test_hay_como_llegar_desde_bodega(app, db_clean):
     c = _login(app)
     dash = pantalla_servida(c, "/inventarios")
     assert "/planta/cuadre" in dash, "no hay puerta al cuadre desde el dashboard"
+
+
+def test_agrupa_la_misma_ubicacion_escrita_distinto(app, db_clean):
+    """Midiendo el inventario real: `Estiba`, `ESTIBA`, `estibas`, `Estibas`, `ESTIBAS` son cinco
+    lugares para el sistema, y el material queda partido entre ellos (M115)."""
+    _limpiar()
+    for est, lote in (("Estiba", "E-1"), ("ESTIBAS", "E-2"), ("estibas", "E-3"),
+                      ("Nevera", "N-1"), ("NEVERA", "N-2")):
+        _sql("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, "
+             "fecha, operador, estanteria, estado_lote) "
+             "VALUES (?,?,'Entrada',10,?,?, 'seed',?, 'VIGENTE')",
+             (COD, "MP CUADRE", lote, "2026-08-01 08:00:00", est))
+    c = _login(app)
+    d = c.get("/api/inventario/ubicaciones-agrupadas").get_json()
+    claves = {g["clave"]: g for g in d["grupos"]}
+    assert "estiba" in claves, "no juntó Estiba/ESTIBAS/estibas: %r" % (list(claves),)
+    assert len(claves["estiba"]["variantes"]) == 3, claves["estiba"]
+    assert "nevera" in claves and len(claves["nevera"]["variantes"]) == 2, claves.get("nevera")
+    _limpiar()
+
+
+def test_unificar_deja_un_solo_nombre_y_no_mueve_material(app, db_clean):
+    _limpiar()
+    for est, lote in (("Estiba", "E-1"), ("ESTIBAS", "E-2")):
+        _sql("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, "
+             "fecha, operador, estanteria, estado_lote) "
+             "VALUES (?,?,'Entrada',10,?,?, 'seed',?, 'VIGENTE')",
+             (COD, "MP CUADRE", lote, "2026-08-01 08:00:00", est))
+    antes = _sql("SELECT SUM(cantidad) FROM movimientos WHERE material_id=?", (COD,))[0][0]
+    c = _login(app)
+    r = c.post("/api/inventario/unificar-ubicacion",
+               json={"canonica": "Estiba", "variantes": ["ESTIBAS"]}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    quedan = _sql("SELECT DISTINCT estanteria FROM movimientos WHERE material_id=?", (COD,))
+    assert [x[0] for x in quedan] == ["Estiba"], quedan
+    despues = _sql("SELECT SUM(cantidad) FROM movimientos WHERE material_id=?", (COD,))[0][0]
+    assert antes == despues, "unificar movió material"
+    _limpiar()
+
+
+def test_no_deja_unificar_dos_ubicaciones_que_son_distintas(app, db_clean):
+    """Unificar dos lugares DE VERDAD movería material de un estante a otro sin que nadie lo
+    haya movido."""
+    _limpiar()
+    c = _login(app)
+    r = c.post("/api/inventario/unificar-ubicacion",
+               json={"canonica": "Nevera", "variantes": ["Estiba"]}, headers=csrf_headers())
+    assert r.status_code == 400 and r.get_json().get("codigo") == "UBICACIONES_DISTINTAS", r.data[:200]
+    _limpiar()
+
+
+def test_el_lote_sin_ubicar_aparece_donde_estan_sus_hermanos(app, db_clean):
+    """*"si X producto sale en estantería pero el otro lote no tiene, igual se pone allí para que
+    sepan que existe y lo busquen y ubiquen"* (Sebastián 21-ago).
+
+    Si sólo se listara lo ubicado, quien cuadra el estante nunca se entera de que ese material
+    tiene otro lote dando vueltas, y el conteo le va a dar de menos sin saber por qué."""
+    _limpiar()
+    _sql("DELETE FROM movimientos WHERE material_id='ZCUA-OTRO'")
+    # mismo material: un lote en la estantería y otro sin ubicar
+    _sql("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, fecha, "
+         "operador, estanteria, estado_lote) VALUES (?,?,'Entrada',10,'U-1',?,'seed','ZEST','VIGENTE')",
+         (COD, "MP CUADRE", "2026-08-01 08:00:00"))
+    _sql("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, fecha, "
+         "operador, estanteria, estado_lote) VALUES (?,?,'Entrada',7,'U-2',?,'seed','','VIGENTE')",
+         (COD, "MP CUADRE", "2026-08-01 08:00:00"))
+    # otro material sin ubicar: NO tiene por qué aparecer en esta estantería
+    _sql("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, fecha, "
+         "operador, estanteria, estado_lote) VALUES ('ZCUA-OTRO','AJENO','Entrada',5,'X-1',?,'seed','','VIGENTE')",
+         ("2026-08-01 08:00:00",))
+    c = _login(app)
+    d = c.get("/api/inventario/cuadre-lotes?est=ZEST").get_json()
+    lotes = {x["lote"]: x for x in d["lotes"]}
+    assert "U-1" in lotes and lotes["U-1"]["sin_ubicar"] is False
+    assert "U-2" in lotes and lotes["U-2"]["sin_ubicar"] is True, "no trajo el hermano sin ubicar"
+    assert "X-1" not in lotes, "trajo material ajeno a esta estantería"
+    # y el área de los que no están en ningún lado los tiene a los dos
+    d2 = c.get("/api/inventario/cuadre-lotes?est=").get_json()
+    sueltos = {x["lote"] for x in d2["lotes"]}
+    assert {"U-2", "X-1"} <= sueltos, "el área 'sin ubicación' no los junta: %r" % (sueltos,)
+    _sql("DELETE FROM movimientos WHERE material_id='ZCUA-OTRO'")
+    _limpiar()
+
+
+def test_la_pantalla_ofrece_ubicar_el_lote_suelto(app, db_clean):
+    """Verlo no alcanza: quien está frente al estante tiene que poder dejarlo ubicado ahí mismo,
+    y eso va por el endpoint que YA corrige la ubicación de un lote (no se duplica)."""
+    c = _login(app)
+    html = c.get("/planta/cuadre").get_data(as_text=True)
+    assert "sin ubicar" in html, "no marca los lotes sin ubicación"
+    assert "ubicarAqui" in html and "/ubicacion" in html, "no hay forma de ubicarlo desde acá"
+    assert "Sin ubicaci" in html, "la cola de sin ubicación no se nombra"
