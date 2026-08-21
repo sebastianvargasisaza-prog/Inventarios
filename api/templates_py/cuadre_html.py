@@ -22,6 +22,21 @@ CUADRE_HTML = r'''<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
+.gbox{margin-top:10px;border:1px solid var(--cx-info-light);background:var(--cx-info-pale);border-radius:11px;padding:11px 13px}
+.gtit{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--cx-info-text);margin-bottom:7px}
+.grow{display:flex;gap:11px;align-items:flex-start;padding:5px 0;border-top:1px solid var(--cx-info-light)}
+.grow:first-of-type{border-top:0}
+.gdet{font-size:12px;color:var(--cx-text-soft);line-height:1.45}
+.gmsg{margin-top:9px;font-size:12.5px;color:var(--cx-text-mute)}
+
+    .sug{grid-column:1/-1;font-size:11.5px;font-weight:700;color:var(--cx-warn-text);background:var(--cx-warn-pale);border:1px solid var(--cx-warn-light);border-radius:8px;padding:4px 9px;margin-top:5px}
+    .edit{grid-column:1/-1;margin-top:8px;padding:11px 12px;background:var(--cx-bg-alt);border:1px solid var(--cx-border);border-radius:11px}
+    .edgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}
+    .edf{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:700;color:var(--cx-text-mute)}
+    .edf span{text-transform:uppercase;letter-spacing:.3px}
+    .edacc{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:9px;flex-wrap:wrap}
+    .edmsg{font-size:11.5px;color:var(--cx-text-mute)}
+
 body{font-family:"Inter",system-ui,-apple-system,Arial,sans-serif;background:var(--cx-bg);color:var(--cx-text);margin:0;padding:18px 2vw 90px}
 .wrap{width:96vw;max-width:1500px;margin:0 auto}
 .hero{display:flex;align-items:center;gap:14px;margin-bottom:6px}
@@ -94,11 +109,12 @@ label.f2{display:block;font-size:11.5px;font-weight:800;text-transform:uppercase
   <div class="card">
     <div class="ests" id="ests"><span class="vacio">Cargando estanter&iacute;as&hellip;</span></div>
     <div class="barra">
-      <input id="q" class="cx-input" type="search" placeholder="Buscar material o lote..." autocomplete="off" oninput="filtrar()">
+      <input id="q" class="cx-input" type="search" placeholder="Buscar material o lote en TODO el inventario..." autocomplete="off" oninput="filtrar()" title="Filtra esta estanteria; si no esta aca, busca en todo el inventario y te dice donde">
       <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="abrirAlta()">+ Est&aacute; en el estante y no aparece</button>
       <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="abrirUbic()" title="La misma estanteria escrita de varias formas parte el inventario en pedazos">&#129513; Unificar ubicaciones</button>
       <span class="prog" id="prog"></span>
     </div>
+    <div id="busca-global"></div>
   </div>
 
   <div id="lista"><div class="vacio">Eleg&iacute; una estanter&iacute;a para empezar.</div></div>
@@ -225,7 +241,10 @@ async function cargarMateriales(){
         +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="noExiste(\''+id+'\')">No existe</button>'
         +'<button class="cx-btn cx-btn-sm cx-btn-grad" onclick="guardar(\''+id+'\')">Guardar</button>'
         +((l.sin_ubicar&&EST)?('<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="ubicarAqui(\''+id+'\')" title="Dejar este lote en la estanteria que estas revisando">&#128205; Ubicar aqu&iacute;</button>'):'')
-        +'</div><span class="msg" id="msg-'+id+'"></span></div>';
+        +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="editar(\''+id+'\')" title="Corregir lote, vencimiento, INCI o ubicacion">&#9998; Editar</button>'
+        +'</div><span class="msg" id="msg-'+id+'"></span>'
+        + _sugUbic(l)
+        + '<div class="edit" id="ed-'+id+'" style="display:none"></div></div>';
       DATOS_MAP[id]=l;
     });
     html+='</div>';
@@ -235,15 +254,145 @@ async function cargarMateriales(){
 }
 var DATOS_MAP={};
 
+// «Esto tambien esta en otra parte»: viaja con los lotes, no detras de un clic. Parado frente
+// al estante es cuando se puede resolver -- despues nadie vuelve (Sebastian 21-ago).
+function _sugUbic(l){
+  var o=(l.otras_ubic||[]);
+  if(!o.length) return '';
+  var d=o.map(function(u){ return esc(u.estanteria)+' ('+Number(u.g||0).toLocaleString('es-CO')+' g)'; }).join(' &middot; ');
+  return '<div class="sug">&#9888; Este material tambi&eacute;n est&aacute; en: '+d+'</div>';
+}
+
+// El panel de edicion: cada campo guarda por su cuenta al salir, contra el endpoint que YA
+// existe para ese dato. Un endpoint nuevo que los junte duplicaria la mutacion (M3).
+function editar(id){
+  var box=document.getElementById('ed-'+id); if(!box) return;
+  if(box.style.display!=='none'){ box.style.display='none'; return; }
+  var l=DATOS_MAP[id]||{};
+  box.style.display='block';
+  box.innerHTML=
+     '<div class="edgrid">'
+    +_campo(id,'lote','N&uacute;mero de lote', l.lote||'', 'el del envase')
+    +_campo(id,'vence','Vence', (l.fecha_vencimiento||'').substring(0,10), 'aaaa-mm-dd','date')
+    +_campo(id,'est','Ubicaci&oacute;n', l.estanteria||'', 'estanteria')
+    +_campo(id,'pos','Posici&oacute;n', l.posicion||'', 'opcional')
+    +_campo(id,'inci','INCI (identidad qu&iacute;mica)', l.nombre_inci||'', 'nombre INCI')
+    +'</div>'
+    +'<div class="edacc">'
+    +'<span class="edmsg" id="edmsg-'+id+'">Cada campo se guarda al salir de &eacute;l.</span>'
+    +'<button class="cx-btn cx-btn-sm cx-btn-ghost" style="color:var(--cx-danger-text)" onclick="borrarLote(\''+id+'\')" title="Borra el lote del kardex. Si el material se uso, mejor declarar que ya no esta con &quot;No existe&quot;.">&#128465; Eliminar lote</button>'
+    +'</div>';
+}
+function _campo(id,k,lbl,val,ph,tipo){
+  return '<label class="edf"><span>'+lbl+'</span>'
+    +'<input class="cx-input" type="'+(tipo||'text')+'" id="ed-'+k+'-'+id+'" value="'+esc(val)+'" placeholder="'+esc(ph||'')+'" '
+    +'onchange="guardarCampo(\''+id+'\',\''+k+'\')"></label>';
+}
+function _edmsg(id,txt,err){
+  var e=document.getElementById('edmsg-'+id); if(!e) return;
+  e.textContent=txt; e.style.color= err? 'var(--cx-danger-text)':'var(--cx-success-text)';
+}
+async function guardarCampo(id,k){
+  var l=DATOS_MAP[id]; if(!l) return;
+  var el=document.getElementById('ed-'+k+'-'+id); if(!el) return;
+  var v=(el.value||'').trim();
+  var cod=encodeURIComponent(l.codigo_mp||''), lote=encodeURIComponent(l.lote||'_SIN_LOTE_');
+  var url='', body={}, metodo='PUT';
+  if(k==='lote'){ url='/api/lotes/'+cod+'/'+lote+'/codigo-lote'; body={lote_nuevo:v}; }
+  else if(k==='vence'){ url='/api/lotes/'+cod+'/'+lote+'/fecha-vencimiento'; body={fecha_vencimiento:v, motivo:'Correccion desde el cuadre de inventario'}; }
+  else if(k==='est'||k==='pos'){
+    var est=(document.getElementById('ed-est-'+id)||{}).value||'';
+    var pos=(document.getElementById('ed-pos-'+id)||{}).value||'';
+    url='/api/lotes/'+cod+'/'+lote+'/ubicacion'; body={estanteria:est.trim(), posicion:pos.trim()};
+  }
+  else if(k==='inci'){ url='/api/inventario/mp/'+cod+'/inci'; body={nombre_inci:v}; }
+  else return;
+  _edmsg(id,'Guardando...');
+  try{
+    var r=await fetch(url,_opts(metodo,body));
+    var d=await r.json();
+    if(!r.ok||d.error){ _edmsg(id, d.error||('Error '+r.status), true); return; }
+    // El lote es la LLAVE: si cambio, las proximas ediciones tienen que ir contra el nuevo,
+    // o el segundo cambio se aplicaria a un lote que ya no existe.
+    if(k==='lote'&&v) l.lote=v;
+    if(k==='est') l.estanteria=(document.getElementById('ed-est-'+id)||{}).value||'';
+    if(k==='pos') l.posicion=(document.getElementById('ed-pos-'+id)||{}).value||'';
+    if(k==='vence') l.fecha_vencimiento=v;
+    if(k==='inci') l.nombre_inci=v;
+    _edmsg(id,'&#10003; guardado'.replace('&#10003;','\u2713'));
+  }catch(e){ _edmsg(id,'No se pudo guardar: '+e, true); }
+}
+async function borrarLote(id){
+  var l=DATOS_MAP[id]; if(!l) return;
+  if(!confirm('Borrar del kardex el lote '+(l.lote||'(sin lote)')+' de '+(l.nombre||l.codigo_mp)+'?\n\nSi el material se USO, es mejor declarar que ya no esta con el boton "No existe": eso deja el consumo registrado. Borrar quita el rastro.')) return;
+  var cod=encodeURIComponent(l.codigo_mp||''), lote=encodeURIComponent(l.lote||'_SIN_LOTE_');
+  _edmsg(id,'Borrando...');
+  try{
+    var r=await fetch('/api/lotes/'+cod+'/'+lote,_opts('DELETE'));
+    var d=await r.json();
+    if(!r.ok||d.error){ _edmsg(id, d.error||('Error '+r.status), true); return; }
+    var row=document.getElementById('row-'+id); if(row) row.remove();
+  }catch(e){ _edmsg(id,'No se pudo borrar: '+e, true); }
+}
+
+
 function pintarProg(){
   var tot=Object.keys(DATOS_MAP).length;
   document.getElementById('prog').textContent = tot? (HECHOS+' de '+tot+' revisados') : '';
 }
+var _BUSCA_T=null;
 function filtrar(){
   var q=(document.getElementById('q').value||'').trim().toLowerCase();
+  var visibles=0;
   document.querySelectorAll('.mat').forEach(function(el){
-    el.classList.toggle('oculto', !!q && (el.dataset.buscar||'').indexOf(q)<0);
+    var oculto = !!q && (el.dataset.buscar||'').indexOf(q)<0;
+    el.classList.toggle('oculto', oculto);
+    if(!oculto) visibles++;
   });
+  // Si lo que busca NO esta en esta estanteria, se busca en TODO el inventario. Sin esto,
+  // "no aparece nada" significa dos cosas distintas -- no existe, o esta en otro estante -- y
+  // desde la silla se leen igual (M100). Con retardo: una consulta por tecla satura los
+  // tres workers (M43).
+  var av=document.getElementById('busca-global');
+  if(av) av.innerHTML='';
+  if(_BUSCA_T){ clearTimeout(_BUSCA_T); _BUSCA_T=null; }
+  if(q.length>=3 && visibles===0){
+    if(av) av.innerHTML='<div class="gmsg">Buscando en todo el inventario...</div>';
+    _BUSCA_T=setTimeout(function(){ buscarGlobal(q); }, 350);
+  }
+}
+async function buscarGlobal(q){
+  var av=document.getElementById('busca-global'); if(!av) return;
+  try{
+    var r=await fetch('/api/inventario/cuadre-lotes?q='+encodeURIComponent(q),{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||d.error){ av.innerHTML='<div class="gmsg">No se pudo buscar: '+esc(d.error||r.status)+'</div>'; return; }
+    var ls=(d.lotes||[]);
+    if(!ls.length){
+      av.innerHTML='<div class="gmsg">No hay ning&uacute;n lote con stock que coincida con "'+esc(q)+'" en todo el inventario.</div>';
+      return;
+    }
+    // Se agrupa por ubicacion: lo que se necesita saber es A DONDE ir.
+    var porEst={};
+    ls.forEach(function(l){
+      var k=(l.estanteria||'').trim() || '\u2014 sin ubicar';
+      (porEst[k]=porEst[k]||[]).push(l);
+    });
+    var h='<div class="gbox"><div class="gtit">'+ls.length+' lote(s) fuera de esta estanter&iacute;a</div>';
+    Object.keys(porEst).sort().forEach(function(k){
+      var real=(k.indexOf('sin ubicar')>=0)?'':k;
+      h+='<div class="grow"><button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="irA('+JSON.stringify(real).replace(/"/g,'&quot;')+')">'+esc(k)+'</button>';
+      h+='<span class="gdet">'+porEst[k].map(function(l){
+            return esc(l.nombre||l.codigo_mp)+' &middot; '+esc(l.lote||'sin lote')+' &middot; '+Number(l.stock_sistema||0).toLocaleString('es-CO')+' g';
+          }).join('<br>')+'</span></div>';
+    });
+    av.innerHTML=h+'</div>';
+  }catch(e){ av.innerHTML='<div class="gmsg">No se pudo buscar: '+esc(String(e))+'</div>'; }
+}
+function irA(est){
+  var b=document.querySelector('.est[data-est="'+(est||'').replace(/"/g,'\\"')+'"]');
+  if(b){ b.click(); return; }
+  EST=est||''; cargarMateriales();
 }
 function igual(id){ var l=DATOS_MAP[id]; if(!l) return; document.getElementById('in-'+id).value=l.stock_sistema; guardar(id); }
 function noExiste(id){ var l=DATOS_MAP[id]; if(!l) return;

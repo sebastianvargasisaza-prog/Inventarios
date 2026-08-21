@@ -700,6 +700,10 @@ CORAZON=(
   # Pendiente y la bandeja de agrupadas tambien -> invisible en las DOS pantallas donde se
   # la busca. El mensaje ahora dice a donde fue, y /api/compras/donde-esta lo contesta.
   "tests/test_donde_esta_solicitud.py"
+  # La hoja de trabajo del inventario: editar lote/vencimiento/INCI/ubicacion en un solo
+  # lugar con autoguardado, la sugerencia "esto tambien esta en otra estanteria" (calculada
+  # en UNA consulta, no una por fila) y buscar en todo el inventario sin salir de la hoja.
+  "tests/test_hoja_inventario.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

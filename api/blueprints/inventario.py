@@ -8584,6 +8584,95 @@ def inventario_fechas_vencimiento_raras():
                     'recortado': max(0, len(out) - 300)})
 
 
+@bp.route('/api/inventario/material-ubicaciones/<path:codigo>', methods=['GET'])
+def inventario_material_ubicaciones(codigo):
+    """Todas las ubicaciones donde este material tiene stock, con cuánto hay en cada una.
+
+    Es la mitad que faltaba para poder ordenar el inventario parado frente al estante: si el
+    propilenglicol aparece acá y también en otra estantería, hay que saberlo AHORA -- después
+    nadie vuelve. Read-only.
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    cod = (codigo or '').strip()
+    if not cod:
+        return jsonify({'error': 'falta el código'}), 400
+    conn = get_db(); c = conn.cursor()
+    estados = (" AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN "
+               "('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))")
+    rows = c.execute(
+        """SELECT COALESCE(m.estanteria,''), COALESCE(m.posicion,''), COALESCE(m.lote,''),
+                  SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste')
+                           THEN m.cantidad
+                           WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -')
+                           THEN -m.cantidad ELSE 0 END) AS stock,
+                  MAX(COALESCE(m.fecha_vencimiento,''))
+             FROM movimientos m
+            WHERE UPPER(TRIM(COALESCE(m.material_id,'')))=UPPER(TRIM(?))""" + estados +
+        """ GROUP BY COALESCE(m.estanteria,''), COALESCE(m.posicion,''), COALESCE(m.lote,'')
+           HAVING stock > 0.01
+            ORDER BY COALESCE(m.estanteria,''), COALESCE(m.lote,'')""", (cod,)).fetchall()
+    por_ubic = {}
+    for est, pos, lote, stock, fv in rows:
+        clave = (str(est or '').strip(), str(pos or '').strip())
+        g = por_ubic.setdefault(clave, {'estanteria': clave[0], 'posicion': clave[1],
+                                        'lotes': [], 'total_g': 0.0})
+        g['lotes'].append({'lote': lote, 'g': round(float(stock or 0), 2),
+                           'vence': str(fv or '')[:10]})
+        g['total_g'] = round(g['total_g'] + float(stock or 0), 2)
+    ubic = sorted(por_ubic.values(), key=lambda x: (-x['total_g'], x['estanteria']))
+    return jsonify({'ok': True, 'codigo': cod, 'ubicaciones': ubic,
+                    'n_ubicaciones': len(ubic),
+                    'sin_ubicar_g': round(sum(u['total_g'] for u in ubic
+                                              if not u['estanteria']), 2),
+                    'total_g': round(sum(u['total_g'] for u in ubic), 2)})
+
+
+@bp.route('/api/inventario/mp/<path:codigo>/inci', methods=['PUT'])
+def inventario_mp_inci(codigo):
+    """Corrige el INCI de una materia prima, que es su identidad química.
+
+    Va auditado con el valor ANTERIOR: ante un INCI equivocado la pregunta es *"¿cuál decía
+    antes?"*, no *"¿cuál dice ahora?"* (M175). Y NO se vacía: un INCI en blanco hace que el
+    resolver caiga a otros criterios y termine eligiendo la molécula de al lado (M137).
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    cod = (codigo or '').strip()
+    nuevo = str(d.get('nombre_inci') or '').strip()[:200]
+    if not cod:
+        return jsonify({'error': 'falta el código'}), 400
+    if not nuevo:
+        return jsonify({'error': 'el INCI no puede quedar vacío',
+                        'detail': 'Sin INCI el resolver cae a otros criterios y puede elegir '
+                                  'otra materia prima. Si el material no tiene INCI, dejá el '
+                                  'que ya estaba.'}), 400
+    conn = get_db(); c = conn.cursor()
+    prev = c.execute("SELECT COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') "
+                     "  FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=UPPER(TRIM(?))",
+                     (cod,)).fetchone()
+    if not prev:
+        return jsonify({'error': 'la materia prima %s no existe en el maestro' % cod}), 404
+    if str(prev[0] or '').strip() == nuevo:
+        return jsonify({'ok': True, 'sin_cambios': True, 'nombre_inci': nuevo})
+    try:
+        c.execute("UPDATE maestro_mps SET nombre_inci=? WHERE UPPER(TRIM(codigo_mp))=UPPER(TRIM(?))",
+                  (nuevo, cod))
+        audit_log(c, usuario=user, accion='EDITAR_INCI_MP', tabla='maestro_mps',
+                  registro_id=cod, antes={'nombre_inci': prev[0]},
+                  despues={'nombre_inci': nuevo},
+                  detalle='INCI de %s: %r -> %r' % (cod, prev[0], nuevo))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo guardar: %s' % str(e)[:200]}), 500
+    return jsonify({'ok': True, 'codigo': cod, 'nombre_inci': nuevo, 'antes': prev[0]})
+
+
 @bp.route('/api/inventario/cuadre-lotes', methods=['GET'])
 def inventario_cuadre_lotes():
     """Lo que hay que revisar en una estantería, incluido lo que NO tiene ubicación.
@@ -8603,6 +8692,9 @@ def inventario_cuadre_lotes():
     est = (request.args.get('est') or '').strip()
     if est.lower() in ('sin estanteria', 'sin estantería', 'sin ubicacion', 'sin ubicación'):
         est = ''
+    # `?q=` busca en TODO el inventario sin salir de la hoja: si estás en la A1 y el material
+    # está en la 2C, "no aparece nada" se lee como "no existe" (M100).
+    q = (request.args.get('q') or '').strip()
     conn = get_db(); c = conn.cursor()
     estados = (" AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN "
                "('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))")
@@ -8617,7 +8709,18 @@ def inventario_cuadre_lotes():
     cierre = (" GROUP BY m.material_id, COALESCE(m.lote,'') HAVING stock > 0.01 "
               " ORDER BY MAX(m.material_nombre), COALESCE(m.lote,'')")
     out = []
-    if est:
+    if q:
+        _like = '%' + q.upper() + '%'
+        for r in c.execute(
+                campos + " WHERE (UPPER(COALESCE(m.material_id,'')) LIKE ? "
+                         "    OR UPPER(COALESCE(m.material_nombre,'')) LIKE ? "
+                         "    OR UPPER(COALESCE(m.lote,'')) LIKE ?)" + estados + cierre,
+                (_like, _like, _like)).fetchall():
+            out.append({'codigo_mp': r[0], 'nombre': r[1], 'lote': r[2],
+                        'stock_sistema': round(float(r[3] or 0), 3), 'posicion': r[4],
+                        'fecha_vencimiento': r[5], 'estanteria': r[6],
+                        'sin_ubicar': not str(r[6] or '').strip()})
+    elif est:
         for r in c.execute(campos + " WHERE m.estanteria=?" + estados + cierre, (est,)).fetchall():
             out.append({'codigo_mp': r[0], 'nombre': r[1], 'lote': r[2],
                         'stock_sistema': round(float(r[3] or 0), 3), 'posicion': r[4],
@@ -8636,8 +8739,48 @@ def inventario_cuadre_lotes():
             out.append({'codigo_mp': r[0], 'nombre': r[1], 'lote': r[2],
                         'stock_sistema': round(float(r[3] or 0), 3), 'posicion': r[4],
                         'fecha_vencimiento': r[5], 'estanteria': '', 'sin_ubicar': True})
-    return jsonify({'ok': True, 'estanteria': est, 'lotes': out,
-                    'sin_ubicar': sum(1 for x in out if x['sin_ubicar'])})
+    # ── «esto tambien esta en otra parte» ────────────────────────────────────
+    # UNA consulta para TODOS los materiales de la estanteria: pedirla por fila desde el
+    # navegador es lo que satura los tres workers (M43).
+    _codigos = sorted(set(str(x['codigo_mp'] or '').strip() for x in out
+                          if str(x.get('codigo_mp') or '').strip()))
+    if _codigos:
+        _marcas = ','.join(['?'] * len(_codigos))
+        try:
+            _otras = c.execute(
+                "SELECT UPPER(TRIM(COALESCE(m.material_id,''))), COALESCE(m.estanteria,''), "
+                "       SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') "
+                "                THEN m.cantidad "
+                "                WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') "
+                "                THEN -m.cantidad ELSE 0 END) AS stk "
+                "  FROM movimientos m "
+                " WHERE UPPER(TRIM(COALESCE(m.material_id,''))) IN (%s)" % _marcas
+                + estados +
+                " GROUP BY UPPER(TRIM(COALESCE(m.material_id,''))), COALESCE(m.estanteria,'') "
+                " HAVING stk > 0.01",
+                tuple(x.upper() for x in _codigos)).fetchall()
+        except Exception as e:
+            # Un except mudo convertiria "no pude mirar" en "no esta en ningun lado", que es
+            # la conclusion CONTRARIA (M4/M94).
+            __import__('logging').getLogger('inventario').warning(
+                'otras ubicaciones del material: %s', e)
+            _otras = []
+        _por_cod = {}
+        for _cod, _est_o, _stk in _otras:
+            _por_cod.setdefault(str(_cod or ''), []).append(
+                {'estanteria': str(_est_o or ''), 'g': round(float(_stk or 0), 2)})
+        _aqui = str(est or '').strip()
+        for _fila in out:
+            _todas = _por_cod.get(str(_fila.get('codigo_mp') or '').strip().upper(), [])
+            # "Otra parte" = una estanteria DISTINTA de la que se esta revisando, y con nombre:
+            # lo que no tiene ubicacion ya viaja marcado como `sin_ubicar` y se muestra aparte.
+            _fila['otras_ubic'] = sorted(
+                [u for u in _todas
+                 if u['estanteria'] and u['estanteria'].strip() != _aqui],
+                key=lambda u: -u['g'])
+    return jsonify({'ok': True, 'estanteria': est, 'busqueda': q, 'lotes': out,
+                    'sin_ubicar': sum(1 for x in out if x['sin_ubicar']),
+                    'con_otras_ubic': sum(1 for x in out if x.get('otras_ubic'))})
 
 
 @bp.route('/api/inventario/ubicaciones-agrupadas', methods=['GET'])
