@@ -8786,6 +8786,7 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
   </div>
   <table>
     {_row('Área o equipo · código', area_label)}
+    {_row('Área', _campos.get('area') or '')}
     {_row(fila_equipo_lbl, fila_equipo_val) if fila_equipo_lbl else ''}
     {_row('Producto a elaborar', prod_elab)}
     {_row('Lote', lote_elab, num=True)}
@@ -9035,6 +9036,30 @@ def _campo_producto_limpieza(cid, etiqueta, sugerido):
         '</div></div>')
 
 
+def _campo_area_rotulo(areas, nom_foco=''):
+    """El área del rótulo se ELIGE de las salas reales, no se teclea.
+
+    Un desplegable evita las cinco formas de escribir la misma sala ("Fab 2", "FABRICACION 2",
+    "Fabricación 2"...) que después no se pueden agrupar (M115). La opción vacía existe a
+    propósito: dejar el renglón en blanco para llenarlo a mano es una decisión válida.
+    """
+    from html import escape as _e2
+    vistos, opts = set(), ['<option value="">-- en blanco = se llena a mano --</option>']
+    for a in areas:
+        nom = str(a[1] or '').strip()
+        if not nom or nom.lower() in vistos:
+            continue
+        vistos.add(nom.lower())
+        sel = ' selected' if nom_foco and nom.lower() == nom_foco.strip().lower() else ''
+        opts.append('<option value="%s"%s>%s</option>' % (_e2(nom), sel, _e2(nom)))
+    return (
+        '<div style="flex:1;min-width:210px">'
+        '<label for="area_txt" style="display:block;font-size:12px;font-weight:700;'
+        'margin-bottom:4px">&Aacute;rea</label>'
+        '<select id="area_txt" class="cx-input" style="width:100%">' + ''.join(opts) + '</select>'
+        '</div>')
+
+
 def _rotulos_limpieza_selector(c, areas, area_foco=''):
     """Pantalla para elegir QUE EQUIPOS se van a usar antes de sacar los rotulos F02.
 
@@ -9146,7 +9171,10 @@ def _rotulos_limpieza_selector(c, areas, area_foco=''):
         # (Sebastián 21-ago): vienen pre-cargados con lo que el área tiene programado, y quien
         # imprime decide si los deja, los cambia o los borra para llenarlos a mano.
         + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px">'
+        + _campo_area_rotulo(areas, _nom_foco)
         + _campo_producto_limpieza('prod', 'Producto a elaborar', _sug_prod)
+        + '</div>'
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px">'
         + _campo_producto_limpieza('lote', 'Lote', _sug_lote)
         + '</div>'
         '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px">'
@@ -9262,7 +9290,8 @@ function imprimir(){
     + '&prod=' + encodeURIComponent(_v('prod'))
     + '&lote=' + encodeURIComponent(_v('lote'))
     + '&prod_prev=' + encodeURIComponent(_v('prod_prev'))
-    + '&lote_prev=' + encodeURIComponent(_v('lote_prev'));
+    + '&lote_prev=' + encodeURIComponent(_v('lote_prev'))
+    + '&area_txt=' + encodeURIComponent(_v('area_txt'));
 }
 filtrar();
 </script>
@@ -9670,9 +9699,18 @@ def planta_rotulos_limpieza_todas():
     # viene (vacío = dejar la línea en blanco a propósito).
     _campos_ctx = {}
     for _q, _k, _n in (('prod', 'producto_elaborar', 120), ('lote', 'lote_elaborar', 60),
-                       ('prod_prev', 'producto_anterior', 120), ('lote_prev', 'lote_anterior', 60)):
+                       ('prod_prev', 'producto_anterior', 120), ('lote_prev', 'lote_anterior', 60),
+                       ('area_txt', 'area', 80)):
         if _q in request.args:
             _campos_ctx[_k] = (request.args.get(_q) or '').strip()[:_n]
+    # Si viene el contexto de Registrar Producción (`?area=FAB2`) y nadie escribió el área a
+    # mano, se imprime el nombre de ESA sala: es la que la persona acaba de elegir para
+    # fabricar, no una derivada del catálogo.
+    if 'area' not in _campos_ctx and _area_ctx:
+        _nom = next((str(a[1] or '').strip() for a in areas
+                     if str(a[2] or '').upper() == _area_ctx), '')
+        if _nom:
+            _campos_ctx['area'] = _nom
     # Un rotulo por estado (limpio / en uso / sucio). Sin el parametro sale uno solo, con
     # el estado real del area, como antes.
     _ests = _rotulo_estados_pedidos(request.args.get('estados'))

@@ -1602,3 +1602,7 @@ Guard: `tests/test_areas_y_rotulo_20ago.py` + `tests/test_rotulo_limpieza_firma_
   que se está viendo, y lo seleccionado fuera de la búsqueda se declara en la cuenta.
 - **Desde la hoja se vuelve al selector** sin cerrar la pestaña.
 - Medido con el `@media print` simulado: **97 × 77,5 mm** sobre una etiqueta de 100×100.
+- **El ÁREA volvió como campo que se ELIGE** (21-ago), no derivada: un desplegable con las salas
+  reales, pre-cargado con la que venga de Registrar Producción, y en blanco si nadie la elige.
+  No contradice el retiro de "Sala / área" del 20-ago: aquélla la afirmaba el sistema y podía
+  nombrar una sala donde el equipo ya no está; ésta la decide quien imprime.

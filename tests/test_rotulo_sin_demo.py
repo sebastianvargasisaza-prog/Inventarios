@@ -186,3 +186,33 @@ def test_el_rotulo_no_lleva_raya_ni_el_nombre_de_la_empresa(app, db_clean):
     assert "Elegir equipos" in html or "Elegir otros equipos" in html, \
         "no hay forma de volver al selector desde la impresión"
     _limpiar(aid)
+
+
+def test_el_area_es_un_campo_que_se_elige_y_se_imprime(app, db_clean):
+    """*"faltaría un espacio que diga área, y que se pueda seleccionar, aunque se puede traer
+    desde fabricación"* (Sebastián 21-ago).
+
+    No es volver a la fila que se quitó el 20-ago: aquella la DERIVABA el sistema y podía decir
+    una sala donde el equipo ya no está. Ésta la elige quien imprime, de las salas reales."""
+    aid, acod = _area_fab()
+    _limpiar(aid)
+    c = _login(app)
+    # (a) el desplegable existe y trae las salas
+    sel = c.get("/planta/rotulos-limpieza?area=%s" % acod).get_data(as_text=True)
+    assert 'id="area_txt"' in sel, "no hay dónde elegir el área"
+    assert "<select" in sel.split('id="area_txt"')[0][-120:] or 'id="area_txt" class' in sel, \
+        "el área debería elegirse de una lista, no teclearse"
+    assert "en blanco = se llena a mano" in sel, "no deja la opción de dejarlo en blanco"
+    # (b) lo elegido se imprime
+    html = c.get("/planta/rotulos-limpieza?todos=1&estados=limpio&area_txt=ZONA%20ZZ").get_data(as_text=True)
+    assert ">Área<" in html or ">&Aacute;rea<" in html, "el rótulo no tiene el renglón de área"
+    assert "ZONA ZZ" in html, "no imprimió el área elegida"
+    # (c) viniendo de fabricación, se trae sola
+    html2 = c.get("/planta/rotulos-limpieza?area=%s&todos=1" % acod).get_data(as_text=True)
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        nom = conn.execute("SELECT nombre FROM areas_planta WHERE id=?", (aid,)).fetchone()[0]
+    finally:
+        conn.close()
+    assert nom in html2, "no trajo el área que se eligió en Registrar Producción"
+    _limpiar(aid)
