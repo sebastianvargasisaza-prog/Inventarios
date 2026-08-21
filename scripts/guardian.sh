@@ -687,6 +687,10 @@ CORAZON=(
   # FEFO no lo consume, mientras la pantalla -que comparaba texto- lo daba por vigente.
   # 29 kg VIGENTES en bodega y produccion decia "FALTA 4000g".
   "tests/test_fecha_vencimiento_iso.py"
+  # Bodega, verificacion y consumo tienen que decidir LO MISMO sobre cada lote: la
+  # pantalla que ofrece, el gate que deja arrancar y el FEFO que descuenta. Cazo que
+  # el FEFO consumia PRIMERO el lote sin fecha, o sea al reves de first-expired.
+  "tests/test_cadena_descuento_coherente.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

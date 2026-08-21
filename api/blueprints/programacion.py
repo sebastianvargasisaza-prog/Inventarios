@@ -14595,9 +14595,17 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
         WHERE stock_lote > 0.01
           AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))=''
                OR date(fv_real) >= date('now', '-5 hours'))
-        ORDER BY COALESCE(fv_real, '9999-12-31') ASC,
+        ORDER BY COALESCE(NULLIF(TRIM(CAST(fv_real AS TEXT)), ''), '9999-12-31') ASC,
                  lote ASC
     """
+    # FIX 21-ago-2026 · el lote SIN FECHA iba PRIMERO, o sea al revés de FEFO.
+    # `fecha_vencimiento` es TEXT DEFAULT '' , así que un lote sin fecha guarda la cadena
+    # VACÍA y no NULL -- y `COALESCE('', '9999-12-31')` devuelve `''`, que ordena antes que
+    # cualquier fecha. Resultado: se gastaba primero el material que nunca vence y el que
+    # caduca el mes entrante se quedaba en el estante hasta vencerse, que es exactamente lo
+    # que FEFO existe para evitar. La pantalla (`_lotes_de_material`) ya ordenaba bien con
+    # `x['vence'] or '9999-12-31'` (en Python la cadena vacía es falsy), así que ofrecía un
+    # orden y el kardex descontaba otro (M5).
     # FIX 17-jun (auditoría Planta · M25/INV-6) · defensa de vencimiento POR FECHA:
     # excluir lotes vencidos aunque el cron job_marcar_vencidos aún no los marcó
     # (ventana de hasta ~24h). El descuento directo (_handle_produccion_inner) ya la

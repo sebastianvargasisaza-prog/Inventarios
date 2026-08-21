@@ -18996,7 +18996,10 @@ def planta_stock_por_lote(codigo_mp):
           AND COALESCE(lote,'') != ''
         GROUP BY lote
         HAVING stock_g > 0
-        ORDER BY COALESCE(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END), '9999-12-31') ASC, lote ASC
+        -- El lote SIN FECHA va al FINAL, igual que en el FEFO que descuenta: la columna es
+        -- TEXT DEFAULT '' , así que un COALESCE a secas deja la cadena vacía adelante y la
+        -- vista ofrecería un orden distinto del que el kardex consume (M5 · 21-ago-2026).
+        ORDER BY COALESCE(NULLIF(TRIM(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT)), ''), '9999-12-31') ASC, lote ASC
     """, (codigo_mp,)).fetchall()
 
     from datetime import date
