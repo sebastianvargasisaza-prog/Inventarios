@@ -8183,6 +8183,19 @@ def _lote_de_produccion(c, produccion_id):
         return ''
 
 
+# Marcas de un lote que NO es producción real. El criterio canónico del batch record mira el
+# LOTE (`es_lote_demo` · empieza por DEMO-), pero acá hace falta también el NOMBRE: el demo de
+# Planta se llama "DEMO PLANTA (BORRAR)" y el simulacro viejo "SIMULACRO Demo", así que un
+# vocabulario solo deja pasar al otro (M248: el que lee no puede inventar su propia lista).
+_DEMO_MARCAS = ('DEMO', 'SIMULACRO', 'PRUEBA')
+
+
+def _es_produccion_demo(producto, lote=''):
+    """¿Este lote es de demostración? Un rótulo regulado no puede hablar de uno."""
+    txt = (str(producto or '') + ' ' + str(lote or '')).upper()
+    return any(m in txt for m in _DEMO_MARCAS)
+
+
 def _rotulo_derivar(c, area_id):
     """Deriva en vivo los datos del rótulo de un área (defaults antes de
     firmar). Devuelve dict o None si el área no existe."""
@@ -8194,19 +8207,28 @@ def _rotulo_derivar(c, area_id):
         return None
     estado_fisico = a[3] or 'libre'
     # Producto a elaborar = producción en curso o próxima en el área.
-    prod_act = c.execute(
+    #
+    # ⚠ Se saltean los lotes de DEMOSTRACIÓN. El 21-ago Sebastián abrió los rótulos y en 37 de
+    # 70 salía "DEMO PLANTA (BORRAR)" como producto a elaborar: el demo del 17-ago dejó 62
+    # lotes abiertos ocupando las salas, y el derivador tomaba el primero que encontraba. Un
+    # rótulo es un registro regulado que se pega en la máquina: si nombra un lote que no
+    # existe, el registro es falso y además tapa el lote de verdad.
+    def _primera_real(sql):
+        for _id, _prod in c.execute(sql, (area_id,)).fetchall():
+            if _es_produccion_demo(_prod, _lote_de_produccion(c, _id)):
+                continue
+            return (_id, _prod)
+        return None
+
+    prod_act = _primera_real(
         """SELECT id, producto FROM produccion_programada
            WHERE area_id=? AND COALESCE(estado,'programado') NOT IN ('completado','cancelado')
-           ORDER BY (inicio_real_at IS NULL), fecha_programada ASC LIMIT 1""",
-        (area_id,),
-    ).fetchone()
+           ORDER BY (inicio_real_at IS NULL), fecha_programada ASC LIMIT 12""")
     # Producto anterior = último lote terminado físicamente en el área.
-    prod_prev = c.execute(
+    prod_prev = _primera_real(
         """SELECT id, producto FROM produccion_programada
            WHERE area_id=? AND fin_real_at IS NOT NULL
-           ORDER BY fin_real_at DESC LIMIT 1""",
-        (area_id,),
-    ).fetchone()
+           ORDER BY fin_real_at DESC LIMIT 12""")
     return {
         'area_id': a[0], 'area_codigo': a[1], 'area_nombre': a[2],
         'estado_fisico': estado_fisico,
@@ -8608,7 +8630,8 @@ def _rotulo_estados_pedidos(raw):
 
 
 def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
-                      sanit_override=None, deterg_override=None, estado_override=None):
+                      sanit_override=None, deterg_override=None, estado_override=None,
+                      campos=None):
     """Devuelve el <div class="sheet"> del rótulo F02. Si equipo=(codigo,nombre), el rótulo es de ESE
     equipo (uno por máquina · Sebastián 25-jun); si no, del área. '' si el área no existe."""
     from html import escape as _e
@@ -8644,6 +8667,12 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
             prod_elab = lote_elab = prod_prev = lote_prev = ''
             sanit = deterg = eq_json = ''
             realizado_por = realizado_at = verificado_por = verificado_at = ''
+        # Y si el ciclo guardado habla de un lote DEMO, sus datos de proceso tampoco sirven:
+        # el rótulo saldría con el producto de una demostración (21-ago).
+        if _es_produccion_demo(prod_elab, lote_elab):
+            prod_elab = lote_elab = ''
+        if _es_produccion_demo(prod_prev, lote_prev):
+            prod_prev = lote_prev = ''
     else:
         prod_elab, lote_elab = base['producto_elaborar'], base['lote_elaborar']
         prod_prev, lote_prev = base['producto_anterior'], base['lote_anterior']
@@ -8658,6 +8687,19 @@ def _rotulo_f02_sheet(c, area_id, equipo=None, operario_asignado='',
         sanit = sanit_override
     if deterg_override is not None:
         deterg = deterg_override
+    # Lo que la persona escribió en el selector MANDA sobre todo lo demás (Sebastián 21-ago:
+    # *"pon todos los datos del rótulo que se puedan escribir y que se impriman, así deciden
+    # qué escribir"*). Vacío es una decisión válida -- dejar la línea para llenarla a mano --
+    # así que se compara contra None, no por truthiness (M19).
+    _campos = campos or {}
+    if _campos.get('producto_elaborar') is not None:
+        prod_elab = _campos['producto_elaborar']
+    if _campos.get('lote_elaborar') is not None:
+        lote_elab = _campos['lote_elaborar']
+    if _campos.get('producto_anterior') is not None:
+        prod_prev = _campos['producto_anterior']
+    if _campos.get('lote_anterior') is not None:
+        lote_prev = _campos['lote_anterior']
     try:
         equipos_lst = json.loads(eq_json) if eq_json else []
     except Exception:
@@ -9042,6 +9084,20 @@ def _rotulos_limpieza_selector(c, areas, area_foco=''):
     # El desplegable de "quien limpia" se retiro el 20-ago: existia solo para imprimir el
     # nombre en la linea, y Sebastian pidio que la linea vaya VACIA para firmar con
     # lapicero. Un control que ya no cambia lo que sale de la impresora es un boton muerto.
+    # Sugerencias del área en foco: lo que el sistema ya sabe de esa sala. Si no hay foco (o
+    # el área no tiene nada programado) quedan vacías -- nunca se inventa un producto.
+    _sug_prod = _sug_lote = _sug_prev = _sug_lote_prev = ''
+    try:
+        _aid_foco = next((a[0] for a in areas if str(a[2] or '').upper() == _foco), None)
+        if _aid_foco:
+            _b = _rotulo_derivar(c, _aid_foco) or {}
+            _sug_prod = _e(str(_b.get('producto_elaborar') or ''))
+            _sug_lote = _e(str(_b.get('lote_elaborar') or ''))
+            _sug_prev = _e(str(_b.get('producto_anterior') or ''))
+            _sug_lote_prev = _e(str(_b.get('lote_anterior') or ''))
+    except Exception as _e3:
+        log.warning('sugerencias del rótulo no legibles: %s', _e3)
+
     _est_ck = ''.join(
         '<label class="est"><input type="checkbox" class="ckest" value="%s" checked> %s</label>'
         % (k, lbl)
@@ -9055,6 +9111,17 @@ def _rotulos_limpieza_selector(c, areas, area_foco=''):
         '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--cx-hairline)">'
         + _campo_producto_limpieza('sanit', 'Sanitizante', 'Alcohol 70%')
         + _campo_producto_limpieza('deterg', 'Detergente', 'Detergente Neutro Industrial')
+        + '</div>'
+        # Los cuatro campos que el rótulo saca del sistema también se pueden escribir acá
+        # (Sebastián 21-ago): vienen pre-cargados con lo que el área tiene programado, y quien
+        # imprime decide si los deja, los cambia o los borra para llenarlos a mano.
+        + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px">'
+        + _campo_producto_limpieza('prod', 'Producto a elaborar', _sug_prod)
+        + _campo_producto_limpieza('lote', 'Lote', _sug_lote)
+        + '</div>'
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px">'
+        + _campo_producto_limpieza('prod_prev', 'Producto anterior', _sug_prev)
+        + _campo_producto_limpieza('lote_prev', 'Lote anterior', _sug_lote_prev)
         + '</div>'
         '<div style="font-size:11.5px;margin-top:6px;opacity:.85">Lo que escribas ac&aacute; sale impreso en el r&oacute;tulo. En blanco queda la l&iacute;nea para llenarla a mano.</div>'
         + '</div>')
@@ -9145,7 +9212,11 @@ function imprimir(){
   window.location.href = '/planta/rotulos-limpieza?equipos=' + encodeURIComponent(cods.join(','))
     + (es.length ? ('&estados=' + encodeURIComponent(es.join(','))) : '')
     + '&sanit=' + encodeURIComponent(_v('sanit'))
-    + '&deterg=' + encodeURIComponent(_v('deterg'));
+    + '&deterg=' + encodeURIComponent(_v('deterg'))
+    + '&prod=' + encodeURIComponent(_v('prod'))
+    + '&lote=' + encodeURIComponent(_v('lote'))
+    + '&prod_prev=' + encodeURIComponent(_v('prod_prev'))
+    + '&lote_prev=' + encodeURIComponent(_v('lote_prev'));
 }
 refrescar();
 </script>
@@ -9153,7 +9224,7 @@ refrescar();
 
 
 def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None, operario_asignado='',
-                     sanit_override=None, deterg_override=None, estados=None):
+                     sanit_override=None, deterg_override=None, estados=None, campos=None):
     """Lista de hojas F02 de una sala: UNA POR EQUIPO (cada máquina su etiqueta · reusa el catálogo
     canónico _equipos_de_area, que devuelve dicts). Si la sala no tiene equipos, una hoja de área.
 
@@ -9178,7 +9249,7 @@ def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None, operario_asigna
                                       operario_asignado=operario_asignado,
                                       sanit_override=sanit_override,
                                       deterg_override=deterg_override,
-                                      estado_override=est)
+                                      estado_override=est, campos=campos)
                 if s:
                     out.append(s)
         return out
@@ -9187,7 +9258,7 @@ def _rotulos_de_area(c, area_id, area_codigo, solo_codigos=None, operario_asigna
         s = _rotulo_f02_sheet(c, area_id, operario_asignado=operario_asignado,
                               sanit_override=sanit_override,
                               deterg_override=deterg_override,
-                              estado_override=est)
+                              estado_override=est, campos=campos)
         if s:
             out.append(s)
     return out
@@ -9549,6 +9620,13 @@ def planta_rotulos_limpieza_todas():
         _sanit_ctx = (request.args.get('sanit') or '').strip()[:60]
     if 'deterg' in request.args:
         _deterg_ctx = (request.args.get('deterg') or '').strip()[:60]
+    # El resto de los campos del rótulo, con el mismo criterio: sólo mandan si el parámetro
+    # viene (vacío = dejar la línea en blanco a propósito).
+    _campos_ctx = {}
+    for _q, _k, _n in (('prod', 'producto_elaborar', 120), ('lote', 'lote_elaborar', 60),
+                       ('prod_prev', 'producto_anterior', 120), ('lote_prev', 'lote_anterior', 60)):
+        if _q in request.args:
+            _campos_ctx[_k] = (request.args.get(_q) or '').strip()[:_n]
     # Un rotulo por estado (limpio / en uso / sucio). Sin el parametro sale uno solo, con
     # el estado real del area, como antes.
     _ests = _rotulo_estados_pedidos(request.args.get('estados'))
@@ -9571,7 +9649,7 @@ def planta_rotulos_limpieza_todas():
                                        operario_asignado=_oper_ctx,
                                        sanit_override=_sanit_ctx,
                                        deterg_override=_deterg_ctx,
-                                       estados=_ests))
+                                       estados=_ests, campos=_campos_ctx))
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:var(--cx-text-mute, #888);padding:40px">No hay salas configuradas.</div>')
     _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)
@@ -29088,9 +29166,13 @@ def simulacro_limpiar():
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
-    # datos de PRUEBA: producto contiene SIMULACRO o PRUEBA
+    # Datos de DEMOSTRACIÓN. Miraba sólo SIMULACRO y PRUEBA, así que no reconocía al demo de
+    # Planta -- que se llama "DEMO PLANTA (BORRAR)" -- y sus 62 lotes quedaron abiertos
+    # ocupando las salas hasta que aparecieron impresos en los rótulos (21-ago). El vocabulario
+    # lo define quien ESCRIBE el dato, no quien lo lee (M248).
     _cond = ("(UPPER(COALESCE(producto,'')) LIKE '%SIMULACRO%' "
-             "OR UPPER(COALESCE(producto,'')) LIKE '%PRUEBA%')")
+             "OR UPPER(COALESCE(producto,'')) LIKE '%PRUEBA%' "
+             "OR UPPER(COALESCE(producto,'')) LIKE '%DEMO%')")
     aids = [r[0] for r in c.execute(
         "SELECT DISTINCT area_id FROM produccion_programada WHERE area_id IS NOT NULL AND " + _cond).fetchall()]
     # descartar legajos EBR de prueba (best-effort · SAVEPOINT · solo NO liberados, no toca regulados)

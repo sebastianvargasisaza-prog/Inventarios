@@ -673,6 +673,9 @@ CORAZON=(
   # Un puesto se cubre por SUPLENCIA con vigencia, no ampliando permisos: sin fecha de fin no
   # habilita, el cargo no cambia, y la regla de las dos personas sigue intacta.
   "tests/test_plan_suplencias.py"
+  # Un rotulo regulado no puede hablar de un lote DEMO: 37 de 70 salian con "DEMO PLANTA
+  # (BORRAR)" como producto a elaborar, y el boton de limpiar demos no los reconocia.
+  "tests/test_rotulo_sin_demo.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.
