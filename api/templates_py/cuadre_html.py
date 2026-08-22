@@ -283,6 +283,10 @@ async function cargarEstanterias(){
     var box=document.getElementById('ests');
     if(!Array.isArray(d)||!d.length){ box.innerHTML='<span class="vacio">No hay estanter&iacute;as cargadas.</span>'; return; }
     d=d.slice().sort(_cmpEstanteria);
+    // Se guardan las que YA existen: ubicar eligiendo de esta lista evita que el
+    // inventario se parta en variantes por escribir el nombre a mano (M272).
+    window._ESTS = d.map(function(e){ return e.estanteria; })
+      .filter(function(x){ return x && !/^sin estanter/i.test(x); });
     box.innerHTML=d.map(function(e){
       var nom=e.estanteria, sinUbic=/^sin estanter/i.test(nom);
       return '<button class="est'+(sinUbic?' pend':'')+'" data-est="'+esc(e.estanteria)+'" onclick="elegir(this,\''+esc(e.estanteria).replace(/'/g,"\\'")+'\')">'
@@ -340,6 +344,10 @@ async function cargarMateriales(){
         +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="noExiste(\''+id+'\')">No existe</button>'
         +'<button class="cx-btn cx-btn-sm cx-btn-grad" onclick="guardar(\''+id+'\')">Guardar</button>'
         +((l.sin_ubicar&&EST)?('<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="ubicarAqui(\''+id+'\')" title="Dejar este lote en la estanteria que estas revisando">&#128205; Ubicar aqu&iacute;</button>'):'')
+        /* Sin estanteria elegida (la vista de los sin ubicar) no hay un "aqui": se
+           ELIGE de las que ya existen. Es la unica vista desde la que se alcanzan los
+           lotes cuyo material no tiene NINGUN movimiento ubicado. */
+        +((l.sin_ubicar&&!EST)?('<button class="cx-btn cx-btn-sm cx-btn-grad" onclick="ubicarEn(\''+id+'\')" title="Elegir en que estanteria queda">&#128205; Ubicar en&hellip;</button>'):'')
         +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="editar(\''+id+'\')" title="Corregir lote, vencimiento, INCI o ubicacion">&#9998; Editar</button>'
         +'</div><span class="msg" id="msg-'+id+'"></span>'
         + _sugUbic(l)
@@ -606,6 +614,45 @@ async function guardar(id, motivo){
     HECHOS++; pintarProg();
     document.getElementById('pie-msg').textContent=l.nombre+(l.lote?(' · '+l.lote):'')+': '+(d.sin_cambio?'coincide':(d.mensaje||'ajustado'));
   }catch(e){ msg.className='msg err'; msg.textContent='Sin conexión'; }
+}
+
+// Ubicar SIN estar parado en una estanteria: se elige de las que ya existen, no se
+// escribe. Escribirla a mano es lo que produce cinco formas del mismo lugar (M272).
+function ubicarEn(id){
+  var l=DATOS_MAP[id]; if(!l) return;
+  var cont=document.getElementById('msg-'+id); if(!cont) return;
+  var ests=(window._ESTS||[]);
+  var opts=ests.map(function(e){ return '<option value="'+esc(e)+'">'+esc(e)+'</option>'; }).join('');
+  cont.className='msg';
+  cont.innerHTML='<select id="ue-'+id+'" class="cx-input" style="max-width:200px">'
+    +'<option value="">-- elegi la estanteria --</option>'+opts
+    +'<option value="__otra__">otra (escribirla)</option></select> '
+    +'<button class="cx-btn cx-btn-sm cx-btn-grad" onclick="ubicarEnGuardar(\''+id+'\')">Guardar</button>';
+}
+async function ubicarEnGuardar(id){
+  var l=DATOS_MAP[id]; if(!l) return;
+  var sel=document.getElementById('ue-'+id); if(!sel) return;
+  var est=sel.value;
+  if(est==='__otra__'){
+    est=prompt('Nombre de la ubicacion (si ya existe, elegila de la lista para no partir '
+      +'el inventario en variantes)');
+    if(est===null) return;
+    est=String(est).trim();
+  }
+  if(!est){ return; }
+  var msg=document.getElementById('msg-'+id);
+  msg.className='msg'; msg.textContent='Ubicando...';
+  try{
+    var r=await fetch('/api/lotes/'+encodeURIComponent(l.codigo_mp)+'/'
+      +encodeURIComponent(l.lote||'_SIN_LOTE_')+'/ubicacion',
+      _opts('PUT', {estanteria:est, motivo:'ubicado durante el cuadre'}));
+    var d={}; try{ d=await r.json(); }catch(_je){}
+    if(!r.ok){ msg.className='msg err';
+      msg.textContent=d.error||('No se pudo ubicar (error '+r.status+')'); return; }
+    msg.className='msg ok'; msg.textContent='Ubicado en '+est;
+    l.estanteria=est; l.sin_ubicar=false;
+    var chip=document.querySelector('#row-'+id+' .chip-sinubic'); if(chip) chip.remove();
+  }catch(e){ msg.className='msg err'; msg.textContent='Sin conexion'; }
 }
 
 async function ubicarAqui(id){

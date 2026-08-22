@@ -244,3 +244,51 @@ def test_ubicar_aqui_refresca_la_fila_en_pantalla(app):
     cuerpo = CUADRE_HTML[i:j if j > i else len(CUADRE_HTML)]
     assert 'l.estanteria' in cuerpo, 'ubicar no actualiza la ubicación de la fila'
     assert 'sin_ubicar' in cuerpo, 'ubicar no le quita la marca de sin ubicar a la fila'
+
+
+# -----------------------------------------------------------------------------
+# La vista "Sin ubicacion · para ubicar" tiene que poder UBICAR
+# -----------------------------------------------------------------------------
+
+def test_la_vista_de_los_SIN_UBICAR_los_lista(admin_client, sembrado):
+    """Es la unica vista desde la que se alcanza un lote cuyo material no tiene NINGUN
+    movimiento ubicado: en la hoja de una estanteria sale solo si su material vive ahi."""
+    r = admin_client.get('/api/inventario/cuadre-lotes?est=')
+    assert r.status_code == 200, r.data[:200]
+    lotes = (r.get_json() or {}).get('lotes') or []
+    assert any(l.get('codigo_mp') == CODIGO and l.get('lote') == LOTE for l in lotes), (
+        'el lote sin ubicar no aparece en la cola de los que hay que ubicar')
+
+
+def test_desde_ahi_se_puede_UBICAR(app):
+    """El boton *Ubicar aqui* deja el lote en la estanteria que se esta revisando, asi que en
+    esta vista -- donde no hay ninguna elegida -- estaba oculto: la pantalla que se llama
+    "para ubicar" era la unica desde la que no se podia ubicar (M233)."""
+    from templates_py.cuadre_html import CUADRE_HTML as H
+    assert 'function ubicarEn(' in H, 'no hay forma de ubicar sin estar parado en la estanteria'
+    i = H.find('function ubicarEn(')
+    j = H.find('async function ubicarEnGuardar', i)
+    cuerpo = H[i:j if j > i else i + 1200]
+    assert '_ESTS' in cuerpo, (
+        'ofrece escribir la ubicacion a mano en vez de elegir de las que ya existen: '
+        'eso es lo que parte el inventario en variantes (M272)')
+
+
+def test_el_boton_aparece_SOLO_donde_corresponde(app):
+    """Con estanteria elegida va *Ubicar aqui*; sin ella, *Ubicar en...*. Si los dos salieran
+    a la vez, uno de los dos haria algo distinto de lo que dice."""
+    from templates_py.cuadre_html import CUADRE_HTML as H
+    assert 'l.sin_ubicar&&EST' in H, 'se perdio la condicion del boton *Ubicar aqui*'
+    assert 'l.sin_ubicar&&!EST' in H, 'el boton *Ubicar en...* no esta condicionado'
+
+
+def test_ubicar_en_manda_PUT_como_los_demas(app):
+    """Mismo endpoint y mismo metodo que el resto: una segunda forma de ubicar que use otra
+    puerta es la que se queda vieja (M1)."""
+    from templates_py.cuadre_html import CUADRE_HTML as H
+    i = H.find('async function ubicarEnGuardar')
+    assert i != -1
+    cuerpo = H[i:i + 1600]
+    assert "_opts('PUT'" in cuerpo, 'no usa PUT, que es lo que la ruta acepta'
+    assert '/ubicacion' in cuerpo, 'no llama al endpoint canonico de ubicacion'
+    assert 'l.estanteria=est' in cuerpo, 'no refresca la fila con la ubicacion nueva'
