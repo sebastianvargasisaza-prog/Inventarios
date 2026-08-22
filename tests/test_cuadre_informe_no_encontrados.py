@@ -201,3 +201,52 @@ def test_la_pantalla_PINTA_lo_que_no_cuadra(app):
     bloque = H[i:i + 1600]
     assert 'stock_ahora' in bloque, 'no muestra cuanto hay ahora'
     assert 'diferencia' in bloque, 'no muestra la diferencia'
+
+
+# -----------------------------------------------------------------------------
+# Lo que se CORRIGIO contando tambien es trabajo del inventario
+# -----------------------------------------------------------------------------
+
+def test_corregir_una_ubicacion_sale_en_el_cierre(admin_client, sembrado):
+    """Se corrige mientras se cuenta, asi que tiene que quedar en el cierre."""
+    admin_client.put('/api/lotes/%s/%s/ubicacion' % (CODIGO, LOTE),
+                     json={'estanteria': 'EST-NUEVA', 'motivo': 'estaba en otro lado'})
+    d = _informe(admin_client)
+    f = _en(d.get('correcciones'), LOTE)
+    assert f is not None, 'la correccion de ubicacion no aparece en el cierre'
+    assert f.get('que') == 'ubicacion' or 'ubicaci' in (f.get('que') or '')
+    assert 'EST-NUEVA' in (f.get('despues') or ''), 'no dice como quedo'
+    assert f.get('por'), 'no dice quien la hizo'
+    assert f.get('motivo') == 'estaba en otro lado', 'perdio el motivo'
+
+
+def test_corregir_un_vencimiento_sale_en_el_cierre(admin_client, sembrado):
+    admin_client.put('/api/lotes/%s/%s/fecha-vencimiento' % (CODIGO, LOTE),
+                     json={'fecha_vencimiento': '2029-01-31', 'motivo': 'mal tecleada'})
+    d = _informe(admin_client)
+    f = _en(d.get('correcciones'), LOTE)
+    assert f is not None, 'la correccion de vencimiento no aparece en el cierre'
+    assert '2029-01-31' in (f.get('despues') or ''), 'no dice la fecha nueva'
+    assert '2027-06-30' in (f.get('antes') or ''), 'no dice que fecha tenia antes'
+
+
+def test_el_cierre_NO_inventa_correcciones(admin_client, sembrado):
+    """El guard tiene que distinguir, o reportaria siempre y dejaria de mirarse (M129).
+
+    Se mira un lote que NINGUN test corrige: el audit_log es append-only por trigger, asi que
+    el rastro de los casos anteriores del archivo sigue ahi y el aislamiento se consigue con un
+    DATO propio, no limpiando (M102/M103).
+    """
+    d = _informe(admin_client)
+    assert _en(d.get('correcciones'), LOTE_POLVO) is None, (
+        'reporta una correccion que nadie hizo sobre ese lote')
+
+
+def test_el_cierre_PINTA_las_correcciones(app):
+    """Una capacidad sin puerta no existe (M121)."""
+    from blueprints.inventario import _INFORME_CUADRE_HTML as H
+    i = H.find('Se corrigieron')
+    assert i != -1, 'el cierre no tiene la seccion de correcciones'
+    bloque = H[i:i + 1400]
+    assert 'f.antes' in bloque or 'antes' in bloque, 'no muestra que decia'
+    assert 'despues' in bloque, 'no muestra como quedo'

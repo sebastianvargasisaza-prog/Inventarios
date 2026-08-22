@@ -1515,8 +1515,36 @@ conexión"* -- el botón nunca ubicó nada y encima le echaba la culpa a la red.
 exista no prueba que su petición se pueda contestar**: hay un guard que cruza *(ruta, método)*
 de cada llamada de la hoja contra el `url_map` real de Werkzeug.
 
-⚠ Pendiente declarado: ese rastro se escribe con `INSERT` crudo y `datetime('now','-5 hours')`
-mientras el helper canónico escribe `datetime('now')` en UTC. Hoy no lo lee nadie por día, pero
-si el informe llega a incluir las reubicaciones hay que alinear el reloj primero (M24).
+⚠ **Ese rastro se escribe en hora COLOMBIA** (`INSERT` crudo con `datetime('now','-5 hours')`)
+mientras el helper canónico escribe UTC, **y no es un error: está emparejado con su lector.**
+`/admin/conteo-rescate` (Correcciones de Bodega MP) corta con `corte` calculado en Colombia y
+muestra el JSON desde la columna `detalle` -- que es donde lo pone el `INSERT` crudo. Pasarlo al
+helper canónico movería ese JSON a `antes`/`despues` y **dejaría ese informe sin detalle**, y
+cambiar el reloj le correría el corte 5 horas.
+
+**Regla: antes de "alinear" un reloj o un formato de rastro, buscá quién lo LEE.** Acá lo declaré
+como pendiente antes de encontrar al lector; medirlo cambió la conclusión (M234).
+
+Por eso el cierre del inventario (INV-38) compara estas filas con `date(fecha)` **directo**, y
+las del cuadre con `date(fecha, '-5 hours')`: cada una con el reloj con el que se escribió.
 
 Tests: `tests/test_cuadre_ubicacion.py` (en el gate).
+
+
+## INV-38 · El cierre incluye lo que se CORRIGIÓ, no sólo lo que se contó (22-ago-2026)
+
+Contando se corrigen ubicaciones y vencimientos mal tecleados, y **eso es trabajo del
+inventario**: hasta ahora sólo se veía en `/admin/conteo-rescate`, una pantalla que hay que
+saber que existe.
+
+El informe de cierre lista cada corrección con: qué material y lote, **qué se corrigió**
+(ubicación o vencimiento), **qué decía antes**, cómo quedó, quién la hizo, cuándo y por qué. Si
+la corrección de un vencimiento devolvió el lote al stock, lo dice (*"volvió a quedar
+disponible"*).
+
+⚠ **Cada rastro se compara con el reloj con el que se escribió** (ver INV-37): las correcciones
+con `date(fecha)` directo (hora Colombia) y las declaraciones del cuadre con
+`date(fecha, '-5 hours')` (UTC). Mezclarlos le corre el día a lo que se hizo entre medianoche y
+las 5am.
+
+Tests: `tests/test_cuadre_informe_no_encontrados.py` (en el gate).

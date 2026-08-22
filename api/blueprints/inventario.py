@@ -9173,6 +9173,23 @@ async function cargar(){
           +esc(f.cuando||'')+'</div>')
           : '<span style="color:var(--cx-text-mute)">nadie lo revis&oacute;</span>'; }},
     ]);
+    if((d.correcciones||[]).length){
+      h+=_sec('Se corrigieron &middot; '+n(s.correcciones)+' dato(s) mientras se contaba');
+      h+=_tabla(d.correcciones, [
+        {t:'Material', v:function(f){ return '<b>'+esc(f.nombre||f.codigo_mp)+'</b>'; }},
+        {t:'Lote', v:function(f){ return esc(f.lote||'sin lote'); }},
+        {t:'Qu&eacute;', v:function(f){ return esc(f.que||''); }},
+        {t:'Dec&iacute;a', v:function(f){ return esc(f.antes||''); }},
+        {t:'Qued&oacute;', v:function(f){
+          return '<b>'+esc(f.despues||'')+'</b>'
+            +(f.reactivado?'<div style="font-size:11px;color:var(--cx-success-text)">volvi&oacute; a quedar disponible</div>':''); }},
+        {t:'Qui&eacute;n', v:function(f){
+          return esc(f.por||'')+'<div style="font-size:11px;color:var(--cx-text-mute)">'
+            +esc(f.cuando||'')+'</div>'; }},
+        {t:'Por qu&eacute;', v:function(f){
+          return '<span class="mot">'+esc(f.motivo||'')+'</span>'; }},
+      ]);
+    }
     h+=_sec('Se ajustaron &middot; '+n(s.ajustados)+' &middot; '+n(s.gramos_ajustados)+' g netos');
     h+=_tabla(d.ajustados, [
       {t:'Material', v:function(f){ return '<b>'+esc(f.nombre||f.codigo_mp)+'</b>'; }},
@@ -9377,6 +9394,55 @@ def inventario_cuadre_informe():
                 'informe · ubicación de lo declarado: %s', _e3)
             lectura_fallo = True
 
+    # ── 2c · lo que se CORRIGIÓ contando ────────────────────────────────────
+    # Ubicaciones y vencimientos mal tecleados que se arreglaron durante el conteo: es
+    # parte del trabajo del inventario y hasta ahora sólo se veía en una pantalla de
+    # admin que hay que saber que existe.
+    #
+    # ⚠ Estos dos rastros se escriben en hora COLOMBIA (no UTC como el helper canónico) y
+    # están emparejados con su lector, `/admin/conteo-rescate`, que corta en Colombia. Por
+    # eso acá se compara `date(fecha)` DIRECTO: aplicarle el '-5 hours' de las filas del
+    # cuadre les correría el día a lo corregido entre medianoche y las 5am.
+    correcciones = []
+    try:
+        _etiq = {'EDITAR_UBICACION_LOTE': 'ubicación',
+                 'EDITAR_FECHA_VENC_LOTE': 'vencimiento'}
+        for _usr, _acc, _det, _f in c.execute(
+                "SELECT COALESCE(usuario,''), COALESCE(accion,''), COALESCE(detalle,''), "
+                "       COALESCE(fecha,'') "
+                "  FROM audit_log "
+                " WHERE accion IN ('EDITAR_UBICACION_LOTE','EDITAR_FECHA_VENC_LOTE') "
+                "   AND date(fecha) BETWEEN ? AND ? "
+                " ORDER BY id DESC LIMIT 400", (desde, hasta)).fetchall():
+            try:
+                _d = _json_mod.loads(_det) if _det else {}
+            except Exception:
+                _d = {}
+            _cod = str(_d.get('material_id') or '').strip().upper()
+            if not _cod:
+                continue
+            _que = _etiq.get(_acc, _acc)
+            if _acc == 'EDITAR_UBICACION_LOTE':
+                _antes = ' · '.join(x for x in (str(_d.get('estanteria_anterior') or ''),
+                                                str(_d.get('posicion_anterior') or '')) if x)
+                _desp = ' · '.join(x for x in (str(_d.get('estanteria_nueva') or ''),
+                                               str(_d.get('posicion_nueva') or '')) if x)
+            else:
+                _antes = str(_d.get('fecha_anterior') or '')
+                _desp = str(_d.get('fecha_nueva') or '')
+            correcciones.append({
+                'codigo_mp': _cod, 'lote': str(_d.get('lote') or ''),
+                'nombre': nombres.get(_cod, _cod),
+                'que': _que, 'antes': _antes or '(vacío)', 'despues': _desp or '(vacío)',
+                'motivo': str(_d.get('motivo') or ''),
+                'por': _usr, 'cuando': str(_f or '')[:16],
+                'reactivado': bool(_d.get('reactivado')),
+            })
+    except Exception as _e4:
+        __import__('logging').getLogger('inventario').warning(
+            'informe · correcciones: %s', _e4)
+        lectura_fallo = True
+
     # ── 3 · el corte ────────────────────────────────────────────────────────
     def _con(como):
         return [dict(v, nombre=nombres.get(v['codigo_mp'], v['codigo_mp']))
@@ -9419,12 +9485,14 @@ def inventario_cuadre_informe():
             'sin_revisar': len(sin_revisar),
             'a_buscar': len(a_buscar),
             'no_cuadran': len(no_cuadran),
+            'correcciones': len(correcciones),
             'gramos_ajustados': round(sum(x['ajuste'] for x in ajustados), 2),
             'gramos_no_encontrados': round(sum(x['sistema'] for x in no_esta), 2),
             'gramos_sin_revisar': round(sum(x['stock_sistema'] for x in sin_revisar), 2),
         },
         'a_buscar': a_buscar,
         'no_cuadran': no_cuadran,
+        'correcciones': correcciones,
         'no_esta': no_esta,
         'ajustados': ajustados,
         'coinciden': coinciden,

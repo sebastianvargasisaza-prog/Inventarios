@@ -380,6 +380,26 @@ imprimía `necesita / hay / falta`, así que un lote en cuarentena se veía como
 operario, con dos lotes enfrente, leía "sin stock" (M124 · INV-15 de `CONTRACT_inventario.md`).
 
 
+
+### El lote se reparte en su parte USABLE y su parte RETENIDA (22-ago-2026)
+
+Un mismo lote puede tener filas en **dos estados**: una recepcion que Calidad parte en aprobado
+y rechazado deja el MISMO numero de lote con 800 g `VIGENTE` y 200 g `RECHAZADO`.
+
+Este helper agrupaba primero y decidia por `MAX(estado_lote)`, asi que ofrecia el lote ENTERO
+como usable: **prometia 1.000 g de un lote del que el FEFO solo puede tomar 800.** Sus dos
+hermanos (`_validar_stock_para_produccion` y `_distribuir_fefo`) ya filtraban los estados no
+producibles **a nivel de FILA**, antes del `GROUP BY` -- de tres, dos lo hacian bien, y esa
+asimetria era la firma (M150).
+
+Ahora suma por separado lo usable y lo retenido, y **declara la parte retenida con su motivo**
+en vez de hacerla desaparecer (M124).
+
+**El invariante que cierra la clase: lo que la pantalla OFRECE y lo que el motor puede TOMAR
+tienen que dar el MISMO numero.** Hay un guard que compara los dos helpers sobre el mismo lote.
+
+Tests: `tests/test_cuadre_pesos_mixtos.py` (en el gate).
+
 ## 🔧 `_equipos_de_area` excluye lo que todavía no está calificado (30-jul)
 
 Un equipo recién recibido nace `estado_calificacion='PENDIENTE'` (mig 402 · INV-16 de
