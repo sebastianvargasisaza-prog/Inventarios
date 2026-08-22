@@ -10069,7 +10069,7 @@ def planta_historial_operarios():
 
 
 @bp.route('/api/programacion/programar/<int:evento_id>/iniciar', methods=['POST'])
-def prog_iniciar_produccion(evento_id):
+def prog_iniciar_produccion(evento_id, reparto=None):
     """Operario aprieta 'Iniciar produccion' — graba inicio_real_at,
     marca la sala asignada como 'ocupada' y DESCUENTA INVENTARIO MP.
 
@@ -10175,7 +10175,8 @@ def prog_iniciar_produccion(evento_id):
     # ── DESCONTAR INVENTARIO MP ATOMICAMENTE ──────────────────────────
     descuento = None
     try:
-        descuento = _descontar_mp_produccion(c, evento_id, user, forzar=forzar)
+        descuento = _descontar_mp_produccion(c, evento_id, user, forzar=forzar,
+                                             reparto=reparto)
     except _DescuentoError as e:
         try: conn.rollback()
         except Exception: pass
@@ -10579,7 +10580,16 @@ def fabricacion_crear_iniciar():
             return jsonify({'error': f'no se pudo crear la producción: {str(e)[:200]}'}), 500
 
     # M3 · DELEGA en el motor canónico: inicio_real_at + sala ocupada + descuento FEFO de MP.
-    resp = prog_iniciar_produccion(eid)
+    # El reparto que el operario hizo en la hoja de verificación: {codigo_mp: {lote: g}}.
+    # Viaja con el acto de producir, sin tabla intermedia -- vale para ESTA fabricación, y
+    # guardarlo aparte crearía un estado que alguien después lee como preferencia fija.
+    _rep = d.get('reparto_lotes') or None
+    if _rep and not isinstance(_rep, dict):
+        return jsonify({'error': 'reparto_lotes tiene que ser un objeto '
+                                 '{codigo: {lote: gramos}}'}), 400
+    if _rep:
+        _rep = {str(k).strip().upper(): v for k, v in _rep.items() if isinstance(v, dict)}
+    resp = prog_iniciar_produccion(eid, reparto=_rep)
     status = resp[1] if isinstance(resp, tuple) else getattr(resp, 'status_code', 200)
     if status >= 400 and creado:
         # el motor hizo rollback (no inició, no descontó) → borrar SOLO la producción que creamos
@@ -14418,7 +14428,7 @@ def _movimientos_tiene_pid(c):
     return val
 
 
-def _descontar_mp_produccion(c, evento_id, user, forzar=False):
+def _descontar_mp_produccion(c, evento_id, user, forzar=False, reparto=None):
     """Helper compartido: claim atomico + descuenta MPs FEFO de una producción.
 
     Sebastian 5-may-2026 (Luis Enrique): "cuando carguen produccion de materia
@@ -14534,7 +14544,12 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
             mp['no_controla_stock'] = True
             descontados.append(mp)
             continue
-        distrib = _distribuir_fefo(c, mp['codigo_mp'], mp['cantidad_g'])
+        # Si el operario repartió a mano de qué lote sale cada gramo, se respeta. El
+        # distribuidor VALIDA contra la misma lista de lotes que consume el FEFO, así que
+        # un reparto no puede alcanzar material retenido por Calidad (M31).
+        distrib = _distribuir_con_reparto(
+            c, mp['codigo_mp'], mp['cantidad_g'],
+            (reparto or {}).get(str(mp['codigo_mp']).strip().upper()))
         mp['distribucion_fefo'] = []
         for d in distrib:
             if float(d.get('cantidad') or 0) <= 0:
@@ -14577,6 +14592,95 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
         'total_g': round(sum(m['cantidad_g'] for m in descontados), 2),
         'producto': meta['producto'],
     }
+
+
+def _lotes_disponibles_fefo(c, codigo_mp):
+    """Los lotes que producción PUEDE consumir, en orden FEFO. Punto único.
+
+    Existe para que el reparto manual valide contra EXACTAMENTE la misma lista que el FEFO
+    consume: si fueran dos consultas, el día que una se ajuste (un estado más, la guarda de
+    vencimiento por fecha) la otra dejaría pasar lo que la primera bloquea, y ahí el reparto
+    sería la puerta de atrás para consumir material retenido por Calidad (M1/M3/M31).
+
+    Devuelve [(lote, fecha_vencimiento, stock_lote), ...].
+    """
+    placeholders = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
+    sql = f"""
+        SELECT lote, fv_real, stock_lote FROM (
+            SELECT lote,
+                   MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
+                   SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stock_lote
+            FROM movimientos
+            WHERE material_id = ?
+              AND COALESCE(lote, '') != ''
+              AND UPPER(COALESCE(estado_lote, '')) NOT IN ({placeholders})
+            GROUP BY lote
+        ) sub
+        WHERE stock_lote > 0.01
+          AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))=''
+               OR date(fv_real) >= date('now', '-5 hours'))
+        ORDER BY COALESCE(NULLIF(TRIM(CAST(fv_real AS TEXT)), ''), '9999-12-31') ASC,
+                 lote ASC
+    """
+    return c.execute(sql, (codigo_mp,) + _ESTADOS_LOTE_NO_PRODUCIBLES).fetchall()
+
+
+def _distribuir_con_reparto(c, codigo_mp, cantidad_a_descontar, reparto):
+    """El reparto que el operario hizo A MANO, validado. Si no hay reparto, cae al FEFO.
+
+    `reparto` = {lote: gramos}. Lo que se rechaza y por qué:
+      · un lote que no está entre los disponibles -- estaría consumiendo material que Calidad
+        retuvo, o vencido, por una puerta que el FEFO cierra (M31/M25);
+      · más gramos de los que ese lote tiene;
+      · una suma que no da lo que la fórmula pide -- un reparto que no cuadra se ve resuelto y
+        con eso se descuenta (M195).
+    """
+    if not reparto:
+        return _distribuir_fefo(c, codigo_mp, cantidad_a_descontar)
+
+    disponibles = {str(r[0]): (r[1], float(r[2] or 0))
+                   for r in _lotes_disponibles_fefo(c, codigo_mp)}
+    distribucion = []
+    total = 0.0
+    for lote, gramos in reparto.items():
+        lote = str(lote or '').strip()
+        try:
+            g = round(float(gramos or 0), 2)
+        except (TypeError, ValueError):
+            raise _DescuentoError(
+                'La cantidad repartida al lote %s no es un numero' % lote,
+                'REPARTO_INVALIDO', {'codigo_mp': codigo_mp, 'lote': lote})
+        if g <= 0:
+            continue
+        if lote not in disponibles:
+            raise _DescuentoError(
+                ('El lote %s de %s no se puede usar: esta retenido por Calidad, vencido o ya no '
+                 'tiene saldo' % (lote, codigo_mp)),
+                'REPARTO_LOTE_NO_USABLE',
+                {'codigo_mp': codigo_mp, 'lote': lote,
+                 'usables': sorted(disponibles.keys())})
+        fv, stock = disponibles[lote]
+        if g > stock + 0.01:
+            raise _DescuentoError(
+                ('El lote %s de %s tiene %.2fg y le asignaste %.2fg'
+                 % (lote, codigo_mp, stock, g)),
+                'REPARTO_MAYOR_QUE_LOTE',
+                {'codigo_mp': codigo_mp, 'lote': lote, 'stock_g': round(stock, 2),
+                 'asignado_g': g})
+        distribucion.append({'lote': lote, 'cantidad': g,
+                             'fecha_vencimiento': fv, 'sin_lote': False,
+                             'manual': True})
+        total = round(total + g, 2)
+
+    if abs(total - float(cantidad_a_descontar)) > 0.05:
+        raise _DescuentoError(
+            ('El reparto de %s suma %.2fg y la formula pide %.2fg'
+             % (codigo_mp, total, float(cantidad_a_descontar))),
+            'REPARTO_NO_CUADRA',
+            {'codigo_mp': codigo_mp, 'repartido_g': total,
+             'requerido_g': round(float(cantidad_a_descontar), 2),
+             'diferencia_g': round(total - float(cantidad_a_descontar), 2)})
+    return distribucion
 
 
 def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
@@ -14642,8 +14746,9 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
     # (ventana de hasta ~24h). El descuento directo (_handle_produccion_inner) ya la
     # tenía; este FEFO de la producción canónica (Iniciar producción) no → consumía
     # MP vencida en producto regulado (INVIMA Res. 2214). Misma ventana -5h que el cron.
-    params = (codigo_mp,) + _ESTADOS_LOTE_NO_PRODUCIBLES
-    rows = c.execute(sql, params).fetchall()
+    # La consulta vive en `_lotes_disponibles_fefo`: el reparto manual valida contra la MISMA
+    # lista, asi que no puede nombrar un lote que este filtro excluye (M1/M3).
+    rows = _lotes_disponibles_fefo(c, codigo_mp)
 
     distribucion = []
     restante = float(cantidad_a_descontar)

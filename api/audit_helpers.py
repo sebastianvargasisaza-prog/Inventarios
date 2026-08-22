@@ -555,9 +555,13 @@ _FORMATOS_RESPALDO = {
     'COC-PRO-002-F06': {'titulo': 'IDENTIFICACI&Oacute;N DE MATERIAL DE ENVASE',
                         'version': '02', 'pagina': '1 de 1',
                         'desde': '21-Jul-2026', 'hasta': '20-Jul-2029'},
-    'COC-PRO-002-F07': {'titulo': 'IDENTIFICACI&Oacute;N DE MATERIA PRIMA',
-                        'version': '', 'pagina': '1 de 1', 'desde': '', 'hasta': '',
-                        'nota': 'Falta cargar versión y vigencia · las tiene Aseguramiento'},
+    'COC-PRO-002-F05': {'titulo': 'IDENTIFICACI&Oacute;N DE MATERIAS PRIMAS',
+                        'version': '02', 'pagina': '1 de 1',
+                        'desde': '21-Jul-2026', 'hasta': '20-Jul-2029'},
+    'COC-PRO-002-F07': {'titulo': '', 'version': '', 'pagina': '1 de 1',
+                        'desde': '', 'hasta': '',
+                        'nota': 'Lo cita la hoja de Controles en proceso · falta confirmar con '
+                                'Aseguramiento que ese sea su código'},
 }
 
 

@@ -724,6 +724,26 @@ CORAZON=(
   # Dar de baja a alguien lo saca de la matriz de permisos Y de la puerta: eran dos fuentes
   # que decian cosas distintas de la misma persona.
   "tests/test_offboarding_una_sola_fuente.py"
+  # El operario reparte a mano de que lote sale cada gramo. Un reparto manual sobre un
+  # kardex regulado es una puerta nueva al inventario: lo que se fija es que llegue al kardex
+  # (si el motor hiciera FEFO igual, la persona creeria que peso de los lotes que eligio), que
+  # valide contra la MISMA lista de lotes que el FEFO -- para que no alcance cuarentena ni
+  # vencido -- y que un reparto que no cuadra se rechace en vez de descontarse a medias.
+  "tests/test_reparto_manual_lotes.py"
+  # El cuadre dice CUAL ya se reviso y, al ACABAR, que lotes no se vieron. El contador
+  # decia "0 de 54" con la estanteria entera declarada porque solo sumaba lo apretado en esa
+  # pestaña: la verdad estaba en el audit_log, donde cada declaracion deja rastro.
+  "tests/test_cuadre_que_falta_revisar.py"
+  # Lo que se declara en el cuadre LLEGA al inventario: camina el acto completo por los
+  # endpoints reales y verifica que el mismo hecho se vea igual en los CINCO lugares donde
+  # alguien lo lee (kardex, stock canonico, hoja, produccion/FEFO, auditoria), y que lo que
+  # NO debe cambiar -el otro lote, el estado, el vencimiento- no cambie. Un kardex con un
+  # descuento equivocado se ve igual que uno sano.
+  "tests/test_cuadre_llega_al_inventario.py"
+  # Asignar nueva ubicacion desde el cuadre: el boton "Ubicar aqui" mandaba un metodo que la
+  # ruta no acepta (405) y la pantalla lo mostraba como "Sin conexion". Cruza CADA llamada de
+  # la hoja contra el mapa de rutas real: que el boton exista no prueba que lo contesten.
+  "tests/test_cuadre_ubicacion.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

@@ -67,6 +67,32 @@ body{font-family:"Inter",system-ui,-apple-system,Arial,sans-serif;background:var
 .lote input[type=number]{width:130px}
 .lote .acc{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
 .lote.ok{background:var(--cx-success-pale)}
+.lote.rev{background:var(--cx-success-pale);border-left:3px solid var(--cx-success-light)}
+.chip-rev{font-size:10.5px;font-weight:800;color:var(--cx-success-text);background:var(--cx-card);
+  border:1px solid var(--cx-success-light);border-radius:999px;padding:2px 9px;white-space:nowrap;
+  margin-left:8px}
+.barra-fin{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:12px 0}
+.b-fin{border:none;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:800;
+  cursor:pointer;font-family:inherit;background:var(--cx-success-pale);
+  color:var(--cx-success-text);border:1px solid var(--cx-success-light)}
+.b-falta{border:1px solid var(--cx-border);background:var(--cx-card);color:var(--cx-text-soft);
+  border-radius:10px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;
+  font-family:inherit}
+.b-falta.on{border-color:var(--cx-warn-light);background:var(--cx-warn-pale);
+  color:var(--cx-warn-text)}
+.cierre{border:1px solid var(--cx-warn-light);background:var(--cx-warn-pale);border-radius:14px;
+  padding:15px 18px;margin:12px 0}
+.cierre.todo{border-color:var(--cx-success-light);background:var(--cx-success-pale)}
+.cierre-t{font-size:15px;font-weight:800;color:var(--cx-warn-text);margin-bottom:3px}
+.cierre.todo .cierre-t{color:var(--cx-success-text)}
+.cierre-s{font-size:12.5px;color:var(--cx-text-soft);margin-bottom:12px;line-height:1.5}
+.pend{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+  background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;
+  padding:9px 13px;margin-bottom:6px}
+.pend-n{font-size:12.5px;color:var(--cx-text)}
+.pend-m{font-size:11.5px;color:var(--cx-text-mute)}
+.pend input{width:92px;padding:5px 8px;border:1px solid var(--cx-border);border-radius:8px;
+  font-size:12.5px;font-family:inherit;text-align:right}
 .lote.ok .sis{color:var(--cx-success-text)}
 .chip-sinubic{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:800;background:var(--cx-warn-pale);color:var(--cx-warn-text);border:1px solid var(--cx-warn)}
 .est.pend{border-color:var(--cx-warn);color:var(--cx-warn-text)}
@@ -116,6 +142,12 @@ label.f2{display:block;font-size:11.5px;font-weight:800;text-transform:uppercase
     </div>
     <div id="busca-global"></div>
   </div>
+<div class="barra-fin">
+  <button class="b-fin" onclick="acabe()" title="Dice que lotes de esta vista no se declararon todavia">&#10003; Acab&eacute; &middot; qu&eacute; me falt&oacute;</button>
+  <button class="b-falta" id="b-falta" onclick="verSoloFalta()">Ver solo lo que falta</button>
+  <a class="b-falta" href="/planta/cuadre-informe" target="_blank" style="text-decoration:none;display:inline-block" title="El cierre de TODO el inventario: lo que se encontro, lo que no, y la lista para ir a buscar">&#128203; Informe de cierre</a>
+</div>
+<div id="cierre" style="display:none"></div>
 
   <div id="lista"><div class="vacio">Eleg&iacute; una estanter&iacute;a para empezar.</div></div>
 </div>
@@ -229,8 +261,17 @@ async function cargarMateriales(){
        +'<span class="tot">'+m.lotes.length+' lote(s) &middot; '+tot.toLocaleString('es-CO')+'</span></div>';
     m.lotes.forEach(function(l,i){
       var id=esc(m.cod)+'__'+i;
-      html+='<div class="lote" id="row-'+id+'">'
-        +'<div class="id"><b>'+(l.lote?esc(l.lote):'<span style="color:var(--cx-text-mute)">sin lote</span>')+'</b>'
+      // Lo revisado HOY sale del audit_log, asi que sobrevive al refresco y vale aunque
+      // revisen entre dos personas. Sin esto la fila se ve identica a una sin tocar.
+      var _rv = l.revisado_hoy
+        ? ('<span class="chip-rev" title="Ya se declaro en esta jornada">&#10003; '
+           + esc(l.revisado_como||'revisado')
+           + (l.revisado_hora?(' '+esc(l.revisado_hora)):'')
+           + (l.revisado_por?(' &middot; '+esc(l.revisado_por)):'') + '</span>')
+        : '';
+      html+='<div class="lote'+(l.revisado_hoy?' rev':'')+'" id="row-'+id+'" data-rev="'
+        +(l.revisado_hoy?'1':'0')+'">'
+        +'<div class="id"><b>'+(l.lote?esc(l.lote):'<span style="color:var(--cx-text-mute)">sin lote</span>')+'</b>'+_rv
         +(l.sin_ubicar?'<span class="chip-sinubic" title="Existe pero nadie sabe donde esta: aparece aca porque su material si esta en esta estanteria">&#128205; sin ubicar</span>':'')
         +'<span class="meta">'+(l.posicion?('pos. '+esc(l.posicion)+' &middot; '):'')+(l.fecha_vencimiento?('vence '+esc(l.fecha_vencimiento)):'sin vencimiento')+'</span></div>'
         +'<div class="sis" id="sis-'+id+'">'+(parseFloat(l.stock_sistema)||0).toLocaleString('es-CO')+'</div>'
@@ -337,8 +378,89 @@ async function borrarLote(id){
 
 
 function pintarProg(){
+  // El conteo sale de lo que el audit_log dice que se revisó HOY, mas lo que se apreto recien
+  // en esta pestaña. Antes contaba SOLO lo segundo: con la estanteria entera declarada decia
+  // "0 de 54", y ahi es donde se pierde el trabajo hecho.
   var tot=Object.keys(DATOS_MAP).length;
-  document.getElementById('prog').textContent = tot? (HECHOS+' de '+tot+' revisados') : '';
+  var yaHoy=0;
+  for(var k in DATOS_MAP){
+    if(Object.prototype.hasOwnProperty.call(DATOS_MAP,k) && DATOS_MAP[k].revisado_hoy) yaHoy++;
+  }
+  var e=document.getElementById('prog');
+  if(!tot){ e.textContent=''; return; }
+  e.textContent = yaHoy + ' de ' + tot + ' revisados hoy'
+    + ((tot-yaHoy) ? (' \u00b7 faltan ' + (tot-yaHoy)) : '');
+}
+// ── "Acabe" · que lotes no se vieron · Sebastian 22-ago-2026 ────────────────────────
+// "Lo mas importante es que si digo acabe me diga: estos lotes, donde estan, no los
+// encontraste". Una lista que solo se puede leer manda a empezar de nuevo (M121), asi que
+// cada pendiente se resuelve ahi mismo.
+function _pendientes(){
+  var out=[];
+  for(var k in DATOS_MAP){
+    if(!Object.prototype.hasOwnProperty.call(DATOS_MAP,k)) continue;
+    if(!DATOS_MAP[k].revisado_hoy) out.push({id:k, l:DATOS_MAP[k]});
+  }
+  return out;
+}
+function acabe(){
+  var p=_pendientes();
+  var cont=document.getElementById('cierre');
+  if(!cont) return;
+  if(!p.length){
+    cont.innerHTML='<div class="cierre todo"><div class="cierre-t">&#10003; No qued&oacute; '
+      + 'nada sin revisar</div><div class="cierre-s">Los '+Object.keys(DATOS_MAP).length
+      + ' lote(s) de esta vista est&aacute;n declarados. Lo que corregiste ya est&aacute; en el '
+      + 'inventario.</div><button class="b-falta" onclick="cerrarCierre()">Cerrar</button></div>';
+    cont.style.display='';
+    cont.scrollIntoView({behavior:'smooth'});
+    return;
+  }
+  var h='<div class="cierre"><div class="cierre-t">&#9888; Estos no los viste &middot; '
+    + p.length + ' lote(s)</div>'
+    + '<div class="cierre-s">&iquest;D&oacute;nde est&aacute;n? Si no los encontraste, marc&aacute; '
+    + '<b>No existe</b> y el lote queda en CERO con su motivo. Si estaban y coinciden, '
+    + '<b>= Igual</b>. Si hay otra cantidad, escribila.</div>';
+  p.forEach(function(x){
+    var l=x.l;
+    h+='<div class="pend" id="pend-'+esc(x.id)+'">'
+      +'<div><div class="pend-n"><b>'+esc(l.nombre||l.codigo_mp)+'</b> &middot; lote '
+      +esc(l.lote||'sin lote')+'</div>'
+      +'<div class="pend-m">'+(parseFloat(l.stock_sistema)||0).toLocaleString('es-CO')+' g'
+      +(l.posicion?(' &middot; pos. '+esc(l.posicion)):'')
+      +(l.sin_ubicar?' &middot; sin ubicar':(EST?(' &middot; '+esc(EST)):''))
+      +(l.fecha_vencimiento?(' &middot; vence '+esc(l.fecha_vencimiento)):'')+'</div></div>'
+      +'<div class="acc">'
+      +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="igual(\''+x.id+'\')">= Igual</button>'
+      +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="noExiste(\''+x.id+'\')">No existe</button>'
+      +'<input type="number" step="0.001" min="0" placeholder="hay" '
+      +'onkeydown="if(event.key===\'Enter\'){document.getElementById(\'in-'+x.id+'\').value=this.value;guardar(\''+x.id+'\')}">'
+      +'</div><span class="msg" id="pmsg-'+esc(x.id)+'"></span></div>';
+  });
+  h+='<div style="margin-top:11px"><button class="b-falta" onclick="cerrarCierre()">Volver a la '
+    + 'lista</button></div></div>';
+  cont.innerHTML=h;
+  cont.style.display='';
+  cont.scrollIntoView({behavior:'smooth'});
+}
+function cerrarCierre(){
+  var c=document.getElementById('cierre'); if(c){ c.innerHTML=''; c.style.display='none'; }
+}
+function _sacarDePendientes(id){
+  // Declarar desde el cierre lo saca de la lista: si siguiera ahi, la persona no sabria cual
+  // ya cerro y volveria a buscarlo (M129).
+  var e=document.getElementById('pend-'+id); if(e) e.remove();
+  var c=document.getElementById('cierre');
+  if(c && c.style.display!=='none' && !c.querySelector('.pend')) acabe();
+}
+function verSoloFalta(){
+  var b=document.getElementById('b-falta');
+  var on=!b.classList.contains('on');
+  b.classList.toggle('on', on);
+  b.textContent = on ? 'Viendo solo lo que falta' : 'Ver solo lo que falta';
+  document.querySelectorAll('.lote').forEach(function(el){
+    el.style.display = (on && el.dataset.rev==='1') ? 'none' : '';
+  });
 }
 var _BUSCA_T=null;
 function filtrar(){
@@ -415,6 +537,14 @@ async function guardar(id, motivo){
     l.stock_sistema=d.stock;
     document.getElementById('row-'+id).classList.add('ok');
     msg.className='msg ok'; msg.textContent=d.sin_cambio?'Cuadrado':(d.mensaje||'Ajustado');
+    // La fila queda marcada como revisada HOY sin esperar a recargar: si no, el contador y
+    // el filtro dirian que sigue pendiente algo que se acaba de declarar (M5).
+    l.revisado_hoy = true;
+    l.revisado_como = d.sin_cambio ? 'coincide' : (parseFloat(v) > 0 ? 'ajustado' : 'no existe');
+    l.revisado_por = ''; l.revisado_hora = '';
+    var _row = document.getElementById('row-'+id);
+    if(_row){ _row.dataset.rev='1'; _row.classList.add('rev'); }
+    _sacarDePendientes(id);
     HECHOS++; pintarProg();
     document.getElementById('pie-msg').textContent=l.nombre+(l.lote?(' · '+l.lote):'')+': '+(d.sin_cambio?'coincide':(d.mensaje||'ajustado'));
   }catch(e){ msg.className='msg err'; msg.textContent='Sin conexión'; }
@@ -425,11 +555,17 @@ async function ubicarAqui(id){
   var msg=document.getElementById('msg-'+id);
   msg.className='msg'; msg.textContent='Ubicando...';
   try{
+    // PUT, que es lo que la ruta acepta: con PATCH contestaba 405, el r.json() reventaba
+    // sobre el HTML del error y la pantalla decia "Sin conexion" -- o sea que el boton
+    // nunca ubico nada y encima le echaba la culpa a la red.
     var r=await fetch('/api/lotes/'+encodeURIComponent(l.codigo_mp)+'/'+encodeURIComponent(l.lote||'_SIN_LOTE_')+'/ubicacion',
-      _opts('PATCH', {estanteria:EST, motivo:'ubicado durante el cuadre'}));
-    var d=await r.json();
-    if(!r.ok){ msg.className='msg err'; msg.textContent=d.error||'No se pudo ubicar'; return; }
+      _opts('PUT', {estanteria:EST, motivo:'ubicado durante el cuadre'}));
+    var d={}; try{ d=await r.json(); }catch(_je){}
+    if(!r.ok){ msg.className='msg err'; msg.textContent=d.error||('No se pudo ubicar (error '+r.status+')'); return; }
     msg.className='msg ok'; msg.textContent='Ubicado en '+EST;
+    // La fila tiene que quedar diciendo la verdad: si sigue mostrando la ubicacion vieja,
+    // la proxima edicion se guarda contra un dato que ya no es (M129).
+    l.estanteria=EST; l.sin_ubicar=false;
     var chip=document.querySelector('#row-'+id+' .chip-sinubic'); if(chip) chip.remove();
   }catch(e){ msg.className='msg err'; msg.textContent='Sin conexion'; }
 }

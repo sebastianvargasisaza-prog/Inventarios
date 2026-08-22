@@ -1313,3 +1313,112 @@ ingreso de MP y la hoja *Controles en proceso* del cuaderno de producción (`pro
 Cuál de los dos está mal lo decide el dueño del documento, no el código (M19/M251b).
 
 Tests: `tests/test_formatos_control_unico.py` (en el gate).
+
+## INV-30 · El rótulo de materia prima ES el formato COC-PRO-002-F05 (22-ago-2026)
+
+Sebastián mandó el Excel oficial: **COC-PRO-002-F05 · IDENTIFICACIÓN DE MATERIAS PRIMAS**,
+versión 02, página 1 de 1, vigente 21-Jul-2026 → 20-Jul-2029. El rótulo citaba **F07**, o sea el
+código de otro documento. Con esto queda **cerrado** el conflicto que INV-29 dejaba abierto: el
+que reclamaba el F07 era este rótulo, y no le correspondía.
+
+**Campos (comparados uno a uno contra el Excel · M264).** Salen del sistema: nombre comercial,
+INCI, código interno, lote, cantidad, proveedor, fecha de recepción, vencimiento, ubicación.
+Salen **en blanco con su etiqueta**, porque el formato se imprime para llenarse y ese dato no
+vive en ninguna columna: **forma química**, fecha de análisis, observaciones, estado (sticker),
+realizado por y **verificado por**.
+
+- La etiqueta es parte del documento: dice **CÓDIGO INTERNO** y **VERIFICADO**, no "Código MP" ni
+  "Revisado por".
+- **No lleva "tipo de insumo"**: éste ES el formato de materias primas, así que ofrecer tres
+  casillas invita a marcar la equivocada (M264). El de envases (F06) sí tiene sus dos.
+- El encabezado usa `_encabezado_formato` -- las **tres zonas** del formato oficial, el mismo
+  helper que el F06 (M1). El bloque de control sale de `_f05_control_vigente()`, que lo pide al
+  registro único (INV-29).
+
+**Cabe en UNA etiqueta térmica, y se mide IMPRIMIENDO.** Chrome a PDF respeta el `@page` del
+CSS, así que **contar páginas mide el resultado**: una hoja que da dos páginas es el defecto.
+Medido así, el rótulo daba 115mm sobre 100 y **se venía partiendo en dos desde antes** (el árbol
+sin los cambios daba lo mismo · M110). Lo que lo resolvió: las tres zonas usan el ancho en vez
+del alto, y el nombre se **escala** (`n1..n4`) en vez de cortarse (M203). Verificado con el peor
+caso: nombre de 65 caracteres, INCI de mezcla, lote y proveedor largos.
+
+Tests: `tests/test_formatos_control_unico.py`, `tests/test_rotulos_en_bloque.py` (en el gate).
+
+## INV-31 · El operario reparte a mano de qué lote sale cada gramo (22-ago-2026)
+
+Sebastián lo eligió con esas palabras. Un reparto manual sobre un kardex regulado es una puerta
+nueva al inventario, así que:
+
+**Cadena:** `POST /api/planta/fabricacion/crear-iniciar` con `reparto_lotes` = `{codigo_mp:
+{lote: gramos}}` → `prog_iniciar_produccion(reparto=)` → `_descontar_mp_produccion(reparto=)` →
+`_distribuir_con_reparto(...)`. Si el reparto se quedara en la pantalla, el kardex descontaría
+por FEFO y la persona creería que pesó de los lotes que eligió (M5/M109).
+
+**Punto único:** `_lotes_disponibles_fefo(c, codigo_mp)` — la consulta de lotes consumibles que
+**el FEFO y el reparto COMPARTEN**. Si fueran dos, el día que una se ajuste (un estado más, la
+guarda de vencimiento por fecha) la otra dejaría pasar lo que la primera bloquea, y el reparto
+sería la puerta de atrás para consumir lo que Calidad retuvo (M1/M3/M31).
+
+**Lo que se rechaza, con su motivo y sin caer a FEFO en silencio:** un lote que no está entre los
+disponibles (`REPARTO_LOTE_NO_USABLE`), más gramos de los que ese lote tiene
+(`REPARTO_MAYOR_QUE_LOTE`) y una suma que no da lo que la fórmula pide (`REPARTO_NO_CUADRA`) —
+un reparto que no cuadra se ve resuelto y con eso se descuenta (M195).
+
+**Viaja con el POST del acto de producir, sin tabla intermedia**: vale para ESA fabricación, y
+guardarlo aparte crearía un estado que alguien después lee como preferencia fija.
+
+Tests: `tests/test_reparto_manual_lotes.py` (en el gate).
+
+## INV-32 · El cuadre dice cuál ya se revisó, y qué no se vio (22-ago-2026)
+
+*"No sé cuáles revisé y cuáles no"* · *"ya hice toda la estantería 10 y no sé qué me faltó"*.
+
+El contador decía **0 de 54** con la estantería entera declarada, porque sumaba una variable del
+navegador. **La verdad ya estaba en el `audit_log`**: cada declaración escribe
+`CUADRE_INVENTARIO` (ajustó) o `CUADRE_CONFIRMA` (coincide). `GET /api/inventario/cuadre-lotes`
+lo lee y devuelve por lote `revisado_hoy`, `revisado_por`, `revisado_hora`, `revisado_como`, más
+`revisados_hoy` / `falta_revisar` / `revisado_lectura_fallo`.
+
+- **Sólo lo de HOY** (día Colombia; el audit guarda UTC, así que se convierte · M24): un lote
+  declarado hace un mes contaría como revisado hoy y el conteo mediría otra cosa (M174).
+- **Confirmar que coincide cuenta como revisado** aunque no escriba kardex; si sólo contaran los
+  ajustes, el lote que estaba bien quedaría pendiente para siempre.
+- **UNA consulta** para toda la estantería, no una por fila (M43).
+- Un fallo de lectura se DECLARA: *"no pude mirar"* y *"no revisaste nada"* son cosas distintas
+  (M100).
+- En la pantalla: la fila revisada se ve distinta, hay filtro **"ver sólo lo que falta"**, y el
+  botón **"Acabé"** lista lo que nadie tocó y lo deja resolver ahí mismo (M121). Declarar desde
+  esa lista lo saca de ella (M129).
+
+⚠ **Los tests usan un material propio por caso**: el `audit_log` es append-only por trigger, así
+que no se puede limpiar entre tests y el rastro de uno contamina al siguiente (M102/M103).
+
+Tests: `tests/test_cuadre_que_falta_revisar.py` (en el gate).
+
+## INV-33 · El informe de cierre del inventario (22-ago-2026)
+
+*"Que quede algo al final, como informe: lo que se encontró y lo que no, así les pido que me
+busquen esas específicas, para cerrar el inventario full"*.
+
+`GET /api/inventario/cuadre-informe?desde=&hasta=` (default hoy) + pantalla
+`/planta/cuadre-informe`, enlazada desde el cuadre.
+
+**De dónde sale cada cosa:**
+- lo **declarado** (coincide · ajustado · no está · apareció) sale del `audit_log`. Lo que se dio
+  por no encontrado quedó en CERO y desapareció del inventario, así que **del stock actual no se
+  puede reconstruir**: el rastro es la única fuente para eso;
+- lo **sin revisar** sale del inventario vivo menos lo declarado;
+- `sistema` (lo que se creía tener) se lee del **`antes`** del audit (`{'stock': ...}`), no del
+  `despues`. Suponerlo ahí devolvía 0, y un cero se lee como un hecho (M220/M245).
+
+**`a_buscar`** junta lo no encontrado y lo que nadie miró: los dos mandan a la misma acción, y
+separarlos obliga a mirar dos veces. Es la lista que se imprime o se copia para el equipo.
+
+**El rango es un parámetro** porque un inventario completo toma varios días; con default hoy, un
+informe de un conteo de tres días diría que falta casi todo (M174).
+
+⚠ **El informe NO cierra nada**: dar un lote por perdido es un ajuste que decide una persona, no
+el efecto secundario de pedir un reporte (M19). Un guard verifica que pedirlo dos veces no mueva
+un gramo.
+
+Tests: `tests/test_cuadre_que_falta_revisar.py` (en el gate).

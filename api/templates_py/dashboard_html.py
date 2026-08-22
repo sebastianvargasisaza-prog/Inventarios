@@ -1501,6 +1501,16 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         if(!kg||kg<=0){m.innerHTML='<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:8px 12px;border-radius:6px">Ingresá la cantidad en kg.</div>';return;}
         if(!area){m.innerHTML='<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:8px 12px;border-radius:6px">Elegí un área de fabricación.</div>';return;}
         var body={producto:prod,area_id:parseInt(area),cantidad_kg:kg}; if(op) body.operario_id=parseInt(op);
+        // El reparto que el operario hizo en la hoja de verificacion viaja CON el acto de
+        // producir: si se quedara en la pantalla, el kardex descontaria por FEFO y la
+        // persona creeria que peso de los lotes que eligio (M5/M109).
+        if(window._VF_REP && Object.keys(window._VF_REP).length){
+          if(typeof vfRepCuadraTodo==='function' && !vfRepCuadraTodo()){
+            m.innerHTML='<div style="background:var(--cx-danger-pale);color:var(--cx-danger-text);padding:8px 12px;border-radius:6px">Hay un reparto de lotes que no cuadra. Ajustalo en la hoja de verificacion antes de fabricar.</div>';
+            return;
+          }
+          body.reparto_lotes = window._VF_REP;
+        }
         var _pres=((document.getElementById('prod-presentacion')||{}).value||'').trim(); if(_pres) body.presentacion=_pres;
         var t=await _csrfFab();
         var r=await fetch('/api/planta/fabricacion/crear-iniciar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
@@ -7417,10 +7427,55 @@ window._VERIF_EST = window._VERIF_EST || {};
   +'background:var(--cx-warn-pale)}'
   +'.vf-ret-m{font-size:11.5px;font-weight:700;color:var(--cx-warn-text)}'
   +'.vf-nada{font-size:12px;color:var(--cx-text-mute);padding:4px 0 8px}'
-  +'.vf-pie{margin:14px 0 0;font-size:12.5px;color:var(--cx-text-soft);line-height:1.55}';
+  +'.vf-pie{margin:14px 0 0;font-size:12.5px;color:var(--cx-text-soft);line-height:1.55}'
+  +'.vf-sec{display:flex;align-items:center;gap:10px;margin:20px 0 10px}'
+  +'.vf-sec:first-of-type{margin-top:14px}'
+  +'.vf-sec-t{font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;white-space:nowrap}'
+  +'.vf-sec-l{flex:1;height:1px;background:var(--cx-border)}'
+  +'.vf-sec-falta .vf-sec-t{color:var(--cx-danger-text)}'
+  +'.vf-sec-ok .vf-sec-t{color:var(--cx-success-text)}'
+  +'.vf-mat.vf-mat-falta{border-left:3px solid var(--cx-danger-light);padding-left:11px}'
+  +'.vf-num{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;font-size:12.5px;color:var(--cx-text-mute)}'
+  +'.vf-num b{display:block;font-size:15px;font-weight:800;color:var(--cx-text);letter-spacing:-.2px}'
+  +'.vf-num .mal b{color:var(--cx-danger-text)}'
+  +'.vf-toma{font-size:11px;font-weight:800;color:var(--cx-primary-text);background:var(--cx-primary-pale);border-radius:999px;padding:2px 9px;white-space:nowrap}'
+  +'.vf-res{font-size:11px;font-weight:700;color:var(--cx-text-mute);background:var(--cx-bg-alt);border-radius:999px;padding:2px 9px;white-space:nowrap}'
+  +'.vf-lote.vf-reserva{opacity:.72}'
+  +'.vf-rep{display:flex;align-items:center;gap:7px}'
+  +'.vf-rep input{width:78px;padding:5px 8px;border:1px solid var(--cx-border);border-radius:8px;font-size:12.5px;font-weight:700;font-family:inherit;text-align:right;background:var(--cx-card);color:var(--cx-text)}'
+  +'.vf-rep input:focus{outline:none;border-color:var(--cx-primary-light)}'
+  +'.vf-rep-u{font-size:11.5px;color:var(--cx-text-mute);font-weight:700}'
+  +'.vf-suma{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:12.5px;font-weight:700}'
+  +'.vf-suma-ok{color:var(--cx-success-text)}'
+  +'.vf-suma-mal{color:var(--cx-danger-text)}'
+  +'.vf-rep-b{border:1px solid var(--cx-border);background:var(--cx-card);color:var(--cx-text-soft);border-radius:9px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}'
+  +'.vf-rep-b:hover{border-color:var(--cx-primary-light);color:var(--cx-primary-text)}'
+  +'.vf-acc-top{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}'
+  +'.vf-bmain{border:none;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}'
+  +'.vf-bini{background:var(--cx-primary-grad,var(--cx-primary));color:#fff}'
+  +'.vf-bfin{background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid var(--cx-success-light)}'
+  +'.vf-estado{font-size:12px;color:var(--cx-text-mute);font-weight:700}'
+  +'.vf-cierre{border:1px solid var(--cx-warn-light);background:var(--cx-warn-pale);border-radius:14px;padding:15px 18px;margin-bottom:16px}'
+  +'.vf-cierre-t{font-size:14.5px;font-weight:800;color:var(--cx-warn-text);margin-bottom:3px}'
+  +'.vf-cierre-s{font-size:12.5px;color:var(--cx-text-soft);margin-bottom:11px;line-height:1.5}'
+  +'.vf-cierre-ok{border-color:var(--cx-success-light);background:var(--cx-success-pale)}'
+  +'.vf-cierre-ok .vf-cierre-t{color:var(--cx-success-text)}'
+  +'.vf-pend{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:var(--cx-card);border:1px solid var(--cx-border);border-radius:10px;padding:8px 13px;margin-bottom:6px}'
+  +'.vf-pend-n{font-size:12.5px;color:var(--cx-text)}'
+  +'.vf-pend-n b{font-weight:800}'
+  +'.vf-pend-m{font-size:11.5px;color:var(--cx-text-mute)}';
   document.head.appendChild(st);
 })();
 function _verifKey(cod, lote){ return String(cod||'')+'||'+String(lote||''); }
+function _vfSacarDePendientes(cod, lote){
+  // Declarar desde la lista del cierre la achica: si el lote siguiera ahi, la persona
+  // no sabria cual ya cerro y volveria a buscarlo (M129).
+  var c = window._VF_CIERRE;
+  if(!c || !c.pendientes) return;
+  c.pendientes = c.pendientes.filter(function(x){
+    return !(String(x.cod)===String(cod) && String(x.lote)===String(lote));
+  });
+}
 function _verifMsg(txt, err){
   // El aviso vive en una VARIABLE, no sólo en el DOM: `simularProduccion` reescribe el panel
   // entero justo después de cada declaración, así que un banner insertado como hijo se borra
@@ -7432,6 +7487,180 @@ function _verifMsg(txt, err){
   b.className='vf-banner'+(err?' vf-banner-err':'');
   b.innerHTML=txt;
 }
+// ── La revision se INICIA y se FINALIZA · Sebastian 22-ago-2026 ──────────────────────
+// "Quiero que se le de iniciar y finalizar, y asi al finalizar que diga: estas materias primas
+// no las tocaste, y las liste, asi las buscamos o decimos no estan".
+// Sin cierre, una hoja de 52 lotes se abandona a la mitad y el progreso no distingue "no
+// arranque" de "arranque y me quedaron 40".
+window._VF_SESION = window._VF_SESION || null;
+function vfIniciarRevision(){
+  var n = Object.keys(window._VERIF_EST||{}).length;
+  // Se avisa ANTES de borrar: la revision anterior es trabajo de alguien, y borrarla en
+  // silencio hace que el progreso mida otra cosa sin que nadie se entere.
+  if(n && !confirm('Arrancar una revision nueva borra lo que ya declaraste en esta pantalla ('
+      + n + ' lote(s)). Los ajustes que YA guardaste en el inventario no se tocan. Seguimos?'))
+    return;
+  window._VERIF_EST = {};
+  window._VF_CIERRE = null;
+  window._VF_SESION = {desde: Date.now(), quien: (window._USUARIO||'')};
+  _verifMsg('&#9654; Revisi&oacute;n iniciada &middot; and&aacute; al estante y declar&aacute; cada lote.');
+  simularProduccion();
+}
+function vfFinalizarRevision(){
+  // Lo que quedo sin tocar: se calcula de lo que la hoja esta MOSTRANDO, que es lo que la
+  // persona tenia enfrente. Contar sobre otra lista diria un numero que no corresponde.
+  var pend = [];
+  var lotes = window._VF_LOTES || {};
+  var nom = window._VF_NOMBRE || {};
+  for(var cod in lotes){
+    if(!Object.prototype.hasOwnProperty.call(lotes,cod)) continue;
+    (lotes[cod]||[]).forEach(function(l){
+      if(!(window._VERIF_EST||{})[_verifKey(cod, l.lote)])
+        pend.push({cod:cod, nombre:(nom[cod]||cod), lote:l.lote, g:l.g,
+                   ubicacion:l.ubicacion||'', vence:l.vence||''});
+    });
+  }
+  window._VF_CIERRE = {pendientes: pend, cuando: Date.now()};
+  simularProduccion();
+}
+function vfSeguirRevisando(){
+  window._VF_CIERRE = null;
+  simularProduccion();
+}
+function _vfCierreHTML(){
+  var c = window._VF_CIERRE;
+  if(!c) return '';
+  var p = c.pendientes || [];
+  if(!p.length)
+    return '<div class="vf-cierre vf-cierre-ok"><div class="vf-cierre-t">'
+      + '&#10003; Revisi&oacute;n completa</div><div class="vf-cierre-s">No qued&oacute; '
+      + 'ning&uacute;n lote sin declarar. Lo que corregiste ya est&aacute; en el inventario.</div>'
+      + '<button class="vf-rep-b" onclick="vfSeguirRevisando()">Volver a la hoja</button></div>';
+  var h = '<div class="vf-cierre"><div class="vf-cierre-t">&#9888; Estas no las tocaste &middot; '
+    + p.length + ' lote(s)</div>'
+    + '<div class="vf-cierre-s">Busc&aacute; cada una y declarala ac&aacute; mismo: si no est&aacute;, '
+    + 'el lote queda en CERO y el sistema busca con qu&eacute; reemplazarlo.</div>';
+  p.forEach(function(x){
+    h += '<div class="vf-pend"><div><div class="vf-pend-n"><b>' + _escHTML(x.nombre) + '</b> '
+      + '&middot; lote ' + _escHTML(x.lote||'sin lote') + '</div>'
+      + '<div class="vf-pend-m">' + Number(x.g||0).toLocaleString('es-CO') + ' g'
+      + (x.ubicacion ? (' &middot; ' + _escHTML(x.ubicacion)) : '')
+      + (x.vence ? (' &middot; vence ' + _escHTML(String(x.vence).substring(0,10))) : '')
+      + '</div></div>'
+      + '<div class="vf-acc">'
+      + '<button class="vf-b vf-b-ok" onclick="verifOk(' + _q(x.cod) + ',' + _q(x.lote)
+      + ')">&#10003; Est&aacute;</button>'
+      + '<button class="vf-b" onclick="verifMenos(' + _q(x.cod) + ',' + _q(x.lote) + ','
+      + (Number(x.g)||0) + ')">Hay menos</button>'
+      + '<button class="vf-b vf-b-no" onclick="verifNoEsta(' + _q(x.cod) + ',' + _q(x.lote)
+      + ')">No est&aacute;</button>'
+      + '</div></div>';
+  });
+  h += '<div style="margin-top:11px"><button class="vf-rep-b" onclick="vfSeguirRevisando()">'
+    + 'Volver a la hoja</button></div></div>';
+  return h;
+}
+function _vfBarraSesion(){
+  var s = window._VF_SESION;
+  return '<div class="vf-acc-top">'
+    + '<button class="vf-bmain vf-bini" onclick="vfIniciarRevision()">&#9654; '
+    + (s ? 'Reiniciar revisi&oacute;n' : 'Iniciar revisi&oacute;n') + '</button>'
+    + (s ? ('<button class="vf-bmain vf-bfin" onclick="vfFinalizarRevision()">'
+            + '&#10003; Finalizar revisi&oacute;n</button>') : '')
+    + '<span class="vf-estado">'
+    + (s ? 'Revisi&oacute;n en curso' : 'Sin revisi&oacute;n abierta &middot; pod&eacute;s declarar igual')
+    + '</span></div>';
+}
+// ── Repartir a mano de que lote sale cada gramo · Sebastian 22-ago-2026 ──────────────
+// La suma se valida MIENTRAS se escribe: descubrir que no cuadra recien al apretar el boton
+// es mandar a rehacerlo (M197). Y un reparto que no cuadra se ve resuelto, y con eso se
+// descontaria (M195), asi que hasta que cierre no se puede fabricar.
+window._VF_REP = window._VF_REP || {};
+function vfRepartir(cod, req){
+  var f = {};
+  ((window._VF_LOTES||{})[cod]||[]).forEach(function(l){ f[l.lote] = Number(l.toma_g||0); });
+  window._VF_REP[cod] = f;                 // arranca con lo que el FEFO propone
+  simularProduccion();
+}
+function vfRepCancelar(cod){
+  delete window._VF_REP[cod];
+  simularProduccion();
+}
+function vfRepCambio(el){
+  var cod = el.getAttribute('data-rep-cod');
+  var lote = el.getAttribute('data-rep-lote');
+  if(!window._VF_REP[cod]) window._VF_REP[cod] = {};
+  var n = parseFloat(String(el.value).replace(',','.'));
+  window._VF_REP[cod][lote] = (isNaN(n) || n < 0) ? 0 : n;
+  _vfPintarSuma(cod);
+}
+function _vfSumaRep(cod){
+  var f = window._VF_REP[cod] || {};
+  var t = 0;
+  for(var k in f){ if(Object.prototype.hasOwnProperty.call(f,k)) t += Number(f[k]||0); }
+  return Math.round(t*100)/100;
+}
+function _vfPintarSuma(cod){
+  var e = document.getElementById('vfsuma-'+cod);
+  if(!e) return;
+  var req = Number(e.getAttribute('data-req')||0);
+  var t = _vfSumaRep(cod);
+  var dif = Math.round((t - req)*100)/100;
+  var ok = Math.abs(dif) < 0.05;
+  e.className = 'vf-suma ' + (ok ? 'vf-suma-ok' : 'vf-suma-mal');
+  e.innerHTML = (ok ? '&#10003; ' : '&#9888; ')
+    + t.toLocaleString('es-CO') + ' de ' + req.toLocaleString('es-CO') + ' g'
+    + (ok ? ' &middot; cuadra' : (dif > 0 ? (' &middot; sobran ' + dif.toLocaleString('es-CO') + ' g')
+                                          : (' &middot; faltan ' + (-dif).toLocaleString('es-CO') + ' g')));
+  _vfBotonFabricar();
+}
+function vfRepCuadraTodo(){
+  var reps = window._VF_REP || {};
+  for(var cod in reps){
+    if(!Object.prototype.hasOwnProperty.call(reps,cod)) continue;
+    var e = document.getElementById('vfsuma-'+cod);
+    if(!e) continue;
+    var req = Number(e.getAttribute('data-req')||0);
+    if(Math.abs(_vfSumaRep(cod) - req) >= 0.05) return false;
+  }
+  return true;
+}
+function _vfBotonFabricar(){
+  var b = document.querySelector('[onclick="iniciarFabVivo()"]');
+  if(!b) return;
+  var ok = vfRepCuadraTodo();
+  b.disabled = !ok;
+  b.style.opacity = ok ? '' : '.5';
+  b.style.cursor = ok ? '' : 'not-allowed';
+  b.title = ok ? b.getAttribute('data-tip-ok') || b.title
+               : 'Hay un reparto de lotes que no cuadra: ajustalo antes de fabricar.';
+}
+function _vfPieReparto(cod, ing){
+  if(!(window._VF_REP||{})[cod])
+    return '<div class="vf-suma"><button class="vf-rep-b" onclick="vfRepartir('
+      + _q(cod) + ',' + Number(ing.g_requerido||0) + ')">Repartir a mano de qu&eacute; lote sale '
+      + 'cada gramo</button></div>';
+  return '<div class="vf-suma" id="vfsuma-' + _escHTML(cod) + '" data-req="'
+    + Number(ing.g_requerido||0) + '"></div>'
+    + '<div class="vf-suma"><button class="vf-rep-b" onclick="vfRepCancelar(' + _q(cod)
+    + ')">Volver al orden de vencimiento</button></div>';
+}
+function _vfSec(clase, titulo, n){
+  return '<div class="vf-sec '+clase+'"><span class="vf-sec-t">'+titulo
+    +(n>1?(' &middot; '+n):'')+'</span><span class="vf-sec-l"></span></div>';
+}
+function _vfSecciones(ings, filas){
+  // `filas` viene en el MISMO orden que `ings` (el backend ordena los insuficientes primero),
+  // asi que el corte es el indice del primero que alcanza. Re-renderizar aparte seria una
+  // segunda pasada que puede divergir del orden que decide el motor (M5).
+  var n = ings.length, corte = n;
+  for (var k = 0; k < n; k++) { if (ings[k].suficiente) { corte = k; break; } }
+  if (corte === 0) return _vfSec('vf-sec-ok', 'Todo alcanza · revis&aacute; y confirm&aacute;', n) + filas.join('');
+  var falta = filas.slice(0, corte).join('');
+  var ok = filas.slice(corte).join('');
+  return _vfSec('vf-sec-falta', 'Falta material', corte) + falta
+    + (ok ? (_vfSec('vf-sec-ok', 'Alcanza · confirm&aacute; contra el estante', n - corte) + ok) : '');
+}
 function _verifBannerHTML(){
   var m=window._VERIF_MSG; if(!m) return '';
   return '<div id="vf-banner" class="vf-banner'+(m.err?' vf-banner-err':'')+'">'+m.txt+'</div>';
@@ -7440,6 +7669,7 @@ function verifOk(cod, lote){
   // "Está y alcanza": no toca el kardex -- el sistema ya decía eso. Sólo deja constancia de
   // que ese lote se MIRÓ, que es lo que permite saber qué falta por revisar.
   window._VERIF_EST[_verifKey(cod,lote)]='ok';
+  _vfSacarDePendientes(cod, lote);
   // El aviso habla SOLO del lote. Un contador global de la sesion diria "llevas 5 revisados"
   // al lado de una barra que dice "1 de 2", y dos mitades de la misma pantalla que se
   // contradicen hacen que se deje de creer en las dos (M161). La cuenta de la hoja la lleva
@@ -7477,6 +7707,7 @@ async function _verifCuadrar(cod, lote, fisico, motivo){
     var d=await r.json();
     if(!r.ok||d.error){ _verifMsg('No se pudo guardar: '+_escHTML(d.error||('Error '+r.status)), true); return; }
     window._VERIF_EST[_verifKey(cod,lote)] = (fisico>0?'menos':'no');
+    _vfSacarDePendientes(cod, lote);
     _verifMsg('&#10003; Inventario corregido: <b>'+_escHTML(lote)+'</b> qued&oacute; en '
       +Number(fisico).toLocaleString('es-CO')+' g. Recalculando con qu&eacute; completar...');
     // Se vuelve a preguntar al MOTOR en vez de recalcular acá: así lo que se ve es lo que el
@@ -7501,6 +7732,14 @@ async function simularProduccion(){
       ?'Stock suficiente para '+d.cantidad_kg+'kg de '+d.producto
       :d.faltantes+' ingrediente(s) insuficiente(s) para producir '+d.cantidad_kg+'kg';
     window._VERIF_CTX={producto:d.producto, kg:d.cantidad_kg};
+    // Los lotes de cada material, para que 'repartir a mano' arranque con lo que el FEFO
+    // propone en vez de una grilla en cero.
+    window._VF_LOTES = {}; window._VF_NOMBRE = {};
+    d.ingredientes.forEach(function(x){
+      var _k = x.codigo_bodega||x.material_id||'';
+      window._VF_LOTES[_k] = x.lotes||[];
+      window._VF_NOMBRE[_k] = x.material_nombre||_k;
+    });
     var _vfTot=0, _vfHechos=0;
     var rows=d.ingredientes.map(function(i){
       var badge=i.suficiente
@@ -7518,9 +7757,26 @@ async function simularProduccion(){
         _vfTot++; if(_st) _vfHechos++;
         var _chip = _st==='ok' ? '<span class="vf-ok">&#10003; verificado</span>'
                   : _st==='menos' ? '<span class="vf-menos">ajustado</span>' : '';
-        return '<div class="vf-lote'+(_st==='ok'?' vf-done':'')+'">'
+        // Cuanto sale de ESTE lote, calculado por el backend con el orden del FEFO real: sin
+        // eso el operario ve el saldo del lote y no sabe cuanto pesar de cada uno (M5).
+        var _tm = Number(l.toma_g||0);
+        // En modo reparto el chip se vuelve un campo: es el mismo numero, editable.
+        var _rep = (window._VF_REP||{})[_cod];
+        var _chipTomar;
+        if(_rep){
+          var _v = (_rep[l.lote]!==undefined) ? _rep[l.lote] : _tm;
+          _chipTomar = '<span class="vf-rep"><input type="number" min="0" step="0.01" value="'
+            +_v+'" data-rep-cod="'+_escHTML(_cod)+'" data-rep-lote="'+_escHTML(l.lote||'')+'" '
+            +'oninput="vfRepCambio(this)"><span class="vf-rep-u">g de aqu&iacute;</span></span>';
+        } else {
+          _chipTomar = l.reserva
+            ? '<span class="vf-res">no hace falta &middot; queda de reserva</span>'
+            : '<span class="vf-toma">pesar '+_tm.toLocaleString('es-CO')+' g de aqu&iacute;</span>';
+        }
+        return '<div class="vf-lote'+(_st==='ok'?' vf-done':'')+(l.reserva?' vf-reserva':'')+'">'
           +'<div class="vf-l1"><b>'+_escHTML(l.lote||'sin lote')+'</b>'
-          +'<span class="vf-g">'+Number(l.g||0).toLocaleString('es-CO')+' g</span>'
+          +_chipTomar
+          +'<span class="vf-g">hay '+Number(l.g||0).toLocaleString('es-CO')+' g</span>'
           +(l.ubicacion? '<span class="vf-ub">&#128205; '+_escHTML(l.ubicacion)+'</span>':'')
           +(l.vence? '<span class="vf-v">vence '+_escHTML(String(l.vence).substring(0,10))+'</span>':'')
           +_chip+'</div>'
@@ -7544,14 +7800,21 @@ async function simularProduccion(){
         _cuerpo='<div class="vf-nada">No hay ning&uacute;n lote de este material en bodega.</div>';
       if(i.no_controla_stock)
         _cuerpo='<div class="vf-nada">Se prepara en el laboratorio &middot; no se controla stock.</div>';
-      return '<div class="vf-mat">'
+      // Repartir a mano: solo tiene sentido con mas de un lote donde elegir.
+      if((i.lotes||[]).length > 1) _cuerpo += _vfPieReparto(_cod, i);
+      return '<div class="vf-mat'+(i.suficiente?'':' vf-mat-falta')+'">'
         +'<div class="vf-mat-h"><div class="vf-mat-n">'+_escHTML(i.material_nombre)
         +(i.codigo_bodega?'<span class="vf-mat-c">'+_escHTML(i.codigo_bodega)+'</span>':'')+'</div>'
-        +'<div class="vf-mat-q">Necesita <b>'+i.g_requerido.toLocaleString('es-CO')+' g</b>'
-        +' &middot; hay <b>'+i.g_disponible.toLocaleString('es-CO')+' g</b>'
-        +' &middot; '+costoCell+' &nbsp; '+badge+'</div></div>'
+        +badge+'</div>'
+        +'<div class="vf-num"><span>necesita<b>'+i.g_requerido.toLocaleString('es-CO')+' g</b></span>'
+        +'<span'+(i.suficiente?'':' class="mal"')+'>hay<b>'+i.g_disponible.toLocaleString('es-CO')+' g</b></span>'
+        +(i.suficiente?'':'<span class="mal">faltan<b>'+i.g_faltante.toLocaleString('es-CO')+' g</b></span>')
+        +'<span>costo<b>'+costoCell+'</b></span></div>'
         +_cuerpo+'</div>';
-    }).join('');
+    });
+    // Lo primero que hay que ver, con el estante enfrente, es QUE FALTA: mezclado entre lo
+    // que alcanza se pierde entre 52 lotes corridos.
+    window._VF_FALTAN = d.ingredientes.filter(function(x){ return !x.suficiente; }).length;
     var _vfPct = _vfTot ? Math.round(_vfHechos*100/_vfTot) : 0;
     var _vfProg = _vfTot
       ? '<div class="vf-prog"><div class="vf-prog-t">'+_vfHechos+' de '+_vfTot+' lotes revisados</div>'
@@ -7573,11 +7836,18 @@ async function simularProduccion(){
       +'<div class="vf-hd-s">Hoja de verificaci&oacute;n f&iacute;sica &middot; and&aacute; al estante y declar&aacute; cada lote. '
       +'Lo que declar&aacute;s CORRIGE el inventario y el sistema vuelve a decirte con qu&eacute; completar.</div></div>'
       +_vfProg+'</div>'
-      +rows
+      +_vfBarraSesion()
+      +_vfCierreHTML()
+      +_vfSecciones(d.ingredientes, rows)
       +costoHtml
       +(d.factible?'<p class="vf-pie">&#128994; Con lo verificado, pod&eacute;s registrar la producci&oacute;n.</p>'
         :'<p class="vf-pie" style="color:var(--cx-danger-text)">&#9888; Revis&aacute; los lotes en el estante o gener&aacute; la OC de compra antes de producir.</p>')
       +'</div>';
+    // Las sumas se pintan DESPUES del innerHTML: antes los contenedores no existen.
+    for(var _c in (window._VF_REP||{})){
+      if(Object.prototype.hasOwnProperty.call(window._VF_REP,_c)) _vfPintarSuma(_c);
+    }
+    _vfBotonFabricar();
     panel.scrollIntoView({behavior:'smooth'});
   }catch(e){panel.innerHTML='<span style="color:var(--cx-danger-text);">Error: '+e.message+'</span>';}
 }

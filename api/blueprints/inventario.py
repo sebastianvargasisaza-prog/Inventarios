@@ -3696,7 +3696,9 @@ def simular_produccion():
         _lts = {'usables': [], 'retenidos': []}
         try:
             from blueprints.programacion import _lotes_de_material as _ldm_sim
-            _lts = _ldm_sim(c, cod_bodega, limite=6)
+            # TODOS los lotes, no una muestra: con el material repartido en ocho, ver
+            # cuatro es no saber que hay mas (y cuales toca bajar del estante).
+            _lts = _ldm_sim(c, cod_bodega, limite=40)
         except Exception as _els:
             import logging as _lgs
             _lgs.getLogger('inventario').warning('lotes del simulador %s: %s', cod_bodega, _els)
@@ -3717,6 +3719,19 @@ def simular_produccion():
             _x['ubicacion'] = _ubi.get(_x.get('lote'), '')
         for _x in _lts.get('retenidos') or []:
             _x['ubicacion'] = _ubi.get(_x.get('lote'), '')
+        # Cuanto sale de CADA lote, con el mismo orden que el FEFO real: asi la hoja dice
+        # lo que el descuento va a hacer, y el operario sabe cuanto pesar de cada uno (M5).
+        _usables = list(_lts.get('usables') or [])
+        _falta_por_tomar = g_req
+        for _lx in _usables:
+            _t = min(_falta_por_tomar, float(_lx.get('g') or 0))
+            _t = round(max(_t, 0), 2)
+            _lx['toma_g'] = _t
+            _lx['reserva'] = (_t <= 0.009)
+            _falta_por_tomar = round(_falta_por_tomar - _t, 2)
+        # Un tope que recorta sin decirlo se lee como el total (M155). Hoy no recorta: el
+        # helper trae hasta 40 y se declara lo que quedaria afuera.
+        _ocultos = max(len(_lts.get('usables') or []) - len(_usables), 0)
         resultado.append({
             'material_id': mat_id, 'material_nombre': mat_nombre,
             'porcentaje': pct, 'g_requerido': g_req,
@@ -3726,8 +3741,9 @@ def simular_produccion():
             'precio_kg': round(precio_kg or 0, 2),
             'costo': costo_item,
             'codigo_bodega': cod_bodega,
-            'lotes': (_lts.get('usables') or [])[:4],
-            'lotes_bloqueados': (_lts.get('retenidos') or [])[:3],
+            'lotes': _usables,
+            'lotes_ocultos': _ocultos,
+            'lotes_bloqueados': (_lts.get('retenidos') or [])[:8],
         })
     faltantes = sum(1 for r in resultado if not r['suficiente'])
     n = len(resultado)
@@ -8673,6 +8689,9 @@ def inventario_mp_inci(codigo):
     return jsonify({'ok': True, 'codigo': cod, 'nombre_inci': nuevo, 'antes': prev[0]})
 
 
+import json as _json_mod  # el rastro del cuadre viaja como JSON
+
+
 @bp.route('/api/inventario/cuadre-lotes', methods=['GET'])
 def inventario_cuadre_lotes():
     """Lo que hay que revisar en una estantería, incluido lo que NO tiene ubicación.
@@ -8739,6 +8758,62 @@ def inventario_cuadre_lotes():
             out.append({'codigo_mp': r[0], 'nombre': r[1], 'lote': r[2],
                         'stock_sistema': round(float(r[3] or 0), 3), 'posicion': r[4],
                         'fecha_vencimiento': r[5], 'estanteria': '', 'sin_ubicar': True})
+    # ── qué de esto YA se revisó hoy ─────────────────────────────────────────
+    # Sebastián 22-ago: *"ya hice toda la estantería 10 y no sé qué me faltó"*. El contador
+    # decía 0 de 54 con la estantería entera declarada, porque sólo contaba lo apretado en esa
+    # pestaña. La verdad está en el `audit_log`, que es donde cada declaración deja rastro.
+    _rev = {}
+    try:
+        # La fecha del audit va en UTC y el día de trabajo es Colombia: se convierte, no se
+        # compara crudo (M24). Se miran los DOS actos del cuadre -- el que ajusta y el que
+        # confirma que coincide -- porque los dos son "ya lo revisé".
+        for _u_r, _acc, _det, _des, _f in c.execute(
+                "SELECT COALESCE(usuario,''), COALESCE(accion,''), COALESCE(detalle,''), "
+                "       COALESCE(despues,''), COALESCE(fecha,'') "
+                "  FROM audit_log "
+                " WHERE accion IN ('CUADRE_INVENTARIO','CUADRE_CONFIRMA') "
+                "   AND date(fecha, '-5 hours') = date('now', '-5 hours') "
+                " ORDER BY id").fetchall():
+            try:
+                _d = _json_mod.loads(_des) if _des else {}
+            except Exception:
+                _d = {}
+            _cod_r = str(_d.get('codigo') or '').strip().upper()
+            _lot_r = str(_d.get('lote') or '').strip()
+            if not _cod_r:
+                continue
+            if _acc == 'CUADRE_CONFIRMA':
+                _como = 'coincide'
+            elif _d.get('alta'):
+                _como = 'dado de alta'
+            elif float(_d.get('fisico') or 0) <= 0:
+                _como = 'no existe'
+            else:
+                _como = 'ajustado'
+            # La ÚLTIMA gana: si el lote se declaró dos veces, lo que vale es lo último que se
+            # dijo, no lo primero.
+            _rev[(_cod_r, _lot_r)] = {
+                'por': _u_r, 'hora': str(_f or '')[11:16], 'como': _como,
+                'fisico': _d.get('fisico'),
+            }
+    except Exception as _er:
+        # Un except mudo acá haría que "no pude leer el rastro" se vea igual que "no revisaste
+        # nada", que es la conclusión contraria y justo la que hay que evitar (M4/M94/M100).
+        __import__('logging').getLogger('inventario').warning('revisado de hoy: %s', _er)
+        _rev = None
+
+    for _fila in out:
+        if _rev is None:
+            _fila['revisado_lectura_fallo'] = True
+            continue
+        _m = _rev.get((str(_fila.get('codigo_mp') or '').strip().upper(),
+                       str(_fila.get('lote') or '').strip()))
+        if _m:
+            _fila['revisado_hoy'] = True
+            _fila['revisado_por'] = _m['por']
+            _fila['revisado_hora'] = _m['hora']
+            _fila['revisado_como'] = _m['como']
+
     # ── «esto tambien esta en otra parte» ────────────────────────────────────
     # UNA consulta para TODOS los materiales de la estanteria: pedirla por fila desde el
     # navegador es lo que satura los tres workers (M43).
@@ -8780,7 +8855,12 @@ def inventario_cuadre_lotes():
                 key=lambda u: -u['g'])
     return jsonify({'ok': True, 'estanteria': est, 'busqueda': q, 'lotes': out,
                     'sin_ubicar': sum(1 for x in out if x['sin_ubicar']),
-                    'con_otras_ubic': sum(1 for x in out if x.get('otras_ubic'))})
+                    'con_otras_ubic': sum(1 for x in out if x.get('otras_ubic')),
+                    # El contador de la pantalla sale de ACA, no de lo que se apreto en la
+                    # pestaña: con la estanteria entera declarada decia 0 de 54.
+                    'revisados_hoy': sum(1 for x in out if x.get('revisado_hoy')),
+                    'falta_revisar': sum(1 for x in out if not x.get('revisado_hoy')),
+                    'revisado_lectura_fallo': any(x.get('revisado_lectura_fallo') for x in out)})
 
 
 @bp.route('/api/inventario/ubicaciones-agrupadas', methods=['GET'])
@@ -8878,6 +8958,330 @@ def planta_cuadre_page():
     from flask import Response
     from templates_py.cuadre_html import CUADRE_HTML
     return Response(CUADRE_HTML, mimetype='text/html; charset=utf-8')
+
+
+@bp.route('/planta/cuadre-informe', methods=['GET'])
+def planta_cuadre_informe_page():
+    """El informe de cierre del inventario, para mirar y para imprimir."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/planta/cuadre-informe')
+    return _INFORME_CUADRE_HTML
+
+
+_INFORME_CUADRE_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<title>Cierre de inventario</title><link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{font-family:Inter,system-ui,sans-serif;background:var(--cx-bg);color:var(--cx-text);
+  margin:0;padding:26px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:22px;font-weight:800;letter-spacing:-.4px;margin:0 0 5px}
+.sub{color:var(--cx-text-mute);font-size:13.5px;line-height:1.6;max-width:80ch;margin:0 0 18px}
+.rango{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.rango input{padding:7px 10px;border:1px solid var(--cx-border);border-radius:9px;
+  font-size:13px;font-family:inherit;background:var(--cx-card);color:var(--cx-text)}
+.b{border:1px solid var(--cx-primary-light);background:var(--cx-primary-pale);
+  color:var(--cx-primary-text);border-radius:10px;padding:8px 15px;font-size:13px;
+  font-weight:800;cursor:pointer;font-family:inherit}
+.b2{border:1px solid var(--cx-border);background:var(--cx-card);color:var(--cx-text-soft);
+  border-radius:10px;padding:8px 15px;font-size:13px;font-weight:700;cursor:pointer;
+  font-family:inherit}
+.kpis{display:flex;gap:26px;flex-wrap:wrap;margin:0 0 20px}
+.kpi b{display:block;font-size:22px;font-weight:800;letter-spacing:-.4px}
+.kpi span{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--cx-text-mute)}
+.kpi.mal b{color:var(--cx-danger-text)}
+.kpi.ok b{color:var(--cx-success-text)}
+.kpi.wa b{color:var(--cx-warn-text)}
+.sec{margin:24px 0 10px;display:flex;align-items:center;gap:10px}
+.sec h2{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;margin:0}
+.sec .l{flex:1;height:1px;background:var(--cx-border)}
+.sec.buscar h2{color:var(--cx-danger-text)}
+.card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;
+  overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--cx-text-mute);padding:10px 13px;border-bottom:1px solid var(--cx-border)}
+td{padding:9px 13px;border-bottom:1px solid var(--cx-border);font-size:12.5px}
+tr:last-child td{border-bottom:none}
+.num{text-align:right;white-space:nowrap}
+.mot{font-size:11px;font-weight:700;color:var(--cx-warn-text);white-space:nowrap}
+.vacio{padding:16px;color:var(--cx-text-mute);font-size:13px}
+.nota{font-size:12px;color:var(--cx-text-mute);margin-top:16px;line-height:1.55}
+@media print{
+  body{background:#fff;padding:0}
+  .rango,.b,.b2{display:none}
+  .card{border-color:#999;box-shadow:none}
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;
+}
+</style></head><body><div class="wrap">
+<h1>Cierre de inventario</h1>
+<p class="sub">Lo que se encontr&oacute; y lo que no. La primera lista es la que hay que ir a
+buscar: son los lotes que el sistema tiene y que nadie vio, o que se dieron por no encontrados.
+<b>Este informe no cierra nada por su cuenta</b>: dar un lote por perdido es un ajuste que
+alguien decide, no el efecto de pedir un reporte.</p>
+<div class="rango">
+  <label style="font-size:12.5px;font-weight:700">Desde <input type="date" id="d1"></label>
+  <label style="font-size:12.5px;font-weight:700">Hasta <input type="date" id="d2"></label>
+  <button class="b" onclick="cargar()">Ver</button>
+  <button class="b2" onclick="window.print()">Imprimir</button>
+  <button class="b2" onclick="copiar()">Copiar la lista para buscar</button>
+</div>
+<div id="cont">Cargando&hellip;</div>
+</div><script>
+function esc(x){ return String(x==null?'':x).replace(/[&<>"']/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function n(x){ return Number(x||0).toLocaleString('es-CO'); }
+var _D=null;
+function _hoy(){ var t=new Date(Date.now()-5*3600*1000); return t.toISOString().slice(0,10); }
+function _tabla(filas, cols){
+  if(!filas.length) return '<div class="card"><div class="vacio">Nada ac&aacute;.</div></div>';
+  var h='<div class="card"><table><thead><tr>';
+  cols.forEach(function(c){ h+='<th'+(c.num?' class="num"':'')+'>'+c.t+'</th>'; });
+  h+='</tr></thead><tbody>';
+  filas.forEach(function(f){
+    h+='<tr>';
+    cols.forEach(function(c){ h+='<td'+(c.num?' class="num"':'')+'>'+c.v(f)+'</td>'; });
+    h+='</tr>';
+  });
+  return h+'</tbody></table></div>';
+}
+function _sec(t, clase){ return '<div class="sec '+(clase||'')+'"><h2>'+t+'</h2><span class="l">'
+  +'</span></div>'; }
+async function cargar(){
+  var c=document.getElementById('cont');
+  c.textContent='Cargando...';
+  try{
+    var r=await fetch('/api/inventario/cuadre-informe?desde='
+      +encodeURIComponent(document.getElementById('d1').value||'')
+      +'&hasta='+encodeURIComponent(document.getElementById('d2').value||''),
+      {credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){ c.innerHTML='<div class="vacio" style="color:var(--cx-danger-text)">'
+      +esc(d.error||('Error '+r.status))+'</div>'; return; }
+    _D=d;
+    var s=d.resumen;
+    var h='<div class="kpis">'
+      +'<div class="kpi mal"><b>'+n(s.a_buscar)+'</b><span>hay que buscar</span></div>'
+      +'<div class="kpi ok"><b>'+n(s.coinciden)+'</b><span>coincidieron</span></div>'
+      +'<div class="kpi wa"><b>'+n(s.ajustados)+'</b><span>ajustados</span></div>'
+      +'<div class="kpi mal"><b>'+n(s.no_esta)+'</b><span>no se encontraron</span></div>'
+      +'<div class="kpi wa"><b>'+n(s.sin_revisar)+'</b><span>sin revisar</span></div>'
+      +'<div class="kpi"><b>'+n(s.aparecieron)+'</b><span>aparecieron</span></div>'
+      +'</div>';
+    h+=_sec('Para ir a buscar &middot; '+n(s.a_buscar)+' lote(s)','buscar');
+    h+=_tabla(d.a_buscar, [
+      {t:'Material', v:function(f){ return '<b>'+esc(f.nombre||f.codigo_mp)+'</b>'; }},
+      {t:'Lote', v:function(f){ return esc(f.lote||'sin lote'); }},
+      {t:'D&oacute;nde deber&iacute;a estar', v:function(f){
+        return esc(f.estanteria||'') + (f.posicion?(' &middot; pos. '+esc(f.posicion)):'')
+          || '<span style="color:var(--cx-text-mute)">sin ubicaci&oacute;n</span>'; }},
+      {t:'Cu&aacute;nto', num:true, v:function(f){
+        return n(f.stock_sistema!==undefined?f.stock_sistema:f.sistema)+' g'; }},
+      {t:'Por qu&eacute;', v:function(f){
+        return '<span class="mot">'+esc(f.motivo_lista||'')+'</span>'
+          +(f.motivo?('<div style="font-size:11px;color:var(--cx-text-mute)">'+esc(f.motivo)
+            +'</div>'):''); }},
+    ]);
+    h+=_sec('Se ajustaron &middot; '+n(s.ajustados)+' &middot; '+n(s.gramos_ajustados)+' g netos');
+    h+=_tabla(d.ajustados, [
+      {t:'Material', v:function(f){ return '<b>'+esc(f.nombre||f.codigo_mp)+'</b>'; }},
+      {t:'Lote', v:function(f){ return esc(f.lote||'sin lote'); }},
+      {t:'Dec&iacute;a', num:true, v:function(f){ return n(f.sistema)+' g'; }},
+      {t:'Hab&iacute;a', num:true, v:function(f){ return n(f.fisico)+' g'; }},
+      {t:'Diferencia', num:true, v:function(f){
+        return '<b style="color:'+(f.ajuste<0?'var(--cx-danger-text)':'var(--cx-success-text)')
+          +'">'+(f.ajuste>0?'+':'')+n(f.ajuste)+' g</b>'; }},
+      {t:'Qui&eacute;n', v:function(f){ return esc(f.por)+' &middot; '+esc(f.cuando); }},
+    ]);
+    h+=_sec('Coincidieron &middot; '+n(s.coinciden));
+    h+=_tabla(d.coinciden, [
+      {t:'Material', v:function(f){ return esc(f.nombre||f.codigo_mp); }},
+      {t:'Lote', v:function(f){ return esc(f.lote||'sin lote'); }},
+      {t:'Cantidad', num:true, v:function(f){ return n(f.fisico)+' g'; }},
+      {t:'Qui&eacute;n', v:function(f){ return esc(f.por)+' &middot; '+esc(f.cuando); }},
+    ]);
+    if(d.lectura_fallo)
+      h+='<div class="nota" style="color:var(--cx-danger-text)">&#9888; No se pudo leer una '
+        +'parte del rastro: el informe puede estar incompleto. No es lo mismo que "no se '
+        +'revis&oacute; nada".</div>';
+    h+='<div class="nota">El rango por defecto es hoy. Un inventario completo toma varios '
+      +'d&iacute;as: cambi&aacute; el <b>Desde</b> al d&iacute;a que arrancaron y el informe '
+      +'cubre todo el conteo.</div>';
+    c.innerHTML=h;
+  }catch(e){ c.innerHTML='<div class="vacio" style="color:var(--cx-danger-text)">No se pudo: '
+    +esc(String(e))+'</div>'; }
+}
+function copiar(){
+  if(!_D){ return; }
+  var t=(_D.a_buscar||[]).map(function(f){
+    return '- '+(f.nombre||f.codigo_mp)+' | lote '+(f.lote||'sin lote')
+      +' | '+(f.estanteria||'sin ubicacion')+(f.posicion?(' pos. '+f.posicion):'')
+      +' | '+Number(f.stock_sistema!==undefined?f.stock_sistema:f.sistema||0).toLocaleString('es-CO')
+      +' g | '+(f.motivo_lista||'');
+  }).join(String.fromCharCode(10));
+  var cab='Lotes por buscar ('+(_D.desde||'')+' a '+(_D.hasta||'')+'):'+String.fromCharCode(10);
+  navigator.clipboard.writeText(cab+t).then(function(){
+    var b=document.querySelectorAll('.b2')[1]; if(b){ var v=b.textContent;
+      b.textContent='Copiado'; setTimeout(function(){ b.textContent=v; },1500); }
+  });
+}
+document.getElementById('d1').value=_hoy();
+document.getElementById('d2').value=_hoy();
+cargar();
+</script></body></html>"""
+
+
+@bp.route('/api/inventario/cuadre-informe', methods=['GET'])
+def inventario_cuadre_informe():
+    """El cierre del inventario: qué apareció, qué no, y qué nadie miró.
+
+    `?desde=YYYY-MM-DD` (default hoy) · `?hasta=YYYY-MM-DD` (default hoy).
+
+    Lo que se dio por NO ENCONTRADO ya no está en el stock, así que del inventario actual no se
+    puede reconstruir: sale del `audit_log`, que es el registro del acto y no se reescribe.
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    _hoy_col = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d')
+    desde = (request.args.get('desde') or _hoy_col).strip()[:10]
+    hasta = (request.args.get('hasta') or _hoy_col).strip()[:10]
+    conn = get_db(); c = conn.cursor()
+
+    # ── 1 · lo DECLARADO, del rastro ────────────────────────────────────────
+    declarado = {}
+    lectura_fallo = False
+    try:
+        for _usr, _acc, _des, _ant, _f in c.execute(
+                "SELECT COALESCE(usuario,''), COALESCE(accion,''), COALESCE(despues,''), "
+                "       COALESCE(antes,''), COALESCE(fecha,'') "
+                "  FROM audit_log "
+                " WHERE accion IN ('CUADRE_INVENTARIO','CUADRE_CONFIRMA') "
+                # El audit guarda UTC y el dia de trabajo es Colombia: se convierte (M24).
+                "   AND date(fecha, '-5 hours') BETWEEN ? AND ? "
+                " ORDER BY id", (desde, hasta)).fetchall():
+            try:
+                _d = _json_mod.loads(_des) if _des else {}
+            except Exception:
+                continue
+            _cod = str(_d.get('codigo') or '').strip().upper()
+            if not _cod:
+                continue
+            # Lo que el sistema CREIA tener vive en el `antes` (`{'stock': ...}`), que es
+            # lo que era antes del ajuste -- no en el `despues`. Suponerlo ahi devolvia
+            # CERO, y un cero se lee como un hecho: el informe decia que el sistema creia
+            # tener 0 g de un lote que tenia 200 (M220/M241/M245).
+            try:
+                _a = _json_mod.loads(_ant) if _ant else {}
+            except Exception:
+                _a = {}
+            _lot = str(_d.get('lote') or '').strip()
+            try:
+                _fis = float(_d.get('fisico') or 0)
+            except (TypeError, ValueError):
+                _fis = 0.0
+            if _acc == 'CUADRE_CONFIRMA':
+                _como = 'coincide'
+            elif _d.get('alta'):
+                _como = 'apareció'
+            elif _fis <= 0:
+                _como = 'no está'
+            else:
+                _como = 'ajustado'
+            # La ÚLTIMA declaración manda: si un lote se declaró dos veces, lo que vale es lo
+            # último que se dijo.
+            _ajuste = float(_d.get('ajuste') or 0)
+            # `antes.stock` es la fuente; el confirmar-que-coincide lo trae en `despues`;
+            # y si faltara, se DERIVA de lo que el mismo registro ya dice.
+            if _a.get('stock') is not None:
+                _sis = float(_a.get('stock') or 0)
+            elif _d.get('sistema') is not None:
+                _sis = float(_d.get('sistema') or 0)
+            else:
+                _sis = _fis - _ajuste
+            declarado[(_cod, _lot)] = {
+                'codigo_mp': _cod, 'lote': _lot, 'como': _como,
+                'fisico': round(_fis, 2),
+                'sistema': round(_sis, 2),
+                'ajuste': round(_ajuste, 2),
+                'motivo': str(_d.get('motivo') or ''),
+                'por': _usr, 'cuando': str(_f or '')[:16],
+            }
+    except Exception as _e:
+        # "No pude leer el rastro" y "no se revisó nada" son cosas distintas, y mostrar la
+        # segunda cuando pasó la primera es la conclusión contraria (M4/M100).
+        __import__('logging').getLogger('inventario').warning('informe de cuadre: %s', _e)
+        lectura_fallo = True
+
+    # ── 2 · lo que sigue en el inventario y nadie miró ──────────────────────
+    sin_revisar = []
+    nombres = {}
+    try:
+        for r in c.execute(
+                """SELECT m.material_id, MAX(m.material_nombre), COALESCE(m.lote,''),
+                          SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste')
+                                   THEN m.cantidad
+                                   WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -')
+                                   THEN -m.cantidad ELSE 0 END) AS stock,
+                          MAX(COALESCE(m.estanteria,'')), MAX(COALESCE(m.posicion,'')),
+                          MAX(COALESCE(m.fecha_vencimiento,''))
+                     FROM movimientos m
+                    WHERE (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN
+                           ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO',
+                            'AGOTADO','BLOQUEADO'))
+                    GROUP BY m.material_id, COALESCE(m.lote,'')
+                   HAVING stock > 0.01
+                    ORDER BY MAX(COALESCE(m.estanteria,'')), MAX(m.material_nombre)""").fetchall():
+            _cod = str(r[0] or '').strip().upper()
+            _lot = str(r[2] or '').strip()
+            nombres[_cod] = r[1]
+            if (_cod, _lot) in declarado:
+                continue
+            sin_revisar.append({
+                'codigo_mp': r[0], 'nombre': r[1], 'lote': _lot,
+                'stock_sistema': round(float(r[3] or 0), 2),
+                'estanteria': r[4], 'posicion': r[5], 'fecha_vencimiento': r[6],
+                'sin_ubicar': not str(r[4] or '').strip(),
+            })
+    except Exception as _e2:
+        __import__('logging').getLogger('inventario').warning('informe · sin revisar: %s', _e2)
+        lectura_fallo = True
+
+    # ── 3 · el corte ────────────────────────────────────────────────────────
+    def _con(como):
+        return [dict(v, nombre=nombres.get(v['codigo_mp'], v['codigo_mp']))
+                for v in declarado.values() if v['como'] == como]
+
+    no_esta = _con('no está')
+    ajustados = _con('ajustado')
+    coinciden = _con('coincide')
+    aparecio = _con('apareció')
+    # Lo que hay que ir a BUSCAR: lo que se dio por no encontrado más lo que nadie miró. Es la
+    # lista que Sebastián pidió para poder pedirlo por nombre.
+    a_buscar = ([dict(x, motivo_lista='no se encontró al contar') for x in no_esta]
+                + [dict(x, motivo_lista='nadie lo revisó') for x in sin_revisar])
+    return jsonify({
+        'ok': True, 'desde': desde, 'hasta': hasta,
+        'resumen': {
+            'declarados': len(declarado),
+            'coinciden': len(coinciden),
+            'ajustados': len(ajustados),
+            'no_esta': len(no_esta),
+            'aparecieron': len(aparecio),
+            'sin_revisar': len(sin_revisar),
+            'a_buscar': len(a_buscar),
+            'gramos_ajustados': round(sum(x['ajuste'] for x in ajustados), 2),
+            'gramos_no_encontrados': round(sum(x['sistema'] for x in no_esta), 2),
+            'gramos_sin_revisar': round(sum(x['stock_sistema'] for x in sin_revisar), 2),
+        },
+        'a_buscar': a_buscar,
+        'no_esta': no_esta,
+        'ajustados': ajustados,
+        'coinciden': coinciden,
+        'aparecieron': aparecio,
+        'sin_revisar': sin_revisar,
+        'lectura_fallo': lectura_fallo,
+    })
 
 
 @bp.route('/api/inventario/cuadre', methods=['POST'])
@@ -11827,14 +12231,19 @@ def _rotulo_recep_css(lw, lh):
       "table{width:100%}td.k{width:21%}td:not(.k){width:29%}"
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"  # PRINT: los valores ENVUELVEN (no cortan a la derecha)
       ".top{padding:4px 14px 3px}.mark{width:26px;height:26px;border-radius:7px;padding:2px}.brandrow{gap:8px}.co{font-size:10pt;letter-spacing:.8pt}.cosub{font-size:4.6pt;letter-spacing:1.6pt;margin-top:1px}.ctrl{font-size:5pt;line-height:1.4}.ctrl-t{font-size:5.4pt;margin-bottom:2px}"
-      ".hero{padding:4px 14px 5px}.hero .name{font-size:16pt;line-height:1.04}.inci{font-size:6.5pt;margin-top:2px}.tipo{font-size:6.5pt;margin-right:8px}"
+      ".hero{padding:3px 14px 3px}.hero .name{font-size:16pt;line-height:1.04}.inci{font-size:6.5pt;margin-top:2px}.inci.ilong{font-size:5.4pt;line-height:1.12}.tipo{font-size:6.5pt;margin-right:8px}"
       ".name.n2{font-size:12.5pt}.name.n3{font-size:10pt}.name.n4{font-size:8.5pt;line-height:1.06}"
+      ".rectagline{font-size:5.6pt;font-weight:800;text-transform:uppercase;letter-spacing:.3pt;text-align:right;padding:1px 14px 0;color:#111}"
       ".nlbl{font-size:5.4pt;font-weight:800;text-transform:uppercase;letter-spacing:.3pt;color:#111;margin-bottom:1px}"
       ".cajanum{margin-top:2px;padding:1px 10px;font-size:9.5pt;border-width:1pt}"
       ".lote{margin:0 12px 2px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:4mm;height:auto}"
-      ".qc{padding:2px 12px;font-size:6.5pt;gap:9px}.firma{padding:3px 11px 4px}.firma .l{font-size:6pt}.firma .sig{margin:5px 0 1px}.firma .f{font-size:5.6pt}"
-      # el area del sticker en alto generoso fijo para llenar el espacio de abajo (Sebastian 18-jul)
-      ".qcbox{padding:2px 12px 3px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:13mm;border-color:var(--cx-text-faint, #999)}.obs{height:4mm}.fill{height:5mm}"
+      ".qc{padding:2px 12px;font-size:6.5pt;gap:9px}.firma{padding:2px 11px 2px}.firma .l{font-size:6pt}.firma .sig{margin:3px 0 0}.firma .f{font-size:5.6pt}"
+      # El area del sticker nacio "generosa para llenar el espacio de abajo" (18-jul), cuando
+      # sobraba lugar. Con el bloque de control completo del F05 ese espacio es justo el que
+      # falta: el rotulo daba 115mm sobre una etiqueta de 100 y se partia en dos. 8mm sigue
+      # siendo mas que el adhesivo, y 4mm es un renglon escrito a mano de verdad. Lo que NO
+      # se hace es quitar un campo del formato para que quepa.
+      ".qcbox{padding:1px 12px 2px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:8mm;border-color:var(--cx-text-faint, #999)}.obs{height:4mm}.fill{height:4mm}"
       "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:2mm}}"
       "</style>")
 
@@ -11947,15 +12356,9 @@ def _rotulo_mp_hojas(codigo, lote, cantidad, args, idx0=0, estado=""):
     _ov_nom = (args.get('nombre') or '').strip()
     if _ov_nom:
         nc = _ov_nom
-    _tipo_sel = (args.get('tipo') or 'MP').strip().upper()
-    if _tipo_sel not in ('MP', 'ME', 'MEMP'):
-        _tipo_sel = 'MP'
-
-    def _tp_row():
-        _b = lambda on: ('&#9746;' if on else '&#9744;')
-        return ('<span class="tipo' + (' on' if _tipo_sel == 'MP' else '') + '">' + _b(_tipo_sel == 'MP') + ' Materia Prima (MP)</span>'
-                '<span class="tipo' + (' on' if _tipo_sel == 'ME' else '') + '">' + _b(_tipo_sel == 'ME') + ' Material de Envase (ME)</span>'
-                '<span class="tipo' + (' on' if _tipo_sel == 'MEMP' else '') + '">' + _b(_tipo_sel == 'MEMP') + ' Material de Empaque (MEMP)</span>')
+    # El `?tipo=` y su generador de casillas salen con la fila: el F05 ES el formato de materias
+    # primas, asi que no hay nada que elegir. Se poda el PAR completo -- un parametro que se
+    # captura y ya no tiene destino es el que alguien despues lee como dato (M112).
     bv=codigo+'|'+lote
     import html as _hh
     def _e(x): return _hh.escape(str(x if x is not None else ''))
@@ -12017,27 +12420,33 @@ def _rotulo_mp_hojas(codigo, lote, cantidad, args, idx0=0, estado=""):
     # El bloque de control sale del registro único de formatos (M251): dos copias escritas a
     # mano divergen, y el día que Aseguramiento libere la versión siguiente una sigue diciendo la
     # vieja con la misma cara de oficial. Se arma UNA vez: una tanda son 40 rótulos.
-    _ctrl_f07 = _rotulo_ctrl_mp(c, _e(hoy))
+    _ctrl_f05 = _f05_control_vigente()
+    # El nombre se ESCALA segun su largo. Truncarlo no es opcion: un rotulo de
+    # identificacion cortado no identifica, y la etiqueta no crece (M203/M265).
+    _ln = len(str(nc or ''))
+    _cls_n = ('n1' if _ln <= 22 else 'n2' if _ln <= 40 else 'n3' if _ln <= 62 else 'n4')
+    # y el INCI, que en una mezcla es mas largo que el nombre
+    _cls_i = ' ilong' if len(str(ni or '')) > 46 else ''
 
     def _sheet_mp(amt, idx):
         _rec_tag = ('<span class="rectag">Recipiente ' + str(idx + 1) + ' de ' + str(_nrec) + '</span>') if _nrec > 1 else ''
         _cant_lbl = 'Cantidad (este recipiente)' if _nrec > 1 else 'Cantidad recibida'
         _cant_val = f"{amt:,.0f} g" + ((' <span class="cantsub">&middot; de ' + f"{_rtot:,.0f}" + ' g en ' + str(_nrec) + ' recipientes</span>') if _nrec > 1 else '')
-        _inci_sub = ('<div class="inci">INCI &middot; ' + _e(ni) + '</div>') if (ni and str(ni).strip()) else ''
+        _inci_sub = ('<div class="inci' + _cls_i + '">INCI &middot; ' + _e(ni) + '</div>') if (ni and str(ni).strip()) else ''
         return ('<div class="sheet"><div class="accent"></div>'
-           '<div class="top"><div class="brandrow"><img class="mark" src="' + _logo + '" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA<span class="cosub">Laboratorio SAS</span></div></div>'
-           + _ctrl_f07.replace('__RECTAG__', _rec_tag) + '</div>'
-           '<div class="hero"><h1 class="name">' + _e(nc) + '</h1>' + _inci_sub + '</div>'
+           + _encabezado_formato(_logo, _ctrl_f05)
+           + (('<div class="rectagline">' + _rec_tag + '</div>') if _rec_tag else '')
+           + '<div class="hero"><h1 class="name ' + _cls_n + '">' + _e(nc) + '</h1>' + _inci_sub + '</div>'
            '<div class="lote"><div class="ll">Numero de lote</div><div class="lv">' + _e(lote) + '</div><svg id="bc' + str(idx) + '"></svg></div>'
            '<table>'
-           '<tr><td class="k">Codigo MP</td><td class="num"><b>' + _e(codigo) + '</b></td></tr>'
-           '<tr><td class="k">Tipo de insumo</td><td>' + _tp_row() + '</td></tr>'
-           '<tr><td class="k">Proveedor</td><td>' + (_e(pv) or '-') + '</td></tr>'
+           '<tr><td class="k">C&oacute;digo interno</td><td class="num"><b>' + _e(codigo) + '</b></td></tr>'
+                      '<tr><td class="k">Proveedor</td><td>' + (_e(pv) or '-') + '</td></tr>'
            '<tr><td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
            '<tr><td class="k">Fecha recepcion</td><td class="dt">' + _e(_frec) + '</td></tr>'
            '<tr><td class="k">Vencimiento</td><td class="venc dt">' + (_e(fv) or '-') + '</td></tr>'
            '<tr><td class="k">Ubicacion</td><td>' + ubic_disp + '</td></tr>'
            '<tr><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
+           '<tr><td class="k">Forma qu&iacute;mica</td><td class="fill"></td></tr>'
            '<tr><td class="k">Observaciones</td><td class="fill obs"></td></tr>'
            '</table>'
            + (('<div class="qcbox estado-' + _est_cls + '"><div class="qcl">Estado de calidad</div>'
@@ -12045,7 +12454,7 @@ def _rotulo_mp_hojas(codigo, lote, cantidad, args, idx0=0, estado=""):
                if estado else
                '<div class="qcbox"><div class="qcl">Estado de calidad <span>&middot; colocar sticker (cuarentena / aprobado / rechazado)</span></div><div class="qcarea"></div></div>') +
            '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
-           '<div class="firma"><div class="l">Revisado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
+           '<div class="firma"><div class="l">Verificado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
            '</div>')
 
     _sheets = ''.join(_sheet_mp(a, i) for i, a in enumerate(_recs))
@@ -12122,28 +12531,6 @@ def _obs_sin_marcas_del_sistema(txt):
     return ' '.join(t.split()).strip()
 
 
-def _rotulo_ctrl_mp(c, hoy_txt):
-    """El bloque de control del rótulo de MP, con `__RECTAG__` donde va el "Recipiente n de N".
-
-    Se deja como marcador y no se resuelve acá porque el bloque se arma UNA vez y se imprime N
-    veces, una por recipiente.
-    """
-    try:
-        from audit_helpers import formato_control_html as _fch
-        html = _fch(c, 'COC-PRO-002-F07', '')
-    except Exception as _ef:
-        # Sin el registro el rótulo sigue saliendo con su código: un formato regulado no se
-        # queda sin identificar porque una tabla no se pudo leer (M4/M94).
-        __import__('logging').getLogger('inventario').warning('control del F07: %s', _ef)
-        html = '<div class="ctrl"><span><b>C&oacute;digo</b> COC-PRO-002-F07</span></div>'
-    html = html.replace(
-        '<div class="ctrl">',
-        '<div class="ctrl"><div class="ctrl-t">Rotulo de ingreso &middot; MP__RECTAG__</div>', 1)
-    if html.endswith('</div>'):
-        html = html[:-6] + '<br><span><b>Impreso</b> ' + str(hoy_txt) + '</span></div>'
-    return html
-
-
 F06_CONTROL = {
     'codigo': 'COC-PRO-002-F06',
     'titulo': 'IDENTIFICACI&Oacute;N DE MATERIAL DE ENVASE',
@@ -12152,6 +12539,28 @@ F06_CONTROL = {
     'desde': '21-Jul-2026',
     'hasta': '20-Jul-2029',
 }
+
+
+def _f05_control_vigente():
+    """El F05 (rótulo de materia prima) con su versión y vigencia del registro único (M251).
+
+    Devuelve el DICT que espera `_encabezado_formato`, no HTML: así el rótulo de MP y el de
+    envases arman su encabezado con el MISMO helper y no hay dos copias que divergen.
+    """
+    d = {'codigo': 'COC-PRO-002-F05',
+         'titulo': 'IDENTIFICACI&Oacute;N DE MATERIAS PRIMAS',
+         'version': '', 'pagina': '1 de 1', 'desde': '', 'hasta': ''}
+    try:
+        from audit_helpers import formato_control as _fc
+        _r = _fc(get_db().cursor(), 'COC-PRO-002-F05')
+        for k in ('titulo', 'version', 'pagina', 'desde', 'hasta'):
+            if str(_r.get(k) or '').strip():
+                d[k] = _r[k]
+    except Exception as _ef:
+        # Sin el registro el rótulo sigue saliendo con su código: un formato regulado no se
+        # queda sin identificar porque una tabla no se pudo leer (M4/M94).
+        __import__('logging').getLogger('inventario').warning('control del F05: %s', _ef)
+    return d
 
 
 def _f06_control_vigente():

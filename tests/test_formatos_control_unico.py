@@ -58,15 +58,33 @@ def test_los_formatos_que_YA_se_imprimian_no_cambian(app, db_clean):
     assert f06['completo'] is True
 
 
-def test_el_F07_declara_lo_que_le_FALTA_en_vez_de_inventarlo(app, db_clean):
-    """No conozco su versión ni su vigencia. Una versión fabricada en un documento regulado es
-    peor que su ausencia: nadie la corrige porque nadie se entera (M19/M242)."""
+def test_el_F05_es_el_rotulo_de_MATERIA_PRIMA_y_esta_completo(app, db_clean):
+    """Sebastián mandó el Excel oficial el 22-ago: el rótulo de materia prima es el
+    **COC-PRO-002-F05**, versión 02, vigente 21-Jul-2026 a 20-Jul-2029.
+
+    Citaba el F07, o sea el código de OTRO documento en un registro regulado -- el mismo defecto
+    que M264 encontró en el rótulo de envases, en el otro rótulo.
+    """
+    f05 = _resolver('COC-PRO-002-F05')
+    assert 'MATERIAS PRIMAS' in f05['titulo'].upper(), f05['titulo']
+    assert f05['version'] == '02'
+    assert f05['desde'] == '21-Jul-2026' and f05['hasta'] == '20-Jul-2029'
+    assert f05['completo'] is True, 'el formato que el dueño mandó no puede salir incompleto'
+
+
+def test_el_F07_dejo_de_decir_que_era_el_de_MATERIA_PRIMA(app, db_clean):
+    """Su ficha había nacido afirmando algo que resultó falso.
+
+    Lo único que lo cita hoy es la hoja de *Controles en proceso* del cuaderno de producción, y
+    si ése es su código o no lo sabe Aseguramiento: la ficha lo DECLARA en vez de afirmarlo. Un
+    dato de control inventado en un documento regulado es peor que su ausencia (M19/M242).
+    """
     f07 = _resolver('COC-PRO-002-F07')
-    assert f07['codigo'] == 'COC-PRO-002-F07'
-    assert f07['titulo'], 'ni siquiera dice de qué formato es'
-    assert f07['version'] == '', 'le inventó una versión'
+    assert 'MATERIA PRIMA' not in (f07['titulo'] or '').upper(), \
+        'el F07 sigue diciendo que es el rótulo de materia prima: %r' % (f07['titulo'],)
     assert f07['completo'] is False
-    assert 'version' in f07['falta'] and 'desde' in f07['falta'], f07['falta']
+    assert 'Controles en proceso' in (f07['nota'] or ''), \
+        'no dice quién lo cita, así que nadie sabe qué hay que confirmar: %r' % (f07['nota'],)
 
 
 def test_un_formato_desconocido_no_inventa_nada(app, db_clean):
@@ -126,18 +144,27 @@ def _html_rotulo_mp(cli):
 
 def test_el_rotulo_de_MP_imprime_su_bloque_de_control_completo(app, db_clean):
     """Antes decía el código del formato y la fecha de impresión: sin versión, sin página y sin
-    vigencia, que es justamente la evidencia de que se usó la versión vigente (M251/M264)."""
+    vigencia, que es justamente la evidencia de que se usó la versión vigente (M251/M264).
+
+    Y el encabezado es el de TRES ZONAS del formato oficial -- logo | FORMATO + título | control
+    -- que además es lo que hace que quepa: con el bloque completo apilado a la derecha del logo,
+    el peor caso se partía en dos etiquetas.
+    """
     cli = _login(app)
     r = _html_rotulo_mp(cli)
     assert r.status_code == 200, r.data[:300]
     html = r.get_data(as_text=True)
     try:
-        assert 'COC-PRO-002-F07' in html, 'el rótulo dejó de decir de qué formato es'
-        assert 'gina</b> 1 de 1' in html, 'no imprime la página'
-        # el F07 todavía no tiene versión cargada: el rótulo tiene que DECIRLO
-        assert 'Falta cargar' in html, \
-            'el hueco no se ve en el papel: un renglón ausente se lee como si estuviera completo'
-        assert 'ctrl-falta' in html, 'el aviso no tiene estilo propio: en térmica no marcaría'
+        assert 'COC-PRO-002-F05' in html, 'el rótulo no cita su formato'
+        assert 'COC-PRO-002-F07' not in html, 'volvió el código del OTRO documento'
+        assert 'MATERIAS PRIMAS' in html.upper(), 'no dice de qué formato es'
+        assert 'FORMATO' in html, 'falta la etiqueta FORMATO de la zona central'
+        assert 'Versi&oacute;n:</b> 02' in html or 'Versión:</b> 02' in html, \
+            'no imprime la versión vigente'
+        assert 'Desde 21-Jul-2026' in html and 'Hasta 20-Jul-2029' in html, \
+            ('la vigencia va en sus DOS subcampos: resumirla en un rango de una línea es lo que '
+             'Aseguramiento marcó como defecto (M251)')
+        assert 'f06ctrl' in html, 'el encabezado no usa las tres zonas del formato oficial'
     finally:
         cn = _cn()
         try:
@@ -147,26 +174,55 @@ def test_el_rotulo_de_MP_imprime_su_bloque_de_control_completo(app, db_clean):
             cn.close()
 
 
-def test_cargar_la_version_hace_desaparecer_el_aviso_del_papel(app, db_clean):
-    """La prueba de que el registro sirve: cargar el dato cambia lo impreso, sin desplegar."""
+def test_el_rotulo_de_MP_trae_TODOS_los_campos_del_formato(app, db_clean):
+    """Comparado campo por campo contra el Excel que mandó Sebastián (M264).
+
+    Los que el sistema sabe salen llenos; los que se llenan a mano salen EN BLANCO con su
+    etiqueta -- que es lo que el formato es: una hoja para llenar. Inventarlos sería peor (M19).
+    """
+    cli = _login(app)
+    html = _html_rotulo_mp(cli).get_data(as_text=True)
+    try:
+        for campo in ('C&oacute;digo interno', 'Proveedor', 'Cantidad recibida',
+                      'Fecha recepcion', 'Vencimiento', 'Fecha analisis',
+                      'Forma qu&iacute;mica', 'Observaciones',
+                      'Realizado por', 'Verificado por'):
+            assert campo in html, 'al rótulo le falta el campo %r del formato' % campo
+        assert 'Revisado por' not in html, \
+            'el oficial dice VERIFICADO: en un formato regulado la etiqueta es parte del documento'
+        assert 'Tipo de insumo' not in html, \
+            ('el F05 ES el formato de materias primas: preguntar si es materia prima invita a '
+             'marcar la casilla equivocada (M264)')
+    finally:
+        cn = _cn()
+        try:
+            cn.execute("DELETE FROM movimientos WHERE material_id='MP-ROT-F07'")
+            cn.commit()
+        finally:
+            cn.close()
+
+
+def test_cargar_la_version_cambia_lo_que_se_IMPRIME_sin_desplegar(app, db_clean):
+    """La prueba de que el registro sirve, y la razón de que exista: hoy cambiar la versión de un
+    formato exigía un despliegue, así que en la práctica no se cambiaba."""
     cli = _login(app)
     cn = _cn()
     try:
-        cn.execute("UPDATE formatos_control SET version='01', desde='01-Ene-2026', "
-                   "  hasta='31-Dic-2028' WHERE codigo='COC-PRO-002-F07'")
+        cn.execute("UPDATE formatos_control SET version='03', desde='01-Ene-2027', "
+                   "  hasta='31-Dic-2029' WHERE codigo='COC-PRO-002-F05'")
         cn.commit()
     finally:
         cn.close()
     try:
         html = _html_rotulo_mp(cli).get_data(as_text=True)
-        assert 'Versi&oacute;n</b> 01' in html, 'cargó la versión y el rótulo la ignora'
-        assert '01-Ene-2026' in html, 'no imprime la vigencia cargada'
-        assert 'Falta cargar' not in html, 'sigue avisando de algo que ya está cargado'
+        assert 'Versi&oacute;n:</b> 03' in html or 'Versión:</b> 03' in html, \
+            'cargó la versión 03 y el rótulo sigue imprimiendo la vieja'
+        assert 'Desde 01-Ene-2027' in html, 'no imprime la vigencia cargada'
     finally:
         cn = _cn()
         try:
-            cn.execute("UPDATE formatos_control SET version='', desde='', hasta='' "
-                       "  WHERE codigo='COC-PRO-002-F07'")
+            cn.execute("UPDATE formatos_control SET version='02', desde='21-Jul-2026', "
+                       "  hasta='20-Jul-2029' WHERE codigo='COC-PRO-002-F05'")
             cn.execute("DELETE FROM movimientos WHERE material_id='MP-ROT-F07'")
             cn.commit()
         finally:
@@ -174,25 +230,36 @@ def test_cargar_la_version_hace_desaparecer_el_aviso_del_papel(app, db_clean):
 
 
 def test_el_bloque_se_arma_UNA_vez_y_no_por_recipiente(app, db_clean):
-    """Una tanda son 40 rótulos: consultar el registro en cada uno es pagar 40 veces lo mismo
-    dentro de un loop (M43)."""
+    """Una tanda son 40 rótulos: resolver el registro dentro del loop es pagar 40 veces lo mismo
+    (M43)."""
     import io as _io
-    import re as _re
     raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     src = _io.open(os.path.join(raiz, 'api', 'blueprints', 'inventario.py'),
                    encoding='utf-8').read()
     i = src.find('def _sheet_mp(amt, idx):')
     assert i != -1
-    # el cuerpo del generador por-recipiente no puede llamar al resolvedor
     j = src.find('\n    return ', i)
     cuerpo = src[i:j if j > i else i + 4000]
-    assert '_rotulo_ctrl_mp(' not in cuerpo, \
+    assert '_f05_control_vigente(' not in cuerpo, \
         'el bloque de control se resuelve DENTRO del loop: 40 rótulos = 40 consultas'
-    assert '_ctrl_f07' in cuerpo, 'el rótulo no usa el bloque que se armó afuera'
-    del _re
+    assert '_ctrl_f05' in cuerpo, 'el rótulo no usa el bloque que se armó afuera'
 
 
-# ───────────────────── la pantalla existe y el permiso es el correcto ─────────────────────
+def test_los_DOS_rotulos_usan_el_MISMO_encabezado(app, db_clean):
+    """El de materia prima y el de envases arman su encabezado con el mismo helper.
+
+    Dos encabezados copiados divergen, y el día que Aseguramiento libere una versión uno sigue
+    diciendo la vieja **con la misma cara de oficial** (M251/M1).
+    """
+    import io as _io
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = _io.open(os.path.join(raiz, 'api', 'blueprints', 'inventario.py'),
+                   encoding='utf-8').read()
+    assert src.count('_encabezado_formato(') >= 3, \
+        'alguno de los dos rótulos volvió a armar su propio encabezado'
+    for quien in ('_f05_control_vigente()', '_f06_control_vigente()'):
+        assert quien in src, 'falta el resolvedor %s' % quien
+
 
 def test_Aseguramiento_puede_CARGAR_la_version(app, db_clean):
     """Sin pantalla, el registro es una capacidad a la que nadie llega (M121)."""

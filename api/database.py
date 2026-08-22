@@ -11809,6 +11809,23 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "        'Falta cargar version y vigencia · las tiene Aseguramiento') "
         "ON CONFLICT (codigo) DO NOTHING",
     ]),
+    (445, "formatos_control · el rotulo de materia prima ES el COC-PRO-002-F05 (Sebastian mando "
+          "el Excel oficial el 22-ago), no el F07 que citaba: el codigo de OTRO documento en un "
+          "registro regulado. Se siembra el F05 con los datos del formato -- version 02, 1 de 1, "
+          "vigente 21-Jul-2026 a 20-Jul-2029 -- y se corrige la ficha del F07, que habia nacido "
+          "diciendo que era el de materias primas. Lo unico que sigue citando F07 es la hoja de "
+          "'Controles en proceso' del cuaderno de produccion; si ese es su codigo o no lo sabe "
+          "Aseguramiento, asi que la ficha lo DECLARA en vez de afirmarlo.", [
+        "INSERT INTO formatos_control (codigo, titulo, version, pagina, desde, hasta) "
+        "VALUES ('COC-PRO-002-F05', 'IDENTIFICACION DE MATERIAS PRIMAS', "
+        "        '02', '1 de 1', '21-Jul-2026', '20-Jul-2029') "
+        "ON CONFLICT (codigo) DO NOTHING",
+        "UPDATE formatos_control "
+        "   SET titulo='', "
+        "       nota='Lo cita la hoja de Controles en proceso · falta confirmar con Aseguramiento "
+        "que ese sea su codigo, y cargar version y vigencia' "
+        " WHERE codigo='COC-PRO-002-F07' AND titulo='IDENTIFICACION DE MATERIA PRIMA'",
+    ]),
 ]
 
 

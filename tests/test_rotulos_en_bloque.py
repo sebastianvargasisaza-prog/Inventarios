@@ -7,7 +7,7 @@ impresión masiva de los lotes, también para que puedan hacerlo por allí"*.
 
 Es **EL MISMO rótulo**, no uno nuevo: se arma con `_rotulo_mp_hojas`, que se extrajo del rótulo
 individual **cortando el cuerpo por líneas, sin tocar la maqueta**. Es un documento REGULADO
-(COC-PRO-002-F07) y dos renderizadores divergen -- terminan imprimiendo distinto según por dónde
+(COC-PRO-002-F05) y dos renderizadores divergen -- terminan imprimiendo distinto según por dónde
 se pida (M1/M93).
 
 Lo que cambia es lo que Alejandro necesita: los campos que llenan el F01/F02 salen **en blanco**
@@ -93,9 +93,19 @@ def test_el_rotulo_individual_sigue_saliendo_IGUAL(app, db_clean):
     ids = _sembrar(app)
     h = _cli(app).get('/rotulo-recepcion/%s/%s/4000' % (COD, LOTE_A)).data.decode(
         'utf-8', 'replace')
-    for marca in ('COC-PRO-002-F07', 'class="sheet"', 'Numero de lote', 'Fecha recepcion',
-                  'Vencimiento', 'Ubicacion', 'Realizado por', 'Revisado por'):
-        assert marca in h, 'la extracción se comió: %s' % marca
+    # Las marcas son las del formato OFICIAL que mando Sebastian el 22-ago
+    # (COC-PRO-002-F05 / IDENTIFICACION DE MATERIAS PRIMAS): el rotulo citaba el F07, que es
+    # el codigo de OTRO documento, y decia 'Revisado por' donde el oficial dice VERIFICADO.
+    # El guard sigue midiendo lo mismo -- que una extraccion no cambie el formato -- solo que
+    # ahora contra el papel correcto (M97/M264).
+    for marca in ('COC-PRO-002-F05', 'class="sheet"', 'Numero de lote', 'Fecha recepcion',
+                  'Vencimiento', 'Ubicacion', 'Realizado por', 'Verificado por',
+                  'Forma qu&iacute;mica'):
+        assert marca in h, 'la extraccion se comio: %s' % marca
+    # Y lo que el formato EXIGE y antes NO salia: la evidencia de que se lleno la version
+    # vigente (M251). Sin esto el guard dejaria pasar un rotulo sin bloque de control.
+    for exige in ('Versi&oacute;n', 'Vigencia', '21-Jul-2026'):
+        assert exige in h, 'el rotulo perdio su bloque de control: %s' % exige
     _limpiar(app)
 
 

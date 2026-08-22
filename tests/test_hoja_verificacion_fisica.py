@@ -305,3 +305,184 @@ def test_la_hoja_se_ve_como_hoja_y_no_como_tabla_apretada(app, db_clean):
     for muerto in ("'#f0fff4'", "'#fff5f5'", "'#28a745'", "'#dc3545'", "'#fff0f0'"):
         assert muerto not in cuerpo, \
             'quedó el color fijo %s: en tema oscuro la hoja se despinta' % muerto
+
+
+# ───────────── la hoja muestra TODOS los lotes y cuánto sale de cada uno ─────────────
+
+def test_muestra_TODOS_los_lotes_no_una_muestra_de_cuatro(app, db_clean):
+    """Sebastián: *"que muestre lotes disponibles"*.
+
+    Mostraba cuatro. Con el material repartido en más, el operario ve una parte y no sabe que
+    hay más -- ni cuáles va a tomar el descuento.
+    """
+    _sembrar(gramos=100)
+    cn = _conn()
+    try:
+        for i in range(2, 8):
+            cn.execute("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, "
+                       "  lote, fecha, operador, estado_lote, fecha_vencimiento, estanteria) "
+                       "VALUES (?,?,'Entrada',?,?,'2026-08-01 08:00','test','VIGENTE',?,'A%d')"
+                       % i, (_COD, 'GOMA VERIF', 100.0 * i, 'LOTE-VF-%d' % i,
+                             # fechas REALES: '2027-02-30' no existe y el sistema la trata como
+                             # ilegible -- correctamente. Un dato de prueba imposible mide el
+                             # guard de fechas, no el de la lista (M170).
+                             '2027-%02d-15' % (i + 1)))
+        cn.commit()
+    finally:
+        cn.close()
+    try:
+        _d, fila = _simular(_login(app))
+        assert len(fila['lotes']) == 7, \
+            'sigue recortando la lista: muestra %d de 7' % len(fila['lotes'])
+        assert fila.get('lotes_ocultos') == 0, \
+            'oculta lotes sin declararlo: un tope que no se dice se lee como el total (M155)'
+    finally:
+        _limpiar()
+
+
+def test_cada_lote_dice_CUANTO_sale_de_el_en_orden_FEFO(app, db_clean):
+    """El operario necesita saber cuánto pesar de cada uno, no el saldo del lote.
+
+    Y el reparto usa el MISMO orden que el FEFO real: si la hoja repartiera distinto, mandaría a
+    pesar de un lote y el kardex anotaría el consumo de otro (M5/M263).
+    """
+    _sembrar(gramos=60)                      # LOTE-VF-1 vence 2027-06-30
+    cn = _conn()
+    try:
+        cn.execute("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, "
+                   "  fecha, operador, estado_lote, fecha_vencimiento, estanteria) "
+                   "VALUES (?,?,'Entrada',500,'LOTE-TARDE','2026-08-01 08:00','test','VIGENTE',"
+                   "        '2028-12-31','B1')", (_COD, 'GOMA VERIF'))
+        cn.commit()
+    finally:
+        cn.close()
+    try:
+        _d, fila = _simular(_login(app))     # necesita 100 g (10% de 1 kg)
+        lotes = {x['lote']: x for x in fila['lotes']}
+        assert lotes['LOTE-VF-1']['toma_g'] == 60, \
+            'el que vence antes tiene que salir COMPLETO primero: %r' % (lotes['LOTE-VF-1'],)
+        assert lotes['LOTE-TARDE']['toma_g'] == 40, \
+            'el resto sale del siguiente en vencimiento: %r' % (lotes['LOTE-TARDE'],)
+        assert not lotes['LOTE-TARDE']['reserva']
+    finally:
+        _limpiar()
+
+
+def test_el_lote_que_NO_hace_falta_se_marca_como_reserva(app, db_clean):
+    """Un lote que la producción no va a tocar no puede verse igual que uno del que hay que
+    pesar: el operario lo bajaría del estante para nada."""
+    _sembrar(gramos=5000)
+    try:
+        _d, fila = _simular(_login(app))     # necesita 100 de 5000
+        assert fila['lotes'][0]['toma_g'] == 100
+        assert fila['lotes'][0]['reserva'] is False
+    finally:
+        _limpiar()
+
+
+def test_la_hoja_separa_lo_que_FALTA_de_lo_que_ALCANZA(app, db_clean):
+    """*"Sería bueno que se vea mejor, mayor claridad, que se diferencien las partes"*.
+
+    Con el estante enfrente lo primero que hay que ver es qué falta; mezclado entre lo que
+    alcanza se pierde entre decenas de lotes corridos.
+    """
+    js = pantalla_servida(_login(app), '/inventarios')
+    assert 'function _vfSecciones' in js, 'la hoja no separa las secciones'
+    cuerpo = _cuerpo_de(js, 'function _vfSecciones')
+    assert 'Falta material' in cuerpo, 'no rotula la sección de lo que falta'
+    assert 'suficiente' in cuerpo, 'el corte no usa el mismo criterio que el motor'
+    assert '.vf-sec-falta' in js and '.vf-sec-ok' in js, 'las secciones no tienen estilo propio'
+
+
+def test_el_corte_de_las_secciones_usa_el_ORDEN_del_motor(app, db_clean):
+    """El backend ordena los insuficientes primero. Si la pantalla los re-ordenara por su cuenta,
+    tendríamos dos criterios del mismo hecho y divergirían (M5/M99)."""
+    js = pantalla_servida(_login(app), '/inventarios')
+    cuerpo = _cuerpo_de(js, 'function _vfSecciones')
+    for propio in ('.sort(', '.filter('):
+        assert propio not in cuerpo, \
+            'la pantalla re-ordena por su cuenta (%s) en vez de respetar el orden del motor' % propio
+
+
+# ───────────── la revisión se INICIA y se FINALIZA ─────────────
+
+def test_la_revision_tiene_INICIAR_y_FINALIZAR(app, db_clean):
+    """Sebastián: *"quiero que se le dé iniciar y finalizar, y así al finalizar que diga: estas
+    materias primas no las tocaste, y las liste, así las buscamos o decimos no están"*.
+
+    Sin cierre, una hoja de 52 lotes se abandona a la mitad y el progreso no distingue *"no
+    arranqué"* de *"arranqué y me quedaron 40"*.
+    """
+    js = pantalla_servida(_login(app), '/inventarios')
+    for fn in ('function vfIniciarRevision', 'function vfFinalizarRevision',
+               'function _vfCierreHTML', 'function _vfBarraSesion'):
+        assert fn in js, 'falta %s' % fn
+    assert 'vfIniciarRevision()' in js and 'vfFinalizarRevision()' in js, \
+        'las funciones existen y ningún botón las llama (M121)'
+
+
+def test_iniciar_AVISA_antes_de_borrar_lo_declarado(app, db_clean):
+    """Borrar el trabajo de la revisión anterior en silencio hace que el progreso mida otra cosa
+    sin que nadie se entere."""
+    js = pantalla_servida(_login(app), '/inventarios')
+    cuerpo = _cuerpo_de(js, 'function vfIniciarRevision')
+    assert 'confirm(' in cuerpo, 'reinicia la revisión sin avisar'
+    assert 'no se tocan' in cuerpo or 'ya guardaste' in cuerpo, \
+        ('no aclara que los ajustes YA guardados en el inventario no se borran: si no, nadie se '
+         'anima a reiniciar')
+
+
+def test_lo_pendiente_se_puede_CERRAR_desde_la_lista(app, db_clean):
+    """Una lista de pendientes que sólo se puede leer manda a empezar de nuevo, y ahí es donde se
+    abandona (M121: la acción va donde la persona está parada)."""
+    js = pantalla_servida(_login(app), '/inventarios')
+    cuerpo = _cuerpo_de(js, 'function _vfCierreHTML')
+    for accion in ('verifOk(', 'verifMenos(', 'verifNoEsta('):
+        assert accion in cuerpo, 'desde el cierre no se puede declarar con %s' % accion
+    assert 'no las tocaste' in cuerpo, 'el cierre no dice qué quedó sin revisar'
+
+
+def test_declarar_desde_el_cierre_lo_saca_de_la_lista(app, db_clean):
+    """Si el lote siguiera en la lista después de declararlo, la persona no sabría cuál ya cerró
+    y volvería a buscarlo (M129)."""
+    js = pantalla_servida(_login(app), '/inventarios')
+    assert 'function _vfSacarDePendientes' in js, 'la lista no se achica al declarar'
+    for fn in ('function verifOk', 'async function _verifCuadrar'):
+        cuerpo = _cuerpo_de(js, fn)
+        assert '_vfSacarDePendientes(' in cuerpo, \
+            '%s no saca el lote de los pendientes' % fn
+
+
+# ───────────── repartir a mano desde la hoja ─────────────
+
+def test_la_hoja_deja_REPARTIR_a_mano_entre_lotes(app, db_clean):
+    """*"Elegir a mano de qué lote sale cada gramo"*."""
+    js = pantalla_servida(_login(app), '/inventarios')
+    for fn in ('function vfRepartir', 'function vfRepCambio', 'function _vfPintarSuma',
+               'function vfRepCuadraTodo'):
+        assert fn in js, 'falta %s' % fn
+    assert 'vfRepartir(' in js, 'ningún botón entra al reparto'
+
+
+def test_el_reparto_se_valida_MIENTRAS_se_escribe(app, db_clean):
+    """Descubrir que no cuadra recién al apretar el botón es mandar a rehacerlo (M197)."""
+    js = pantalla_servida(_login(app), '/inventarios')
+    cuerpo = _cuerpo_de(js, 'function vfRepCambio')
+    assert '_vfPintarSuma(' in cuerpo, 'la suma no se recalcula al escribir'
+    pinta = _cuerpo_de(js, 'function _vfPintarSuma')
+    assert 'faltan' in pinta and 'sobran' in pinta, \
+        'no dice cuánto falta o sobra: obliga a hacer la cuenta a mano'
+    assert '_vfBotonFabricar(' in pinta, 'el botón de fabricar no se entera'
+
+
+def test_con_un_reparto_que_NO_cuadra_no_se_puede_fabricar(app, db_clean):
+    """Un reparto que no cuadra se ve resuelto, y con eso se descontaría (M195)."""
+    js = pantalla_servida(_login(app), '/inventarios')
+    cuerpo = _cuerpo_de(js, 'function _vfBotonFabricar')
+    assert 'disabled' in cuerpo, 'el botón no se bloquea'
+    assert 'vfRepCuadraTodo()' in cuerpo, 'no consulta si el reparto cuadra'
+    # y el backend igual lo rechaza: la pantalla no es el control
+    ini = _cuerpo_de(js, 'window.iniciarFabVivo=async function')
+    assert 'reparto_lotes' in ini, \
+        'el reparto se queda en la pantalla y el kardex descontaría por FEFO (M5/M109)'
+    assert 'vfRepCuadraTodo' in ini, 'no revalida antes de mandar'
