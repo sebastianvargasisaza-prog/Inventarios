@@ -1422,3 +1422,101 @@ el efecto secundario de pedir un reporte (M19). Un guard verifica que pedirlo do
 un gramo.
 
 Tests: `tests/test_cuadre_que_falta_revisar.py` (en el gate).
+
+
+## INV-34 · El peso que se MUESTRA es el que DECIDE el ajuste (22-ago-2026)
+
+Un mismo lote puede tener filas en **dos estados**: una recepción que Calidad parte en aprobado
+y rechazado deja el MISMO número de lote con 800 g `VIGENTE` y 200 g `RECHAZADO`.
+
+**Regla dura: el filtro de estados va a nivel de FILA, antes del `GROUP BY`.** Nunca
+`MAX(estado_lote)` sobre el lote ya agrupado, porque eso le pone a las filas rechazadas el
+estado de las aprobadas y el lote entero cuenta como usable.
+
+Lo que pasaba sin eso, medido: la hoja mostraba 800 g (excluye los seis estados que no son
+stock) y `_cuadre_stock_lote` sumaba las filas sin mirar el estado (1.000). Declarar 750 sobre
+una hoja que decía 800 dejaba el lote en **550** -- se descontaron 250 en vez de 50 --, y
+declarar *"coincide"* escribía una **Salida de 200 g que nadie contó**.
+
+Los tres helpers que suman stock por lote tienen que dar lo mismo:
+
+| Helper | Qué decide | Filtra por fila |
+|---|---|---|
+| `_cuadre_stock_lote` (inventario.py) | el ajuste del cuadre | sí (`_SQL_SOLO_USABLE`) |
+| `_lotes_disponibles_fefo` (programacion.py) | qué puede tomar el descuento | sí |
+| `_lotes_de_material` (programacion.py) | qué ofrece la hoja a producción | sí · reparte usable / retenido |
+
+**El invariante que cierra la clase, y es el único que hay que recordar: lo que la pantalla
+OFRECE y lo que el motor puede TOMAR tienen que dar el MISMO número.** Hay un guard que compara
+los dos helpers sobre el mismo lote.
+
+⚠ El estado del movimiento del ajuste sale de las filas **usables**, no de `MAX(estado_lote)`:
+salía bien por casualidad (`VIGENTE` es el mayor alfabético de los seis) y una casualidad no es
+una garantía.
+
+Tests: `tests/test_cuadre_pesos_mixtos.py` (en el gate).
+
+
+## INV-35 · Lo declarado NO ENCONTRADO se puede ir a verificar (22-ago-2026)
+
+Lo que se da por no encontrado **queda en cero y desaparece de la hoja**, así que del inventario
+con saldo no se puede reconstruir nada: el informe es la única forma de ir a buscarlo.
+
+**Regla: cuando un informe habla de algo que YA NO ESTÁ, sus datos salen del rastro y del
+kardex** (donde los movimientos siguen estando), **nunca de la vista de saldos vivos.** Sin eso
+la lista sale con el código pelado y la columna de ubicación en blanco, o sea que no se le
+puede repartir a nadie.
+
+Cada renglón lleva: qué material es, dónde debería estar (estantería · posición), cuánto creía
+tener el sistema, quién lo declaró y cuándo, y el motivo que escribió quien contó.
+
+**Bajar un lote a cero ES no encontrarlo.** El corte es el mismo umbral de polvo que usa la hoja
+(`<= 0,01 g` · M21): con el corte en `<= 0`, un lote declarado en 0,004 g caía en *ajustados* y
+nadie iba a buscarlo, aunque había salido del inventario igual.
+
+La consulta que enriquece lo declarado va **por tandas de 500 códigos, jamás una por lote**
+(M43).
+
+Tests: `tests/test_cuadre_informe_no_encontrados.py` (en el gate).
+
+
+## INV-36 · El conteo es la verdad, y el informe lo verifica contra el inventario de ahora (22-ago-2026)
+
+Sebastián, contando: *"no se puede perder nada de lo que estamos haciendo, eso es la realidad
+del ahora, eso reemplaza la bodega porque es lo que hay"*.
+
+Si el conteo es la verdad del estante, **cada lote declarado tiene que estar HOY en la cantidad
+que se contó**. El informe lo compara lote por lote y lo que no coincide sale primero, con lo
+contado, lo que hay ahora, la diferencia, la ubicación y quién lo contó.
+
+⚠ **El informe NO elige la causa.** Hay dos explicaciones opuestas -- se movió después de
+contarlo (una producción, otra declaración) o la declaración no aterrizó -- y desde el sistema
+no hay forma de saber cuál es. Se nombran las dos (M19/M130).
+
+El guard prueba las **dos ramas**: un lote que quedó como se declaró NO se reporta (si reportara
+todo dejaría de mirarse · M129) y uno que se movió después SÍ aparece con la diferencia exacta.
+
+Tests: `tests/test_cuadre_informe_no_encontrados.py` (en el gate).
+
+
+## INV-37 · Ubicar un lote desde el cuadre (22-ago-2026)
+
+`PUT /api/lotes/<material_id>/<path:lote>/ubicacion` es el punto **único** para corregir dónde
+está un lote: lo usan el cuadre (botón *Ubicar aquí* y el editor de la fila) y las dos pantallas
+del dashboard. El `UPDATE` va por `(material_id, lote)`, así que ubicar un lote **no arrastra**
+a los otros lotes del mismo material, y no toca cantidad, estado ni vencimiento.
+
+El rastro guarda **de dónde venía**: ante una ubicación equivocada la pregunta es *"¿dónde
+estaba antes?"*, no *"¿dónde está ahora?"* (M139).
+
+⚠ **El método importa.** El botón mandaba `PATCH` a una ruta declarada `methods=['PUT']`: Flask
+contesta 405 con HTML, el `r.json()` de la página revienta y la pantalla mostraba *"Sin
+conexión"* -- el botón nunca ubicó nada y encima le echaba la culpa a la red. **Que un botón
+exista no prueba que su petición se pueda contestar**: hay un guard que cruza *(ruta, método)*
+de cada llamada de la hoja contra el `url_map` real de Werkzeug.
+
+⚠ Pendiente declarado: ese rastro se escribe con `INSERT` crudo y `datetime('now','-5 hours')`
+mientras el helper canónico escribe `datetime('now')` en UTC. Hoy no lo lee nadie por día, pero
+si el informe llega a incluir las reubicaciones hay que alinear el reloj primero (M24).
+
+Tests: `tests/test_cuadre_ubicacion.py` (en el gate).
