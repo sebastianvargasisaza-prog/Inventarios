@@ -151,3 +151,53 @@ def test_la_pantalla_del_informe_muestra_donde_estaba_y_quien_lo_dijo(app):
     bloque = H[i:i + 2200]
     assert 'estanteria' in bloque, 'la lista para buscar no pinta dónde estaba'
     assert 'f.por' in bloque or 'por' in bloque, 'no pinta quién lo declaró'
+
+
+# -----------------------------------------------------------------------------
+# Lo contado ES la verdad del estante: tiene que seguir ahi
+# -----------------------------------------------------------------------------
+
+def test_lo_declarado_que_SIGUE_igual_no_se_reporta(admin_client, sembrado):
+    """El guard tiene que distinguir, o reportaria todo y dejaria de mirarse."""
+    admin_client.post('/api/inventario/cuadre', json={
+        'codigo_mp': CODIGO, 'lote': LOTE, 'fisico': 900.0, 'motivo': 'conteo',
+        'estanteria': EST, 'token': 'inf-nc-7'})
+    d = _informe(admin_client)
+    assert _en(d.get('no_cuadran'), LOTE) is None, (
+        'un lote que quedo como se declaro se reporto como descuadrado')
+
+
+def test_si_lo_declarado_YA_NO_ESTA_el_informe_lo_canta(admin_client, sembrado):
+    """La red de seguridad que pidio Sebastian: *"no se puede perder nada de lo que estamos
+    haciendo"*. Si un lote contado hoy ya no esta en la cantidad declarada, eso se mira antes
+    que nada -- se consumio despues, o la declaracion no aterrizo."""
+    from database import get_db
+    admin_client.post('/api/inventario/cuadre', json={
+        'codigo_mp': CODIGO, 'lote': LOTE, 'fisico': 900.0, 'motivo': 'conteo',
+        'estanteria': EST, 'token': 'inf-nc-8'})
+    # Alguien se llevo 300 g despues de contarlo (una produccion, por ejemplo).
+    with admin_client.application.app_context():
+        c = get_db()
+        c.execute(
+            "INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, "
+            " fecha, operador, estanteria, estado_lote) "
+            "VALUES (?,?,'Salida',?,?,?,?,?,'VIGENTE')",
+            (CODIGO, NOMBRE, 300.0, LOTE, '2026-08-22 18:00:00', 'produccion', EST))
+        c.commit()
+    f = _en(_informe(admin_client).get('no_cuadran'), LOTE)
+    assert f is not None, 'lo contado ya no esta y el informe no lo dice'
+    assert f.get('fisico') == 900.0, 'no dice cuanto se conto'
+    assert f.get('stock_ahora') == 600.0, 'no dice cuanto hay ahora: %r' % f.get('stock_ahora')
+    assert f.get('diferencia') == -300.0, 'no dice la diferencia: %r' % f.get('diferencia')
+    assert f.get('posible'), 'no declara que hay dos explicaciones posibles'
+
+
+def test_la_pantalla_PINTA_lo_que_no_cuadra(app):
+    """Una capacidad sin puerta no existe (M121)."""
+    from blueprints.inventario import _INFORME_CUADRE_HTML as H
+    assert 'no_cuadran' in H, 'el informe no pinta la seccion'
+    i = H.find('no coincide con el inventario de ahora')
+    assert i != -1, 'la seccion no tiene titulo que se entienda'
+    bloque = H[i:i + 1600]
+    assert 'stock_ahora' in bloque, 'no muestra cuanto hay ahora'
+    assert 'diferencia' in bloque, 'no muestra la diferencia'

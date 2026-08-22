@@ -9087,12 +9087,34 @@ async function cargar(){
     var s=d.resumen;
     var h='<div class="kpis">'
       +'<div class="kpi mal"><b>'+n(s.a_buscar)+'</b><span>hay que buscar</span></div>'
+      +((s.no_cuadran||0)?('<div class="kpi mal"><b>'+n(s.no_cuadran)
+        +'</b><span>no coinciden con el inventario</span></div>'):'')
       +'<div class="kpi ok"><b>'+n(s.coinciden)+'</b><span>coincidieron</span></div>'
       +'<div class="kpi wa"><b>'+n(s.ajustados)+'</b><span>ajustados</span></div>'
       +'<div class="kpi mal"><b>'+n(s.no_esta)+'</b><span>no se encontraron</span></div>'
       +'<div class="kpi wa"><b>'+n(s.sin_revisar)+'</b><span>sin revisar</span></div>'
       +'<div class="kpi"><b>'+n(s.aparecieron)+'</b><span>aparecieron</span></div>'
       +'</div>';
+    /* Lo declarado es la verdad del estante: si un lote no esta hoy en la cantidad que se
+       conto, eso hay que mirarlo ANTES que nada -- por eso va primero. */
+    if((d.no_cuadran||[]).length){
+      h+=_sec('Revisar &middot; lo contado no coincide con el inventario de ahora &middot; '
+        +n(s.no_cuadran)+' lote(s)','buscar');
+      h+=_tabla(d.no_cuadran, [
+        {t:'Material', v:function(f){ return '<b>'+esc(f.nombre||f.codigo_mp)+'</b>'; }},
+        {t:'Lote', v:function(f){ return esc(f.lote||'sin lote'); }},
+        {t:'D&oacute;nde', v:function(f){
+          return esc(f.estanteria||'') + (f.posicion?(' &middot; pos. '+esc(f.posicion)):'')
+            || '<span style="color:var(--cx-text-mute)">sin ubicaci&oacute;n</span>'; }},
+        {t:'Se cont&oacute;', num:true, v:function(f){ return n(f.fisico)+' g'; }},
+        {t:'Hay ahora', num:true, v:function(f){ return n(f.stock_ahora)+' g'; }},
+        {t:'Diferencia', num:true, v:function(f){
+          return '<b>'+(f.diferencia>0?'+':'')+n(f.diferencia)+' g</b>'; }},
+        {t:'Qui&eacute;n lo cont&oacute;', v:function(f){
+          return esc(f.por||'')+'<div style="font-size:11px;color:var(--cx-text-mute)">'
+            +esc(f.cuando||'')+'</div>'; }},
+      ]);
+    }
     h+=_sec('Para ir a buscar &middot; '+n(s.a_buscar)+' lote(s)','buscar');
     h+=_tabla(d.a_buscar, [
       {t:'Material', v:function(f){ return '<b>'+esc(f.nombre||f.codigo_mp)+'</b>'; }},
@@ -9297,7 +9319,9 @@ def inventario_cuadre_informe():
                         "SELECT UPPER(COALESCE(material_id,'')), COALESCE(lote,''), "
                         "       MAX(COALESCE(material_nombre,'')), "
                         "       MAX(COALESCE(estanteria,'')), MAX(COALESCE(posicion,'')), "
-                        "       MAX(COALESCE(fecha_vencimiento,'')) "
+                        "       MAX(COALESCE(fecha_vencimiento,'')), "
+                        "       SUM(CASE WHEN (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO')) "
+                        "                THEN CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END ELSE 0 END) "
                         "  FROM movimientos "
                         " WHERE UPPER(COALESCE(material_id,'')) IN (%s) "
                         " GROUP BY UPPER(COALESCE(material_id,'')), COALESCE(lote,'')"
@@ -9309,6 +9333,7 @@ def inventario_cuadre_informe():
                         declarado[_k]['estanteria'] = _r[3] or ''
                         declarado[_k]['posicion'] = _r[4] or ''
                         declarado[_k]['fecha_vencimiento'] = _r[5] or ''
+                        declarado[_k]['stock_ahora'] = round(float(_r[6] or 0), 2)
         except Exception as _e3:
             __import__('logging').getLogger('inventario').warning(
                 'informe · ubicación de lo declarado: %s', _e3)
@@ -9327,6 +9352,24 @@ def inventario_cuadre_informe():
     # lista que Sebastián pidió para poder pedirlo por nombre.
     a_buscar = ([dict(x, motivo_lista='no se encontró al contar') for x in no_esta]
                 + [dict(x, motivo_lista='nadie lo revisó') for x in sin_revisar])
+    # Lo declarado ES la verdad del estante, así que cada lote contado tiene que estar HOY
+    # en la cantidad que se declaró. Si no coincide hay DOS explicaciones opuestas -- se
+    # consumió después de contarlo (legítimo) o la declaración no aterrizó (grave) -- y el
+    # informe las NOMBRA sin elegir: acá no hay forma de saber cuál es (M19/M130).
+    no_cuadran = []
+    for _v in declarado.values():
+        _ahora = _v.get('stock_ahora')
+        if _ahora is None:
+            continue
+        _dif = round(_ahora - _v['fisico'], 2)
+        if abs(_dif) <= 0.01:
+            continue
+        no_cuadran.append(dict(
+            _v, nombre=nombres.get(_v['codigo_mp'], _v['codigo_mp']),
+            stock_ahora=_ahora, diferencia=_dif,
+            posible=('se movió después de contarlo (producción, otra declaración) '
+                     'o la declaración no llegó al inventario')))
+    no_cuadran.sort(key=lambda x: -abs(x['diferencia']))
     return jsonify({
         'ok': True, 'desde': desde, 'hasta': hasta,
         'resumen': {
@@ -9337,11 +9380,13 @@ def inventario_cuadre_informe():
             'aparecieron': len(aparecio),
             'sin_revisar': len(sin_revisar),
             'a_buscar': len(a_buscar),
+            'no_cuadran': len(no_cuadran),
             'gramos_ajustados': round(sum(x['ajuste'] for x in ajustados), 2),
             'gramos_no_encontrados': round(sum(x['sistema'] for x in no_esta), 2),
             'gramos_sin_revisar': round(sum(x['stock_sistema'] for x in sin_revisar), 2),
         },
         'a_buscar': a_buscar,
+        'no_cuadran': no_cuadran,
         'no_esta': no_esta,
         'ajustados': ajustados,
         'coinciden': coinciden,
