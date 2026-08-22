@@ -783,6 +783,10 @@ CORAZON=(
   # El Excel del cierre: tres hojas segun QUIEN lo resuelve (los jefes / falta contar / datos
   # que se completan en pantalla), y cada fila dice que paso y que hacer.
   "tests/test_cierre_excel.py"
+  # Antes de cerrar: que nada quede duplicado ni donde no es. Los tres accidentes reales al
+  # ingresar material contando -- el mismo lote dos veces, el mismo lote en dos estantes, y el
+  # mismo material bajo dos codigos. Con el GRADO adentro, o gritaria con los hialuronicos.
+  "tests/test_cierre_duplicados.py"
   # Mismo INCI + otro GRADO no es el mismo material. El normalizador canonico borra el
   # parentesis donde vive el grado, asi que el resolver podia cambiar 300 kD por 50 kD.
   "tests/test_grado_no_se_sustituye.py"

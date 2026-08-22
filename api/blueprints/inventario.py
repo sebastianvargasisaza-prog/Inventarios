@@ -9274,6 +9274,20 @@ async function cargar(){
       +'<div class="kpi wa"><b>'+n(s.sin_revisar)+'</b><span>sin revisar</span></div>'
       +'<div class="kpi"><b>'+n(s.aparecieron)+'</b><span>aparecieron</span></div>'
       +'</div>';
+    /* Antes de nada: lo que puede haber quedado DUPLICADO o en el lugar equivocado. Va
+       primero porque un stock inflado no da ningun sintoma y se descubre al producir. */
+    if((d.posibles_duplicados||[]).length){
+      h+=_sec('Revisar antes de cerrar &middot; '+n(s.posibles_duplicados)
+        +' posible(s) duplicado(s)','buscar');
+      h+=_tabla(d.posibles_duplicados, [
+        {t:'Material', v:function(f){ return '<b>'+esc(f.nombre||f.codigo_mp)+'</b>'; }},
+        {t:'Lote', v:function(f){ return esc(f.lote||'-'); }},
+        {t:'Qu&eacute; pas&oacute;', v:function(f){ return esc(f.que||''); }},
+        {t:'Detalle', v:function(f){
+          return '<span class="mot">'+esc(f.detalle||'')+'</span>'; }},
+        {t:'D&oacute;nde', v:function(f){ return esc(f.estanteria||'-'); }},
+      ]);
+    }
     /* PARA CERRAR · lo pendiente por ESTANTE. Va primero porque es lo que hay que resolver
        antes de dar el inventario por cerrado, y se copia por estante: asi se le reparte a
        cada persona el pasillo que le toca, en vez de una lista de 40 mezclados. */
@@ -9949,6 +9963,109 @@ def inventario_cuadre_informe():
             'informe · sin dato: %s', _e6)
         lectura_fallo = True
 
+    # ── 2e · antes de cerrar: nada duplicado ni donde no es ─────────────────
+    # Se mira SOLO lo tocado en el rango: un detector que vuelca el historico entero se deja
+    # de mirar (M170), y lo que se revisa es el trabajo de estos dias.
+    posibles_duplicados = []
+    try:
+        _tocados = sorted({k[0] for k in declarado} | {k[0] for k in trabajado})
+        for _i in range(0, len(_tocados), 500):
+            _tr = _tocados[_i:_i + 500]
+            if not _tr:
+                continue
+            _mk = ','.join(['?'] * len(_tr))
+
+            # (1) el MISMO lote con dos Entradas · y (2) el mismo lote en dos ubicaciones
+            for _r in c.execute(
+                    "SELECT UPPER(COALESCE(material_id,'')), COALESCE(lote,''), "
+                    "       MAX(COALESCE(material_nombre,'')), "
+                    "       SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') "
+                    "                THEN 1 ELSE 0 END), "
+                    "       COUNT(DISTINCT CASE WHEN COALESCE(estanteria,'')<>'' "
+                    "                           THEN estanteria END), "
+                    "       MAX(COALESCE(estanteria,'')), MIN(COALESCE(estanteria,'')), "
+                    "       SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') "
+                    "                THEN cantidad ELSE 0 END) "
+                    "  FROM movimientos "
+                    " WHERE UPPER(COALESCE(material_id,'')) IN (%s) "
+                    "   AND COALESCE(lote,'') <> '' "
+                    " GROUP BY UPPER(COALESCE(material_id,'')), COALESCE(lote,'')"
+                    % _mk, tuple(_tr)).fetchall():
+                _cod, _lot = str(_r[0] or ''), str(_r[1] or '').strip()
+                _nom = _r[2] or nombres.get(_cod, _cod)
+                if (_r[3] or 0) > 1:
+                    posibles_duplicados.append({
+                        'codigo_mp': _cod, 'lote': _lot, 'nombre': _nom,
+                        'que': 'el mismo lote tiene %d entradas' % int(_r[3] or 0),
+                        'detalle': 'suman %s g · revisar si se ingreso dos veces'
+                                   % round(float(_r[7] or 0), 2),
+                        'estanteria': _r[5] or ''})
+                if (_r[4] or 0) > 1:
+                    posibles_duplicados.append({
+                        'codigo_mp': _cod, 'lote': _lot, 'nombre': _nom,
+                        'que': 'el mismo lote figura en %d ubicaciones' % int(_r[4] or 0),
+                        'detalle': 'aparece en %s y en %s · una de las dos esta mal'
+                                   % (_r[6] or '?', _r[5] or '?'),
+                        'estanteria': _r[5] or ''})
+
+            # (3) el MISMO material bajo dos codigos, los dos con stock
+            _porinci = {}
+            for _r in c.execute(
+                    "SELECT UPPER(COALESCE(mp.codigo_mp,'')), COALESCE(mp.nombre_inci,''), "
+                    "       COALESCE(mp.nombre_comercial,'') "
+                    "  FROM maestro_mps mp "
+                    " WHERE COALESCE(mp.activo,1)=1 AND TRIM(COALESCE(mp.nombre_inci,''))<>''"
+            ).fetchall():
+                try:
+                    from blueprints.programacion import _inci_con_grado as _icg
+                    _k = _icg(_r[1])
+                except Exception:
+                    _k = str(_r[1] or '').strip().upper()
+                if _k:
+                    _porinci.setdefault(_k, []).append((str(_r[0] or ''), _r[2] or _r[1]))
+            for _cod in _tr:
+                for _k, _lst in _porinci.items():
+                    if len(_lst) < 2:
+                        continue
+                    if not any(x[0] == _cod for x in _lst):
+                        continue
+                    # Sólo molesta si LOS DOS tienen material: dos códigos donde uno está en
+                    # cero es un código viejo, no un duplicado activo.
+                    _conStock = []
+                    for _c2, _n2 in _lst:
+                        _q = c.execute(
+                            "SELECT COALESCE(SUM(CASE WHEN tipo IN "
+                            "  ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
+                            "  WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') "
+                            "  THEN -cantidad ELSE 0 END),0) FROM movimientos "
+                            " WHERE UPPER(COALESCE(material_id,''))=?" + _SQL_SOLO_USABLE,
+                            (_c2,)).fetchone()
+                        if float(_q[0] or 0) > 0.01:
+                            _conStock.append((_c2, _n2, round(float(_q[0] or 0), 2)))
+                    if len(_conStock) > 1:
+                        posibles_duplicados.append({
+                            'codigo_mp': _cod, 'lote': '', 'nombre': nombres.get(_cod, _cod),
+                            'que': 'el mismo material esta bajo %d codigos' % len(_conStock),
+                            'detalle': ' · '.join('%s (%s g)' % (a, cc) for a, _b, cc in _conStock)
+                                       + ' · la demanda se parte entre los dos',
+                            'estanteria': ''})
+                    break
+        # Un mismo lote puede caer dos veces por dos motivos distintos: se deduplica por
+        # (codigo, lote, motivo), no por lote, o se perderia el segundo hallazgo.
+        _vistos = set()
+        _limpio = []
+        for _d in posibles_duplicados:
+            _k = (_d['codigo_mp'], _d['lote'], _d['que'])
+            if _k in _vistos:
+                continue
+            _vistos.add(_k)
+            _limpio.append(_d)
+        posibles_duplicados = _limpio
+    except Exception as _e7:
+        __import__('logging').getLogger('inventario').warning(
+            'informe · posibles duplicados: %s', _e7)
+        lectura_fallo = True
+
     # ── 3 · el corte ────────────────────────────────────────────────────────
     def _con(como):
         return [dict(v, nombre=nombres.get(v['codigo_mp'], v['codigo_mp']))
@@ -10029,6 +10146,7 @@ def inventario_cuadre_informe():
             'trabajado_inventario': len(trabajado),
             'sin_dato': len(sin_dato),
             'ubicaciones_pendientes': len(por_ubicacion),
+            'posibles_duplicados': len(posibles_duplicados),
             'correcciones': len(correcciones),
             'gramos_ajustados': round(sum(x['ajuste'] for x in ajustados), 2),
             'gramos_no_encontrados': round(sum(x['sistema'] for x in no_esta), 2),
@@ -10038,6 +10156,7 @@ def inventario_cuadre_informe():
         'no_cuadran': no_cuadran,
         'sin_dato': sin_dato,
         'por_ubicacion': por_ubicacion,
+        'posibles_duplicados': posibles_duplicados,
         'trabajado_inventario': sorted(
             trabajado.values(), key=lambda x: (x['estanteria'], x['nombre'])),
         'correcciones': correcciones,
