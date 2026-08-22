@@ -9029,6 +9029,123 @@ def planta_cuadre_page():
     return Response(CUADRE_HTML, mimetype='text/html; charset=utf-8')
 
 
+@bp.route('/api/inventario/cuadre-informe/xlsx', methods=['GET'])
+def inventario_cuadre_informe_xlsx():
+    """Lo que falta para cerrar el inventario, en Excel, para repartirlo al equipo.
+
+    Tres hojas, porque **no las resuelve la misma persona**: lo que necesita el ojo de un jefe
+    (no encontrado · sin ubicar), lo que falta contar, y los datos que se completan desde la
+    pantalla. Mezcladas en una sola lista no se resuelve ninguna.
+
+    Sale de `inventario_cuadre_informe()`, no de un cálculo propio: dos cuentas del mismo hecho
+    divergen el día que alguien toque una (M99/M241).
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    from flask import make_response
+    import io as _io
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+    except Exception:
+        return jsonify({'error': 'openpyxl no disponible'}), 500
+
+    try:
+        data = inventario_cuadre_informe().get_json()
+    except Exception as _e:
+        __import__('logging').getLogger('inventario').warning('xlsx del cierre: %s', _e)
+        return jsonify({'error': 'no se pudo armar el informe'}), 500
+    if not isinstance(data, dict):
+        return jsonify({'error': 'no se pudo armar el informe'}), 500
+
+    def _fila(est, f, paso, hacer):
+        _c = f.get('sistema')
+        if _c is None:
+            _c = f.get('stock_sistema')
+        return [est, f.get('posicion') or '', f.get('codigo_mp') or '',
+                f.get('nombre') or '', f.get('lote') or 'sin lote',
+                paso, hacer, float(_c or 0),
+                f.get('por') or '', f.get('cuando') or '', f.get('motivo') or '']
+
+    jefes, contar, datos = [], [], []
+    for g in data.get('por_ubicacion') or []:
+        est = g.get('estanteria') or ''
+        # Lo que se dio por NO ENCONTRADO: alguien que conoce la bodega tiene que confirmarlo.
+        for f in g.get('no_esta') or []:
+            jefes.append(_fila(
+                est, f, 'Se dio por NO ENCONTRADO',
+                'Confirmar si de verdad no está. Si aparece, decir dónde y cuánto hay.'))
+        for f in g.get('sin_revisar') or []:
+            contar.append(_fila(
+                est, f, 'Nadie lo revisó', 'Contarlo y declarar la cantidad que hay.'))
+        for f in g.get('sin_dato') or []:
+            _falta = list(f.get('falta') or [])
+            if 'ubicación' in _falta:
+                # Sin ubicación no se puede ir a buscar: lo tiene que ubicar quien conozca
+                # dónde vive ese material.
+                jefes.append(_fila(
+                    est, f, 'No tiene ubicación',
+                    'Decir en qué estantería y posición está.'))
+                _falta = [x for x in _falta if x != 'ubicación']
+            if _falta:
+                datos.append(_fila(
+                    est, f, 'Le falta: ' + ', '.join(_falta),
+                    'Completar en el sistema: ' + ', '.join(_falta) + '.'))
+
+    HEADERS = ['Estantería', 'Posición', 'Código', 'Material', 'Lote', 'Qué pasó', 'Qué hacer',
+               'Cantidad que dice el sistema (g)', 'Quién lo declaró', 'Cuándo', 'Motivo']
+    HOJAS = [('Revisar con los jefes', jefes), ('Falta contar', contar),
+             ('Otros datos faltantes', datos)]
+
+    wb = Workbook()
+    _primera = True
+    for titulo, filas in HOJAS:
+        if _primera:
+            ws = wb.active
+            ws.title = titulo
+            _primera = False
+        else:
+            ws = wb.create_sheet(titulo)
+        _hf = Font(bold=True, color='FFFFFF', size=11)
+        _fill = PatternFill(start_color='6D28D9', end_color='6D28D9', fill_type='solid')
+        for ci, h in enumerate(HEADERS, start=1):
+            cell = ws.cell(row=1, column=ci, value=h)
+            cell.font = _hf
+            cell.fill = _fill
+            cell.alignment = Alignment(vertical='center', wrap_text=True)
+        for ri, fila in enumerate(filas, start=2):
+            for ci, val in enumerate(fila, start=1):
+                ws.cell(row=ri, column=ci, value=val)
+        if not filas:
+            # Una hoja vacía se lee como "no se pudo": se DICE que no hay nada (M100).
+            ws.cell(row=2, column=1, value='Nada pendiente en esta lista.')
+        for ci in range(1, len(HEADERS) + 1):
+            _letra = get_column_letter(ci)
+            _max = len(HEADERS[ci - 1])
+            for ri in range(2, len(filas) + 2):
+                v = ws.cell(row=ri, column=ci).value
+                if v is not None:
+                    _max = max(_max, len(str(v)))
+            ws.column_dimensions[_letra].width = min(_max + 2, 55)
+        ws.freeze_panes = 'A2'
+        if filas:
+            ws.auto_filter.ref = ws.dimensions
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    _desde = str(data.get('desde') or '')[:10]
+    resp = make_response(buf.getvalue())
+    resp.headers['Content-Type'] = (
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp.headers['Content-Disposition'] = (
+        'attachment; filename="inventario-para-cerrar-%s.xlsx"' % (_desde or 'hoy'))
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    return resp
+
+
 @bp.route('/planta/cuadre-informe', methods=['GET'])
 def planta_cuadre_informe_page():
     """El informe de cierre del inventario, para mirar y para imprimir."""
@@ -9111,6 +9228,7 @@ alguien decide, no el efecto de pedir un reporte.</p>
   <button class="b" onclick="cargar()">Ver</button>
   <button class="b2" onclick="window.print()">Imprimir</button>
   <button class="b2" onclick="copiar()">Copiar la lista para buscar</button>
+  <button class="b2" onclick="bajarExcel()">&#128202; Descargar Excel para el equipo</button>
 </div>
 <div id="cont">Cargando&hellip;</div>
 </div><script>
@@ -9190,7 +9308,9 @@ async function cargar(){
               +'<span class="ubi-lote">'+esc(f.lote||'sin lote')+'</span>'
               +(f.posicion?('<span class="ubi-pos">pos. '+esc(f.posicion)+'</span>'):'')
               +'<span class="ubi-det">'+det+'</span>'
-              +(par[0]==='sin_dato'? '' : ('<span class="ubi-acc">'
+              +(par[0]==='sin_dato'
+                ? _btnsDato(ix, f)
+                : ('<span class="ubi-acc">'
                 +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="pOk('+ix+')">&#10003; est&aacute; bien</button>'
                 +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="pCant('+ix+')">&#9998; cantidad</button>'
                 +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="pNo('+ix+')">&#10007; no existe</button>'
@@ -9354,6 +9474,100 @@ async function _declararPend(ix, fisico, motivo){
   }catch(e){ msg.className = 'ubi-msg err'; msg.textContent = ' sin conexion'; }
 }
 
+// ── completar el dato que falta, sin salir de la lista ──────────────────────────
+// Esta cubeta NO ofrece declarar cantidad: el lote SI esta, lo que falta es un dato. Cada
+// boton corrige SU dato por el endpoint que ya existe para eso (M3).
+var _DATO_BTN = {
+  'vencimiento': ['&#128197; poner vencimiento', 'dVenc'],
+  'ubicaci\u00f3n': ['&#128205; poner ubicaci&oacute;n', 'dUbic'],
+  'INCI': ['&#129516; poner INCI', 'dInci'],
+  'n\u00famero de lote': ['&#128278; poner lote', 'dLote']
+};
+function _btnsDato(ix, f){
+  var out = '<span class="ubi-acc">';
+  (f.falta || []).forEach(function(k){
+    var b = _DATO_BTN[k];
+    if(!b) return;
+    out += '<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="'+b[1]+'('+ix+')">'
+      + b[0] + '</button>';
+  });
+  return out + '</span>';
+}
+
+async function _guardarDato(ix, url, body, etiqueta){
+  var p = _PEND[ix]; if(!p) return;
+  var msg = document.getElementById('pm-'+ix); if(!msg) return;
+  msg.className = 'ubi-msg'; msg.textContent = ' guardando...';
+  try{
+    var r = await fetch(url, {method:'PUT', credentials:'same-origin',
+      headers:{'Content-Type':'application/json', 'X-CSRF-Token':_CSRF},
+      body: JSON.stringify(body)});
+    var d = {}; try{ d = await r.json(); }catch(_je){}
+    if(!r.ok || d.error){
+      msg.className = 'ubi-msg err';
+      msg.textContent = ' ' + (d.error || ('error ' + r.status));
+      return;
+    }
+    msg.className = 'ubi-msg';
+    msg.innerHTML = ' <span class="ubi-ok">&#10003; ' + esc(etiqueta) + '</span>'
+      + (d.reactivado ? ' <span class="ubi-ok">volvi&oacute; a quedar disponible</span>' : '');
+    // Se saca de la lista de faltantes de esa fila: si el lote tenia DOS datos faltando,
+    // el otro boton tiene que seguir ahi (M129).
+    p.f.falta = (p.f.falta || []).filter(function(k){ return k !== p._ultimo; });
+    var li = document.getElementById('p-'+ix);
+    if(li && !(p.f.falta || []).length){ li.className = 'hecho'; }
+  }catch(e){ msg.className = 'ubi-msg err'; msg.textContent = ' sin conexion'; }
+}
+function _urlLote(f, cola){
+  return '/api/lotes/' + encodeURIComponent(f.codigo_mp) + '/'
+    + encodeURIComponent(f.lote || '_SIN_LOTE_') + '/' + cola;
+}
+function dVenc(ix){
+  var p = _PEND[ix]; if(!p) return;
+  var v = prompt('Fecha de vencimiento de ' + (p.f.nombre||p.f.codigo_mp)
+    + ' lote ' + (p.f.lote||'sin lote') + ' (AAAA-MM-DD)');
+  if(v === null) return;
+  v = String(v).trim();
+  if(!v){ alert('Una fecha de vencimiento no se deja vacia.'); return; }
+  p._ultimo = 'vencimiento';
+  _guardarDato(ix, _urlLote(p.f, 'fecha-vencimiento'),
+    {fecha_vencimiento: v, motivo: 'completado al cerrar el inventario'}, 'vencimiento puesto');
+}
+function dUbic(ix){
+  var p = _PEND[ix]; if(!p) return;
+  var e = prompt('En que estanteria esta ' + (p.f.nombre||p.f.codigo_mp)
+    + ' lote ' + (p.f.lote||'sin lote') + '?');
+  if(e === null) return;
+  e = String(e).trim();
+  if(!e){ alert('Hace falta la estanteria.'); return; }
+  var pos = prompt('Posicion (opcional)', p.f.posicion || '');
+  if(pos === null) pos = '';
+  p._ultimo = 'ubicaci\u00f3n';
+  _guardarDato(ix, _urlLote(p.f, 'ubicacion'),
+    {estanteria: e, posicion: String(pos).trim(),
+     motivo: 'ubicado al cerrar el inventario'}, 'ubicacion puesta');
+}
+function dInci(ix){
+  var p = _PEND[ix]; if(!p) return;
+  var v = prompt('INCI de ' + (p.f.nombre||p.f.codigo_mp)
+    + ' (la identidad quimica · si tiene grado, escribilo: "(300 kD)")');
+  if(v === null) return;
+  v = String(v).trim();
+  if(!v){ alert('El INCI no se deja vacio: sin el, el sistema puede elegir la molecula de al lado.'); return; }
+  p._ultimo = 'INCI';
+  _guardarDato(ix, '/api/inventario/mp/' + encodeURIComponent(p.f.codigo_mp) + '/inci',
+    {nombre_inci: v}, 'INCI puesto');
+}
+function dLote(ix){
+  var p = _PEND[ix]; if(!p) return;
+  var v = prompt('Numero de lote real (el que dice el envase)');
+  if(v === null) return;
+  v = String(v).trim();
+  if(!v){ alert('Hace falta el numero de lote.'); return; }
+  p._ultimo = 'n\u00famero de lote';
+  _guardarDato(ix, _urlLote(p.f, 'codigo-lote'), {lote_nuevo: v}, 'lote puesto');
+}
+
 function pOk(ix){
   var p = _PEND[ix]; if(!p) return;
   var q = (p.f.stock_sistema !== undefined) ? p.f.stock_sistema : p.f.sistema;
@@ -9380,6 +9594,15 @@ function pNo(ix){
   m = String(m).trim();
   if(!m){ alert('Hace falta el motivo.'); return; }
   _declararPend(ix, 0, m);
+}
+
+// El Excel es una ORDEN DE TRABAJO: va por estante y cada fila dice QUE PASO y QUE HACER.
+// Un listado que no dice que hacer se lo devuelven a uno.
+function bajarExcel(){
+  var d1=(document.getElementById('d1')||{}).value||'';
+  var d2=(document.getElementById('d2')||{}).value||'';
+  window.location = '/api/inventario/cuadre-informe/xlsx?desde='
+    + encodeURIComponent(d1) + '&hasta=' + encodeURIComponent(d2);
 }
 
 function copiarUbi(gi){

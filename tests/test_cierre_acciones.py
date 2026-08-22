@@ -25,6 +25,30 @@ def _js():
     return '\n'.join(re.findall(r'<script[^>]*>(.*?)</script>', H, re.S))
 
 
+def _recortar(js, desde, hasta):
+    i = js.find(desde)
+    assert i != -1, 'no se encontro %r' % desde
+    j = js.find(hasta, i)
+    assert j > i, 'no se encontro el cierre de %r' % desde
+    return js[i:j + len(hasta)]
+
+
+def _fn(js, nombre):
+    """La funcion entera, cortada por BALANCE de llaves (M229)."""
+    i = js.find('function ' + nombre + '(')
+    assert i != -1, 'no esta la funcion %s' % nombre
+    j = js.find('{', i)
+    prof = 0
+    for k in range(j, len(js)):
+        if js[k] == '{':
+            prof += 1
+        elif js[k] == '}':
+            prof -= 1
+            if prof == 0:
+                return js[i:k + 1]
+    raise AssertionError('la funcion %s no cierra' % nombre)
+
+
 def _render(tmp_path, datos):
     """Corre el renderizador de la seccion con un informe sembrado y devuelve el HTML."""
     node = shutil.which('node')
@@ -38,7 +62,11 @@ def _render(tmp_path, datos):
     assert j > i, 'no se encontro el cierre de la seccion'
     bloque = js[i:j + len("h+='</div>';\n    }")]
 
+    # El bloque LLAMA a `_btnsDato`, que vive fuera: sin ella el render revienta y la sonda
+    # mediria otra cosa. Se recorta por balance de llaves, no por un largo fijo (M229).
+    aux = _recortar(js, '_DATO_BTN = {', '};') + '\n' + _fn(js, '_btnsDato')
     prelude = (
+        'var ' + aux.lstrip('var ') + '\n'
         'function esc(s){return String(s==null?"":s)'
         '.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")'
         '.replace(/"/g,"&quot;");}\n'
@@ -96,6 +124,51 @@ def test_lo_que_le_falta_un_DATO_no_ofrece_declarar_cantidad(app, tmp_path):
     assert 'pNo(' not in fila and 'pOk(' not in fila, (
         'la fila de "le falta un dato" ofrece declararlo en cero')
     assert 'falta vencimiento' in fila, 'no dice cual dato falta'
+
+
+def test_lo_que_le_falta_un_DATO_ofrece_COMPLETARLO(app, tmp_path):
+    """Sebastian: *"las que les falte un dato puedo hacerlo de una vez"*. Sin el boton hay que
+    abrir otra pantalla y buscar el material: ahi es donde se abandona (M121)."""
+    html = _render(tmp_path, DATOS)
+    i = html.find('UREA')
+    fila = html[i:html.find('</li>', i)]
+    assert 'dVenc(' in fila, 'no ofrece poner el vencimiento que le falta'
+
+
+def test_solo_ofrece_el_boton_del_dato_que_FALTA(app, tmp_path):
+    """Si ofreciera los cuatro siempre, tres de ellos cambiarian un dato que ya esta bien."""
+    datos = json.loads(json.dumps(DATOS))
+    datos['por_ubicacion'][0]['sin_dato'][0]['falta'] = ['INCI']
+    html = _render(tmp_path, datos)
+    i = html.find('UREA')
+    fila = html[i:html.find('</li>', i)]
+    assert 'dInci(' in fila, 'no ofrece poner el INCI'
+    assert 'dVenc(' not in fila, 'ofrece cambiar el vencimiento, que no falta'
+    assert 'dUbic(' not in fila, 'ofrece cambiar la ubicacion, que no falta'
+
+
+def test_cada_dato_va_por_SU_endpoint(app):
+    """Cada boton usa el endpoint que ya existe para ese dato, no una puerta nueva (M3)."""
+    js = _js()
+    for fn, url in (('function dVenc(', 'fecha-vencimiento'),
+                    ('function dUbic(', 'ubicacion'),
+                    ('function dInci(', '/inci'),
+                    ('function dLote(', 'codigo-lote')):
+        i = js.find(fn)
+        assert i != -1, 'falta la funcion %s' % fn
+        cuerpo = js[i:i + 900]
+        assert url in cuerpo, '%s no llama a su endpoint (%s)' % (fn, url)
+
+
+def test_ningun_dato_se_deja_VACIO(app):
+    """Un INCI vacio hace que el resolver caiga a otros criterios y elija la molecula de al
+    lado (M137); un vencimiento vacio vuelve el lote eterno al FEFO (M118)."""
+    js = _js()
+    for fn in ('function dVenc(', 'function dInci(', 'function dUbic(', 'function dLote('):
+        i = js.find(fn)
+        cuerpo = js[i:i + 900]
+        assert 'if(!' in cuerpo and 'alert(' in cuerpo, (
+            '%s deja guardar el dato vacio' % fn)
 
 
 def test_el_HTML_que_arma_no_queda_PARTIDO(app, tmp_path):

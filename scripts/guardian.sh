@@ -780,6 +780,9 @@ CORAZON=(
   # endpoint del cuadre. El HTML se genera EJECUTANDO el renderizador con datos que llevan
   # comillas, que es lo que parte un atributo sin que el node-check lo vea.
   "tests/test_cierre_acciones.py"
+  # El Excel del cierre: tres hojas segun QUIEN lo resuelve (los jefes / falta contar / datos
+  # que se completan en pantalla), y cada fila dice que paso y que hacer.
+  "tests/test_cierre_excel.py"
   # Mismo INCI + otro GRADO no es el mismo material. El normalizador canonico borra el
   # parentesis donde vive el grado, asi que el resolver podia cambiar 300 kD por 50 kD.
   "tests/test_grado_no_se_sustituye.py"

@@ -217,10 +217,21 @@ def test_darlo_por_NO_ENCONTRADO_lo_saca_del_INVENTARIO(admin_client, bodega):
 
 
 def test_un_lote_al_que_le_falta_un_DATO_no_se_puede_dar_en_cero_desde_ahi(admin_client, bodega):
-    """El guard del reves: la cubeta de datos incompletos NO ofrece esos botones, porque el
-    lote SI esta -- lo que falta es corregirle un dato."""
+    """El guard del reves: la cubeta de datos incompletos NO ofrece declarar cantidad, porque
+    el lote SI esta -- lo que falta es corregirle un dato. Lo que SI ofrece es completarlo.
+
+    Se mide sobre lo que la rama PRODUCE, no sobre la forma del `if`: fijar la escritura exacta
+    pone el guard en rojo el dia que alguien mejora la rama, con el codigo sano (M97/M216).
+    """
     from blueprints.inventario import _INFORME_CUADRE_HTML as H
-    i = H.find("par[0]==='sin_dato'? '' :")
-    assert i != -1, (
-        'la cubeta de "le falta un dato" ofrece los botones de declarar cantidad: eso invita '
-        'a borrar un lote que si esta')
+    assert "par[0]==='sin_dato'" in H, 'la cubeta de datos incompletos ya no se distingue'
+    i = H.find('function _btnsDato')
+    assert i != -1, 'no hay forma de completar el dato desde la lista'
+    j = H.find('async function', i)
+    cuerpo = H[i:j if j > i else i + 1200]
+    for prohibido in ('pOk(', 'pCant(', 'pNo('):
+        assert prohibido not in cuerpo, (
+            'la cubeta de "le falta un dato" ofrece %s: eso invita a borrar un lote que si '
+            'esta, solo porque le falta un dato' % prohibido)
+    assert 'dVenc' in cuerpo or '_DATO_BTN' in cuerpo, (
+        'no ofrece completar el dato que falta')
