@@ -708,6 +708,11 @@ CORAZON=(
   # envases de a uno no lo hace nadie, y el rotulo por caja no tenia de donde sacar las
   # cajas cuando el conteo entraba por el ajuste de stock.
   "tests/test_conteo_por_cajas.py"
+  # La verificacion de stock pasa a ser la HOJA de verificacion fisica: el operario va al
+  # estante y declara "esta" / "hay menos" / "no esta", y eso CORRIGE el kardex por el
+  # endpoint de cuadre que ya existe. Cubre tambien que el aviso llegue al contenedor real
+  # y que el dato de un lote no pueda partir el onclick del boton.
+  "tests/test_hoja_verificacion_fisica.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

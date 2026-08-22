@@ -7363,6 +7363,127 @@ async function generarOCsDesdeAlertasMEE(){
   else alert('Error: '+(d2.error||''));
 }
 /* MEE en producción */
+// ── Hoja de verificación física · Sebastián 21-ago-2026 ──────────────────────
+// "Van y revisan y dicen si está OK lo usaré; no está, ¿por qué? se acabó; si hay pero menos,
+// entonces usaré otro". Lo que se declara CORRIGE el kardex: una verificación que no corrige
+// nada es una lista de lectura, y el descuadre sigue ahí mañana.
+window._VERIF_EST = window._VERIF_EST || {};
+(function(){
+  if(document.getElementById('vf-css')) return;
+  var st=document.createElement('style'); st.id='vf-css';
+  st.textContent=
+   '.vf-tit{font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--cx-text-mute);margin:8px 0 6px}'
+  +'.vf-tit-w{color:var(--cx-warn-text)}'
+  +'.vf-lote{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;'
+  +'border:1px solid var(--cx-border);border-radius:11px;padding:9px 13px;margin-bottom:7px;background:var(--cx-card)}'
+  +'.vf-lote.vf-done{border-color:var(--cx-success-light);background:var(--cx-success-pale)}'
+  +'.vf-l1{display:flex;align-items:center;gap:11px;flex-wrap:wrap;font-size:13px;color:var(--cx-text);min-width:0}'
+  +'.vf-g{font-weight:800;color:var(--cx-primary-text)}'
+  +'.vf-ub,.vf-v{font-size:11.5px;color:var(--cx-text-mute)}'
+  +'.vf-ok{font-size:11px;font-weight:800;color:var(--cx-success-text);background:var(--cx-success-pale);border-radius:999px;padding:2px 9px}'
+  +'.vf-menos{font-size:11px;font-weight:800;color:var(--cx-warn-text);background:var(--cx-warn-pale);border-radius:999px;padding:2px 9px}'
+  +'.vf-acc{display:flex;gap:7px;flex-wrap:wrap}'
+  +'.vf-b{border:1px solid var(--cx-border);background:var(--cx-card);color:var(--cx-text-soft);'
+  +'border-radius:9px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}'
+  +'.vf-b:hover{border-color:var(--cx-primary-light);color:var(--cx-primary-text)}'
+  +'.vf-b-ok{border-color:var(--cx-success-light);color:var(--cx-success-text)}'
+  +'.vf-b-no{border-color:var(--cx-danger-light);color:var(--cx-danger-text)}'
+  +'.vf-banner{margin:0 0 12px;padding:11px 15px;border-radius:11px;font-size:13px;'
+  +'background:var(--cx-primary-pale);border:1px solid var(--cx-primary-light);color:var(--cx-primary-text)}'
+  +'.vf-banner-err{background:var(--cx-danger-pale);border-color:var(--cx-danger-light);color:var(--cx-danger-text)}'
+  +'.vf-card{border:1px solid var(--cx-border);border-radius:16px;padding:18px 20px;background:var(--cx-card);'
+  +'box-shadow:0 10px 30px rgba(24,24,27,.06)}'
+  +'.vf-card-ok{border-left:5px solid var(--cx-success-light)}'
+  +'.vf-card-no{border-left:5px solid var(--cx-danger-light)}'
+  +'.vf-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}'
+  +'.vf-hd-t{font-size:16px;font-weight:800;letter-spacing:-.2px;color:var(--cx-text)}'
+  +'.vf-hd-s{font-size:12px;color:var(--cx-text-mute);margin-top:4px;max-width:60ch;line-height:1.5}'
+  +'.vf-prog{min-width:190px}'
+  +'.vf-prog-t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;'
+  +'color:var(--cx-text-mute);margin-bottom:5px}'
+  +'.vf-prog-r{height:7px;border-radius:999px;background:var(--cx-bg-alt);overflow:hidden}'
+  +'.vf-prog-b{display:block;height:100%;border-radius:999px;background:var(--cx-success-light)}'
+  +'.vf-mat{border-top:1px solid var(--cx-border);padding:13px 0 4px}'
+  +'.vf-mat-h{display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap}'
+  +'.vf-mat-n{font-size:14px;font-weight:800;color:var(--cx-text)}'
+  +'.vf-mat-c{font-size:10.5px;font-family:ui-monospace,monospace;color:var(--cx-text-mute);margin-left:8px;font-weight:600}'
+  +'.vf-mat-q{font-size:12.5px;color:var(--cx-text-soft)}'
+  +'.vf-mat-q b{color:var(--cx-text);font-weight:800}'
+  +'.vf-est{font-size:11px;font-weight:800;border-radius:999px;padding:3px 11px;white-space:nowrap}'
+  +'.vf-est-ok{color:var(--cx-success-text);background:var(--cx-success-pale)}'
+  +'.vf-est-no{color:var(--cx-danger-text);background:var(--cx-danger-pale)}'
+  +'.vf-ret{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;'
+  +'border:1px dashed var(--cx-warn-light);border-radius:11px;padding:8px 13px;margin-bottom:6px;'
+  +'background:var(--cx-warn-pale)}'
+  +'.vf-ret-m{font-size:11.5px;font-weight:700;color:var(--cx-warn-text)}'
+  +'.vf-nada{font-size:12px;color:var(--cx-text-mute);padding:4px 0 8px}'
+  +'.vf-pie{margin:14px 0 0;font-size:12.5px;color:var(--cx-text-soft);line-height:1.55}';
+  document.head.appendChild(st);
+})();
+function _verifKey(cod, lote){ return String(cod||'')+'||'+String(lote||''); }
+function _verifMsg(txt, err){
+  // El aviso vive en una VARIABLE, no sólo en el DOM: `simularProduccion` reescribe el panel
+  // entero justo después de cada declaración, así que un banner insertado como hijo se borra
+  // medio segundo más tarde y la persona no alcanza a leer que su corrección quedó guardada.
+  window._VERIF_MSG = txt ? {txt: txt, err: !!err} : null;
+  var c=document.getElementById('prod-simul-result'); if(!c) return;
+  var b=document.getElementById('vf-banner');
+  if(!b){ b=document.createElement('div'); b.id='vf-banner'; c.insertBefore(b, c.firstChild); }
+  b.className='vf-banner'+(err?' vf-banner-err':'');
+  b.innerHTML=txt;
+}
+function _verifBannerHTML(){
+  var m=window._VERIF_MSG; if(!m) return '';
+  return '<div id="vf-banner" class="vf-banner'+(m.err?' vf-banner-err':'')+'">'+m.txt+'</div>';
+}
+function verifOk(cod, lote){
+  // "Está y alcanza": no toca el kardex -- el sistema ya decía eso. Sólo deja constancia de
+  // que ese lote se MIRÓ, que es lo que permite saber qué falta por revisar.
+  window._VERIF_EST[_verifKey(cod,lote)]='ok';
+  // El aviso habla SOLO del lote. Un contador global de la sesion diria "llevas 5 revisados"
+  // al lado de una barra que dice "1 de 2", y dos mitades de la misma pantalla que se
+  // contradicen hacen que se deje de creer en las dos (M161). La cuenta de la hoja la lleva
+  // la barra, que se calcula de los lotes que la hoja esta mostrando.
+  _verifMsg('&#10003; Verificado <b>'+_escHTML(lote)+'</b> &middot; qued&oacute; confirmado contra el estante.');
+  simularProduccion();
+}
+async function verifMenos(cod, lote, sugerido){
+  // Prompt de UNA sola linea: en este template un escape de salto de linea es un salto REAL
+  // y parte la cadena JS, que rompe el bloque entero. Escribir ese escape aca -- incluso
+  // dentro de este comentario -- vuelve a romperlo (M65).
+  var v=prompt('¿Cuántos gramos hay REALMENTE de '+lote+'? El sistema cree que hay '+Number(sugerido||0).toLocaleString('es-CO')+' g. Se corrige el inventario y se busca con qué completar.', '');
+  if(v===null) return;
+  var n=parseFloat(String(v).replace(',','.'));
+  if(isNaN(n)||n<0){ alert('Escribí cuántos gramos hay (un número).'); return; }
+  await _verifCuadrar(cod, lote, n, 'verificación física antes de producir');
+}
+async function verifNoEsta(cod, lote){
+  var m=prompt('¿Por qué no está '+lote+'? (ej: se acabó · no lo encuentro · se rompió). El lote queda en CERO y se busca con qué reemplazarlo.', 'se acabó');
+  if(m===null) return;
+  m=(m||'').trim();
+  if(m.length<3){ alert('Escribí el motivo: queda en el rastro del ajuste.'); return; }
+  await _verifCuadrar(cod, lote, 0, m);
+}
+async function _verifCuadrar(cod, lote, fisico, motivo){
+  _verifMsg('Guardando lo que encontraste...');
+  try{
+    var _t=await fetch('/api/csrf-token',{credentials:'same-origin'});
+    var _tk=(await _t.json()).csrf_token||'';
+    var r=await fetch('/api/inventario/cuadre',{
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':_tk},
+      body:JSON.stringify({codigo_mp:cod, lote:lote, fisico:fisico, motivo:motivo,
+                           token:'verif-'+Date.now()+'-'+Math.random().toString(36).slice(2,9)})});
+    var d=await r.json();
+    if(!r.ok||d.error){ _verifMsg('No se pudo guardar: '+_escHTML(d.error||('Error '+r.status)), true); return; }
+    window._VERIF_EST[_verifKey(cod,lote)] = (fisico>0?'menos':'no');
+    _verifMsg('&#10003; Inventario corregido: <b>'+_escHTML(lote)+'</b> qued&oacute; en '
+      +Number(fisico).toLocaleString('es-CO')+' g. Recalculando con qu&eacute; completar...');
+    // Se vuelve a preguntar al MOTOR en vez de recalcular acá: así lo que se ve es lo que el
+    // descuento va a hacer, y no una cuenta paralela que puede divergir (M5).
+    simularProduccion();
+  }catch(e){ _verifMsg('No se pudo guardar: '+_escHTML(String(e)), true); }
+}
 async function simularProduccion(){
   var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value.trim();
   var kg=parseFloat(document.getElementById('prod-kg').value);
@@ -7375,43 +7496,70 @@ async function simularProduccion(){
     var r=await fetch('/api/produccion/simular',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf},body:JSON.stringify({producto:prod,cantidad_kg:kg})});
     var d=await r.json();
     if(!r.ok){panel.innerHTML='<span style="color:var(--cx-danger-text);">'+(d.error||'Error al simular')+'</span>';return;}
-    var bg=d.factible?'#f0fff4':'#fff5f5';
-    var brd=d.factible?'#28a745':'#dc3545';
     var ico=d.factible?'&#9989;':'&#10060;';
     var titulo=d.factible
       ?'Stock suficiente para '+d.cantidad_kg+'kg de '+d.producto
       :d.faltantes+' ingrediente(s) insuficiente(s) para producir '+d.cantidad_kg+'kg';
+    window._VERIF_CTX={producto:d.producto, kg:d.cantidad_kg};
+    var _vfTot=0, _vfHechos=0;
     var rows=d.ingredientes.map(function(i){
-      var rowbg=i.suficiente?'':'#fff0f0';
       var badge=i.suficiente
-        ?'<span style="color:var(--cx-success-text);font-weight:700;">OK</span>'
-        :'<span style="color:var(--cx-danger-text);font-weight:700;">FALTA '+i.g_faltante.toLocaleString()+'g</span>';
+        ?'<span class="vf-est vf-est-ok">Alcanza</span>'
+        :'<span class="vf-est vf-est-no">Faltan '+i.g_faltante.toLocaleString('es-CO')+' g</span>';
       var costoCell=i.precio_kg>0
-        ?'<span style="color:#2d3748;">$'+Number(i.costo).toLocaleString('es-CO')+'</span>'
-        :'<span style="color:#a0aec0;font-size:0.8em;">sin precio</span>';
-      var _lt = (i.lotes||[]).map(function(l){
-        return '<span style="display:inline-block;margin:2px 6px 0 0;padding:1px 7px;border-radius:9px;background:var(--cx-success-pale);color:var(--cx-success-text);font-size:11px;font-weight:700">'
-          +_escHTML(l.lote)+' &middot; '+Number(l.g||0).toLocaleString()+'g'
-          +(l.ubicacion? ' &middot; '+_escHTML(l.ubicacion):'')+'</span>';
+        ?'$'+Number(i.costo).toLocaleString('es-CO')
+        :'<span style="color:var(--cx-text-faint)">sin precio</span>';
+      // Cada lote propuesto es una LINEA DE TRABAJO: se va al estante, se mira, y se declara.
+      // Antes era un chip de texto: informaba, y no dejaba corregir lo que se encontraba.
+      var _cod=i.codigo_bodega||i.material_id||'';
+      var _lt = (i.lotes||[]).map(function(l,li){
+        var _lk=_verifKey(_cod,l.lote);
+        var _st=(window._VERIF_EST||{})[_lk]||'';
+        _vfTot++; if(_st) _vfHechos++;
+        var _chip = _st==='ok' ? '<span class="vf-ok">&#10003; verificado</span>'
+                  : _st==='menos' ? '<span class="vf-menos">ajustado</span>' : '';
+        return '<div class="vf-lote'+(_st==='ok'?' vf-done':'')+'">'
+          +'<div class="vf-l1"><b>'+_escHTML(l.lote||'sin lote')+'</b>'
+          +'<span class="vf-g">'+Number(l.g||0).toLocaleString('es-CO')+' g</span>'
+          +(l.ubicacion? '<span class="vf-ub">&#128205; '+_escHTML(l.ubicacion)+'</span>':'')
+          +(l.vence? '<span class="vf-v">vence '+_escHTML(String(l.vence).substring(0,10))+'</span>':'')
+          +_chip+'</div>'
+          +'<div class="vf-acc">'
+          +'<button class="vf-b vf-b-ok" onclick="verifOk('+_q(_cod)+','+_q(l.lote)+')">&#10003; Est&aacute;</button>'
+          +'<button class="vf-b" onclick="verifMenos('+_q(_cod)+','+_q(l.lote)+','+(Number(l.g)||0)+')">Hay menos</button>'
+          +'<button class="vf-b vf-b-no" onclick="verifNoEsta('+_q(_cod)+','+_q(l.lote)+')">No est&aacute;</button>'
+          +'</div></div>';
       }).join('');
+      // Lo RETENIDO se dice con el motivo entero, no en un chip apretado: el operario tiene
+      // ese material enfrente y necesita saber por qué no lo puede tocar (M124).
       var _lb = (i.lotes_bloqueados||[]).map(function(l){
-        return '<span style="display:inline-block;margin:2px 6px 0 0;padding:1px 7px;border-radius:9px;background:var(--cx-warn-pale);color:var(--cx-warn-text);font-size:11px;font-weight:700" title="'+_escHTML(l.motivo||'')+'">'
-          +_escHTML(l.lote)+' &middot; '+Number(l.g||0).toLocaleString()+'g &middot; '+_escHTML(l.motivo||'')+'</span>';
+        return '<div class="vf-ret">'
+          +'<div class="vf-l1"><b>'+_escHTML(l.lote||'sin lote')+'</b>'
+          +'<span class="vf-g">'+Number(l.g||0).toLocaleString('es-CO')+' g</span></div>'
+          +'<div class="vf-ret-m">'+_escHTML(l.motivo||'retenido')+'</div></div>';
       }).join('');
-      var _det = (_lt||_lb) ? ('<tr style="background:'+rowbg+';"><td colspan="5" style="padding:2px 8px 8px;border-top:none">'
-          +(_lt? '<span style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700">LOTES A USAR (FEFO): </span>'+_lt : '')
-          +(_lb? '<div style="margin-top:3px"><span style="font-size:10.5px;color:var(--cx-text-mute);font-weight:700">NO SE PUEDEN USAR: </span>'+_lb+'</div>' : '')
-          +'</td></tr>') : '';
-      return '<tr style="background:'+rowbg+';">'
-        +'<td>'+i.material_nombre+(i.codigo_bodega?'<div style="font-size:10px;color:var(--cx-text-mute);font-family:monospace">'+_escHTML(i.codigo_bodega)+'</div>':'')+'</td>'
-        +'<td style="text-align:right;">'+i.g_requerido.toLocaleString()+'g</td>'
-        +'<td style="text-align:right;">'+i.g_disponible.toLocaleString()+'g</td>'
-        +'<td style="text-align:right;">'+badge+'</td>'
-        +'<td style="text-align:right;">'+costoCell+'</td></tr>'+_det;
+      var _cuerpo = (_lt? '<div class="vf-tit">Lotes a usar &middot; en orden de vencimiento</div>'+_lt : '')
+          +(_lb? '<div class="vf-tit vf-tit-w">Est&aacute;n en bodega y NO se pueden usar</div>'+_lb : '');
+      if(!_cuerpo && !i.no_controla_stock)
+        _cuerpo='<div class="vf-nada">No hay ning&uacute;n lote de este material en bodega.</div>';
+      if(i.no_controla_stock)
+        _cuerpo='<div class="vf-nada">Se prepara en el laboratorio &middot; no se controla stock.</div>';
+      return '<div class="vf-mat">'
+        +'<div class="vf-mat-h"><div class="vf-mat-n">'+_escHTML(i.material_nombre)
+        +(i.codigo_bodega?'<span class="vf-mat-c">'+_escHTML(i.codigo_bodega)+'</span>':'')+'</div>'
+        +'<div class="vf-mat-q">Necesita <b>'+i.g_requerido.toLocaleString('es-CO')+' g</b>'
+        +' &middot; hay <b>'+i.g_disponible.toLocaleString('es-CO')+' g</b>'
+        +' &middot; '+costoCell+' &nbsp; '+badge+'</div></div>'
+        +_cuerpo+'</div>';
     }).join('');
+    var _vfPct = _vfTot ? Math.round(_vfHechos*100/_vfTot) : 0;
+    var _vfProg = _vfTot
+      ? '<div class="vf-prog"><div class="vf-prog-t">'+_vfHechos+' de '+_vfTot+' lotes revisados</div>'
+        +'<div class="vf-prog-r"><span class="vf-prog-b" style="width:'+_vfPct+'%"></span></div></div>'
+      : '';
     var costoHtml='';
     if(d.costo_total>0){
-      costoHtml='<div style="margin-top:10px;padding:10px 14px;background:#eef2ff;border-radius:8px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;">'
+      costoHtml='<div style="margin-top:14px;padding:10px 14px;background:var(--cx-primary-pale);border-radius:10px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;font-size:13px;">'
         +'<span>&#128176; <strong>Costo estimado batch:</strong> $'+Number(d.costo_total).toLocaleString('es-CO')+'</span>'
         +'<span>&#128197; <strong>Costo/kg:</strong> $'+Number(d.costo_por_kg).toLocaleString('es-CO')+'</span>'
         +(d.ingredientes_sin_precio>0?'<span style="color:#e67e22;font-size:0.85em;">&#9888; '+d.ingredientes_sin_precio+' ingrediente(s) sin precio - costo subestimado ('+d.cobertura_precio_pct+'% cobertura)</span>':'')
@@ -7419,16 +7567,16 @@ async function simularProduccion(){
     } else if(d.ingredientes_sin_precio>0){
       costoHtml='<div style="margin-top:8px;padding:8px 12px;background:var(--cx-warn-pale);border-radius:6px;font-size:0.84em;color:#b7791f;">&#9888; No hay precios de referencia. <a href="#" onclick="abrirPreciosMP();return false;">Configura precios por material</a> para ver costo estimado.</div>';
     }
-    panel.innerHTML='<div style="background:'+bg+';border:2px solid '+brd+';border-radius:10px;padding:14px 16px;">'
-      +'<strong style="color:'+brd+';font-size:1em;">'+ico+' '+titulo+'</strong>'
-      +'<div style="overflow-x:auto;margin-top:10px;"><table class="table" style="font-size:0.85em;margin:0;">'
-      +'<thead><tr><th>Material</th><th style="text-align:right;">Requerido</th>'
-      +'<th style="text-align:right;">Disponible</th><th style="text-align:right;">Estado</th>'
-      +'<th style="text-align:right;">Costo</th></tr></thead>'
-      +'<tbody>'+rows+'</tbody></table></div>'
+    panel.innerHTML=_verifBannerHTML()
+      +'<div class="vf-card'+(d.factible?' vf-card-ok':' vf-card-no')+'">'
+      +'<div class="vf-hd"><div><div class="vf-hd-t">'+ico+' '+titulo+'</div>'
+      +'<div class="vf-hd-s">Hoja de verificaci&oacute;n f&iacute;sica &middot; and&aacute; al estante y declar&aacute; cada lote. '
+      +'Lo que declar&aacute;s CORRIGE el inventario y el sistema vuelve a decirte con qu&eacute; completar.</div></div>'
+      +_vfProg+'</div>'
+      +rows
       +costoHtml
-      +(d.factible?'<p style="margin:10px 0 0;font-size:0.85em;color:var(--cx-text-soft);">&#128994; Puedes registrar la produccion con seguridad.</p>'
-        :'<p style="margin:10px 0 0;font-size:0.85em;color:var(--cx-danger-text);">&#9888; Revisa el stock o genera OC de compra antes de producir.</p>')
+      +(d.factible?'<p class="vf-pie">&#128994; Con lo verificado, pod&eacute;s registrar la producci&oacute;n.</p>'
+        :'<p class="vf-pie" style="color:var(--cx-danger-text)">&#9888; Revis&aacute; los lotes en el estante o gener&aacute; la OC de compra antes de producir.</p>')
       +'</div>';
     panel.scrollIntoView({behavior:'smooth'});
   }catch(e){panel.innerHTML='<span style="color:var(--cx-danger-text);">Error: '+e.message+'</span>';}
