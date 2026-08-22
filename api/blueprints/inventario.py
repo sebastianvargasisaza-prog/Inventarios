@@ -9075,6 +9075,12 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.4px;margin:0 0 5px}
 .ubi-lote{font-family:ui-monospace,monospace;font-size:11px;color:var(--cx-text-mute)}
 .ubi-pos{font-size:11px;color:var(--cx-primary-text);margin-left:6px}
 .ubi-det{color:var(--cx-text-mute)}
+.ubi-acc{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+.ubi-acc .cx-btn{padding:1px 6px;font-size:11px}
+.ubi-msg{font-size:11px;color:var(--cx-text-mute)}
+.ubi-msg.err{color:var(--cx-danger-text);font-weight:700}
+.ubi-ok{color:var(--cx-success-text);font-weight:700;font-size:11px}
+.ubi-l li.hecho{opacity:.55}
 
 .card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;
   overflow:hidden}
@@ -9155,11 +9161,12 @@ async function cargar(){
        cada persona el pasillo que le toca, en vez de una lista de 40 mezclados. */
     if((d.por_ubicacion||[]).length){
       h+=_sec('Para cerrar &middot; '+n(s.ubicaciones_pendientes)+' ubicaci&oacute;n(es) con pendientes','buscar');
+      _PEND = [];
       h+='<div class="ubis">';
       (d.por_ubicacion||[]).forEach(function(g,gi){
         h+='<div class="ubi">'
           +'<div class="ubi-h"><b>'+esc(g.estanteria)+'</b>'
-          +'<span class="ubi-n">'+n(g.total)+' pendiente(s)</span>'
+          +'<span class="ubi-n" id="ubin-'+gi+'">'+n(g.total)+' pendiente(s)</span>'
           +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="copiarUbi('+gi+')">Copiar</button>'
           +'</div>';
         [['no_esta','No se encontr&oacute;'],
@@ -9173,10 +9180,22 @@ async function cargar(){
             if(par[0]==='sin_dato') det=' &middot; falta '+esc((f.falta||[]).join(', '));
             else if(f.sistema!==undefined) det=' &middot; el sistema cre&iacute;a '+n(f.sistema)+' g';
             else if(f.stock_sistema!==undefined) det=' &middot; '+n(f.stock_sistema)+' g';
-            h+='<li><b>'+esc(f.nombre||f.codigo_mp)+'</b> '
+            /* Cada pendiente se registra en un indice: el onclick recibe un NUMERO y no hay
+               ni una comilla que escapar dentro del atributo (M173). El indice ademas
+               distingue el MISMO lote pendiente por dos motivos, que con una llave por lote
+               compartirian el mismo id y un boton no haria nada (M204). */
+            var ix=_PEND.length;
+            _PEND.push({gi:gi, cubeta:par[0], f:f});
+            h+='<li id="p-'+ix+'"><b>'+esc(f.nombre||f.codigo_mp)+'</b> '
               +'<span class="ubi-lote">'+esc(f.lote||'sin lote')+'</span>'
               +(f.posicion?('<span class="ubi-pos">pos. '+esc(f.posicion)+'</span>'):'')
-              +'<span class="ubi-det">'+det+'</span></li>';
+              +'<span class="ubi-det">'+det+'</span>'
+              +(par[0]==='sin_dato'? '' : ('<span class="ubi-acc">'
+                +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="pOk('+ix+')">&#10003; est&aacute; bien</button>'
+                +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="pCant('+ix+')">&#9998; cantidad</button>'
+                +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="pNo('+ix+')">&#10007; no existe</button>'
+                +'</span>'))
+              +'<span class="ubi-msg" id="pm-'+ix+'"></span></li>';
           });
           h+='</ul>';
         });
@@ -9287,6 +9306,82 @@ async function cargar(){
   }catch(e){ c.innerHTML='<div class="vacio" style="color:var(--cx-danger-text)">No se pudo: '
     +esc(String(e))+'</div>'; }
 }
+// ── resolver el pendiente SIN salir de la lista ─────────────────────────────────
+// Escribe por el MISMO endpoint del cuadre: no es una segunda puerta al inventario, asi que
+// conserva el estado del lote, su vencimiento, el rastro y el token anti doble-clic (M3).
+var _PEND = [];
+var _CSRF = '';
+fetch('/api/csrf-token', {credentials:'same-origin'})
+  .then(function(r){ return r.json(); })
+  .then(function(d){ _CSRF = d.csrf_token || ''; })
+  .catch(function(){});
+
+function _tokCierre(){ return 'cierre-'+Date.now()+'-'+Math.random().toString(36).slice(2,10); }
+
+async function _declararPend(ix, fisico, motivo){
+  var p = _PEND[ix]; if(!p) return;
+  var f = p.f;
+  var msg = document.getElementById('pm-'+ix); if(!msg) return;
+  msg.className = 'ubi-msg'; msg.textContent = ' guardando...';
+  try{
+    var r = await fetch('/api/inventario/cuadre', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json', 'X-CSRF-Token':_CSRF},
+      body: JSON.stringify({codigo_mp:f.codigo_mp, lote:f.lote||'', fisico:fisico,
+        motivo:motivo||'', token:_tokCierre(), estanteria:f.estanteria||'',
+        nombre:f.nombre||''})});
+    var d = {}; try{ d = await r.json(); }catch(_je){}
+    if(!r.ok || d.error){
+      msg.className = 'ubi-msg err';
+      msg.textContent = ' ' + (d.error || ('error ' + r.status));
+      return;
+    }
+    // La fila SALE de la lista: si se quedara, nadie sabe cual ya cerro y vuelve a
+    // buscarlo (M129).
+    var li = document.getElementById('p-'+ix);
+    if(li){
+      li.className = 'hecho';
+      li.innerHTML = '<b>'+esc(f.nombre||f.codigo_mp)+'</b> <span class="ubi-lote">'
+        + esc(f.lote||'sin lote') + '</span> <span class="ubi-ok">&#10003; '
+        + esc(d.sin_cambio ? 'coincide' : (d.mensaje || 'declarado')) + '</span>';
+    }
+    var g = ((_D && _D.por_ubicacion) || [])[p.gi];
+    if(g){
+      g.total = Math.max(0, (g.total||1) - 1);
+      var c = document.getElementById('ubin-'+p.gi);
+      if(c) c.textContent = g.total + ' pendiente(s)';
+    }
+  }catch(e){ msg.className = 'ubi-msg err'; msg.textContent = ' sin conexion'; }
+}
+
+function pOk(ix){
+  var p = _PEND[ix]; if(!p) return;
+  var q = (p.f.stock_sistema !== undefined) ? p.f.stock_sistema : p.f.sistema;
+  if(q === undefined || q === null){
+    alert('No se sabe cuanto deberia haber: usa el boton de cantidad.'); return; }
+  _declararPend(ix, q, 'revisado al cerrar el inventario');
+}
+function pCant(ix){
+  var p = _PEND[ix]; if(!p) return;
+  var q = prompt('Cuanto hay de ' + (p.f.nombre||p.f.codigo_mp)
+    + ' lote ' + (p.f.lote||'sin lote') + '? (en gramos)');
+  if(q === null) return;
+  q = parseFloat(String(q).replace(',', '.'));
+  if(isNaN(q) || q < 0){ alert('Esa cantidad no es un numero.'); return; }
+  _declararPend(ix, q, 'contado al cerrar el inventario');
+}
+function pNo(ix){
+  var p = _PEND[ix]; if(!p) return;
+  // El motivo es obligatorio: dar un lote por perdido sin decir por que deja el ajuste sin
+  // poder explicarse despues (M19).
+  var m = prompt('Se da por NO ENCONTRADO y queda en CERO.' + String.fromCharCode(10)
+    + 'Por que? (queda en el registro)', 'no esta en el estante');
+  if(m === null) return;
+  m = String(m).trim();
+  if(!m){ alert('Hace falta el motivo.'); return; }
+  _declararPend(ix, 0, m);
+}
+
 function copiarUbi(gi){
   var g=((_D&&_D.por_ubicacion)||[])[gi]; if(!g) return;
   var NL=String.fromCharCode(10);

@@ -47,8 +47,12 @@ def bodega(app):
         for suf, inci in (('', 'INCI OK'), ('X', '')):
             c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, "
                       " activo) VALUES (?,?,?,1)", (COD + suf, 'MP CIERRE' + suf, inci))
-        # estante 2 · un lote que nadie reviso
+        # estante 2 · lotes que nadie reviso. Van DOS con nombre propio porque el
+        # audit_log es append-only por trigger: el rastro que deja un test marca como
+        # declarado el lote del siguiente, y el aislamiento se consigue con un DATO
+        # propio, no limpiando (M102/M103).
         _mov(c, COD, 'L-QUIETO', 500.0, EST_A)
+        _mov(c, COD, 'L-QUIETO2', 500.0, EST_A)
         # estante 10 · un lote SIN fecha de vencimiento
         _mov(c, COD, 'L-SINVENC', 300.0, EST_B, venc='')
         # estante 10 · un material SIN INCI
@@ -162,3 +166,61 @@ def test_la_pantalla_PINTA_la_vista_por_ubicacion(app):
     for t in ('No se encontr', 'Nadie lo revis', 'Le falta un dato'):
         assert t in bloque, 'la vista no muestra la cubeta %r' % t
     assert 'copiarUbi' in H, 'no se puede repartir la lista por estante'
+
+
+# -----------------------------------------------------------------------------
+# resolver desde la lista SACA el pendiente: es para no volver a buscarlo
+# -----------------------------------------------------------------------------
+
+def test_declarar_desde_el_cierre_lo_saca_de_PENDIENTES(admin_client, bodega):
+    """Sebastian: *"es ir a revisar lo que aparece que no tocamos"* -- si al declararlo siguiera
+    apareciendo, la lista mandaria a buscar dos veces lo mismo (M129)."""
+    antes = _grupo(_informe(admin_client), EST_A)
+    assert _tiene(antes['sin_revisar'], 'L-QUIETO'), 'el escenario no es el que se quiere probar'
+
+    # lo mismo que hace el boton "esta bien": declarar la cantidad que el sistema cree
+    f = [x for x in antes['sin_revisar'] if x['lote'] == 'L-QUIETO'][0]
+    r = admin_client.post('/api/inventario/cuadre', json={
+        'codigo_mp': f['codigo_mp'], 'lote': f['lote'], 'fisico': f['stock_sistema'],
+        'motivo': 'revisado al cerrar el inventario', 'estanteria': EST_A,
+        'token': 'cierre-t1'})
+    assert r.status_code == 200, r.data[:200]
+
+    d = _informe(admin_client)
+    g = _grupo(d, EST_A)
+    assert not (g and _tiene(g['sin_revisar'], 'L-QUIETO')), (
+        'lo declarado desde el cierre sigue apareciendo como pendiente')
+    assert _tiene(d.get('coinciden'), 'L-QUIETO'), (
+        'no quedo registrado como revisado que coincide')
+
+
+def test_darlo_por_NO_ENCONTRADO_lo_saca_del_INVENTARIO(admin_client, bodega):
+    """*"decir no existe, esta en cero, para que salga de inventario"*."""
+    g0 = _grupo(_informe(admin_client), EST_A)
+    assert g0 is not None, 'el escenario no es el que se quiere probar'
+    f = [x for x in g0['sin_revisar'] if x['lote'] == 'L-QUIETO2'][0]
+    r = admin_client.post('/api/inventario/cuadre', json={
+        'codigo_mp': f['codigo_mp'], 'lote': f['lote'], 'fisico': 0,
+        'motivo': 'no esta en el estante', 'estanteria': EST_A, 'token': 'cierre-t2'})
+    assert r.status_code == 200, r.data[:200]
+
+    # ya no esta en el stock usable
+    lot = admin_client.get('/api/inventario/cuadre-lotes?est=' + EST_A)
+    assert not any(x.get('lote') == 'L-QUIETO2'
+                   for x in (lot.get_json() or {}).get('lotes') or []), (
+        'el lote dado por no encontrado sigue contando como stock')
+
+    # y queda en la lista para ir a verificarlo, no desaparece del informe
+    d = _informe(admin_client)
+    assert _tiene(d.get('no_esta'), 'L-QUIETO2'), (
+        'lo dado por no encontrado no quedo en el informe para poder verificarlo')
+
+
+def test_un_lote_al_que_le_falta_un_DATO_no_se_puede_dar_en_cero_desde_ahi(admin_client, bodega):
+    """El guard del reves: la cubeta de datos incompletos NO ofrece esos botones, porque el
+    lote SI esta -- lo que falta es corregirle un dato."""
+    from blueprints.inventario import _INFORME_CUADRE_HTML as H
+    i = H.find("par[0]==='sin_dato'? '' :")
+    assert i != -1, (
+        'la cubeta de "le falta un dato" ofrece los botones de declarar cantidad: eso invita '
+        'a borrar un lote que si esta')
