@@ -744,6 +744,13 @@ CORAZON=(
   # ruta no acepta (405) y la pantalla lo mostraba como "Sin conexion". Cruza CADA llamada de
   # la hoja contra el mapa de rutas real: que el boton exista no prueba que lo contesten.
   "tests/test_cuadre_ubicacion.py"
+  # Pesos: el numero que la hoja MUESTRA tiene que ser el que DECIDE el ajuste. Una recepcion
+  # partida por Calidad deja el MISMO lote con filas aprobadas y rechazadas; sumarlas todas
+  # hacia que confirmar lo que se ve descontara la diferencia.
+  "tests/test_cuadre_pesos_mixtos.py"
+  # Lo declarado NO ENCONTRADO sale del inventario, asi que el informe es la unica forma de ir
+  # a verificarlo: tiene que decir que material es, donde estaba y quien lo declaro.
+  "tests/test_cuadre_informe_no_encontrados.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

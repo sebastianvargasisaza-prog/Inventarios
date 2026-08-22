@@ -8513,14 +8513,31 @@ def liberar_lote():
 #   · y un token por acción, porque un doble clic sobre un botón que ajusta stock duplica
 #     el ajuste y eso no da ningún síntoma (M63/M45).
 
+# Los estados que NO son stock usable. Va como constante porque la hoja y el ajuste
+# tienen que excluir EXACTAMENTE los mismos: si la hoja muestra 800 g usables y el
+# ajuste calcula contra 1.000 (sumando lo que Calidad rechazó del mismo lote), declarar
+# lo que se ve escribe una Salida que nadie contó (M5 en el peor lugar posible).
+_ESTADOS_NO_USABLES = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO',
+                       'VENCIDO', 'AGOTADO', 'BLOQUEADO')
+_SQL_SOLO_USABLE = (
+    " AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN "
+    "('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))")
+
+
 def _cuadre_stock_lote(c, codigo, lote):
-    """Stock canónico de UN lote: la suma de sus movimientos (regla #4)."""
+    """Stock USABLE de UN lote: la suma de sus movimientos (regla #4).
+
+    Se excluyen los estados que no son stock, que es lo que hace la hoja al mostrarlo.
+    Una recepción partida por Calidad deja el MISMO lote con filas aprobadas y filas
+    rechazadas: sumarlas todas hacía que confirmar lo que se ve descontara la diferencia.
+    """
     r = c.execute(
         "SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') "
         "              THEN cantidad "
         "            WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad "
         "            ELSE 0 END) "
-        "  FROM movimientos WHERE material_id=? AND COALESCE(lote,'')=?",
+        "  FROM movimientos WHERE material_id=? AND COALESCE(lote,'')=?"
+        + _SQL_SOLO_USABLE,
         (codigo, lote or '')).fetchone()
     return float((r[0] if r and r[0] is not None else 0) or 0)
 
@@ -8535,8 +8552,16 @@ def _cuadre_contexto_lote(c, codigo, lote):
         (codigo, lote or '')).fetchone()
     if not r:
         return {}
+    # El estado se toma de las filas USABLES: el ajuste corrige lo usable, así que nacer
+    # 'RECHAZADO' lo sacaría del stock de una. Con MAX() salía bien por casualidad
+    # (VIGENTE es el mayor alfabético de los seis), y una casualidad no es una garantía.
+    _us = c.execute(
+        "SELECT MAX(COALESCE(estado_lote,'')) FROM movimientos "
+        "  WHERE material_id=? AND COALESCE(lote,'')=?" + _SQL_SOLO_USABLE,
+        (codigo, lote or '')).fetchone()
+    _estado = (_us[0] if _us else None) or (r[5] or '')
     return {'nombre': r[0] or '', 'estanteria': r[1] or '', 'posicion': r[2] or '',
-            'proveedor': r[3] or '', 'vence': r[4] or '', 'estado_lote': r[5] or ''}
+            'proveedor': r[3] or '', 'vence': r[4] or '', 'estado_lote': _estado}
 
 
 def _ubic_norm(v):
@@ -9081,6 +9106,12 @@ async function cargar(){
         return '<span class="mot">'+esc(f.motivo_lista||'')+'</span>'
           +(f.motivo?('<div style="font-size:11px;color:var(--cx-text-mute)">'+esc(f.motivo)
             +'</div>'):''); }},
+      /* Para verificar si de verdad no esta hay que poder volver a preguntarle a quien
+         lo declaro: sin eso la lista solo se puede volver a contar desde cero. */
+      {t:'Qui&eacute;n lo dijo', v:function(f){
+        return f.por? (esc(f.por)+'<div style="font-size:11px;color:var(--cx-text-mute)">'
+          +esc(f.cuando||'')+'</div>')
+          : '<span style="color:var(--cx-text-mute)">nadie lo revis&oacute;</span>'; }},
     ]);
     h+=_sec('Se ajustaron &middot; '+n(s.ajustados)+' &middot; '+n(s.gramos_ajustados)+' g netos');
     h+=_tabla(d.ajustados, [
@@ -9184,7 +9215,10 @@ def inventario_cuadre_informe():
                 _como = 'coincide'
             elif _d.get('alta'):
                 _como = 'apareció'
-            elif _fis <= 0:
+            elif _fis <= 0.01:
+                # Bajarlo a cero ES no encontrarlo: el lote sale del inventario igual.
+                # Se usa el mismo umbral de polvo que la hoja (M21), porque un lote que
+                # queda en 0,004 g tampoco está: si cayera en 'ajustado' nadie lo buscaría.
                 _como = 'no está'
             else:
                 _como = 'ajustado'
@@ -9246,6 +9280,39 @@ def inventario_cuadre_informe():
     except Exception as _e2:
         __import__('logging').getLogger('inventario').warning('informe · sin revisar: %s', _e2)
         lectura_fallo = True
+
+    # ── 2b · dónde estaba y cómo se llama lo declarado ──────────────────────
+    # Lo que se dio por NO ENCONTRADO queda en cero y desaparece de la hoja, así que su
+    # ubicación y su nombre ya no salen del inventario con saldo: hay que ir al kardex,
+    # donde sus movimientos siguen estando. Sin esto la lista para buscar sale con el
+    # código pelado y la columna de ubicación en blanco -- o sea, no se puede repartir.
+    if declarado:
+        try:
+            _cods = sorted({k[0] for k in declarado})
+            # UNA consulta por tanda, nunca una por lote (M43).
+            for _i in range(0, len(_cods), 500):
+                _trozo = _cods[_i:_i + 500]
+                _marcas = ','.join(['?'] * len(_trozo))
+                for _r in c.execute(
+                        "SELECT UPPER(COALESCE(material_id,'')), COALESCE(lote,''), "
+                        "       MAX(COALESCE(material_nombre,'')), "
+                        "       MAX(COALESCE(estanteria,'')), MAX(COALESCE(posicion,'')), "
+                        "       MAX(COALESCE(fecha_vencimiento,'')) "
+                        "  FROM movimientos "
+                        " WHERE UPPER(COALESCE(material_id,'')) IN (%s) "
+                        " GROUP BY UPPER(COALESCE(material_id,'')), COALESCE(lote,'')"
+                        % _marcas, tuple(_trozo)).fetchall():
+                    _k = (str(_r[0] or ''), str(_r[1] or '').strip())
+                    if _r[2] and not nombres.get(_k[0]):
+                        nombres[_k[0]] = _r[2]
+                    if _k in declarado:
+                        declarado[_k]['estanteria'] = _r[3] or ''
+                        declarado[_k]['posicion'] = _r[4] or ''
+                        declarado[_k]['fecha_vencimiento'] = _r[5] or ''
+        except Exception as _e3:
+            __import__('logging').getLogger('inventario').warning(
+                'informe · ubicación de lo declarado: %s', _e3)
+            lectura_fallo = True
 
     # ── 3 · el corte ────────────────────────────────────────────────────────
     def _con(como):

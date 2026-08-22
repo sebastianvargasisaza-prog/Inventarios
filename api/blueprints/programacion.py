@@ -14235,11 +14235,13 @@ def _lotes_de_material(c, cod, limite=12):
     try:
         rows = c.execute(
             """SELECT COALESCE(lote,'') AS lote,
-                      MAX(UPPER(COALESCE(estado_lote,''))) AS est,
+                      MAX(CASE WHEN NOT (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
+                               THEN UPPER(COALESCE(estado_lote,'')) END) AS est_ret,
                       MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv,
-                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
-                               WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
-                               ELSE 0 END) AS neto
+                      SUM(CASE WHEN (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
+                               THEN CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END ELSE 0 END) AS neto_usable,
+                      SUM(CASE WHEN NOT (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
+                               THEN CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END ELSE 0 END) AS neto_retenido
                FROM movimientos
                WHERE UPPER(TRIM(COALESCE(material_id,'')))=UPPER(TRIM(?))
                  AND COALESCE(lote,'') NOT IN ('', 'S/L')
@@ -14252,6 +14254,7 @@ def _lotes_de_material(c, cod, limite=12):
     from audit_helpers import fecha_iso as _fecha_iso
     for r in rows:
         lote = str(r[0] or '').strip()
+        # El estado ya no decide el lote ENTERO: decide qué PARTE de él está retenida.
         est = str(r[1] or '').strip()
         fv_crudo = str(r[2] or '').strip()
         # La fecha se NORMALIZA antes de compararla. Sin esto, `26-Dic-2026` se comparaba como
@@ -14260,15 +14263,21 @@ def _lotes_de_material(c, cod, limite=12):
         # misma fila decía "disponible 0g · FALTA" y "LOTES A USAR: 29.137,5g" (M5/M161).
         fv = _fecha_iso(fv_crudo)
         neto = round(float(r[3] or 0), 2)
+        neto_ret = round(float(r[4] or 0), 2)
+        # La parte RETENIDA del lote se declara aparte, con su propio estado. Una
+        # recepción partida por Calidad deja el mismo lote con filas aprobadas y filas
+        # rechazadas: mostrarlo entero como usable promete material que el FEFO no toma.
+        if neto_ret > 0.01:
+            retenidos.append({
+                'lote': lote, 'g': neto_ret, 'vence': fv or fv_crudo[:10],
+                'estado': est or 'RETENIDO',
+                'motivo': ('en CUARENTENA · falta que Calidad lo libere'
+                           if est.startswith('CUARENTENA') else (est or 'retenido'))})
         if neto <= 0.01:
             continue
         item = {'lote': lote, 'g': neto, 'vence': fv or fv_crudo[:10],
-                'estado': est or 'VIGENTE'}
-        if est in _ESTADOS_LOTE_NO_PRODUCIBLES:
-            item['motivo'] = ('en CUARENTENA · falta que Calidad lo libere'
-                              if est.startswith('CUARENTENA') else est)
-            retenidos.append(item)
-        elif fv and fv < hoy_col:
+                'estado': 'VIGENTE'}
+        if fv and fv < hoy_col:
             item['motivo'] = 'VENCIDO el ' + fv
             retenidos.append(item)
         elif fv_crudo and not fv:
