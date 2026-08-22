@@ -8733,6 +8733,174 @@ def _equipos_sync_delta(conn):
     return {'nuevos': nuevos, 'mueven': mueven, 'reactivar': reactivar, 'desactivar': desactivar, 'total_maestro': len(m_by)}
 
 
+def _require_documentos_sgc():
+    """Quién gobierna los datos de control de un formato regulado.
+
+    Aseguramiento es el dueño; Calidad y el Director Técnico los usan a diario. Se pregunta por
+    la CAPACIDAD, no por la lista de un puesto: un gate escrito con el set de un cargo le cierra
+    la puerta a quien de verdad hace el acto (M210/M257).
+    """
+    u = session.get('compras_user', '')
+    if not u:
+        return '', jsonify({'error': 'No autenticado'}), 401
+    # El set del Director Tecnico se llama TECNICA_USERS (verificado en config.py, no supuesto
+    # por el nombre que uno le pondria · M202/M170).
+    from config import TECNICA_USERS as _DT
+    if u not in (ASEGURAMIENTO_USERS | CALIDAD_USERS | _DT | ADMIN_USERS):
+        return u, jsonify({'error': 'Solo Aseguramiento / Calidad / Direccion Tecnica / admin'}), 403
+    return u, None, 200
+
+
+@bp.route("/api/admin/formatos-control", methods=["GET"])
+def admin_formatos_control_listar():
+    """Los formatos registrados con su bloque de control y qué le falta a cada uno."""
+    u, err, code = _require_documentos_sgc()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    from audit_helpers import formato_control as _fc
+    filas = []
+    try:
+        for r in c.execute("SELECT codigo FROM formatos_control ORDER BY codigo").fetchall():
+            filas.append(_fc(c, r[0]))
+    except Exception as e:
+        # Distinguir "no hay formatos" de "no pude mirar": un vacio se lee como lo primero (M100).
+        return jsonify({'ok': False, 'error': 'no se pudo leer el registro: %s' % str(e)[:150]}), 500
+    return jsonify({'ok': True, 'formatos': filas,
+                    'incompletos': sum(1 for f in filas if not f['completo'])})
+
+
+@bp.route("/api/admin/formatos-control", methods=["POST"])
+def admin_formatos_control_guardar():
+    """Carga o corrige el bloque de control de UN formato. Auditado.
+
+    Es un dato regulado: cambiar la version que se imprime en un formato tiene que dejar quien y
+    cuando, y de que valor a cual -- ante un rotulo con la version equivocada la pregunta es
+    "cual decia antes" (M175).
+    """
+    u, err, code = _require_documentos_sgc()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    cod = str(d.get('codigo') or '').strip().upper()
+    if not cod:
+        return jsonify({'error': 'falta el codigo del formato'}), 400
+    campos = {}
+    for k in ('titulo', 'version', 'pagina', 'desde', 'hasta', 'nota'):
+        if k in d:
+            campos[k] = str(d.get(k) or '').strip()[:160]
+    if not campos:
+        return jsonify({'error': 'no mandaste ningun campo para guardar'}), 400
+
+    from datetime import datetime as _dt, timezone as _tz
+    conn = get_db(); c = conn.cursor()
+    from audit_helpers import formato_control as _fc
+    antes = _fc(c, cod)
+    sets = ', '.join('%s=?' % k for k in campos)
+    vals = [campos[k] for k in campos]
+    try:
+        c.execute("INSERT INTO formatos_control (codigo) VALUES (?) ON CONFLICT (codigo) "
+                  "DO NOTHING", (cod,))
+        c.execute("UPDATE formatos_control SET " + sets + ", actualizado_por=?, "
+                  "  actualizado_at_utc=? WHERE codigo=?",
+                  vals + [u, _dt.now(_tz.utc).isoformat(), cod])
+        audit_log(c, usuario=u, accion='FORMATO_CONTROL_ACTUALIZAR', tabla='formatos_control',
+                  registro_id=cod,
+                  antes={k: antes.get(k) for k in campos},
+                  despues=dict(campos),
+                  detalle='Bloque de control de %s' % cod)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo guardar: %s' % str(e)[:180]}), 500
+    return jsonify({'ok': True, 'formato': _fc(c, cod)})
+
+
+@bp.route("/admin/formatos-control", methods=["GET"])
+def admin_formatos_control_page():
+    """Codigo / Version / Pagina / Vigencia de cada formato, en un solo lugar."""
+    import html as _hf
+    u, err, code = _require_documentos_sgc()
+    if err:
+        if code == 401:
+            return redirect('/login')
+        return "<h2>Sin acceso</h2><p>Esta pantalla es de Aseguramiento de la Calidad.</p>", 403
+    conn = get_db(); c = conn.cursor()
+    from audit_helpers import formato_control as _fc
+    filas = []
+    try:
+        for r in c.execute("SELECT codigo FROM formatos_control ORDER BY codigo").fetchall():
+            filas.append(_fc(c, r[0]))
+    except Exception as e:
+        return "<h2>No se pudo leer el registro</h2><p>%s</p>" % _hf.escape(str(e)[:200]), 500
+
+    def _e(x):
+        return _hf.escape(str(x or ''), quote=True)
+
+    tr = ''
+    for f in filas:
+        falta = (('<span class="falta">Falta: ' + _e(', '.join(f['falta'])) + '</span>')
+                 if not f['completo'] else '<span class="ok">Completo</span>')
+        tr += ('<tr><td><b>' + _e(f['codigo']) + '</b><div class="ti">' + _e(f['titulo'])
+               + '</div></td>'
+               '<td><input id="v-' + _e(f['codigo']) + '" value="' + _e(f['version'])
+               + '" placeholder="02"></td>'
+               '<td><input id="p-' + _e(f['codigo']) + '" value="' + _e(f['pagina'])
+               + '" placeholder="1 de 1"></td>'
+               '<td><input id="d-' + _e(f['codigo']) + '" value="' + _e(f['desde'])
+               + '" placeholder="21-Jul-2026"></td>'
+               '<td><input id="h-' + _e(f['codigo']) + '" value="' + _e(f['hasta'])
+               + '" placeholder="20-Jul-2029"></td>'
+               '<td>' + falta + '</td>'
+               '<td><button class="b" onclick="guardar(&quot;' + _e(f['codigo'])
+               + '&quot;)">Guardar</button></td></tr>')
+
+    return """<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<title>Control de formatos</title><link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{font-family:Inter,system-ui,sans-serif;background:var(--cx-bg);color:var(--cx-text);margin:0;padding:28px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:22px;font-weight:800;letter-spacing:-.4px;margin:0 0 6px}
+.sub{color:var(--cx-text-mute);font-size:13.5px;line-height:1.6;max-width:78ch;margin:0 0 22px}
+table{width:100%;border-collapse:collapse;background:var(--cx-card);border-radius:14px;overflow:hidden;box-shadow:0 8px 26px rgba(24,24,27,.06)}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--cx-text-mute);padding:11px 14px;border-bottom:1px solid var(--cx-border)}
+td{padding:11px 14px;border-bottom:1px solid var(--cx-border);font-size:13px;vertical-align:top}
+.ti{font-size:11px;color:var(--cx-text-mute);margin-top:3px;max-width:34ch}
+input{width:100%;max-width:150px;padding:6px 9px;border:1px solid var(--cx-border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--cx-card);color:var(--cx-text)}
+.b{border:1px solid var(--cx-primary-light);background:var(--cx-primary-pale);color:var(--cx-primary-text);border-radius:9px;padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+.falta{font-size:11px;font-weight:800;color:var(--cx-warn-text);background:var(--cx-warn-pale);border-radius:999px;padding:3px 10px;white-space:nowrap}
+.ok{font-size:11px;font-weight:800;color:var(--cx-success-text);background:var(--cx-success-pale);border-radius:999px;padding:3px 10px}
+#msg{margin:16px 0 0;padding:11px 15px;border-radius:11px;font-size:13px;background:var(--cx-primary-pale);border:1px solid var(--cx-primary-light);color:var(--cx-primary-text)}
+</style></head><body><div class="wrap">
+<h1>Control de formatos</h1>
+<p class="sub">Codigo, version, pagina y vigencia de cada formato impreso. Es la evidencia de que
+el registro se lleno en la <b>version vigente</b>, asi que los rotulos lo piden de aqui: cargar la
+version siguiente cambia lo que se imprime sin desplegar nada. Lo que falte aparece marcado y el
+rotulo lo dice en el papel, para que el hueco se vea.</p>
+<table><thead><tr><th>Formato</th><th>Version</th><th>Pagina</th><th>Vigente desde</th>
+<th>hasta</th><th>Estado</th><th></th></tr></thead><tbody>""" + tr + """</tbody></table>
+<div id="msg" hidden></div>
+</div><script>
+function _v(p,c){ var e=document.getElementById(p+'-'+c); return e? e.value.trim() : ''; }
+function _msg(t){ var m=document.getElementById('msg'); m.innerHTML=t; m.hidden=!t; }
+async function guardar(cod){
+  _msg('Guardando...');
+  try{
+    var t=await fetch('/api/csrf-token',{credentials:'same-origin'});
+    var tk=(await t.json()).csrf_token||'';
+    var r=await fetch('/api/admin/formatos-control',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':tk},
+      body:JSON.stringify({codigo:cod, version:_v('v',cod), pagina:_v('p',cod),
+                           desde:_v('d',cod), hasta:_v('h',cod)})});
+    var d=await r.json();
+    if(!r.ok||d.error){ _msg('No se pudo: '+(d.error||('Error '+r.status))); return; }
+    _msg('Guardado ' + cod + '. Los rotulos ya lo imprimen asi.');
+    setTimeout(function(){ location.reload(); }, 900);
+  }catch(e){ _msg('No se pudo: '+e); }
+}
+</script></body></html>"""
+
+
 @bp.route("/api/admin/equipos-sync", methods=["POST"])
 def admin_equipos_sync_apply():
     """Aplica el maestro 2026 a equipos_planta: upsert por código (nombre/área/capacidad, activo=1) y DESACTIVA

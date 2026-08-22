@@ -538,3 +538,106 @@ def fecha_iso(v):
             except ValueError:
                 return ''
     return ''
+
+
+# ── Bloque de control de un formato regulado (M251) ────────────────────────────────────────
+# Aseguramiento lo declaró no negociable: todo formato impreso lleva Código · Versión · Página ·
+# Vigencia, porque es la evidencia de que se llenó la VERSIÓN VIGENTE. Vive en una tabla para
+# que se pueda actualizar sin desplegar, y para que no haya dos copias que divergen el día que
+# se libere la versión siguiente.
+
+_FORMATOS_RESPALDO = {
+    # Respaldo por si la migración 444 todavía no corrió: son los MISMOS valores que el código
+    # tenía escritos a mano, así que el rótulo imprime igual que antes y no queda en blanco.
+    'PRD-PRO-002-F02': {'titulo': 'Identificación de Estado de Limpieza de Áreas o Equipos',
+                        'version': '02', 'pagina': '1 de 1',
+                        'desde': '09-Abr-2026', 'hasta': '08-Abr-2029'},
+    'COC-PRO-002-F06': {'titulo': 'IDENTIFICACI&Oacute;N DE MATERIAL DE ENVASE',
+                        'version': '02', 'pagina': '1 de 1',
+                        'desde': '21-Jul-2026', 'hasta': '20-Jul-2029'},
+    'COC-PRO-002-F07': {'titulo': 'IDENTIFICACI&Oacute;N DE MATERIA PRIMA',
+                        'version': '', 'pagina': '1 de 1', 'desde': '', 'hasta': '',
+                        'nota': 'Falta cargar versión y vigencia · las tiene Aseguramiento'},
+}
+
+
+def formato_control(c, codigo):
+    """El bloque de control de UN formato, con lo que falta DECLARADO.
+
+    Devuelve siempre las mismas llaves más `completo` y `falta`: un rótulo que no puede probar su
+    versión tiene que decirlo con palabras, no imprimir un renglón vacío que se lee como si
+    estuviera todo (M100/M124). Y nunca inventa: una versión fabricada en un documento regulado
+    es peor que su ausencia (M19/M242).
+    """
+    cod = str(codigo or '').strip().upper()
+    d = dict(_FORMATOS_RESPALDO.get(cod) or {})
+    try:
+        r = c.execute("SELECT titulo, version, pagina, desde, hasta, COALESCE(nota,'') "
+                      "  FROM formatos_control WHERE UPPER(TRIM(codigo))=?", (cod,)).fetchone()
+        if r:
+            # COALESCE no cubre la cadena vacía y estas columnas son TEXT DEFAULT '': el
+            # respaldo sólo entra si el valor guardado está REALMENTE vacío (M263/M264).
+            for k, v in zip(('titulo', 'version', 'pagina', 'desde', 'hasta', 'nota'), r):
+                v = str(v or '').strip()
+                if v:
+                    d[k] = v
+    except Exception as _e:
+        import logging
+        # Un except mudo acá haría que "no pude leer la tabla" se vea igual que "el formato no
+        # tiene versión cargada", y son cosas distintas (M4/M94/M100).
+        logging.getLogger('formatos').warning('formatos_control %s: %s', cod, _e)
+        d['lectura_fallo'] = True
+    d['codigo'] = cod
+    d.setdefault('titulo', '')
+    d.setdefault('pagina', '1 de 1')
+    for k in ('version', 'desde', 'hasta', 'nota'):
+        d.setdefault(k, '')
+    falta = [k for k in ('version', 'desde', 'hasta') if not str(d.get(k) or '').strip()]
+    d['falta'] = falta
+    d['completo'] = not falta
+    return d
+
+
+def formato_control_html(c, codigo, etiqueta=''):
+    """El bloque de control ya armado, con la misma estructura en todos los formatos.
+
+    Si falta la versión o la vigencia, lo DICE en el propio rótulo: así el hueco se ve y alguien
+    lo llena, en vez de imprimirse un renglón en blanco que parece completo.
+    """
+    from html import escape as _esc
+    d = formato_control(c, codigo)
+
+    def _e(x):
+        return _esc(str(x or ''), quote=True)
+
+    filas = ['<span><b>C&oacute;digo</b> ' + _e(d['codigo']) + '</span>']
+    if d['version']:
+        filas.append('<span><b>Versi&oacute;n</b> ' + _e(d['version']) + '</span>')
+    filas.append('<span><b>P&aacute;gina</b> ' + _e(d['pagina']) + '</span>')
+    if d['desde'] or d['hasta']:
+        filas.append('<span><b>Vigente desde</b> ' + _e(d['desde'] or '-') + '</span>')
+        filas.append('<span><b>hasta</b> ' + _e(d['hasta'] or '-') + '</span>')
+    if not d['completo']:
+        filas.append('<span class="ctrl-falta">Falta cargar: ' + _e(', '.join(d['falta']))
+                     + '</span>')
+    cuerpo = '<br>'.join(filas)
+    if etiqueta:
+        cuerpo = '<div class="ctrl-t">' + _e(etiqueta) + '</div>' + cuerpo
+    return '<div class="ctrl">' + cuerpo + '</div>'
+
+
+def control_vigente_campos(c, codigo):
+    """Sólo VERSIÓN · PÁGINA · VIGENCIA de un formato, y sólo lo que esté cargado.
+
+    Existe para poder enchufar el registro a un formato que ya imprime, SIN tocarle el título ni
+    el layout: cambiarle lo que imprime a un documento regulado no se hace de pasada (M105).
+    Un campo vacío en la tabla NO pisa el valor que el código ya tenía -- `COALESCE` no cubre la
+    cadena vacía y estas columnas son TEXT DEFAULT '' (M263/M264).
+    """
+    d = formato_control(c, codigo)
+    out = {}
+    for k in ('version', 'pagina', 'desde', 'hasta'):
+        v = str(d.get(k) or '').strip()
+        if v:
+            out[k] = v
+    return out

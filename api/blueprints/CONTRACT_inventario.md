@@ -1237,3 +1237,79 @@ es peor que no tenerla (M19/M93).
 Guards: `tests/test_rotulo_envase_f06.py` (14 casos, en el gate · incluye el barrido de
 `COALESCE` con el fallback muerto y sus excepciones enumeradas, el escalado del nombre y las
 reglas que sostienen los 95,3 mm).
+
+## INV-28 · El desglose por CAJAS de un envase se DERIVA del kardex (21-ago-2026)
+
+Sebastián: *"si agrego 37 cajas, ¿cómo sé que hay 37 y cuántas hay en cada una? ¿allí aplica
+FEFO? ¿va diciendo qué caja coger, cuáles usamos, en cuáles quedan alguna cantidad?"*.
+
+**Invariante dura: `sum(saldo de cada tanda) == saldo del código`.** Es la razón de que el
+desglose se derive en vez de guardarse: si viviera aparte, divergiría del kardex el día que
+alguno de los **veinte** escritores de `movimientos_mee` se olvide de actualizarlo, y ahí la
+pantalla diría una cosa y el descuento otra.
+
+**Endpoints**
+- `GET /api/mee/<codigo>/cajas` — read-only. Devuelve `saldo_total`, `tandas[]` (cada una con
+  `cajas_completas`, `suelto`, `caja_abierta`, `sin_desglose`, `bajas[]`), `retenidas[]`,
+  `tomar_de` e `instruccion`. Cualquier autenticado.
+- `POST /api/mee/<codigo>/merma-caja` — da de baja material de UNA tanda.
+  Body `{mov_id, caja?, cantidad, motivo, token?}`. `_require_planta_write`. Auditado
+  (`BAJA_CAJA_MEE`). Idempotente por token contra `oc_recepcion_dedup` (numero_oc `'BAJA-MEE'`).
+
+**Helper canónico:** `mee_estado_por_cajas(c, cod)` en `inventario.py`. Todo consumidor le pide
+a él; nadie recalcula el desglose (dos cuentas del mismo hecho divergen · M5/M99).
+
+**Reglas que NO se relajan**
+1. **FEFO por tanda** con `NULLIF` en el orden: `fecha_vencimiento` es `TEXT DEFAULT ''`, así que
+   un `COALESCE` pelado consumiría PRIMERO la tanda sin fecha, o sea al revés del FEFO (M263).
+2. **El saldo canónico usa la MISMA regla que `_get_mee_stock`**: una Entrada en CUARENTENA o
+   RECHAZADO no es stock, un `Ajuste` cuenta con su signo (M26).
+3. **Las excepciones NO siguen FEFO.** Una caja rota sale de SU tanda: se ancla en
+   `mee_cajas_disposicion` y se descuenta de su tanda ANTES de repartir el resto. Sin esa fila,
+   la Salida existe igual y el reparto se la cobra a la tanda más vieja.
+4. **La llave de una baja es NEGATIVA.** `mee_cajas_disposicion` tiene `UNIQUE(mov_id, caja)` y
+   Calidad ocupa 1..N con sus propias filas: un número real chocaría con el de Calidad de esa
+   caja, y dos bajas de la misma caja entre sí (son dos hechos legítimos). El número declarado va
+   en el `motivo`, que es donde se lee.
+5. **`dispuesto_at_utc` va VACÍO en una baja.** Esa columna alimenta la **fecha de análisis del
+   rótulo F06**, que es un formato regulado: una baja de bodega no es un análisis de Calidad y no
+   puede firmarle la fecha (M258). El cuándo vive en `audit_log`.
+6. **Lo que ninguna tanda explica se DECLARA** (`sin_atribuir`), nunca se reparte: cuadrar el
+   número inventando de dónde salió el material es peor que un desglose incompleto (M124/M148).
+7. **Una entrada sin `n_cajas` se marca `sin_desglose`**, no se muestra en cero: todo el
+   histórico entró así y un 0 se leería como *"no quedan cajas"* (M236).
+8. **Se valida ANTES de reclamar el token.** Si un rechazo lo quemara, quien corrige la cantidad
+   y reenvía recibiría *"ya se registró"*, que es mentira y lo deja sin poder hacerlo.
+
+Tests: `tests/test_cajas_fefo_envases.py` (en el gate).
+
+## INV-29 · El bloque de control de un formato sale de UN registro (21-ago-2026)
+
+Aseguramiento declaró no negociable que todo formato impreso lleve **Código · Versión · Página ·
+Vigencia**: es la evidencia de que el registro se llenó en la versión vigente (M251). El rótulo
+de ingreso de MP sólo decía el código y la fecha de impresión.
+
+**Fuente única:** tabla `formatos_control` (mig 444) + `audit_helpers.formato_control(c, codigo)`
+y `formato_control_html(...)`. `control_vigente_campos(c, codigo)` devuelve SÓLO versión / página
+/ vigencia, para poder enchufar el registro a un formato que ya imprime **sin tocarle el título
+ni el layout** (cambiar lo que imprime un documento regulado no se hace de pasada · M105/M251b).
+
+- El rótulo de MP (`COC-PRO-002-F07`) arma su bloque **una vez por hoja**, no por recipiente: una
+  tanda son 40 rótulos (M43).
+- `F02_CONTROL` y `F06_CONTROL` siguen en el código como **respaldo** (si la migración no corrió,
+  el rótulo no sale sin identificar) pero lo que esté cargado en la tabla MANDA.
+- **Lo que falta se DECLARA en el papel** (`ctrl-falta`, recuadro negro: en térmica un gris no
+  marca · M123). No se inventa una versión: un dato de control fabricado en un documento regulado
+  es peor que su ausencia, porque nadie lo corrige (M19/M242).
+
+**Pantalla:** `/admin/formatos-control` + pestaña *Control de formatos* en Aseguramiento.
+Gate = Aseguramiento ∪ Calidad ∪ Dirección Técnica ∪ admin (se pregunta por la CAPACIDAD, no por
+la lista de un puesto · M210/M257). Cambiar una versión queda auditado con el valor previo
+(`FORMATO_CONTROL_ACTUALIZAR`): ante un rótulo con la versión equivocada la pregunta es *cuál
+decía antes* (M175).
+
+⚠ **Abierto para Aseguramiento:** dos documentos distintos citan `COC-PRO-002-F07` — el rótulo de
+ingreso de MP y la hoja *Controles en proceso* del cuaderno de producción (`programacion.py`).
+Cuál de los dos está mal lo decide el dueño del documento, no el código (M19/M251b).
+
+Tests: `tests/test_formatos_control_unico.py` (en el gate).

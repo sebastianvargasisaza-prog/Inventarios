@@ -96,10 +96,32 @@ def test_y_NO_entra_a_lo_que_no_es_suyo(app):
 
 
 def test_lo_GENERAL_es_para_todos(app):
-    """*"hay cosas que son para todos como solicitudes y recepciones, chat"*."""
-    from config import puede_ver_modulo, COMPRAS_USERS
-    faltan = [(u, m) for u in COMPRAS_USERS for m in GENERAL if not puede_ver_modulo(u, m)]
+    """*"hay cosas que son para todos como solicitudes y recepciones, chat"*.
+
+    "Todos" son los que TRABAJAN acá. `COMPRAS_USERS` no es ese universo: conserva a quien ya se
+    fue para que sus registros firmados sigan siendo atribuibles -- borrarlo los dejaría sin
+    dueño (GMP conserva el rastro). Quien está desvinculado no ve nada, y el login además lo
+    bloquea en la base.
+    """
+    from config import puede_ver_modulo, COMPRAS_USERS, USUARIOS_DESVINCULADOS
+    activos = set(COMPRAS_USERS) - USUARIOS_DESVINCULADOS
+    faltan = [(u, m) for u in activos for m in GENERAL if not puede_ver_modulo(u, m)]
     assert not faltan, faltan
+
+
+def test_y_el_DESVINCULADO_es_exactamente_la_excepcion(app):
+    """Con más dientes que sólo sacarlo del universo: si mañana el barrido saca de más, o si
+    alguien vuelve a meter a un desvinculado, este test lo dice."""
+    from config import puede_ver_modulo, COMPRAS_USERS, USUARIOS_DESVINCULADOS
+    assert USUARIOS_DESVINCULADOS, 'la lista está vacía: nadie la mantiene'
+    for quien in USUARIOS_DESVINCULADOS:
+        for m in GENERAL:
+            assert not puede_ver_modulo(quien, m), \
+                '%s está desvinculado y sigue viendo %s' % (quien, m)
+    # y el borde: nadie más perdió los módulos generales
+    ciegos = sorted(u for u in set(COMPRAS_USERS) - USUARIOS_DESVINCULADOS
+                    if not all(puede_ver_modulo(u, m) for m in GENERAL))
+    assert not ciegos, 'el barrido dejó sin lo general a gente que trabaja acá: %r' % (ciegos,)
 
 
 def test_los_operarios_RECIBEN(app):

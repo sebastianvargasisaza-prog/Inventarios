@@ -8113,6 +8113,14 @@ def _encabezado_formato_zonas(ctl=None):
     propio CSS porque una imprime en etiqueta de 100x100mm y la otra en hoja.
     """
     d = dict(F02_CONTROL)
+    # La versión y la vigencia salen del registro único: dos copias divergen y el día que
+    # Aseguramiento libere la siguiente, una sigue diciendo la vieja (M251). El título y el
+    # layout NO se tocan -- ese rótulo tiene una decisión documentada de Sebastián (M251b).
+    try:
+        from audit_helpers import control_vigente_campos as _cvc
+        d.update(_cvc(get_db().cursor(), F02_CONTROL['codigo']))
+    except Exception as _ec:
+        log.warning('control vigente del F02: %s', _ec)
     d.update(ctl or {})
     return (
         "<div class=\"doc\">"

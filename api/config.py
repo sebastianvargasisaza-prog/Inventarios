@@ -105,8 +105,18 @@ def puede_archivar(usuario):
 # guards. Mezclarlos aca haria que cambiar quien VE una pantalla cambie quien puede FIRMAR, que
 # es justo lo que no se quiere en un sistema INVIMA.
 
+# Quien ya no trabaja aca. El login lo bloquea la base (`users_passwords.activo=0`, que es lo
+# que de verdad cierra la puerta), pero esta matriz se deriva del diccionario de claves, asi que
+# sin declararlo aca la persona sigue figurando con acceso a los modulos "para todos" -- dos
+# fuentes diciendo cosas distintas de la misma persona (M211). Se saca de LOS DOS lados.
+# No se borra de COMPRAS_USERS: ese diccionario es lo que permite RECONOCER el usuario en los
+# registros historicos que lleva firmados, y borrarlo dejaria esos registros sin duenio.
+USUARIOS_DESVINCULADOS = {
+    'luis',      # jefe de produccion hasta el 24-jul-2026 · lo reemplazo 'jose' (mig 375)
+}
+
 # Lo que ve todo el mundo: pedir algo, registrar lo que llega y hablar con el equipo.
-_TODOS = set(COMPRAS_USERS)
+_TODOS = set(COMPRAS_USERS) - USUARIOS_DESVINCULADOS
 
 MODULOS_ACCESO = {
     # --- para todos ---
@@ -157,6 +167,12 @@ MODULOS_ACCESO = {
     'seguridad':     set(ADMIN_USERS),
     'admin':         set(ADMIN_USERS),
 }
+
+# Barrido final: quien esta desvinculado sale de TODOS los modulos, tambien de los que se
+# escriben a mano. Un set explicito es facil de olvidar el dia que alguien se va, y ahi la
+# matriz -que es la unica fuente de quien ve que- seguiria diciendo que tiene acceso.
+for _mod in MODULOS_ACCESO:
+    MODULOS_ACCESO[_mod] -= USUARIOS_DESVINCULADOS
 
 # Que prefijo de URL pertenece a que modulo · se evalua EN ORDEN (el mas especifico primero).
 #

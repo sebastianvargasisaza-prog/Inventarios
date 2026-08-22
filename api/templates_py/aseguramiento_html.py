@@ -117,6 +117,7 @@ code{background:var(--cx-border-soft);padding:1px 6px;border-radius:3px;font-fam
   <div class="tab" data-tip="Bitácora de calibración de equipos (INVIMA): cuándo se calibró cada balanza/equipo, cuándo vence la próxima, quién la hizo, con qué certificado y con qué orden de compra." data-tip-pos="bottom" onclick="goTab('tab-calib')">&#x1F527; Calibración</div>
   <div class="tab" data-tip="Verificaciones GMP: los ítems del despeje de línea y los controles en proceso de cada fase. Lo que se guarde acá es lo que el piso verifica y lo que Calidad firma. Lo ya firmado nunca cambia de texto." data-tip-pos="bottom" onclick="goTab('tab-checklists')">&#9989; Verificaciones GMP</div>
   <div class="tab" data-tip="Plan de suplencias: quién puede firmar en el puesto de quién mientras el titular no está, con motivo y fecha de fin. Se apaga solo al vencer." data-tip-pos="bottom" onclick="goTab('tab-suplencias')">&#128100; Suplencias</div>
+  <div class="tab" data-tip="Codigo, version, pagina y vigencia de cada formato impreso: es la evidencia de que el registro se lleno en la version vigente. Cargar la version siguiente cambia lo que imprimen los rotulos sin desplegar nada." data-tip-pos="bottom" onclick="goTab('tab-formatos')">&#128209; Control de formatos</div>
   <div class="tab" data-tip="Audit trail en lenguaje humano: quien cambio que, de que a que, con el registro crudo debajo como prueba (21 CFR Part 11). Filtrable por area del proceso." data-tip-pos="bottom" onclick="goTab('tab-audit')">&#128340; Audit trail</div>
   <div class="tab" data-tip="Que falta para que el registro de lote viva en EOS y no en MyBatch: quien lo ve, que controles estan encendidos, cuantos productos tienen instructivo aprobado. Medido, no supuesto." data-tip-pos="bottom" onclick="goTab('tab-reemplazo')">&#127981; Reemplazo de MyBatch</div>
 </div>
@@ -1130,6 +1131,14 @@ code{background:var(--cx-border-soft);padding:1px 6px;border-radius:3px;font-fam
   <iframe id="audit-ifr" src="about:blank" title="Audit trail" style="width:100%;height:78vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"></iframe>
 </div>
 
+<div id="tab-formatos" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:13px;color:var(--cx-text-soft)">&#128209; Control de formatos &middot; c&oacute;digo, versi&oacute;n, p&aacute;gina y vigencia de cada formato impreso. Los r&oacute;tulos lo piden de ac&aacute;, as&iacute; que cargar la versi&oacute;n siguiente cambia lo que se imprime sin desplegar. Lo que falte sale marcado en el papel para que el hueco se vea.</div>
+    <a href="/admin/formatos-control" target="_blank" class="btn btn-ghost btn-sm">Abrir en pesta&ntilde;a nueva &#8599;</a>
+  </div>
+  <iframe id="formatos-ifr" src="about:blank" title="Control de formatos" style="width:100%;height:78vh;border:1px solid var(--cx-border);border-radius:12px;background:var(--cx-card)"></iframe>
+</div>
+
 <div id="tab-suplencias" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
     <div style="font-size:13px;color:var(--cx-text-soft)">&#128100; Plan de suplencias &middot; qui&eacute;n puede firmar en el puesto de qui&eacute;n mientras el titular no est&aacute;. Se declara una vez y se activa cuando hace falta, con motivo y fecha de fin: al vencer se apaga solo. La regla de las dos personas no cambia.</div>
@@ -1275,7 +1284,7 @@ async function withBusy(btn, fn){
   finally { btn.disabled = false; if(btn.textContent !== prev) btn.textContent = prev; }
 }
 
-var _tabIds = ['tab-dash','tab-indic','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf','tab-firmas','tab-calib','tab-checklists','tab-suplencias','tab-audit','tab-reemplazo'];
+var _tabIds = ['tab-dash','tab-indic','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf','tab-firmas','tab-calib','tab-checklists','tab-suplencias','tab-audit','tab-reemplazo','tab-formatos'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -1297,6 +1306,7 @@ function goTab(id){
   else if(id==='tab-calib'){ var g=document.getElementById('calib-ifr'); if(g && String(g.src||'').indexOf('calibracion')<0) g.src='/aseguramiento/calibracion'; }
   else if(id==='tab-checklists'){ var k=document.getElementById('checklists-ifr'); if(k && String(k.src||'').indexOf('checklists')<0) k.src='/aseguramiento/checklists'; }
   else if(id==='tab-suplencias'){ var sp=document.getElementById('suplencias-ifr'); if(sp && String(sp.src||'').indexOf('suplencias')<0) sp.src='/aseguramiento/suplencias'; }
+  else if(id==='tab-formatos'){ var fo=document.getElementById('formatos-ifr'); if(fo && String(fo.src||'').indexOf('formatos-control')<0) fo.src='/admin/formatos-control'; }
   else if(id==='tab-audit'){ var a=document.getElementById('audit-ifr'); if(a && String(a.src||'').indexOf('audit-trail')<0) a.src='/aseguramiento/audit-trail'; }
   else if(id==='tab-reemplazo'){ var m=document.getElementById('reemplazo-ifr'); if(m && String(m.src||'').indexOf('reemplazo')<0) m.src='/aseguramiento/reemplazo-mybatch'; }
 }

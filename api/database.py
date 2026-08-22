@@ -11772,6 +11772,43 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
          "UPDATE movimientos_mee SET fecha_vencimiento = substr(fecha_vencimiento,7,4) || '-' || CASE LOWER(substr(fecha_vencimiento,3,3)) WHEN 'ene' THEN '01' WHEN 'jan' THEN '01' WHEN 'feb' THEN '02' WHEN 'mar' THEN '03' WHEN 'abr' THEN '04' WHEN 'apr' THEN '04' WHEN 'may' THEN '05' WHEN 'jun' THEN '06' WHEN 'jul' THEN '07' WHEN 'ago' THEN '08' WHEN 'aug' THEN '08' WHEN 'sep' THEN '09' WHEN 'set' THEN '09' WHEN 'oct' THEN '10' WHEN 'nov' THEN '11' WHEN 'dic' THEN '12' WHEN 'dec' THEN '12' END || '-0' || substr(fecha_vencimiento,1,1) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) = 10   AND substr(fecha_vencimiento,2,1) = '-'   AND substr(fecha_vencimiento,6,1) = '-'   AND LOWER(substr(fecha_vencimiento,3,3)) IN ('ene','jan','feb','mar','abr','apr','may','jun','jul','ago','aug','sep','set','oct','nov','dic','dec')",
          "UPDATE movimientos_mee SET fecha_vencimiento = substr(fecha_vencimiento,1,10) WHERE LENGTH(COALESCE(fecha_vencimiento,'')) > 10   AND substr(fecha_vencimiento,5,1) = '-'   AND substr(fecha_vencimiento,8,1) = '-'",
      ]),
+    (444, "formatos_control · UN registro para el bloque Codigo/Version/Pagina/Vigencia que "
+          "Aseguramiento declaro no negociable en todo formato impreso (M251). Hoy vive escrito "
+          "a mano en DOS archivos (F02_CONTROL en programacion.py, F06_CONTROL en inventario.py) "
+          "y el rotulo de ingreso de MATERIA PRIMA no tiene ninguno: dice el codigo del formato y "
+          "nada mas. Dos copias divergen, y el dia que se libere la version 03 una va a seguir "
+          "diciendo 02 con la misma cara de oficial. Los rotulos ahora le PIDEN el bloque a esta "
+          "tabla y Aseguramiento la actualiza sin desplegar. "
+          "\u26a0 El F07 se siembra SIN version ni vigencia a proposito: no las conozco, y un dato "
+          "de control inventado en un documento regulado es peor que su ausencia (M19/M242). El "
+          "rotulo lo declara hasta que Aseguramiento las cargue.", [
+        """CREATE TABLE IF NOT EXISTS formatos_control (
+             codigo TEXT PRIMARY KEY,
+             titulo TEXT NOT NULL DEFAULT '',
+             version TEXT NOT NULL DEFAULT '',
+             pagina TEXT NOT NULL DEFAULT '1 de 1',
+             desde TEXT NOT NULL DEFAULT '',
+             hasta TEXT NOT NULL DEFAULT '',
+             nota TEXT NOT NULL DEFAULT '',
+             actualizado_por TEXT NOT NULL DEFAULT '',
+             actualizado_at_utc TEXT NOT NULL DEFAULT ''
+           )""",
+        # Los dos que YA existen se siembran con los valores que hoy tiene el codigo, tal cual:
+        # esto no cambia lo que se imprime, sólo mueve de dónde sale.
+        "INSERT INTO formatos_control (codigo, titulo, version, pagina, desde, hasta) "
+        "VALUES ('PRD-PRO-002-F02', 'Identificacion de Estado de Limpieza de Areas o Equipos', "
+        "        '02', '1 de 1', '09-Abr-2026', '08-Abr-2029') "
+        "ON CONFLICT (codigo) DO NOTHING",
+        "INSERT INTO formatos_control (codigo, titulo, version, pagina, desde, hasta) "
+        "VALUES ('COC-PRO-002-F06', 'IDENTIFICACION DE MATERIAL DE ENVASE', "
+        "        '02', '1 de 1', '21-Jul-2026', '20-Jul-2029') "
+        "ON CONFLICT (codigo) DO NOTHING",
+        # El F07 nace SIN version/vigencia y con la nota que dice por que.
+        "INSERT INTO formatos_control (codigo, titulo, version, pagina, desde, hasta, nota) "
+        "VALUES ('COC-PRO-002-F07', 'IDENTIFICACION DE MATERIA PRIMA', '', '1 de 1', '', '', "
+        "        'Falta cargar version y vigencia · las tiene Aseguramiento') "
+        "ON CONFLICT (codigo) DO NOTHING",
+    ]),
 ]
 
 

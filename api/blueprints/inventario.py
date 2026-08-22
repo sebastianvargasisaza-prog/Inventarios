@@ -11771,6 +11771,9 @@ def _rotulo_recep_css(lw, lh):
       ".cosub{font-size:9px;font-weight:600;letter-spacing:3px;color:var(--mute);text-transform:uppercase;margin-top:3px}"
       ".ctrl{text-align:right;font-size:9px;color:var(--mute);line-height:1.55;flex:none;white-space:nowrap}.ctrl b{color:var(--violet-d);font-weight:700}"
       ".ctrl-t{font-size:9.5px;font-weight:800;color:var(--ink);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}"
+      # Lo que FALTA del bloque de control se ve: un renglon en blanco se lee como si
+      # estuviera completo, y en termica un gris claro directamente no marca (M123).
+      ".ctrl-falta{display:inline-block;margin-top:3px;font-size:8px;font-weight:800;color:#000;border:1px solid #000;border-radius:4px;padding:1px 5px;white-space:nowrap}"
       ".hero{text-align:center;padding:11px 18px 12px;border-top:1px solid var(--line)}"
       ".hero .name{font-size:26px;font-weight:800;letter-spacing:-.5px;line-height:1.08;color:var(--ink)}"
       ".name.n2{font-size:21px}.name.n3{font-size:17px}.name.n4{font-size:14px;letter-spacing:0}"
@@ -12011,6 +12014,11 @@ def _rotulo_mp_hojas(codigo, lote, cantidad, args, idx0=0, estado=""):
     _est_cls = ('apro' if estado.startswith('APRO') else
                 ('rech' if estado.startswith('RECH') else 'cuar'))
 
+    # El bloque de control sale del registro único de formatos (M251): dos copias escritas a
+    # mano divergen, y el día que Aseguramiento libere la versión siguiente una sigue diciendo la
+    # vieja con la misma cara de oficial. Se arma UNA vez: una tanda son 40 rótulos.
+    _ctrl_f07 = _rotulo_ctrl_mp(c, _e(hoy))
+
     def _sheet_mp(amt, idx):
         _rec_tag = ('<span class="rectag">Recipiente ' + str(idx + 1) + ' de ' + str(_nrec) + '</span>') if _nrec > 1 else ''
         _cant_lbl = 'Cantidad (este recipiente)' if _nrec > 1 else 'Cantidad recibida'
@@ -12018,7 +12026,7 @@ def _rotulo_mp_hojas(codigo, lote, cantidad, args, idx0=0, estado=""):
         _inci_sub = ('<div class="inci">INCI &middot; ' + _e(ni) + '</div>') if (ni and str(ni).strip()) else ''
         return ('<div class="sheet"><div class="accent"></div>'
            '<div class="top"><div class="brandrow"><img class="mark" src="' + _logo + '" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA<span class="cosub">Laboratorio SAS</span></div></div>'
-           '<div class="ctrl"><div class="ctrl-t">Rotulo de ingreso &middot; MP' + _rec_tag + '</div><span><b>Formato</b> COC-PRO-002-F07</span><br><span><b>Impreso</b> ' + _e(hoy) + '</span></div></div>'
+           + _ctrl_f07.replace('__RECTAG__', _rec_tag) + '</div>'
            '<div class="hero"><h1 class="name">' + _e(nc) + '</h1>' + _inci_sub + '</div>'
            '<div class="lote"><div class="ll">Numero de lote</div><div class="lv">' + _e(lote) + '</div><svg id="bc' + str(idx) + '"></svg></div>'
            '<table>'
@@ -12114,6 +12122,28 @@ def _obs_sin_marcas_del_sistema(txt):
     return ' '.join(t.split()).strip()
 
 
+def _rotulo_ctrl_mp(c, hoy_txt):
+    """El bloque de control del rótulo de MP, con `__RECTAG__` donde va el "Recipiente n de N".
+
+    Se deja como marcador y no se resuelve acá porque el bloque se arma UNA vez y se imprime N
+    veces, una por recipiente.
+    """
+    try:
+        from audit_helpers import formato_control_html as _fch
+        html = _fch(c, 'COC-PRO-002-F07', '')
+    except Exception as _ef:
+        # Sin el registro el rótulo sigue saliendo con su código: un formato regulado no se
+        # queda sin identificar porque una tabla no se pudo leer (M4/M94).
+        __import__('logging').getLogger('inventario').warning('control del F07: %s', _ef)
+        html = '<div class="ctrl"><span><b>C&oacute;digo</b> COC-PRO-002-F07</span></div>'
+    html = html.replace(
+        '<div class="ctrl">',
+        '<div class="ctrl"><div class="ctrl-t">Rotulo de ingreso &middot; MP__RECTAG__</div>', 1)
+    if html.endswith('</div>'):
+        html = html[:-6] + '<br><span><b>Impreso</b> ' + str(hoy_txt) + '</span></div>'
+    return html
+
+
 F06_CONTROL = {
     'codigo': 'COC-PRO-002-F06',
     'titulo': 'IDENTIFICACI&Oacute;N DE MATERIAL DE ENVASE',
@@ -12122,6 +12152,25 @@ F06_CONTROL = {
     'desde': '21-Jul-2026',
     'hasta': '20-Jul-2029',
 }
+
+
+def _f06_control_vigente():
+    """El F06 con su versión y vigencia tomadas del registro único (M251).
+
+    Sólo esos campos: el título lleva entidades HTML y cambiarle el origen cambiaría lo que
+    imprime un documento regulado.
+
+    Resuelve su propio cursor porque el generador del rótulo (`_rotulo_mee_sheet`) no tiene
+    ninguno en scope -- pasárselo por parámetro daba un NameError que sólo aparece cuando
+    alguien imprime (M78).
+    """
+    d = dict(F06_CONTROL)
+    try:
+        from audit_helpers import control_vigente_campos as _cvc
+        d.update(_cvc(get_db().cursor(), F06_CONTROL['codigo']))
+    except Exception as _ec:
+        __import__('logging').getLogger('inventario').warning('control vigente del F06: %s', _ec)
+    return d
 
 
 def _encabezado_formato(logo, ctl=None):
@@ -12196,7 +12245,7 @@ def _rotulo_mee_sheet(*, codigo, desc, categoria, proveedor, zona, observaciones
     _cls_n = ('n1' if _ldesc <= 22 else 'n2' if _ldesc <= 40
               else 'n3' if _ldesc <= 62 else 'n4')
     return ('<div class="sheet"><div class="accent"></div>'
-            + _encabezado_formato(logo, F06_CONTROL) +
+            + _encabezado_formato(logo, _f06_control_vigente()) +
             '<div class="title"><div class="eyebrow">Ingreso de material' + _cajatag + '</div>'
             '<div class="nlbl">Nombre del insumo</div>'
             '<h1 class="name ' + _cls_n + '">' + _e(desc) + '</h1>' + _cajachip + '</div>'
@@ -18002,6 +18051,320 @@ def mee_ajustar_stock(codigo):
                     'delta': delta, 'mov_id': _mov_id_ajuste,
                     'n_cajas': _n_cajas or None,
                     'unidades_por_caja': _por_caja or None})
+
+
+def _log_cajas():
+    import logging as _lg
+    return _lg.getLogger('inventario')
+
+
+def _mee_saldo_codigo(c, cod):
+    """El saldo canónico de UN envase, con la MISMA regla que `_get_mee_stock` (M26/M1).
+
+    Se replica la regla y no el helper porque aquél devuelve el mapa entero y acá hace falta un
+    código; lo que NO se puede es inventar otra regla -- una Entrada en cuarentena no cuenta como
+    stock y un 'Ajuste' cuenta con su signo.
+    """
+    r = c.execute(
+        """SELECT COALESCE(SUM(CASE
+                     WHEN LOWER(tipo) IN ('entrada','ingreso','devolucion','devolución')
+                          AND UPPER(COALESCE(estado,'VIGENTE')) NOT IN ('CUARENTENA','RECHAZADO')
+                         THEN cantidad
+                     WHEN LOWER(tipo) = 'ajuste' THEN cantidad
+                     WHEN LOWER(tipo) IN ('salida','consumo','rechazo') THEN -cantidad
+                     ELSE 0 END), 0)
+             FROM movimientos_mee
+            WHERE UPPER(TRIM(mee_codigo))=UPPER(TRIM(?)) AND COALESCE(anulado,0)=0""",
+        (cod,)).fetchone()
+    return round(float(r[0] or 0), 2)
+
+
+def _mee_fuera_de_servicio(c, mov_id):
+    """Lo que salió de UNA tanda por fuera del consumo normal (rota, rechazada por Calidad).
+
+    Va aparte del reparto FEFO a propósito: una caja que se rompió no sale de la tanda más vieja,
+    sale de la suya.
+    """
+    fuera = 0.0
+    detalle = []
+    try:
+        for r in c.execute(
+                "SELECT caja, UPPER(COALESCE(estado,'')), COALESCE(cantidad,0), "
+                "       COALESCE(motivo,''), COALESCE(dispuesto_por,'') "
+                "  FROM mee_cajas_disposicion WHERE mov_id=? ORDER BY caja", (mov_id,)).fetchall():
+            est = str(r[1] or '')
+            if est not in ('RECHAZADO', 'RECHAZADA', 'AVERIADA', 'AVERIADO'):
+                continue
+            detalle.append({'caja': int(r[0] or 0), 'estado': est,
+                            'cantidad': round(float(r[2] or 0), 2),
+                            'motivo': r[3], 'quien': r[4]})
+            fuera += float(r[2] or 0)
+    except Exception as _e:
+        # Un except mudo acá convertiría "no pude leer" en "ninguna caja tuvo problemas", que es
+        # la conclusión contraria (M4/M94).
+        _log_cajas().warning('disposicion de cajas de la tanda %s: %s', mov_id, _e)
+        return 0.0, [], True
+    return round(fuera, 2), detalle, False
+
+
+def mee_estado_por_cajas(c, cod):
+    """Cuántas cajas quedan de cada tanda, cuál está abierta y cuál toca tomar.
+
+    El reparto es FEFO por TANDA (la que vence primero; sin fecha, la más antigua) y dentro de la
+    tanda la regla real de bodega: **se termina la caja abierta antes de abrir otra**, que es lo
+    que evita que queden cinco cajas a medias por todo el estante.
+
+    Devuelve siempre `sin_atribuir`: si el kardex tiene MÁS de lo que suman las tandas (saldos de
+    apertura, ajustes en más), ese sobrante se DECLARA en vez de repartirse a ojo -- un desglose
+    que cuadra inventando de dónde salió el material es peor que uno incompleto (M124/M148).
+    """
+    import math as _m
+    cod = str(cod or '').strip()
+    filas = c.execute(
+        """SELECT id, COALESCE(fecha,''), COALESCE(lote_ref,''),
+                  COALESCE(fecha_vencimiento,''), cantidad,
+                  COALESCE(n_cajas,0), COALESCE(unidades_por_caja,0),
+                  UPPER(COALESCE(estado,'VIGENTE')), COALESCE(oc_numero,''),
+                  COALESCE(proveedor,'')
+             FROM movimientos_mee
+            WHERE UPPER(TRIM(mee_codigo))=UPPER(TRIM(?)) AND COALESCE(anulado,0)=0
+              AND LOWER(COALESCE(tipo,'')) IN ('entrada','ingreso','devolucion','devolución')
+            ORDER BY id""", (cod,)).fetchall()
+
+    tandas, retenidas = [], []
+    for f in filas:
+        fv = str(f[3] or '').strip()
+        item = {
+            'mov_id': f[0], 'fecha': str(f[1] or '')[:10], 'lote': f[2], 'vence': fv,
+            'ingresado': round(float(f[4] or 0), 2),
+            'n_cajas': int(f[5] or 0), 'unidades_por_caja': round(float(f[6] or 0), 2),
+            'estado': f[7], 'oc': f[8], 'proveedor': f[9],
+        }
+        if item['estado'] in ('CUARENTENA', 'RECHAZADO'):
+            item['motivo'] = ('en CUARENTENA · falta que Calidad la libere'
+                              if item['estado'] == 'CUARENTENA' else 'RECHAZADA por Calidad')
+            retenidas.append(item)
+        else:
+            tandas.append(item)
+
+    # El orden FEFO usa NULLIF: `fecha_vencimiento` es TEXT DEFAULT '', así que un COALESCE
+    # pelado NUNCA cae al respaldo y la tanda SIN fecha se consumiría PRIMERO, o sea al revés
+    # de first-expired-first-out (M263).
+    tandas.sort(key=lambda t: ((t['vence'] or '9999-12-31'),
+                               (t['fecha'] or '9999-12-31'), t['mov_id']))
+
+    hubo_error = False
+    fuera_total = 0.0
+    for t in tandas:
+        fuera, detalle, err = _mee_fuera_de_servicio(c, t['mov_id'])
+        hubo_error = hubo_error or err
+        t['fuera_de_servicio'] = fuera
+        t['bajas'] = detalle
+        t['disponible_inicial'] = round(max(t['ingresado'] - fuera, 0), 2)
+        fuera_total += fuera
+
+    saldo = _mee_saldo_codigo(c, cod)
+    util = round(sum(t['disponible_inicial'] for t in tandas), 2)
+    # Lo consumido por producción es lo que falta DESPUÉS de descontar lo que se dio de baja: esa
+    # merma ya salió del kardex y ya está atribuida a su tanda, así que contarla otra vez acá
+    # vaciaría tandas que están llenas.
+    consumido = round(util - saldo, 2)
+    sin_atribuir = 0.0
+    if consumido < 0:
+        sin_atribuir = round(-consumido, 2)
+        consumido = 0.0
+
+    resto = consumido
+    for t in tandas:
+        toma = min(resto, t['disponible_inicial'])
+        resto = round(resto - toma, 2)
+        t['consumido'] = round(toma, 2)
+        t['saldo'] = round(t['disponible_inicial'] - toma, 2)
+        upc = t['unidades_por_caja']
+        if upc and upc > 0:
+            completas = int(_m.floor(round(t['saldo'] / upc, 6)))
+            completas = max(completas, 0)
+            suelto = round(t['saldo'] - completas * upc, 2)
+            t['cajas_completas'] = completas
+            t['suelto'] = max(suelto, 0)
+            # La caja ABIERTA es la que tiene el suelto. Su número se cuenta hacia atrás desde el
+            # total de la tanda: las completas son las últimas que quedan intactas.
+            t['caja_abierta'] = (t['n_cajas'] - completas) if suelto > 0.009 else 0
+            t['sin_desglose'] = False
+        else:
+            # La tanda no se contó por cajas (todo lo anterior a que existiera el desglose). Se
+            # dice con esas palabras en vez de mostrar un cero que se leería como "no quedan
+            # cajas" (M236: una columna nueva está vacía para todo el histórico).
+            t['cajas_completas'] = 0
+            t['suelto'] = 0
+            t['caja_abierta'] = 0
+            t['sin_desglose'] = True
+
+    con_saldo = [t for t in tandas if t['saldo'] > 0.009]
+    tomar = con_saldo[0] if con_saldo else None
+    instruccion = ''
+    if tomar:
+        if tomar['sin_desglose']:
+            instruccion = ('Tomá del lote %s: quedan %s unidades (esa entrada no se contó por cajas)'
+                           % (tomar['lote'] or 'sin lote', '{:,.0f}'.format(tomar['saldo'])))
+        elif tomar['caja_abierta']:
+            instruccion = ('Tomá de la CAJA %d, que está abierta: le quedan %s de %s'
+                           % (tomar['caja_abierta'], '{:,.0f}'.format(tomar['suelto']),
+                              '{:,.0f}'.format(tomar['unidades_por_caja'])))
+        else:
+            instruccion = ('Abrí una caja nueva de la tanda %s: quedan %d cajas completas'
+                           % (tomar['lote'] or tomar['fecha'], tomar['cajas_completas']))
+
+    return {
+        'codigo': cod,
+        'saldo_total': saldo,
+        'tandas': tandas,
+        'retenidas': retenidas,
+        'tomar_de': tomar,
+        'instruccion': instruccion,
+        'cajas_completas_total': sum(t['cajas_completas'] for t in tandas),
+        'fuera_de_servicio_total': round(fuera_total, 2),
+        'sin_atribuir': sin_atribuir,
+        'sin_desglose_n': sum(1 for t in tandas if t['sin_desglose'] and t['saldo'] > 0.009),
+        'error_lectura': hubo_error,
+    }
+
+
+@bp.route('/api/mee/<path:codigo>/cajas', methods=['GET'])
+def mee_cajas_estado(codigo):
+    """La hoja de cajas: qué tomar, cuántas quedan y en cuál queda cantidad. Read-only."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        d = mee_estado_por_cajas(c, codigo)
+    except Exception as e:
+        _log_cajas().warning('estado por cajas de %s: %s', codigo, e)
+        return jsonify({'ok': False, 'error': 'no se pudo calcular: %s' % str(e)[:160]}), 500
+    d['ok'] = True
+    return jsonify(d)
+
+
+@bp.route('/api/mee/<path:codigo>/merma-caja', methods=['POST'])
+def mee_merma_caja(codigo):
+    """Se rompió una caja (o unas unidades) de una tanda puntual.
+
+    Body: {mov_id, caja?, cantidad, motivo, token?}
+
+    Sale del kardex Y queda atribuida a SU tanda: si sólo se registrara la Salida, el reparto
+    FEFO se la cobraría a la tanda más vieja y las cuentas de la que de verdad se rompió
+    quedarían infladas.
+    """
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    cod = str(codigo or '').strip()
+    try:
+        mov_id = int(d.get('mov_id') or 0)
+    except (TypeError, ValueError):
+        mov_id = 0
+    try:
+        cant = float(d.get('cantidad') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'la cantidad no es un número'}), 400
+    motivo = str(d.get('motivo') or '').strip()[:180]
+    if not mov_id:
+        return jsonify({'error': 'falta decir de qué tanda salió'}), 400
+    if cant <= 0:
+        return jsonify({'error': 'la cantidad tiene que ser mayor que cero'}), 400
+    if len(motivo) < 3:
+        return jsonify({'error': 'escribí el motivo: queda en el rastro de la baja',
+                        'codigo': 'MOTIVO_REQUERIDO'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    tanda = c.execute(
+        "SELECT cantidad, COALESCE(n_cajas,0), COALESCE(unidades_por_caja,0), COALESCE(lote_ref,'') "
+        "  FROM movimientos_mee WHERE id=? AND UPPER(TRIM(mee_codigo))=UPPER(TRIM(?)) "
+        "    AND COALESCE(anulado,0)=0", (mov_id, cod)).fetchone()
+    if not tanda:
+        return jsonify({'error': 'esa tanda no existe para este envase'}), 404
+
+    # Se VALIDA antes de reclamar el token: si el token se quemara en un rechazo, quien corrige
+    # la cantidad y reenvía recibiría "ya se registró", que es mentira y lo deja sin poder
+    # hacerlo (M260 al revés).
+    est = mee_estado_por_cajas(c, cod)
+    _t = next((t for t in est['tandas'] if t['mov_id'] == mov_id), None)
+    if _t is None:
+        return jsonify({'error': 'esa tanda está retenida por Calidad: todavía no se le puede '
+                                 'dar de baja material',
+                        'codigo': 'TANDA_RETENIDA'}), 409
+    if cant > _t['saldo'] + 0.01:
+        return jsonify({'error': 'la tanda tiene %s unidades y estás dando de baja %s'
+                                 % ('{:,.0f}'.format(_t['saldo']), '{:,.0f}'.format(cant)),
+                        'codigo': 'BAJA_MAYOR_QUE_SALDO'}), 400
+
+    # Un doble clic sobre un botón que da de baja material no tiene NINGÚN síntoma: se ve como
+    # un número más (M260).
+    token = str(d.get('token') or '').strip()[:80]
+    if token:
+        try:
+            c.execute("INSERT INTO oc_recepcion_dedup (recepcion_id, numero_oc, creado_en) "
+                      "VALUES (?,?,?)", (token, 'BAJA-MEE', datetime.now().isoformat()))
+        except Exception as _edup:
+            if 'unique' in str(_edup).lower() or 'duplicate' in str(_edup).lower():
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                return jsonify({'error': 'Esta baja ya se registró (doble envío)',
+                                'codigo': 'BAJA_DUPLICADA'}), 409
+            raise
+
+    try:
+        caja = int(d.get('caja') or 0)
+    except (TypeError, ValueError):
+        caja = 0
+    if caja and (caja < 1 or caja > (_t['n_cajas'] or caja)):
+        return jsonify({'error': 'esa tanda tiene %d caja(s): no existe la %d'
+                                 % (_t['n_cajas'], caja), 'codigo': 'CAJA_NO_EXISTE'}), 400
+
+    # La llave es NEGATIVA a propósito: `UNIQUE(mov_id, caja)` y Calidad ya ocupa 1..N con sus
+    # propias filas, así que un número real chocaría con la de Calidad de esa misma caja -- y
+    # dos bajas sobre la misma caja chocarían entre sí. El número declarado va en el motivo,
+    # que es donde se lee.
+    _mn = c.execute("SELECT COALESCE(MIN(caja), 0) FROM mee_cajas_disposicion WHERE mov_id=?",
+                    (mov_id,)).fetchone()
+    llave = min(int(_mn[0] or 0), 0) - 1
+    motivo_full = (('caja %d · ' % caja) if caja else '') + motivo
+
+    hoy = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+    obs = '[baja de caja] tanda #%d · %s' % (mov_id, motivo_full)
+    try:
+        c.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, "
+                  "  responsable, observaciones, fecha, estado) "
+                  "VALUES (?, 'Salida', ?, 'und', ?, ?, ?, ?, 'VIGENTE')",
+                  (cod, cant, tanda[3], user, obs, hoy))
+        # Esta fila es lo que ANCLA la baja a SU tanda. Sin ella la Salida existiría igual y el
+        # reparto FEFO se la cobraría a la tanda más vieja.
+        # `dispuesto_at_utc` va VACÍO: esa columna alimenta la FECHA DE ANÁLISIS del rótulo F06,
+        # que es un formato regulado, y una baja no es un análisis de Calidad (M258). El cuándo
+        # vive en el audit_log, que es su lugar.
+        c.execute("INSERT INTO mee_cajas_disposicion (mov_id, caja, estado, motivo, cantidad, "
+                  "  dispuesto_por, dispuesto_at_utc) VALUES (?,?,?,?,?,?,'')",
+                  (mov_id, llave, 'AVERIADA', motivo_full, cant, user))
+        audit_log(c, usuario=user, accion='BAJA_CAJA_MEE', tabla='movimientos_mee',
+                  registro_id=str(mov_id),
+                  antes={'saldo_tanda': _t['saldo']},
+                  despues={'codigo': cod, 'tanda': mov_id, 'caja': caja,
+                           'cantidad': cant, 'motivo': motivo},
+                  detalle='Baja de %s unidades de %s (tanda #%d)' % (cant, cod, mov_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo registrar la baja: %s' % str(e)[:200]}), 500
+
+    d2 = mee_estado_por_cajas(c, cod)
+    return jsonify({'ok': True, 'saldo_total': d2['saldo_total'],
+                    'instruccion': d2['instruccion'],
+                    'mensaje': 'Dadas de baja %s unidades de la tanda #%d'
+                               % ('{:,.0f}'.format(cant), mov_id)})
 
 
 @bp.route('/api/mee/<path:codigo>/tandas', methods=['GET'])

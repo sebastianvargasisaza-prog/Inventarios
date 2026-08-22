@@ -713,6 +713,17 @@ CORAZON=(
   # endpoint de cuadre que ya existe. Cubre tambien que el aviso llegue al contenedor real
   # y que el dato de un lote no pueda partir el onclick del boton.
   "tests/test_hoja_verificacion_fisica.py"
+  # El inventario de envases POR CAJAS: cuantas quedan, cual esta abierta, de cual tomar
+  # (FEFO por tanda) y que pasa si una se rompe. El desglose se DERIVA del kardex, asi que la
+  # invariante que se fija es que la suma de las tandas sea exactamente el saldo del codigo.
+  "tests/test_cajas_fefo_envases.py"
+  # UN registro para el bloque Codigo/Version/Pagina/Vigencia de los formatos regulados, que
+  # Aseguramiento declaro no negociable. Dos copias escritas a mano divergen el dia que se
+  # libere la version siguiente, y las dos se ven igual de oficiales.
+  "tests/test_formatos_control_unico.py"
+  # Dar de baja a alguien lo saca de la matriz de permisos Y de la puerta: eran dos fuentes
+  # que decian cosas distintas de la misma persona.
+  "tests/test_offboarding_una_sola_fuente.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

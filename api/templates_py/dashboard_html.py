@@ -10682,6 +10682,7 @@ async function cargarMeeStock(){
       h+='<td><div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">';
       h+='<button onclick="meeAjustar(&quot;'+_mc+'&quot;)" title="Ajustar stock, mínimo, proveedor, ubicación + rótulo" style="'+_bs+'background:var(--cx-primary-pale);color:var(--cx-primary-text);border:1px solid #ddd6fe">&#9878; Ajustar</button>';
       h+='<button onclick="meeRotulo(&quot;'+_mc+'&quot;)" title="Imprimir rótulo del envase" style="'+_bs+'background:var(--cx-info-pale);color:var(--cx-info-text);border:1px solid #a5f3fc">&#128424;&#65039; R&oacute;tulo</button>';
+      h+='<button onclick="meeCajas(&quot;'+_mc+'&quot;)" title="Cuántas cajas quedan, cuál está abierta y de cuál tomar" style="'+_bs+'background:var(--cx-warn-pale);color:var(--cx-warn-text);border:1px solid var(--cx-warn-light)">&#128230; Cajas</button>';
       h+='<button onclick="meeKit(&quot;'+_mc+'&quot;)" title="Kit: partes que van juntas (gotero/tapa/etiqueta/plegadiza)" style="'+_bs+'background:#fdf2f8;color:#be185d;border:1px solid #fbcfe8">&#129513; Kit</button>';
       h+='<button onclick="meeHistorico(&quot;'+_mc+'&quot;)" title="Histórico de movimientos" style="'+_bs+'background:var(--cx-success-pale);color:var(--cx-success-text);border:1px solid #bbf7d0">&#128202; Hist</button>';
       h+='<button onclick="meeArchivar(&quot;'+_mc+'&quot;)" title="Archivar (eliminar)" style="'+_bs+'background:var(--cx-danger-pale);color:var(--cx-danger-text);border:1px solid #fecaca">&#128465; Borrar</button>';
@@ -10691,6 +10692,166 @@ async function cargarMeeStock(){
     tb.innerHTML=h;
     if(window._meeAgrupado) renderMeeAgrupado();
   }catch(e){ console.error('cargarMeeStock:',e); }
+}
+
+// ─── Hoja de CAJAS · Sebastián 21-ago-2026 ──────────────────────
+// "Si agrego 37 cajas, como se que hay 37 y cuantas hay en cada una? alli aplica FEFO? va
+// diciendo que caja coger, cuales usamos, en cuales quedan alguna cantidad?".
+// El desglose lo DERIVA el backend del kardex, asi que la suma de las tandas es exactamente el
+// saldo del codigo y esta pantalla no puede contradecir al numero que manda.
+function _cjCSS(){
+  if(document.getElementById('cj-css')) return;
+  var st=document.createElement('style'); st.id='cj-css';
+  st.textContent=
+   '.cj-wrap{background:var(--cx-card);border-radius:16px;max-width:820px;width:100%;max-height:86vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.28)}'
+  +'.cj-hd{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:16px 22px;border-bottom:1px solid var(--cx-border);position:sticky;top:0;background:var(--cx-card);z-index:2}'
+  +'.cj-t{font-weight:800;font-size:15.5px;color:var(--cx-text)}'
+  +'.cj-x{background:none;border:none;font-size:22px;cursor:pointer;color:var(--cx-text-mute);line-height:1}'
+  +'.cj-body{padding:16px 22px 22px}'
+  +'.cj-tomar{border:1px solid var(--cx-success-light);background:var(--cx-success-pale);border-radius:13px;padding:13px 17px;margin-bottom:16px}'
+  +'.cj-tomar-t{font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--cx-success-text);margin-bottom:4px}'
+  +'.cj-tomar-v{font-size:15px;font-weight:800;color:var(--cx-text)}'
+  +'.cj-kpi{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:16px}'
+  +'.cj-kpi div span{display:block}'
+  +'.cj-kpi-n{font-size:19px;font-weight:800;color:var(--cx-text);letter-spacing:-.3px}'
+  +'.cj-kpi-l{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--cx-text-mute)}'
+  +'.cj-tanda{border:1px solid var(--cx-border);border-radius:13px;padding:13px 16px;margin-bottom:10px;background:var(--cx-card)}'
+  +'.cj-tanda.cj-prox{border-color:var(--cx-success-light);border-left:4px solid var(--cx-success-light)}'
+  +'.cj-tanda.cj-vacia{opacity:.55}'
+  +'.cj-tanda.cj-ret{border-style:dashed;border-color:var(--cx-warn-light);background:var(--cx-warn-pale)}'
+  +'.cj-l1{display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap}'
+  +'.cj-lote{font-size:14px;font-weight:800;color:var(--cx-text)}'
+  +'.cj-meta{font-size:11.5px;color:var(--cx-text-mute)}'
+  +'.cj-cajas{font-size:13px;color:var(--cx-text-soft);margin-top:6px}'
+  +'.cj-cajas b{color:var(--cx-text);font-weight:800}'
+  +'.cj-baja{font-size:11.5px;color:var(--cx-warn-text);margin-top:5px}'
+  +'.cj-acc{margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}'
+  +'.cj-b{border:1px solid var(--cx-border);background:var(--cx-card);color:var(--cx-text-soft);border-radius:9px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}'
+  +'.cj-b:hover{border-color:var(--cx-danger-light);color:var(--cx-danger-text)}'
+  +'.cj-nota{font-size:12px;color:var(--cx-text-mute);margin-top:14px;line-height:1.55}'
+  +'.cj-msg{margin-bottom:12px;padding:10px 14px;border-radius:10px;font-size:13px;background:var(--cx-primary-pale);border:1px solid var(--cx-primary-light);color:var(--cx-primary-text)}';
+  document.head.appendChild(st);
+}
+function _cjCerrar(){
+  var m=document.getElementById('cj-modal');
+  if(!m) return;
+  m.style.removeProperty('display');   // si queda `flex` en linea, le gana al [hidden]
+  m.hidden=true;
+}
+function _cjMsg(t){ var e=document.getElementById('cj-msg'); if(!e) return; e.innerHTML=t; e.hidden=!t; }
+function _cjMiles(n){ return Number(n||0).toLocaleString('es-CO'); }
+async function meeCajas(codigo){
+  _cjCSS();
+  var m=document.getElementById('cj-modal');
+  if(!m){
+    m=document.createElement('div'); m.id='cj-modal';
+    m.hidden=true;
+    // Sin propiedad de display en el estilo: asi la regla del navegador para `[hidden]` gana
+    // sola y no hace falta una de autor -- que el trinquete de diseno contaria igual, porque
+    // mide el texto y no distingue una pantalla escondida de un comentario (M154/M254).
+    m.style.cssText='position:fixed;inset:0;background:rgba(24,24,27,.55);z-index:10000;align-items:center;justify-content:center;padding:18px';
+    m.innerHTML='<div class="cj-wrap"><div class="cj-hd"><div class="cj-t" id="cj-tit">Cajas</div>'
+      +'<button class="cj-x" onclick="_cjCerrar()">&times;</button></div>'
+      +'<div class="cj-body"><div class="cj-msg" id="cj-msg" hidden></div>'
+      +'<div id="cj-cont">Cargando...</div></div></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click',function(e){ if(e.target===m) _cjCerrar(); });
+  }
+  window._CJ_COD=codigo;
+  document.getElementById('cj-tit').textContent='Cajas · '+codigo;
+  document.getElementById('cj-cont').textContent='Cargando...';
+  m.hidden=false; m.style.display='flex';
+  await _cjPintar();
+}
+async function _cjPintar(){
+  var cont=document.getElementById('cj-cont'); if(!cont) return;
+  var d;
+  try{
+    var r=await fetch('/api/mee/'+encodeURIComponent(window._CJ_COD)+'/cajas',{credentials:'same-origin'});
+    d=await r.json();
+    if(!r.ok||!d.ok){ cont.innerHTML='<div style="color:var(--cx-danger-text)">'+_escHTML(d.error||('Error '+r.status))+'</div>'; return; }
+  }catch(e){ cont.innerHTML='<div style="color:var(--cx-danger-text)">No se pudo consultar: '+_escHTML(String(e))+'</div>'; return; }
+  window._CJ_DATA=d;
+  var h='';
+  if(d.instruccion)
+    h+='<div class="cj-tomar"><div class="cj-tomar-t">De aqu&iacute; se toma</div>'
+      +'<div class="cj-tomar-v">'+_escHTML(d.instruccion)+'</div></div>';
+  h+='<div class="cj-kpi">'
+    +'<div><span class="cj-kpi-n">'+_cjMiles(d.saldo_total)+'</span><span class="cj-kpi-l">unidades en bodega</span></div>'
+    +'<div><span class="cj-kpi-n">'+_cjMiles(d.cajas_completas_total)+'</span><span class="cj-kpi-l">cajas sin abrir</span></div>'
+    +'<div><span class="cj-kpi-n">'+d.tandas.length+'</span><span class="cj-kpi-l">entradas con saldo o agotadas</span></div>'
+    +'</div>';
+  (d.tandas||[]).forEach(function(t){
+    var vacia = t.saldo <= 0.009;
+    var prox = d.tomar_de && d.tomar_de.mov_id===t.mov_id;
+    h+='<div class="cj-tanda'+(prox?' cj-prox':'')+(vacia?' cj-vacia':'')+'">'
+      +'<div class="cj-l1"><div class="cj-lote">'+_escHTML(t.lote||('entrada del '+t.fecha))+'</div>'
+      +'<div class="cj-meta">'+(t.vence? 'vence '+_escHTML(t.vence.substring(0,10)) : 'sin vencimiento')
+      +(t.oc? ' &middot; '+_escHTML(t.oc):'')+' &middot; entr&oacute; '+_escHTML(t.fecha)+'</div></div>';
+    if(t.sin_desglose){
+      h+='<div class="cj-cajas">Quedan <b>'+_cjMiles(t.saldo)+'</b> unidades &middot; '
+        +'<span style="color:var(--cx-text-mute)">esta entrada no se cont&oacute; por cajas</span></div>';
+    } else if(vacia){
+      h+='<div class="cj-cajas">Agotada &middot; entraron '+t.n_cajas+' caja(s) de '+_cjMiles(t.unidades_por_caja)+'</div>';
+    } else {
+      h+='<div class="cj-cajas">Quedan <b>'+t.cajas_completas+'</b> caja(s) sin abrir de '
+        +_cjMiles(t.unidades_por_caja)
+        +(t.caja_abierta? ' &middot; la <b>caja '+t.caja_abierta+'</b> est&aacute; abierta con <b>'+_cjMiles(t.suelto)+'</b>':'')
+        +' &middot; total <b>'+_cjMiles(t.saldo)+'</b> de '+_cjMiles(t.ingresado)+'</div>';
+    }
+    (t.bajas||[]).forEach(function(b){
+      h+='<div class="cj-baja">&#9888; '+_cjMiles(b.cantidad)+' dadas de baja &middot; '+_escHTML(b.motivo||'')+'</div>';
+    });
+    if(!vacia)
+      h+='<div class="cj-acc"><button class="cj-b" onclick="cjBaja('+t.mov_id+','+(t.n_cajas||0)+','+(t.unidades_por_caja||0)+')">Se da&ntilde;&oacute; / dar de baja</button></div>';
+    h+='</div>';
+  });
+  (d.retenidas||[]).forEach(function(t){
+    h+='<div class="cj-tanda cj-ret"><div class="cj-l1"><div class="cj-lote">'+_escHTML(t.lote||('entrada del '+t.fecha))+'</div>'
+      +'<div class="cj-meta">'+_escHTML(t.motivo||'')+'</div></div>'
+      +'<div class="cj-cajas">'+t.n_cajas+' caja(s) &middot; '+_cjMiles(t.ingresado)+' unidades &middot; '
+      +'<span style="color:var(--cx-warn-text);font-weight:700">no cuentan como stock</span></div></div>';
+  });
+  var notas=[];
+  if(d.sin_atribuir>0) notas.push('Hay <b>'+_cjMiles(d.sin_atribuir)+'</b> unidades en el kardex que no salen de ninguna entrada registrada (saldo de apertura o un ajuste). No se reparten entre las cajas porque no se sabe de d&oacute;nde salieron.');
+  if(d.sin_desglose_n>0) notas.push('<b>'+d.sin_desglose_n+'</b> entrada(s) con saldo no se contaron por cajas: para verlas por caja hay que contarlas desde <b>Ajustar</b>.');
+  if(d.error_lectura) notas.push('No se pudo leer la disposici&oacute;n de algunas cajas: el n&uacute;mero de dadas de baja puede estar corto.');
+  if(!d.tandas.length && !(d.retenidas||[]).length) notas.push('Este envase no tiene ninguna entrada registrada en el kardex.');
+  if(notas.length) h+='<div class="cj-nota">'+notas.join('<br>')+'</div>';
+  cont.innerHTML=h;
+}
+async function cjBaja(movId, nCajas, upc){
+  // Prompts de UNA sola linea: en este template un escape de salto de linea es un salto REAL
+  // y parte la cadena JS, que rompe el bloque entero (M65).
+  var cj='';
+  if(nCajas>0){
+    cj=prompt('Numero de la caja que se dano (1 a '+nCajas+'). Deja vacio si son unidades sueltas de varias cajas.','');
+    if(cj===null) return;
+  }
+  var sug = (upc>0 && cj) ? String(upc) : '';
+  var q=prompt('Cuantas unidades se dan de baja?', sug);
+  if(q===null) return;
+  var n=parseFloat(String(q).replace(',','.'));
+  if(isNaN(n)||n<=0){ alert('Escribi cuantas unidades (un numero mayor que cero).'); return; }
+  var mot=prompt('Que paso? (ej: se rompio al bajarla, se mojo la estiba, llego partida)','');
+  if(mot===null) return;
+  mot=(mot||'').trim();
+  if(mot.length<3){ alert('Escribi el motivo: queda en el rastro de la baja.'); return; }
+  _cjMsg('Guardando...');
+  try{
+    var _t=await fetch('/api/csrf-token',{credentials:'same-origin'});
+    var _tk=(await _t.json()).csrf_token||'';
+    var r=await fetch('/api/mee/'+encodeURIComponent(window._CJ_COD)+'/merma-caja',{
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':_tk},
+      body:JSON.stringify({mov_id:movId, caja:(parseInt(cj,10)||0), cantidad:n, motivo:mot,
+                           token:'baja-'+movId+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,9)})});
+    var d=await r.json();
+    if(!r.ok||d.error){ _cjMsg('No se pudo: '+_escHTML(d.error||('Error '+r.status))); return; }
+    _cjMsg('&#10003; '+_escHTML(d.mensaje||'Registrado'));
+    await _cjPintar();
+    if(typeof cargarMeeStock==='function') cargarMeeStock();
+  }catch(e){ _cjMsg('No se pudo: '+_escHTML(String(e))); }
 }
 
 // ─── Acciones MEE (paridad con MP) ──────────────────────────────
