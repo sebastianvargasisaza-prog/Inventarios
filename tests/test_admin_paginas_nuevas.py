@@ -43,7 +43,12 @@ def test_rotulo_recepcion_mp_premium(admin_client):
     # ACTUALIZADO 25-jul · el rótulo de MP muestra la marca en DOS elementos
     # ('ESPAGIRIA' + <span class="cosub">Laboratorio SAS</span>) desde el rediseño, así que la
     # cadena concatenada exacta ya no aparece. Lo que importa es que la empresa esté rotulada.
-    assert "ESPAGIRIA" in body and "Laboratorio SAS" in body
+    # El nombre de la empresa salio del encabezado: el LOGO ya lo dice y ocupaba una
+    # zona entera del formato de tres zonas (M258/M264). Lo que de verdad tiene que
+    # estar es la identidad del FORMATO.
+    assert 'COC-PRO-002-F05' in body, 'el rotulo de MP debe citar SU formato'
+    assert 'Versi' in body and 'Vigencia' in body, (
+        'un formato regulado se imprime con su version y su vigencia (M251)')
     assert "espagiria" in body.lower()  # logo src
     assert 'class="sheet"' in body
     assert "100mm 100mm" in body
@@ -54,7 +59,10 @@ def test_rotulo_recepcion_mee_premium(admin_client):
     r = admin_client.get("/rotulo-recepcion-mee/MEE0001/100")
     assert r.status_code == 200, r.status_code
     body = r.data.decode("utf-8", "replace")
-    assert "ESPAGIRIA Laboratorio SAS" in body
+    # Igual que el de MP: manda la identidad del FORMATO, no la de la empresa.
+    assert 'COC-PRO-002-F06' in body, 'el rotulo de envase debe citar SU formato'
+    assert 'Versi' in body and 'Vigencia' in body, (
+        'un formato regulado se imprime con su version y su vigencia (M251)')
     assert 'class="sheet"' in body
     assert "100mm 100mm" in body
 

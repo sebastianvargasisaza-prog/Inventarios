@@ -761,6 +761,11 @@ CORAZON=(
   # lote sano, y silenciar apaga la alerta dejando el material igual de bloqueado. Y el borde:
   # corregir un dato NUNCA libera lo que Calidad retuvo.
   "tests/test_lote_vencido_corregir_fecha.py"
+  # Los rotulos regulados y la genealogia: estaban FUERA de todo gate y por eso llevaban dias
+  # en rojo sin que nadie lo viera. Un test que no corre en ningun gate no protege nada (M95).
+  "tests/test_cc_correcciones.py"
+  "tests/test_admin_paginas_nuevas.py"
+  "tests/test_r2_archivo_expediente.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

@@ -74,11 +74,22 @@ def test_disco_preflight(admin_client):
     assert 'listo_para_quitar_disco' in d and 'disco' in d
 
 
-def test_genealogia_pt(logged_client):
-    """Genealogía de PT: la página premium carga y el endpoint devuelve el árbol sin crash (lote inexistente)."""
+def test_genealogia_pt_solo_para_quien_tiene_calidad(logged_client):
+    """La genealogía de un lote es una pantalla de CALIDAD, no de cualquiera.
+
+    `logged_client` entra como valentina, que no tiene Calidad en la matriz y nunca la tuvo:
+    el 403 es el control funcionando. Se fija la política por las dos caras.
+    """
     p = logged_client.get('/calidad/genealogia')
+    assert p.status_code == 403, (
+        'quien no tiene Calidad no puede abrir la genealogía de un lote: %s' % p.status_code)
+
+
+def test_genealogia_pt(admin_client):
+    """Genealogía de PT: la página premium carga y el endpoint devuelve el árbol sin crash (lote inexistente)."""
+    p = admin_client.get('/calidad/genealogia')
     assert p.status_code == 200 and b'cortex.css' in p.data and b'cx-mod-header' in p.data
-    j = logged_client.get('/api/calidad/genealogia-pt/LOTE-INEXISTENTE-XYZ')
+    j = admin_client.get('/api/calidad/genealogia-pt/LOTE-INEXISTENTE-XYZ')
     assert j.status_code == 200
     d = j.get_json()
     assert d['ok'] is True and d['encontrado'] is False
@@ -100,12 +111,17 @@ def test_equipo_calibracion_helper(app):
         assert r is None or ('ultima' in r and 'proxima' in r and 'vigente' in r)
 
 
-def test_fase2_imprimibles(logged_client):
-    """Los 2 imprimibles de Fase 2 (CoA de PT + rótulo de limpieza por-registro) responden sin crash."""
-    r = logged_client.get('/api/calidad/coa-pt/LOTE-INEXISTENTE-XYZ/imprimible')
+def test_fase2_imprimibles(admin_client):
+    """Los 2 imprimibles de Fase 2 (CoA de PT + rótulo de limpieza por-registro) responden sin crash.
+
+    Van con `admin_client`: son imprimibles de Calidad y Planta, así que un usuario sin esos
+    módulos recibe 403 y el test mediría el gate en vez del imprimible (M152).
+    """
+    r = admin_client.get('/api/calidad/coa-pt/LOTE-INEXISTENTE-XYZ/imprimible')
     assert r.status_code == 200 and b'No hay resultados' in r.data
-    p = logged_client.get('/planta/rotulo-limpieza/registro/9999999/pdf')
-    assert p.status_code == 404
+    p = admin_client.get('/planta/rotulo-limpieza/registro/9999999/pdf')
+    assert p.status_code == 404, (
+        'un registro que no existe tiene que dar 404, no %s' % p.status_code)
 
 
 def test_backfill_incluye_fase2(admin_client):

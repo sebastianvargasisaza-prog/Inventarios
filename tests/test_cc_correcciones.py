@@ -70,4 +70,9 @@ def test_rotulo_final_usa_overrides(admin_client):
     # que el OVERRIDE se aplicó (que no salga la fecha de hoy), no el formato crudo.
     assert '2026' in html and 'JULIO' in html.upper(), 'el rótulo debe mostrar la fecha override'
     # tipo ME marcado (checkbox lleno &#9746;)
-    assert '&#9746; Material de Envase (ME)' in html
+    # El COC-PRO-002-F05 NO tiene casillas de tipo de insumo: ESE formato es el de
+    # materias primas, asi que preguntar si es materia prima invita a marcar la
+    # equivocada (M268). Se exige en su lugar lo que el formato oficial SI pide.
+    assert 'COC-PRO-002-F05' in html, 'el rotulo debe citar SU formato'
+    assert 'Versi' in html and 'Vigencia' in html, (
+        'un formato regulado se imprime con su version y su vigencia (M251)')
