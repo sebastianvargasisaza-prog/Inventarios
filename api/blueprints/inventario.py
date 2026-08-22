@@ -8573,9 +8573,15 @@ def _ubic_norm(v):
     import re as _re
     t = unicodedata.normalize('NFKD', str(v or '')).encode('ascii', 'ignore').decode()
     t = _re.sub(r'[^a-zA-Z0-9]+', ' ', t).strip().lower()
-    if len(t) > 3 and t.endswith('s') and not t[-2].isdigit():
-        t = t[:-1]
-    return t
+    # El plural se quita PALABRA POR PALABRA: en la bodega los nombres llevan numero
+    # ('NEVERA 2'), asi que quitarlo solo al final de todo dejaba 'estibas 3' y 'estiba 3'
+    # en claves distintas y la herramienta no las ofrecia juntas.
+    palabras = []
+    for w in t.split():
+        if len(w) > 3 and w.endswith('s') and not w[-2].isdigit():
+            w = w[:-1]
+        palabras.append(w)
+    return ' '.join(palabras)
 
 
 @bp.route('/api/inventario/fechas-vencimiento-raras', methods=['GET'])

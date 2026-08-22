@@ -751,6 +751,11 @@ CORAZON=(
   # Lo declarado NO ENCONTRADO sale del inventario, asi que el informe es la unica forma de ir
   # a verificarlo: tiene que decir que material es, donde estaba y quien lo declaro.
   "tests/test_cuadre_informe_no_encontrados.py"
+  # Las estanterias en el orden del pasillo (2 antes que 10) y la misma ubicacion escrita de
+  # una sola forma. El JS se EJECUTA con node: que compile no prueba que ordene ni que agrupe.
+  # Y la pantalla y el servidor tienen que agrupar IGUAL, o se avisa de un grupo que el
+  # endpoint despues rechaza.
+  "tests/test_estanterias_orden_y_unificar.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

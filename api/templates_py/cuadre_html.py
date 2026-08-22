@@ -46,6 +46,9 @@ body{font-family:"Inter",system-ui,-apple-system,Arial,sans-serif;background:var
 .sub{color:var(--cx-text-soft);font-size:13px;margin:2px 0 14px;max-width:900px;line-height:1.5}
 .card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:16px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(15,23,42,.04)}
 .ests{display:flex;gap:8px;flex-wrap:wrap}
+.apart{margin:10px 0 0;padding:12px 14px;border:1px solid var(--cx-warn,#f59e0b);border-radius:12px;background:var(--cx-warn-pale,#fffbeb)}
+.apart .ap-t{font-weight:800;font-size:14px;color:var(--cx-warn-text,#92400e);margin-bottom:4px}
+.apart .ap-d{font-size:12px;color:var(--cx-text-mute,#6b7280);margin-bottom:6px}
 .est{padding:9px 18px;border-radius:999px;border:1px solid var(--cx-hairline);background:var(--cx-card);font-weight:800;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px}
 .est:hover{border-color:var(--cx-primary-light)}
 .est.on{background:var(--cx-primary);color:#fff;border-color:var(--cx-primary)}
@@ -134,6 +137,7 @@ label.f2{display:block;font-size:11.5px;font-weight:800;text-transform:uppercase
 
   <div class="card">
     <div class="ests" id="ests"><span class="vacio">Cargando estanter&iacute;as&hellip;</span></div>
+    <div id="aviso-partidas" class="apart" style="display:none"></div>
     <div class="barra">
       <input id="q" class="cx-input" type="search" placeholder="Buscar material o lote en TODO el inventario..." autocomplete="off" oninput="filtrar()" title="Filtra esta estanteria; si no esta aca, busca en todo el inventario y te dice donde">
       <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="abrirAlta()">+ Est&aacute; en el estante y no aparece</button>
@@ -220,17 +224,71 @@ function _opts(method, body){var h={};var t=_csrf();if(t)h['X-CSRF-Token']=t;var
 function _tok(){return 'cuadre-'+Date.now()+'-'+Math.random().toString(36).slice(2,10);}
 fetch('/api/csrf-token',{credentials:'same-origin'}).catch(function(){});
 
+// El orden de la BODEGA, no el del diccionario: la 2 va antes que la 10. Ordenar como
+// texto daba "10 11 12 13 14 2 3 4..." y quien camina el pasillo no sabe cual sigue.
+// Lo que empieza con numero va primero y por NUMERO; el resto por nombre; sin ubicar al final.
+function _ordenEstanteria(nom){
+  var t=String(nom||'').trim();
+  if(/^sin estanter/i.test(t)) return [3,0,''];
+  var m=t.match(/^(\d+)/);
+  if(m) return [0, parseInt(m[1],10), t.toLowerCase()];
+  return [1,0,t.toLowerCase()];
+}
+function _cmpEstanteria(a,b){
+  var x=_ordenEstanteria(a.estanteria), y=_ordenEstanteria(b.estanteria);
+  if(x[0]!==y[0]) return x[0]-y[0];
+  if(x[1]!==y[1]) return x[1]-y[1];
+  return x[2]<y[2]? -1 : (x[2]>y[2]? 1 : 0);
+}
+
+// Mismo criterio que la herramienta de unificar (sin mayusculas, sin acentos, sin
+// puntuacion, sin el plural final), asi lo que se avisa aca se puede resolver ahi mismo.
+// Los numeros no se tocan: la 1 y la 10 son estanterias distintas.
+function _claveUbic(v){
+  var t=String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  t=t.replace(/[^a-zA-Z0-9]+/g,' ').trim().toLowerCase();
+  // Palabra por palabra y con el MISMO criterio que `_ubic_norm` del servidor: si la
+  // pantalla agrupara distinto, avisaria de un grupo que el endpoint despues rechaza.
+  return t.split(' ').map(function(w){
+    if(w.length>3 && w.charAt(w.length-1)==='s' && !/\d/.test(w.charAt(w.length-2))) return w.slice(0,-1);
+    return w;
+  }).join(' ');
+}
+function _avisoPartidas(d){
+  var caja=document.getElementById('aviso-partidas'); if(!caja) return;
+  var g={};
+  d.forEach(function(e){
+    var nom=e.estanteria; if(/^sin estanter/i.test(nom)) return;
+    var k=_claveUbic(nom); if(!k) return;
+    if(!g[k]) g[k]={nombres:[],mats:0};
+    g[k].nombres.push(nom); g[k].mats+=(e.total_mps||0);
+  });
+  var part=Object.keys(g).filter(function(k){ return g[k].nombres.length>1; });
+  if(!part.length){ caja.innerHTML=''; caja.style.display='none'; return; }
+  var mats=0, det=[];
+  part.forEach(function(k){ mats+=g[k].mats; det.push('<b>'+esc(g[k].nombres.join(' / '))+'</b>'); });
+  caja.style.display='';
+  caja.innerHTML='<div class="ap-t">&#9888; '+part.length+' ubicaci'
+    +(part.length===1?'&oacute;n est&aacute;':'ones est&aacute;n')+' escrita'
+    +(part.length===1?'':'s')+' de varias formas &middot; '+mats+' material(es) repartidos</div>'
+    +'<div class="ap-d">'+det.join(' &middot; ')+'</div>'
+    +'<div class="ap-d">Es el mismo lugar y sale como botones distintos: quien camina ah&iacute; s&oacute;lo abre uno.</div>'
+    +'<button class="cx-btn cx-btn-sm cx-btn-grad" onclick="abrirUbic()">&#129513; Unificarlas ahora</button>';
+}
+
 async function cargarEstanterias(){
   try{
     var r=await fetch('/api/conteo/estanterias?tipo_material=MP',{credentials:'same-origin'});
     var d=await r.json();
     var box=document.getElementById('ests');
     if(!Array.isArray(d)||!d.length){ box.innerHTML='<span class="vacio">No hay estanter&iacute;as cargadas.</span>'; return; }
+    d=d.slice().sort(_cmpEstanteria);
     box.innerHTML=d.map(function(e){
       var nom=e.estanteria, sinUbic=/^sin estanter/i.test(nom);
       return '<button class="est'+(sinUbic?' pend':'')+'" data-est="'+esc(e.estanteria)+'" onclick="elegir(this,\''+esc(e.estanteria).replace(/'/g,"\\'")+'\')">'
         +(sinUbic?'&#128205; Sin ubicaci&oacute;n &middot; para ubicar':esc(nom))+'<span class="n">'+(e.total_mps||0)+'</span></button>';
     }).join('');
+    _avisoPartidas(d);
   }catch(e){ document.getElementById('ests').innerHTML='<span class="vacio">No se pudieron cargar.</span>'; }
 }
 
