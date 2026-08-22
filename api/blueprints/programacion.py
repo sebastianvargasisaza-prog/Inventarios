@@ -13817,6 +13817,33 @@ def _resolver_material_bodega(c, formula_mid, formula_nombre):
     return _res
 
 
+def _grado_de_texto(v):
+    """Lo que va entre parentesis, que es donde vive el grado: `(300 kD)`, `(triterpenos 80%)`.
+
+    Cadena vacia = sin grado declarado. Un material CON grado y otro SIN grado son distintos:
+    ese es justo el caso de la Centella (`(triterpenos 80%)` vs el extracto plano).
+    """
+    import re as _re3
+    _gg = _re3.findall(r'\(([^)]*)\)', str(v or ''))
+    return _norm_mp_name(' '.join(_gg)) if _gg else ''
+
+
+def _inci_con_grado(v):
+    """El INCI CON el grado adentro: `(300 kD)`, `(triterpenos 80%)`.
+
+    `_norm_mp_name` borra el parentesis, y ahi es justo donde vive lo que distingue un material
+    de otro con el mismo INCI. Para decidir si un material puede REEMPLAZAR a otro hay que
+    conservarlo: mismo INCI + otro grado = otra potencia, y eso no se sustituye (M19).
+
+    No se toca `_norm_mp_name`, que es el normalizador canonico de medio sistema: el grado solo
+    importa aca (M45).
+    """
+    import unicodedata as _ud
+    import re as _re2
+    t = _ud.normalize('NFKD', str(v or '')).encode('ascii', 'ignore').decode()
+    return _re2.sub(r'[^A-Z0-9]+', ' ', t.upper()).strip()
+
+
 def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
     """FIX 1-jun-2026 (P0 · frena producción) · resuelve el material_id de FÓRMULA al
     material_id que usa BODEGA/movimientos. Bug: al producir 'N-acetil glucosamina' decía
@@ -13894,11 +13921,15 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
     try:
         if fmid:
             _ir = c.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (fmid,)).fetchone()
-            _inci_f = _norm_mp_name(_ir[0]) if (_ir and _ir[0]) else ''
+            _inci_f = _inci_con_grado(_ir[0]) if (_ir and _ir[0]) else ''
             if _inci_f:
                 _inci_cands, _inci_todos = [], []
                 for cod, _inci_c, _com_c in _maestro_mps_activos(c):   # PERF #6: lista cacheada por request
-                    if cod and _norm_mp_name(_inci_c) == _inci_f:
+                    # Con el GRADO adentro, 'HYALURONIC ACID (300 kD)' y '(50 kD)' dejan de ser
+                    # la misma clave: ya no dependen de cuantos codigos compartan el INCI
+                    # para no intercambiarse. La Centella (triterpenos 80% vs extracto plano)
+                    # eran DOS, asi que el guard de ambiguedad no disparaba (M19).
+                    if cod and _inci_con_grado(_inci_c) == _inci_f:
                         _inci_todos.append(cod)
                         if _stock_neto(cod) > 0.01:
                             _inci_cands.append(cod)
@@ -14008,9 +14039,14 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
     # esté activo o no, el material existe en bodega. Log para que se limpie luego.
     try:
         _inci_f = ''
+        _g_pedido = ''
         if fmid:
-            _ir = c.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (fmid,)).fetchone()
+            _ir = c.execute("SELECT COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') FROM maestro_mps WHERE codigo_mp=?", (fmid,)).fetchone()
             _inci_f = _norm_mp_name(_ir[0]) if (_ir and _ir[0]) else ''
+            # El GRADO de lo que se PIDIO. Sin esto el guard de mas abajo comparaba los
+            # grados entre candidatos y con UNO solo no comparaba nada: se sustituia en
+            # silencio (M137 · la ambiguedad es de la COSA, no de quien tiene stock).
+            _g_pedido = _grado_de_texto(((_ir[0] if _ir else '') or '') + ' ' + ((_ir[1] if _ir else '') or ''))
         nn = _norm_mp_name(nom) if nom else ''
         _alias_nn = _MP_NAME_ALIAS.get(nn) if nn else None
         _resc = set()
@@ -14034,17 +14070,22 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
                         break
             if _ok and _stock_neto(cod) > 0:
                 _resc.add(cod)
-                _resc_nombre[cod] = r[2] or r[1] or ''
+                # El grado puede vivir en el INCI o en el comercial: se miran LOS DOS.
+                # En los datos reales esta en el INCI ('CENTELLA ASIATICA EXTRACT
+                # (triterpenos 80%)'), y mirar solo el comercial dejaba el hueco abierto.
+                _resc_nombre[cod] = ((r[1] or '') + ' ' + (r[2] or '')).strip()
         # FIX 25-jul (auditoría): el rescate es el ÚLTIMO tier y también elegía por stock. Si
         # los candidatos rescatados difieren en el GRADO del paréntesis, es la misma ambigüedad
         # de los tiers 2b/3 y tampoco se adivina: se prefiere frenar la producción (el operario
         # ve "sin stock") antes que fabricar con otro grado del mismo INCI.
-        if len(_resc) > 1:
-            import re as _re_r
-            _g_resc = set()
+        # El grado del material PEDIDO entra al conjunto, y por eso el guard corre aunque
+        # haya UN solo candidato: antes exigia `len(_resc) > 1` y comparaba los grados entre
+        # candidatos, asi que un unico candidato de otro grado se devolvia sin comparar nada.
+        # Es lo que ya hace el tier por NOMBRE, que si frenaba (incluye a fmid en el conjunto).
+        if _resc:
+            _g_resc = {_g_pedido}
             for _cd in _resc:
-                _gg = _re_r.findall(r'\(([^)]*)\)', str(_resc_nombre.get(_cd) or ''))
-                _g_resc.add(_norm_mp_name(' '.join(_gg)) if _gg else '')
+                _g_resc.add(_grado_de_texto(_resc_nombre.get(_cd) or ''))
             if len(_g_resc) > 1:
                 logging.getLogger('programacion').warning(
                     "resolver MP RESCATE · fórmula '%s' (fmid=%s): %s códigos con GRADOS "

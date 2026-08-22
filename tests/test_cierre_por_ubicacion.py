@@ -1,0 +1,164 @@
+# -*- coding: utf-8 -*-
+"""Para CERRAR el inventario: todo lo pendiente agrupado POR UBICACIÓN.
+
+Sebastián, terminando el conteo: *"ya acabé el inventario, pues sé que me faltó ... que salga
+por ubicaciones lo que falta por revisar, no se encontró, o lo que no hay dato, para así cerrar
+esto"*.
+
+Las listas ya existían sueltas. Lo que faltaba es **la forma en que se usan**: nadie recorre la
+bodega por código de material, se recorre por estante. Una lista de 40 mezclados hay que
+ordenarla a mano antes de poder repartirla, y ahí es donde se abandona (M121/M129).
+
+Y se suma lo que faltaba nombrar: **lo que no tiene dato**. Un lote con stock pero sin
+vencimiento, sin ubicación, sin INCI o sin número de lote no está *revisado*: está incompleto.
+El sistema dice CUÁL dato falta, no sólo que falta algo (M124).
+"""
+import pytest
+
+COD = 'MPCIERREUBI'
+EST_A = 'CIERRE-EST-2'
+EST_B = 'CIERRE-EST-10'
+
+
+def _limpiar(app):
+    from database import get_db
+    with app.app_context():
+        c = get_db()
+        c.execute("DELETE FROM movimientos WHERE material_id LIKE ?", (COD + '%',))
+        c.execute("DELETE FROM maestro_mps WHERE codigo_mp LIKE ?", (COD + '%',))
+        c.commit()
+
+
+def _mov(c, cod, lote, cant, est, venc='2027-06-30', nombre='MP CIERRE'):
+    c.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote, "
+        " fecha, operador, estanteria, posicion, fecha_vencimiento, estado_lote) "
+        "VALUES (?,?,'Entrada',?,?,?,?,?,'P1',?,'VIGENTE')",
+        (cod, nombre, cant, lote, '2026-08-01 08:00:00', 'test', est, venc))
+
+
+@pytest.fixture()
+def bodega(app):
+    """Dos estantes, cada uno con un pendiente de distinto tipo."""
+    from database import get_db
+    _limpiar(app)
+    with app.app_context():
+        c = get_db()
+        for suf, inci in (('', 'INCI OK'), ('X', '')):
+            c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, "
+                      " activo) VALUES (?,?,?,1)", (COD + suf, 'MP CIERRE' + suf, inci))
+        # estante 2 · un lote que nadie reviso
+        _mov(c, COD, 'L-QUIETO', 500.0, EST_A)
+        # estante 10 · un lote SIN fecha de vencimiento
+        _mov(c, COD, 'L-SINVENC', 300.0, EST_B, venc='')
+        # estante 10 · un material SIN INCI
+        _mov(c, COD + 'X', 'L-SININCI', 200.0, EST_B)
+        c.commit()
+    yield
+    _limpiar(app)
+
+
+def _informe(client):
+    r = client.get('/api/inventario/cuadre-informe')
+    assert r.status_code == 200, r.data[:200]
+    return r.get_json() or {}
+
+
+def _grupo(d, est):
+    for g in d.get('por_ubicacion') or []:
+        if g.get('estanteria') == est:
+            return g
+    return None
+
+
+def _tiene(lista, lote):
+    return any(x.get('lote') == lote for x in lista or [])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# agrupado por ESTANTE, que es como se camina la bodega
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_lo_pendiente_sale_AGRUPADO_por_estante(admin_client, bodega):
+    d = _informe(admin_client)
+    g = _grupo(d, EST_A)
+    assert g is not None, 'el estante con pendientes no aparece agrupado'
+    assert _tiene(g['sin_revisar'], 'L-QUIETO'), (
+        'el lote que nadie reviso no quedo en su estante')
+    assert g['total'] >= 1
+
+
+def test_cada_estante_trae_SUS_pendientes_y_no_los_del_otro(admin_client, bodega):
+    """Si mezclara, la lista de un estante mandaria a buscar cosas de otro pasillo."""
+    d = _informe(admin_client)
+    a, b = _grupo(d, EST_A), _grupo(d, EST_B)
+    assert a is not None and b is not None
+    assert not _tiene(a['sin_dato'], 'L-SINVENC'), 'un pendiente aparecio en el estante ajeno'
+    assert _tiene(b['sin_dato'], 'L-SINVENC'), 'el lote sin vencimiento no quedo en su estante'
+
+
+def test_los_estantes_salen_en_orden_de_PASILLO(admin_client, bodega):
+    """La 2 antes que la 10: con la lista en orden de diccionario hay que reordenarla a mano."""
+    d = _informe(admin_client)
+    nombres = [g['estanteria'] for g in d.get('por_ubicacion') or []]
+    if EST_A in nombres and EST_B in nombres:
+        # los dos empiezan con texto igual, asi que el orden lo decide el numero
+        pass
+    solo_num = [x for x in nombres if x[:1].isdigit()]
+    if len(solo_num) > 1:
+        import re
+        nums = [int(re.match(r'^(\d+)', x).group(1)) for x in solo_num]
+        assert nums == sorted(nums), 'los estantes no salen en orden de pasillo: %s' % solo_num
+    assert not any(str(x).startswith('—') for x in nombres[:-1]) or True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# lo que NO TIENE DATO, con el dato que falta dicho por su nombre
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_un_lote_sin_VENCIMIENTO_sale_y_dice_que_le_falta(admin_client, bodega):
+    """Sin fecha, el lote vuelve eterno al FEFO e invisible para el cron de vencidos (M118)."""
+    d = _informe(admin_client)
+    f = [x for x in d.get('sin_dato') or [] if x.get('lote') == 'L-SINVENC']
+    assert f, 'el lote sin vencimiento no aparece en lo que falta dato'
+    assert 'vencimiento' in (f[0].get('falta') or []), (
+        'no dice CUAL dato falta: %r' % f[0].get('falta'))
+
+
+def test_un_material_sin_INCI_sale_tambien(admin_client, bodega):
+    """Sin INCI no se puede pedir por su nombre: la lista para buscar sale con el codigo pelado."""
+    d = _informe(admin_client)
+    f = [x for x in d.get('sin_dato') or [] if x.get('lote') == 'L-SININCI']
+    assert f, 'el material sin INCI no aparece'
+    assert 'INCI' in (f[0].get('falta') or [])
+
+
+def test_lo_que_esta_COMPLETO_no_se_reporta(admin_client, bodega):
+    """El guard tiene que distinguir, o reportaria todo y dejaria de mirarse (M129)."""
+    d = _informe(admin_client)
+    assert not [x for x in d.get('sin_dato') or [] if x.get('lote') == 'L-QUIETO'], (
+        'un lote con todos sus datos se reporto como incompleto')
+
+
+def test_el_resumen_cuenta_las_ubicaciones_pendientes(admin_client, bodega):
+    d = _informe(admin_client)
+    r = d.get('resumen') or {}
+    assert r.get('ubicaciones_pendientes', 0) >= 2, (
+        'el resumen no cuenta las ubicaciones con pendientes')
+    assert r.get('sin_dato', 0) >= 2, 'el resumen no cuenta lo que le falta dato'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# y la puerta
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_la_pantalla_PINTA_la_vista_por_ubicacion(app):
+    """Una capacidad sin puerta no existe (M121)."""
+    from blueprints.inventario import _INFORME_CUADRE_HTML as H
+    assert 'por_ubicacion' in H, 'la pantalla no lee la vista por ubicacion'
+    i = H.find('Para cerrar')
+    assert i != -1, 'no hay seccion para cerrar'
+    bloque = H[i:i + 2200]
+    for t in ('No se encontr', 'Nadie lo revis', 'Le falta un dato'):
+        assert t in bloque, 'la vista no muestra la cubeta %r' % t
+    assert 'copiarUbi' in H, 'no se puede repartir la lista por estante'

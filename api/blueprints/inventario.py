@@ -9065,6 +9065,17 @@ h1{font-size:22px;font-weight:800;letter-spacing:-.4px;margin:0 0 5px}
 .sec h2{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;margin:0}
 .sec .l{flex:1;height:1px;background:var(--cx-border)}
 .sec.buscar h2{color:var(--cx-danger-text)}
+.ubis{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.ubi{border:1px solid var(--cx-border);border-radius:12px;padding:12px 14px;background:var(--cx-card)}
+.ubi-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.ubi-h b{font-size:15px}
+.ubi-n{font-size:12px;color:var(--cx-text-mute);margin-right:auto}
+.ubi-g{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--cx-danger-text);margin-top:8px}
+.ubi-l{margin:4px 0 0;padding-left:16px;font-size:12px;line-height:1.5}
+.ubi-lote{font-family:ui-monospace,monospace;font-size:11px;color:var(--cx-text-mute)}
+.ubi-pos{font-size:11px;color:var(--cx-primary-text);margin-left:6px}
+.ubi-det{color:var(--cx-text-mute)}
+
 .card{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:14px;
   overflow:hidden}
 table{width:100%;border-collapse:collapse}
@@ -9139,6 +9150,40 @@ async function cargar(){
       +'<div class="kpi wa"><b>'+n(s.sin_revisar)+'</b><span>sin revisar</span></div>'
       +'<div class="kpi"><b>'+n(s.aparecieron)+'</b><span>aparecieron</span></div>'
       +'</div>';
+    /* PARA CERRAR · lo pendiente por ESTANTE. Va primero porque es lo que hay que resolver
+       antes de dar el inventario por cerrado, y se copia por estante: asi se le reparte a
+       cada persona el pasillo que le toca, en vez de una lista de 40 mezclados. */
+    if((d.por_ubicacion||[]).length){
+      h+=_sec('Para cerrar &middot; '+n(s.ubicaciones_pendientes)+' ubicaci&oacute;n(es) con pendientes','buscar');
+      h+='<div class="ubis">';
+      (d.por_ubicacion||[]).forEach(function(g,gi){
+        h+='<div class="ubi">'
+          +'<div class="ubi-h"><b>'+esc(g.estanteria)+'</b>'
+          +'<span class="ubi-n">'+n(g.total)+' pendiente(s)</span>'
+          +'<button class="cx-btn cx-btn-sm cx-btn-ghost" onclick="copiarUbi('+gi+')">Copiar</button>'
+          +'</div>';
+        [['no_esta','No se encontr&oacute;'],
+         ['sin_revisar','Nadie lo revis&oacute;'],
+         ['sin_dato','Le falta un dato']].forEach(function(par){
+          var lista=g[par[0]]||[];
+          if(!lista.length) return;
+          h+='<div class="ubi-g">'+par[1]+' &middot; '+lista.length+'</div><ul class="ubi-l">';
+          lista.forEach(function(f){
+            var det='';
+            if(par[0]==='sin_dato') det=' &middot; falta '+esc((f.falta||[]).join(', '));
+            else if(f.sistema!==undefined) det=' &middot; el sistema cre&iacute;a '+n(f.sistema)+' g';
+            else if(f.stock_sistema!==undefined) det=' &middot; '+n(f.stock_sistema)+' g';
+            h+='<li><b>'+esc(f.nombre||f.codigo_mp)+'</b> '
+              +'<span class="ubi-lote">'+esc(f.lote||'sin lote')+'</span>'
+              +(f.posicion?('<span class="ubi-pos">pos. '+esc(f.posicion)+'</span>'):'')
+              +'<span class="ubi-det">'+det+'</span></li>';
+          });
+          h+='</ul>';
+        });
+        h+='</div>';
+      });
+      h+='</div>';
+    }
     /* Lo declarado es la verdad del estante: si un lote no esta hoy en la cantidad que se
        conto, eso hay que mirarlo ANTES que nada -- por eso va primero. */
     if((d.no_cuadran||[]).length){
@@ -9241,6 +9286,26 @@ async function cargar(){
     c.innerHTML=h;
   }catch(e){ c.innerHTML='<div class="vacio" style="color:var(--cx-danger-text)">No se pudo: '
     +esc(String(e))+'</div>'; }
+}
+function copiarUbi(gi){
+  var g=((_D&&_D.por_ubicacion)||[])[gi]; if(!g) return;
+  var NL=String.fromCharCode(10);
+  var t='Inventario &middot; pendientes de '+g.estanteria+':'+NL;
+  t=t.replace('&middot;','·');
+  [['no_esta','NO SE ENCONTRO'],['sin_revisar','NADIE LO REVISO'],
+   ['sin_dato','LE FALTA UN DATO']].forEach(function(par){
+    var l=g[par[0]]||[]; if(!l.length) return;
+    t+=NL+par[1]+':'+NL;
+    l.forEach(function(f){
+      t+='  - '+(f.nombre||f.codigo_mp)+' | lote '+(f.lote||'sin lote')
+        +(f.posicion?(' | pos. '+f.posicion):'')
+        +(par[0]==='sin_dato'?(' | falta '+(f.falta||[]).join(', ')):'')+NL;
+    });
+  });
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t);
+    alert('Lista de '+g.estanteria+' copiada.');
+  } else { alert(t); }
 }
 function copiar(){
   if(!_D){ return; }
@@ -9519,6 +9584,53 @@ def inventario_cuadre_informe():
             'informe · correcciones: %s', _e4)
         lectura_fallo = True
 
+    # ── 2d · lo que tiene stock y le FALTA un dato ──────────────────────────
+    # Un lote sin vencimiento vuelve eterno al FEFO e invisible para el cron de vencidos;
+    # uno sin ubicación no se puede ir a buscar; un material sin INCI no se puede pedir
+    # por su nombre. No es 'revisado': es incompleto, y se dice CUÁL dato falta (M124).
+    sin_dato = []
+    try:
+        for _r in c.execute(
+                "SELECT m.material_id, MAX(COALESCE(m.material_nombre,'')), "
+                "       COALESCE(m.lote,''), "
+                "       SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') "
+                "                THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') "
+                "                THEN -m.cantidad ELSE 0 END) AS stock, "
+                "       MAX(COALESCE(m.estanteria,'')), MAX(COALESCE(m.posicion,'')), "
+                "       MAX(COALESCE(m.fecha_vencimiento,'')), "
+                "       MAX(COALESCE(mp.nombre_inci,'')) "
+                "  FROM movimientos m "
+                "  LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp "
+                " WHERE (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN "
+                "        ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO',"
+                "         'AGOTADO','BLOQUEADO')) "
+                " GROUP BY m.material_id, COALESCE(m.lote,'') "
+                "HAVING stock > 0.01").fetchall():
+            _falta = []
+            if not str(_r[6] or '').strip():
+                _falta.append('vencimiento')
+            if not str(_r[4] or '').strip():
+                _falta.append('ubicación')
+            if not str(_r[7] or '').strip():
+                _falta.append('INCI')
+            if not str(_r[2] or '').strip():
+                _falta.append('número de lote')
+            if not _falta:
+                continue
+            _cod = str(_r[0] or '').strip().upper()
+            if _r[1] and not nombres.get(_cod):
+                nombres[_cod] = _r[1]
+            sin_dato.append({
+                'codigo_mp': _r[0], 'nombre': _r[1] or _r[0], 'lote': _r[2],
+                'stock_sistema': round(float(_r[3] or 0), 2),
+                'estanteria': _r[4], 'posicion': _r[5],
+                'fecha_vencimiento': _r[6], 'falta': _falta,
+            })
+    except Exception as _e6:
+        __import__('logging').getLogger('inventario').warning(
+            'informe · sin dato: %s', _e6)
+        lectura_fallo = True
+
     # ── 3 · el corte ────────────────────────────────────────────────────────
     def _con(como):
         return [dict(v, nombre=nombres.get(v['codigo_mp'], v['codigo_mp']))
@@ -9550,6 +9662,41 @@ def inventario_cuadre_informe():
             posible=('se movió después de contarlo (producción, otra declaración) '
                      'o la declaración no llegó al inventario')))
     no_cuadran.sort(key=lambda x: -abs(x['diferencia']))
+
+    # ── para CERRAR: todo lo pendiente, POR ESTANTE ─────────────────────────
+    # Nadie recorre la bodega por código de material: se recorre por estante. Una lista
+    # mezclada hay que ordenarla a mano antes de poder repartirla, y ahí es donde se
+    # abandona (M121/M129).
+    _por_ubi = {}
+
+    def _sumar(fila, cubeta):
+        _est = str(fila.get('estanteria') or '').strip() or '— sin ubicación'
+        _g = _por_ubi.setdefault(_est, {'estanteria': _est, 'no_esta': [],
+                                        'sin_revisar': [], 'sin_dato': []})
+        _g[cubeta].append(fila)
+
+    for _f in no_esta:
+        _sumar(_f, 'no_esta')
+    for _f in sin_revisar:
+        _sumar(_f, 'sin_revisar')
+    for _f in sin_dato:
+        _sumar(_f, 'sin_dato')
+    for _g in _por_ubi.values():
+        _g['total'] = len(_g['no_esta']) + len(_g['sin_revisar']) + len(_g['sin_dato'])
+
+    def _orden_ubi(g):
+        # El orden del PASILLO, no el del diccionario: la 2 va antes que la 10, y lo que
+        # no tiene ubicación va al final (M272).
+        _n = str(g['estanteria'])
+        if _n.startswith('—'):
+            return (2, 0, '')
+        import re as _re_u
+        _m = _re_u.match(r'^(\d+)', _n)
+        if _m:
+            return (0, int(_m.group(1)), _n.lower())
+        return (1, 0, _n.lower())
+
+    por_ubicacion = sorted(_por_ubi.values(), key=_orden_ubi)
     return jsonify({
         'ok': True, 'desde': desde, 'hasta': hasta,
         'resumen': {
@@ -9562,6 +9709,8 @@ def inventario_cuadre_informe():
             'a_buscar': len(a_buscar),
             'no_cuadran': len(no_cuadran),
             'trabajado_inventario': len(trabajado),
+            'sin_dato': len(sin_dato),
+            'ubicaciones_pendientes': len(por_ubicacion),
             'correcciones': len(correcciones),
             'gramos_ajustados': round(sum(x['ajuste'] for x in ajustados), 2),
             'gramos_no_encontrados': round(sum(x['sistema'] for x in no_esta), 2),
@@ -9569,6 +9718,8 @@ def inventario_cuadre_informe():
         },
         'a_buscar': a_buscar,
         'no_cuadran': no_cuadran,
+        'sin_dato': sin_dato,
+        'por_ubicacion': por_ubicacion,
         'trabajado_inventario': sorted(
             trabajado.values(), key=lambda x: (x['estanteria'], x['nombre'])),
         'correcciones': correcciones,

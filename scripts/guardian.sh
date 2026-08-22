@@ -773,6 +773,12 @@ CORAZON=(
   # Con un filtro puesto, el total y el detalle tienen que hablar de lo mismo: 600 arriba y un
   # lote de 300 abajo se lee como un descuadre.
   "tests/test_stock_total_filtrado.py"
+  # Para CERRAR el inventario: lo pendiente agrupado por ESTANTE (nadie recorre la bodega por
+  # codigo de material) y lo que le FALTA UN DATO, diciendo cual falta.
+  "tests/test_cierre_por_ubicacion.py"
+  # Mismo INCI + otro GRADO no es el mismo material. El normalizador canonico borra el
+  # parentesis donde vive el grado, asi que el resolver podia cambiar 300 kD por 50 kD.
+  "tests/test_grado_no_se_sustituye.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.
