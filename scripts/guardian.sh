@@ -756,6 +756,11 @@ CORAZON=(
   # Y la pantalla y el servidor tienen que agrupar IGUAL, o se avisa de un grupo que el
   # endpoint despues rechaza.
   "tests/test_estanterias_orden_y_unificar.py"
+  # Un lote con el vencimiento mal tecleado: corregir la fecha tiene que DESBLOQUEARLO. Las
+  # dos acciones que habia eran las dos equivocadas -- dar de baja borra los movimientos de un
+  # lote sano, y silenciar apaga la alerta dejando el material igual de bloqueado. Y el borde:
+  # corregir un dato NUNCA libera lo que Calidad retuvo.
+  "tests/test_lote_vencido_corregir_fecha.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.

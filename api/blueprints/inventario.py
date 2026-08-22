@@ -6132,6 +6132,30 @@ def editar_fecha_vencimiento_lote(material_id, lote):
         )
     movs_actualizados = c.rowcount
 
+    # El estado y la fecha se mueven JUNTOS. El cron de las 7:50 marca `estado_lote='VENCIDO'`
+    # cuando la fecha ya pasó, y el stock canónico excluye ese estado: cambiar sólo la fecha
+    # sacaba el lote de la alerta y lo dejaba igual de invisible para producción -- arreglado en
+    # apariencia y roto de una forma mucho más difícil de ver.
+    #
+    # ⚠ Sólo se toca VIGENTE <-> VENCIDO. Un lote en CUARENTENA / RECHAZADO / BLOQUEADO sigue
+    # como está: corregir un dato no puede liberar por la puerta de atrás lo que Calidad
+    # retuvo (M31/M23).
+    _hoy_col = (datetime.now() - timedelta(hours=5)).date().isoformat()
+    _vencida = bool(nueva_fv) and nueva_fv < _hoy_col
+    _where_estado = ("material_id=? AND (lote IS NULL OR lote='')" if sin_lote
+                     else "material_id=? AND lote=?")
+    _params_estado = ([material_id] if sin_lote else [material_id, lote])
+    reactivado = False
+    revencido = False
+    if not _vencida:
+        c.execute("UPDATE movimientos SET estado_lote='VIGENTE' WHERE " + _where_estado +
+                  " AND UPPER(COALESCE(estado_lote,''))='VENCIDO'", tuple(_params_estado))
+        reactivado = (c.rowcount or 0) > 0
+    else:
+        c.execute("UPDATE movimientos SET estado_lote='VENCIDO' WHERE " + _where_estado +
+                  " AND UPPER(COALESCE(estado_lote,''))='VIGENTE'", tuple(_params_estado))
+        revencido = (c.rowcount or 0) > 0
+
     # Audit
     try:
         import json as _json
@@ -6147,6 +6171,8 @@ def editar_fecha_vencimiento_lote(material_id, lote):
                        'fecha_nueva': nueva_fv,
                        'motivo': motivo,
                        'movimientos_actualizados': movs_actualizados,
+                       'reactivado': reactivado,
+                       'revencido': revencido,
                    }, ensure_ascii=False),
                    request.remote_addr))
     except sqlite3.OperationalError:
@@ -6157,11 +6183,17 @@ def editar_fecha_vencimiento_lote(material_id, lote):
 
     conn.commit()
 
+    # Se DICE lo que pasó con el lote: sin esto, quien corrige no sabe si tiene que hacer
+    # algo más para que producción lo vuelva a ver.
+    _extra = (' El lote volvió a quedar disponible.' if reactivado
+              else (' Con esa fecha el lote queda VENCIDO.' if revencido else ''))
     return jsonify({
         'ok': True,
+        'reactivado': reactivado,
+        'revencido': revencido,
         'message': (f'Fecha de vencimiento actualizada en {movs_actualizados} '
                     f'movimiento(s) del lote {lote if not sin_lote else "(sin lote)"} '
-                    f'de {material_id}.'),
+                    f'de {material_id}.' + _extra),
         'movimientos_actualizados': movs_actualizados,
         'fecha_anterior': fv_anterior,
         'fecha_nueva': nueva_fv,

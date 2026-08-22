@@ -6808,6 +6808,8 @@ if(typeof document !== 'undefined' && !window._ALERTAS_DELEG){
       silenciarAlerta(btn.dataset.tipo, btn.dataset.cod);
     } else if(act === 'dar-baja'){
       darBajaLoteAlerta(btn.dataset.mid, btn.dataset.lote);
+    } else if(act === 'corregir-venc'){
+      corregirVencLote(btn.dataset.mid, btn.dataset.lote, btn.dataset.fv||'');
     } else if(act === 'ir-qc'){
       if(typeof switchGroup === 'function') switchGroup('bar-calidadHub','cuarentena',null);
     }
@@ -6971,6 +6973,10 @@ function _renderSeccionLotes(titulo, items, color, esVencido){
       '<td style="text-align:center;color:'+dCol+';font-weight:700">'+(it.dias_para_vencer<0?(it.dias_para_vencer+'d (VENCIDO)'):(it.dias_para_vencer+'d'))+'</td>'+
       '<td style="text-align:center;white-space:nowrap">'+
         (esVencido ? '<button data-act="dar-baja" data-mid="'+_escHTML(it.material_id)+'" data-lote="'+_escHTML(it.lote)+'" style="padding:2px 7px;font-size:11px;background:var(--cx-danger);color:#fff;border-radius:3px">Dar de baja</button>' : '') + ' ' +
+        /* Casi siempre el lote esta sano y la FECHA se tecleo mal al recibir. Sin este
+           boton las dos salidas eran destruir el lote o silenciar la alerta dejandolo
+           bloqueado, que es peor porque se ve resuelto (M121). */
+        '<button data-act="corregir-venc" data-mid="'+_escHTML(it.material_id)+'" data-lote="'+_escHTML(it.lote)+'" data-fv="'+_escHTML(it.fecha_vencimiento||'')+'" style="padding:2px 7px;font-size:11px;background:var(--cx-primary);color:#fff;border-radius:3px" title="La fecha esta mal tecleada">Corregir fecha</button>' + ' ' +
         '<button data-act="silenciar" data-tipo="lote_venc" data-cod="'+_escHTML(it.material_id)+'::'+_escHTML(it.lote)+'" style="padding:2px 7px;font-size:11px;background:var(--cx-text-faint);color:#fff;border-radius:3px" title="Silenciar">🔇</button>'+
       '</td></tr>';
   });
@@ -7044,6 +7050,32 @@ async function silenciarAlerta(tipo, cod){
     loadAlertasAll(true);
   }catch(e){ alert('Error red: '+e.message); }
 }
+// Casi siempre el lote esta SANO y la fecha se teclearon mal al recibir. Antes las dos
+// salidas eran destruir el lote (dar de baja borra sus movimientos) o silenciar la alerta
+// -- que la apaga y deja el material igual de bloqueado, porque el stock canonico excluye
+// estado_lote='VENCIDO'. Corregir la fecha mueve las DOS cosas: la fecha y el estado.
+async function corregirVencLote(mid, lote, fvActual){
+  var nueva = prompt('Fecha de vencimiento REAL del lote ' + lote + ' (AAAA-MM-DD).'
+    + ' El sistema tiene: ' + (fvActual||'sin fecha'), fvActual||'');
+  if(nueva === null) return;
+  nueva = String(nueva).trim();
+  if(!nueva){ alert('No se cambio nada: una fecha de vencimiento no se borra.'); return; }
+  var motivo = prompt('Por que se corrige? (queda en el registro)', 'mal tecleada al recibir');
+  if(motivo === null) return;
+  try{
+    var t = await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r = await fetch('/api/lotes/' + encodeURIComponent(mid) + '/'
+      + encodeURIComponent(lote||'_SIN_LOTE_') + '/fecha-vencimiento',
+      {method:'PUT', credentials:'same-origin',
+       headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},
+       body: JSON.stringify({fecha_vencimiento:nueva, motivo:motivo})});
+    var d = {}; try{ d = await r.json(); }catch(_je){}
+    if(!r.ok || d.error){ alert(d.error || ('No se pudo corregir (error ' + r.status + ')')); return; }
+    alert(d.message || 'Fecha corregida.');
+    if(typeof loadAlertasAll === 'function') loadAlertasAll(true);
+  }catch(e){ alert('No se pudo corregir: ' + e); }
+}
+
 async function darBajaLoteAlerta(mid, lote){
   if(!confirm('Dar de baja DEFINITIVA el lote '+lote+'? Esto elimina los movimientos y queda en audit_log.')) return;
   var motivo = prompt('Motivo (≥10 chars):');
