@@ -5242,13 +5242,22 @@ function renderStock(items){
   var h='';
   order.forEach(function(k){
     var lotes=grp[k], first=lotes[0], safe=_mpSafe(k);
-    var totalMP=(typeof first.stock_total_mp_g==='number')?first.stock_total_mp_g:lotes.reduce(function(a,x){return a+(x.cantidad_g||0);},0);
+    // Lo que se VE y lo que el material tiene en TOTAL son dos numeros distintos en
+    // cuanto hay un filtro puesto: el backend manda el total de TODOS los lotes del MP
+    // y aca solo estan los que pasaron la busqueda. Mostrar el total sin filtrar al lado
+    // de un conteo filtrado se lee como un descuadre (M148/M5).
+    var totalVisible=lotes.reduce(function(a,x){return a+(x.cantidad_g||0);},0);
+    var totalMP=(typeof first.stock_total_mp_g==='number')?first.stock_total_mp_g:totalVisible;
+    var lotesMP=(typeof first.lotes_mp_n==='number')?first.lotes_mp_n:lotes.length;
+    var hayFiltro=(Math.abs(totalMP-totalVisible)>0.01)||(lotesMP>lotes.length);
     var minMP=first.stock_min_g||0;
     var bajo=minMP>0 && totalMP<minMP;
     var worst='ok', nearVenc=null, nearDias=null;
     lotes.forEach(function(x){ var a=x.alerta||'ok'; if((sev[a]||0)>(sev[worst]||0)) worst=a;
       if(x.fecha_vencimiento && (nearVenc===null || x.fecha_vencimiento<nearVenc)){ nearVenc=x.fecha_vencimiento; nearDias=x.dias_para_vencer; } });
-    var qtot=totalMP<=0?'color:#cc0000':totalMP<500?'color:#e68a00':'color:var(--cx-success-text)';
+    // El color habla del numero que se muestra, no de uno escondido.
+    var qShow=hayFiltro?totalVisible:totalMP;
+    var qtot=qShow<=0?'color:#cc0000':qShow<500?'color:#e68a00':'color:var(--cx-success-text)';
     var giFirst=_lotes.indexOf(first); if(giFirst<0)giFirst=0;
     var solBtn = first.tiene_solicitud_pendiente
       ? '<button class="mpact mpact-sol" style="background:var(--cx-warn-pale);color:var(--cx-warn-text);border-color:#fde68a" onclick="event.stopPropagation();abrirSolicitarLote('+giFirst+')" title="Ya hay una solicitud de compra pendiente para este MP">Sol pend.</button>'
@@ -5260,8 +5269,8 @@ function renderStock(items){
     h+='<td style="color:var(--cx-text-faint)">'+_escHTML(first.tipo||'')+'</td>';
     h+='<td style="color:var(--cx-text-mute)">'+(first.proveedor?_escHTML(first.proveedor):'<span style="color:var(--cx-border)">-</span>')+'</td>';
     h+='<td style="text-align:right;'+(bajo?'background:var(--cx-danger-pale);color:var(--cx-danger-text);font-weight:800;':'color:var(--cx-text-faint);')+'" title="Mínimo del MP completo">'+minMP.toLocaleString('es-CO')+'</td>';
-    h+='<td style="text-align:center;color:var(--cx-primary-text);font-weight:700;font-size:0.85em">'+lotes.length+'</td>';
-    h+='<td style="text-align:right;font-weight:800;'+qtot+'" title="Cantidad total del MP (suma de sus lotes)">'+totalMP.toLocaleString('es-CO')+'</td>';
+    h+='<td style="text-align:center;color:var(--cx-primary-text);font-weight:700;font-size:0.85em">'+lotes.length+(hayFiltro?('<span style="color:var(--cx-text-mute);font-weight:600"> de '+lotesMP+'</span>'):'')+'</td>';
+    h+='<td style="text-align:right;font-weight:800;'+qtot+'" title="'+(hayFiltro?'Suma de los lotes que se estan viendo':'Cantidad total del MP (suma de sus lotes)')+'">'+qShow.toLocaleString('es-CO')+(hayFiltro?('<div style="font-size:11px;font-weight:600;color:var(--cx-text-mute)">de '+totalMP.toLocaleString('es-CO')+' g en '+lotesMP+' lotes</div>'):'')+'</td>';
     h+='<td style="text-align:center;color:var(--cx-border)">-</td>';
     h+='<td style="text-align:center;color:var(--cx-text-mute);font-size:0.82em;white-space:nowrap">'+_escHTML(nearVenc||'-')+'</td>';
     h+='<td style="text-align:center">'+badge(worst,nearDias)+'</td>';

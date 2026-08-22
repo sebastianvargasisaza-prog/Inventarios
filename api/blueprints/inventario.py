@@ -4924,9 +4924,14 @@ def get_lotes():
     # calculamos el TOTAL por material y lo devolvemos en cada fila para
     # que el frontend compare contra ese total.
     totales_mp = {}
+    # Cuantos lotes tiene el material EN TOTAL. La pantalla filtra del lado del cliente,
+    # asi que sin este numero no puede decir 'se ven 1 de 2' y el total sin filtrar
+    # queda al lado de un conteo filtrado: se lee como un descuadre (M148).
+    lotes_mp = {}
     for r in rows:
         mid_r = r[0] or ''
         totales_mp[mid_r] = totales_mp.get(mid_r, 0) + (r[3] or 0)
+        lotes_mp[mid_r] = lotes_mp.get(mid_r, 0) + 1
 
     result = []
     for r in rows:
@@ -4944,6 +4949,7 @@ def get_lotes():
         result.append({'material_id':mid or '','nombre_inci':inci,'material_nombre':mnm or '',
                        'tipo':tipo,'proveedor':prov or '','stock_min_g':round(smin,1),
                        'stock_total_mp_g':round(totales_mp.get(mid or '', 0), 2),
+                       'lotes_mp_n': lotes_mp.get(mid or '', 0),
                        'lote':lote or '','cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),
                        'estanteria':est or '','posicion':pos or '',
                        'fecha_vencimiento':str(fvenc)[:10] if fvenc else '',
@@ -4974,7 +4980,7 @@ def get_lotes():
                 result.append({
                     'material_id': _cod, 'nombre_inci': cr[2], 'material_nombre': cr[1],
                     'tipo': cr[3], 'proveedor': '', 'stock_min_g': round(cr[4] or 0, 1),
-                    'stock_total_mp_g': 0, 'lote': '', 'cantidad_g': 0, 'cantidad_kg': 0,
+                    'stock_total_mp_g': 0, 'lotes_mp_n': 0, 'lote': '', 'cantidad_g': 0, 'cantidad_kg': 0,
                     'estanteria': '', 'posicion': '', 'fecha_vencimiento': '',
                     'dias_para_vencer': None, 'estado_lote': '', 'alerta': 'sin_stock',
                     'tiene_solicitud_pendiente': _cod in codigos_con_solicitud})
@@ -9190,6 +9196,23 @@ async function cargar(){
           return '<span class="mot">'+esc(f.motivo||'')+'</span>'; }},
       ]);
     }
+    if((d.trabajado_inventario||[]).length){
+      h+=_sec('Se trabaj&oacute; desde el m&oacute;dulo de inventario &middot; '
+        +n(s.trabajado_inventario)+' lote(s)');
+      h+=_tabla(d.trabajado_inventario, [
+        {t:'Material', v:function(f){ return '<b>'+esc(f.nombre||f.codigo_mp)+'</b>'; }},
+        {t:'Lote', v:function(f){ return esc(f.lote||'sin lote'); }},
+        {t:'D&oacute;nde', v:function(f){
+          return esc(f.estanteria||'') + (f.posicion?(' &middot; pos. '+esc(f.posicion)):'')
+            || '<span style="color:var(--cx-text-mute)">sin ubicaci&oacute;n</span>'; }},
+        {t:'Movs', num:true, v:function(f){ return n(f.movimientos); }},
+        {t:'Neto', num:true, v:function(f){
+          return (f.neto_g>0?'+':'')+n(f.neto_g)+' g'; }},
+        {t:'Qui&eacute;n', v:function(f){
+          return esc(f.por||'')+'<div style="font-size:11px;color:var(--cx-text-mute)">'
+            +esc(f.cuando||'')+'</div>'; }},
+      ]);
+    }
     h+=_sec('Se ajustaron &middot; '+n(s.ajustados)+' &middot; '+n(s.gramos_ajustados)+' g netos');
     h+=_tabla(d.ajustados, [
       {t:'Material', v:function(f){ return '<b>'+esc(f.nombre||f.codigo_mp)+'</b>'; }},
@@ -9324,9 +9347,58 @@ def inventario_cuadre_informe():
         __import__('logging').getLogger('inventario').warning('informe de cuadre: %s', _e)
         lectura_fallo = True
 
+    nombres = {}
+    # ── 2b-bis · lo que se trabajó DESDE EL MÓDULO DE INVENTARIO ────────────
+    # Sebastián hizo la nevera entrando material y ajustando desde /inventarios, no desde
+    # el cuadre. Si el informe sólo mirara el rastro del cuadre, esa estantería saldría
+    # como 'nadie lo revisó' y mandaría a buscar lo que ya está contado.
+    #
+    # No se pregunta QUÉ PANTALLA se uso: el kardex es la verdad. Si alguien tocó un lote,
+    # hay un movimiento. Se excluye lo que viene de una producción (eso es consumo, no
+    # verificación) y lo que escribió el propio cuadre (ya está en `declarado`).
+    #
+    # ⚠ `movimientos.fecha` lleva DOS relojes: el cuadre escribe hora Colombia y
+    # `POST /api/movimientos` escribe `datetime.now()`, que en producción es UTC. Por eso
+    # la ventana se abre 5 horas hacia adelante: sin eso, lo registrado despues de las 7pm
+    # Colombia caería en el día siguiente y no se contaría (M24).
+    trabajado = {}
+    try:
+        _ini = desde + ' 00:00:00'
+        _fin = (datetime.strptime(hasta, '%Y-%m-%d')
+                + timedelta(days=1, hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+        for _r in c.execute(
+                "SELECT UPPER(COALESCE(material_id,'')), COALESCE(lote,''), "
+                "       MAX(COALESCE(material_nombre,'')), COUNT(*), "
+                "       SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') "
+                "                THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') "
+                "                THEN -cantidad ELSE 0 END), "
+                "       MAX(COALESCE(operador,'')), MAX(COALESCE(fecha,'')), "
+                "       MAX(COALESCE(estanteria,'')), MAX(COALESCE(posicion,'')) "
+                "  FROM movimientos "
+                " WHERE fecha >= ? AND fecha < ? "
+                "   AND COALESCE(produccion_id,0)=0 "
+                "   AND COALESCE(observaciones,'') NOT LIKE '[cuadre]%' "
+                " GROUP BY UPPER(COALESCE(material_id,'')), COALESCE(lote,'') "
+                " ORDER BY MAX(COALESCE(estanteria,'')), MAX(COALESCE(material_nombre,''))",
+                (_ini, _fin)).fetchall():
+            _k = (str(_r[0] or ''), str(_r[1] or '').strip())
+            if not _k[0] or _k in declarado:
+                continue
+            if _r[2] and not nombres.get(_k[0]):
+                nombres[_k[0]] = _r[2]
+            trabajado[_k] = {
+                'codigo_mp': _k[0], 'lote': _k[1], 'nombre': _r[2] or _k[0],
+                'movimientos': int(_r[3] or 0), 'neto_g': round(float(_r[4] or 0), 2),
+                'por': _r[5] or '', 'cuando': str(_r[6] or '')[:16],
+                'estanteria': _r[7] or '', 'posicion': _r[8] or '',
+            }
+    except Exception as _e5:
+        __import__('logging').getLogger('inventario').warning(
+            'informe · trabajado desde inventario: %s', _e5)
+        lectura_fallo = True
+
     # ── 2 · lo que sigue en el inventario y nadie miró ──────────────────────
     sin_revisar = []
-    nombres = {}
     try:
         for r in c.execute(
                 """SELECT m.material_id, MAX(m.material_nombre), COALESCE(m.lote,''),
@@ -9347,6 +9419,10 @@ def inventario_cuadre_informe():
             _lot = str(r[2] or '').strip()
             nombres[_cod] = r[1]
             if (_cod, _lot) in declarado:
+                continue
+            # Lo trabajado desde el módulo de inventario TAMBIÉN se miró: dejarlo en
+            # 'sin revisar' mandaría a buscar lo que alguien acaba de contar.
+            if (_cod, _lot) in trabajado:
                 continue
             sin_revisar.append({
                 'codigo_mp': r[0], 'nombre': r[1], 'lote': _lot,
@@ -9485,6 +9561,7 @@ def inventario_cuadre_informe():
             'sin_revisar': len(sin_revisar),
             'a_buscar': len(a_buscar),
             'no_cuadran': len(no_cuadran),
+            'trabajado_inventario': len(trabajado),
             'correcciones': len(correcciones),
             'gramos_ajustados': round(sum(x['ajuste'] for x in ajustados), 2),
             'gramos_no_encontrados': round(sum(x['sistema'] for x in no_esta), 2),
@@ -9492,6 +9569,8 @@ def inventario_cuadre_informe():
         },
         'a_buscar': a_buscar,
         'no_cuadran': no_cuadran,
+        'trabajado_inventario': sorted(
+            trabajado.values(), key=lambda x: (x['estanteria'], x['nombre'])),
         'correcciones': correcciones,
         'no_esta': no_esta,
         'ajustados': ajustados,

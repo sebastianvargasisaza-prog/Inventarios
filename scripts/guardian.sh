@@ -766,6 +766,13 @@ CORAZON=(
   "tests/test_cc_correcciones.py"
   "tests/test_admin_paginas_nuevas.py"
   "tests/test_r2_archivo_expediente.py"
+  # El cierre suma lo trabajado desde el MODULO DE INVENTARIO, no solo desde el cuadre: si no,
+  # una estanteria contada por ahi sale como "nadie la reviso" y se manda a buscar lo que ya
+  # esta. El kardex es la verdad; el consumo de produccion NO es verificacion.
+  "tests/test_informe_suma_inventario.py"
+  # Con un filtro puesto, el total y el detalle tienen que hablar de lo mismo: 600 arriba y un
+  # lote de 300 abajo se lee como un descuadre.
+  "tests/test_stock_total_filtrado.py"
   # La linea de tiempo del legajo hablaba SIEMPRE de fabricacion ("Batch Record Bulk",
   # "Pesaje de Materias Primas") aunque el lote fuera de envasado -- y es la pantalla a la
   # que llega Calidad desde su cola de controles. Incluye verificacion del DOM real.
